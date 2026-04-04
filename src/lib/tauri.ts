@@ -8,14 +8,14 @@ export async function getCwd(): Promise<string> {
   return invoke<string>("get_cwd");
 }
 
-export async function listDirectory(dirPath: string): Promise<{
+export async function listDirectory(dirPath: string, workspace: string): Promise<{
   name: string;
   path: string;
   is_dir: boolean;
   size: number;
   extension: string | null;
 }[]> {
-  return invoke("list_directory", { dirPath });
+  return invoke("list_directory", { dirPath, workspace });
 }
 
 // PTY session management

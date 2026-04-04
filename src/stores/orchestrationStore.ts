@@ -5,7 +5,9 @@ import {
   killPty,
   launchFlightInBackend,
   loadPersistedState,
-  notifyTaskComplete,
+  notifyApprovalNeeded,
+  notifyApprovalResolved,
+
   orchestrationTick,
   pauseFlightInBackend,
   recordTaskSpawn,
@@ -345,6 +347,9 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
         break;
       }
     }
+
+    // Notify the Rust backend (fire-and-forget)
+    notifyApprovalNeeded(taskId).catch(console.error);
   },
 
   onTaskApprovalResolved: (taskId) => {
@@ -366,6 +371,9 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
       }
       break;
     }
+
+    // Notify the Rust backend (fire-and-forget)
+    notifyApprovalResolved(taskId).catch(console.error);
   },
 
   attachSessionToTask: (taskId, sessionId) => {

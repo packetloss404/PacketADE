@@ -21,8 +21,9 @@ pub fn get_cwd() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn list_directory(dir_path: String) -> Result<Vec<DirEntry>, String> {
+pub fn list_directory(dir_path: String, workspace: String) -> Result<Vec<DirEntry>, String> {
     super::validate_project_path(&dir_path)?;
+    super::is_within_workspace(&dir_path, &workspace)?;
     info!(dir_path = %dir_path, "Listing directory");
     let path = Path::new(&dir_path);
 
@@ -42,7 +43,7 @@ pub fn list_directory(dir_path: String) -> Result<Vec<DirEntry>, String> {
         let file_name = entry.file_name().to_string_lossy().to_string();
 
         // Skip hidden files/dirs (starting with .) except a few useful ones
-        if file_name.starts_with('.') && !matches!(file_name.as_str(), ".env" | ".env.local" | ".gitignore" | ".eslintrc" | ".prettierrc") {
+        if file_name.starts_with('.') && !matches!(file_name.as_str(), ".gitignore" | ".eslintrc" | ".prettierrc") {
             continue;
         }
 

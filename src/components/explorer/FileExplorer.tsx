@@ -86,7 +86,7 @@ function formatSize(bytes: number): string {
 
 // ─── Tree Node ──────────────────────────────────────────────
 
-function TreeNode({ entry, depth }: { entry: DirEntry; depth: number }) {
+function TreeNode({ entry, depth, workspace }: { entry: DirEntry; depth: number; workspace: string }) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DirEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -97,7 +97,7 @@ function TreeNode({ entry, depth }: { entry: DirEntry; depth: number }) {
     if (!expanded && children === null) {
       setLoading(true);
       try {
-        const entries = await listDirectory(entry.path) as DirEntry[];
+        const entries = await listDirectory(entry.path, workspace) as DirEntry[];
         setChildren(entries);
       } catch {
         setChildren([]);
@@ -176,7 +176,7 @@ function TreeNode({ entry, depth }: { entry: DirEntry; depth: number }) {
           )}
           {children &&
             children.map((child) => (
-              <TreeNode key={child.path} entry={child} depth={depth + 1} />
+              <TreeNode key={child.path} entry={child} depth={depth + 1} workspace={workspace} />
             ))}
         </>
       )}
@@ -198,7 +198,7 @@ export function FileExplorer({ onClose, docked = false }: FileExplorerProps) {
 
   useEffect(() => {
     setLoading(true);
-    (listDirectory(projectPath) as Promise<DirEntry[]>)
+    (listDirectory(projectPath, projectPath) as Promise<DirEntry[]>)
       .then((entries) => {
         setRootEntries(entries);
         setLoading(false);
@@ -283,7 +283,7 @@ export function FileExplorer({ onClose, docked = false }: FileExplorerProps) {
           )}
           {rootEntries &&
             rootEntries.map((entry) => (
-              <TreeNode key={entry.path} entry={entry} depth={0} />
+              <TreeNode key={entry.path} entry={entry} depth={0} workspace={projectPath} />
             ))}
         </div>
 
@@ -344,7 +344,7 @@ export function FileExplorer({ onClose, docked = false }: FileExplorerProps) {
         )}
         {rootEntries &&
           rootEntries.map((entry) => (
-            <TreeNode key={entry.path} entry={entry} depth={0} />
+            <TreeNode key={entry.path} entry={entry} depth={0} workspace={projectPath} />
           ))}
       </div>
 

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A custom IDE for Claude Code"
 authors = ["PacketCode"]
 edition = "2021"
+default-run = "packetcode"
 
 [lib]
 name = "packetcode_lib"

@@ -10,7 +10,7 @@ interface LayoutStore {
   setProjectPath: (path: string) => void;
   setExplorerOpen: (open: boolean) => void;
   toggleExplorer: () => void;
-  addPane: (opts?: { cliCommand?: "claude" | "codex"; cliArgs?: string[]; initialPrompt?: string }) => string;
+  addPane: (opts?: { cliCommand?: string; cliArgs?: string[]; initialPrompt?: string; projectPath?: string; agentConfigId?: string; taskId?: string; flightId?: string }) => string;
   removePane: (paneId: string) => void;
   setActivePaneId: (paneId: string) => void;
   setPaneSession: (paneId: string, sessionId: string | null) => void;
