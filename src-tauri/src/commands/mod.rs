@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod analytics;
 pub mod code_quality;
 pub mod deploy;
@@ -9,10 +10,12 @@ pub mod ideation;
 pub mod insights;
 pub mod mcp;
 pub mod memory;
+pub mod orchestration;
 pub mod pty;
 pub mod scaffold;
 pub mod shared;
 pub mod spec;
+pub mod state;
 pub mod statusline;
 
 use std::path::Path;

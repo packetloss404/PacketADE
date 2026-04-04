@@ -1,50 +1,42 @@
-/* eslint-disable no-control-regex */
 import { useEffect, useRef, useCallback } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { AgentStatusPatterns } from "@/types/agent";
+import { stripAnsi } from "@/agents/types";
 
-// --- ANSI strip ---
-const ANSI_RE =
-  /\x1B\[[0-9;]*[A-Za-z]|\x1B\].*?\x07|\x1B[()][A-Z0-9]|\x1B[>=<]|\x0F|\x0E/g;
-
-function stripAnsi(str: string): string {
-  return str.replace(ANSI_RE, "");
-}
-
-// --- Approval detection patterns ---
-const APPROVAL_PATTERNS = [
-  /Allow\s+\w+.*\?/i,
-  /\(y\/n\)/i,
-  /Do you want to (?:proceed|continue|allow)/i,
-  /Press\s+y\s+to\s+(?:approve|allow|confirm)/i,
-  /\[Y\/n\]/i,
-  /\[y\/N\]/i,
-  /Allow once|Allow always|Deny/i,
-];
-
-// --- Tool use detection patterns ---
-const TOOL_PATTERNS: { pattern: RegExp; tool: string; fileGroup?: number }[] = [
-  { pattern: /⏺\s*Read\(([^)]+)\)/i, tool: "Read", fileGroup: 1 },
-  { pattern: /⏺\s*Edit\(([^)]+)\)/i, tool: "Edit", fileGroup: 1 },
-  { pattern: /⏺\s*Write\(([^)]+)\)/i, tool: "Write", fileGroup: 1 },
-  { pattern: /⏺\s*Bash\(([^)]*)\)/i, tool: "Bash", fileGroup: 1 },
-  { pattern: /⏺\s*Glob\(([^)]*)\)/i, tool: "Glob", fileGroup: 1 },
-  { pattern: /⏺\s*Grep\(([^)]*)\)/i, tool: "Grep", fileGroup: 1 },
-  { pattern: /⏺\s*Task\(([^)]*)\)/i, tool: "Task", fileGroup: 1 },
-  { pattern: /Reading\s+(.+)/i, tool: "Read", fileGroup: 1 },
-  { pattern: /Editing\s+(.+)/i, tool: "Edit", fileGroup: 1 },
-  { pattern: /Writing\s+(.+)/i, tool: "Write", fileGroup: 1 },
-  { pattern: /Running\s+(.+)/i, tool: "Bash", fileGroup: 1 },
-];
-
-// --- Thinking / idle patterns ---
-const THINKING_PATTERN = /⏺\s*Thinking|thinking\.\.\./i;
-const IDLE_PATTERN = /^\s*[>❯]\s*$/m;
+// Default patterns (Claude Code style) — used when no agent config is provided
+const DEFAULT_PATTERNS: AgentStatusPatterns = {
+  approval: [
+    "Allow\\s+\\w+.*\\?",
+    "\\(y\\/n\\)",
+    "Do you want to (?:proceed|continue|allow)",
+    "Press\\s+y\\s+to\\s+(?:approve|allow|confirm)",
+    "\\[Y\\/n\\]",
+    "\\[y\\/N\\]",
+    "Allow once|Allow always|Deny",
+  ],
+  thinking: ["⏺\\s*Thinking", "thinking\\.\\.\\."],
+  toolUse: [
+    { pattern: "⏺\\s*Read\\(([^)]+)\\)", tool: "Read", fileGroup: 1 },
+    { pattern: "⏺\\s*Edit\\(([^)]+)\\)", tool: "Edit", fileGroup: 1 },
+    { pattern: "⏺\\s*Write\\(([^)]+)\\)", tool: "Write", fileGroup: 1 },
+    { pattern: "⏺\\s*Bash\\(([^)]*)\\)", tool: "Bash", fileGroup: 1 },
+    { pattern: "⏺\\s*Glob\\(([^)]*)\\)", tool: "Glob", fileGroup: 1 },
+    { pattern: "⏺\\s*Grep\\(([^)]*)\\)", tool: "Grep", fileGroup: 1 },
+    { pattern: "⏺\\s*Task\\(([^)]*)\\)", tool: "Task", fileGroup: 1 },
+    { pattern: "Reading\\s+(.+)", tool: "Read", fileGroup: 1 },
+    { pattern: "Editing\\s+(.+)", tool: "Edit", fileGroup: 1 },
+    { pattern: "Writing\\s+(.+)", tool: "Write", fileGroup: 1 },
+    { pattern: "Running\\s+(.+)", tool: "Bash", fileGroup: 1 },
+  ],
+  idle: ["^\\s*[>❯]\\s*$"],
+};
 
 export interface PtyDetectorState {
   needsApproval: boolean;
   currentTool: string | null;
   currentFile: string | null;
-  agentState: "idle" | "thinking" | "tool_use" | "responding";
+  approvalText: string | null;
+  agentState: "idle" | "thinking" | "tool_use" | "responding" | "approval_needed";
   lastActivityAt: number;
 }
 
@@ -52,19 +44,66 @@ const INITIAL_STATE: PtyDetectorState = {
   needsApproval: false,
   currentTool: null,
   currentFile: null,
+  approvalText: null,
   agentState: "idle",
   lastActivityAt: 0,
 };
 
 const MAX_BUFFER_SIZE = 4096;
 
+interface CompiledPatterns {
+  approval: RegExp[];
+  thinking: RegExp[];
+  toolUse: { pattern: RegExp; tool: string; fileGroup?: number }[];
+  idle: RegExp[];
+}
+
+function compilePatterns(patterns: AgentStatusPatterns): CompiledPatterns {
+  return {
+    approval: patterns.approval.map((p) => new RegExp(p, "i")),
+    thinking: patterns.thinking.map((p) => new RegExp(p, "i")),
+    toolUse: patterns.toolUse.map((t) => ({
+      pattern: new RegExp(t.pattern, "i"),
+      tool: t.tool,
+      fileGroup: t.fileGroup,
+    })),
+    idle: patterns.idle.map((p) => new RegExp(p, "im")),
+  };
+}
+
+function extractApprovalText(lines: string[], approvalPatterns: RegExp[]): string | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (approvalPatterns.some((pattern) => pattern.test(line))) {
+      const context = lines
+        .slice(Math.max(0, i - 1), Math.min(lines.length, i + 2))
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .join("\n");
+      return context || line;
+    }
+  }
+
+  const fallback = lines
+    .slice(-3)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+  return fallback || null;
+}
+
 interface UsePtyStateDetectorOpts {
   sessionId: string | null;
+  /** Agent-specific patterns. Falls back to Claude Code defaults if not provided. */
+  statusPatterns?: AgentStatusPatterns;
   onStateChange?: (prev: PtyDetectorState, next: PtyDetectorState) => void;
 }
 
 export function usePtyStateDetector({
   sessionId,
+  statusPatterns,
   onStateChange,
 }: UsePtyStateDetectorOpts) {
   const stateRef = useRef<PtyDetectorState>({ ...INITIAL_STATE });
@@ -72,15 +111,22 @@ export function usePtyStateDetector({
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
 
+  // Compile patterns once and cache via ref
+  const patternsRef = useRef<CompiledPatterns>(compilePatterns(statusPatterns || DEFAULT_PATTERNS));
+  // Update compiled patterns when statusPatterns changes
+  useEffect(() => {
+    patternsRef.current = compilePatterns(statusPatterns || DEFAULT_PATTERNS);
+  }, [statusPatterns]);
+
   const updateState = useCallback((partial: Partial<PtyDetectorState>) => {
     const prev = { ...stateRef.current };
     const next = { ...stateRef.current, ...partial };
 
-    // Only fire callback if something actually changed
     if (
       prev.needsApproval !== next.needsApproval ||
       prev.currentTool !== next.currentTool ||
       prev.currentFile !== next.currentFile ||
+      prev.approvalText !== next.approvalText ||
       prev.agentState !== next.agentState
     ) {
       stateRef.current = next;
@@ -90,38 +136,39 @@ export function usePtyStateDetector({
     }
   }, []);
 
-  // Process incoming PTY data
   const processData = useCallback(
     (data: string) => {
       const stripped = stripAnsi(data);
-      // Append to rolling buffer
       bufferRef.current += stripped;
       if (bufferRef.current.length > MAX_BUFFER_SIZE) {
         bufferRef.current = bufferRef.current.slice(-MAX_BUFFER_SIZE);
       }
 
       const now = Date.now();
-      // Check only the last ~1KB for patterns (recent output)
       const recent = bufferRef.current.slice(-1024);
       const lines = recent.split("\n");
       const lastLines = lines.slice(-8);
       const lastChunk = lastLines.join("\n");
 
-      // 1. Approval detection — check last few lines
+      const compiled = patternsRef.current;
+
+      // 1. Approval detection
       let needsApproval = false;
-      for (const pat of APPROVAL_PATTERNS) {
+      let approvalText: string | null = null;
+      for (const pat of compiled.approval) {
         if (pat.test(lastChunk)) {
           needsApproval = true;
+          approvalText = extractApprovalText(lastLines, compiled.approval);
           break;
         }
       }
 
-      // 2. Tool use detection — scan recent lines in reverse for latest tool
+      // 2. Tool use detection
       let currentTool: string | null = null;
       let currentFile: string | null = null;
       for (let i = lastLines.length - 1; i >= 0; i--) {
         const line = lastLines[i];
-        for (const { pattern, tool, fileGroup } of TOOL_PATTERNS) {
+        for (const { pattern, tool, fileGroup } of compiled.toolUse) {
           const m = line.match(pattern);
           if (m) {
             currentTool = tool;
@@ -134,33 +181,47 @@ export function usePtyStateDetector({
 
       // 3. Agent state
       let agentState: PtyDetectorState["agentState"] = "responding";
-      if (THINKING_PATTERN.test(lastChunk)) {
-        agentState = "thinking";
+      if (needsApproval) {
+        agentState = "approval_needed";
       } else if (currentTool) {
         agentState = "tool_use";
-      } else if (IDLE_PATTERN.test(lastChunk)) {
-        agentState = "idle";
+      } else {
+        // Check thinking
+        for (const pat of compiled.thinking) {
+          if (pat.test(lastChunk)) {
+            agentState = "thinking";
+            break;
+          }
+        }
+        // Check idle
+        if (agentState === "responding") {
+          for (const pat of compiled.idle) {
+            if (pat.test(lastChunk)) {
+              agentState = "idle";
+              break;
+            }
+          }
+        }
       }
 
       updateState({
         needsApproval,
         currentTool,
         currentFile,
+        approvalText,
         agentState,
         lastActivityAt: now,
       });
     },
-    [updateState]
+    [updateState],
   );
 
-  // Clear approval state when user responds (data written to PTY)
   const clearApproval = useCallback(() => {
     if (stateRef.current.needsApproval) {
-      updateState({ needsApproval: false });
+      updateState({ needsApproval: false, approvalText: null, agentState: "responding" });
     }
   }, [updateState]);
 
-  // Reset on session change
   const reset = useCallback(() => {
     bufferRef.current = "";
     stateRef.current = { ...INITIAL_STATE };
@@ -213,5 +274,5 @@ export function usePtyStateDetector({
     return () => clearInterval(interval);
   }, [updateState]);
 
-  return { stateRef, clearApproval, reset };
+  return { stateRef, clearApproval, reset, ingestData: processData };
 }

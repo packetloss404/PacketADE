@@ -51,7 +51,7 @@ export function Toolbar() {
   const computeFlightStatus = useFlightStore((s) => s.computeFlightStatus);
   const attentionCount = flights.filter((f) => {
     const status = computeFlightStatus(f.id);
-    return status === "blocked" || status === "needs_human";
+    return status === "paused" || status === "failed";
   }).length;
 
   const projectName = projectPath.split(/[/\\]/).pop() || "PacketCode";

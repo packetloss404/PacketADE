@@ -9,7 +9,7 @@ import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS, ISSUE_STATUS_COLORS, ISSU
 import type { Flight, FlightStatus, FlightPriority } from "@/types/flight";
 import type { IssueStatus } from "@/stores/issueStore";
 
-const ALL_STATUSES: FlightStatus[] = ["draft", "active", "blocked", "needs_human", "done", "failed"];
+const ALL_STATUSES: FlightStatus[] = ["draft", "planning", "ready", "active", "paused", "review", "done", "failed", "cancelled"];
 const ALL_PRIORITIES: FlightPriority[] = ["low", "medium", "high", "critical"];
 
 // ---------------------------------------------------------------------------
@@ -234,6 +234,7 @@ function CreateFlightForm({
   onCancel: () => void;
 }) {
   const addFlight = useFlightStore((s) => s.addFlight);
+  const projectPath = useLayoutStore((s) => s.projectPath);
   const [title, setTitle] = useState("");
   const [objective, setObjective] = useState("");
   const [priority, setPriority] = useState<FlightPriority>("medium");
@@ -244,9 +245,8 @@ function CreateFlightForm({
       title: title.trim(),
       objective: objective.trim(),
       priority,
-      status: "draft",
+      projectPath: projectPath || "",
       issueIds: [],
-      linkedSessionIds: [],
     });
     onCreated(f.id);
   }

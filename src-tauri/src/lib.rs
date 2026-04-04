@@ -1,8 +1,10 @@
+pub mod core;
 mod claude;
 mod commands;
 
 use commands::github::create_github_auth_state;
 use commands::pty::create_shared_pty_manager;
+use commands::orchestration::create_shared_orchestrator;
 
 fn init_tracing() {
     use tracing_subscriber::{fmt, EnvFilter};
@@ -60,13 +62,16 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(create_github_auth_state())
         .manage(create_shared_pty_manager())
+        .manage(create_shared_orchestrator())
         .invoke_handler(tauri::generate_handler![
             // PTY-based sessions (primary)
             commands::pty::create_pty_session,
             commands::pty::write_pty,
             commands::pty::resize_pty,
             commands::pty::kill_pty,
+            commands::pty::kill_pty_and_wait,
             commands::pty::list_pty_sessions,
+            commands::pty::read_pty_transcript,
             // Git
             commands::git::get_git_branch,
             commands::git::get_git_status,
@@ -74,11 +79,32 @@ pub fn run() {
             commands::git::git_push,
             commands::git::git_pull,
             commands::git::git_create_branch,
+            commands::git::git_safety_check,
             // Code quality
             commands::code_quality::analyze_code_quality,
             // Filesystem
             commands::fs::list_directory,
             commands::fs::get_cwd,
+            // Flight lifecycle orchestration
+            commands::orchestration::launch_flight,
+            commands::orchestration::pause_flight,
+            commands::orchestration::resume_flight,
+            commands::orchestration::cancel_flight,
+            commands::orchestration::orchestration_tick,
+            commands::orchestration::get_orchestration_state,
+            commands::orchestration::record_task_spawn,
+            commands::orchestration::notify_task_complete,
+            commands::orchestration::notify_approval_needed,
+            commands::orchestration::notify_approval_resolved,
+            // Unified persisted state
+            commands::state::load_persisted_state,
+            commands::state::save_persisted_state,
+            commands::state::save_flights_slice,
+            commands::state::save_agents_slice,
+            commands::state::save_settings_slice,
+            commands::state::save_ui_slice,
+            // Agent detection
+            commands::agent::detect_agent,
             // Status line
             commands::statusline::claude::read_statusline_states,
             commands::statusline::codex::read_codex_statusline_states,
