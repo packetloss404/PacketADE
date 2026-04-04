@@ -3,7 +3,7 @@ import { create } from "zustand";
 export interface PaneActivity {
   currentTool: string | null;
   currentFile: string | null;
-  agentState: "idle" | "thinking" | "tool_use" | "responding";
+  agentState: "idle" | "thinking" | "tool_use" | "responding" | "approval_needed";
   lastActivityAt: number;
 }
 

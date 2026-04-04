@@ -389,10 +389,10 @@ function GitActionButtons() {
       } else if (action === "push") {
         await gitPush(projectPath);
       } else if (action === "commit") {
-        // Quick commit with stage all
+        // Commit staged changes only (stage-all is rejected by safety layer)
         const message = window.prompt("Commit message:");
         if (message) {
-          await gitCommit(projectPath, message, true);
+          await gitCommit(projectPath, message, false);
         }
       }
     } catch (err) {

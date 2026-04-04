@@ -306,3 +306,32 @@ pub fn list_pty_sessions(
     let mgr = lock_mutex(&manager)?;
     Ok(mgr.sessions.values().map(|s| s.info.clone()).collect())
 }
+
+#[tauri::command]
+pub fn kill_pty_and_wait(
+    manager: State<'_, SharedPtyManager>,
+    session_id: String,
+) -> Result<bool, String> {
+    let mut mgr = lock_mutex(&manager)?;
+    info!(session_id = %session_id, "Killing PTY session and waiting for exit");
+    if let Some(mut session) = mgr.sessions.remove(&session_id) {
+        session
+            .kill_flag
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        session.info.alive = false;
+        if let Err(e) = session.child.kill() {
+            warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
+        }
+        // Wait briefly for cleanup
+        drop(mgr);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+pub fn read_pty_transcript(session_id: String) -> Result<crate::core::pty::PtyTranscript, String> {
+    crate::core::pty::read_transcript(&session_id)
+}
