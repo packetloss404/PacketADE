@@ -15,7 +15,7 @@ function handleFlightClick(flightId: string) {
 // ── StatusStrip ──────────────────────────────────────────────────────
 
 function StatusStrip({ statusCounts, total }: { statusCounts: Record<FlightStatus, number>; total: number }) {
-  const statuses: FlightStatus[] = ["active", "blocked", "needs_human", "done", "draft", "failed"];
+  const statuses: FlightStatus[] = ["active", "paused", "review", "done", "draft", "failed", "cancelled"];
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-bg-secondary border-b border-bg-border">
       <span className="text-[11px] text-text-muted mr-1">
@@ -43,7 +43,7 @@ function AttentionCard({ flight, status }: { flight: Flight; status: FlightStatu
   const linkedIssues = issues.filter((i) => flight.issueIds.includes(i.id));
   const concerningIssues = linkedIssues.filter((i) => i.status === "blocked" || i.status === "needs_human");
   const cfg = FLIGHT_STATUS_CONFIG[status];
-  const borderColor = status === "blocked" ? "border-accent-red" : "border-accent-amber";
+  const borderColor = status === "failed" ? "border-accent-red" : "border-accent-amber";
 
   return (
     <button
@@ -210,11 +210,14 @@ export function FlightDeckView() {
   const flightsByStatus = useMemo(() => {
     const map: Record<FlightStatus, { flight: Flight; status: FlightStatus }[]> = {
       draft: [],
+      planning: [],
+      ready: [],
       active: [],
-      blocked: [],
-      needs_human: [],
+      paused: [],
+      review: [],
       done: [],
       failed: [],
+      cancelled: [],
     };
     for (const f of flights) {
       const status = computeFlightStatus(f.id);
@@ -224,7 +227,7 @@ export function FlightDeckView() {
   }, [flights, computeFlightStatus]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<FlightStatus, number> = { draft: 0, active: 0, blocked: 0, needs_human: 0, done: 0, failed: 0 };
+    const counts: Record<FlightStatus, number> = { draft: 0, planning: 0, ready: 0, active: 0, paused: 0, review: 0, done: 0, failed: 0, cancelled: 0 };
     for (const key of Object.keys(counts) as FlightStatus[]) {
       counts[key] = flightsByStatus[key].length;
     }
@@ -232,14 +235,14 @@ export function FlightDeckView() {
   }, [flightsByStatus]);
 
   const attentionFlights = useMemo(
-    () => [...flightsByStatus.blocked, ...flightsByStatus.needs_human],
+    () => [...flightsByStatus.paused, ...flightsByStatus.failed],
     [flightsByStatus]
   );
 
   const activeFlights = flightsByStatus.active;
 
-  // Groups for "All Flights" section — exclude active, blocked, needs_human (already shown above)
-  const remainingGroups: FlightStatus[] = ["done", "draft", "failed"];
+  // Groups for "All Flights" section — exclude active, paused, failed (already shown above)
+  const remainingGroups: FlightStatus[] = ["done", "review", "draft", "cancelled"];
 
   if (flights.length === 0) {
     return (
