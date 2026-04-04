@@ -8,10 +8,11 @@ PacketCode is a native desktop IDE built on Tauri v2 that unifies Claude Code an
 
 ## Features
 
-### Flights & Flight Deck *(NEW)*
+### Flights & Flight Deck
 
 Plan, track, and supervise AI-driven work at a higher level than individual sessions or tickets.
 
+- **AI-assisted flight planning** — create flights through a split-view modal with an integrated AI chat panel that suggests titles, objectives, and priorities; apply suggestions with one click or refine through conversation
 - **Planning surface** — create, browse, search, and edit flights from a dedicated view with status and priority filters
 - **Issue linking** — assign issues to flights; status automatically rolls up from linked issues (draft → active → blocked → done)
 - **Session launch** — start Claude or Codex sessions directly from a flight with context-rich prompts that include the objective, priority, and all linked issue details with acceptance criteria
@@ -89,6 +90,23 @@ Plan, track, and supervise AI-driven work at a higher level than individual sess
 - Deploy run history with status tracking and duration
 - Toolbar deploy button with Rocket icon
 
+### Terminal UI (TUI)
+
+A standalone Ratatui-based terminal interface sharing the same orchestration engine as the GUI.
+
+- **Dashboard** — flight counts by status, attention queue, active flight metrics
+- **Flight editor** — create and edit flights with milestones, tasks, and agent assignments
+- **Session viewer** — real-time agent output with markdown and diff rendering
+- **Agent management** — list agents and check installation status
+- **5 color themes** — default dark, tokyonight, catppuccin mocha, gruvbox dark, nord
+- **Command palette** — fuzzy-matched commands with keyboard shortcuts
+- Run with `cargo run --bin packetcode-tui` from `src-tauri/`
+
+### Analytics & Cost Tracking
+
+- **Usage analytics** — track session activity, token usage, and AI tool invocations
+- **Cost dashboard** — monitor spend across sessions and flights
+
 ### UI/UX
 
 - Custom frameless window with native title bar controls
@@ -165,30 +183,38 @@ PacketCode/
     components/
       common/                      # Shared components (MarkdownRenderer)
       explorer/                    # File explorer panel
+      flights/                     # NewFlightModal (AI chat + form), FlightChatPanel
       issues/                      # Kanban board (IssueBoard, IssueCard, etc.)
       layout/                      # TitleBar, Toolbar, PaneContainer, StatusBar, SessionTabBar
       session/                     # TerminalPane, NewSessionModal, status bars
-      ui/                          # Button, Dropdown, ErrorBoundary
+      ui/                          # Button, Dropdown, ErrorBoundary, Modal
       views/
         FlightsView.tsx            # Flight planning surface
         FlightDeckView.tsx         # Fleet supervision dashboard
         GitHubView.tsx             # GitHub integration
         MemoryView.tsx             # Memory layer
-        ToolsView.tsx              # AI tools hub
+        InsightsView.tsx           # AI codebase Q&A chat
+        IdeationView.tsx           # AI feature ideation
         VibeArchitectView.tsx      # Architecture design
         McpHubView.tsx             # MCP server management
         ScaffoldView.tsx           # Project scaffolding
         DeployView.tsx             # Deploy pipeline
-    hooks/                         # useGitInfo, useStatusLine, useCodexStatusLine
+        AnalyticsView.tsx          # Usage analytics
+        CostDashboardView.tsx      # Cost tracking
+    hooks/                         # useGitInfo, useStatusLine, useCodexStatusLine, useFlightChat, useVoiceInput
     lib/
       tauri.ts                     # All Tauri invoke wrappers
       flight-colors.ts             # Flight/issue status color config
       time.ts                      # Relative time formatting
-    stores/
+    stores/                        # Zustand stores (23 total)
       appStore.ts                  # View routing, app state
       layoutStore.ts               # Pane layout
       issueStore.ts                # Kanban issues
       flightStore.ts               # Flight state and operations
+      insightsStore.ts             # AI chat sessions
+      profileStore.ts              # Agent profiles
+      orchestrationStore.ts        # Flight orchestration state
+      costStore.ts                 # Cost tracking
       mcpStore.ts                  # MCP server config
       scaffoldStore.ts             # Scaffolding state
       deployStore.ts               # Deploy pipeline state
@@ -205,7 +231,8 @@ PacketCode/
         git.rs                     # Git branch/status
         github.rs                  # GitHub API (reqwest)
         memory.rs                  # AI memory commands
-        insights.rs                # Insights chat
+        insights.rs                # Insights chat streaming
+        flight_chat.rs             # Flight planning AI chat streaming
         ideation.rs                # Ideation scanner
         spec.rs                    # Spec-to-tickets parser
         code_quality.rs            # Code quality analysis
@@ -214,6 +241,12 @@ PacketCode/
         mcp.rs                     # MCP server config read/write/delete
         scaffold.rs                # Project template scaffolding
         deploy.rs                  # Deploy config read/write
+        orchestration.rs           # Flight orchestration engine
+        agent.rs                   # Agent detection
+        analytics.rs               # Usage analytics
+        state.rs                   # Persisted state management
+      claude/                      # Claude CLI interaction helpers
+      tui/                         # Standalone TUI binary (packetcode-tui)
 
   public/                          # Static assets
   docs/                            # Website

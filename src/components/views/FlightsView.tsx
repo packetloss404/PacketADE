@@ -6,6 +6,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { relativeTime } from "@/lib/time";
 import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS, ISSUE_STATUS_COLORS, ISSUE_STATUS_LABELS } from "@/lib/flight-colors";
+import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import type { Flight, FlightStatus, FlightPriority } from "@/types/flight";
 import type { IssueStatus } from "@/stores/issueStore";
 
@@ -70,7 +71,7 @@ export function FlightsView() {
             </span>
           </div>
           <button
-            onClick={() => setShowCreate(!showCreate)}
+            onClick={() => setShowCreate(true)}
             className="flex items-center gap-1 px-2 py-1 text-[11px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
           >
             <Plus size={12} />
@@ -78,13 +79,7 @@ export function FlightsView() {
           </button>
         </div>
 
-        {/* Create form */}
-        {showCreate && (
-          <CreateFlightForm
-            onCreated={handleCreated}
-            onCancel={() => setShowCreate(false)}
-          />
-        )}
+        {/* Create modal rendered below */}
 
         {/* Search + filter */}
         <div className="px-3 pb-2 space-y-1.5">
@@ -130,6 +125,13 @@ export function FlightsView() {
           <EmptyState hasFlights={flights.length > 0} />
         )}
       </div>
+
+      {showCreate && (
+        <NewFlightModal
+          onCreated={(id) => handleCreated(id)}
+          onClose={() => setShowCreate(false)}
+        />
+      )}
     </div>
   );
 }
@@ -219,81 +221,6 @@ function FlightCard({
       </div>
       <p className="text-[10px] text-text-muted mt-0.5">{relativeTime(flight.updatedAt)}</p>
     </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Create flight form
-// ---------------------------------------------------------------------------
-
-function CreateFlightForm({
-  onCreated,
-  onCancel,
-}: {
-  onCreated: (id: string) => void;
-  onCancel: () => void;
-}) {
-  const addFlight = useFlightStore((s) => s.addFlight);
-  const projectPath = useLayoutStore((s) => s.projectPath);
-  const [title, setTitle] = useState("");
-  const [objective, setObjective] = useState("");
-  const [priority, setPriority] = useState<FlightPriority>("medium");
-
-  function handleCreate() {
-    if (!title.trim()) return;
-    const f = addFlight({
-      title: title.trim(),
-      objective: objective.trim(),
-      priority,
-      projectPath: projectPath || "",
-      issueIds: [],
-    });
-    onCreated(f.id);
-  }
-
-  return (
-    <div className="mx-3 mb-2 p-2 bg-bg-elevated rounded border border-bg-border space-y-1.5">
-      <input
-        type="text"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Flight title"
-        className="w-full bg-bg-primary text-xs text-text-primary placeholder:text-text-muted px-2 py-1 rounded border border-bg-border outline-none focus:border-accent-green/50"
-        autoFocus
-      />
-      <textarea
-        value={objective}
-        onChange={(e) => setObjective(e.target.value)}
-        placeholder="Objective (optional)"
-        rows={2}
-        className="w-full bg-bg-primary text-xs text-text-primary placeholder:text-text-muted px-2 py-1 rounded border border-bg-border outline-none focus:border-accent-green/50 resize-none"
-      />
-      <div className="flex items-center gap-2">
-        <select
-          value={priority}
-          onChange={(e) => setPriority(e.target.value as FlightPriority)}
-          className="bg-bg-primary text-xs text-text-primary border border-bg-border rounded px-1.5 py-0.5 outline-none"
-        >
-          {ALL_PRIORITIES.map((p) => (
-            <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-          ))}
-        </select>
-        <div className="flex-1" />
-        <button
-          onClick={onCancel}
-          className="px-2 py-0.5 text-[11px] text-text-muted hover:text-text-primary transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleCreate}
-          disabled={!title.trim()}
-          className="px-2 py-0.5 text-[11px] text-accent-green hover:bg-accent-green/10 rounded transition-colors disabled:opacity-40"
-        >
-          Create Flight
-        </button>
-      </div>
-    </div>
   );
 }
 
