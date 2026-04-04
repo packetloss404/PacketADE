@@ -113,6 +113,8 @@ pub fn run() {
             // Insights chat
             commands::insights::ask_insights,
             commands::insights::ask_insights_stream,
+            // Flight chat
+            commands::flight_chat::ask_flight_chat_stream,
             // Ideation scanner
             commands::ideation::generate_ideas,
             // GitHub integration

@@ -744,6 +744,18 @@ export async function askInsightsStream(
   });
 }
 
+export async function askFlightChatStream(
+  projectPath: string,
+  messages: { role: string; content: string }[],
+  flightState: { title: string; objective: string; priority: string },
+): Promise<void> {
+  return invoke("ask_flight_chat_stream", {
+    projectPath,
+    messages,
+    flightState,
+  });
+}
+
 export async function generateIdeas(
   projectPath: string,
   ideaTypes: string[]

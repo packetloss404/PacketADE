@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
-import { Radio, ChevronDown, ChevronRight, Target, AlertTriangle } from "lucide-react";
+import { Radio, ChevronDown, ChevronRight, Target, AlertTriangle, Plus } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { useAppStore } from "@/stores/appStore";
 import { relativeTime } from "@/lib/time";
 import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
+import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import type { Flight, FlightStatus } from "@/types/flight";
 
 function handleFlightClick(flightId: string) {
@@ -14,7 +15,7 @@ function handleFlightClick(flightId: string) {
 
 // ── StatusStrip ──────────────────────────────────────────────────────
 
-function StatusStrip({ statusCounts, total }: { statusCounts: Record<FlightStatus, number>; total: number }) {
+function StatusStrip({ statusCounts, total, onNewFlight }: { statusCounts: Record<FlightStatus, number>; total: number; onNewFlight?: () => void }) {
   const statuses: FlightStatus[] = ["active", "paused", "review", "done", "draft", "failed", "cancelled"];
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-bg-secondary border-b border-bg-border">
@@ -32,6 +33,18 @@ function StatusStrip({ statusCounts, total }: { statusCounts: Record<FlightStatu
           </span>
         );
       })}
+      {onNewFlight && (
+        <>
+          <div className="flex-1" />
+          <button
+            onClick={onNewFlight}
+            className="flex items-center gap-1 px-2 py-1 text-[11px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+          >
+            <Plus size={12} />
+            New Flight
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -205,6 +218,12 @@ function FlightGroupSection({ statusKey, flights }: { statusKey: FlightStatus; f
 export function FlightDeckView() {
   const flights = useFlightStore((s) => s.flights);
   const computeFlightStatus = useFlightStore((s) => s.computeFlightStatus);
+  const [showCreate, setShowCreate] = useState(false);
+
+  function handleFlightCreated(id: string) {
+    useFlightStore.getState().setActiveFlight(id);
+    useAppStore.getState().setActiveView("flights");
+  }
 
   // Compute status for every flight
   const flightsByStatus = useMemo(() => {
@@ -246,17 +265,32 @@ export function FlightDeckView() {
 
   if (flights.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-3 text-text-muted">
-        <Radio size={32} />
-        <span className="text-sm font-medium">No flights to supervise</span>
-        <span className="text-xs">Create flights from the Flights view to see them here.</span>
-      </div>
+      <>
+        <div className="flex flex-col items-center justify-center flex-1 gap-3 text-text-muted">
+          <Radio size={32} />
+          <span className="text-sm font-medium">No flights to supervise</span>
+          <span className="text-xs">Create your first flight to get started.</span>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="mt-1 flex items-center gap-1.5 px-3 py-1.5 text-xs text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/10 transition-colors"
+          >
+            <Plus size={12} />
+            New Flight
+          </button>
+        </div>
+        {showCreate && (
+          <NewFlightModal
+            onCreated={handleFlightCreated}
+            onClose={() => setShowCreate(false)}
+          />
+        )}
+      </>
     );
   }
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <StatusStrip statusCounts={statusCounts} total={flights.length} />
+      <StatusStrip statusCounts={statusCounts} total={flights.length} onNewFlight={() => setShowCreate(true)} />
 
       <div className="flex-1 overflow-y-auto">
         <AttentionQueue attentionFlights={attentionFlights} />
@@ -277,6 +311,13 @@ export function FlightDeckView() {
           )}
         </div>
       </div>
+
+      {showCreate && (
+        <NewFlightModal
+          onCreated={handleFlightCreated}
+          onClose={() => setShowCreate(false)}
+        />
+      )}
     </div>
   );
 }

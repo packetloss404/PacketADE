@@ -2,6 +2,7 @@ pub mod agent;
 pub mod analytics;
 pub mod code_quality;
 pub mod deploy;
+pub mod flight_chat;
 pub mod fs;
 pub mod git;
 pub mod github;
