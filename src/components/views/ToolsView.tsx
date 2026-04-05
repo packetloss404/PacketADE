@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2 } from "lucide-react";
+import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useIssueStore } from "@/stores/issueStore";
@@ -8,16 +8,18 @@ import { ProjectInfoCard } from "./tools/ProjectInfoCard";
 import { IssueSettingsCard } from "./tools/IssueSettingsCard";
 import { TagListCard } from "./tools/TagListCard";
 import { AgentProfilesCard } from "./tools/AgentProfilesCard";
+import { ProviderRoutingCard } from "./tools/ProviderRoutingCard";
 import { ModulesCard } from "./tools/ModulesCard";
 import { NotificationSettingsCard } from "./tools/NotificationSettingsCard";
 import type { PromptTemplate } from "@/types/prompt";
 
-type SettingsSection = "project" | "issues" | "profiles" | "modules" | "templates";
+type SettingsSection = "project" | "issues" | "profiles" | "routing" | "modules" | "templates";
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
   { key: "project", label: "Project", icon: FolderOpen },
   { key: "issues", label: "Issues", icon: Ticket },
   { key: "profiles", label: "Profiles", icon: User },
+  { key: "routing", label: "AI Routing", icon: Route },
   { key: "modules", label: "Modules", icon: Puzzle },
   { key: "templates", label: "Templates", icon: FileText },
 ];
@@ -91,6 +93,12 @@ export function ToolsView() {
         {activeSection === "profiles" && (
           <div className="max-w-2xl">
             <AgentProfilesCard />
+          </div>
+        )}
+
+        {activeSection === "routing" && (
+          <div className="max-w-2xl">
+            <ProviderRoutingCard />
           </div>
         )}
 

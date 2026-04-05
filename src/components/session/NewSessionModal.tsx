@@ -7,28 +7,9 @@ import { useProfileStore } from "@/stores/profileStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { usePromptStore } from "@/stores/promptStore";
 
+import { CLAUDE_MODELS, CODEX_MODELS } from "@/lib/models";
+
 type CliChoice = "claude" | "codex";
-
-interface ModelOption {
-  label: string;
-  value: string | null; // null = system default (no --model flag)
-}
-
-const CLAUDE_MODELS: ModelOption[] = [
-  { label: "System Default", value: null },
-  { label: "Opus 4.6", value: "claude-opus-4-6-20250610" },
-  { label: "Opus 4.5", value: "claude-opus-4-5-20250514" },
-  { label: "Sonnet 4.5", value: "claude-sonnet-4-5-20250514" },
-  { label: "Haiku 4.5", value: "claude-haiku-4-5-20250514" },
-];
-
-const CODEX_MODELS: ModelOption[] = [
-  { label: "System Default", value: null },
-  { label: "GPT-5.3 Codex", value: "gpt-5.3-codex" },
-  { label: "GPT-5.2 Codex", value: "gpt-5.2-codex" },
-  { label: "GPT-5.1 Codex", value: "gpt-5.1-codex" },
-  { label: "Codex Mini", value: "codex-mini-latest" },
-];
 
 interface NewSessionModalProps {
   defaultCli?: CliChoice;

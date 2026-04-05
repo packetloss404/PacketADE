@@ -3,6 +3,7 @@ import { loadFromStorage, saveToStorage, generateId as genId } from "@/lib/stora
 import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
 import type { Flight, FlightStatus, Milestone, Task } from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
+import { useRoutingStore } from "@/stores/routingStore";
 
 type FlightState = {
   flights: Flight[];
@@ -101,7 +102,7 @@ interface FlightStore {
   addMilestone: (
     flightId: string,
     milestone: Pick<Milestone, "title" | "description" | "validationCriteria">,
-  ) => void;
+  ) => string;
   updateMilestone: (flightId: string, milestoneId: string, updates: Partial<Milestone>) => void;
   deleteMilestone: (flightId: string, milestoneId: string) => void;
 
@@ -109,8 +110,8 @@ interface FlightStore {
   addTask: (
     flightId: string,
     milestoneId: string,
-    task: Pick<Task, "title" | "description" | "type" | "agentConfigId" | "dependsOn">,
-  ) => void;
+    task: Pick<Task, "title" | "description" | "type" | "dependsOn"> & { agentConfigId?: string; model?: string },
+  ) => string;
   updateTask: (
     flightId: string,
     milestoneId: string,
@@ -212,11 +213,12 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // === Milestone management ===
 
   addMilestone: (flightId, input) => {
+    const msId = generateId("ms");
     set((s) => {
       const flights = s.flights.map((f) => {
         if (f.id !== flightId) return f;
         const milestone: Milestone = {
-          id: generateId("ms"),
+          id: msId,
           flightId,
           title: input.title,
           description: input.description,
@@ -230,6 +232,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       saveState({ flights, activeFlightId: s.activeFlightId });
       return { flights };
     });
+    return msId;
   },
 
   updateMilestone: (flightId, milestoneId, updates) => {
@@ -264,13 +267,19 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // === Task management ===
 
   addTask: (flightId, milestoneId, input) => {
+    // Resolve agent + model from routing table when not explicitly provided
+    const routing = useRoutingStore.getState().resolveForTask(input.type);
+    const agentConfigId = input.agentConfigId ?? routing.agentConfigId;
+    const model = input.model ?? routing.model;
+    const taskId = generateId("task");
+
     set((s) => {
       const flights = s.flights.map((f) => {
         if (f.id !== flightId) return f;
         const milestones = f.milestones.map((m) => {
           if (m.id !== milestoneId) return m;
           const task: Task = {
-            id: generateId("task"),
+            id: taskId,
             milestoneId,
             flightId,
             title: input.title,
@@ -278,12 +287,13 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             order: m.tasks.length,
             status: "pending",
             type: input.type,
-            agentConfigId: input.agentConfigId,
+            agentConfigId,
             dependsOn: input.dependsOn,
             sessionId: null,
             createdAt: Date.now(),
             cost: 0,
             tokens: 0,
+            ...(model ? { model } : {}),
           };
           return { ...m, tasks: [...m.tasks, task] };
         });
@@ -292,6 +302,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       saveState({ flights, activeFlightId: s.activeFlightId });
       return { flights };
     });
+    return taskId;
   },
 
   updateTask: (flightId, milestoneId, taskId, updates) => {

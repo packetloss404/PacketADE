@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createPtySession, writePty, resizePty, killPty } from "@/lib/tauri";
 import {
@@ -132,8 +133,13 @@ export function TerminalPane({
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
+      lineHeight: 1.15,
+      letterSpacing: 0,
       fontFamily:
         "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+      fontWeight: "400",
+      fontWeightBold: "600",
+      rescaleOverlappingGlyphs: true,
       theme: {
         background: "#0d1117",
         foreground: "#c9d1d9",
@@ -164,9 +170,12 @@ export function TerminalPane({
 
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
+    const unicode11Addon = new Unicode11Addon();
 
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
+    term.loadAddon(unicode11Addon);
+    term.unicode.activeVersion = "11";
     term.open(termRef.current);
 
     // Initial fit
@@ -550,7 +559,7 @@ export function TerminalPane({
         <div
           ref={termRef}
           className="h-full overflow-hidden"
-          style={{ padding: "4px" }}
+          style={{ padding: "4px 2px 0 4px" }}
         />
 
         {/* Quick Actions overlay — shown when approval needed */}

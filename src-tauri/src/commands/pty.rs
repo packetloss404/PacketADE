@@ -176,7 +176,9 @@ pub fn create_pty_session(
     let mgr_ref = manager.inner().clone();
 
     thread::spawn(move || {
-        let mut buf = [0u8; 4096];
+        let mut buf = [0u8; 8192];
+        // Carry-over bytes from incomplete UTF-8 sequences at read boundaries
+        let mut pending: Vec<u8> = Vec::new();
         loop {
             if kill_flag.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
@@ -185,9 +187,29 @@ pub fn create_pty_session(
             match reader.read(&mut buf) {
                 Ok(0) => break, // EOF — process exited
                 Ok(n) => {
-                    // Convert to string, replacing invalid UTF-8
-                    let mut data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    // CLI may print "Claude Code for Cursor"; PacketCode is for the standalone CLI — never show that in the terminal
+                    // Prepend any leftover bytes from a previous partial UTF-8 sequence
+                    let chunk = if pending.is_empty() {
+                        &buf[..n]
+                    } else {
+                        pending.extend_from_slice(&buf[..n]);
+                        pending.as_slice()
+                    };
+
+                    // Find the last valid UTF-8 boundary. Walk backwards from
+                    // the end to find the start of an incomplete multi-byte
+                    // sequence (if any) and split there.
+                    let valid_up_to = match std::str::from_utf8(chunk) {
+                        Ok(_) => chunk.len(),
+                        Err(e) => e.valid_up_to(),
+                    };
+
+                    let mut data =
+                        String::from_utf8_lossy(&chunk[..valid_up_to]).into_owned();
+
+                    // Save incomplete trailing bytes for the next read
+                    let leftover = &chunk[valid_up_to..];
+                    pending = leftover.to_vec();
+
                     data = data.replace("Claude Code for Cursor", "Claude Code");
                     let event = PtyOutput {
                         session_id: sid.clone(),

@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { ExternalLink, ClipboardList } from "lucide-react";
+import { ExternalLink, ClipboardList, Rocket } from "lucide-react";
 import { SpecImportModal } from "./SpecImportModal";
+import { SpecToFlightModal } from "./SpecToFlightModal";
 
 const VIBE_ARCHITECT_URL = "https://specs-gen.vercel.app";
 
 export function VibeArchitectView() {
   const [showImport, setShowImport] = useState(false);
+  const [showFlightImport, setShowFlightImport] = useState(false);
 
   return (
     <div className="flex flex-col h-full bg-bg-primary">
@@ -30,6 +32,14 @@ export function VibeArchitectView() {
           <ClipboardList size={10} />
           Import to Issues
         </button>
+        <button
+          onClick={() => setShowFlightImport(true)}
+          className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded border border-bg-border text-text-muted hover:text-accent-green hover:border-accent-green/40 transition-colors"
+          title="Import spec as a Flight with milestones and tasks"
+        >
+          <Rocket size={10} />
+          Import to Flight
+        </button>
         <span className="text-[10px] text-text-muted ml-auto">
           AI Project Spec Generator
         </span>
@@ -42,6 +52,7 @@ export function VibeArchitectView() {
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-clipboard-read allow-clipboard-write"
       />
       {showImport && <SpecImportModal onClose={() => setShowImport(false)} />}
+      {showFlightImport && <SpecToFlightModal onClose={() => setShowFlightImport(false)} />}
     </div>
   );
 }
