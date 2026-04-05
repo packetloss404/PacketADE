@@ -721,6 +721,10 @@ function toRustAgent(agent: AgentConfig): RustAgentConfig {
   };
 }
 
+export async function parseSpecToFlight(specText: string): Promise<string> {
+  return invoke<string>("parse_spec_to_flight", { specText });
+}
+
 export async function parseSpecToTickets(specText: string): Promise<string> {
   return invoke<string>("parse_spec_to_tickets", { specText });
 }
