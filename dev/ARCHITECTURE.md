@@ -46,12 +46,19 @@
 | `CostDashboardView.tsx` | Cost tracking dashboard for AI session spending |
 | `FlightsView.tsx` | Flights list view: top-level work organizer above issues |
 | `FlightDeckView.tsx` | Flight Deck: detailed orchestration view for an active flight |
+| `ReviewQueueView.tsx` | Pending approvals across all active flights |
 | `VibeArchitectView.tsx` | AI spec-to-architecture tool (module view) |
 | `PRModal.tsx` | Modal for creating GitHub pull requests |
 | `SpecImportModal.tsx` | Modal for importing specs and parsing them into issue tickets |
 | `DiffViewer.tsx` | Side-by-side or unified diff display component |
 
 ### Views Subdirectories
+
+`src/components/views/flight-deck/`
+
+| File | Description |
+|------|-------------|
+| `StatusStrip.tsx` | Reusable flight status count strip with badges |
 
 `src/components/views/tools/`
 
@@ -131,7 +138,9 @@
 
 | File | Description |
 |------|-------------|
-| `TerminalPane.tsx` | xterm.js terminal pane connected to a PTY backend session |
+| `TerminalPane.tsx` | xterm.js terminal pane connected to a PTY backend session (composition shell) |
+| `ActivityStrip.tsx` | Activity indicator strip with agent state icon and label |
+| `TerminalHeader.tsx` | Pane header bar with status dot, CLI badge, restart/close buttons |
 | `NewSessionModal.tsx` | Modal for creating a new CLI session with agent/model selection |
 | `ClaudeStatusBar.tsx` | Status bar overlay showing Claude Code session metrics (tokens, cost, model) |
 | `CodexStatusBar.tsx` | Status bar overlay showing Codex session metrics |
@@ -390,8 +399,8 @@ The `AppView` type is defined in `src/stores/appStore.ts`:
 
 ```typescript
 type CoreView = "welcome" | "claude" | "codex" | "issues" | "flights" | "flight_deck"
-              | "history" | "tools" | "insights" | "github" | "memory" | "analytics"
-              | "deploy" | "cost";
+              | "review_queue" | "history" | "tools" | "insights" | "github" | "memory"
+              | "analytics" | "deploy" | "cost";
 type AppView = CoreView | `mod:${string}`;
 ```
 
@@ -413,6 +422,7 @@ Routing is handled in `src/App.tsx` via the `OtherViewContent` switch and top-le
 | `"analytics"` | `AnalyticsView` | `src/components/views/AnalyticsView.tsx` |
 | `"deploy"` | `DeployView` | `src/components/views/DeployView.tsx` |
 | `"cost"` | `CostDashboardView` | `src/components/views/CostDashboardView.tsx` |
+| `"review_queue"` | `ReviewQueueView` | `src/components/views/ReviewQueueView.tsx` |
 | `"mod:vibe-architect"` | `VibeArchitectView` | `src/components/views/VibeArchitectView.tsx` |
 | `"mod:ideation"` | `IdeationView` | `src/components/views/IdeationView.tsx` |
 | `"mod:mcp-hub"` | `McpHubView` | `src/components/views/McpHubView.tsx` |
@@ -470,6 +480,7 @@ All commands registered in `src-tauri/src/lib.rs` via `tauri::generate_handler![
 - `save_agents_slice` -- Save only the agents portion of state
 - `save_settings_slice` -- Save only the orchestrator settings portion of state
 - `save_ui_slice` -- Save only the UI state portion
+- `save_issues_slice` -- Save only the issues portion of state
 
 ### Agent Detection
 - `detect_agent` -- Check if a CLI agent command is available on PATH

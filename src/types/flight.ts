@@ -81,6 +81,23 @@ export interface TaskResult {
   validation?: TaskValidationReport;
 }
 
+export type ReviewType = "tool_call" | "file_write" | "command" | "milestone_gate";
+
+export interface ReviewPacket {
+  id: string;
+  taskId: string;
+  flightId: string;
+  milestoneId: string;
+  requestedAt: number;
+  reviewType: ReviewType;
+  summary: string;
+  diff?: string;
+  command?: string;
+  filePaths: string[];
+  agentId?: string;
+  sessionId?: string;
+}
+
 export interface Task {
   id: string;
   milestoneId: string;
@@ -96,6 +113,7 @@ export interface Task {
   dependsOn: string[];
   sessionId: string | null;
   result?: TaskResult;
+  reviewPacket?: ReviewPacket;
   createdAt: number;
   startedAt?: number;
   completedAt?: number;
@@ -104,6 +122,18 @@ export interface Task {
 }
 
 // === Flight ===
+
+export type ApprovalDecisionType = "approved" | "denied" | "force_overridden";
+
+export interface ApprovalDecision {
+  id: string;
+  reviewPacketId: string;
+  taskId: string;
+  flightId: string;
+  decision: ApprovalDecisionType;
+  decidedAt: number;
+  reason?: string;
+}
 
 export interface Flight {
   id: string;

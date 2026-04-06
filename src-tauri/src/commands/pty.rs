@@ -13,7 +13,10 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 /// Commands allowed to be spawned in a PTY session.
-const ALLOWED_COMMANDS: &[&str] = &["claude", "codex"];
+const ALLOWED_COMMANDS: &[&str] = &[
+    "claude", "codex", "gemini", "opencode",
+    "bash", "sh", "zsh", "powershell", "cmd",
+];
 
 /// Data emitted to the frontend for each chunk of PTY output
 #[derive(Clone, Serialize)]
@@ -49,6 +52,18 @@ impl PtyManager {
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
+        }
+    }
+
+    /// Kill multiple PTY sessions by ID. Skips missing sessions.
+    pub fn kill_sessions(&mut self, session_ids: &[String]) {
+        for session_id in session_ids {
+            if let Some(mut session) = self.sessions.remove(session_id) {
+                info!(session_id = %session_id, "Killing PTY session (flight cleanup)");
+                session.kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                session.info.alive = false;
+                let _ = session.child.kill();
+            }
         }
     }
 }
@@ -124,6 +139,11 @@ pub fn create_pty_session(
         cmd.env_remove("CLAUDECODE");
         cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
         // Tell statusline.ps1 to suppress terminal output (PacketCode has its own native status bar)
+        cmd.env("PACKETCODE", "1");
+    }
+
+    // Gemini CLI env setup
+    if command == "gemini" {
         cmd.env("PACKETCODE", "1");
     }
 

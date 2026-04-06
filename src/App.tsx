@@ -12,6 +12,8 @@ import { MemoryView } from "@/components/views/MemoryView";
 import { AnalyticsView } from "@/components/views/AnalyticsView";
 import { DeployView } from "@/components/views/DeployView";
 import { CostDashboardView } from "@/components/views/CostDashboardView";
+import { ReviewQueueView } from "@/components/views/ReviewQueueView";
+import { WorkspaceView } from "@/components/views/WorkspaceView";
 import { FlightsView } from "@/components/views/FlightsView";
 import { FlightDeckView } from "@/components/views/FlightDeckView";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
@@ -145,6 +147,12 @@ export default function App() {
       }
       // Ctrl+Shift+1/2/3/4/5/6 to switch views
       if (e.ctrlKey && e.shiftKey) {
+        // Ctrl+Shift+W → Workspace view
+        if (e.key === "W") {
+          e.preventDefault();
+          setActiveView("workspace");
+          return;
+        }
         const viewMap: Record<string, AppView> = {
           "!": "claude",    // Shift+1
           "@": "codex",     // Shift+2
@@ -244,6 +252,10 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <DeployView />;
     case "cost":
       return <CostDashboardView />;
+    case "review_queue":
+      return <ReviewQueueView />;
+    case "workspace":
+      return <WorkspaceView />;
   }
 
   // Module views — dynamic lookup
