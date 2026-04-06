@@ -327,3 +327,111 @@ pub struct Issue {
     pub created_at: u64,
     pub updated_at: u64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_task(status: TaskStatus) -> Task {
+        Task {
+            id: uuid::Uuid::new_v4().to_string(),
+            milestone_id: "m1".to_string(),
+            flight_id: "f1".to_string(),
+            title: "Test task".to_string(),
+            description: String::new(),
+            order: 0,
+            status,
+            task_type: TaskType::Implementation,
+            agent_config_id: String::new(),
+            agent_args: None,
+            model: None,
+            depends_on: Vec::new(),
+            session_id: None,
+            result: None,
+            review_packet: None,
+            created_at: 0,
+            started_at: None,
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+        }
+    }
+
+    fn make_milestone(tasks: Vec<Task>) -> Milestone {
+        Milestone {
+            id: "m1".to_string(),
+            flight_id: "f1".to_string(),
+            title: "Milestone 1".to_string(),
+            description: String::new(),
+            order: 0,
+            status: MilestoneStatus::Active,
+            tasks,
+            validation_criteria: Vec::new(),
+        }
+    }
+
+    fn make_flight(milestones: Vec<Milestone>) -> Flight {
+        Flight {
+            id: "f1".to_string(),
+            title: "Test flight".to_string(),
+            objective: String::new(),
+            status: FlightStatus::Active,
+            priority: FlightPriority::Medium,
+            project_path: "/tmp/test".to_string(),
+            git_branch: None,
+            milestones,
+            linked_session_ids: Vec::new(),
+            created_at: 0,
+            updated_at: 0,
+            completed_at: None,
+            total_cost: 0.0,
+            total_tokens: 0,
+        }
+    }
+
+    #[test]
+    fn all_tasks_returns_tasks_across_milestones() {
+        let m1 = make_milestone(vec![make_task(TaskStatus::Done)]);
+        let m2 = make_milestone(vec![make_task(TaskStatus::Pending), make_task(TaskStatus::Running)]);
+        let flight = make_flight(vec![m1, m2]);
+        assert_eq!(flight.all_tasks().len(), 3);
+    }
+
+    #[test]
+    fn progress_counts_done_tasks() {
+        let t1 = make_task(TaskStatus::Done);
+        let t2 = make_task(TaskStatus::Running);
+        let flight = make_flight(vec![make_milestone(vec![t1, t2])]);
+        let (done, total) = flight.progress();
+        assert_eq!(done, 1);
+        assert_eq!(total, 2);
+    }
+
+    #[test]
+    fn needs_attention_detects_approval_needed() {
+        let flight = make_flight(vec![make_milestone(vec![make_task(TaskStatus::ApprovalNeeded)])]);
+        assert!(flight.needs_attention());
+    }
+
+    #[test]
+    fn needs_attention_detects_failed() {
+        let flight = make_flight(vec![make_milestone(vec![make_task(TaskStatus::Failed)])]);
+        assert!(flight.needs_attention());
+    }
+
+    #[test]
+    fn needs_attention_false_when_all_ok() {
+        let flight = make_flight(vec![make_milestone(vec![make_task(TaskStatus::Running)])]);
+        assert!(!flight.needs_attention());
+    }
+
+    #[test]
+    fn task_status_is_terminal() {
+        assert!(TaskStatus::Done.is_terminal());
+        assert!(TaskStatus::Failed.is_terminal());
+        assert!(TaskStatus::Cancelled.is_terminal());
+        assert!(!TaskStatus::Running.is_terminal());
+        assert!(!TaskStatus::Pending.is_terminal());
+        assert!(!TaskStatus::ApprovalNeeded.is_terminal());
+    }
+}
