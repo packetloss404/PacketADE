@@ -16,6 +16,7 @@ import { SpecImportModal } from "@/components/views/SpecImportModal";
 const TABS: { key: AppView; label: string }[] = [
   { key: "claude", label: "Claude" },
   { key: "codex", label: "Codex" },
+  { key: "workspace", label: "Workspaces" },
   { key: "issues", label: "Issues" },
   { key: "flights", label: "Flights" },
   { key: "history", label: "History" },
@@ -97,6 +98,7 @@ export function Toolbar() {
       setActiveView(key);
     }
   }
+
 
   function handleNewSessionClose() {
     if (newSessionCli) {

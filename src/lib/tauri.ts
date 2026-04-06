@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AgentConfig, AgentStatusPatterns } from "@/types/agent";
 import type { Flight, Milestone, Task, TaskResult, ReviewType } from "@/types/flight";
 import type { StatusLineData, CodexStatusLineData } from "@/types/statusline";
+import type { Workspace } from "@/types/workspace";
 
 // Filesystem
 export async function getCwd(): Promise<string> {
@@ -333,6 +334,25 @@ export async function saveFlightsSlice(flights: Flight[]): Promise<void> {
 
 export async function saveAgentsSlice(agents: AgentConfig[]): Promise<void> {
   return invoke("save_agents_slice", { agents: agents.map(toRustAgent) });
+}
+
+export async function saveWorkspacesSlice(workspaces: Workspace[]): Promise<void> {
+  const rustWorkspaces = workspaces.map((w) => ({
+    id: w.id,
+    name: w.name,
+    agents: w.agents,
+    panes: w.panes.map((p) => ({
+      id: p.id,
+      agent_id: p.agentId,
+      session_id: p.sessionId ?? null,
+      grid_position: p.gridPosition,
+    })),
+    project_path: w.projectPath,
+    created_at: w.createdAt,
+    updated_at: w.updatedAt,
+    status: w.status,
+  }));
+  return invoke("save_workspaces_slice", { workspaces: rustWorkspaces });
 }
 
 export async function saveSettingsSlice(settings: PersistedState["settings"]): Promise<void> {
