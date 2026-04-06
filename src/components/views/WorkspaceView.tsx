@@ -31,40 +31,94 @@ export function WorkspaceView() {
     setActiveWorkspace(null);
   }
 
-  // If active workspace renders the grid
+  // If active workspace renders the grid + right sidebar
   if (activeWorkspace) {
     return (
-      <div className="flex flex-col flex-1 overflow-hidden">
-        {/* Workspace toolbar */}
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-secondary border-b border-bg-border">
-          <LayoutGrid size={12} className="text-accent-green" />
-          <span className="text-xs font-medium text-text-primary">{activeWorkspace.name}</span>
-          <span className="text-[10px] text-text-muted">
-            {activeWorkspace.agents.length} agent{activeWorkspace.agents.length !== 1 ? "s" : ""}
-          </span>
-          <div className="flex-1" />
-          <button
-            onClick={() => handleCloseWorkspace(activeWorkspace.id)}
-            className="px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary bg-bg-primary border border-bg-border rounded transition-colors"
-          >
-            Close
-          </button>
-          <button
-            onClick={() => {
-              handleCloseWorkspace(activeWorkspace.id);
-              archiveWorkspace(activeWorkspace.id);
-            }}
-            className="px-2 py-0.5 text-[10px] text-text-muted hover:text-accent-amber bg-bg-primary border border-bg-border rounded transition-colors"
-          >
-            <Archive size={10} />
-          </button>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Main grid area */}
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {/* Workspace toolbar */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-secondary border-b border-bg-border">
+            <LayoutGrid size={12} className="text-accent-green" />
+            <span className="text-xs font-medium text-text-primary">{activeWorkspace.name}</span>
+            <span className="text-[10px] text-text-muted">
+              {activeWorkspace.agents.length} agent{activeWorkspace.agents.length !== 1 ? "s" : ""}
+            </span>
+            <div className="flex-1" />
+            <button
+              onClick={() => handleCloseWorkspace(activeWorkspace.id)}
+              className="px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary bg-bg-primary border border-bg-border rounded transition-colors"
+            >
+              Close
+            </button>
+            <button
+              onClick={() => {
+                handleCloseWorkspace(activeWorkspace.id);
+                archiveWorkspace(activeWorkspace.id);
+              }}
+              className="px-2 py-0.5 text-[10px] text-text-muted hover:text-accent-amber bg-bg-primary border border-bg-border rounded transition-colors"
+            >
+              <Archive size={10} />
+            </button>
+          </div>
+
+          {/* Broadcast bar */}
+          <BroadcastBar workspace={activeWorkspace} />
+
+          {/* Agent grid */}
+          <WorkspaceGrid workspace={activeWorkspace} />
         </div>
 
-        {/* Broadcast bar */}
-        <BroadcastBar workspace={activeWorkspace} />
+        {/* Right sidebar — workspace list */}
+        <div className="w-56 flex flex-col bg-bg-secondary border-l border-bg-border overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-bg-border">
+            <span className="text-[10px] uppercase tracking-wide text-text-muted font-semibold">Workspaces</span>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="p-1 text-text-muted hover:text-accent-green transition-colors"
+              title="New workspace"
+            >
+              <Plus size={11} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto py-1">
+            {activeNonArchived.map((ws) => {
+              const isActive = ws.id === activeWorkspace.id;
+              return (
+                <button
+                  key={ws.id}
+                  onClick={() => setActiveWorkspace(ws.id)}
+                  className={`flex items-start gap-2 w-full px-3 py-2 text-left transition-colors ${
+                    isActive
+                      ? "bg-bg-elevated border-l-2 border-accent-green"
+                      : "hover:bg-bg-hover border-l-2 border-transparent"
+                  }`}
+                >
+                  <LayoutGrid size={11} className={`mt-0.5 ${isActive ? "text-accent-green" : "text-text-muted"}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-[11px] font-medium truncate ${isActive ? "text-text-primary" : "text-text-secondary"}`}>
+                      {ws.name}
+                    </div>
+                    <div className="text-[9px] text-text-muted truncate">
+                      {ws.agents.join(" · ")}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {/* Project info footer */}
+          <div className="border-t border-bg-border px-3 py-2">
+            <div className="text-[9px] uppercase tracking-wide text-text-muted font-semibold mb-1">Project</div>
+            <div className="text-[10px] text-text-secondary truncate" title={activeWorkspace.projectPath}>
+              {activeWorkspace.projectPath.split(/[/\\]/).pop() || "—"}
+            </div>
+          </div>
+        </div>
 
-        {/* Agent grid */}
-        <WorkspaceGrid workspace={activeWorkspace} />
+        {showCreate && (
+          <WorkspaceCreationModal onClose={() => setShowCreate(false)} />
+        )}
       </div>
     );
   }
