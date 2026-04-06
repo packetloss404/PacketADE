@@ -131,11 +131,31 @@ pub fn pull(project_path: &str) -> Result<String, String> {
 }
 
 pub fn create_branch(project_path: &str, branch_name: &str, checkout: bool) -> Result<String, String> {
+    validate_branch_name(branch_name)?;
     if checkout {
-        git_command_result(&["checkout", "-b", branch_name], project_path)
+        git_command_result(&["checkout", "-b", "--", branch_name], project_path)
     } else {
-        git_command_result(&["branch", branch_name], project_path)
+        git_command_result(&["branch", "--", branch_name], project_path)
     }
+}
+
+fn validate_branch_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Branch name cannot be empty".to_string());
+    }
+    if name.starts_with('-') {
+        return Err("Branch name cannot start with '-'".to_string());
+    }
+    if name.contains("..") || name.contains(' ') || name.contains('~')
+        || name.contains('^') || name.contains(':') || name.contains('\\')
+        || name.contains('\x7f') || name.contains('\0')
+    {
+        return Err("Branch name contains invalid characters".to_string());
+    }
+    if name.ends_with('/') || name.ends_with(".lock") || name.ends_with('.') {
+        return Err("Branch name has an invalid suffix".to_string());
+    }
+    Ok(())
 }
 
 /// Pre-flight safety check for git state
@@ -206,5 +226,49 @@ pub fn safety_check(project_path: &str) -> GitSafetyReport {
         uncommitted_count,
         behind_upstream,
         warnings,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_branch_name_rejects_flag_injection() {
+        assert!(validate_branch_name("--delete").is_err());
+        assert!(validate_branch_name("-D").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_empty() {
+        assert!(validate_branch_name("").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_double_dot() {
+        assert!(validate_branch_name("foo..bar").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_bad_suffixes() {
+        assert!(validate_branch_name("branch/").is_err());
+        assert!(validate_branch_name("branch.lock").is_err());
+        assert!(validate_branch_name("branch.").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_rejects_special_chars() {
+        assert!(validate_branch_name("feat ~thing").is_err());
+        assert!(validate_branch_name("feat^thing").is_err());
+        assert!(validate_branch_name("feat:thing").is_err());
+        assert!(validate_branch_name("feat\\thing").is_err());
+    }
+
+    #[test]
+    fn validate_branch_name_accepts_valid_names() {
+        assert!(validate_branch_name("feature/foo").is_ok());
+        assert!(validate_branch_name("fix-123").is_ok());
+        assert!(validate_branch_name("release/v1.0.0").is_ok());
+        assert!(validate_branch_name("my_branch").is_ok());
     }
 }

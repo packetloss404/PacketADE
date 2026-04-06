@@ -1,7 +1,8 @@
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use tauri::State;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{info, warn};
+use zeroize::Zeroizing;
 
 /// Validate that a GitHub owner or repo name contains only allowed characters.
 fn validate_github_name(name: &str, field: &str) -> Result<(), String> {
@@ -25,24 +26,73 @@ fn token_file_path() -> Option<std::path::PathBuf> {
         .map(|h| std::path::PathBuf::from(h).join(".packetcode").join("github-token"))
 }
 
+fn keyring_entry() -> Option<keyring::Entry> {
+    match keyring::Entry::new("packetcode", "github-token") {
+        Ok(entry) => Some(entry),
+        Err(e) => {
+            warn!("Failed to create keyring entry: {}", e);
+            None
+        }
+    }
+}
+
 fn load_persisted_token() -> Option<String> {
+    // Try keyring first
+    if let Some(entry) = keyring_entry() {
+        match entry.get_password() {
+            Ok(token) => return Some(token),
+            Err(keyring::Error::NoEntry) => {} // fall through to legacy migration
+            Err(e) => {
+                warn!("Failed to read token from keyring: {}", e);
+            }
+        }
+    }
+
+    // Legacy file-based migration fallback
     let path = token_file_path()?;
-    std::fs::read_to_string(&path).ok().and_then(|s| {
-        let trimmed = s.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
-    })
+    let raw = Zeroizing::new(std::fs::read_to_string(&path).ok()?);
+    let trimmed = raw.trim().to_string();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Migrate to keyring and remove legacy file
+    if let Some(entry) = keyring_entry() {
+        match entry.set_password(&trimmed) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(&path);
+                info!("Migrated GitHub token from file to OS credential store");
+            }
+            Err(e) => {
+                warn!("Failed to migrate token to keyring: {}", e);
+            }
+        }
+    }
+
+    Some(trimmed)
 }
 
 fn persist_token(token: &str) {
-    if let Some(path) = token_file_path() {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+    if let Some(entry) = keyring_entry() {
+        if let Err(e) = entry.set_password(token) {
+            warn!("Failed to store GitHub token in keyring: {}", e);
         }
-        let _ = std::fs::write(&path, token);
+    } else {
+        warn!("Keyring unavailable; GitHub token was NOT persisted");
     }
 }
 
 fn clear_persisted_token() {
+    if let Some(entry) = keyring_entry() {
+        match entry.delete_credential() {
+            Ok(()) => {}
+            Err(keyring::Error::NoEntry) => {}
+            Err(e) => {
+                warn!("Failed to delete token from keyring: {}", e);
+            }
+        }
+    }
+    // Also clean up legacy file if it exists
     if let Some(path) = token_file_path() {
         let _ = std::fs::remove_file(&path);
     }
@@ -333,4 +383,30 @@ Be specific — reference actual file paths and code."#,
     );
 
     crate::claude::binary::run_claude(&prompt, Some(&project_path)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_github_name_accepts_valid() {
+        assert!(validate_github_name("valid-repo", "repo").is_ok());
+    }
+
+    #[test]
+    fn validate_github_name_rejects_empty() {
+        assert!(validate_github_name("", "repo").is_err());
+    }
+
+    #[test]
+    fn validate_github_name_rejects_too_long() {
+        let long = "a".repeat(101);
+        assert!(validate_github_name(&long, "repo").is_err());
+    }
+
+    #[test]
+    fn validate_github_name_rejects_invalid_chars() {
+        assert!(validate_github_name("repo;drop", "repo").is_err());
+    }
 }
