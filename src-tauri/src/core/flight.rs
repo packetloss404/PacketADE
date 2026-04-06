@@ -189,6 +189,31 @@ pub struct TaskResult {
     pub validation: Option<TaskValidationReport>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewType {
+    ToolCall,
+    FileWrite,
+    Command,
+    MilestoneGate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewPacket {
+    pub id: String,
+    pub task_id: String,
+    pub flight_id: String,
+    pub milestone_id: String,
+    pub requested_at: u64,
+    pub review_type: ReviewType,
+    pub summary: String,
+    pub diff: Option<String>,
+    pub command: Option<String>,
+    pub file_paths: Vec<String>,
+    pub agent_id: Option<String>,
+    pub session_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
@@ -205,11 +230,33 @@ pub struct Task {
     pub depends_on: Vec<String>,
     pub session_id: Option<String>,
     pub result: Option<TaskResult>,
+    pub review_packet: Option<ReviewPacket>,
     pub created_at: u64,
     pub started_at: Option<u64>,
     pub completed_at: Option<u64>,
     pub cost: f64,
     pub tokens: u64,
+}
+
+// === Approval Decision ===
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalDecisionType {
+    Approved,
+    Denied,
+    ForceOverridden,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApprovalDecision {
+    pub id: String,
+    pub review_packet_id: String,
+    pub task_id: String,
+    pub flight_id: String,
+    pub decision: ApprovalDecisionType,
+    pub decided_at: u64,
+    pub reason: Option<String>,
 }
 
 // === Flight ===
@@ -251,4 +298,32 @@ impl Flight {
             t.status == TaskStatus::ApprovalNeeded || t.status == TaskStatus::Failed
         })
     }
+}
+
+// === Issue ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptanceCriterion {
+    pub id: String,
+    pub text: String,
+    pub checked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Issue {
+    pub id: String,
+    pub ticket_id: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub priority: String,
+    pub labels: Vec<String>,
+    pub epic: Option<String>,
+    pub session_id: Option<String>,
+    pub flight_id: Option<String>,
+    pub acceptance_criteria: Vec<AcceptanceCriterion>,
+    pub blocked_by: Vec<String>,
+    pub blocks: Vec<String>,
+    pub created_at: u64,
+    pub updated_at: u64,
 }

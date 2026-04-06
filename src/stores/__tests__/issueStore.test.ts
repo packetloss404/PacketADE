@@ -5,7 +5,7 @@ import { useIssueStore, type IssueStatus } from "../issueStore";
 const store = () => useIssueStore.getState();
 
 /** Minimal input for creating an issue */
-function makeIssue(overrides: Partial<Parameters<typeof store>["0"] & Record<string, unknown>> = {}) {
+function makeIssue(overrides: Record<string, unknown> = {}) {
   return {
     title: "Test issue",
     description: "A test issue description",

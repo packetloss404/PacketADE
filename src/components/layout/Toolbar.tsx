@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, Zap, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, Radio } from "lucide-react";
+import { Plus, GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, Zap, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, Radio, ShieldCheck } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
@@ -53,6 +53,10 @@ export function Toolbar() {
     const status = computeFlightStatus(f.id);
     return status === "paused" || status === "failed";
   }).length;
+
+  const approvalCount = flights.reduce((count, f) =>
+    count + f.milestones.reduce((mc, m) =>
+      mc + m.tasks.filter((t) => t.status === "approval_needed").length, 0), 0);
 
   const projectName = projectPath.split(/[/\\]/).pop() || "PacketCode";
 
@@ -285,6 +289,25 @@ export function Toolbar() {
           {attentionCount > 0 && (
             <span className="ml-0.5 px-1.5 py-0 text-[9px] font-bold rounded-full bg-accent-amber/20 text-accent-amber">
               {attentionCount}
+            </span>
+          )}
+        </button>
+
+        {/* Review Queue */}
+        <button
+          onClick={() => setActiveView("review_queue")}
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+            activeView === "review_queue"
+              ? "bg-bg-elevated text-accent-amber"
+              : "text-text-muted hover:text-accent-amber"
+          }`}
+          title="Review Queue"
+        >
+          <ShieldCheck size={11} />
+          <span>Review</span>
+          {approvalCount > 0 && (
+            <span className="ml-0.5 px-1.5 py-0 text-[9px] font-bold rounded-full bg-accent-amber/20 text-accent-amber">
+              {approvalCount}
             </span>
           )}
         </button>

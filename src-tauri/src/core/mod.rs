@@ -6,6 +6,8 @@ pub mod orchestrator;
 pub mod pty;
 pub mod shared;
 pub mod storage;
+#[cfg(test)]
+mod contract_tests;
 
 pub use pty::{PtyManager, PtySessionInfo, PtyEvent};
 pub use flight::{Flight, Milestone, Task, FlightStatus, TaskStatus};

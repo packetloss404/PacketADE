@@ -1,18 +1,25 @@
 import { useState } from "react";
-import { ShieldCheck, ShieldX } from "lucide-react";
+import { ShieldCheck, ShieldX, AlertTriangle } from "lucide-react";
+import { DiffBlock } from "./DiffBlock";
 
 interface ApprovalPromptProps {
   toolName: string;
   description: string;
+  diff?: string;
+  filePath?: string;
   onApprove: () => void;
   onDeny: () => void;
+  onAbort?: () => void;
 }
 
 export function ApprovalPrompt({
   toolName,
   description,
+  diff,
+  filePath,
   onApprove,
   onDeny,
+  onAbort,
 }: ApprovalPromptProps) {
   const [responded, setResponded] = useState(false);
 
@@ -24,6 +31,11 @@ export function ApprovalPrompt({
   const handleDeny = () => {
     setResponded(true);
     onDeny();
+  };
+
+  const handleAbort = () => {
+    setResponded(true);
+    onAbort?.();
   };
 
   if (responded) return null;
@@ -43,6 +55,13 @@ export function ApprovalPrompt({
       <pre className="text-xs text-text-secondary bg-bg-primary rounded px-2 py-1.5 mb-3 overflow-x-auto whitespace-pre-wrap">
         {description}
       </pre>
+
+      {diff && filePath && (
+        <div className="mb-3">
+          <DiffBlock filePath={filePath} diff={diff} />
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
         <button
           onClick={handleApprove}
@@ -58,6 +77,15 @@ export function ApprovalPrompt({
           <ShieldX size={12} />
           Deny
         </button>
+        {onAbort && (
+          <button
+            onClick={handleAbort}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-text-muted/20 text-text-secondary rounded text-xs font-medium hover:bg-text-muted/30 transition-colors"
+          >
+            <AlertTriangle size={12} />
+            Abort
+          </button>
+        )}
       </div>
     </div>
   );
