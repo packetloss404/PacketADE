@@ -325,6 +325,7 @@ impl App {
             },
             issues: Vec::new(),
             approval_log: Vec::new(),
+            workspaces: Vec::new(),
         })
     }
 

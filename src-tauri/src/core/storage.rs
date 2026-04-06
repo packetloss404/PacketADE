@@ -9,6 +9,7 @@ use super::agent_config::AgentConfig;
 use super::flight::{Flight, ApprovalDecision, Issue};
 use super::orchestrator::OrchestratorSettings;
 use super::shared::home_dir;
+use super::workspace::Workspace;
 
 pub const STATE_FILENAME: &str = "state.v1.json";
 
@@ -32,6 +33,8 @@ pub struct PersistedState {
     pub issues: Vec<Issue>,
     #[serde(default)]
     pub approval_log: Vec<ApprovalDecision>,
+    #[serde(default)]
+    pub workspaces: Vec<Workspace>,
 }
 
 impl Default for PersistedState {
@@ -44,6 +47,7 @@ impl Default for PersistedState {
             ui: PersistedUiState::default(),
             issues: Vec::new(),
             approval_log: Vec::new(),
+            workspaces: Vec::new(),
         }
     }
 }
@@ -160,6 +164,7 @@ fn load_legacy_state() -> PersistedState {
         ui: PersistedUiState::default(),
         issues: Vec::new(),
         approval_log: Vec::new(),
+        workspaces: Vec::new(),
     }
 }
 
@@ -167,6 +172,14 @@ pub fn save_issues(issues: Vec<Issue>) -> Result<(), String> {
     let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.issues = issues;
+    state.version += 1;
+    save_state_inner(&state)
+}
+
+pub fn save_workspaces(workspaces: Vec<Workspace>) -> Result<(), String> {
+    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut state = load_state();
+    state.workspaces = workspaces;
     state.version += 1;
     save_state_inner(&state)
 }

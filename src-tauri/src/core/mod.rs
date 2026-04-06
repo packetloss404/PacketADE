@@ -6,6 +6,7 @@ pub mod orchestrator;
 pub mod pty;
 pub mod shared;
 pub mod storage;
+pub mod workspace;
 #[cfg(test)]
 mod contract_tests;
 

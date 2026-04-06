@@ -13,7 +13,10 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 /// Commands allowed to be spawned in a PTY session.
-const ALLOWED_COMMANDS: &[&str] = &["claude", "codex"];
+const ALLOWED_COMMANDS: &[&str] = &[
+    "claude", "codex", "gemini", "opencode",
+    "bash", "sh", "zsh", "powershell", "cmd",
+];
 
 /// Data emitted to the frontend for each chunk of PTY output
 #[derive(Clone, Serialize)]
@@ -136,6 +139,11 @@ pub fn create_pty_session(
         cmd.env_remove("CLAUDECODE");
         cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
         // Tell statusline.ps1 to suppress terminal output (PacketCode has its own native status bar)
+        cmd.env("PACKETCODE", "1");
+    }
+
+    // Gemini CLI env setup
+    if command == "gemini" {
         cmd.env("PACKETCODE", "1");
     }
 
