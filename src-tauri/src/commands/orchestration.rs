@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use crate::core::flight::FlightStatus;
-use crate::core::orchestrator::{Orchestrator, OrchestratorSettings, RunningTask, TaskSpawnRequest};
+use crate::commands::pty::SharedPtyManager;
+use crate::core::orchestrator::{Orchestrator, OrchestratorSettings, TaskSpawnRequest};
 use crate::core::storage::{self, PersistedState};
 use crate::core::shared::lock_mutex;
 
@@ -23,10 +23,22 @@ pub struct TickRuntimeSnapshot {
     pub running_task_ids: Vec<String>,
 }
 
+/// Serializable snapshot of a single running task for the frontend
+#[derive(serde::Serialize, Clone)]
+pub struct RunningTaskSnapshot {
+    pub task_id: String,
+    pub milestone_id: String,
+    pub flight_id: String,
+    pub session_id: String,
+    pub agent_config_id: String,
+    pub started_at: u64,
+}
+
 /// Serializable snapshot of orchestrator runtime state for the frontend
 #[derive(serde::Serialize, Clone)]
 pub struct OrchestratorSnapshot {
     pub running_task_ids: Vec<String>,
+    pub running_tasks: Vec<RunningTaskSnapshot>,
     pub active_flight_ids: Vec<String>,
     pub paused_at_milestone: Vec<(String, String)>,
 }
@@ -64,17 +76,41 @@ pub fn launch_flight(
 #[tauri::command]
 pub fn pause_flight(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
+    pty_manager: tauri::State<'_, SharedPtyManager>,
     flight_id: String,
 ) -> Result<PersistedState, String> {
-    with_orchestrator_and_flights(&orchestrator, |orch, state| {
+    // Step 1: Collect session IDs and pause flight (under orchestrator lock)
+    let (result, session_ids) = {
+        let mut orch = lock_mutex(&orchestrator)?;
+        let mut state = storage::load_state();
+
+        let session_ids: Vec<String> = orch
+            .running_tasks
+            .values()
+            .filter(|rt| rt.flight_id == flight_id)
+            .map(|rt| rt.session_id.clone())
+            .filter(|id| !id.is_empty())
+            .collect();
+
         let flight = state
             .flights
             .iter_mut()
             .find(|f| f.id == flight_id)
             .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
         orch.pause_flight(flight);
-        Ok(state.clone())
-    })
+        storage::save_state(&state)?;
+
+        (state, session_ids)
+    }; // orchestrator lock released here
+
+    // Step 2: Kill PTY sessions (under pty lock, orchestrator already released)
+    if !session_ids.is_empty() {
+        if let Ok(mut mgr) = pty_manager.lock() {
+            mgr.kill_sessions(&session_ids);
+        }
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -96,17 +132,41 @@ pub fn resume_flight(
 #[tauri::command]
 pub fn cancel_flight(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
+    pty_manager: tauri::State<'_, SharedPtyManager>,
     flight_id: String,
 ) -> Result<PersistedState, String> {
-    with_orchestrator_and_flights(&orchestrator, |orch, state| {
+    // Step 1: Collect session IDs and cancel flight (under orchestrator lock)
+    let (result, session_ids) = {
+        let mut orch = lock_mutex(&orchestrator)?;
+        let mut state = storage::load_state();
+
+        let session_ids: Vec<String> = orch
+            .running_tasks
+            .values()
+            .filter(|rt| rt.flight_id == flight_id)
+            .map(|rt| rt.session_id.clone())
+            .filter(|id| !id.is_empty())
+            .collect();
+
         let flight = state
             .flights
             .iter_mut()
             .find(|f| f.id == flight_id)
             .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
         orch.cancel_flight(flight);
-        Ok(state.clone())
-    })
+        storage::save_state(&state)?;
+
+        (state, session_ids)
+    }; // orchestrator lock released here
+
+    // Step 2: Kill PTY sessions (under pty lock, orchestrator already released)
+    if !session_ids.is_empty() {
+        if let Ok(mut mgr) = pty_manager.lock() {
+            mgr.kill_sessions(&session_ids);
+        }
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -125,6 +185,14 @@ pub fn get_orchestration_state(
     let orch = lock_mutex(&orchestrator)?;
     Ok(OrchestratorSnapshot {
         running_task_ids: orch.running_tasks.keys().cloned().collect(),
+        running_tasks: orch.running_tasks.values().map(|rt| RunningTaskSnapshot {
+            task_id: rt.task_id.clone(),
+            milestone_id: rt.milestone_id.clone(),
+            flight_id: rt.flight_id.clone(),
+            session_id: rt.session_id.clone(),
+            agent_config_id: rt.agent_config_id.clone(),
+            started_at: rt.started_at,
+        }).collect(),
         active_flight_ids: orch.active_flight_ids.iter().cloned().collect(),
         paused_at_milestone: orch.paused_at_milestone.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
     })

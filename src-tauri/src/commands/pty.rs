@@ -51,6 +51,18 @@ impl PtyManager {
             sessions: HashMap::new(),
         }
     }
+
+    /// Kill multiple PTY sessions by ID. Skips missing sessions.
+    pub fn kill_sessions(&mut self, session_ids: &[String]) {
+        for session_id in session_ids {
+            if let Some(mut session) = self.sessions.remove(session_id) {
+                info!(session_id = %session_id, "Killing PTY session (flight cleanup)");
+                session.kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                session.info.alive = false;
+                let _ = session.child.kill();
+            }
+        }
+    }
 }
 
 pub type SharedPtyManager = Arc<Mutex<PtyManager>>;

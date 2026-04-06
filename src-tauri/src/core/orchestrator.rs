@@ -539,4 +539,242 @@ mod tests {
         orchestrator.on_task_approval_resolved("task-1", &mut flights);
         assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Running);
     }
+
+    fn sample_agent() -> AgentConfig {
+        AgentConfig {
+            id: "claude-code".into(),
+            name: "Claude Code".into(),
+            command: "claude".into(),
+            default_args: vec!["-p".to_string()],
+            description: "Test agent".into(),
+            installed: true,
+            capabilities: vec![],
+            icon: "Bot".into(),
+            color: "text-accent-purple".into(),
+            status_patterns: super::super::agent_config::AgentStatusPatterns {
+                approval: vec![],
+                thinking: vec![],
+                tool_use: vec![],
+                idle: vec![],
+            },
+            approval_actions: super::super::agent_config::AgentApprovalActions {
+                approve: "y\n".into(),
+                deny: "n\n".into(),
+                abort: "\u{3}".into(),
+            },
+            is_builtin: true,
+        }
+    }
+
+    fn two_task_flight() -> Flight {
+        let mut task1 = sample_task("task-1");
+        task1.status = TaskStatus::Queued;
+
+        let mut task2 = sample_task("task-2");
+        task2.id = "task-2".to_string();
+        task2.status = TaskStatus::Pending;
+        task2.depends_on = vec!["task-1".to_string()];
+
+        Flight {
+            id: "flight-1".to_string(),
+            title: "Flight".to_string(),
+            objective: "Objective".to_string(),
+            status: FlightStatus::Draft,
+            priority: FlightPriority::High,
+            project_path: "D:/projects/FlightDeck".to_string(),
+            git_branch: Some("feature/test".to_string()),
+            milestones: vec![Milestone {
+                id: "ms-1".to_string(),
+                flight_id: "flight-1".to_string(),
+                title: "Milestone".to_string(),
+                description: "Desc".to_string(),
+                order: 0,
+                status: MilestoneStatus::Pending,
+                tasks: vec![task1, task2],
+                validation_criteria: Vec::new(),
+            }],
+            linked_session_ids: Vec::new(),
+            created_at: 0,
+            updated_at: 0,
+            completed_at: None,
+            total_cost: 0.0,
+            total_tokens: 0,
+        }
+    }
+
+    #[test]
+    fn test_launch_tick_spawn_complete_lifecycle() {
+        let mut orchestrator = Orchestrator::new(OrchestratorSettings {
+            milestone_gating: false,
+            ..OrchestratorSettings::default()
+        });
+        let agents = vec![sample_agent()];
+        let mut flight = two_task_flight();
+
+        // Launch flight
+        orchestrator.launch_flight(&mut flight);
+        assert_eq!(flight.status, FlightStatus::Active);
+        assert_eq!(flight.milestones[0].status, MilestoneStatus::Active);
+        assert_eq!(flight.milestones[0].tasks[0].status, TaskStatus::Queued);
+        // task-2 should still be Pending (deps not met)
+        assert_eq!(flight.milestones[0].tasks[1].status, TaskStatus::Pending);
+
+        let mut flights = vec![flight];
+
+        // Tick should return 1 spawn request for task-1
+        let requests = orchestrator.tick(&flights, &agents);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].task_id, "task-1");
+
+        // Record spawn
+        orchestrator.record_spawn("sess-1", &requests[0], &mut flights);
+        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Running);
+
+        // Complete task-1 successfully
+        orchestrator.on_task_complete("task-1", true, &mut flights);
+        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Done);
+        // task-2 deps resolved → Queued
+        assert_eq!(flights[0].milestones[0].tasks[1].status, TaskStatus::Queued);
+
+        // Tick again → spawn request for task-2
+        let requests2 = orchestrator.tick(&flights, &agents);
+        assert_eq!(requests2.len(), 1);
+        assert_eq!(requests2[0].task_id, "task-2");
+
+        // Record spawn and complete task-2
+        orchestrator.record_spawn("sess-2", &requests2[0], &mut flights);
+        orchestrator.on_task_complete("task-2", true, &mut flights);
+
+        assert_eq!(flights[0].milestones[0].status, MilestoneStatus::Done);
+        assert_eq!(flights[0].status, FlightStatus::Done);
+    }
+
+    #[test]
+    fn test_milestone_gating_pauses_flight() {
+        let mut orchestrator = Orchestrator::new(OrchestratorSettings {
+            milestone_gating: true,
+            ..OrchestratorSettings::default()
+        });
+        let agents = vec![sample_agent()];
+
+        let mut task1 = sample_task("task-1");
+        task1.milestone_id = "ms-1".to_string();
+
+        let mut task2 = sample_task("task-2");
+        task2.id = "task-2".to_string();
+        task2.milestone_id = "ms-2".to_string();
+
+        let mut flight = Flight {
+            id: "flight-1".to_string(),
+            title: "Flight".to_string(),
+            objective: "Objective".to_string(),
+            status: FlightStatus::Draft,
+            priority: FlightPriority::High,
+            project_path: "D:/projects/FlightDeck".to_string(),
+            git_branch: Some("feature/test".to_string()),
+            milestones: vec![
+                Milestone {
+                    id: "ms-1".to_string(),
+                    flight_id: "flight-1".to_string(),
+                    title: "Milestone 1".to_string(),
+                    description: "Desc".to_string(),
+                    order: 0,
+                    status: MilestoneStatus::Pending,
+                    tasks: vec![task1],
+                    validation_criteria: Vec::new(),
+                },
+                Milestone {
+                    id: "ms-2".to_string(),
+                    flight_id: "flight-1".to_string(),
+                    title: "Milestone 2".to_string(),
+                    description: "Desc".to_string(),
+                    order: 1,
+                    status: MilestoneStatus::Pending,
+                    tasks: vec![task2],
+                    validation_criteria: Vec::new(),
+                },
+            ],
+            linked_session_ids: Vec::new(),
+            created_at: 0,
+            updated_at: 0,
+            completed_at: None,
+            total_cost: 0.0,
+            total_tokens: 0,
+        };
+
+        // Launch, tick, spawn, complete task-1
+        orchestrator.launch_flight(&mut flight);
+        let mut flights = vec![flight];
+
+        let requests = orchestrator.tick(&flights, &agents);
+        assert_eq!(requests.len(), 1);
+        orchestrator.record_spawn("sess-1", &requests[0], &mut flights);
+        orchestrator.on_task_complete("task-1", true, &mut flights);
+
+        // ms-1 done, flight should be in Review due to milestone gating
+        assert_eq!(flights[0].milestones[0].status, MilestoneStatus::Done);
+        assert_eq!(flights[0].status, FlightStatus::Review);
+        assert!(orchestrator.paused_at_milestone.contains_key("flight-1"));
+        assert_eq!(orchestrator.paused_at_milestone.get("flight-1").unwrap(), "ms-2");
+
+        // Resume flight
+        orchestrator.resume_flight(&mut flights[0]);
+        assert_eq!(flights[0].status, FlightStatus::Active);
+        assert_eq!(flights[0].milestones[1].status, MilestoneStatus::Active);
+        assert_eq!(flights[0].milestones[1].tasks[0].status, TaskStatus::Queued);
+
+        // Tick, spawn, complete task-2
+        let requests2 = orchestrator.tick(&flights, &agents);
+        assert_eq!(requests2.len(), 1);
+        assert_eq!(requests2[0].task_id, "task-2");
+        orchestrator.record_spawn("sess-2", &requests2[0], &mut flights);
+        orchestrator.on_task_complete("task-2", true, &mut flights);
+
+        assert_eq!(flights[0].status, FlightStatus::Done);
+    }
+
+    #[test]
+    fn test_task_failure_fails_milestone_and_flight() {
+        let mut orchestrator = Orchestrator::new(OrchestratorSettings::default());
+        let agents = vec![sample_agent()];
+        let mut flight = sample_flight();
+        flight.status = FlightStatus::Draft;
+
+        orchestrator.launch_flight(&mut flight);
+        let mut flights = vec![flight];
+
+        let requests = orchestrator.tick(&flights, &agents);
+        assert_eq!(requests.len(), 1);
+        orchestrator.record_spawn("sess-1", &requests[0], &mut flights);
+
+        // Complete task-1 with failure
+        orchestrator.on_task_complete("task-1", false, &mut flights);
+
+        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Failed);
+        assert_eq!(flights[0].milestones[0].status, MilestoneStatus::Failed);
+        assert_eq!(flights[0].status, FlightStatus::Failed);
+    }
+
+    #[test]
+    fn test_cancel_flight_cancels_all_tasks() {
+        let mut orchestrator = Orchestrator::new(OrchestratorSettings::default());
+        let agents = vec![sample_agent()];
+        let mut flight = sample_flight();
+        flight.status = FlightStatus::Draft;
+
+        orchestrator.launch_flight(&mut flight);
+        let mut flights = vec![flight];
+
+        let requests = orchestrator.tick(&flights, &agents);
+        assert_eq!(requests.len(), 1);
+        orchestrator.record_spawn("sess-1", &requests[0], &mut flights);
+        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Running);
+
+        // Cancel flight
+        orchestrator.cancel_flight(&mut flights[0]);
+
+        assert_eq!(flights[0].status, FlightStatus::Cancelled);
+        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Cancelled);
+        assert!(orchestrator.running_tasks.is_empty());
+    }
 }
