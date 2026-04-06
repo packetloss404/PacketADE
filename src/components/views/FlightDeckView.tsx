@@ -1,8 +1,10 @@
-import { useState, useMemo } from "react";
-import { Radio, ChevronDown, ChevronRight, Target, AlertTriangle, Plus, ShieldCheck } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { Radio, ChevronDown, ChevronRight, Target, AlertTriangle, Plus, Pause, Play, XCircle } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { useAppStore } from "@/stores/appStore";
+import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useActivityStore } from "@/stores/activityStore";
 import { relativeTime } from "@/lib/time";
 import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
@@ -13,9 +15,89 @@ function handleFlightClick(flightId: string) {
   useAppStore.getState().setActiveView("flights");
 }
 
+// ── SessionIndicators ───────────────────────────────────────────────
+
+const ACTIVITY_DOT_COLORS: Record<string, string> = {
+  idle: "bg-text-muted",
+  thinking: "bg-accent-blue",
+  tool_use: "bg-accent-green",
+  responding: "bg-accent-green",
+  approval_needed: "bg-accent-amber",
+};
+
+function SessionIndicators({ flightId }: { flightId: string }) {
+  const runningTasks = useOrchestrationStore((s) => s.getRunningTasksForFlight(flightId));
+  const activities = useActivityStore((s) => s.activities);
+
+  if (runningTasks.length === 0) return null;
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      {runningTasks.map((rt) => {
+        const activity = activities[rt.paneId];
+        const state = activity?.agentState ?? "idle";
+        const dotColor = ACTIVITY_DOT_COLORS[state] || "bg-text-muted";
+        return (
+          <span
+            key={rt.taskId}
+            className={`w-1.5 h-1.5 rounded-full ${dotColor}`}
+            title={`Session: ${state}`}
+          />
+        );
+      })}
+      <span className="text-[9px] text-text-muted ml-0.5">{runningTasks.length}</span>
+    </span>
+  );
+}
+
+// ── FlightActions ───────────────────────────────────────────────────
+
+function FlightActions({ flightId, status }: { flightId: string; status: FlightStatus }) {
+  const pauseFlight = useOrchestrationStore((s) => s.pauseFlight);
+  const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
+  const cancelFlight = useOrchestrationStore((s) => s.cancelFlight);
+
+  const handleAction = useCallback((e: React.MouseEvent, action: () => Promise<void>) => {
+    e.stopPropagation();
+    void action();
+  }, []);
+
+  if (status !== "active" && status !== "paused") return null;
+
+  return (
+    <span className="inline-flex items-center gap-0.5 ml-1">
+      {status === "active" && (
+        <button
+          className="p-1 text-text-muted hover:text-accent-amber transition-colors"
+          title="Pause"
+          onClick={(e) => handleAction(e, () => pauseFlight(flightId))}
+        >
+          <Pause size={12} />
+        </button>
+      )}
+      {status === "paused" && (
+        <button
+          className="p-1 text-text-muted hover:text-accent-green transition-colors"
+          title="Resume"
+          onClick={(e) => handleAction(e, () => resumeFlight(flightId))}
+        >
+          <Play size={12} />
+        </button>
+      )}
+      <button
+        className="p-1 text-text-muted hover:text-accent-red transition-colors"
+        title="Cancel"
+        onClick={(e) => handleAction(e, () => cancelFlight(flightId))}
+      >
+        <XCircle size={12} />
+      </button>
+    </span>
+  );
+}
+
 // ── StatusStrip ──────────────────────────────────────────────────────
 
-function StatusStrip({ statusCounts, total, onNewFlight }: { statusCounts: Record<FlightStatus, number>; total: number; onNewFlight?: () => void }) {
+function StatusStrip({ statusCounts, total, onNewFlight, lastUpdated }: { statusCounts: Record<FlightStatus, number>; total: number; onNewFlight?: () => void; lastUpdated: number }) {
   const statuses: FlightStatus[] = ["active", "paused", "review", "done", "draft", "failed", "cancelled"];
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-bg-secondary border-b border-bg-border">
@@ -33,9 +115,13 @@ function StatusStrip({ statusCounts, total, onNewFlight }: { statusCounts: Recor
           </span>
         );
       })}
+      <div className="flex-1" />
+      <span className="text-[10px] text-text-muted">
+        Updated {Math.round((Date.now() - lastUpdated) / 1000)}s ago
+      </span>
       {onNewFlight && (
         <>
-          <div className="flex-1" />
+          <div className="w-px h-4 bg-bg-border mx-1" />
           <button
             onClick={onNewFlight}
             className="flex items-center gap-1 px-2 py-1 text-[11px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
@@ -58,11 +144,6 @@ function AttentionCard({ flight, status }: { flight: Flight; status: FlightStatu
   const cfg = FLIGHT_STATUS_CONFIG[status];
   const borderColor = status === "failed" ? "border-accent-red" : "border-accent-amber";
 
-  // Find tasks needing approval across all milestones
-  const approvalTasks = flight.milestones.flatMap((ms) =>
-    ms.tasks.filter((t) => t.status === "approval_needed")
-  );
-
   return (
     <button
       onClick={() => handleFlightClick(flight.id)}
@@ -71,12 +152,8 @@ function AttentionCard({ flight, status }: { flight: Flight; status: FlightStatu
       <div className="flex items-center gap-2 mb-1">
         <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
         <span className="text-xs font-medium text-text-primary truncate flex-1">{flight.title}</span>
-        {approvalTasks.length > 0 && (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-accent-amber/20 text-accent-amber animate-pulse">
-            <ShieldCheck size={9} />
-            {approvalTasks.length} approval{approvalTasks.length !== 1 ? "s" : ""}
-          </span>
-        )}
+        <SessionIndicators flightId={flight.id} />
+        <FlightActions flightId={flight.id} status={status} />
         <span className={`text-[10px] font-medium ${FLIGHT_PRIORITY_COLORS[flight.priority] || "text-text-muted"}`}>
           {flight.priority}
         </span>
@@ -91,19 +168,6 @@ function AttentionCard({ flight, status }: { flight: Flight; status: FlightStatu
         )}
         <span className="ml-auto">{relativeTime(flight.updatedAt)}</span>
       </div>
-      {approvalTasks.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {approvalTasks.map((task) => (
-            <span
-              key={task.id}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-accent-amber/10 text-accent-amber"
-            >
-              <ShieldCheck size={8} />
-              {task.title}: awaiting approval
-            </span>
-          ))}
-        </div>
-      )}
       {concerningIssues.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {concerningIssues.map((issue) => (
@@ -161,12 +225,9 @@ function ActiveFlightsSection({ activeFlights }: { activeFlights: { flight: Flig
         <span className="text-[10px] text-text-muted">({activeFlights.length})</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        {activeFlights.map(({ flight }) => {
+        {activeFlights.map(({ flight, status }) => {
           const linkedIssues = issues.filter((i) => flight.issueIds.includes(i.id));
           const doneCount = linkedIssues.filter((i) => i.status === "done").length;
-          const pendingApprovals = flight.milestones.flatMap((ms) =>
-            ms.tasks.filter((t) => t.status === "approval_needed")
-          );
           return (
             <button
               key={flight.id}
@@ -176,12 +237,8 @@ function ActiveFlightsSection({ activeFlights }: { activeFlights: { flight: Flig
               <div className="flex items-center gap-2 mb-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent-blue" />
                 <span className="text-xs font-medium text-text-primary truncate flex-1">{flight.title}</span>
-                {pendingApprovals.length > 0 && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-accent-amber/20 text-accent-amber animate-pulse">
-                    <ShieldCheck size={9} />
-                    {pendingApprovals.length}
-                  </span>
-                )}
+                <SessionIndicators flightId={flight.id} />
+                <FlightActions flightId={flight.id} status={status} />
               </div>
               <div className="flex items-center gap-3 text-[10px] text-text-muted">
                 <span className={FLIGHT_PRIORITY_COLORS[flight.priority] || "text-text-muted"}>{flight.priority}</span>
@@ -253,6 +310,17 @@ export function FlightDeckView() {
   const computeFlightStatus = useFlightStore((s) => s.computeFlightStatus);
   const [showCreate, setShowCreate] = useState(false);
 
+  // B2.4: Auto-refresh heartbeat (5s polling)
+  const [lastUpdated, setLastUpdated] = useState(Date.now());
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick((t) => t + 1);
+      setLastUpdated(Date.now());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   function handleFlightCreated(id: string) {
     useFlightStore.getState().setActiveFlight(id);
     useAppStore.getState().setActiveView("flights");
@@ -286,15 +354,10 @@ export function FlightDeckView() {
     return counts;
   }, [flightsByStatus]);
 
-  const attentionFlights = useMemo(() => {
-    // Include paused, failed, and any active flights with tasks awaiting approval
-    const approvalFlights = flightsByStatus.active.filter(({ flight }) =>
-      flight.milestones.some((ms) =>
-        ms.tasks.some((t) => t.status === "approval_needed")
-      )
-    );
-    return [...approvalFlights, ...flightsByStatus.paused, ...flightsByStatus.failed];
-  }, [flightsByStatus]);
+  const attentionFlights = useMemo(
+    () => [...flightsByStatus.paused, ...flightsByStatus.failed],
+    [flightsByStatus]
+  );
 
   const activeFlights = flightsByStatus.active;
 
@@ -328,7 +391,7 @@ export function FlightDeckView() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <StatusStrip statusCounts={statusCounts} total={flights.length} onNewFlight={() => setShowCreate(true)} />
+      <StatusStrip statusCounts={statusCounts} total={flights.length} onNewFlight={() => setShowCreate(true)} lastUpdated={lastUpdated} />
 
       <div className="flex-1 overflow-y-auto">
         <AttentionQueue attentionFlights={attentionFlights} />

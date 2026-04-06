@@ -1,6 +1,6 @@
 import { Plus, X, Link } from "lucide-react";
 import { useTabStore, type SessionTab } from "@/stores/tabStore";
-import { useActivityStore } from "@/stores/activityStore";
+import { useActivityStore, type PaneActivity } from "@/stores/activityStore";
 
 interface SessionTabBarProps {
   cliType?: "claude" | "codex";
@@ -54,11 +54,40 @@ function TabItem({
   onClose: () => void;
   closable: boolean;
 }) {
-  const statusColor = getStatusColor(tab.status);
   const activity = useActivityStore((s) => s.activities[tab.id]);
-  const activityTooltip = activity?.currentTool
-    ? `${activity.currentTool}${activity.currentFile ? `: ${activity.currentFile}` : ""}`
-    : undefined;
+
+  // Build rich tooltip
+  const tooltipParts: string[] = [tab.name];
+  if (activity?.agentState && activity.agentState !== "idle") {
+    if (activity.agentState === "thinking" || activity.agentState === "responding") {
+      tooltipParts.push(activity.agentState);
+    } else if (activity.agentState === "tool_use" && activity.currentTool) {
+      tooltipParts.push(
+        `${activity.currentTool.toLowerCase()}${activity.currentFile ? ` ${activity.currentFile}` : ""}`
+      );
+    } else if (activity.agentState === "approval_needed") {
+      tooltipParts.push("needs approval");
+    }
+  }
+  if (tab.durationMs > 0) {
+    const mins = Math.floor(tab.durationMs / 60000);
+    const secs = Math.floor((tab.durationMs % 60000) / 1000);
+    tooltipParts.push(`${mins}m ${secs}s`);
+  }
+  const tooltip = tooltipParts.join(" — ");
+
+  // Determine dot color from activity state (prefer granular agent state over tab status)
+  const dotColor = activity?.agentState
+    ? getActivityDotColor(activity.agentState)
+    : getStatusColor(tab.status);
+  const shouldPulse =
+    activity?.agentState === "thinking" ||
+    activity?.agentState === "tool_use" ||
+    activity?.agentState === "responding" ||
+    activity?.agentState === "approval_needed" ||
+    tab.status === "thinking" ||
+    tab.status === "running" ||
+    tab.status === "waiting_approval";
 
   return (
     <div
@@ -68,17 +97,11 @@ function TabItem({
           : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
       }`}
       onClick={onActivate}
-      title={activityTooltip}
+      title={tooltip}
     >
       {/* Status dot */}
       <div
-        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColor} ${
-          tab.status === "thinking" || tab.status === "running"
-            ? "animate-pulse"
-            : tab.status === "waiting_approval"
-              ? "animate-pulse"
-              : ""
-        }`}
+        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor} ${shouldPulse ? "animate-pulse" : ""}`}
       />
 
       {/* Session name */}
@@ -112,6 +135,21 @@ function TabItem({
       )}
     </div>
   );
+}
+
+function getActivityDotColor(state: PaneActivity["agentState"]): string {
+  switch (state) {
+    case "tool_use":
+    case "responding":
+      return "bg-accent-green";
+    case "thinking":
+      return "bg-accent-blue";
+    case "approval_needed":
+      return "bg-accent-amber";
+    case "idle":
+    default:
+      return "bg-text-muted";
+  }
 }
 
 function getStatusColor(status: SessionTab["status"]): string {

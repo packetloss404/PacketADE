@@ -70,3 +70,40 @@ pub fn validate_input_size(input: &str, max_size: usize, field_name: &str) -> Re
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_project_path_rejects_empty() {
+        let result = validate_project_path("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_project_path_rejects_relative() {
+        let result = validate_project_path("relative/path");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_input_size_accepts_within_limit() {
+        let result = validate_input_size("hello", MAX_INPUT_SIZE, "test");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_input_size_rejects_over_limit() {
+        let big = "x".repeat(MAX_INPUT_SIZE + 1);
+        let result = validate_input_size(&big, MAX_INPUT_SIZE, "test");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_input_size_exact_limit_passes() {
+        let exact = "x".repeat(MAX_INPUT_SIZE);
+        let result = validate_input_size(&exact, MAX_INPUT_SIZE, "test");
+        assert!(result.is_ok());
+    }
+}
