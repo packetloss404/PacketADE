@@ -24,7 +24,7 @@ PacketCode is a Tauri v2 desktop IDE that wraps Claude Code and OpenAI Codex CLI
 | HTTP (Rust) | reqwest 0.12 with rustls-tls |
 | TUI binary | ratatui 0.29 + crossterm 0.28 (separate `packetcode-tui` binary) |
 | Logging | tracing + tracing-subscriber + tracing-appender (daily rolling file) |
-| Persistence (backend) | JSON file at `~/.packetcode/state.v1.json` |
+| Persistence (backend) | JSON file at `~/.packetcode/state.v2.json` |
 | Persistence (frontend) | localStorage under `packetcode:*` keys |
 | Frontend testing | vitest + jsdom + @testing-library/react |
 | Backend testing | cargo test (built-in) |
@@ -78,9 +78,9 @@ Routed via `AppView` union type in `appStore.ts`:
 
 | Sprint | Focus | Status |
 |--------|-------|--------|
-| Sprint 0 | Initial audit, project documentation, architecture review | Complete |
+| Sprint 0 | Security Foundations -- keyring, path traversal, CSP, async I/O | Complete |
 | Sprint 1 | Control Plane Hardening -- eliminate split-brain orchestration state | Complete |
-| Sprint 2 | Review Loops & Persistence -- approval workflow, audit trail, state migration | Complete |
+| Sprint 2 | Review Loops & Persistence -- approval workflow, audit trail, state migration v1→v2 | Complete |
 | Sprint 3 | UX Polish & Test Infrastructure -- vitest/cargo test setup, TerminalPane decomposition, FlightDeck upgrade | Complete |
 
 ---
@@ -111,7 +111,7 @@ Routed via `AppView` union type in `appStore.ts`:
 - Prompt history + usage analytics views
 - Agent profiles with model selection and system prompts
 - Keyboard shortcuts (Ctrl+B explorer, Ctrl+\ split, Ctrl+1-4 pane switch, Ctrl+Shift+1-6 view switch)
-- Persisted state via `~/.packetcode/state.v1.json` (flights, agents, settings, UI state)
+- Persisted state via `~/.packetcode/state.v2.json` (flights, agents, settings, UI state)
 - Separate TUI binary (`packetcode-tui`) using ratatui
 - **FlightDeck live session indicators** -- active flights show colored dots per session state (idle/thinking/tool_use/approval_needed)
 - **FlightDeck inline actions** -- pause/resume/cancel buttons on flight cards
@@ -125,16 +125,13 @@ Routed via `AppView` union type in `appStore.ts`:
 ### Partial
 
 - **Module/plugin system:** 4 hardcoded modules with enable/disable, but no external plugin loading or community manifest format
-- **Persistence:** Split between Rust JSON file (flights/agents/settings) and frontend localStorage (pane count, project path, issue data). No unified persistence strategy
-- **FlightDeck orchestration frontend:** `orchestrationStore.ts` mirrors Rust orchestrator state -- dual state management with sync via `orchestration_tick` and `get_orchestration_state` commands
-- **TerminalPane decomposition:** ActivityStrip and TerminalHeader extracted; ApprovalOverlay and useTerminalSession hook still inline (~520 lines remaining). Target is ~60-line composition shell
-- **Test coverage:** Infrastructure is in place but coverage is still low. 122 frontend tests across 6 test files; 50 Rust tests across ~8 modules. No E2E tests
+- **TerminalPane decomposition:** ActivityStrip and TerminalHeader extracted; ApprovalOverlay and useTerminalSession hook still inline (601 lines remaining). Target is ~60-line composition shell
+- **Test coverage:** Infrastructure is in place but coverage is still low. 122 frontend tests across 10 test files; 50 Rust tests across ~8 modules. No E2E tests
 
 ### Not Started
 
 - Code signing and distribution (Windows SmartScreen, macOS Gatekeeper -- Phase 9)
 - E2E tests (no Playwright/WebDriver setup)
-- Secure storage (GitHub token is plaintext; no OS keychain integration)
 - Inline file preview from terminal output
 - Session persistence and reconnection across app restarts
 - Multi-model A/B comparison (dual-fire mode)
@@ -149,9 +146,10 @@ Routed via `AppView` union type in `appStore.ts`:
 
 | Category | Files | Tests |
 |----------|-------|-------|
-| Store tests (flightStore, issueStore, tabStore) | 3 | 122 tests |
-| Component tests (ActivityIcon, StatusStrip, ReviewQueueView) | 3 | 122 tests |
-| **Total** | **6** | **122 tests** |
+| Store tests (flight, issue, tab, orchestration, persistence migration) | 5 | 82 tests |
+| Component tests (ActivityIcon, StatusStrip, ReviewQueue) | 3 | 23 tests |
+| Utility tests (storage, contract) | 2 | 17 tests |
+| **Total** | **10** | **122 tests** |
 
 Gate: `pnpm test` exits 0.
 
@@ -175,33 +173,19 @@ Gate: `cargo test` in `src-tauri/` exits 0.
 
 ## Known Architectural Debt
 
-### 1. Split-Brain Orchestration State
+### 1. TerminalPane Still Oversized
 
-The frontend `orchestrationStore.ts` maintains its own `runningTasks`, `activeFlightIds`, `pausedAtMilestone`, and scheduling logic (Map/Set-based). The Rust backend `core/orchestrator.rs` maintains a parallel `Orchestrator` struct with its own `RunningTask` tracking. Synchronization happens via periodic `orchestration_tick` calls and `get_orchestration_state` snapshots, but there is no single source of truth. If the frontend and backend diverge (missed tick, stale cache), flight status can become inconsistent.
+TerminalPane.tsx is 601 lines after Sprint 3 partial decomposition (down from 676). Two more extractions are needed (ApprovalOverlay, useTerminalSession hook) to reach the ~60-line composition shell target. This is the top priority for Sprint 4.
 
-### 2. Dual Persistence Systems
-
-- **Rust side:** `~/.packetcode/state.v1.json` stores flights, agents, orchestrator settings, and UI state. Loaded/saved via `storage.rs` with a file-level mutex.
-- **Frontend side:** localStorage under `packetcode:*` keys stores pane count, project path, issue board data, module enable/disable state, and other UI preferences.
-- There is no migration or reconciliation mechanism between the two. Issue data lives only in localStorage (via `issueStore`) while flights live in the JSON file, despite issues being linked to flights.
-
-### 3. TerminalPane Still Oversized
-
-TerminalPane.tsx is ~520 lines after Sprint 3 partial decomposition (down from 678). Two more extractions are needed (ApprovalOverlay, useTerminalSession hook) to reach the ~60-line composition shell target. This is the top priority for Sprint 4.
-
-### 4. Low Test Coverage
+### 2. Low Test Coverage
 
 Test infrastructure is now in place (vitest for frontend, expanded cargo test for backend), but overall coverage remains low. The 24 Zustand stores have only 3 tested. React components have only 3 test files. Rust command modules beyond statusline/code_quality/orchestrator/pty/git/fs/storage/flight still have zero tests.
 
-### 5. No Secure Secret Storage
-
-GitHub tokens are stored in plaintext (backend memory, not persisted -- but no keychain integration either). No `zeroize` crate usage for sensitive data in memory.
-
-### 6. Store Proliferation
+### 3. Store Proliferation
 
 24 Zustand store files with no clear boundary between "domain state" and "UI state." Several stores (e.g., `flightStore` + `orchestrationStore`, `statusLineStore` + `statusLineStoreUtils`) have overlapping concerns.
 
-### 7. No E2E Testing
+### 4. No E2E Testing
 
 While unit/component tests now exist, there is no end-to-end test framework (Playwright, WebDriver, or Tauri's built-in test harness). Critical user flows (session creation, flight launch, approval cycle) are only tested manually.
 
