@@ -357,6 +357,10 @@ pub fn read_transcript(session_id: &str) -> Result<PtyTranscript, String> {
 }
 
 fn transcript_path(session_id: &str) -> Option<PathBuf> {
+    // Validate session_id is a valid UUID to prevent path traversal
+    if uuid::Uuid::parse_str(session_id).is_err() {
+        return None;
+    }
     let dir = storage::data_dir().join("pty-transcripts");
     let _ = fs::create_dir_all(&dir);
     Some(dir.join(format!("{}.log", session_id)))
@@ -377,4 +381,29 @@ pub type SharedPtyManager = Arc<Mutex<PtyManager>>;
 
 pub fn create_shared_pty_manager(event_tx: mpsc::Sender<PtyEvent>) -> SharedPtyManager {
     Arc::new(Mutex::new(PtyManager::new(event_tx)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transcript_path_rejects_traversal_attack() {
+        assert!(transcript_path("../../etc/passwd").is_none());
+    }
+
+    #[test]
+    fn transcript_path_rejects_non_uuid() {
+        assert!(transcript_path("not-a-uuid").is_none());
+        assert!(transcript_path("").is_none());
+        assert!(transcript_path("hello world").is_none());
+    }
+
+    #[test]
+    fn transcript_path_accepts_valid_uuid() {
+        let id = uuid::Uuid::new_v4().to_string();
+        let path = transcript_path(&id);
+        assert!(path.is_some());
+        assert!(path.unwrap().to_string_lossy().contains(&id));
+    }
 }

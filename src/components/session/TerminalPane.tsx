@@ -360,7 +360,7 @@ export function TerminalPane({
       // Notify session error
       notifySessionError(tabId, `Session ${sessionCounter}`);
     }
-  }, [projectPath, cliCommand, cliArgs, startDurationTimer, stopDurationTimer]);
+  }, [projectPath, cliCommand, cliArgs, startDurationTimer, stopDurationTimer, paneId]);
 
   // Auto-start session on mount
   useEffect(() => {
