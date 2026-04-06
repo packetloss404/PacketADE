@@ -25,7 +25,7 @@ PacketCode is a Tauri v2 desktop IDE that wraps Claude Code and OpenAI Codex CLI
 | TUI binary | ratatui 0.29 + crossterm 0.28 (separate `packetcode-tui` binary) |
 | Logging | tracing + tracing-subscriber + tracing-appender (daily rolling file) |
 | Persistence (backend) | JSON file at `~/.packetcode/state.v2.json` |
-| Persistence (frontend) | localStorage under `packetcode:*` keys |
+| Persistence (frontend) | localStorage for UI preferences only (flights/agents/issues migrated to backend) |
 | Frontend testing | vitest + jsdom + @testing-library/react |
 | Backend testing | cargo test (built-in) |
 
@@ -33,11 +33,11 @@ PacketCode is a Tauri v2 desktop IDE that wraps Claude Code and OpenAI Codex CLI
 
 ## Architecture Overview
 
-### Frontend Views (14 core + dynamic module views)
+### Frontend Views (15 core + dynamic module views)
 
 Routed via `AppView` union type in `appStore.ts`:
 
-**Core views:** `welcome`, `claude`, `codex`, `issues`, `flights`, `flight_deck`, `history`, `tools`, `insights`, `github`, `memory`, `analytics`, `deploy`, `cost`
+**Core views:** `welcome`, `claude`, `codex`, `issues`, `flights`, `flight_deck`, `review_queue`, `history`, `tools`, `insights`, `github`, `memory`, `analytics`, `deploy`, `cost`
 
 **Module views** (dynamic `mod:{id}` pattern): `vibe-architect` (AI), `ideation` (analysis), `mcp-hub` (integration), `scaffold` (utility)
 
@@ -48,7 +48,7 @@ Routed via `AppView` union type in `appStore.ts`:
 | `pty.rs` | create_pty_session, write_pty, resize_pty, kill_pty, kill_pty_and_wait, list_pty_sessions, read_pty_transcript |
 | `git.rs` | get_git_branch, get_git_status, git_commit, git_push, git_pull, git_create_branch, git_safety_check |
 | `orchestration.rs` | launch_flight, pause_flight, resume_flight, cancel_flight, orchestration_tick, get_orchestration_state, record_task_spawn, notify_task_complete, notify_approval_needed, notify_approval_resolved |
-| `state.rs` | load_persisted_state, save_persisted_state, save_flights_slice, save_agents_slice, save_settings_slice, save_ui_slice |
+| `state.rs` | load_persisted_state, save_persisted_state, save_flights_slice, save_agents_slice, save_settings_slice, save_ui_slice, save_issues_slice |
 | `github.rs` | github_set_token, github_clear_token, github_has_token, github_list_repos, github_list_issues, github_get_issue, github_create_pr, github_list_prs, github_get_pr_diff, github_investigate_issue |
 | `memory.rs` | scan_codebase_memory, summarize_session, extract_patterns |
 | `insights.rs` | ask_insights, ask_insights_stream |
@@ -68,9 +68,9 @@ Routed via `AppView` union type in `appStore.ts`:
 
 `flight.rs`, `orchestrator.rs`, `agent_config.rs`, `agent.rs`, `git.rs`, `pty.rs`, `storage.rs`, `shared.rs` -- domain logic separate from Tauri command handlers.
 
-### Zustand Stores (24 files in `src/stores/`)
+### Zustand Stores (25 files in `src/stores/`)
 
-`appStore`, `layoutStore`, `flightStore`, `orchestrationStore`, `issueStore`, `agentStore`, `tabStore`, `profileStore`, `memoryStore`, `insightsStore`, `githubStore`, `historyStore`, `analyticsStore`, `costStore`, `deployStore`, `mcpStore`, `scaffoldStore`, `ideationStore`, `moduleStore`, `notificationStore`, `promptStore`, `statusLineStore`, `statusLineStoreUtils`, `activityStore`
+`appStore`, `layoutStore`, `flightStore`, `orchestrationStore`, `issueStore`, `agentStore`, `tabStore`, `profileStore`, `memoryStore`, `insightsStore`, `githubStore`, `historyStore`, `analyticsStore`, `costStore`, `deployStore`, `mcpStore`, `scaffoldStore`, `ideationStore`, `moduleStore`, `notificationStore`, `promptStore`, `statusLineStore`, `statusLineStoreUtils`, `activityStore`, `routingStore`
 
 ---
 
@@ -130,7 +130,7 @@ Routed via `AppView` union type in `appStore.ts`:
 
 ### Not Started
 
-- Code signing and distribution (Windows SmartScreen, macOS Gatekeeper -- Phase 9)
+- Code signing and distribution (Windows SmartScreen, macOS Gatekeeper)
 - E2E tests (no Playwright/WebDriver setup)
 - Inline file preview from terminal output
 - Session persistence and reconnection across app restarts
@@ -191,4 +191,4 @@ While unit/component tests now exist, there is no end-to-end test framework (Pla
 
 ---
 
-*This document reflects the codebase as of 2026-04-06 and is grounded in actual file contents, not planned or aspirational features. Test counts in brackets are placeholders pending merge of Sprint 3 agent branches.*
+*This document reflects the codebase as of 2026-04-06 and is grounded in actual file contents, not planned or aspirational features.*
