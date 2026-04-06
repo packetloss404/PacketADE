@@ -5,17 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createPtySession, writePty, resizePty, killPty } from "@/lib/tauri";
-import {
-  X,
-  RotateCcw,
-  Plus,
-  ShieldCheck,
-  ShieldX,
-  XCircle,
-  FileEdit,
-  Brain,
-  TerminalSquare,
-} from "lucide-react";
+import { ShieldCheck, ShieldX, XCircle } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useActivityStore } from "@/stores/activityStore";
@@ -25,6 +15,8 @@ import {
   notifySessionComplete,
   notifySessionError,
 } from "@/lib/notifications";
+import { ActivityStrip } from "@/components/session/ActivityStrip";
+import { TerminalHeader } from "@/components/session/TerminalHeader";
 import { ClaudeStatusBar } from "@/components/session/ClaudeStatusBar";
 import { CodexStatusBar } from "@/components/session/CodexStatusBar";
 import "@xterm/xterm/css/xterm.css";
@@ -360,7 +352,7 @@ export function TerminalPane({
       // Notify session error
       notifySessionError(tabId, `Session ${sessionCounter}`);
     }
-  }, [projectPath, cliCommand, cliArgs, startDurationTimer, stopDurationTimer]);
+  }, [projectPath, cliCommand, cliArgs, startDurationTimer, stopDurationTimer, paneId]);
 
   // Auto-start session on mount
   useEffect(() => {
@@ -488,6 +480,44 @@ export function TerminalPane({
     detectorResult.clearApproval();
   }, [detectorResult]);
 
+  // Keyboard shortcuts for approval overlay
+  useEffect(() => {
+    if (!showApproval) return;
+
+    // Blur the terminal so xterm doesn't consume keystrokes
+    const term = xtermRef.current;
+    if (term) {
+      term.blur();
+    }
+
+    const handler = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return;
+
+      if (e.key === "y" || e.key === "Y") {
+        e.preventDefault();
+        handleApprove();
+      } else if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        handleDeny();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        handleAbort();
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      if (term) {
+        term.focus();
+      }
+    };
+  }, [showApproval, handleApprove, handleDeny, handleAbort]);
+
   // Activity strip visibility — hide when idle for >10s
   const showActivityStrip =
     alive && activityInfo.state !== "idle" && activityInfo.tool !== null;
@@ -498,61 +528,16 @@ export function TerminalPane({
       onClick={() => setActivePaneId(paneId)}
     >
       {/* Pane header */}
-      <div className="flex items-center justify-between px-3 py-1 bg-bg-secondary border-b border-bg-border">
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              showApproval
-                ? "bg-accent-amber animate-pulse"
-                : alive
-                  ? "bg-accent-green animate-pulse"
-                  : error
-                    ? "bg-accent-red"
-                    : "bg-text-muted"
-            }`}
-          />
-          <span
-            className="text-[10px] px-2 py-0.5 rounded-full text-white font-medium"
-            style={{
-              backgroundColor: cliCommand === "claude" ? "#f0b400" : "#58a6ff",
-            }}
-          >
-            {cliCommand === "claude" ? "Claude" : "Codex"}
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
-          {!alive && (
-            <button
-              onClick={handleRestart}
-              className="p-1 text-text-muted hover:text-accent-green transition-colors"
-              title={`New ${cliCommand.charAt(0).toUpperCase() + cliCommand.slice(1)} session`}
-            >
-              <Plus size={12} />
-            </button>
-          )}
-          {alive && (
-            <button
-              onClick={handleRestart}
-              className="p-1 text-text-muted hover:text-text-primary transition-colors"
-              title="Restart session"
-            >
-              <RotateCcw size={12} />
-            </button>
-          )}
-          {showCloseButton && onClose && (
-            <button
-              onClick={() => {
-                handleKill();
-                onClose();
-              }}
-              className="p-1 text-text-muted hover:text-accent-red transition-colors"
-              title="Close pane"
-            >
-              <X size={12} />
-            </button>
-          )}
-        </div>
-      </div>
+      <TerminalHeader
+        alive={alive}
+        error={error}
+        showApproval={showApproval}
+        cliCommand={cliCommand}
+        onRestart={handleRestart}
+        onKill={handleKill}
+        onClose={onClose}
+        showCloseButton={showCloseButton}
+      />
 
       {/* Terminal */}
       <div className="relative flex-1 overflow-hidden">
@@ -588,7 +573,7 @@ export function TerminalPane({
               className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded bg-text-muted/20 text-text-secondary hover:bg-text-muted/30 transition-colors"
             >
               <XCircle size={10} />
-              Abort
+              Abort (Esc)
             </button>
           </div>
         )}
@@ -596,20 +581,12 @@ export function TerminalPane({
 
       {/* Activity Strip */}
       {showActivityStrip && (
-        <div className="flex items-center gap-1.5 h-5 px-3 bg-bg-secondary border-t border-bg-border/50 text-[10px] text-text-muted">
-          <ActivityIcon state={activityInfo.state} tool={activityInfo.tool} />
-          <span className="truncate">
-            {getActivityLabel(activityInfo.state, activityInfo.tool, activityInfo.file)}
-          </span>
-        </div>
+        <ActivityStrip state={activityInfo.state} tool={activityInfo.tool} file={activityInfo.file} />
       )}
 
       {/* Thinking indicator (when no specific tool) */}
       {alive && activityInfo.state === "thinking" && !activityInfo.tool && (
-        <div className="flex items-center gap-1.5 h-5 px-3 bg-bg-secondary border-t border-bg-border/50 text-[10px] text-text-muted">
-          <Brain size={10} className="text-accent-blue animate-pulse" />
-          <span>Thinking...</span>
-        </div>
+        <ActivityStrip state="thinking" tool={null} file={null} />
       )}
 
       {/* Status Bars */}
@@ -621,58 +598,4 @@ export function TerminalPane({
       )}
     </div>
   );
-}
-
-function ActivityIcon({
-  state,
-  tool,
-}: {
-  state: string;
-  tool: string | null;
-}) {
-  if (state === "thinking") {
-    return <Brain size={10} className="text-accent-blue animate-pulse flex-shrink-0" />;
-  }
-  if (tool === "Edit" || tool === "Write") {
-    return <FileEdit size={10} className="text-accent-amber flex-shrink-0" />;
-  }
-  if (tool === "Bash") {
-    return <TerminalSquare size={10} className="text-accent-green flex-shrink-0" />;
-  }
-  return <FileEdit size={10} className="text-text-muted flex-shrink-0" />;
-}
-
-function getActivityLabel(
-  state: string,
-  tool: string | null,
-  file: string | null
-): string {
-  if (state === "thinking") return "Thinking...";
-
-  if (!tool) return "";
-
-  const shortFile = file
-    ? file.length > 50
-      ? "..." + file.slice(-47)
-      : file
-    : "";
-
-  switch (tool) {
-    case "Edit":
-      return `Editing ${shortFile}`;
-    case "Write":
-      return `Writing ${shortFile}`;
-    case "Read":
-      return `Reading ${shortFile}`;
-    case "Bash":
-      return `Running: ${shortFile}`;
-    case "Glob":
-      return `Searching: ${shortFile}`;
-    case "Grep":
-      return `Searching: ${shortFile}`;
-    case "Task":
-      return `Running task: ${shortFile}`;
-    default:
-      return `${tool} ${shortFile}`;
-  }
 }

@@ -103,6 +103,8 @@ pub fn run() {
             commands::state::save_agents_slice,
             commands::state::save_settings_slice,
             commands::state::save_ui_slice,
+            commands::state::save_issues_slice,
+            commands::state::save_workspaces_slice,
             // Agent detection
             commands::agent::detect_agent,
             // Status line

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { loadFromStorage, saveToStorage, generateId as genId } from "@/lib/storage";
+import { loadFromStorage, removeFromStorage, generateId as genId } from "@/lib/storage";
 import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
 import type { Flight, FlightStatus, Milestone, Task } from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
@@ -15,14 +15,11 @@ const STORAGE_KEY = "packetcode:flights";
 const generateId = (prefix: string) => genId(prefix);
 
 function loadState(): FlightState {
-  return loadFromStorage<FlightState>(STORAGE_KEY, {
-    flights: [],
-    activeFlightId: null,
-  });
+  // Backend is the sole source of truth; real data arrives via hydrateFromBackend.
+  return { flights: [], activeFlightId: null };
 }
 
 function saveState(state: FlightState) {
-  saveToStorage(STORAGE_KEY, state);
   void syncFlightsToBackend(state);
 }
 
@@ -426,14 +423,36 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   hydrateFromBackend: async (persisted) => {
     try {
       const state = persisted ?? (await loadPersistedState());
-      const nextState: FlightState = {
-        flights: state.flights,
-        activeFlightId: state.ui.selectedFlightId ?? null,
-      };
-      saveToStorage(STORAGE_KEY, nextState);
-      set(nextState);
+      let flights = state.flights;
+      let activeFlightId = state.ui.selectedFlightId ?? null;
+
+      // One-time migration: if the backend has zero flights, import from localStorage
+      if (flights.length === 0) {
+        const legacy = loadFromStorage<FlightState>(STORAGE_KEY, {
+          flights: [],
+          activeFlightId: null,
+        });
+        if (legacy.flights.length > 0) {
+          flights = legacy.flights;
+          activeFlightId = legacy.activeFlightId;
+          // Persist migrated data to backend
+          await saveFlightsSlice(flights);
+          if (activeFlightId) await saveUiSlice({ selectedFlightId: activeFlightId });
+          // Remove legacy localStorage copy
+          removeFromStorage(STORAGE_KEY);
+        }
+      }
+
+      set({ flights, activeFlightId });
     } catch {
-      // Keep localStorage-backed initial state when the backend is unavailable.
+      // Fallback: try localStorage when backend is unavailable (dev mode)
+      const legacy = loadFromStorage<FlightState>(STORAGE_KEY, {
+        flights: [],
+        activeFlightId: null,
+      });
+      if (legacy.flights.length > 0) {
+        set(legacy);
+      }
     }
   },
 

@@ -59,72 +59,106 @@ export function FlightsView() {
 
   return (
     <div className="flex flex-1 h-full overflow-hidden bg-bg-primary">
-      {/* Left panel — flight list */}
-      <div className="flex flex-col w-[280px] min-w-[280px] border-r border-bg-border bg-bg-secondary">
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 pt-3 pb-2">
-          <div className="flex items-center gap-2">
-            <Target size={16} className="text-accent-green" />
-            <h2 className="text-sm font-semibold text-text-primary">Flights</h2>
-            <span className="text-[10px] text-text-muted bg-bg-elevated px-1.5 py-0.5 rounded-full">
-              {flights.length}
-            </span>
-          </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1 px-2 py-1 text-[11px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
-          >
-            <Plus size={12} />
-            New Flight
-          </button>
-        </div>
-
-        {/* Create modal rendered below */}
-
-        {/* Search + filter */}
-        <div className="px-3 pb-2 space-y-1.5">
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-bg-elevated rounded border border-bg-border">
-            <Search size={12} className="text-text-muted" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search flights…"
-              className="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-muted outline-none"
-            />
-          </div>
-          <StatusFilterDropdown value={statusFilter} onChange={setStatusFilter} />
-        </div>
-
-        {/* Flight list */}
-        <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
-          {filtered.length === 0 && (
-            <p className="text-[11px] text-text-muted px-2 py-4 text-center">
-              No flights match your filters. Try clearing the search or status filter.
+      {flights.length === 0 && !search.trim() ? (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center max-w-md">
+            <Target size={48} className="mx-auto text-text-muted mb-4" />
+            <h2 className="text-lg font-semibold text-text-primary mb-2">No flights yet</h2>
+            <p className="text-xs text-text-secondary mb-6">
+              Flights are the top-level work organizer in PacketCode. Each flight contains
+              milestones with tasks that are executed by AI agents.
             </p>
-          )}
-          {filtered.map((f) => (
-            <FlightCard
-              key={f.id}
-              flight={f}
-              isSelected={f.id === selectedId}
-              onClick={() => setSelectedId(f.id)}
-            />
-          ))}
+            <ul className="text-xs text-text-muted mb-6 space-y-2 text-left mx-auto max-w-xs">
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0" />
+                Organize work into milestones and tasks
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-blue flex-shrink-0" />
+                Orchestrate multiple AI agents in parallel
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-amber flex-shrink-0" />
+                Track progress with automated status rollups
+              </li>
+            </ul>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-accent-green/20 text-accent-green rounded-md text-sm font-medium hover:bg-accent-green/30 transition-colors"
+            >
+              <Plus size={16} />
+              Create Your First Flight
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Left panel — flight list */}
+          <div className="flex flex-col w-[280px] min-w-[280px] border-r border-bg-border bg-bg-secondary">
+            {/* Header */}
+            <div className="flex items-center justify-between px-3 pt-3 pb-2">
+              <div className="flex items-center gap-2">
+                <Target size={16} className="text-accent-green" />
+                <h2 className="text-sm font-semibold text-text-primary">Flights</h2>
+                <span className="text-[10px] text-text-muted bg-bg-elevated px-1.5 py-0.5 rounded-full">
+                  {flights.length}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowCreate(true)}
+                className="flex items-center gap-1 px-2 py-1 text-[11px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+              >
+                <Plus size={12} />
+                New Flight
+              </button>
+            </div>
 
-      {/* Right panel — detail or empty state */}
-      <div className="flex flex-col flex-1 overflow-hidden">
-        {selected ? (
-          <FlightDetail
-            flight={selected}
-            onDeleted={() => setSelectedId(null)}
-          />
-        ) : (
-          <EmptyState hasFlights={flights.length > 0} />
-        )}
-      </div>
+            {/* Search + filter */}
+            <div className="px-3 pb-2 space-y-1.5">
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-bg-elevated rounded border border-bg-border">
+                <Search size={12} className="text-text-muted" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search flights…"
+                  className="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-muted outline-none"
+                />
+              </div>
+              <StatusFilterDropdown value={statusFilter} onChange={setStatusFilter} />
+            </div>
+
+            {/* Flight list */}
+            <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
+              {filtered.length === 0 && (
+                <p className="text-[11px] text-text-muted px-2 py-4 text-center">
+                  No flights match your filters. Try clearing the search or status filter.
+                </p>
+              )}
+              {filtered.map((f) => (
+                <FlightCard
+                  key={f.id}
+                  flight={f}
+                  isSelected={f.id === selectedId}
+                  onClick={() => setSelectedId(f.id)}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Right panel — detail or empty state */}
+          <div className="flex flex-col flex-1 overflow-hidden">
+            {selected ? (
+              <FlightDetail
+                flight={selected}
+                onDeleted={() => setSelectedId(null)}
+              />
+            ) : (
+              <EmptyState hasFlights={flights.length > 0} />
+            )}
+          </div>
+        </>
+      )}
 
       {showCreate && (
         <NewFlightModal

@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentConfig, AgentStatusPatterns } from "@/types/agent";
-import type { Flight, Milestone, Task, TaskResult } from "@/types/flight";
+import type { Flight, Milestone, Task, TaskResult, ReviewType } from "@/types/flight";
 import type { StatusLineData, CodexStatusLineData } from "@/types/statusline";
+import type { Workspace } from "@/types/workspace";
 
 // Filesystem
 export async function getCwd(): Promise<string> {
@@ -215,6 +216,20 @@ type RustTask = {
   depends_on: string[];
   session_id?: string | null;
   result?: RustTaskResult | null;
+  review_packet?: {
+    id: string;
+    task_id: string;
+    flight_id: string;
+    milestone_id: string;
+    requested_at: number;
+    review_type: ReviewType;
+    summary: string;
+    diff?: string | null;
+    command?: string | null;
+    file_paths: string[];
+    agent_id?: string | null;
+    session_id?: string | null;
+  } | null;
   created_at: number;
   started_at?: number | null;
   completed_at?: number | null;
@@ -321,6 +336,25 @@ export async function saveAgentsSlice(agents: AgentConfig[]): Promise<void> {
   return invoke("save_agents_slice", { agents: agents.map(toRustAgent) });
 }
 
+export async function saveWorkspacesSlice(workspaces: Workspace[]): Promise<void> {
+  const rustWorkspaces = workspaces.map((w) => ({
+    id: w.id,
+    name: w.name,
+    agents: w.agents,
+    panes: w.panes.map((p) => ({
+      id: p.id,
+      agent_id: p.agentId,
+      session_id: p.sessionId ?? null,
+      grid_position: p.gridPosition,
+    })),
+    project_path: w.projectPath,
+    created_at: w.createdAt,
+    updated_at: w.updatedAt,
+    status: w.status,
+  }));
+  return invoke("save_workspaces_slice", { workspaces: rustWorkspaces });
+}
+
 export async function saveSettingsSlice(settings: PersistedState["settings"]): Promise<void> {
   return invoke("save_settings_slice", {
     settings: {
@@ -389,8 +423,18 @@ export async function orchestrationTick(): Promise<OrchestrationSpawnRequest[]> 
   }));
 }
 
+export type RunningTaskSnapshot = {
+  taskId: string;
+  milestoneId: string;
+  flightId: string;
+  sessionId: string;
+  agentConfigId: string;
+  startedAt: number;
+};
+
 export type OrchestratorSnapshot = {
   runningTaskIds: string[];
+  runningTasks: RunningTaskSnapshot[];
   activeFlightIds: string[];
   pausedAtMilestone: [string, string][];
 };
@@ -398,11 +442,27 @@ export type OrchestratorSnapshot = {
 export async function getOrchestrationState(): Promise<OrchestratorSnapshot> {
   const payload = await invoke<{
     running_task_ids: string[];
+    running_tasks: Array<{
+      task_id: string;
+      milestone_id: string;
+      flight_id: string;
+      session_id: string;
+      agent_config_id: string;
+      started_at: number;
+    }>;
     active_flight_ids: string[];
     paused_at_milestone: [string, string][];
   }>("get_orchestration_state");
   return {
     runningTaskIds: payload.running_task_ids,
+    runningTasks: payload.running_tasks.map(rt => ({
+      taskId: rt.task_id,
+      milestoneId: rt.milestone_id,
+      flightId: rt.flight_id,
+      sessionId: rt.session_id,
+      agentConfigId: rt.agent_config_id,
+      startedAt: rt.started_at,
+    })),
     activeFlightIds: payload.active_flight_ids,
     pausedAtMilestone: payload.paused_at_milestone,
   };
@@ -569,6 +629,20 @@ function fromRustTask(task: RustTask): Task {
     dependsOn: task.depends_on,
     sessionId: task.session_id ?? null,
     result: task.result ? fromRustTaskResult(task.result) : undefined,
+    reviewPacket: task.review_packet ? {
+      id: task.review_packet.id,
+      taskId: task.review_packet.task_id,
+      flightId: task.review_packet.flight_id,
+      milestoneId: task.review_packet.milestone_id,
+      requestedAt: task.review_packet.requested_at,
+      reviewType: task.review_packet.review_type,
+      summary: task.review_packet.summary,
+      diff: task.review_packet.diff ?? undefined,
+      command: task.review_packet.command ?? undefined,
+      filePaths: task.review_packet.file_paths,
+      agentId: task.review_packet.agent_id ?? undefined,
+      sessionId: task.review_packet.session_id ?? undefined,
+    } : undefined,
     createdAt: task.created_at,
     startedAt: task.started_at ?? undefined,
     completedAt: task.completed_at ?? undefined,
@@ -593,6 +667,20 @@ function toRustTask(task: Task): RustTask {
     depends_on: task.dependsOn,
     session_id: task.sessionId,
     result: task.result ? toRustTaskResult(task.result) : null,
+    review_packet: task.reviewPacket ? {
+      id: task.reviewPacket.id,
+      task_id: task.reviewPacket.taskId,
+      flight_id: task.reviewPacket.flightId,
+      milestone_id: task.reviewPacket.milestoneId,
+      requested_at: task.reviewPacket.requestedAt,
+      review_type: task.reviewPacket.reviewType,
+      summary: task.reviewPacket.summary,
+      diff: task.reviewPacket.diff ?? null,
+      command: task.reviewPacket.command ?? null,
+      file_paths: task.reviewPacket.filePaths,
+      agent_id: task.reviewPacket.agentId ?? null,
+      session_id: task.reviewPacket.sessionId ?? null,
+    } : null,
     created_at: task.createdAt,
     started_at: task.startedAt ?? null,
     completed_at: task.completedAt ?? null,
