@@ -389,8 +389,18 @@ export async function orchestrationTick(): Promise<OrchestrationSpawnRequest[]> 
   }));
 }
 
+export type RunningTaskSnapshot = {
+  taskId: string;
+  milestoneId: string;
+  flightId: string;
+  sessionId: string;
+  agentConfigId: string;
+  startedAt: number;
+};
+
 export type OrchestratorSnapshot = {
   runningTaskIds: string[];
+  runningTasks: RunningTaskSnapshot[];
   activeFlightIds: string[];
   pausedAtMilestone: [string, string][];
 };
@@ -398,11 +408,27 @@ export type OrchestratorSnapshot = {
 export async function getOrchestrationState(): Promise<OrchestratorSnapshot> {
   const payload = await invoke<{
     running_task_ids: string[];
+    running_tasks: Array<{
+      task_id: string;
+      milestone_id: string;
+      flight_id: string;
+      session_id: string;
+      agent_config_id: string;
+      started_at: number;
+    }>;
     active_flight_ids: string[];
     paused_at_milestone: [string, string][];
   }>("get_orchestration_state");
   return {
     runningTaskIds: payload.running_task_ids,
+    runningTasks: payload.running_tasks.map(rt => ({
+      taskId: rt.task_id,
+      milestoneId: rt.milestone_id,
+      flightId: rt.flight_id,
+      sessionId: rt.session_id,
+      agentConfigId: rt.agent_config_id,
+      startedAt: rt.started_at,
+    })),
     activeFlightIds: payload.active_flight_ids,
     pausedAtMilestone: payload.paused_at_milestone,
   };
