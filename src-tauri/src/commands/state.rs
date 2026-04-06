@@ -1,5 +1,5 @@
 use crate::core::storage::{self, PersistedState, PersistedUiState};
-use crate::core::flight::Flight;
+use crate::core::flight::{Flight, Issue};
 use crate::core::agent_config::AgentConfig;
 use crate::core::orchestrator::OrchestratorSettings;
 
@@ -31,4 +31,9 @@ pub fn save_settings_slice(settings: OrchestratorSettings) -> Result<(), String>
 #[tauri::command]
 pub fn save_ui_slice(ui: PersistedUiState) -> Result<(), String> {
     storage::save_ui(ui)
+}
+
+#[tauri::command]
+pub fn save_issues_slice(issues: Vec<Issue>) -> Result<(), String> {
+    storage::save_issues(issues)
 }

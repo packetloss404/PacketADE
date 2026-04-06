@@ -6,7 +6,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use tracing::{info, warn};
 
 use super::agent_config::AgentConfig;
-use super::flight::Flight;
+use super::flight::{Flight, ApprovalDecision, Issue};
 use super::orchestrator::OrchestratorSettings;
 use super::shared::home_dir;
 
@@ -28,6 +28,10 @@ pub struct PersistedState {
     pub agents: Vec<AgentConfig>,
     pub settings: OrchestratorSettings,
     pub ui: PersistedUiState,
+    #[serde(default)]
+    pub issues: Vec<Issue>,
+    #[serde(default)]
+    pub approval_log: Vec<ApprovalDecision>,
 }
 
 impl Default for PersistedState {
@@ -38,6 +42,8 @@ impl Default for PersistedState {
             agents: Vec::new(),
             settings: OrchestratorSettings::default(),
             ui: PersistedUiState::default(),
+            issues: Vec::new(),
+            approval_log: Vec::new(),
         }
     }
 }
@@ -152,7 +158,25 @@ fn load_legacy_state() -> PersistedState {
         agents: load("agents.json"),
         settings: load("settings.json"),
         ui: PersistedUiState::default(),
+        issues: Vec::new(),
+        approval_log: Vec::new(),
     }
+}
+
+pub fn save_issues(issues: Vec<Issue>) -> Result<(), String> {
+    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut state = load_state();
+    state.issues = issues;
+    state.version += 1;
+    save_state_inner(&state)
+}
+
+pub fn save_approval(decision: ApprovalDecision) -> Result<(), String> {
+    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut state = load_state();
+    state.approval_log.push(decision);
+    state.version += 1;
+    save_state_inner(&state)
 }
 
 fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {

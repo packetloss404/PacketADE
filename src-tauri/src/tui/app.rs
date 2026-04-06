@@ -323,6 +323,8 @@ impl App {
                 }.to_string()),
                 theme: Some(self.theme.name.clone()),
             },
+            issues: Vec::new(),
+            approval_log: Vec::new(),
         })
     }
 
@@ -2323,6 +2325,7 @@ fn blank_task(flight_id: &str, milestone_id: &str, order: usize, agent_config_id
         depends_on: Vec::new(),
         session_id: None,
         result: None,
+        review_packet: None,
         created_at: now(),
         started_at: None,
         completed_at: None,

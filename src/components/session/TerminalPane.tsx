@@ -9,9 +9,6 @@ import {
   X,
   RotateCcw,
   Plus,
-  ShieldCheck,
-  ShieldX,
-  XCircle,
   FileEdit,
   Brain,
   TerminalSquare,
@@ -27,6 +24,8 @@ import {
 } from "@/lib/notifications";
 import { ClaudeStatusBar } from "@/components/session/ClaudeStatusBar";
 import { CodexStatusBar } from "@/components/session/CodexStatusBar";
+import { ApprovalPrompt } from "@/components/session/ApprovalPrompt";
+import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPaneProps {
@@ -460,15 +459,31 @@ export function TerminalPane({
     await startSession();
   }, [startSession, stopDurationTimer]);
 
+  // Find the orchestration taskId for this session (if any)
+  const findTaskIdForSession = useCallback((): string | null => {
+    const sid = sessionIdRef.current;
+    if (!sid) return null;
+    const runningTasks = useOrchestrationStore.getState().runningTasks;
+    for (const [taskId, rt] of runningTasks) {
+      if (rt.sessionId === sid) return taskId;
+    }
+    return null;
+  }, []);
+
   // Quick action handlers
   const handleApprove = useCallback(() => {
     const sid = sessionIdRef.current;
     if (sid) {
       writePty(sid, "y\n").catch(() => {});
     }
+    // Resolve approval in orchestration store if task is tracked
+    const taskId = findTaskIdForSession();
+    if (taskId) {
+      useOrchestrationStore.getState().onTaskApprovalResolved(taskId);
+    }
     setShowApproval(false);
     detectorResult.clearApproval();
-  }, [detectorResult]);
+  }, [detectorResult, findTaskIdForSession]);
 
   const handleDeny = useCallback(() => {
     const sid = sessionIdRef.current;
@@ -564,32 +579,15 @@ export function TerminalPane({
 
         {/* Quick Actions overlay — shown when approval needed */}
         {showApproval && alive && (
-          <div className="absolute bottom-0 left-0 right-0 flex items-center gap-2 px-3 py-1.5 bg-accent-amber/10 border-t border-accent-amber/30 backdrop-blur-sm">
-            <ShieldCheck size={12} className="text-accent-amber flex-shrink-0" />
-            <span className="text-[11px] text-accent-amber font-medium flex-1">
-              Approval needed
-            </span>
-            <button
-              onClick={handleApprove}
-              className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded bg-accent-green/20 text-accent-green hover:bg-accent-green/30 transition-colors"
-            >
-              <ShieldCheck size={10} />
-              Allow (y)
-            </button>
-            <button
-              onClick={handleDeny}
-              className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded bg-accent-red/20 text-accent-red hover:bg-accent-red/30 transition-colors"
-            >
-              <ShieldX size={10} />
-              Deny (n)
-            </button>
-            <button
-              onClick={handleAbort}
-              className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-medium rounded bg-text-muted/20 text-text-secondary hover:bg-text-muted/30 transition-colors"
-            >
-              <XCircle size={10} />
-              Abort
-            </button>
+          <div className="absolute bottom-0 left-0 right-0 px-3 py-1.5 bg-accent-amber/5 border-t border-accent-amber/30 backdrop-blur-sm">
+            <ApprovalPrompt
+              toolName={activityInfo.tool || "Agent"}
+              description={activityInfo.file ? `Operating on ${activityInfo.file}` : "Waiting for approval"}
+              filePath={activityInfo.file || undefined}
+              onApprove={handleApprove}
+              onDeny={handleDeny}
+              onAbort={handleAbort}
+            />
           </div>
         )}
       </div>

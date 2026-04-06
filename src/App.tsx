@@ -12,6 +12,7 @@ import { MemoryView } from "@/components/views/MemoryView";
 import { AnalyticsView } from "@/components/views/AnalyticsView";
 import { DeployView } from "@/components/views/DeployView";
 import { CostDashboardView } from "@/components/views/CostDashboardView";
+import { ReviewQueueView } from "@/components/views/ReviewQueueView";
 import { FlightsView } from "@/components/views/FlightsView";
 import { FlightDeckView } from "@/components/views/FlightDeckView";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
@@ -244,6 +245,8 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <DeployView />;
     case "cost":
       return <CostDashboardView />;
+    case "review_queue":
+      return <ReviewQueueView />;
   }
 
   // Module views — dynamic lookup

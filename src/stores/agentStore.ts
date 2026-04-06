@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { loadFromStorage, saveToStorage } from "@/lib/storage";
+import { loadFromStorage, removeFromStorage } from "@/lib/storage";
 import { loadPersistedState, saveAgentsSlice } from "@/lib/tauri";
 import type { AgentConfig } from "@/types/agent";
 import { CLAUDE_CODE_CONFIG } from "@/agents/claude-code";
@@ -32,48 +32,17 @@ interface AgentStore extends AgentStoreState {
   hydrateFromBackend: (persisted?: Awaited<ReturnType<typeof loadPersistedState>>) => Promise<void>;
 }
 
+const OVERRIDES_KEY = "packetcode:agent-overrides";
+
 function loadState(): AgentStoreState {
-  const saved = loadFromStorage<{ customAgents?: AgentConfig[] }>(STORAGE_KEY, {});
-  const customAgents = (saved.customAgents || []).filter((a) => !a.isBuiltin);
-
-  // Merge built-in agents with any saved overrides
-  const savedBuiltinOverrides = loadFromStorage<Record<string, Partial<AgentConfig>>>(
-    "packetcode:agent-overrides",
-    {},
-  );
-
-  const builtins = BUILTIN_AGENTS.map((b) => ({
-    ...b,
-    ...(savedBuiltinOverrides[b.id] || {}),
-    id: b.id,
-    isBuiltin: true,
-  }));
-
+  // Backend is the sole source of truth; real data arrives via hydrateFromBackend.
   return {
-    agents: [...builtins, ...customAgents],
+    agents: [...BUILTIN_AGENTS],
     detecting: false,
   };
 }
 
 function saveState(agents: AgentConfig[]) {
-  const customAgents = agents.filter((a) => !a.isBuiltin);
-  saveToStorage(STORAGE_KEY, { customAgents });
-
-  // Save built-in overrides (only non-default fields)
-  const overrides: Record<string, Partial<AgentConfig>> = {};
-  for (const agent of agents) {
-    if (!agent.isBuiltin) continue;
-    const builtin = BUILTIN_AGENTS.find((b) => b.id === agent.id);
-    if (!builtin) continue;
-    const diff: Partial<AgentConfig> = {};
-    if (JSON.stringify(agent.defaultArgs) !== JSON.stringify(builtin.defaultArgs)) {
-      diff.defaultArgs = agent.defaultArgs;
-    }
-    if (Object.keys(diff).length > 0) {
-      overrides[agent.id] = diff;
-    }
-  }
-  saveToStorage("packetcode:agent-overrides", overrides);
   void syncAgentsToBackend(agents);
 }
 
@@ -176,10 +145,60 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   hydrateFromBackend: async (persisted) => {
     try {
       const state = persisted ?? (await loadPersistedState());
-      saveState(state.agents);
-      set({ agents: state.agents });
+      let agents = state.agents;
+
+      // One-time migration: if the backend has no custom agents, import from localStorage
+      const hasCustomFromBackend = agents.some((a) => !a.isBuiltin);
+      if (!hasCustomFromBackend) {
+        const legacySaved = loadFromStorage<{ customAgents?: AgentConfig[] }>(STORAGE_KEY, {});
+        const legacyCustom = (legacySaved.customAgents || []).filter((a) => !a.isBuiltin);
+
+        // Also check for built-in overrides in localStorage
+        const legacyOverrides = loadFromStorage<Record<string, Partial<AgentConfig>>>(
+          OVERRIDES_KEY,
+          {},
+        );
+
+        if (legacyCustom.length > 0 || Object.keys(legacyOverrides).length > 0) {
+          // Merge built-in overrides into backend agents
+          const mergedBuiltins = agents
+            .filter((a) => a.isBuiltin)
+            .map((b) => ({
+              ...b,
+              ...(legacyOverrides[b.id] || {}),
+              id: b.id,
+              isBuiltin: true as const,
+            }));
+          const nonBuiltins = agents.filter((a) => !a.isBuiltin);
+          agents = [...mergedBuiltins, ...nonBuiltins, ...legacyCustom];
+
+          // Persist migrated data to backend
+          await saveAgentsSlice(agents);
+          // Remove legacy localStorage copies
+          removeFromStorage(STORAGE_KEY);
+          removeFromStorage(OVERRIDES_KEY);
+        }
+      }
+
+      set({ agents });
     } catch {
-      // Keep localStorage-backed initial state when the backend is unavailable.
+      // Fallback: try localStorage when backend is unavailable (dev mode)
+      const legacySaved = loadFromStorage<{ customAgents?: AgentConfig[] }>(STORAGE_KEY, {});
+      const legacyCustom = (legacySaved.customAgents || []).filter((a) => !a.isBuiltin);
+      const legacyOverrides = loadFromStorage<Record<string, Partial<AgentConfig>>>(
+        OVERRIDES_KEY,
+        {},
+      );
+
+      if (legacyCustom.length > 0 || Object.keys(legacyOverrides).length > 0) {
+        const builtins = BUILTIN_AGENTS.map((b) => ({
+          ...b,
+          ...(legacyOverrides[b.id] || {}),
+          id: b.id,
+          isBuiltin: true as const,
+        }));
+        set({ agents: [...builtins, ...legacyCustom] });
+      }
     }
   },
 }));

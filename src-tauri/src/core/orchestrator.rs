@@ -459,6 +459,7 @@ mod tests {
             depends_on: Vec::new(),
             session_id: None,
             result: None,
+            review_packet: None,
             created_at: 0,
             started_at: None,
             completed_at: None,
