@@ -210,7 +210,7 @@ export function SpecToFlightModal({ onClose }: SpecToFlightModalProps) {
       await launchFlight(flight.id);
       setActiveView("flight_deck");
     } else {
-      setActiveView("flights");
+      setActiveView("mission");
     }
 
     onClose();

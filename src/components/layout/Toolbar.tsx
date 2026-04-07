@@ -18,7 +18,6 @@ const TABS: { key: AppView; label: string }[] = [
   { key: "codex", label: "Codex" },
   { key: "workspace", label: "Workspaces" },
   { key: "issues", label: "Issues" },
-  { key: "flights", label: "Flights" },
   { key: "history", label: "History" },
 ];
 
@@ -184,10 +183,8 @@ export function Toolbar() {
                 onClick={() => { setActiveView("github"); setShowToolsMenu(false); }} />
               <DropdownItem icon={<Brain size={12} className="text-accent-purple" />} label="Memory"
                 onClick={() => { setActiveView("memory"); setShowToolsMenu(false); }} />
-              <DropdownItem icon={<BarChart3 size={12} className="text-accent-green" />} label="Analytics"
+              <DropdownItem icon={<BarChart3 size={12} className="text-accent-green" />} label="Cost & Usage"
                 onClick={() => { setActiveView("analytics"); setShowToolsMenu(false); }} />
-              <DropdownItem icon={<DollarSign size={12} className="text-accent-amber" />} label="Cost Dashboard"
-                onClick={() => { setActiveView("cost"); setShowToolsMenu(false); }} />
               <DropdownItem icon={<ClipboardList size={12} className="text-accent-green" />} label="Import Spec"
                 onClick={() => { setShowSpecImport(true); setShowToolsMenu(false); }} />
               <div className="h-px bg-bg-border my-0.5" />
@@ -284,10 +281,10 @@ export function Toolbar() {
               ? "bg-bg-elevated text-accent-green"
               : "text-text-muted hover:text-accent-green"
           }`}
-          title="Mission Workspace"
+          title="Flight"
         >
           <Target size={12} />
-          <span>Mission</span>
+          <span>Flight</span>
         </button>
 
         {/* Flight Deck */}
@@ -298,10 +295,10 @@ export function Toolbar() {
               ? "bg-bg-elevated text-accent-green"
               : "text-text-muted hover:text-accent-green"
           }`}
-          title="Flight Deck"
+          title="Flight Ops"
         >
           <Radio size={11} />
-          <span>Flight Deck</span>
+          <span>Flight Ops</span>
           {attentionCount > 0 && (
             <span className="ml-0.5 px-1.5 py-0 text-[9px] font-bold rounded-full bg-accent-amber/20 text-accent-amber">
               {attentionCount}
@@ -337,15 +334,15 @@ export function Toolbar() {
           {theme === "dark" ? <Sun size={12} /> : <Moon size={12} />}
         </button>
 
-        {/* Cost Dashboard */}
+        {/* Cost & Usage */}
         <button
-          onClick={() => setActiveView("cost")}
+          onClick={() => setActiveView("analytics")}
           className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
-            activeView === "cost"
+            activeView === "analytics"
               ? "bg-bg-elevated text-accent-amber"
               : "text-text-muted hover:text-accent-amber"
           }`}
-          title="Cost Dashboard"
+          title="Cost & Usage"
         >
           <DollarSign size={11} />
         </button>

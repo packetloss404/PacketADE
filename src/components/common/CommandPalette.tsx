@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Search, MessageSquare, Ticket, Clock, Wrench, Github, Brain, BarChart3, Rocket, Zap, DollarSign } from "lucide-react";
+import { Search, MessageSquare, Ticket, Clock, Wrench, Github, Brain, BarChart3, Rocket, Zap } from "lucide-react";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModulesSorted } from "@/modules/registry";
@@ -92,11 +92,11 @@ export function CommandPalette() {
       },
       {
         id: "analytics",
-        label: "Analytics",
-        description: "Session analytics dashboard",
+        label: "Cost & Usage",
+        description: "Cost, tokens, and session analytics",
         icon: <BarChart3 size={14} className="text-accent-green" />,
         action: () => setActiveView("analytics"),
-        keywords: ["stats", "usage", "metrics"],
+        keywords: ["stats", "usage", "metrics", "cost", "money", "spending", "budget", "tokens"],
       },
       {
         id: "deploy",
@@ -105,14 +105,6 @@ export function CommandPalette() {
         icon: <Rocket size={14} className="text-accent-amber" />,
         action: () => setActiveView("deploy"),
         keywords: ["ship", "release", "ci", "cd"],
-      },
-      {
-        id: "cost",
-        label: "Cost Dashboard",
-        description: "Track API usage costs",
-        icon: <DollarSign size={14} className="text-accent-amber" />,
-        action: () => setActiveView("cost"),
-        keywords: ["money", "spending", "budget", "usage"],
       },
       {
         id: "settings",
