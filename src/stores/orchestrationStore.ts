@@ -16,6 +16,11 @@ import {
 import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
+import {
+  notifyApprovalNeeded as notifyApprovalNeededDesktop,
+  notifyFlightFailed as notifyFlightFailedDesktop,
+  notifyTaskComplete as notifyTaskCompleteDesktop,
+} from "@/lib/notifications";
 // Flight types used only for type reference in approval fallback paths
 
 // === Types ===
@@ -144,6 +149,18 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
   },
 
   onTaskApprovalNeeded: async (taskId) => {
+    // Fire desktop notification using current task/session info before hydration
+    {
+      const rt = get().runningTasks.get(taskId);
+      if (rt) {
+        const flight = useFlightStore.getState().flights.find((f) => f.id === rt.flightId);
+        const task = flight?.milestones
+          .flatMap((m) => m.tasks)
+          .find((t) => t.id === taskId);
+        const name = task?.title ?? flight?.title ?? "Task";
+        void notifyApprovalNeededDesktop(rt.sessionId ?? taskId, name);
+      }
+    }
     try {
       const persisted = await notifyApprovalNeeded(taskId);
       await useFlightStore.getState().hydrateFromBackend(persisted);
@@ -379,11 +396,38 @@ export function setupExitListener() {
           const success =
             event.payload.success ?? (!event.payload.killed && tab?.status !== "error");
 
+          // Capture task + flight info for notifications before hydration
+          const flightStoreBefore = useFlightStore.getState();
+          const flightBefore = flightStoreBefore.flights.find((f) => f.id === rt.flightId);
+          const taskBefore = flightBefore?.milestones
+            .flatMap((m) => m.tasks)
+            .find((t) => t.id === taskId);
+          const taskName = taskBefore?.title ?? "Task";
+          const flightName = flightBefore?.title ?? "Flight";
+          const flightStatusBefore = flightBefore?.status;
+
+          // Fire task-complete notification on success
+          if (success) {
+            void notifyTaskCompleteDesktop(taskId, taskName);
+          }
+
           // Notify the Rust backend — this is the single source of truth
           try {
             const persisted = await notifyTaskComplete(taskId, success);
             await useFlightStore.getState().hydrateFromBackend(persisted);
             await store.syncFromBackend();
+
+            // Detect flight failure transition post-hydration
+            const flightAfter = useFlightStore
+              .getState()
+              .flights.find((f) => f.id === rt.flightId);
+            if (
+              flightAfter &&
+              flightAfter.status === "failed" &&
+              flightStatusBefore !== "failed"
+            ) {
+              void notifyFlightFailedDesktop(flightName);
+            }
           } catch {
             // If backend is unavailable, fall back to local cleanup only
             useOrchestrationStore.setState((s) => {

@@ -1,21 +1,8 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, lazy, Suspense } from "react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { PaneContainer } from "@/components/layout/PaneContainer";
 import { StatusBar } from "@/components/layout/StatusBar";
-import { IssueBoard } from "@/components/issues/IssueBoard";
-import { HistoryView } from "@/components/views/HistoryView";
-import { ToolsView } from "@/components/views/ToolsView";
-import { InsightsView } from "@/components/views/InsightsView";
-import { GitHubView } from "@/components/views/GitHubView";
-import { MemoryView } from "@/components/views/MemoryView";
-import { AnalyticsView } from "@/components/views/AnalyticsView";
-import { DeployView } from "@/components/views/DeployView";
-import { CostDashboardView } from "@/components/views/CostDashboardView";
-import { ReviewQueueView } from "@/components/views/ReviewQueueView";
-import { WorkspaceView } from "@/components/views/WorkspaceView";
-import { FlightsView } from "@/components/views/FlightsView";
-import { FlightDeckView } from "@/components/views/FlightDeckView";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { FileExplorer } from "@/components/explorer/FileExplorer";
@@ -27,6 +14,30 @@ import { getModule } from "@/modules/registry";
 import { useStatusLinePoller, useCodexStatusLinePoller } from "@/hooks/useStatusLine";
 import { getCwd } from "@/lib/tauri";
 import type { AppView } from "@/stores/appStore";
+
+// Lazy-loaded views — split into separate chunks to reduce initial bundle size
+const IssueBoard = lazy(() => import("@/components/issues/IssueBoard").then((m) => ({ default: m.IssueBoard })));
+const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
+const ToolsView = lazy(() => import("@/components/views/ToolsView").then((m) => ({ default: m.ToolsView })));
+const InsightsView = lazy(() => import("@/components/views/InsightsView").then((m) => ({ default: m.InsightsView })));
+const GitHubView = lazy(() => import("@/components/views/GitHubView").then((m) => ({ default: m.GitHubView })));
+const MemoryView = lazy(() => import("@/components/views/MemoryView").then((m) => ({ default: m.MemoryView })));
+const AnalyticsView = lazy(() => import("@/components/views/AnalyticsView").then((m) => ({ default: m.AnalyticsView })));
+const DeployView = lazy(() => import("@/components/views/DeployView").then((m) => ({ default: m.DeployView })));
+const CostDashboardView = lazy(() => import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })));
+const ReviewQueueView = lazy(() => import("@/components/views/ReviewQueueView").then((m) => ({ default: m.ReviewQueueView })));
+const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })));
+const FlightsView = lazy(() => import("@/components/views/FlightsView").then((m) => ({ default: m.FlightsView })));
+const FlightDeckView = lazy(() => import("@/components/views/FlightDeckView").then((m) => ({ default: m.FlightDeckView })));
+const MissionWorkspaceView = lazy(() => import("@/components/views/MissionWorkspaceView").then((m) => ({ default: m.MissionWorkspaceView })));
+
+function ViewLoader() {
+  return (
+    <div className="flex flex-1 items-center justify-center text-xs text-text-secondary">
+      Loading…
+    </div>
+  );
+}
 
 export default function App() {
   const addPane = useLayoutStore((s) => s.addPane);
@@ -218,7 +229,9 @@ export default function App() {
                 <PaneContainer />
               </div>
               {/* Other views render conditionally */}
-              <OtherViewContent activeView={activeView} />
+              <Suspense fallback={<ViewLoader />}>
+                <OtherViewContent activeView={activeView} />
+              </Suspense>
             </ErrorBoundary>
           </div>
         </div>
@@ -261,6 +274,8 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <ReviewQueueView />;
     case "workspace":
       return <WorkspaceView />;
+    case "mission":
+      return <MissionWorkspaceView />;
   }
 
   // Module views — dynamic lookup
