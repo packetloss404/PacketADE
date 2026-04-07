@@ -5,6 +5,7 @@ import { computeGridLayout } from "@/lib/gridLayout";
 interface WorkspaceStore {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
+  keepTerminalsAlive: boolean;
 
   createWorkspace: (name: string, agents: WorkspaceAgentSlot[], projectPath: string) => string;
   archiveWorkspace: (id: string) => void;
@@ -12,8 +13,11 @@ interface WorkspaceStore {
   setActiveWorkspace: (id: string | null) => void;
   getActiveWorkspace: () => Workspace | undefined;
   setPaneSession: (workspaceId: string, paneId: string, sessionId: string | null) => void;
+  setKeepTerminalsAlive: (keep: boolean) => void;
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
+
+const KEEP_ALIVE_KEY = "packetcode:workspace-keep-alive";
 
 let wsCounter = 0;
 
@@ -38,6 +42,14 @@ function syncToBackend(workspaces: Workspace[]) {
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaces: [],
   activeWorkspaceId: null,
+  keepTerminalsAlive: typeof localStorage !== "undefined" && localStorage.getItem(KEEP_ALIVE_KEY) === "true",
+
+  setKeepTerminalsAlive: (keep) => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(KEEP_ALIVE_KEY, String(keep));
+    }
+    set({ keepTerminalsAlive: keep });
+  },
 
   createWorkspace: (name, agents, projectPath) => {
     const id = crypto.randomUUID();
