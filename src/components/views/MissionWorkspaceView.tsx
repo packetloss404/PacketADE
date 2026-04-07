@@ -1,7 +1,8 @@
-import { useMemo, useState, useEffect } from "react";
-import { Target, Clock, ListChecks, Users, Flag, Activity, ChevronDown } from "lucide-react";
+import { useMemo, useState, useEffect, useRef } from "react";
+import { Target, Clock, ListChecks, Users, Flag, Activity, ChevronDown, MoreVertical, Trash2, Play, Plus, X } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
 import { useIssueStore } from "@/stores/issueStore";
+import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useActivityStore } from "@/stores/activityStore";
 import { relativeTime } from "@/lib/time";
@@ -11,7 +12,11 @@ import {
   ISSUE_STATUS_COLORS,
   ISSUE_STATUS_LABELS,
 } from "@/lib/flight-colors";
-import type { Flight, Milestone, Task } from "@/types/flight";
+import type { Flight, Milestone, Task, FlightStatus, FlightPriority } from "@/types/flight";
+import type { IssueStatus } from "@/stores/issueStore";
+
+const ALL_STATUSES: FlightStatus[] = ["draft", "planning", "ready", "active", "paused", "review", "done", "failed", "cancelled"];
+const ALL_PRIORITIES: FlightPriority[] = ["low", "medium", "high", "critical"];
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -72,11 +77,13 @@ export function MissionWorkspaceView() {
           setSelectedId(id);
           setActiveFlight(id);
         }}
+        onDeleted={() => setSelectedId(null)}
       />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left column — milestones + issues */}
         <div className="flex flex-col flex-1 overflow-y-auto border-r border-bg-border">
+          <LaunchSessionPanel flight={flight} />
           <MilestonesPanel flight={flight} />
           <LinkedIssuesPanel flight={flight} />
         </div>
@@ -100,13 +107,40 @@ function MissionHeader({
   flight,
   allFlights,
   onSelect,
+  onDeleted,
 }: {
   flight: Flight;
   allFlights: Flight[];
   onSelect: (id: string) => void;
+  onDeleted: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const sc = FLIGHT_STATUS_CONFIG[flight.status];
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingObjective, setEditingObjective] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(flight.title);
+  const [objectiveDraft, setObjectiveDraft] = useState(flight.objective);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const updateFlight = useFlightStore((s) => s.updateFlight);
+  const deleteFlight = useFlightStore((s) => s.deleteFlight);
+
+  useEffect(() => {
+    setTitleDraft(flight.title);
+    setObjectiveDraft(flight.objective);
+  }, [flight.id, flight.title, flight.objective]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [menuOpen]);
+
   const pc = FLIGHT_PRIORITY_COLORS[flight.priority];
 
   const progress = useMemo(() => {
@@ -117,20 +151,40 @@ function MissionHeader({
     };
   }, [flight]);
 
+  function commitTitle() {
+    setEditingTitle(false);
+    if (titleDraft !== flight.title) {
+      updateFlight(flight.id, { title: titleDraft });
+    }
+  }
+  function commitObjective() {
+    setEditingObjective(false);
+    if (objectiveDraft !== flight.objective) {
+      updateFlight(flight.id, { objective: objectiveDraft });
+    }
+  }
+  function handleDelete() {
+    if (!window.confirm(`Delete flight "${flight.title}"? This cannot be undone.`)) return;
+    deleteFlight(flight.id);
+    setMenuOpen(false);
+    onDeleted();
+  }
+
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-bg-border bg-bg-secondary">
-      <Target size={16} className="text-accent-green shrink-0" />
-      <div className="flex flex-col min-w-0 flex-1">
+    <div className="flex items-start gap-3 px-4 py-3 border-b border-bg-border bg-bg-secondary">
+      <Target size={16} className="text-accent-green shrink-0 mt-0.5" />
+      <div className="flex flex-col min-w-0 flex-1 gap-1">
         <div className="flex items-center gap-2">
+          {/* Flight picker */}
           <div className="relative">
             <button
-              onClick={() => setOpen(!open)}
-              className="flex items-center gap-1 text-sm font-semibold text-text-primary hover:text-accent-green transition-colors"
+              onClick={() => setPickerOpen(!pickerOpen)}
+              className="flex items-center gap-1 text-text-muted hover:text-accent-green transition-colors"
+              title="Switch flight"
             >
-              <span className="truncate max-w-[360px]">{flight.title || "Untitled Mission"}</span>
-              <ChevronDown size={12} className="text-text-muted" />
+              <ChevronDown size={12} />
             </button>
-            {open && (
+            {pickerOpen && (
               <div className="absolute top-full left-0 mt-1 w-72 max-h-80 overflow-y-auto bg-bg-elevated border border-bg-border rounded shadow-xl z-30 py-1">
                 {allFlights.map((f) => {
                   const fsc = FLIGHT_STATUS_CONFIG[f.status];
@@ -139,7 +193,7 @@ function MissionHeader({
                       key={f.id}
                       onClick={() => {
                         onSelect(f.id);
-                        setOpen(false);
+                        setPickerOpen(false);
                       }}
                       className={`flex items-center gap-2 w-full text-left px-2 py-1.5 text-[11px] hover:bg-bg-hover transition-colors ${
                         f.id === flight.id ? "text-accent-green" : "text-text-secondary"
@@ -153,27 +207,253 @@ function MissionHeader({
               </div>
             )}
           </div>
-          <span
-            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] ${sc.bg} ${sc.text}`}
+
+          {/* Editable title */}
+          {editingTitle ? (
+            <input
+              autoFocus
+              type="text"
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitTitle();
+                if (e.key === "Escape") { setTitleDraft(flight.title); setEditingTitle(false); }
+              }}
+              className="flex-1 text-sm font-semibold text-text-primary bg-transparent border-b border-accent-green focus:outline-none"
+              placeholder="Flight title"
+            />
+          ) : (
+            <button
+              onClick={() => setEditingTitle(true)}
+              className="text-sm font-semibold text-text-primary hover:text-accent-green transition-colors truncate max-w-[360px] text-left"
+              title="Click to edit"
+            >
+              {flight.title || "Untitled Mission"}
+            </button>
+          )}
+
+          {/* Status selector */}
+          <select
+            value={flight.status}
+            onChange={(e) => updateFlight(flight.id, { status: e.target.value as FlightStatus })}
+            className="bg-bg-primary text-[10px] text-text-secondary border border-bg-border rounded px-1.5 py-0.5 outline-none focus:border-accent-green"
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
-            {sc.label}
-          </span>
-          <span className={`inline-flex items-center gap-1 text-[10px] ${pc}`}>
+            {ALL_STATUSES.map((s) => (
+              <option key={s} value={s}>{FLIGHT_STATUS_CONFIG[s].label}</option>
+            ))}
+          </select>
+
+          {/* Priority selector */}
+          <select
+            value={flight.priority}
+            onChange={(e) => updateFlight(flight.id, { priority: e.target.value as FlightPriority })}
+            className={`bg-bg-primary text-[10px] border border-bg-border rounded px-1.5 py-0.5 outline-none focus:border-accent-green ${pc}`}
+          >
+            {ALL_PRIORITIES.map((p) => (
+              <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+            ))}
+          </select>
+
+          <span className="inline-flex items-center gap-1 text-[10px] text-text-muted">
             <Flag size={10} />
             {flight.priority}
           </span>
         </div>
-        {flight.objective && (
-          <p className="text-[11px] text-text-secondary truncate mt-0.5">{flight.objective}</p>
+
+        {/* Editable objective */}
+        {editingObjective ? (
+          <textarea
+            autoFocus
+            value={objectiveDraft}
+            onChange={(e) => setObjectiveDraft(e.target.value)}
+            onBlur={commitObjective}
+            rows={2}
+            className="w-full text-[11px] text-text-secondary bg-transparent border border-accent-green rounded px-1 py-0.5 resize-none focus:outline-none"
+            placeholder="Objective (optional)"
+          />
+        ) : (
+          <button
+            onClick={() => setEditingObjective(true)}
+            className="text-[11px] text-text-secondary hover:text-text-primary truncate text-left"
+            title="Click to edit"
+          >
+            {flight.objective || <span className="text-text-muted italic">Add an objective…</span>}
+          </button>
         )}
       </div>
-      <div className="flex flex-col items-end gap-0.5 shrink-0">
-        <span className="text-[10px] text-text-muted">
-          {progress.done} / {progress.total} tasks done
-        </span>
-        <span className="text-[10px] text-text-muted">Updated {relativeTime(flight.updatedAt)}</span>
+
+      <div className="flex items-start gap-2 shrink-0">
+        <div className="flex flex-col items-end gap-0.5">
+          <span className="text-[10px] text-text-muted">
+            {progress.done} / {progress.total} tasks done
+          </span>
+          <span className="text-[10px] text-text-muted">Updated {relativeTime(flight.updatedAt)}</span>
+        </div>
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="p-1 text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+            title="More actions"
+          >
+            <MoreVertical size={12} />
+          </button>
+          {menuOpen && (
+            <div className="absolute top-full right-0 mt-1 w-44 bg-bg-elevated border border-bg-border rounded shadow-xl z-30 py-1">
+              <button
+                onClick={handleDelete}
+                className="flex items-center gap-2 w-full text-left px-2 py-1.5 text-[11px] text-accent-red hover:bg-accent-red/10 transition-colors"
+              >
+                <Trash2 size={12} />
+                Delete flight
+              </button>
+            </div>
+          )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Launch Session panel
+// ---------------------------------------------------------------------------
+
+function LaunchSessionPanel({ flight }: { flight: Flight }) {
+  const issues = useIssueStore((s) => s.issues);
+  const linkSessionToFlight = useFlightStore((s) => s.linkSessionToFlight);
+
+  function handleLaunch(cli: "claude" | "codex") {
+    const linkedIssues = issues.filter((i) => flight.issueIds.includes(i.id));
+    const lines: string[] = [];
+    lines.push(`Work on this flight:`);
+    lines.push(``);
+    lines.push(`## ${flight.title}`);
+    if (flight.objective) {
+      lines.push(``);
+      lines.push(flight.objective);
+    }
+    lines.push(``);
+    lines.push(`Priority: ${flight.priority}`);
+
+    if (linkedIssues.length > 0) {
+      lines.push(``);
+      lines.push(`### Linked Issues (${linkedIssues.length})`);
+      for (const issue of linkedIssues) {
+        const statusStr = ISSUE_STATUS_LABELS[issue.status];
+        lines.push(``);
+        lines.push(`- **${issue.ticketId}: ${issue.title}** [${statusStr}]`);
+        if (issue.description) {
+          lines.push(`  ${issue.description}`);
+        }
+        const criteria = issue.acceptanceCriteria;
+        if (criteria && criteria.length > 0) {
+          for (const c of criteria) {
+            lines.push(`  - [${c.checked ? "x" : " "}] ${c.text}`);
+          }
+        }
+      }
+    }
+
+    const prompt = lines.join("\n");
+
+    useAppStore.getState().setActiveView(cli);
+    const paneId = useLayoutStore.getState().addPane({ cliCommand: cli });
+
+    const unsub = useLayoutStore.subscribe((state) => {
+      const pane = state.panes.find((p) => p.id === paneId);
+      if (pane?.sessionId) {
+        linkSessionToFlight(flight.id, pane.sessionId);
+        unsub();
+      }
+    });
+    setTimeout(() => unsub(), 30_000);
+
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("packetcode:issue-prompt", { detail: { prompt } })
+      );
+    }, 1500);
+  }
+
+  return (
+    <div className="px-4 py-3 border-b border-bg-border">
+      <div className="flex items-center gap-2 mb-2">
+        <Play size={12} className="text-accent-green" />
+        <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">
+          Launch Session
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => handleLaunch("claude")}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-accent-green bg-accent-green/10 border border-accent-green/20 rounded hover:bg-accent-green/20 transition-colors"
+        >
+          <Play size={11} />
+          Claude
+        </button>
+        <button
+          onClick={() => handleLaunch("codex")}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-accent-blue bg-accent-blue/10 border border-accent-blue/20 rounded hover:bg-accent-blue/20 transition-colors"
+        >
+          <Play size={11} />
+          Codex
+        </button>
+        <span className="text-[10px] text-text-muted ml-1">with flight context</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Assign issue button
+// ---------------------------------------------------------------------------
+
+function AssignIssueButton({ flightId }: { flightId: string }) {
+  const [open, setOpen] = useState(false);
+  const issues = useIssueStore((s) => s.issues);
+  const addIssueToFlight = useFlightStore((s) => s.addIssueToFlight);
+  const assignToFlight = useIssueStore((s) => s.assignToFlight);
+
+  const unassigned = useMemo(
+    () => issues.filter((i) => i.flightId == null),
+    [issues]
+  );
+
+  function handleAssign(issueId: string) {
+    addIssueToFlight(flightId, issueId);
+    assignToFlight(issueId, flightId);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-[10px] text-accent-green hover:bg-accent-green/10 px-1.5 py-0.5 rounded transition-colors"
+      >
+        <Plus size={10} />
+        Assign
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-0.5 w-56 max-h-48 overflow-y-auto bg-bg-elevated border border-bg-border rounded shadow-lg z-30 py-0.5">
+          {unassigned.length === 0 ? (
+            <p className="text-[10px] text-text-muted px-2 py-2 text-center">No unassigned issues</p>
+          ) : (
+            unassigned.map((issue) => (
+              <button
+                key={issue.id}
+                onClick={() => handleAssign(issue.id)}
+                className="flex items-center gap-2 w-full text-left px-2 py-1.5 text-[11px] text-text-secondary hover:bg-bg-hover transition-colors"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ISSUE_STATUS_COLORS[issue.status as IssueStatus]}`} />
+                <span className="text-text-muted font-mono text-[10px] w-14 shrink-0">{issue.ticketId}</span>
+                <span className="truncate flex-1">{issue.title}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -263,19 +543,29 @@ function TaskRow({ task }: { task: Task }) {
 
 function LinkedIssuesPanel({ flight }: { flight: Flight }) {
   const issues = useIssueStore((s) => s.issues);
+  const removeIssueFromFlight = useFlightStore((s) => s.removeIssueFromFlight);
+  const assignToFlight = useIssueStore((s) => s.assignToFlight);
   const linked = useMemo(
     () => issues.filter((i) => flight.issueIds.includes(i.id)),
     [issues, flight.issueIds]
   );
 
+  function handleUnlink(issueId: string) {
+    removeIssueFromFlight(flight.id, issueId);
+    assignToFlight(issueId, null);
+  }
+
   return (
     <div className="px-4 py-3 border-b border-bg-border">
-      <div className="flex items-center gap-2 mb-2">
-        <Flag size={12} className="text-accent-blue" />
-        <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">
-          Linked Issues
-        </span>
-        <span className="text-[10px] text-text-muted">({linked.length})</span>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Flag size={12} className="text-accent-blue" />
+          <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">
+            Linked Issues
+          </span>
+          <span className="text-[10px] text-text-muted">({linked.length})</span>
+        </div>
+        <AssignIssueButton flightId={flight.id} />
       </div>
       {linked.length === 0 ? (
         <p className="text-[10px] text-text-muted py-2">No issues linked to this mission.</p>
@@ -284,13 +574,20 @@ function LinkedIssuesPanel({ flight }: { flight: Flight }) {
           {linked.map((issue) => {
             const color = ISSUE_STATUS_COLORS[issue.status] ?? "bg-text-muted";
             return (
-              <div key={issue.id} className="flex items-center gap-2 py-1">
+              <div key={issue.id} className="flex items-center gap-2 py-1 group">
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${color}`} />
                 <span className="text-[10px] text-text-muted font-mono w-14 shrink-0">
                   {issue.ticketId}
                 </span>
                 <span className="text-xs text-text-primary truncate flex-1">{issue.title}</span>
                 <span className="text-[10px] text-text-muted">{ISSUE_STATUS_LABELS[issue.status]}</span>
+                <button
+                  onClick={() => handleUnlink(issue.id)}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 text-text-muted hover:text-accent-red transition-all"
+                  title="Unlink issue"
+                >
+                  <X size={10} />
+                </button>
               </div>
             );
           })}
@@ -396,7 +693,7 @@ function SessionsPanel({ flight }: { flight: Flight }) {
       ) : (
         <div className="space-y-1">
           {sessions.map(({ sessionId, pane }) => (
-            <div key={sessionId} className="flex items-center gap-2 py-1">
+            <div key={sessionId} className="flex items-center gap-2 py-1 group">
               <span
                 className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                   pane ? "bg-accent-green" : "bg-text-muted"
@@ -408,6 +705,13 @@ function SessionsPanel({ flight }: { flight: Flight }) {
               <span className="text-[10px] text-text-muted">
                 {pane?.cliCommand ?? "offline"}
               </span>
+              <button
+                onClick={() => useFlightStore.getState().unlinkSessionFromFlight(flight.id, sessionId)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 text-text-muted hover:text-accent-red transition-all"
+                title="Unlink session"
+              >
+                <X size={10} />
+              </button>
             </div>
           ))}
         </div>

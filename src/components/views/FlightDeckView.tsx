@@ -12,7 +12,7 @@ import type { Flight, FlightStatus } from "@/types/flight";
 
 function handleFlightClick(flightId: string) {
   useFlightStore.getState().setActiveFlight(flightId);
-  useAppStore.getState().setActiveView("flights");
+  useAppStore.getState().setActiveView("mission");
 }
 
 // ── SessionIndicators ───────────────────────────────────────────────
@@ -323,7 +323,7 @@ export function FlightDeckView() {
 
   function handleFlightCreated(id: string) {
     useFlightStore.getState().setActiveFlight(id);
-    useAppStore.getState().setActiveView("flights");
+    useAppStore.getState().setActiveView("mission");
   }
 
   // Compute status for every flight

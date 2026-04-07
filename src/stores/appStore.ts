@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type CoreView = "welcome" | "claude" | "codex" | "issues" | "flights" | "flight_deck" | "history" | "tools" | "insights" | "github" | "memory" | "analytics" | "deploy" | "cost" | "review_queue" | "workspace" | "mission";
+export type CoreView = "welcome" | "claude" | "codex" | "issues" | "flight_deck" | "history" | "tools" | "insights" | "github" | "memory" | "analytics" | "deploy" | "review_queue" | "workspace" | "mission";
 export type AppView = CoreView | `mod:${string}`;
 
 export function isModuleView(view: AppView): boolean {

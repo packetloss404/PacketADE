@@ -11,12 +11,12 @@ test.describe("Toolbar navigation", () => {
     await expect(page.getByRole("heading", { name: "PacketCode" })).toHaveCount(0);
   });
 
-  test("can navigate to Flights and History views", async ({ page }) => {
+  test("can navigate to Flight and History views", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "PacketCode" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Flights", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Flights", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Flight", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Flight", exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "History", exact: true }).click();
     await expect(page.getByRole("button", { name: "History", exact: true })).toBeVisible();
