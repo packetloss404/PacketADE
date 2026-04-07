@@ -10,6 +10,23 @@ Build the Mission Workspace (dedicated per-flight command center) and ship a cha
 
 Sprints 0–3 complete.
 
+## Sprint 4 Status
+
+| Item | Status |
+|------|--------|
+| A1. Mission Workspace view | ❌ Not started |
+| A2. Session Inspect | ❌ Not started |
+| B1. OpenCode Chat UI | ❌ Not started |
+| B2. Multi-model A/B comparison | ❌ Not started |
+| C1. Complete TerminalPane decomposition | ❌ Not started |
+| C2. Notification wiring | ❌ Not started |
+| C3. Bundle size optimization | ❌ Not started |
+| D1. Code signing | ❌ Blocked on certificate |
+| D2. Auto-updater | ❌ Blocked on D1 |
+| D3. Crash reporting | ❌ Not started |
+
+**Out-of-plan shipped:** Workspaces feature (multi-agent grid + sidebar) — see PROJECT-STATUS.md and REMAINING-WORK.md. This is **distinct** from "Mission Workspace" (A1) which is a per-flight war room.
+
 ---
 
 ## Part A — Mission Workspace

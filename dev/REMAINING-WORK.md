@@ -14,16 +14,23 @@
 | TerminalPane partial decomp | Done — ActivityStrip + TerminalHeader extracted |
 | Test infrastructure | Done — 50 Rust + 122 frontend tests |
 
-## Remaining — Sprint 4 (Mission Workspace & Chat)
+## Completed (Sprint 4 — out of plan)
 
-| Item | Priority | Complexity |
-|------|----------|-----------|
-| Mission Workspace view | High | Large |
-| Session inspect (read-only transcript) | High | Medium |
-| OpenCode chat UI | Medium | Large |
-| Complete TerminalPane decomposition | Medium | Medium |
-| Notification wiring | Medium | Small |
-| Bundle size optimization | Low | Medium |
+| Area | Status |
+|------|--------|
+| **Workspaces feature** (multi-agent grid) | Done — symmetric NxN grid of any combination of Terminal/Claude/Codex/Gemini/OpenCode, broadcast prompts, persistent right sidebar with WORKSPACES + PROJECTS sections, project history tracking, "Keep terminals alive" toggle. New agents: Gemini CLI + Terminal. Ctrl+Shift+W shortcut. |
+
+## Remaining — Sprint 4
+
+| Item | Status | Priority | Complexity | Notes |
+|------|--------|----------|-----------|-------|
+| A1. Mission Workspace view (per-flight war room) | ❌ Not started | High | Large | Distinct from the Workspaces feature already shipped. This is a per-flight command center: timeline, linked issues, agent sessions panel, milestones+tasks, activity log. New view `mission` to add to `CoreView`. |
+| A2. Session inspect (read-only transcript) | ❌ Not started | High | Medium | Reuse existing `read_pty_transcript` Tauri command. New file: `src/components/session/SessionInspect.tsx` |
+| B1. OpenCode chat UI | ❌ Not started | Medium | Large | Reuse `ask_insights_stream` pattern. New file: `src/components/session/AgentChatPanel.tsx` |
+| B2. Multi-model A/B comparison | ❌ Not started | Low | Medium | "Dual fire" mode — same prompt to two agents, side-by-side diff |
+| C1. Complete TerminalPane decomposition | ❌ Not started | Medium | Medium | Currently 601 lines. Extract `ApprovalOverlay` (~30 lines) + `useTerminalSession` hook (~200 lines). Target: ~60-line composition shell |
+| C2. Notification wiring | ❌ Not started | Medium | Small | Hook `notificationStore` to orchestration events: task complete, approval needed, flight failed |
+| C3. Bundle size optimization | ❌ Not started | Low | Medium | Vite build warns at >500KB. Lazy-load views via `React.lazy()` + `Suspense`, tree-shake syntax highlighter |
 
 ## Remaining — Phase 3 (Distribution)
 
