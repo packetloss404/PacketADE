@@ -69,6 +69,11 @@ export default function App() {
   const projectPath = useLayoutStore((s) => s.projectPath);
   useEffect(() => {
     localStorage.setItem("packetcode:project-path", projectPath);
+    if (projectPath) {
+      import("@/stores/projectHistoryStore").then(({ useProjectHistoryStore }) => {
+        useProjectHistoryStore.getState().recordOpen(projectPath);
+      });
+    }
   }, [projectPath]);
 
   // Guard: if active view is a disabled module, redirect to tools
