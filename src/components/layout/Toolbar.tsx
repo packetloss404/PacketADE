@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, Zap, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, Radio, ShieldCheck } from "lucide-react";
+import { Plus, GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, Zap, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, Radio, ShieldCheck, Target } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
@@ -276,6 +276,20 @@ export function Toolbar() {
 
       {/* Right section */}
       <div className="flex items-center gap-2">
+        {/* Mission Workspace */}
+        <button
+          onClick={() => setActiveView("mission")}
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+            activeView === "mission"
+              ? "bg-bg-elevated text-accent-green"
+              : "text-text-muted hover:text-accent-green"
+          }`}
+          title="Mission Workspace"
+        >
+          <Target size={12} />
+          <span>Mission</span>
+        </button>
+
         {/* Flight Deck */}
         <button
           onClick={() => setActiveView("flight_deck")}

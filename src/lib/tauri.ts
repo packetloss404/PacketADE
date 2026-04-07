@@ -43,6 +43,24 @@ export async function killPty(sessionId: string): Promise<void> {
 }
 
 // Code quality
+export interface CrashEntry {
+  timestamp: string;
+  path: string;
+  summary: string;
+}
+
+export async function listCrashes(): Promise<CrashEntry[]> {
+  return invoke<CrashEntry[]>("list_crashes");
+}
+
+export async function readCrash(path: string): Promise<string> {
+  return invoke<string>("read_crash", { path });
+}
+
+export async function deleteCrash(path: string): Promise<void> {
+  await invoke("delete_crash", { path });
+}
+
 export async function analyzeCodeQuality(projectPath: string): Promise<unknown> {
   return invoke("analyze_code_quality", { projectPath });
 }
@@ -830,6 +848,18 @@ export async function askInsightsStream(
   sessionContext?: string
 ): Promise<void> {
   return invoke("ask_insights_stream", {
+    projectPath,
+    messages,
+    sessionContext: sessionContext || null,
+  });
+}
+
+export async function askAgentChatStream(
+  projectPath: string,
+  messages: { role: string; content: string }[],
+  sessionContext?: string
+): Promise<void> {
+  return invoke("ask_agent_chat_stream", {
     projectPath,
     messages,
     sessionContext: sessionContext || null,

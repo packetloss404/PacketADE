@@ -11,6 +11,7 @@ import { AgentProfilesCard } from "./tools/AgentProfilesCard";
 import { ProviderRoutingCard } from "./tools/ProviderRoutingCard";
 import { ModulesCard } from "./tools/ModulesCard";
 import { NotificationSettingsCard } from "./tools/NotificationSettingsCard";
+import { CrashViewerCard } from "./tools/CrashViewerCard";
 import type { PromptTemplate } from "@/types/prompt";
 
 type SettingsSection = "project" | "issues" | "profiles" | "routing" | "modules" | "templates";
@@ -67,6 +68,7 @@ export function ToolsView() {
           <div className="grid grid-cols-2 gap-4 max-w-2xl">
             <ProjectInfoCard projectPath={projectPath} gitBranch={gitBranch} />
             <NotificationSettingsCard />
+            <CrashViewerCard />
           </div>
         )}
 

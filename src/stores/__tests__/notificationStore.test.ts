@@ -1,0 +1,67 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { useNotificationStore } from "../notificationStore";
+
+const STORAGE_KEY = "packetcode:notifications";
+const store = () => useNotificationStore.getState();
+
+describe("notificationStore", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useNotificationStore.setState({
+      enabled: true,
+      onlyWhenUnfocused: true,
+      onApprovalNeeded: true,
+      onSessionComplete: true,
+      onSessionError: true,
+    });
+  });
+
+  it("has sensible defaults", () => {
+    expect(store().enabled).toBe(true);
+    expect(store().onlyWhenUnfocused).toBe(true);
+    expect(store().onApprovalNeeded).toBe(true);
+    expect(store().onSessionComplete).toBe(true);
+    expect(store().onSessionError).toBe(true);
+  });
+
+  it("setEnabled updates state and persists", () => {
+    store().setEnabled(false);
+    expect(store().enabled).toBe(false);
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(raw.enabled).toBe(false);
+  });
+
+  it("setOnlyWhenUnfocused updates state and persists", () => {
+    store().setOnlyWhenUnfocused(false);
+    expect(store().onlyWhenUnfocused).toBe(false);
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(raw.onlyWhenUnfocused).toBe(false);
+  });
+
+  it("setOnApprovalNeeded updates state and persists", () => {
+    store().setOnApprovalNeeded(false);
+    expect(store().onApprovalNeeded).toBe(false);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).onApprovalNeeded).toBe(false);
+  });
+
+  it("setOnSessionComplete updates state and persists", () => {
+    store().setOnSessionComplete(false);
+    expect(store().onSessionComplete).toBe(false);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).onSessionComplete).toBe(false);
+  });
+
+  it("setOnSessionError updates state and persists", () => {
+    store().setOnSessionError(false);
+    expect(store().onSessionError).toBe(false);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).onSessionError).toBe(false);
+  });
+
+  it("multiple updates accumulate in persisted state", () => {
+    store().setEnabled(false);
+    store().setOnApprovalNeeded(false);
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(raw.enabled).toBe(false);
+    expect(raw.onApprovalNeeded).toBe(false);
+    expect(raw.onSessionComplete).toBe(true);
+  });
+});

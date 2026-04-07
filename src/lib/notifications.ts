@@ -67,6 +67,28 @@ export async function notifySessionError(
   });
 }
 
+export async function notifyTaskComplete(taskId: string, taskName: string) {
+  if (!useNotificationStore.getState().onSessionComplete) return;
+  if (!shouldNotify(`task-${taskId}`)) return;
+  if (!(await ensurePermission())) return;
+
+  new Notification("Task Complete", {
+    body: `${taskName} has finished`,
+    tag: `task-complete-${taskId}`,
+  });
+}
+
+export async function notifyFlightFailed(flightName: string) {
+  if (!useNotificationStore.getState().onSessionError) return;
+  if (!shouldNotify(`flight-failed-${flightName}`)) return;
+  if (!(await ensurePermission())) return;
+
+  new Notification("Flight Failed", {
+    body: `${flightName} has failed`,
+    tag: `flight-failed-${flightName}`,
+  });
+}
+
 export async function requestNotificationPermission(): Promise<boolean> {
   return ensurePermission();
 }

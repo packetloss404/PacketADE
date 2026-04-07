@@ -54,6 +54,7 @@ fn dirs_log_dir() -> std::path::PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing();
+    commands::crashes::install_panic_hook();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -82,6 +83,10 @@ pub fn run() {
             commands::git::git_safety_check,
             // Code quality
             commands::code_quality::analyze_code_quality,
+            // Crash reports
+            commands::crashes::list_crashes,
+            commands::crashes::read_crash,
+            commands::crashes::delete_crash,
             // Filesystem
             commands::fs::list_directory,
             commands::fs::get_cwd,
@@ -116,6 +121,7 @@ pub fn run() {
             // Insights chat
             commands::insights::ask_insights,
             commands::insights::ask_insights_stream,
+            commands::insights::ask_agent_chat_stream,
             // Flight chat
             commands::flight_chat::ask_flight_chat_stream,
             // Ideation scanner

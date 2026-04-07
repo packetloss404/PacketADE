@@ -26,6 +26,11 @@ Thumbs.db
 src-tauri/gen/
 WixTools/
 
+# Playwright E2E
+test-results/
+playwright-report/
+playwright/.cache/
+
 # Claude Code local settings
 .claude/
 CLAUDE.md
