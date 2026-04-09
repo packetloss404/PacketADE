@@ -1,8 +1,18 @@
 use crate::claude::binary::{claude_command, run_claude};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::info;
+
+/// Emitted as the `insights:error` or `agent-chat:error` event payload when
+/// the Claude CLI process fails, so the frontend can show actionable messages.
+#[derive(Clone, Serialize)]
+struct StreamError {
+    category: String,
+    message: String,
+    suggestion: String,
+    is_transient: bool,
+}
 
 #[derive(Deserialize)]
 pub struct InsightsMessage {
@@ -74,6 +84,8 @@ pub async fn ask_insights_stream(
         .take()
         .ok_or_else(|| "Failed to capture stdout".to_string())?;
 
+    let stderr = child.stderr.take();
+
     let handle = app_handle.clone();
     tokio::spawn(async move {
         let reader = BufReader::new(stdout);
@@ -83,8 +95,29 @@ pub async fn ask_insights_stream(
             let _ = handle.emit("insights:chunk", &line);
         }
 
+        // Collect stderr for error classification
+        let stderr_text = if let Some(se) = stderr {
+            let mut buf = String::new();
+            let mut sr = BufReader::new(se);
+            let _ = tokio::io::AsyncReadExt::read_to_string(&mut sr, &mut buf).await;
+            buf
+        } else {
+            String::new()
+        };
+
         let status = child.wait().await;
         let success = status.map(|s| s.success()).unwrap_or(false);
+
+        if !success && !stderr_text.trim().is_empty() {
+            let classified = super::error_classifier::classify_cli_error(&stderr_text);
+            let _ = handle.emit("insights:error", StreamError {
+                category: format!("{:?}", classified.category).to_lowercase(),
+                message: classified.message,
+                suggestion: classified.suggestion,
+                is_transient: classified.is_transient,
+            });
+        }
+
         let _ = handle.emit("insights:done", success);
     });
 
@@ -118,6 +151,8 @@ pub async fn ask_agent_chat_stream(
         .take()
         .ok_or_else(|| "Failed to capture stdout".to_string())?;
 
+    let stderr = child.stderr.take();
+
     let handle = app_handle.clone();
     tokio::spawn(async move {
         let reader = BufReader::new(stdout);
@@ -127,8 +162,28 @@ pub async fn ask_agent_chat_stream(
             let _ = handle.emit("agent-chat:chunk", &line);
         }
 
+        let stderr_text = if let Some(se) = stderr {
+            let mut buf = String::new();
+            let mut sr = BufReader::new(se);
+            let _ = tokio::io::AsyncReadExt::read_to_string(&mut sr, &mut buf).await;
+            buf
+        } else {
+            String::new()
+        };
+
         let status = child.wait().await;
         let success = status.map(|s| s.success()).unwrap_or(false);
+
+        if !success && !stderr_text.trim().is_empty() {
+            let classified = super::error_classifier::classify_cli_error(&stderr_text);
+            let _ = handle.emit("agent-chat:error", StreamError {
+                category: format!("{:?}", classified.category).to_lowercase(),
+                message: classified.message,
+                suggestion: classified.suggestion,
+                is_transient: classified.is_transient,
+            });
+        }
+
         let _ = handle.emit("agent-chat:done", success);
     });
 

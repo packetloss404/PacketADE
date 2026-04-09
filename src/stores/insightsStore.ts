@@ -138,6 +138,13 @@ export const useInsightsStore = create<InsightsStore>((set, get) => ({
         set({ streamingContent: accumulated });
       });
 
+      // Listen for classified errors
+      const errorRef: { current: { message: string; suggestion: string } | null } = { current: null };
+      const unlistenError: UnlistenFn = await listen<{ message: string; suggestion: string }>(
+        "insights:error",
+        (event) => { errorRef.current = event.payload; },
+      );
+
       const donePromise = new Promise<boolean>((resolve) => {
         listen<boolean>("insights:done", (event) => {
           resolve(event.payload);
@@ -153,11 +160,16 @@ export const useInsightsStore = create<InsightsStore>((set, get) => ({
       // Wait for completion
       await donePromise;
       unlistenChunk();
+      unlistenError();
+
+      // If the stream failed and we got a classified error, use it
+      const finalContent = accumulated.trim()
+        || (errorRef.current ? `${errorRef.current.message}\n\n${errorRef.current.suggestion}` : "No response received.");
 
       const assistantMsg: InsightsMessage = {
         id: generateId("msg"),
         role: "assistant",
-        content: accumulated.trim(),
+        content: finalContent,
         timestamp: Date.now(),
       };
 

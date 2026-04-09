@@ -1,4 +1,5 @@
 use crate::claude::binary::run_claude;
+use serde::Deserialize;
 use tracing::info;
 
 #[tauri::command]
@@ -35,5 +36,67 @@ Session summaries:
 {}"#,
         summaries
     );
+    run_claude(&prompt, Some(&project_path)).await
+}
+
+// === Flight Retrospectives (self-improving feedback loop) ===
+
+#[derive(Deserialize)]
+pub struct FlightSummaryInput {
+    pub title: String,
+    pub objective: String,
+    pub priority: String,
+    pub status: String,
+    pub task_count: usize,
+    pub tasks_done: usize,
+    pub tasks_failed: usize,
+    pub duration_description: String,
+}
+
+/// Generate a retrospective for a completed flight. The retrospective captures
+/// what worked, what failed, and patterns to carry forward — inspired by
+/// Hermes Agent's self-improving skill/memory loop.
+#[tauri::command]
+pub async fn summarize_flight(
+    project_path: String,
+    flight_summary: FlightSummaryInput,
+    session_logs: String,
+) -> Result<String, String> {
+    super::validate_project_path(&project_path)?;
+    super::validate_input_size(&session_logs, super::MAX_INPUT_SIZE, "Session logs")?;
+
+    let flight_json = serde_json::json!({
+        "title": flight_summary.title,
+        "objective": flight_summary.objective,
+        "priority": flight_summary.priority,
+        "status": flight_summary.status,
+        "taskCount": flight_summary.task_count,
+        "tasksDone": flight_summary.tasks_done,
+        "tasksFailed": flight_summary.tasks_failed,
+        "duration": flight_summary.duration_description,
+    });
+
+    let prompt = format!(
+        r#"Analyze this completed flight and generate a retrospective. Output ONLY a JSON object with no markdown formatting.
+
+Flight details:
+{flight_json}
+
+Session activity:
+{session_logs}
+
+Output format:
+{{
+  "summary": "1-2 sentence summary of what the flight accomplished",
+  "whatWorked": ["pattern or approach that was effective"],
+  "whatFailed": ["issue or approach that caused problems"],
+  "lessonsLearned": ["actionable insight to apply to future flights"],
+  "suggestedImprovements": ["specific process improvement"],
+  "tags": ["relevant topic tags for searchability"]
+}}"#,
+        flight_json = flight_json,
+        session_logs = session_logs,
+    );
+
     run_claude(&prompt, Some(&project_path)).await
 }
