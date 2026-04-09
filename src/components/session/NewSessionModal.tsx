@@ -7,9 +7,9 @@ import { useProfileStore } from "@/stores/profileStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { usePromptStore } from "@/stores/promptStore";
 
-import { CLAUDE_MODELS, CODEX_MODELS } from "@/lib/models";
+import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS } from "@/lib/models";
 
-type CliChoice = "claude" | "codex";
+type CliChoice = "claude" | "codex" | "gemini" | "opencode";
 
 interface NewSessionModalProps {
   defaultCli?: CliChoice;
@@ -29,8 +29,20 @@ export function NewSessionModal({ defaultCli = "claude", onClose }: NewSessionMo
   const profiles = useProfileStore((s) => s.profiles);
   const getContextForSession = useMemoryStore((s) => s.getContextForSession);
 
-  const cliLabel = cli === "claude" ? "Claude" : "Codex";
-  const models = cli === "claude" ? CLAUDE_MODELS : CODEX_MODELS;
+  const cliLabels: Record<CliChoice, string> = {
+    claude: "Claude",
+    codex: "Codex",
+    gemini: "Gemini",
+    opencode: "OpenCode",
+  };
+  const cliModelMap: Record<CliChoice, typeof CLAUDE_MODELS> = {
+    claude: CLAUDE_MODELS,
+    codex: CODEX_MODELS,
+    gemini: GEMINI_MODELS,
+    opencode: OPENCODE_MODELS,
+  };
+  const cliLabel = cliLabels[cli];
+  const models = cliModelMap[cli];
 
   function handleCliChange(newCli: CliChoice) {
     setCli(newCli);
@@ -177,26 +189,21 @@ export function NewSessionModal({ defaultCli = "claude", onClose }: NewSessionMo
       <div className="px-5 py-4 flex flex-col gap-4" onKeyDown={handleKeyDown}>
           {/* CLI toggle */}
           <div className="flex rounded-lg border border-bg-border overflow-hidden">
-            <button
-              onClick={() => handleCliChange("claude")}
-              className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
-                cli === "claude"
-                  ? "bg-accent-green/15 text-accent-green border-r border-bg-border"
-                  : "bg-bg-primary text-text-muted hover:text-text-secondary border-r border-bg-border"
-              }`}
-            >
-              Claude
-            </button>
-            <button
-              onClick={() => handleCliChange("codex")}
-              className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
-                cli === "codex"
-                  ? "bg-accent-green/15 text-accent-green"
-                  : "bg-bg-primary text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              Codex
-            </button>
+            {(["claude", "codex", "gemini", "opencode"] as const).map((choice, i, arr) => (
+              <button
+                key={choice}
+                onClick={() => handleCliChange(choice)}
+                className={`flex-1 py-1.5 text-xs font-medium transition-colors ${
+                  i < arr.length - 1 ? "border-r border-bg-border" : ""
+                } ${
+                  cli === choice
+                    ? "bg-accent-green/15 text-accent-green"
+                    : "bg-bg-primary text-text-muted hover:text-text-secondary"
+                }`}
+              >
+                {cliLabels[choice]}
+              </button>
+            ))}
           </div>
 
           {/* Agent Profile */}

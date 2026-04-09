@@ -16,17 +16,21 @@ import { SpecImportModal } from "@/components/views/SpecImportModal";
 const TABS: { key: AppView; label: string }[] = [
   { key: "claude", label: "Claude" },
   { key: "codex", label: "Codex" },
+  { key: "gemini", label: "Gemini" },
+  { key: "opencode", label: "OpenCode" },
   { key: "workspace", label: "Workspaces" },
   { key: "issues", label: "Issues" },
   { key: "history", label: "History" },
 ];
+
+const SESSION_VIEWS = new Set<AppView>(["claude", "codex", "gemini", "opencode"]);
 
 export function Toolbar() {
   const projectPath = useLayoutStore((s) => s.projectPath);
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
   const gitBranch = useGitInfo();
   const [showCodeQuality, setShowCodeQuality] = useState(false);
-  const [newSessionCli, setNewSessionCli] = useState<"claude" | "codex" | null>(null);
+  const [newSessionCli, setNewSessionCli] = useState<"claude" | "codex" | "gemini" | "opencode" | null>(null);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showSpecImport, setShowSpecImport] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -87,12 +91,12 @@ export function Toolbar() {
   }
 
   function handleSplit() {
-    setNewSessionCli(activeView === "codex" ? "codex" : "claude");
+    setNewSessionCli(SESSION_VIEWS.has(activeView) ? (activeView as "claude" | "codex" | "gemini" | "opencode") : "claude");
   }
 
   function handleTabClick(key: AppView) {
-    if (key === "claude" || key === "codex") {
-      setNewSessionCli(key);
+    if (SESSION_VIEWS.has(key)) {
+      setNewSessionCli(key as "claude" | "codex" | "gemini" | "opencode");
     } else {
       setActiveView(key);
     }
@@ -113,12 +117,12 @@ export function Toolbar() {
         {/* Sessions — navigate to sessions view without opening modal */}
         <button
           onClick={() => {
-            if (activeView !== "claude" && activeView !== "codex") {
+            if (!SESSION_VIEWS.has(activeView)) {
               setActiveView("claude");
             }
           }}
           className={`px-2.5 py-1 text-xs rounded transition-colors ${
-            activeView === "claude" || activeView === "codex"
+            SESSION_VIEWS.has(activeView)
               ? "text-accent-green bg-bg-elevated"
               : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
           }`}
@@ -132,8 +136,7 @@ export function Toolbar() {
             onClick={() => handleTabClick(tab.key)}
             className={`px-2.5 py-1 text-xs rounded transition-colors ${
               activeView === tab.key ||
-              ((tab.key === "claude" || tab.key === "codex") &&
-                (activeView === "claude" || activeView === "codex"))
+              (SESSION_VIEWS.has(tab.key) && SESSION_VIEWS.has(activeView))
                 ? "text-accent-green bg-bg-elevated"
                 : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
             }`}
@@ -197,10 +200,10 @@ export function Toolbar() {
         <div className="w-px h-4 bg-bg-border ml-1" />
 
         {/* Quick Session + Split pane buttons — in Claude or Codex view */}
-        {(activeView === "claude" || activeView === "codex") && (
+        {SESSION_VIEWS.has(activeView) && (
           <>
             <button
-              onClick={() => quickStartSession(activeView === "codex" ? "codex" : "claude")}
+              onClick={() => quickStartSession(activeView as "claude" | "codex" | "gemini" | "opencode")}
               className="flex items-center gap-1.5 px-2 py-1 text-xs text-accent-green hover:bg-accent-green/10 rounded transition-colors ml-1"
               title="Quick session with profile defaults"
             >

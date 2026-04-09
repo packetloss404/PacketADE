@@ -14,18 +14,18 @@ export function StatusBar() {
 
   const totalSessions = tabs.length;
 
-  const isCliView = activeView === "claude" || activeView === "codex";
+  const isCliView = activeView === "claude" || activeView === "codex" || activeView === "gemini" || activeView === "opencode";
   const claudeCount = panes.filter((p) => p.cliCommand === "claude").length;
   const codexCount = panes.filter((p) => p.cliCommand === "codex").length;
+  const geminiCount = panes.filter((p) => p.cliCommand === "gemini").length;
+  const opencodeCount = panes.filter((p) => p.cliCommand === "opencode").length;
 
   return (
     <div className="flex items-center h-6 px-3 bg-bg-secondary border-t border-bg-border text-[10px] text-text-muted gap-4">
-      <span>
-        {claudeCount} claude
-      </span>
-      <span>
-        {codexCount} codex
-      </span>
+      <span>{claudeCount} claude</span>
+      <span>{codexCount} codex</span>
+      {geminiCount > 0 && <span>{geminiCount} gemini</span>}
+      {opencodeCount > 0 && <span>{opencodeCount} opencode</span>}
       <span>
         {totalSessions} session{totalSessions !== 1 ? "s" : ""}
         {activeSessions > 0 && (
