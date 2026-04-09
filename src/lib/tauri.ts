@@ -78,6 +78,25 @@ export async function extractPatterns(projectPath: string, summaries: string): P
   return invoke<string>("extract_patterns", { projectPath, summaries });
 }
 
+export interface FlightSummaryInput {
+  title: string;
+  objective: string;
+  priority: string;
+  status: string;
+  task_count: number;
+  tasks_done: number;
+  tasks_failed: number;
+  duration_description: string;
+}
+
+export async function summarizeFlight(
+  projectPath: string,
+  flightSummary: FlightSummaryInput,
+  sessionLogs: string
+): Promise<string> {
+  return invoke<string>("summarize_flight", { projectPath, flightSummary, sessionLogs });
+}
+
 // Git
 export async function getGitBranch(projectPath: string): Promise<string> {
   return invoke<string>("get_git_branch", { projectPath });
@@ -870,11 +889,13 @@ export async function askFlightChatStream(
   projectPath: string,
   messages: { role: string; content: string }[],
   flightState: { title: string; objective: string; priority: string },
+  retrospectives?: string,
 ): Promise<void> {
   return invoke("ask_flight_chat_stream", {
     projectPath,
     messages,
     flightState,
+    retrospectives: retrospectives || null,
   });
 }
 

@@ -425,7 +425,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <div class="stats-grid">
       <div>
-        <div class="stat-number green" data-target="14">0</div>
+        <div class="stat-number green" data-target="19">0</div>
         <div class="stat-label">Views & Tools</div>
       </div>
       <div>
@@ -437,7 +437,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <div class="stat-label">AI Runtimes</div>
       </div>
       <div>
-        <div class="stat-number amber" data-target="80" data-suffix="+">0</div>
+        <div class="stat-number amber" data-target="240" data-suffix="+">0</div>
         <div class="stat-label">Source Files</div>
       </div>
     </div>
@@ -449,7 +449,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <div class="section-header reveal">
       <h2>Everything you need. Nothing you don't.</h2>
-      <p>Six core capabilities designed to keep you in flow.</p>
+      <p>Nine core capabilities designed to keep you in flow.</p>
     </div>
     <div class="features-grid">
       <div class="feature-card reveal" style="--delay:0s">
@@ -493,6 +493,27 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         </div>
         <h3>Deploy Pipeline</h3>
         <p>Configure and trigger deployments from a single panel. Run history, environment variables, live terminal output.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.48s">
+        <div class="feature-icon cyan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <h3>Insights Chat</h3>
+        <p>Conversational codebase Q&amp;A. Ask Claude about your project with full repository context injected automatically.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.56s">
+        <div class="feature-icon purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+        </div>
+        <h3>Analytics &amp; Cost Tracking</h3>
+        <p>Monitor session activity, token usage, and AI spend across sessions and flights with dedicated dashboards.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.64s">
+        <div class="feature-icon green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </div>
+        <h3>Terminal UI (TUI)</h3>
+        <p>Standalone Ratatui-based terminal interface sharing the same orchestration engine. Five color themes, command palette, and full flight management.</p>
       </div>
     </div>
   </div>
@@ -572,7 +593,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <div class="section-header reveal">
       <h2>Extensible by Design</h2>
-      <p>A modular architecture that grows with your workflow</p>
+      <p>A modular architecture with six built-in modules that grows with your workflow</p>
     </div>
     <div class="modules-grid">
       <div class="module-card purple-border reveal" style="--delay:0s">
@@ -594,6 +615,16 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <span class="module-tag">Utility</span>
         <h3>New Project</h3>
         <p>Create new projects from built-in templates. Next.js, React, FastAPI, Rust CLI, and more.</p>
+      </div>
+      <div class="module-card purple-border reveal" style="--delay:0.32s">
+        <span class="module-tag">Quality</span>
+        <h3>Code Quality</h3>
+        <p>On-demand AI code quality analysis. Surface issues, complexity hotspots, and improvement opportunities.</p>
+      </div>
+      <div class="module-card amber-border reveal" style="--delay:0.4s">
+        <span class="module-tag">Reliability</span>
+        <h3>Crash Viewer</h3>
+        <p>Browse, inspect, and manage crash reports locally. Timestamps, summaries, and full stack traces in one panel.</p>
       </div>
     </div>
   </div>
@@ -732,6 +763,27 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <h3>Release</h3>
         <p>Deploy pipeline ships. GitHub handles PRs. Flight Deck confirms all issues resolved.</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== KEYBOARD SHORTCUTS ===== -->
+<section class="features" id="shortcuts" style="padding:60px 0">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Keyboard-driven workflow</h2>
+      <p>Navigate the entire app without touching the mouse</p>
+    </div>
+    <div class="table-wrap reveal" style="--delay:0.1s">
+      <table style="max-width:560px;margin:0 auto;font-size:0.85rem;border-collapse:collapse">
+        <thead><tr><th style="text-align:left;padding:10px 16px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600">Shortcut</th><th style="text-align:left;padding:10px 16px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600">Action</th></tr></thead>
+        <tbody>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+\</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Split &mdash; new session pane</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+1-4</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Switch to pane 1&ndash;4</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+1-6</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Claude, Codex, Issues, History, Tools, Architect</td></tr>
+          <tr><td style="padding:8px 16px;font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Enter</td><td style="padding:8px 16px;color:var(--text-secondary)">Start session (in modal)</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>

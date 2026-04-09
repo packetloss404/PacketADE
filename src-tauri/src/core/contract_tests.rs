@@ -80,6 +80,7 @@ mod tests {
             ui: Default::default(),
             issues: vec![],
             approval_log: vec![],
+            workspaces: vec![],
         }
     }
 

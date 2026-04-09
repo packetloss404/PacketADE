@@ -29,6 +29,9 @@ Plan, track, and supervise AI-driven work at a higher level than individual sess
 - Model selection (Opus 4.6, Opus 4.5, Sonnet 4.5, Haiku 4.5) per session
 - Session tab bar with live status labels
 - Session history and status tracking
+- **Session Inspect** — view session metadata and state at a glance
+- **Agent Chat Panel** — inline chat interface for interacting with agents within a session
+- **Approval Overlay** — review and approve agent actions directly in the terminal pane
 
 ### Agent Profiles
 
@@ -106,6 +109,16 @@ A standalone Ratatui-based terminal interface sharing the same orchestration eng
 
 - **Usage analytics** — track session activity, token usage, and AI tool invocations
 - **Cost dashboard** — monitor spend across sessions and flights
+
+### Review Queue & Notifications
+
+- **Review Queue** — centralized view of items needing human attention across all flights and sessions
+- **Notification settings** — configurable notification preferences with per-category toggles, persisted to localStorage
+
+### Crash Reporting
+
+- **Crash viewer** — browse, inspect, and delete local crash reports with timestamps and full stack traces
+- Local crash report storage (no remote upload yet)
 
 ### UI/UX
 
@@ -186,7 +199,7 @@ PacketCode/
       flights/                     # NewFlightModal (AI chat + form), FlightChatPanel
       issues/                      # Kanban board (IssueBoard, IssueCard, etc.)
       layout/                      # TitleBar, Toolbar, PaneContainer, StatusBar, SessionTabBar
-      session/                     # TerminalPane, NewSessionModal, status bars
+      session/                     # TerminalPane, SessionInspect, AgentChatPanel, ApprovalOverlay, status bars
       ui/                          # Button, Dropdown, ErrorBoundary, Modal
       views/
         FlightsView.tsx            # Flight planning surface
@@ -201,6 +214,9 @@ PacketCode/
         DeployView.tsx             # Deploy pipeline
         AnalyticsView.tsx          # Usage analytics
         CostDashboardView.tsx      # Cost tracking
+        ReviewQueueView.tsx        # Review queue for items needing attention
+        MissionWorkspaceView.tsx   # Mission workspace
+        tools/                     # NotificationSettingsCard, CrashViewerCard
     hooks/                         # useGitInfo, useStatusLine, useCodexStatusLine, useFlightChat, useVoiceInput
     lib/
       tauri.ts                     # All Tauri invoke wrappers

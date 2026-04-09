@@ -71,19 +71,45 @@ pub fn claude_command() -> Result<tokio::process::Command, String> {
 
 /// Run a Claude CLI prompt and return stdout as a String.
 /// Optionally sets the working directory to `project_path`.
+/// Automatically retries transient errors (rate limits, timeouts, server errors)
+/// up to 3 times with jittered exponential backoff.
 pub async fn run_claude(prompt: &str, project_path: Option<&str>) -> Result<String, String> {
-    let mut cmd = claude_command()?;
-    cmd.args(&["-p", prompt, "--output-format", "text"]);
-    if let Some(cwd) = project_path {
-        cmd.current_dir(cwd);
-    }
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run Claude CLI: {}. Is claude installed and on PATH?", e))?;
-    if !output.status.success() {
+    use crate::commands::error_classifier::{classify_cli_error, retry_delay_ms};
+
+    const MAX_RETRIES: u32 = 3;
+
+    for attempt in 0..=MAX_RETRIES {
+        let mut cmd = claude_command()?;
+        cmd.args(&["-p", prompt, "--output-format", "text"]);
+        if let Some(cwd) = project_path {
+            cmd.current_dir(cwd);
+        }
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run Claude CLI: {}. Is claude installed and on PATH?", e))?;
+
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+        }
+
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Claude CLI exited with error: {}", stderr));
+        let classified = classify_cli_error(&stderr);
+
+        if classified.is_transient && attempt < MAX_RETRIES {
+            let delay = retry_delay_ms(attempt, 2000, 30000);
+            tracing::warn!(
+                category = ?classified.category,
+                attempt = attempt + 1,
+                retry_ms = delay,
+                "Transient Claude CLI error, retrying"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+            continue;
+        }
+
+        return Err(format!("{} — {}", classified.message, classified.suggestion));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+
+    unreachable!()
 }

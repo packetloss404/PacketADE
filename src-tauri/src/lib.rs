@@ -141,6 +141,7 @@ pub fn run() {
             commands::memory::scan_codebase_memory,
             commands::memory::summarize_session,
             commands::memory::extract_patterns,
+            commands::memory::summarize_flight,
             // Prompt history
             commands::history::read_prompt_history,
             // Usage analytics
