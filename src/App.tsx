@@ -197,7 +197,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  const isSessionsView = activeView === "claude" || activeView === "codex";
+  const isSessionsView = activeView === "claude" || activeView === "codex" || activeView === "gemini" || activeView === "opencode";
 
   return (
     <ErrorBoundary fallbackMessage="PacketCode encountered an error">

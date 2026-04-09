@@ -38,10 +38,17 @@ export function TerminalHeader({
         <span
           className="text-[10px] px-2 py-0.5 rounded-full text-white font-medium"
           style={{
-            backgroundColor: cliCommand === "claude" ? "#f0b400" : "#58a6ff",
+            backgroundColor:
+              cliCommand === "claude" ? "#f0b400"
+              : cliCommand === "gemini" ? "#8ab4f8"
+              : cliCommand === "opencode" ? "#3fb950"
+              : "#58a6ff",
           }}
         >
-          {cliCommand === "claude" ? "Claude" : "Codex"}
+          {cliCommand === "claude" ? "Claude"
+            : cliCommand === "gemini" ? "Gemini"
+            : cliCommand === "opencode" ? "OpenCode"
+            : "Codex"}
         </span>
       </div>
       <div className="flex items-center gap-1">
