@@ -7,16 +7,37 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tracing::{info, warn};
 
-use portable_pty::{
-    native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize,
-};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::storage;
 use super::shared::MAX_PTY_WRITE_SIZE;
+use super::storage;
 
 const PTY_TRANSCRIPT_LIMIT_BYTES: usize = 256 * 1024;
+
+pub(crate) fn decode_terminal_chunk(bytes: &[u8], pending: &mut Vec<u8>) -> String {
+    let (data, leftover) = {
+        let chunk = if pending.is_empty() {
+            bytes
+        } else {
+            pending.extend_from_slice(bytes);
+            pending.as_slice()
+        };
+
+        let valid_up_to = match std::str::from_utf8(chunk) {
+            Ok(_) => chunk.len(),
+            Err(e) => e.valid_up_to(),
+        };
+
+        let data = String::from_utf8_lossy(&chunk[..valid_up_to]).into_owned();
+        let leftover = chunk[valid_up_to..].to_vec();
+        (data, leftover)
+    };
+
+    *pending = leftover;
+    data
+}
 
 /// Events emitted by PTY sessions via channels
 #[derive(Clone, Debug)]
@@ -83,7 +104,10 @@ impl PtyManager {
     ) -> Result<String, String> {
         let project_dir = std::path::Path::new(project_path);
         if !project_dir.is_dir() {
-            return Err(format!("Project path '{}' is not a valid directory", project_path));
+            return Err(format!(
+                "Project path '{}' is not a valid directory",
+                project_path
+            ));
         }
 
         info!(command = %command, project_path = %project_path, "Creating PTY session");
@@ -93,19 +117,20 @@ impl PtyManager {
 
         let pair = pty_system
             .openpty(PtySize {
-                rows, cols, pixel_width: 0, pixel_height: 0,
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
             })
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
         // Resolve .cmd wrappers on Windows
-        let resolved_command = if cfg!(windows)
-            && !command.ends_with(".cmd")
-            && !command.ends_with(".exe")
-        {
-            format!("{}.cmd", command)
-        } else {
-            command.to_string()
-        };
+        let resolved_command =
+            if cfg!(windows) && !command.ends_with(".cmd") && !command.ends_with(".exe") {
+                format!("{}.cmd", command)
+            } else {
+                command.to_string()
+            };
 
         let mut cmd = CommandBuilder::new(&resolved_command);
         cmd.cwd(project_path);
@@ -122,18 +147,26 @@ impl PtyManager {
         }
 
         cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
 
         let mut child = pair.slave.spawn_command(cmd).map_err(|e| {
-            format!("Failed to spawn {} in PTY: {}. Is {} installed?", command, e, command)
+            format!(
+                "Failed to spawn {} in PTY: {}. Is {} installed?",
+                command, e, command
+            )
         })?;
 
         let pid = child.process_id();
         let killer = child.clone_killer();
 
-        let writer = pair.master.take_writer()
+        let writer = pair
+            .master
+            .take_writer()
             .map_err(|e| format!("Failed to take PTY writer: {}", e))?;
 
-        let mut reader = pair.master.try_clone_reader()
+        let mut reader = pair
+            .master
+            .try_clone_reader()
             .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
 
         let kill_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -166,6 +199,7 @@ impl PtyManager {
 
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
+            let mut pending: Vec<u8> = Vec::new();
             loop {
                 if output_kill_flag.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
@@ -174,7 +208,7 @@ impl PtyManager {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let data = decode_terminal_chunk(&buf[..n], &mut pending);
                         append_transcript(&output_sid, &data);
                         let _ = output_tx.send(PtyEvent::Output {
                             session_id: output_sid.clone(),
@@ -231,16 +265,23 @@ impl PtyManager {
         if data.len() > MAX_PTY_WRITE_SIZE {
             return Err(format!(
                 "PTY write data exceeds max size ({} bytes, limit {})",
-                data.len(), MAX_PTY_WRITE_SIZE
+                data.len(),
+                MAX_PTY_WRITE_SIZE
             ));
         }
 
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or_else(|| format!("PTY session {} not found", session_id))?;
 
-        session.writer.write_all(data.as_bytes())
+        session
+            .writer
+            .write_all(data.as_bytes())
             .map_err(|e| format!("Failed to write to PTY: {}", e))?;
-        session.writer.flush()
+        session
+            .writer
+            .flush()
             .map_err(|e| format!("Failed to flush PTY: {}", e))?;
 
         Ok(())
@@ -248,12 +289,20 @@ impl PtyManager {
 
     /// Resize a PTY session.
     pub fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<(), String> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("PTY session {} not found", session_id))?;
 
-        session.master.resize(PtySize {
-            rows, cols, pixel_width: 0, pixel_height: 0,
-        }).map_err(|e| format!("Failed to resize PTY: {}", e))?;
+        session
+            .master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| format!("Failed to resize PTY: {}", e))?;
 
         Ok(())
     }
@@ -262,7 +311,9 @@ impl PtyManager {
     pub fn kill(&mut self, session_id: &str) -> Result<(), String> {
         if let Some(session) = self.sessions.get_mut(session_id) {
             info!(session_id = %session_id, "Killing PTY session");
-            session.kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            session
+                .kill_flag
+                .store(true, std::sync::atomic::Ordering::Relaxed);
             session.info.alive = false;
             if let Err(e) = session.killer.kill() {
                 warn!(session_id = %session_id, error = %e, "Failed to kill PTY child");
@@ -275,7 +326,11 @@ impl PtyManager {
 
     /// Kill a PTY session and wait for the exit event (with timeout).
     /// Returns Ok(true) if the session exited, Ok(false) if it timed out.
-    pub fn kill_and_wait(&mut self, session_id: &str, timeout: std::time::Duration) -> Result<bool, String> {
+    pub fn kill_and_wait(
+        &mut self,
+        session_id: &str,
+        timeout: std::time::Duration,
+    ) -> Result<bool, String> {
         self.kill(session_id)?;
         // We can't block on the mpsc channel here since we don't own the receiver.
         // Instead, poll the session's kill_flag and check if the session was removed.
@@ -296,7 +351,11 @@ impl PtyManager {
     }
 
     /// Kill multiple sessions and wait for all to exit.
-    pub fn kill_sessions_and_wait(&mut self, session_ids: &[String], timeout: std::time::Duration) -> Vec<(String, bool)> {
+    pub fn kill_sessions_and_wait(
+        &mut self,
+        session_ids: &[String],
+        timeout: std::time::Duration,
+    ) -> Vec<(String, bool)> {
         // First, send kill signal to all sessions
         for sid in session_ids {
             let _ = self.kill(sid);
@@ -405,5 +464,37 @@ mod tests {
         let path = transcript_path(&id);
         assert!(path.is_some());
         assert!(path.unwrap().to_string_lossy().contains(&id));
+    }
+
+    #[test]
+    fn decode_terminal_chunk_preserves_ansi_sequences() {
+        let mut pending = Vec::new();
+
+        let data = decode_terminal_chunk(b"\x1b[31mred\x1b[0m\r\n", &mut pending);
+
+        assert_eq!(data, "\x1b[31mred\x1b[0m\r\n");
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn decode_terminal_chunk_buffers_split_utf8_sequences() {
+        let mut pending = Vec::new();
+
+        let first = decode_terminal_chunk(&[0xE2, 0x94], &mut pending);
+        let second = decode_terminal_chunk(&[0x82, b'\n'], &mut pending);
+
+        assert_eq!(first, "");
+        assert_eq!(second, "│\n");
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn decode_terminal_chunk_does_not_rewrite_plain_text() {
+        let mut pending = Vec::new();
+
+        let data = decode_terminal_chunk("Claude Code for Cursor".as_bytes(), &mut pending);
+
+        assert_eq!(data, "Claude Code for Cursor");
+        assert!(pending.is_empty());
     }
 }

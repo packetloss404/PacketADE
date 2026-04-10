@@ -5,17 +5,22 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tracing::{info, warn};
 
-use portable_pty::{
-    native_pty_system, Child as PtyChild, CommandBuilder, MasterPty, PtySize,
-};
+use portable_pty::{native_pty_system, Child as PtyChild, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 /// Commands allowed to be spawned in a PTY session.
 const ALLOWED_COMMANDS: &[&str] = &[
-    "claude", "codex", "gemini", "opencode",
-    "bash", "sh", "zsh", "powershell", "cmd",
+    "claude",
+    "codex",
+    "gemini",
+    "opencode",
+    "bash",
+    "sh",
+    "zsh",
+    "powershell",
+    "cmd",
 ];
 
 /// Data emitted to the frontend for each chunk of PTY output
@@ -60,7 +65,9 @@ impl PtyManager {
         for session_id in session_ids {
             if let Some(mut session) = self.sessions.remove(session_id) {
                 info!(session_id = %session_id, "Killing PTY session (flight cleanup)");
-                session.kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                session
+                    .kill_flag
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 session.info.alive = false;
                 let _ = session.child.kill();
             }
@@ -119,11 +126,12 @@ pub fn create_pty_session(
     // Build the command: launch the specified CLI interactively
     // On Windows, npm global installs use .cmd wrappers (e.g. codex.cmd, claude.cmd)
     // CommandBuilder doesn't resolve .cmd like a shell does, so we must add the extension.
-    let resolved_command = if cfg!(windows) && !command.ends_with(".cmd") && !command.ends_with(".exe") {
-        format!("{}.cmd", command)
-    } else {
-        command.clone()
-    };
+    let resolved_command =
+        if cfg!(windows) && !command.ends_with(".cmd") && !command.ends_with(".exe") {
+            format!("{}.cmd", command)
+        } else {
+            command.clone()
+        };
     let mut cmd = CommandBuilder::new(&resolved_command);
     cmd.cwd(&project_path);
 
@@ -147,14 +155,18 @@ pub fn create_pty_session(
         cmd.env("PACKETCODE", "1");
     }
 
-    // PTY is a real terminal — set TERM so CLIs (e.g. Claude) start their interactive TUI instead of refusing with "TERM is set to dumb"
+    // PTY is a real terminal — advertise a common modern terminal profile so CLIs
+    // enable their interactive UI and 24-bit color output.
     cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
 
     // Spawn the child process in the PTY
-    let child = pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|e| format!("Failed to spawn {} in PTY: {}. Is {} installed?", command, e, command))?;
+    let child = pair.slave.spawn_command(cmd).map_err(|e| {
+        format!(
+            "Failed to spawn {} in PTY: {}. Is {} installed?",
+            command, e, command
+        )
+    })?;
 
     let pid = child.process_id();
 
@@ -207,30 +219,8 @@ pub fn create_pty_session(
             match reader.read(&mut buf) {
                 Ok(0) => break, // EOF — process exited
                 Ok(n) => {
-                    // Prepend any leftover bytes from a previous partial UTF-8 sequence
-                    let chunk = if pending.is_empty() {
-                        &buf[..n]
-                    } else {
-                        pending.extend_from_slice(&buf[..n]);
-                        pending.as_slice()
-                    };
+                    let data = crate::core::pty::decode_terminal_chunk(&buf[..n], &mut pending);
 
-                    // Find the last valid UTF-8 boundary. Walk backwards from
-                    // the end to find the start of an incomplete multi-byte
-                    // sequence (if any) and split there.
-                    let valid_up_to = match std::str::from_utf8(chunk) {
-                        Ok(_) => chunk.len(),
-                        Err(e) => e.valid_up_to(),
-                    };
-
-                    let mut data =
-                        String::from_utf8_lossy(&chunk[..valid_up_to]).into_owned();
-
-                    // Save incomplete trailing bytes for the next read
-                    let leftover = &chunk[valid_up_to..];
-                    pending = leftover.to_vec();
-
-                    data = data.replace("Claude Code for Cursor", "Claude Code");
                     let event = PtyOutput {
                         session_id: sid.clone(),
                         data,
@@ -320,10 +310,7 @@ pub fn resize_pty(
 }
 
 #[tauri::command]
-pub fn kill_pty(
-    manager: State<'_, SharedPtyManager>,
-    session_id: String,
-) -> Result<(), String> {
+pub fn kill_pty(manager: State<'_, SharedPtyManager>, session_id: String) -> Result<(), String> {
     let mut mgr = lock_mutex(&manager)?;
     if let Some(mut session) = mgr.sessions.remove(&session_id) {
         info!(session_id = %session_id, "Killing PTY session");
