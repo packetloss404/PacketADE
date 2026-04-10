@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { Workspace, WorkspacePane, WorkspaceAgentSlot } from "@/types/workspace";
-import { computeGridLayout } from "@/lib/gridLayout";
+
 
 export interface WorkspaceSessionConfig {
   prompt?: string;
@@ -40,15 +40,11 @@ export function consumePendingSessionConfig(workspaceId: string): WorkspaceSessi
 }
 
 function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
-  const layout = computeGridLayout(agents.length);
-  return layout.cells
-    .filter((cell) => cell.agentIndex !== null)
-    .map((cell) => ({
-      id: `ws-pane-${++wsCounter}`,
-      agentId: agents[cell.agentIndex!],
-      sessionId: null,
-      gridPosition: { row: cell.row, col: cell.col },
-    }));
+  return agents.map((agent) => ({
+    id: `ws-pane-${++wsCounter}`,
+    agentId: agent,
+    sessionId: null,
+  }));
 }
 
 function syncToBackend(workspaces: Workspace[]) {

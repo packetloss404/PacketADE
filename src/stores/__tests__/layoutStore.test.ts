@@ -36,7 +36,6 @@ describe("layoutStore", () => {
       expect(store().panes).toHaveLength(1);
       expect(store().panes[0].cliCommand).toBe("claude");
       expect(store().panes[0].sessionId).toBeNull();
-      expect(store().panes[0].flexSize).toBe(1);
       expect(store().activePaneId).toBe(id);
     });
 
@@ -95,27 +94,13 @@ describe("layoutStore", () => {
     });
   });
 
-  describe("setPaneSession and updatePaneSize", () => {
+  describe("setPaneSession", () => {
     it("attaches and clears a session on a pane", () => {
       const id = store().addPane();
       store().setPaneSession(id, "sess_1");
       expect(store().panes[0].sessionId).toBe("sess_1");
       store().setPaneSession(id, null);
       expect(store().panes[0].sessionId).toBeNull();
-    });
-
-    it("updates the flex size of a pane", () => {
-      const id = store().addPane();
-      store().updatePaneSize(id, 2.5);
-      expect(store().panes[0].flexSize).toBe(2.5);
-    });
-
-    it("does not affect other panes when updating one", () => {
-      const a = store().addPane();
-      const b = store().addPane();
-      store().updatePaneSize(a, 3);
-      const paneB = store().panes.find((p) => p.id === b)!;
-      expect(paneB.flexSize).toBe(1);
     });
   });
 

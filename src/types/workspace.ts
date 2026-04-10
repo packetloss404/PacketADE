@@ -4,7 +4,7 @@ export interface WorkspacePane {
   id: string;
   agentId: WorkspaceAgentSlot;
   sessionId: string | null;
-  gridPosition: { row: number; col: number };
+  gridPosition?: { row: number; col: number };
 }
 
 export interface Workspace {

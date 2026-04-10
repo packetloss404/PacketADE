@@ -15,7 +15,6 @@ interface LayoutStore {
   setActivePaneId: (paneId: string) => void;
   setPaneSession: (paneId: string, sessionId: string | null) => void;
   getActivePane: () => PaneConfig | undefined;
-  updatePaneSize: (paneId: string, flexSize: number) => void;
 }
 
 let paneCounter = 0;
@@ -44,7 +43,6 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
           cliCommand: opts?.cliCommand ?? "claude",
           cliArgs: opts?.cliArgs,
           initialPrompt: opts?.initialPrompt,
-          flexSize: 1,
         },
       ],
       activePaneId: id,
@@ -78,11 +76,4 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     return state.panes.find((p) => p.id === state.activePaneId);
   },
 
-  updatePaneSize: (paneId, flexSize) => {
-    set((state) => ({
-      panes: state.panes.map((p) =>
-        p.id === paneId ? { ...p, flexSize } : p
-      ),
-    }));
-  },
 }));
