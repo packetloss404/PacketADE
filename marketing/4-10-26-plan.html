@@ -1,0 +1,1573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PacketCode — Updated Marketing Plan (April 2026)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Base ───────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; font-size: 15px; }
+body {
+  font-family: 'Sora', system-ui, sans-serif;
+  background: #0d1117;
+  color: #c9d1d9;
+  line-height: 1.65;
+  min-height: 100vh;
+}
+a { color: #58a6ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Color Tokens ───────────────────────────────────────── */
+:root {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --border: #30363d;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --green: #3fb950;
+  --green-dim: #238636;
+  --blue: #58a6ff;
+  --purple: #bc8cff;
+  --amber: #d29922;
+  --red: #f85149;
+  --pink: #f778ba;
+}
+
+/* ── Sidebar TOC ────────────────────────────────────────── */
+.sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: 260px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  z-index: 100;
+  padding: 24px 0 40px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-tertiary) transparent;
+}
+.sidebar-logo {
+  padding: 0 20px 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.sidebar-logo h1 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: -0.5px;
+}
+.sidebar-logo p {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.sidebar nav { padding: 0 12px; }
+.sidebar nav a {
+  display: block;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  transition: all 0.15s;
+  line-height: 1.4;
+}
+.sidebar nav a:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  text-decoration: none;
+}
+.sidebar nav a.active {
+  color: var(--green);
+  background: rgba(63, 185, 80, 0.08);
+}
+.sidebar nav .toc-group {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 16px 12px 4px;
+  font-weight: 600;
+}
+
+/* ── Main Content ───────────────────────────────────────── */
+.main {
+  margin-left: 260px;
+  padding: 48px 48px 120px;
+  max-width: 1160px;
+}
+
+/* ── Typography ─────────────────────────────────────────── */
+h1, h2, h3, h4, h5 { color: var(--text-primary); font-weight: 600; }
+h2 {
+  font-size: 1.6rem;
+  margin: 56px 0 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: -0.5px;
+}
+h2 .section-num {
+  color: var(--green);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85em;
+  margin-right: 8px;
+}
+h3 { font-size: 1.15rem; margin: 32px 0 12px; color: var(--blue); }
+h4 { font-size: 0.95rem; margin: 20px 0 8px; color: var(--purple); }
+p { margin: 10px 0; }
+ul, ol { padding-left: 24px; margin: 10px 0; }
+li { margin: 4px 0; }
+li::marker { color: var(--text-muted); }
+strong { color: var(--text-primary); }
+em { color: var(--amber); font-style: normal; }
+
+/* ── Hero Banner ────────────────────────────────────────── */
+.hero {
+  background: linear-gradient(135deg, rgba(63,185,80,0.08) 0%, rgba(88,166,255,0.06) 50%, rgba(188,140,255,0.06) 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 40px;
+  margin-bottom: 40px;
+}
+.hero h1 {
+  font-size: 2rem;
+  letter-spacing: -1px;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--green), var(--blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero .tagline {
+  font-size: 1.15rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.hero .tagline strong { color: var(--green); }
+.hero .meta {
+  display: flex; gap: 24px; flex-wrap: wrap;
+  font-size: 0.8rem; color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+.hero .meta span { display: flex; align-items: center; gap: 6px; }
+
+/* ── Stat Cards ─────────────────────────────────────────── */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.stat-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+}
+.stat-card .value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: -1px;
+}
+.stat-card .value.green { color: var(--green); }
+.stat-card .value.blue { color: var(--blue); }
+.stat-card .value.purple { color: var(--purple); }
+.stat-card .value.amber { color: var(--amber); }
+.stat-card .value.red { color: var(--red); }
+.stat-card .label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ── Tables ─────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+thead th {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+tbody td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+tbody tr:nth-child(even) { background: rgba(22, 27, 34, 0.5); }
+tbody tr:hover { background: rgba(63, 185, 80, 0.04); }
+
+/* Threat badges */
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.badge-critical { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge-high { background: rgba(210,153,34,0.15); color: var(--amber); }
+.badge-moderate { background: rgba(88,166,255,0.15); color: var(--blue); }
+.badge-low { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-new { background: rgba(247,120,186,0.15); color: var(--pink); }
+
+/* ── Code Blocks ────────────────────────────────────────── */
+pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  margin: 16px 0;
+  color: var(--text-primary);
+}
+code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85em;
+}
+p code, li code {
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.82em;
+  color: var(--purple);
+}
+
+/* ── Collapsible Details ────────────────────────────────── */
+details {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 12px 0;
+}
+details[open] { border-color: var(--green-dim); }
+summary {
+  padding: 14px 20px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  user-select: none;
+}
+summary::-webkit-details-marker { display: none; }
+summary::before {
+  content: '&#9656;';
+  color: var(--green);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85em;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+details .detail-body { padding: 4px 20px 20px; }
+
+/* ── Callout Boxes ──────────────────────────────────────── */
+.callout {
+  border-left: 3px solid;
+  border-radius: 0 8px 8px 0;
+  padding: 16px 20px;
+  margin: 16px 0;
+  font-size: 0.88rem;
+}
+.callout-green { border-color: var(--green); background: rgba(63,185,80,0.06); }
+.callout-blue { border-color: var(--blue); background: rgba(88,166,255,0.06); }
+.callout-amber { border-color: var(--amber); background: rgba(210,153,34,0.06); }
+.callout-red { border-color: var(--red); background: rgba(248,81,73,0.06); }
+.callout-purple { border-color: var(--purple); background: rgba(188,140,255,0.06); }
+
+/* ── Checkmarks & Lists ──────────────────────────────────  */
+.check-list { list-style: none; padding-left: 0; }
+.check-list li { padding: 4px 0; }
+.check-list li::before { content: '&#10003; '; color: var(--green); font-weight: 700; }
+.x-list { list-style: none; padding-left: 0; }
+.x-list li { padding: 4px 0; }
+.x-list li::before { content: '&#10005; '; color: var(--red); font-weight: 700; }
+
+/* ── Pricing Tiers ──────────────────────────────────────── */
+.tier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.tier-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+}
+.tier-card.featured { border-color: var(--green); }
+.tier-card .tier-name {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.tier-card .tier-price {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 8px 0;
+  font-family: 'JetBrains Mono', monospace;
+}
+.tier-card .tier-price span {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.tier-card ul { list-style: none; padding: 0; margin-top: 16px; }
+.tier-card li {
+  padding: 5px 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.tier-card li::before { content: '&rarr; '; color: var(--green); }
+
+/* ── Phase Timeline ─────────────────────────────────────── */
+.phase {
+  border-left: 3px solid var(--border);
+  padding: 0 0 32px 24px;
+  margin-left: 12px;
+  position: relative;
+}
+.phase::before {
+  content: '';
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  position: absolute;
+  left: -8px; top: 4px;
+}
+.phase.phase-1::before { background: var(--green); }
+.phase.phase-2::before { background: var(--blue); }
+.phase.phase-3::before { background: var(--purple); }
+.phase.phase-4::before { background: var(--amber); }
+.phase:last-child { border-left-color: transparent; }
+.phase h4 { margin-top: 0; }
+
+/* ── Change Log ─────────────────────────────────────────── */
+.changelog {
+  background: var(--bg-secondary);
+  border: 1px solid var(--green-dim);
+  border-radius: 10px;
+  padding: 24px;
+  margin: 20px 0;
+}
+.changelog h3 { margin-top: 0; color: var(--green); }
+.changelog li { font-size: 0.88rem; }
+
+/* ── ASCII Diagram ──────────────────────────────────────── */
+.diagram {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  margin: 20px 0;
+  overflow-x: auto;
+}
+.diagram pre {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--green);
+}
+
+/* ── Mobile ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar {
+    position: relative;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 60vh;
+  }
+  .main {
+    margin-left: 0;
+    padding: 24px 16px 80px;
+  }
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .tier-grid { grid-template-columns: 1fr; }
+  .hero { padding: 24px; }
+  .hero h1 { font-size: 1.4rem; }
+}
+
+/* ── Print ──────────────────────────────────────────────── */
+@media print {
+  .sidebar { display: none; }
+  .main { margin-left: 0; max-width: 100%; }
+  body { background: #fff; color: #1a1a1a; font-size: 11pt; }
+  h2, h3, h4 { color: #111; }
+  pre, .stat-card, details, .callout, .tier-card, .diagram {
+    border-color: #ccc;
+    background: #f8f8f8;
+  }
+  .badge { border: 1px solid currentColor; }
+  a { color: #0366d6; }
+  details { break-inside: avoid; }
+  details[open] > .detail-body { display: block; }
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<!-- SIDEBAR TOC                                                 -->
+<!-- ════════════════════════════════════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <h1>PacketCode</h1>
+    <p>Updated Marketing Plan</p>
+  </div>
+  <nav>
+    <div class="toc-group">What Changed</div>
+    <a href="#changelog">Changes Since March</a>
+
+    <div class="toc-group">Strategy</div>
+    <a href="#executive-summary">1. Executive Summary</a>
+    <a href="#market-reality">2. Market Reality Check</a>
+    <a href="#competitive-landscape">3. Competitive Landscape</a>
+    <a href="#differentiation">4. Updated Differentiation</a>
+    <a href="#target-users">5. Target Users (Refined)</a>
+    <a href="#revenue-model">6. Revenue Model & Pricing</a>
+
+    <div class="toc-group">Execution</div>
+    <a href="#positioning-pivot">7. Positioning Pivot</a>
+    <a href="#marketing-channels">8. Marketing Channels</a>
+    <a href="#content-strategy">9. Content & Social Strategy</a>
+    <a href="#growth-playbook">10. Growth Playbook</a>
+
+    <div class="toc-group">Intelligence</div>
+    <a href="#new-entrants">11. New Entrants Since March</a>
+    <a href="#threats-opportunities">12. Threats & Opportunities</a>
+
+    <div class="toc-group">Appendix</div>
+    <a href="#sources">13. Sources</a>
+  </nav>
+</aside>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<!-- MAIN CONTENT                                                -->
+<!-- ════════════════════════════════════════════════════════════ -->
+<div class="main">
+
+<!-- ── Hero ────────────────────────────────────────────────── -->
+<div class="hero">
+  <h1>PacketCode Updated Marketing Plan</h1>
+  <p class="tagline"><strong>One cockpit. Every AI agent. Ship faster.</strong></p>
+  <div class="meta">
+    <span>v2.0</span>
+    <span>Internal Reference</span>
+    <span>Apache-2.0</span>
+    <span>Updated: 2026-04-10</span>
+    <span>Previous: 2026-03-21</span>
+  </div>
+</div>
+
+<!-- ── Changelog ───────────────────────────────────────────── -->
+<div class="changelog" id="changelog">
+  <h3>What Changed Since March 21</h3>
+  <p>The AI coding landscape shifted dramatically in the 20 days since the original plan. Key developments:</p>
+  <ul>
+    <li><strong>Multi-agent is now table stakes.</strong> In February 2026, every major player shipped parallel agents in the same two-week window: Claude Code (8 agents), Windsurf (5 parallel Cascade agents), Grok Build (8 agents), and Codex CLI (Agents SDK).</li>
+    <li><strong>Cursor hit $2B ARR</strong> (doubled in 3 months) and is reportedly raising at a $60B valuation.</li>
+    <li><strong>Kiro launched</strong> &mdash; Amazon's spec-driven AI IDE, a major new entrant.</li>
+    <li><strong>Replit raised $400M at $9B</strong> valuation, targeting $1B ARR by year-end.</li>
+    <li><strong>Lovable hit $400M ARR</strong> &mdash; 200K new projects created per day.</li>
+    <li><strong>Windsurf overhauled pricing</strong> on March 19, switching to daily/weekly quotas. Pro price raised from $15 to $20/mo.</li>
+    <li><strong>Vibe coding market</strong> hit $4.7B with 38% CAGR. 92% of US devs use AI tools daily.</li>
+    <li><strong>The original plan's "multi-agent" moat has eroded significantly.</strong> Strategy must be updated.</li>
+  </ul>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 1. EXECUTIVE SUMMARY                                      -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="executive-summary"><span class="section-num">01</span> Executive Summary</h2>
+
+<div class="callout callout-red">
+  <strong>Critical Update:</strong> The March plan positioned PacketCode as "the first IDE that orchestrates multiple AI agents." As of April 2026, multi-agent is no longer unique &mdash; Claude Code, Windsurf, Cursor, and others all support parallel agents. The positioning must shift from <em>multi-agent pioneer</em> to <em>unified workflow cockpit</em>.
+</div>
+
+<div class="callout callout-green">
+  <strong>New Positioning:</strong> PacketCode is the only open-source, native desktop IDE that combines AI agent orchestration with a complete project lifecycle &mdash; from ideation to issues to coding to deploy &mdash; in a single binary. It's not just another AI coding tool. It's mission control for your entire development workflow.
+</div>
+
+<p><strong>Updated taglines:</strong></p>
+<ul>
+  <li><em>"Your entire dev workflow. One cockpit. Zero tab-switching."</em></li>
+  <li><em>"The IDE that ships projects, not just code."</em></li>
+  <li><em>"Ideate. Plan. Code. Deploy. One app."</em></li>
+</ul>
+
+<h3>Updated Market Context</h3>
+<div class="stat-row">
+  <div class="stat-card">
+    <div class="value green">$10B+</div>
+    <div class="label">AI coding tools market (2026)</div>
+  </div>
+  <div class="stat-card">
+    <div class="value blue">$2B</div>
+    <div class="label">Cursor ARR (Mar 2026)</div>
+  </div>
+  <div class="stat-card">
+    <div class="value purple">$400M</div>
+    <div class="label">Lovable ARR (2026)</div>
+  </div>
+  <div class="stat-card">
+    <div class="value amber">92%</div>
+    <div class="label">US devs using AI daily</div>
+  </div>
+</div>
+
+<div class="stat-row">
+  <div class="stat-card">
+    <div class="value green">46%</div>
+    <div class="label">All new code is AI-generated</div>
+  </div>
+  <div class="stat-card">
+    <div class="value blue">$60B</div>
+    <div class="label">Cursor target valuation</div>
+  </div>
+  <div class="stat-card">
+    <div class="value purple">$9B</div>
+    <div class="label">Replit valuation</div>
+  </div>
+  <div class="stat-card">
+    <div class="value amber">520%</div>
+    <div class="label">Non-dev AI coding adoption YoY</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 2. MARKET REALITY CHECK                                   -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="market-reality"><span class="section-num">02</span> Market Reality Check</h2>
+
+<h3>What the March Plan Got Right</h3>
+<ul class="check-list">
+  <li>Agent-agnostic design &mdash; still unique, still valuable as model churn accelerates</li>
+  <li>Tauri native &mdash; no competitor has adopted Tauri; binary size advantage holds</li>
+  <li>Open source positioning &mdash; Cursor backlash continues, open alternatives gaining interest</li>
+  <li>Integrated workflow &mdash; kanban + memory + deploy combo is still rare</li>
+  <li>"Vibe coding" is mainstream &mdash; 92% of US devs use AI daily, market is $10B+</li>
+</ul>
+
+<h3>What the March Plan Got Wrong</h3>
+<ul class="x-list">
+  <li><strong>"Multi-agent orchestration" as primary differentiator</strong> &mdash; every major tool now does this</li>
+  <li><strong>Market size underestimated</strong> &mdash; plan cited $15B; actual 2026 estimate is $10-12.8B with $91B projected by 2035</li>
+  <li><strong>Cursor growth underestimated</strong> &mdash; $2B ARR (not $1.2B), 60% enterprise revenue</li>
+  <li><strong>Missed Kiro entirely</strong> &mdash; Amazon's spec-driven IDE is a significant new entrant</li>
+  <li><strong>Missed Amp (Sourcegraph)</strong> &mdash; team-oriented agentic coding with thread sharing</li>
+  <li><strong>Replit underestimated</strong> &mdash; $400M raise at $9B, Agent 4 with cooperating agents</li>
+  <li><strong>Lovable massively underestimated</strong> &mdash; $400M ARR (was $100M in March plan)</li>
+</ul>
+
+<h3>The "Multi-Agent Moment" of February 2026</h3>
+<div class="callout callout-amber">
+  <strong>Key Event:</strong> In February 2026, every major AI coding tool shipped multi-agent capabilities in the same two-week window. Claude Code got 8 parallel agents via git worktrees. Windsurf shipped 5 parallel Cascade agents. Grok Build launched with 8 agents. This commoditized what was PacketCode's primary differentiator.
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 3. COMPETITIVE LANDSCAPE (UPDATED)                        -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="competitive-landscape"><span class="section-num">03</span> Competitive Landscape (Updated)</h2>
+
+<h3>Market Giants (April 2026)</h3>
+<div class="stat-row">
+  <div class="stat-card">
+    <div class="value green">$60B</div>
+    <div class="label">Cursor target valuation</div>
+  </div>
+  <div class="stat-card">
+    <div class="value blue">$9B</div>
+    <div class="label">Replit valuation ($400M raise)</div>
+  </div>
+  <div class="stat-card">
+    <div class="value purple">$400M</div>
+    <div class="label">Lovable ARR</div>
+  </div>
+  <div class="stat-card">
+    <div class="value amber">65K</div>
+    <div class="label">OpenHands GitHub stars</div>
+  </div>
+</div>
+
+<h3>Full Competitor Matrix (Updated April 2026)</h3>
+<div class="table-wrap">
+<table>
+<thead>
+  <tr>
+    <th>Tool</th>
+    <th>Model</th>
+    <th>Funding/Revenue</th>
+    <th>Traction (Apr 2026)</th>
+    <th>Multi-Agent?</th>
+    <th>Threat</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td><strong>Cursor</strong></td>
+    <td>VS Code fork, SaaS</td>
+    <td>$2B ARR; raising at $60B</td>
+    <td>1M+ users, 360K paying; 60% enterprise</td>
+    <td>Yes (agent mode)</td>
+    <td><span class="badge badge-critical">Critical</span></td>
+  </tr>
+  <tr>
+    <td><strong>GitHub Copilot</strong></td>
+    <td>VS Code/JetBrains extension</td>
+    <td>Microsoft-backed</td>
+    <td>Agent mode GA; coding agent; agentic code review</td>
+    <td>Yes (coding agent)</td>
+    <td><span class="badge badge-critical">Critical</span></td>
+  </tr>
+  <tr>
+    <td><strong>Windsurf</strong></td>
+    <td>VS Code fork, OpenAI-owned</td>
+    <td>$3B acquisition</td>
+    <td>SWE-1.5 model; 5 parallel Cascade agents</td>
+    <td>Yes (5 parallel)</td>
+    <td><span class="badge badge-critical">Critical</span></td>
+  </tr>
+  <tr>
+    <td><strong>Kiro</strong></td>
+    <td>AWS spec-driven IDE</td>
+    <td>Amazon-backed</td>
+    <td>Free + $19/mo; specs + hooks + MCP</td>
+    <td>Partial (hooks)</td>
+    <td><span class="badge badge-high">High</span> <span class="badge badge-new">New</span></td>
+  </tr>
+  <tr>
+    <td><strong>Claude Code</strong></td>
+    <td>CLI + Agent Teams</td>
+    <td>Anthropic-backed</td>
+    <td>8 parallel agents; Ultra plan with critic agent</td>
+    <td>Yes (8 parallel)</td>
+    <td><span class="badge badge-high">High</span></td>
+  </tr>
+  <tr>
+    <td><strong>Devin</strong></td>
+    <td>Autonomous agent, cloud IDE</td>
+    <td>Cognition AI</td>
+    <td>Core plan $20/mo (down from $500); parallel Devins</td>
+    <td>Yes (parallel sessions)</td>
+    <td><span class="badge badge-high">High</span></td>
+  </tr>
+  <tr>
+    <td><strong>Amp (Sourcegraph)</strong></td>
+    <td>CLI + VS Code extension</td>
+    <td>Sourcegraph-backed</td>
+    <td>Unconstrained tokens; subagent parallelization</td>
+    <td>Yes (subagents)</td>
+    <td><span class="badge badge-moderate">Moderate</span> <span class="badge badge-new">New</span></td>
+  </tr>
+  <tr>
+    <td><strong>Cline</strong></td>
+    <td>VS Code extension, open-source</td>
+    <td>Teams plan $20/user/mo</td>
+    <td>58K stars; 5M+ installs; MCP marketplace</td>
+    <td>No</td>
+    <td><span class="badge badge-high">High</span></td>
+  </tr>
+  <tr>
+    <td><strong>Roo Code</strong></td>
+    <td>VS Code extension (Cline fork)</td>
+    <td>Open-source, BYOK</td>
+    <td>22K stars; 1.2M installs; custom modes</td>
+    <td>No</td>
+    <td><span class="badge badge-moderate">Moderate</span> <span class="badge badge-new">New</span></td>
+  </tr>
+  <tr>
+    <td><strong>Zed</strong></td>
+    <td>Native IDE (Rust), GPUI</td>
+    <td>$42M+ raised</td>
+    <td>ACP (Agent Client Protocol); MCP; Zeta2 edit prediction</td>
+    <td>Via external agents</td>
+    <td><span class="badge badge-high">High</span></td>
+  </tr>
+  <tr>
+    <td><strong>Replit</strong></td>
+    <td>Cloud IDE + Agent 4</td>
+    <td>$400M raise at $9B</td>
+    <td>Agent 4 with cooperating agents; targeting $1B ARR</td>
+    <td>Yes (cooperating)</td>
+    <td><span class="badge badge-moderate">Moderate</span></td>
+  </tr>
+  <tr>
+    <td><strong>OpenHands</strong></td>
+    <td>Open-source cloud agent</td>
+    <td>$18.8M raised</td>
+    <td>65K stars; 53% SWE-bench; MIT license</td>
+    <td>No</td>
+    <td><span class="badge badge-moderate">Moderate</span></td>
+  </tr>
+  <tr>
+    <td><strong>Aider</strong></td>
+    <td>CLI, open-source</td>
+    <td>Bootstrapped</td>
+    <td>40K+ GitHub stars; gold standard for CLI AI coding</td>
+    <td>No</td>
+    <td><span class="badge badge-moderate">Moderate</span></td>
+  </tr>
+  <tr>
+    <td><strong>Lovable</strong></td>
+    <td>Web-based, vibe coding</td>
+    <td>$400M ARR; acquiring companies</td>
+    <td>200K new projects/day; hunting acquisitions</td>
+    <td>No</td>
+    <td><span class="badge badge-low">Low</span></td>
+  </tr>
+  <tr>
+    <td><strong>Bolt.new</strong></td>
+    <td>Web-based, vibe coding</td>
+    <td>$40M+ ARR</td>
+    <td>Non-dev focused; app builder</td>
+    <td>No</td>
+    <td><span class="badge badge-low">Low</span></td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+<h3>Pricing Landscape (April 2026)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tool</th><th>Free</th><th>Pro/Standard</th><th>Premium</th><th>Notes</th></tr></thead>
+<tbody>
+  <tr><td>Cursor</td><td>Limited</td><td>$20/mo</td><td>$60 (Pro+) / $200 (Ultra)</td><td>Credit-based; pricing volatility</td></tr>
+  <tr><td>Windsurf</td><td>Yes (limited)</td><td>$20/mo</td><td>$200/mo (Max)</td><td>Daily/weekly quotas since Mar 19</td></tr>
+  <tr><td>GitHub Copilot</td><td>Yes (2K completions)</td><td>$10/mo</td><td>$39/mo (Pro+)</td><td>Best value per dollar; extra requests $0.04</td></tr>
+  <tr><td>Kiro</td><td>Yes (50 interactions)</td><td>$19/mo</td><td>&mdash;</td><td>New; AWS integration is the draw</td></tr>
+  <tr><td>Claude Code</td><td>BYOK</td><td>$20/mo (Pro)</td><td>$100-200 (Max)</td><td>Ultra plan has multi-agent architecture</td></tr>
+  <tr><td>Devin</td><td>&mdash;</td><td>$20 (Core)</td><td>$500/mo (Team)</td><td>Pay-as-you-go ACU model</td></tr>
+  <tr><td>Amp</td><td>Free tier</td><td>TBD</td><td>TBD</td><td>Unconstrained token usage</td></tr>
+  <tr><td>Cline</td><td>Free (BYOK)</td><td>$20/user/mo (Teams)</td><td>&mdash;</td><td>Open-source core</td></tr>
+  <tr style="background: rgba(63,185,80,0.08); font-weight: 600;">
+    <td><strong>PacketCode</strong></td><td><strong>Full app free</strong></td><td><strong>$12/mo (Pro)</strong></td><td><strong>$20/user (Teams)</strong></td><td><strong>Only tool with full free tier + workflow</strong></td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 4. UPDATED DIFFERENTIATION                                -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="differentiation"><span class="section-num">04</span> Updated Differentiation</h2>
+
+<div class="callout callout-amber">
+  <strong>The Moat Has Shifted.</strong> "Multi-agent orchestration" is no longer a differentiator. The new moat is the <em>integrated workflow</em> &mdash; the combination of ideation + issues + coding + memory + deploy in a single native binary that no competitor offers.
+</div>
+
+<h3>What Still No One Else Does</h3>
+<div class="table-wrap">
+<table>
+<thead>
+  <tr><th>Capability</th><th>PacketCode</th><th>Cursor</th><th>Windsurf</th><th>Kiro</th><th>Zed</th><th>Claude Code</th><th>Devin</th></tr>
+</thead>
+<tbody>
+  <tr><td>Multi-agent orchestration</td><td><strong style="color:var(--green)">Yes</strong></td><td>Yes</td><td>Yes (5)</td><td>Partial</td><td>Via ACP</td><td>Yes (8)</td><td>Yes</td></tr>
+  <tr><td>Agent-agnostic (any CLI agent)</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>No</td><td>Partial</td><td>No</td><td>No</td></tr>
+  <tr><td>Built-in Kanban board</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>No</td><td>No</td><td>No</td><td>No</td></tr>
+  <tr><td>Flight Deck (unified work view)</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>No</td><td>No</td><td>No</td><td>No</td></tr>
+  <tr><td>Deploy pipeline</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>Partial (AWS)</td><td>No</td><td>No</td><td>Yes</td></tr>
+  <tr><td>MCP Hub (GUI manager)</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>Config only</td><td>Config</td><td>Config</td><td>No</td></tr>
+  <tr><td>Project scaffolding</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>Via specs</td><td>No</td><td>No</td><td>No</td></tr>
+  <tr><td>Memory layer (persistent)</td><td><strong style="color:var(--green)">Yes</strong></td><td>Partial</td><td>Yes</td><td>No</td><td>No</td><td>CLAUDE.md</td><td>Partial</td></tr>
+  <tr><td>Agent profiles</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>Steering</td><td>No</td><td>No</td><td>No</td></tr>
+  <tr><td>Ideation / Insights AI</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>Specs</td><td>No</td><td>No</td><td>Planning</td></tr>
+  <tr><td>Tauri native (small binary)</td><td><strong style="color:var(--green)">Yes</strong></td><td>Electron</td><td>Electron</td><td>Electron</td><td>GPUI</td><td>CLI</td><td>Web</td></tr>
+  <tr><td>Cost dashboard</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>No</td><td>No</td><td>No</td><td>ACU tracking</td></tr>
+  <tr><td>Fully free open-source</td><td><strong style="color:var(--green)">Yes</strong></td><td>No</td><td>No</td><td>No</td><td>Partial</td><td>No</td><td>No</td></tr>
+</tbody>
+</table>
+</div>
+
+<details open>
+  <summary>Updated Defensible Advantages</summary>
+  <div class="detail-body">
+    <h4>Strong Moats (Hard to Copy)</h4>
+    <ul class="check-list">
+      <li><strong>Integrated project lifecycle</strong> &mdash; ideation + issues + coding + deploy in one binary; no competitor combines all of these</li>
+      <li><strong>Agent-agnostic architecture</strong> &mdash; PTY-based, works with any CLI agent; survives model/provider churn</li>
+      <li><strong>Flight Deck metaphor</strong> &mdash; unique UX paradigm tying issues, sessions, and deploys into "flights"</li>
+      <li><strong>Open source + fully free core</strong> &mdash; only tool with genuinely full-featured free tier (Cursor, Windsurf, Kiro all gate features)</li>
+      <li><strong>Tauri native performance</strong> &mdash; 10-50x smaller binary than Electron competitors</li>
+      <li><strong>TUI companion binary</strong> &mdash; unique dual GUI+TUI approach</li>
+    </ul>
+    <h4>Eroded Advantages (Now Commoditized)</h4>
+    <ul class="x-list">
+      <li><strong>Multi-agent orchestration</strong> &mdash; Claude Code, Windsurf, Devin, Replit all do this now</li>
+      <li><strong>Memory layer</strong> &mdash; Windsurf, Cursor (partial), and Claude Code (CLAUDE.md) all have memory now</li>
+      <li><strong>MCP support</strong> &mdash; Kiro, Zed, Claude Code, Cline all support MCP</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Updated Critical Risks & Mitigations</summary>
+  <div class="detail-body">
+    <div class="table-wrap">
+    <table>
+    <thead><tr><th>Risk</th><th>Severity</th><th>Change</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>Competitors add project management</td><td><span class="badge badge-critical">Critical</span></td><td>Kiro's specs get close</td><td>Depth of integration + Flight Deck UX is hard to copy in extensions</td></tr>
+      <tr><td>Multi-agent no longer unique</td><td><span class="badge badge-critical">Critical</span></td><td><strong>Already happened</strong></td><td>Pivot positioning to workflow cockpit, not just multi-agent</td></tr>
+      <tr><td>Claude/OpenAI break CLI APIs</td><td><span class="badge badge-high">High</span></td><td>Stable so far</td><td>PTY-based design; agent-agnostic</td></tr>
+      <tr><td>Solo-dev burnout</td><td><span class="badge badge-high">High</span></td><td>Unchanged</td><td>Open source contributors; automate pipeline</td></tr>
+      <tr><td>Zed becomes the "agent cockpit"</td><td><span class="badge badge-high">High</span></td><td><strong>New</strong> &mdash; Zed's ACP + MCP positioning</td><td>PacketCode has project mgmt; Zed is editor-only</td></tr>
+      <tr><td>Pricing race to bottom</td><td><span class="badge badge-moderate">Moderate</span></td><td>Devin dropped from $500 to $20</td><td>Open-source core means $0 is sustainable; monetize on cloud sync</td></tr>
+    </tbody>
+    </table>
+    </div>
+  </div>
+</details>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 5. TARGET USERS (REFINED)                                 -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="target-users"><span class="section-num">05</span> Target Users (Refined)</h2>
+
+<div class="callout callout-blue">
+  <strong>Key Insight:</strong> With 92% of US devs using AI tools daily and 520% YoY growth in non-dev adoption, the market is much larger than the March plan assumed. But PacketCode should stay focused on technical users who need <em>workflow integration</em>, not just AI coding.
+</div>
+
+<details open>
+  <summary>Primary: "Workflow-First Builder"</summary>
+  <div class="detail-body">
+    <div class="callout callout-green">
+      <strong>Profile:</strong> Technical developer who uses 3+ AI tools and is frustrated by context fragmentation. They don't just want AI coding &mdash; they want ideation, project tracking, coding, and deployment in one place. They're tired of switching between Cursor + Linear + Vercel + terminal.
+    </div>
+    <ul>
+      <li><strong>Pain:</strong> "I use Claude Code for coding, Linear for issues, Vercel for deploy, and Notes for planning. I want ONE app."</li>
+      <li><strong>Want:</strong> Complete project lifecycle in a single native app</li>
+      <li><strong>Budget:</strong> $0-20/mo; willing to pay for cloud sync and convenience</li>
+      <li><strong>Where they are:</strong> Twitter/X, HN, Reddit r/programming, GitHub, YouTube</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Secondary: "Agent Power User"</summary>
+  <div class="detail-body">
+    <div class="callout callout-blue">
+      <strong>Profile:</strong> Developer who runs multiple AI agents simultaneously and wants fine-grained control. Frustrated by vendor lock-in to a single AI provider. Wants to mix Claude Code + Codex + local models.
+    </div>
+    <ul>
+      <li><strong>Pain:</strong> "Cursor locks me into their models. I want to use whatever agent is best for each task."</li>
+      <li><strong>Want:</strong> Agent-agnostic orchestration with profiles and memory</li>
+      <li><strong>Budget:</strong> Already paying $20-200/mo for AI tools; would switch for better control</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Tertiary: "Open Source Advocate"</summary>
+  <div class="detail-body">
+    <div class="callout callout-purple">
+      <strong>Profile:</strong> Developer who specifically seeks open-source alternatives to Cursor/Windsurf. Values transparency, no vendor lock-in, and community governance. Often found in discussions about Cursor pricing backlash.
+    </div>
+    <ul>
+      <li><strong>Pain:</strong> "Cursor keeps changing pricing. Windsurf switched to quotas. I want something I control."</li>
+      <li><strong>Want:</strong> Full-featured, free, open-source IDE that won't rug-pull on pricing</li>
+      <li><strong>Where they are:</strong> Reddit threads about Cursor alternatives, GitHub, HN</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>NOT For (Unchanged)</summary>
+  <div class="detail-body">
+    <ul class="x-list">
+      <li><strong>Enterprise (500+)</strong> &mdash; no SSO, audit logs, or compliance</li>
+      <li><strong>Non-technical "vibe coders"</strong> &mdash; Bolt.new/Lovable/Replit serve them better</li>
+      <li><strong>Full IDE seekers</strong> &mdash; PacketCode is a cockpit, not a code editor replacement</li>
+    </ul>
+  </div>
+</details>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 6. REVENUE MODEL & PRICING                                -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="revenue-model"><span class="section-num">06</span> Revenue Model & Pricing</h2>
+
+<h3>Updated Market Anchors (April 2026)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tool</th><th>Price</th><th>Change Since March</th></tr></thead>
+<tbody>
+  <tr><td>Cursor Pro</td><td>$20/mo</td><td>Pricing volatility; credit-based billing</td></tr>
+  <tr><td>Windsurf Pro</td><td>$20/mo</td><td><strong>Up from $15</strong>; switched to daily/weekly quotas Mar 19</td></tr>
+  <tr><td>GitHub Copilot Pro</td><td>$10/mo</td><td>Pro+ at $39/mo added; extra requests $0.04</td></tr>
+  <tr><td>Kiro Pro</td><td>$19/mo</td><td><strong>New entrant</strong></td></tr>
+  <tr><td>Cline Teams</td><td>$20/user/mo</td><td>Free through Q1 2026, now paid</td></tr>
+  <tr><td>Devin Core</td><td>$20/mo</td><td><strong>Down from $500</strong>; ACU-based pricing</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout callout-green">
+  <strong>Pricing Opportunity:</strong> The market is converging on $20/mo as the standard price point. Windsurf just raised from $15 to $20. PacketCode at $12/mo Pro with a genuinely full free tier is a strong value proposition &mdash; especially for users burned by Cursor/Windsurf pricing changes.
+</div>
+
+<h3>PacketCode Pricing (Unchanged, Validated)</h3>
+<div class="tier-grid">
+  <div class="tier-card">
+    <div class="tier-name">Free / Core</div>
+    <div class="tier-price">$0</div>
+    <ul>
+      <li>Full open-source app (no feature gating)</li>
+      <li>Multi-agent sessions (unlimited)</li>
+      <li>Kanban issue tracker + Flight Deck</li>
+      <li>Memory layer + Agent profiles</li>
+      <li>MCP Hub + Deploy pipeline</li>
+      <li>Ideation + Insights AI</li>
+      <li>Cost dashboard</li>
+      <li>Community support</li>
+    </ul>
+  </div>
+  <div class="tier-card featured">
+    <div class="tier-name">Pro</div>
+    <div class="tier-price">$12<span>/mo</span></div>
+    <ul>
+      <li>Everything in Free</li>
+      <li>Cloud memory sync</li>
+      <li>Agent profile marketplace</li>
+      <li>Advanced analytics</li>
+      <li>Priority GitHub issues</li>
+      <li>Custom scaffolding templates</li>
+      <li>Early access to features</li>
+    </ul>
+  </div>
+  <div class="tier-card">
+    <div class="tier-name">Teams</div>
+    <div class="tier-price">$20<span>/user/mo</span></div>
+    <ul>
+      <li>Everything in Pro</li>
+      <li>Shared team memory</li>
+      <li>Team agent profiles</li>
+      <li>Shared issue boards</li>
+      <li>Team deploy configs</li>
+      <li>Admin dashboard</li>
+      <li>Slack/email support</li>
+    </ul>
+  </div>
+</div>
+
+<details>
+  <summary>Updated Revenue Projections</summary>
+  <div class="detail-body">
+    <div class="callout callout-amber">
+      <strong>Note:</strong> Projections are conservative and assume organic growth with $0 paid acquisition. The market has grown faster than the March plan predicted, but competition has also intensified significantly.
+    </div>
+    <div class="table-wrap">
+    <table>
+    <thead><tr><th>Milestone</th><th>GitHub Stars</th><th>Monthly Users</th><th>Pro Conv.</th><th>Pro Users</th><th>Est. MRR</th></tr></thead>
+    <tbody>
+      <tr><td>Month 3</td><td>500</td><td>200</td><td>0%</td><td>0</td><td>$0</td></tr>
+      <tr><td>Month 6</td><td>2,000</td><td>800</td><td>3%</td><td>24</td><td>$288</td></tr>
+      <tr><td>Month 9</td><td>4,000</td><td>1,500</td><td>4%</td><td>60</td><td>$720</td></tr>
+      <tr><td>Month 12</td><td>8,000</td><td>3,500</td><td>5%</td><td>175</td><td>$2,100</td></tr>
+      <tr><td>Month 18</td><td>15,000</td><td>8,000</td><td>5%</td><td>400</td><td>$4,800</td></tr>
+      <tr><td>Month 24</td><td>30,000</td><td>15,000</td><td>6%</td><td>900</td><td>$10,800</td></tr>
+    </tbody>
+    </table>
+    </div>
+    <p style="color:var(--text-muted);font-size:0.8rem;">Projections slightly reduced from March plan due to intensified competition. More realistic given market conditions. Pro-only; team revenue excluded.</p>
+  </div>
+</details>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 7. POSITIONING PIVOT                                      -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="positioning-pivot"><span class="section-num">07</span> Positioning Pivot</h2>
+
+<div class="callout callout-red">
+  <strong>Critical Strategic Change:</strong> The March plan's positioning as "the first multi-agent IDE" is now invalid. Every major competitor supports multi-agent. PacketCode must reposition around its true differentiator: the <em>complete project lifecycle in a single native binary</em>.
+</div>
+
+<h3>Old Positioning (March 2026)</h3>
+<p style="text-decoration: line-through; color: var(--text-muted);">"The first open-source, native desktop IDE that orchestrates multiple AI coding agents in a single multi-pane cockpit."</p>
+
+<h3>New Positioning (April 2026)</h3>
+<p><strong>"The only open-source IDE that ships entire projects &mdash; from idea to deploy &mdash; without leaving the cockpit."</strong></p>
+
+<h3>Messaging Framework</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Audience</th><th>Message</th><th>Proof Point</th></tr></thead>
+<tbody>
+  <tr>
+    <td>Workflow-First Builder</td>
+    <td>"Stop switching between Cursor + Linear + Vercel. PacketCode is all three."</td>
+    <td>Flight Deck demo: create flight &rarr; break into issues &rarr; code &rarr; deploy</td>
+  </tr>
+  <tr>
+    <td>Agent Power User</td>
+    <td>"Use any AI agent. Claude, Codex, local models. No lock-in."</td>
+    <td>Side-by-side sessions with different agents on same codebase</td>
+  </tr>
+  <tr>
+    <td>Open Source Advocate</td>
+    <td>"Every feature. Free. Forever. No quotas, no credits, no rug-pulls."</td>
+    <td>Apache-2.0; contrast with Cursor/Windsurf pricing changes</td>
+  </tr>
+  <tr>
+    <td>Cursor Refugee</td>
+    <td>"Tired of pricing changes? PacketCode gives you more for $0."</td>
+    <td>Feature comparison table showing PacketCode free vs Cursor Pro</td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+<h3>Competitive Narratives</h3>
+<details>
+  <summary>PacketCode vs Cursor</summary>
+  <div class="detail-body">
+    <ul>
+      <li><strong>Cursor:</strong> Amazing AI code editor. But it's JUST a code editor. No issues, no deploy, no project management.</li>
+      <li><strong>PacketCode:</strong> Full project lifecycle. And it's free, open-source, and agent-agnostic.</li>
+      <li><strong>Key line:</strong> "Cursor writes code. PacketCode ships projects."</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>PacketCode vs Kiro</summary>
+  <div class="detail-body">
+    <ul>
+      <li><strong>Kiro:</strong> Great spec-driven approach, but locked to AWS/Bedrock ecosystem.</li>
+      <li><strong>PacketCode:</strong> Agent-agnostic, works with any cloud or local model, has full issue tracking and deploy pipeline.</li>
+      <li><strong>Key line:</strong> "Kiro plans your code. PacketCode plans your project."</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>PacketCode vs Zed</summary>
+  <div class="detail-body">
+    <ul>
+      <li><strong>Zed:</strong> Fastest editor alive, excellent MCP/ACP support. But it's an editor, not a project cockpit.</li>
+      <li><strong>PacketCode:</strong> Complementary &mdash; position as "use Zed for editing, PacketCode for orchestrating."</li>
+      <li><strong>Key line:</strong> "Zed is the best editor. PacketCode is the best cockpit. Use both."</li>
+    </ul>
+  </div>
+</details>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 8. MARKETING CHANNELS                                     -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="marketing-channels"><span class="section-num">08</span> Marketing Channels (Updated)</h2>
+
+<h3>Tier 1 &mdash; High Impact (Unchanged, Validated)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Channel</th><th>Why</th><th>Updated Approach</th></tr></thead>
+<tbody>
+  <tr><td><strong>Word of Mouth</strong></td><td>#1 driver; Cursor proved this</td><td>Focus on "wow moment" when user sees full flight lifecycle</td></tr>
+  <tr><td><strong>Hacker News</strong></td><td>Dev tool launches live/die here</td><td>Lead with "open-source project cockpit" angle, not "multi-agent"</td></tr>
+  <tr><td><strong>Twitter/X</strong></td><td>AI dev community epicenter</td><td>Build-in-public; demo Flight Deck workflow; engage Cursor refugees</td></tr>
+  <tr><td><strong>Reddit</strong></td><td>r/programming, r/LocalLLaMA, r/SideProject</td><td>Answer "Cursor alternative?" threads; show workflow demos</td></tr>
+  <tr><td><strong>YouTube</strong></td><td>Long-form trust builder</td><td>Full project builds: idea &rarr; flight &rarr; issues &rarr; code &rarr; deploy</td></tr>
+  <tr><td><strong>GitHub</strong></td><td>Discovery + credibility</td><td>Excellent README with Flight Deck GIF; comparison tables</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>New Channel: Cursor/Windsurf Migration Content</h3>
+<div class="callout callout-green">
+  <strong>Opportunity:</strong> Windsurf's March 19 pricing overhaul and Cursor's ongoing pricing volatility create a steady stream of users searching for alternatives. Create dedicated migration guides and comparison content.
+</div>
+<ul>
+  <li>"PacketCode vs Cursor: What $0 Gets You" (blog + YouTube)</li>
+  <li>"Migrating from Windsurf's Quotas to PacketCode" (tutorial)</li>
+  <li>"Why I Switched from Cursor to PacketCode" (authentic user stories)</li>
+  <li>Target Reddit threads: r/cursor, r/programming "Cursor alternative" posts</li>
+</ul>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 9. CONTENT & SOCIAL STRATEGY                              -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="content-strategy"><span class="section-num">09</span> Content & Social Strategy (Updated)</h2>
+
+<h3>Content Pillars (Revised)</h3>
+<ol>
+  <li><strong>"Full Flight" demos</strong> &mdash; show an entire project from idea to deploy in PacketCode (highest impact)</li>
+  <li><strong>Comparison content</strong> &mdash; "PacketCode vs X" for every competitor (captures search intent)</li>
+  <li><strong>Migration guides</strong> &mdash; specifically targeting Cursor/Windsurf pricing backlash</li>
+  <li><strong>Build-in-public threads</strong> &mdash; weekly Twitter threads on what shipped</li>
+  <li><strong>Agent shootouts</strong> &mdash; "Claude Code vs Codex in PacketCode: which is better for X?"</li>
+  <li><strong>Architecture deep-dives</strong> &mdash; Tauri + Rust credibility content for HN audience</li>
+</ol>
+
+<h3>New Content Angle: "The Project Cockpit"</h3>
+<p>Every piece of content should reinforce the <em>workflow</em> message, not the multi-agent message:</p>
+<ul>
+  <li><strong>Old:</strong> "Watch me orchestrate 3 AI agents simultaneously"</li>
+  <li><strong>New:</strong> "Watch me go from idea to deployed app without leaving PacketCode"</li>
+</ul>
+
+<h3>Video Content Strategy (Updated)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Format</th><th>Platform</th><th>Cadence</th><th>Key Change</th></tr></thead>
+<tbody>
+  <tr><td>"Full Flight" build (20-45 min)</td><td>YouTube</td><td>1/week</td><td><strong>New:</strong> emphasis on complete lifecycle, not just coding</td></tr>
+  <tr><td>Feature demo (3-8 min)</td><td>YouTube, Twitter</td><td>2/week</td><td>Focus on Flight Deck, Kanban, Deploy &mdash; not just agents</td></tr>
+  <tr><td>Comparison (5-10 min)</td><td>YouTube</td><td>2/month</td><td><strong>New:</strong> comparison must include workflow features, not just AI quality</td></tr>
+  <tr><td>Short clip (30-60s)</td><td>TikTok, Shorts, Reels</td><td>3-5/week</td><td>Hook: "One app. Idea to deploy." with speed demo</td></tr>
+  <tr><td>Architecture tour (10-20 min)</td><td>YouTube</td><td>1/month</td><td>Unchanged</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Automation Stack (Unchanged)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tool</th><th>Cost</th><th>Purpose</th></tr></thead>
+<tbody>
+  <tr><td>OBS Studio</td><td>$0</td><td>Recording</td></tr>
+  <tr><td>CapCut</td><td>$0</td><td>Editing</td></tr>
+  <tr><td>Postiz (self-hosted)</td><td>$0</td><td>Scheduling</td></tr>
+  <tr><td>PostHog (free tier)</td><td>$0</td><td>Analytics</td></tr>
+  <tr><td>Resend (free tier)</td><td>$0</td><td>Email</td></tr>
+  <tr><td>Opus Clip</td><td>$15</td><td>Video Clips</td></tr>
+  <tr><td>Claude API</td><td>~$20</td><td>AI Content</td></tr>
+  <tr><td>Zebracat</td><td>$20</td><td>Video Gen</td></tr>
+  <tr><td>HeyGen</td><td>$24</td><td>Avatar Video</td></tr>
+  <tr style="background: rgba(63,185,80,0.08); font-weight: 600;">
+    <td><strong>Total</strong></td><td><strong>~$79/mo</strong></td><td></td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 10. GROWTH PLAYBOOK (UPDATED)                             -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="growth-playbook"><span class="section-num">10</span> Growth Playbook (Updated)</h2>
+
+<div class="phase phase-1">
+  <h4 style="color: var(--green);">Phase 1: Foundation &mdash; Months 1-3 &mdash; <em>"Ship the Cockpit"</em></h4>
+  <p><strong>Product Priority (Updated):</strong></p>
+  <ul>
+    <li>Polish Flight Deck end-to-end workflow &mdash; this IS the differentiator now</li>
+    <li>Ensure "Full Flight" demo works flawlessly: create flight &rarr; ideate &rarr; issues &rarr; code &rarr; deploy</li>
+    <li>README with animated GIF showing complete workflow (not just multi-pane terminals)</li>
+    <li>Quick-start guide: "Ship your first project in 5 minutes"</li>
+  </ul>
+  <p><strong>Channels:</strong></p>
+  <ul>
+    <li>Build-in-public on Twitter/X with "project cockpit" framing</li>
+    <li>Discord server with #show-your-flights channel</li>
+    <li>First YouTube "Full Flight" build session</li>
+  </ul>
+  <p><strong>Target:</strong> <em>500 GitHub stars, 50 Discord members, 200 Twitter followers</em></p>
+</div>
+
+<div class="phase phase-2">
+  <h4 style="color: var(--blue);">Phase 2: Traction &mdash; Months 3-6 &mdash; <em>"Capture Refugees"</em></h4>
+  <p><strong>Launches:</strong></p>
+  <ul>
+    <li>Show HN: "PacketCode &mdash; Open-source project cockpit for AI-powered development"</li>
+    <li>Product Hunt: lead with workflow story, not multi-agent</li>
+    <li>Publish migration guides for Cursor and Windsurf users</li>
+  </ul>
+  <p><strong>Content Blitz:</strong></p>
+  <ul>
+    <li>Comparison videos: PacketCode vs Cursor, vs Kiro, vs Zed (emphasize workflow gap)</li>
+    <li>"I built X from idea to deploy in PacketCode" video series</li>
+    <li>Target every Reddit "Cursor alternative" thread with genuine value</li>
+  </ul>
+  <p><strong>Target:</strong> <em>2,000 stars, 200 Discord, 1,000 Twitter, 800 MAU</em></p>
+</div>
+
+<div class="phase phase-3">
+  <h4 style="color: var(--purple);">Phase 3: Monetize &mdash; Months 6-12 &mdash; <em>"Ship Pro"</em></h4>
+  <p><strong>Product:</strong></p>
+  <ul>
+    <li>Launch Pro tier ($12/mo) with cloud memory sync as lead feature</li>
+    <li>Agent profile marketplace</li>
+    <li>Advanced analytics and cost tracking across agents</li>
+  </ul>
+  <p><strong>Growth:</strong></p>
+  <ul>
+    <li>Referral program (free Pro month)</li>
+    <li>Sponsor open-source devs who adopt PacketCode</li>
+    <li>Guest spots on 2-3 dev/AI podcasts</li>
+    <li>Teams beta with 5-10 early teams</li>
+  </ul>
+  <p><strong>Target:</strong> <em>8,000 stars, 3,500 MAU, $2,100 MRR</em></p>
+</div>
+
+<div class="phase phase-4">
+  <h4 style="color: var(--amber);">Phase 4: Scale &mdash; Months 12-24 &mdash; <em>"Ecosystem"</em></h4>
+  <p><strong>Product:</strong></p>
+  <ul>
+    <li>Plugin/extension system for community-built modules</li>
+    <li>Team collaboration features (shared flights, real-time sync)</li>
+    <li>Explore Zed-style ACP integration for external agent support</li>
+  </ul>
+  <p><strong>Growth:</strong></p>
+  <ul>
+    <li>Contributor program with rewards/recognition</li>
+    <li>Partnership with AI tool providers for official integrations</li>
+    <li>Conference talks: "Beyond AI Coding: Building AI-Powered Project Cockpits"</li>
+  </ul>
+  <p><strong>Target:</strong> <em>30,000 stars, 15,000 MAU, $10,800 MRR</em></p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 11. NEW ENTRANTS SINCE MARCH                              -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="new-entrants"><span class="section-num">11</span> New Entrants & Major Updates Since March</h2>
+
+<details open>
+  <summary>Kiro (Amazon/AWS) &mdash; Spec-Driven IDE</summary>
+  <div class="detail-body">
+    <div class="stat-row">
+      <div class="stat-card"><div class="value blue">$19/mo</div><div class="label">Pro price</div></div>
+      <div class="stat-card"><div class="value green">Free</div><div class="label">50 interactions/mo</div></div>
+    </div>
+    <ul>
+      <li><strong>What:</strong> AI IDE that generates specs before writing code. Specs cover requirements, design, data models, and task breakdown.</li>
+      <li><strong>Key features:</strong> Specs, Hooks (automation triggers), Steering (custom rules), MCP Servers, native AWS integration</li>
+      <li><strong>Powered by:</strong> Claude Sonnet via Amazon Bedrock</li>
+      <li><strong>Threat to PacketCode:</strong> Kiro's spec-driven approach is the closest to PacketCode's "ideate then code" workflow. But it lacks kanban, deploy pipeline, and agent-agnostic design.</li>
+      <li><strong>Opportunity:</strong> Position PacketCode as "Kiro's workflow but open-source and agent-agnostic"</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Amp (Sourcegraph) &mdash; Team-Oriented Agent</summary>
+  <div class="detail-body">
+    <ul>
+      <li><strong>What:</strong> Agentic coding assistant from Sourcegraph. CLI + VS Code extension.</li>
+      <li><strong>Key features:</strong> Unconstrained token usage, subagent parallelization, thread sharing, team leaderboards, 168K context</li>
+      <li><strong>Threat to PacketCode:</strong> Low-medium. Amp is agent-only, no project management. But the team features (thread sharing, leaderboards) are interesting.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Roo Code &mdash; Cline Fork with Custom Modes</summary>
+  <div class="detail-body">
+    <div class="stat-row">
+      <div class="stat-card"><div class="value green">22K</div><div class="label">GitHub stars</div></div>
+      <div class="stat-card"><div class="value blue">1.2M</div><div class="label">VS Code installs</div></div>
+    </div>
+    <ul>
+      <li><strong>What:</strong> Fork of Cline with custom AI personas ("modes") with scoped tool permissions</li>
+      <li><strong>Key features:</strong> Custom modes, diff-based editing, cloud layer for remote agent management</li>
+      <li><strong>Threat:</strong> Moderate. Similar to PacketCode's agent profiles concept but within VS Code.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Modo &mdash; New Open-Source IDE</summary>
+  <div class="detail-body">
+    <ul>
+      <li><strong>What:</strong> New open-source IDE (appeared April 2026) positioning as explicit alternative to Cursor, Kiro, and Windsurf</li>
+      <li><strong>Built on:</strong> VS Code core with AI coding built in</li>
+      <li><strong>Status:</strong> Very early; limited information available</li>
+      <li><strong>Threat:</strong> Low for now, but watch closely as another open-source competitor</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Windsurf Pricing Overhaul (March 19, 2026)</summary>
+  <div class="detail-body">
+    <div class="callout callout-red">
+      <strong>Opportunity Alert:</strong> Windsurf switched from credit system to daily/weekly quotas and raised Pro from $15 to $20/mo. This is generating user frustration &mdash; a prime acquisition moment for PacketCode.
+    </div>
+    <ul>
+      <li>Existing subscribers grandfathered at old prices</li>
+      <li>Heavy users hitting daily limits even on Pro</li>
+      <li>SWE-1.5 "Fast Agent" model announced alongside pricing change</li>
+      <li><strong>PacketCode angle:</strong> "No quotas. No credits. No limits. Free."</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Claude Code Agent Teams (February 2026)</summary>
+  <div class="detail-body">
+    <ul>
+      <li>Multiple Claude instances work in parallel via shared task list</li>
+      <li>Ultra plan: 3 exploration agents + 1 critic agent architecture</li>
+      <li>Demonstrated by building a 100K-line C compiler with 16 agents</li>
+      <li><strong>Impact on PacketCode:</strong> Claude Code itself now does multi-agent &mdash; but PacketCode wraps it with project management, issues, and deploy. The value prop shifts from "orchestrate Claude" to "manage your project around Claude."</li>
+    </ul>
+  </div>
+</details>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 12. THREATS & OPPORTUNITIES                               -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="threats-opportunities"><span class="section-num">12</span> Threats & Opportunities Matrix</h2>
+
+<h3>Immediate Threats</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Threat</th><th>Severity</th><th>Timeframe</th><th>Response</th></tr></thead>
+<tbody>
+  <tr>
+    <td>Cursor adds project management / issues</td>
+    <td><span class="badge badge-critical">Critical</span></td>
+    <td>6-12 months</td>
+    <td>Ship and gain users before they can. Depth of integration is hard to copy.</td>
+  </tr>
+  <tr>
+    <td>Kiro expands beyond specs to full project lifecycle</td>
+    <td><span class="badge badge-high">High</span></td>
+    <td>6-18 months</td>
+    <td>PacketCode is agent-agnostic; Kiro is locked to AWS/Bedrock.</td>
+  </tr>
+  <tr>
+    <td>Zed adds project management via extensions</td>
+    <td><span class="badge badge-high">High</span></td>
+    <td>6-12 months</td>
+    <td>Position as complementary ("use Zed for editing, PacketCode for orchestrating").</td>
+  </tr>
+  <tr>
+    <td>GitHub adds full project cockpit to Copilot</td>
+    <td><span class="badge badge-critical">Critical</span></td>
+    <td>12-24 months</td>
+    <td>Open-source advantage; GitHub would charge enterprise prices.</td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+<h3>Immediate Opportunities</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Opportunity</th><th>Impact</th><th>Effort</th><th>Action</th></tr></thead>
+<tbody>
+  <tr>
+    <td>Windsurf pricing backlash (March 19)</td>
+    <td><span class="badge badge-critical">High</span></td>
+    <td>Low</td>
+    <td>Publish migration guide and comparison content immediately</td>
+  </tr>
+  <tr>
+    <td>Cursor pricing volatility frustration</td>
+    <td><span class="badge badge-high">High</span></td>
+    <td>Low</td>
+    <td>"PacketCode: $0. Every feature. No surprises." messaging</td>
+  </tr>
+  <tr>
+    <td>45% of AI code has OWASP vulnerabilities</td>
+    <td><span class="badge badge-moderate">Medium</span></td>
+    <td>Medium</td>
+    <td>Add code quality scanning to Flight Deck; market as "ship safe AI code"</td>
+  </tr>
+  <tr>
+    <td>63% of devs spent more time debugging AI code than writing it</td>
+    <td><span class="badge badge-moderate">Medium</span></td>
+    <td>Medium</td>
+    <td>Position Flight Deck as "AI project management" that catches issues before deploy</td>
+  </tr>
+  <tr>
+    <td>No Tauri-based AI IDE competitor exists</td>
+    <td><span class="badge badge-moderate">Medium</span></td>
+    <td>Zero (already built)</td>
+    <td>Market the binary size and performance advantage vs Electron competitors</td>
+  </tr>
+  <tr>
+    <td>520% YoY growth in non-dev AI coding adoption</td>
+    <td><span class="badge badge-low">Low</span></td>
+    <td>High</td>
+    <td>Future consideration; don't chase this market now (Bolt/Lovable own it)</td>
+  </tr>
+</tbody>
+</table>
+</div>
+
+<h3>Strategic Recommendations Summary</h3>
+<div class="callout callout-green">
+  <strong>Top 5 Actions for April-June 2026:</strong>
+  <ol>
+    <li><strong>Reposition messaging immediately</strong> &mdash; drop "multi-agent pioneer," lead with "project cockpit" / "idea-to-deploy"</li>
+    <li><strong>Polish the Flight Deck demo</strong> &mdash; this one workflow IS the marketing; it must be flawless</li>
+    <li><strong>Publish Cursor/Windsurf comparison content</strong> &mdash; capitalize on pricing backlash while it's hot</li>
+    <li><strong>Update GitHub README</strong> &mdash; feature comparison table with workflow features, not just AI capabilities</li>
+    <li><strong>Watch Kiro closely</strong> &mdash; it's the closest conceptual competitor; differentiate on agent-agnostic + open-source</li>
+  </ol>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- 13. SOURCES                                               -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<h2 id="sources"><span class="section-num">13</span> Sources</h2>
+
+<details open>
+  <summary>Market Data & Revenue</summary>
+  <div class="detail-body">
+    <ul>
+      <li><a href="https://techcrunch.com/2026/03/02/cursor-has-reportedly-surpassed-2b-in-annualized-revenue/">TechCrunch &mdash; Cursor surpasses $2B ARR (March 2026)</a></li>
+      <li><a href="https://www.bloomberg.com/news/articles/2026-03-02/cursor-recurring-revenue-doubles-in-three-months-to-2-billion">Bloomberg &mdash; Cursor revenue doubles in three months</a></li>
+      <li><a href="https://tech-insider.org/cursor-60-billion-valuation-anysphere-ai-coding-2026/">Tech Insider &mdash; Cursor $60B valuation talks</a></li>
+      <li><a href="https://fortune.com/2026/03/21/cursor-ceo-michael-truell-ai-coding-claude-anthropic-venture-capital/">Fortune &mdash; Cursor's rapid rise and uncertain future</a></li>
+      <li><a href="https://www.precedenceresearch.com/ai-code-tools-market">Precedence Research &mdash; AI Code Tools Market ($91B by 2035)</a></li>
+      <li><a href="https://theaiinsider.tech/2026/03/16/replit-raises-400m-to-expand-ai-coding-platform-at-9b-valuation/">AI Insider &mdash; Replit $400M raise at $9B</a></li>
+      <li><a href="https://techcrunch.com/2026/03/23/vibe-coding-startup-lovable-is-on-the-hunt-for-acquisitions/">TechCrunch &mdash; Lovable hunting acquisitions</a></li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Competitor Features & Pricing</summary>
+  <div class="detail-body">
+    <ul>
+      <li><a href="https://www.datacamp.com/blog/best-agentic-ide">DataCamp &mdash; The 13 Best Agentic IDEs in 2026</a></li>
+      <li><a href="https://www.builder.io/blog/agentic-ide">Builder.io &mdash; Best agentic IDEs heading into 2026</a></li>
+      <li><a href="https://www.nxcode.io/resources/news/ai-coding-tools-pricing-comparison-2026">NxCode &mdash; AI Coding Tools Pricing Comparison 2026</a></li>
+      <li><a href="https://lushbinary.com/blog/ai-coding-agents-comparison-cursor-windsurf-claude-copilot-kiro-2026/">Lushbinary &mdash; AI Coding Agents Pricing & Features Compared</a></li>
+      <li><a href="https://www.verdent.ai/guides/windsurf-pricing-2026">Verdent &mdash; Windsurf Pricing 2026 (quota changes)</a></li>
+      <li><a href="https://windsurf.com/pricing">Windsurf &mdash; Official Pricing Page</a></li>
+      <li><a href="https://www.nxcode.io/resources/news/github-copilot-complete-guide-2026-features-pricing-agents">NxCode &mdash; GitHub Copilot 2026 Complete Guide</a></li>
+      <li><a href="https://venturebeat.com/programming-development/devin-2-0-is-here-cognition-slashes-price-of-ai-software-engineer-to-20-per-month-from-500">VentureBeat &mdash; Devin 2.0 price drop from $500 to $20</a></li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>New Entrants</summary>
+  <div class="detail-body">
+    <ul>
+      <li><a href="https://kiro.dev/">Kiro &mdash; Official Site</a></li>
+      <li><a href="https://www.openaitoolshub.org/en/blog/kiro-review-amazon-ide">OpenAI Tools Hub &mdash; Kiro Review</a></li>
+      <li><a href="https://dev.to/aws-builders/kiro-vs-cursor-how-amazons-ai-ide-is-redefining-developer-productivity-3eg8">Dev.to &mdash; Kiro vs Cursor</a></li>
+      <li><a href="https://ampcode.com/">Amp &mdash; Official Site</a></li>
+      <li><a href="https://sourcegraph.com/amp">Sourcegraph &mdash; Amp</a></li>
+      <li><a href="https://www.qodo.ai/blog/roo-code-vs-cline/">Qodo &mdash; Roo Code vs Cline</a></li>
+      <li><a href="https://openhands.dev/">OpenHands &mdash; Official Site</a></li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Multi-Agent & Claude Code</summary>
+  <div class="detail-body">
+    <ul>
+      <li><a href="https://www.anthropic.com/engineering/building-c-compiler">Anthropic &mdash; Building a C compiler with parallel Claudes</a></li>
+      <li><a href="https://www.mindstudio.ai/blog/claude-code-agent-teams-parallel-collaboration">MindStudio &mdash; Claude Code Agent Teams</a></li>
+      <li><a href="https://code.claude.com/docs/en/sub-agents">Claude Code Docs &mdash; Custom Subagents</a></li>
+      <li><a href="https://code.visualstudio.com/blogs/2026/02/05/multi-agent-development">VS Code Blog &mdash; Multi-Agent Development (Feb 2026)</a></li>
+      <li><a href="https://addyosmani.com/blog/code-agent-orchestra/">Addy Osmani &mdash; The Code Agent Orchestra</a></li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Vibe Coding & Market Trends</summary>
+  <div class="detail-body">
+    <ul>
+      <li><a href="https://www.secondtalent.com/resources/vibe-coding-statistics/">Second Talent &mdash; Vibe Coding Statistics 2026</a></li>
+      <li><a href="https://hashnode.com/blog/state-of-vibe-coding-2026">Hashnode &mdash; The State of Vibe Coding in 2026</a></li>
+      <li><a href="https://www.getpanto.ai/blog/ai-coding-assistant-statistics">Panto &mdash; AI Coding Statistics</a></li>
+      <li><a href="https://serenitiesai.com/articles/vibe-coding-vs-traditional-coding-2026">Serenities AI &mdash; Vibe Coding vs Traditional Coding 2026</a></li>
+      <li><a href="https://www.builder.io/blog/cursor-alternatives-2026">Builder.io &mdash; Cursor Alternatives in 2026</a></li>
+      <li><a href="https://apidog.com/blog/open-source-coding-assistants-2026/">Apidog &mdash; Best open source coding assistants 2026</a></li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Zed & Open Source Editors</summary>
+  <div class="detail-body">
+    <ul>
+      <li><a href="https://zed.dev/ai">Zed AI &mdash; Official Page</a></li>
+      <li><a href="https://www.builder.io/blog/zed-ai-2026">Builder.io &mdash; Is Zed ready for AI power users in 2026?</a></li>
+      <li><a href="https://zed.dev/docs/ai/models">Zed Docs &mdash; AI Models and Pricing</a></li>
+      <li><a href="https://www.index.dev/blog/best-open-source-ai-code-editors">Index.dev &mdash; 7 Best Open Source AI Code Editors 2026</a></li>
+      <li><a href="https://github.com/Aider-AI/aider">GitHub &mdash; Aider (40K+ stars)</a></li>
+    </ul>
+  </div>
+</details>
+
+
+<!-- ── Footer ─────────────────────────────────────────────── -->
+<div style="margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
+  <p>PacketCode Updated Marketing Plan &mdash; Internal Reference Document</p>
+  <p>Generated 2026-04-10 | Supersedes 2026-03-21 plan | Apache-2.0 | Not for public distribution</p>
+</div>
+
+</div><!-- /.main -->
+
+<!-- ── Minimal JS for TOC highlighting ──────────────────── -->
+<script>
+(function() {
+  const links = document.querySelectorAll('.sidebar nav a[href^="#"]');
+  const sections = [];
+  links.forEach(link => {
+    const id = link.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    if (el) sections.push({ id, el, link });
+  });
+
+  function updateActive() {
+    let current = sections[0];
+    const scrollY = window.scrollY + 120;
+    for (const s of sections) {
+      if (s.el.offsetTop <= scrollY) current = s;
+    }
+    links.forEach(l => l.classList.remove('active'));
+    if (current) current.link.classList.add('active');
+  }
+
+  window.addEventListener('scroll', updateActive, { passive: true });
+  updateActive();
+})();
+</script>
+
+</body>
+</html>
