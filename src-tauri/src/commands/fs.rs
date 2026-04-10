@@ -123,6 +123,41 @@ pub async fn list_directory(dir_path: String, workspace: String) -> Result<Vec<D
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// List only immediate subdirectories of a given path.
+/// Used by the "projects folder" setting to discover project folders.
+/// No workspace constraint — the user explicitly configures this path.
+#[tauri::command]
+pub async fn list_subdirectories(dir_path: String) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let path = Path::new(&dir_path);
+        if !path.is_absolute() {
+            return Err(format!("Path must be absolute: {}", dir_path));
+        }
+        if !path.is_dir() {
+            return Err(format!("Not a directory: {}", dir_path));
+        }
+
+        let read_dir = fs::read_dir(path)
+            .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+        let mut dirs: Vec<String> = Vec::new();
+        for entry in read_dir.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if !name.starts_with('.') && !SKIP_DIRS.contains(&name.as_str()) {
+                        dirs.push(entry.path().to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+        dirs.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        Ok(dirs)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -89,6 +89,7 @@ pub fn run() {
             commands::crashes::delete_crash,
             // Filesystem
             commands::fs::list_directory,
+            commands::fs::list_subdirectories,
             commands::fs::get_cwd,
             // Flight lifecycle orchestration
             commands::orchestration::launch_flight,

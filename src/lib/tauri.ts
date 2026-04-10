@@ -9,6 +9,10 @@ export async function getCwd(): Promise<string> {
   return invoke<string>("get_cwd");
 }
 
+export async function listSubdirectories(dirPath: string): Promise<string[]> {
+  return invoke<string[]>("list_subdirectories", { dirPath });
+}
+
 export async function listDirectory(dirPath: string, workspace: string): Promise<{
   name: string;
   path: string;

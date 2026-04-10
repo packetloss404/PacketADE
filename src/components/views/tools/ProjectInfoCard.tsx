@@ -1,6 +1,7 @@
-import { FolderOpen, GitBranch } from "lucide-react";
+import { FolderOpen, GitBranch, FolderSearch } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useLayoutStore } from "../../../stores/layoutStore";
+import { useLayoutStore } from "@/stores/layoutStore";
+import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 
 interface ProjectInfoCardProps {
   projectPath: string;
@@ -9,11 +10,20 @@ interface ProjectInfoCardProps {
 
 export function ProjectInfoCard({ projectPath, gitBranch }: ProjectInfoCardProps) {
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
+  const projectsFolder = useProjectHistoryStore((s) => s.projectsFolder);
+  const setProjectsFolder = useProjectHistoryStore((s) => s.setProjectsFolder);
 
   const handleBrowse = async () => {
-    const selected = await open({ directory: true, title: "Select Default Project Folder" });
+    const selected = await open({ directory: true, title: "Select Project Folder" });
     if (selected) {
       setProjectPath(selected);
+    }
+  };
+
+  const handleBrowseProjectsFolder = async () => {
+    const selected = await open({ directory: true, title: "Select Default Projects Folder" });
+    if (selected) {
+      setProjectsFolder(selected);
     }
   };
 
@@ -23,10 +33,11 @@ export function ProjectInfoCard({ projectPath, gitBranch }: ProjectInfoCardProps
         <FolderOpen size={12} />
         Project
       </h3>
-      <div className="flex flex-col gap-2 text-xs">
+      <div className="flex flex-col gap-3 text-xs">
+        {/* Current project */}
         <div className="flex items-center gap-2">
           <span className="text-text-muted">Path: </span>
-          <span className="text-text-secondary truncate flex-1">{projectPath}</span>
+          <span className="text-text-secondary truncate flex-1" title={projectPath}>{projectPath}</span>
           <button
             onClick={handleBrowse}
             className="px-2 py-0.5 text-[11px] bg-bg-tertiary hover:bg-bg-border text-text-secondary rounded transition-colors"
@@ -41,6 +52,36 @@ export function ProjectInfoCard({ projectPath, gitBranch }: ProjectInfoCardProps
             <span className="text-text-secondary">{gitBranch}</span>
           </div>
         )}
+
+        {/* Projects folder setting */}
+        <div className="border-t border-bg-border pt-3 mt-1">
+          <div className="flex items-center gap-2 mb-1.5">
+            <FolderSearch size={11} className="text-accent-amber" />
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">Projects Folder</span>
+          </div>
+          <p className="text-[10px] text-text-muted mb-2">
+            Set a default folder. All subdirectories will appear in the sidebar projects list.
+          </p>
+          <div className="flex items-center gap-2">
+            <span className="text-text-secondary truncate flex-1 text-[11px]" title={projectsFolder ?? ""}>
+              {projectsFolder || "Not set"}
+            </span>
+            <button
+              onClick={handleBrowseProjectsFolder}
+              className="px-2 py-0.5 text-[11px] bg-bg-tertiary hover:bg-bg-border text-text-secondary rounded transition-colors"
+            >
+              Browse
+            </button>
+            {projectsFolder && (
+              <button
+                onClick={() => setProjectsFolder(null)}
+                className="px-2 py-0.5 text-[11px] text-text-muted hover:text-red-400 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 
 const STORAGE_KEY = "packetcode:project-history";
+const FOLDER_KEY = "packetcode:projects-folder";
 
 export interface ProjectHistoryEntry {
   path: string;
@@ -10,8 +11,14 @@ export interface ProjectHistoryEntry {
 
 interface ProjectHistoryStore {
   projects: ProjectHistoryEntry[];
+  projectsFolder: string | null;
+  scannedProjects: string[];
+
   recordOpen: (path: string) => void;
   removeProject: (path: string) => void;
+  setProjectsFolder: (folder: string | null) => void;
+  setScannedProjects: (paths: string[]) => void;
+  scanProjectsFolder: () => Promise<void>;
 }
 
 function load(): ProjectHistoryEntry[] {
@@ -22,8 +29,14 @@ function persist(projects: ProjectHistoryEntry[]) {
   saveToStorage(STORAGE_KEY, projects);
 }
 
-export const useProjectHistoryStore = create<ProjectHistoryStore>((set) => ({
+function loadFolder(): string | null {
+  return loadFromStorage<string | null>(FOLDER_KEY, null);
+}
+
+export const useProjectHistoryStore = create<ProjectHistoryStore>((set, get) => ({
   projects: load(),
+  projectsFolder: loadFolder(),
+  scannedProjects: [],
 
   recordOpen: (path) => {
     if (!path) return;
@@ -41,5 +54,29 @@ export const useProjectHistoryStore = create<ProjectHistoryStore>((set) => ({
       persist(projects);
       return { projects };
     });
+  },
+
+  setProjectsFolder: (folder) => {
+    saveToStorage(FOLDER_KEY, folder);
+    set({ projectsFolder: folder });
+    if (folder) {
+      get().scanProjectsFolder();
+    } else {
+      set({ scannedProjects: [] });
+    }
+  },
+
+  setScannedProjects: (paths) => set({ scannedProjects: paths }),
+
+  scanProjectsFolder: async () => {
+    const folder = get().projectsFolder;
+    if (!folder) return;
+    try {
+      const { listSubdirectories } = await import("@/lib/tauri");
+      const dirs = await listSubdirectories(folder);
+      set({ scannedProjects: dirs });
+    } catch {
+      set({ scannedProjects: [] });
+    }
   },
 }));
