@@ -59,41 +59,38 @@ export function useTerminalSession({
 
   const projectPath = useLayoutStore((s) => s.projectPath);
 
-  const handleStateChange = useCallback(
-    (prev: PtyDetectorState, next: PtyDetectorState) => {
-      const tabId = tabIdRef.current;
-      const sessionId = sessionIdRef.current;
+  const handleStateChange = useCallback((prev: PtyDetectorState, next: PtyDetectorState) => {
+    const tabId = tabIdRef.current;
+    const sessionId = sessionIdRef.current;
 
-      setShowApproval(next.needsApproval);
-      setActivityInfo({
-        tool: next.currentTool,
-        file: next.currentFile,
-        state: next.agentState,
+    setShowApproval(next.needsApproval);
+    setActivityInfo({
+      tool: next.currentTool,
+      file: next.currentFile,
+      state: next.agentState,
+    });
+
+    if (tabId) {
+      useActivityStore.getState().setActivity(tabId, {
+        currentTool: next.currentTool,
+        currentFile: next.currentFile,
+        agentState: next.agentState,
+        lastActivityAt: next.lastActivityAt,
       });
+    }
 
-      if (tabId) {
-        useActivityStore.getState().setActivity(tabId, {
-          currentTool: next.currentTool,
-          currentFile: next.currentFile,
-          agentState: next.agentState,
-          lastActivityAt: next.lastActivityAt,
-        });
-      }
-
-      if (tabId) {
-        if (next.needsApproval && !prev.needsApproval) {
-          useTabStore.getState().updateTabStatus(tabId, "waiting_approval");
-          const tab = useTabStore.getState().getTab(tabId);
-          if (sessionId && tab) {
-            notifyApprovalNeeded(sessionId, tab.name);
-          }
-        } else if (!next.needsApproval && prev.needsApproval) {
-          useTabStore.getState().updateTabStatus(tabId, "running");
+    if (tabId) {
+      if (next.needsApproval && !prev.needsApproval) {
+        useTabStore.getState().updateTabStatus(tabId, "waiting_approval");
+        const tab = useTabStore.getState().getTab(tabId);
+        if (sessionId && tab) {
+          notifyApprovalNeeded(sessionId, tab.name);
         }
+      } else if (!next.needsApproval && prev.needsApproval) {
+        useTabStore.getState().updateTabStatus(tabId, "running");
       }
-    },
-    []
-  );
+    }
+  }, []);
 
   const detectorResult = usePtyStateDetector({
     sessionId: currentSessionId,
@@ -132,7 +129,7 @@ export function useTerminalSession({
     setError(null);
     setShowApproval(false);
     setActivityInfo({ tool: null, file: null, state: "idle" });
-    term.clear();
+    term.reset();
 
     try {
       fitAddon.fit();
@@ -174,9 +171,7 @@ export function useTerminalSession({
 
       useTabStore.getState().updateTabStatus(tabId, "running");
       useTabStore.setState((s) => ({
-        tabs: s.tabs.map((t) =>
-          t.id === tabId ? { ...t, ptySessionId: sessionId } : t
-        ),
+        tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, ptySessionId: sessionId } : t)),
       }));
 
       startDurationTimer(tabId);
@@ -211,15 +206,22 @@ export function useTerminalSession({
       setError(msg);
       const label = cliCommand.charAt(0).toUpperCase() + cliCommand.slice(1);
       term.write(`\x1b[31mFailed to start ${label}: ${msg}\x1b[0m\r\n`);
-      term.write(
-        `\x1b[90mMake sure '${cliCommand}' is installed and on your PATH.\x1b[0m\r\n`
-      );
+      term.write(`\x1b[90mMake sure '${cliCommand}' is installed and on your PATH.\x1b[0m\r\n`);
       useTabStore.getState().updateTabStatus(tabId, "error");
       stopDurationTimer();
 
       notifySessionError(tabId, `Session ${sessionCounter}`);
     }
-  }, [projectPath, cliCommand, cliArgs, startDurationTimer, stopDurationTimer, paneId, xtermRef, fitAddonRef]);
+  }, [
+    projectPath,
+    cliCommand,
+    cliArgs,
+    startDurationTimer,
+    stopDurationTimer,
+    paneId,
+    xtermRef,
+    fitAddonRef,
+  ]);
 
   // Auto-start on mount
   useEffect(() => {

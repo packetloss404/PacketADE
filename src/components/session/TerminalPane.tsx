@@ -68,14 +68,10 @@ export function TerminalPane({
     onAbort: handleAbort,
   });
 
-  const showActivityStrip =
-    alive && activityInfo.state !== "idle" && activityInfo.tool !== null;
+  const showActivityStrip = alive && activityInfo.state !== "idle" && activityInfo.tool !== null;
 
   return (
-    <div
-      className="flex flex-col h-full bg-bg-primary"
-      onClick={() => setActivePaneId(paneId)}
-    >
+    <div className="flex h-full flex-col bg-bg-primary" onClick={() => setActivePaneId(paneId)}>
       <TerminalHeader
         alive={alive}
         error={error}
@@ -87,23 +83,19 @@ export function TerminalPane({
         showCloseButton={showCloseButton}
       />
 
-      <div className="relative flex-1 overflow-hidden">
-        <div
-          ref={termContainerRef}
-          className="h-full overflow-hidden"
-          style={{ padding: "4px 2px 0 4px" }}
-        />
+      <div className="relative flex-1 overflow-hidden" style={{ padding: "4px 2px 0 4px" }}>
+        <div ref={termContainerRef} className="h-full w-full overflow-hidden" />
         {showApproval && alive && (
-          <ApprovalOverlay
-            onApprove={handleApprove}
-            onDeny={handleDeny}
-            onAbort={handleAbort}
-          />
+          <ApprovalOverlay onApprove={handleApprove} onDeny={handleDeny} onAbort={handleAbort} />
         )}
       </div>
 
       {showActivityStrip && (
-        <ActivityStrip state={activityInfo.state} tool={activityInfo.tool} file={activityInfo.file} />
+        <ActivityStrip
+          state={activityInfo.state}
+          tool={activityInfo.tool}
+          file={activityInfo.file}
+        />
       )}
 
       {alive && activityInfo.state === "thinking" && !activityInfo.tool && (
