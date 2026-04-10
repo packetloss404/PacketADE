@@ -270,6 +270,19 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
         {/* Model selection per selected AI agent */}
         {selectedAiAgents.map((slot) => {
           const models = CLI_MODEL_MAP[slot.cliId!];
+
+          // OpenCode manages its own models internally
+          if (models.length === 0) {
+            return (
+              <div key={slot.id} className="opacity-50">
+                <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+                  {slot.label} Model
+                </label>
+                <span className="text-[11px] text-text-muted italic">Configured inside {slot.label}</span>
+              </div>
+            );
+          }
+
           const currentModel = modelOverrides[slot.id] ?? null;
           return (
             <div key={slot.id}>
