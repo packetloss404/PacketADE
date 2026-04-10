@@ -2,6 +2,10 @@
 
 > Research date: 2026-04-09
 
+## Context
+
+> This plan is the foundation for `dev/bridgemind/workspace-editor-scale-plan.md`. Complete Phase 1 of this plan (project picker in workspace creation) before starting the workspace UX workstream there.
+
 ## Goal
 
 Make each PacketCode workspace own a separate project, with its own terminals, file context, and git context.

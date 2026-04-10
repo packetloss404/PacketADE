@@ -21,7 +21,7 @@ This directory holds active product and architecture planning docs that are too 
 - `bridgemind/swarm-orchestration-plan.md` — plan for turning current flight/task orchestration into explicit multi-agent swarm behavior
 - `bridgemind/packetcode-mcp-server-plan.md` — plan for evolving PacketCode from MCP config management to a true PacketCode MCP provider
 - `bridgemind/workspace-editor-scale-plan.md` — plan for workspace templates, higher-density layouts, and a lightweight editor surface
-- `bridgemind/positioning-notes.md` — product stance notes from the BridgeMind comparison, including the local-first decision
+- `bridgemind/positioning-notes.md` — **historical only** — see `dev/positioning-notes.md` for the current cross-competitor positioning stance
 
 ### QuadCode Research
 
@@ -41,16 +41,34 @@ This directory holds active product and architecture planning docs that are too 
 
 ### Shared Planning
 
+- `priority-resolution.md` — resolves apparent conflicts between BridgeMind and Zen workspace plans; states the five-track execution model
+- `cross-competitor-map.md` — unified feature map across all three competitors; maps each gap to its plan doc and PacketCode's current state
+- `positioning-notes.md` — cross-competitor local-first product stance; replaces `bridgemind/positioning-notes.md`
+- `tui-shared-engine-plan.md` — plan for the `packetcode-tui` binary and the shared `packetcode_lib::core` engine
 - `backlog.md` — deferred ideas that should not be lost, including voice work
+
+### Moat Feature Plans
+
+These documents audit PacketCode's existing competitive advantages to identify what is solid and what has room for improvement.
+
+- `moat/memory-layer-plan.md` — audit of the current memory layer (scan, summarize, extract)
+- `moat/insights-plan.md` — audit of the Insights chat view and its relationship to the ideation scanner
+- `moat/cost-dashboard-plan.md` — audit of cost tracking and the cost dashboard
+- `moat/analytics-plan.md` — audit of usage analytics
+- `moat/deploy-pipeline-plan.md` — audit of the deploy pipeline
+- `moat/scaffold-plan.md` — audit of project scaffolding
 
 ## Current Direction
 
-The immediate planning focus is:
+The immediate planning focus is organized into five tracks:
 
-1. swarm orchestration
-2. file ownership and collision prevention
-3. PacketCode MCP server capabilities
-4. workspace UX improvements that support multi-agent execution
+1. **W** — Workspace Foundation (workspace-per-project model)
+2. **X** — Workspace UX (templates, git surface, prompt library)
+3. **S** — Swarm Orchestration (roles, file ownership, coordination)
+4. **M** — PacketCode MCP server
+5. **T** — TUI Evolution (binary and shared engine)
+
+See `priority-resolution.md` for the full dependency chain and execution order.
 
 Voice remains in backlog for now.
 
