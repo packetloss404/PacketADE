@@ -242,6 +242,7 @@ pub struct App {
     pub session_filter: Option<String>,
     pub session_filter_input: bool,
     pub help_overlay: HelpOverlay,
+    pub retrospectives: Vec<storage::FlightRetrospective>,
     persisted_ui: PersistedUiState,
     suppressed_exit_sessions: HashSet<String>,
 }
@@ -293,6 +294,7 @@ impl App {
             session_filter: None,
             session_filter_input: false,
             help_overlay: HelpOverlay::new(),
+            retrospectives: Vec::new(),
             persisted_ui,
             suppressed_exit_sessions: HashSet::new(),
         }
@@ -326,6 +328,7 @@ impl App {
             issues: Vec::new(),
             approval_log: Vec::new(),
             workspaces: Vec::new(),
+            retrospectives: self.retrospectives.clone(),
         })
     }
 
@@ -1540,7 +1543,7 @@ impl App {
                         buffer.killed = killed;
                     }
 
-                    // Toast notification for session exit
+                    // Toast notification for session exit with error classification
                     if !killed {
                         if success {
                             self.toasts.push(
@@ -1548,9 +1551,19 @@ impl App {
                                 ToastLevel::Success,
                             );
                         } else {
+                            // Classify the error from session output tail
+                            let stderr_hint = self.session_buffers
+                                .get(&session_id)
+                                .map(|b| {
+                                    // Use the last 500 chars of output as error context
+                                    let out = &b.output;
+                                    if out.len() > 500 { &out[out.len()-500..] } else { out }
+                                })
+                                .unwrap_or(&"");
+                            let classified = packetcode_lib::core::error_classifier::classify_cli_error(stderr_hint);
                             self.toasts.push(
-                                format!("Session failed: {}", session_title),
-                                ToastLevel::Error,
+                                format!("{}: {} — {}", session_title, classified.message, classified.suggestion),
+                                if classified.is_transient { ToastLevel::Warning } else { ToastLevel::Error },
                             );
                         }
                     }

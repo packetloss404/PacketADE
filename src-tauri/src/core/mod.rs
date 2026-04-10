@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod agent_config;
+pub mod error_classifier;
 pub mod flight;
 pub mod git;
 pub mod orchestrator;

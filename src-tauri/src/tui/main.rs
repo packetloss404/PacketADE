@@ -41,6 +41,9 @@ fn main() -> io::Result<()> {
         pty_rx,
     );
 
+    // Hydrate retrospectives from persisted state
+    app.retrospectives = persisted.retrospectives;
+
     // Detect installed agents
     app.detect_agents();
     app.refresh_git_context();
