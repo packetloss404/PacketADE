@@ -47,6 +47,12 @@ This directory holds active product and architecture planning docs that are too 
 - `tui-shared-engine-plan.md` — plan for the `packetcode-tui` binary and the shared `packetcode_lib::core` engine
 - `backlog.md` — deferred ideas that should not be lost, including voice work
 
+### VibeToText Integration
+
+- `vibetotext/README.md` — master plan for porting VibeToText dictation into PacketCode as a native Rust/Tauri engine, plus analytics migration to Tools page
+- `vibetotext/features.md` — detailed feature spec: Rust backend (cpal, whisper-rs, rusqlite), frontend module, types, store, Tools page changes
+- `vibetotext/sprint.md` — 6-sprint implementation plan with file lists and acceptance criteria per sprint
+
 ### Moat Feature Plans
 
 These documents audit PacketCode's existing competitive advantages to identify what is solid and what has room for improvement.
@@ -57,6 +63,16 @@ These documents audit PacketCode's existing competitive advantages to identify w
 - `moat/analytics-plan.md` — audit of usage analytics
 - `moat/deploy-pipeline-plan.md` — audit of the deploy pipeline
 - `moat/scaffold-plan.md` — audit of project scaffolding
+
+### Implementation Specs
+
+Each moat audit has a corresponding implementation spec with concrete code changes, data model updates, and delivery order.
+
+- `moat/memory-layer-implementation.md` — session-end memory hooks, pattern refresh thresholds, flight-scoped memory
+- `moat/insights-implementation.md` — memory context in Insights, send-to-terminal, flight-scoped sessions, Ideation bridge
+- `moat/deploy-pipeline-implementation.md` — deploy execution via PTY, pre-deploy validation, log capture, flight integration
+- `moat/scaffold-to-workspace-implementation.md` — scaffold result step "Create Workspace" button and workspace template picker
+- `moat/cost-analytics-unification-implementation.md` — deprecate self-reported cost tracking, backend as single source of truth, per-flight attribution, cost alerts
 
 ## Current Direction
 
@@ -70,7 +86,7 @@ The immediate planning focus is organized into five tracks:
 
 See `priority-resolution.md` for the full dependency chain and execution order.
 
-Voice remains in backlog for now.
+Voice/dictation is now actively planned — see `vibetotext/` for the full integration plan porting VibeToText into native Rust/Tauri.
 
 Local-first remains a strategic product principle, not a gap to close.
 

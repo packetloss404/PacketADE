@@ -71,3 +71,7 @@ The most impactful single improvement would be: **unify the cost and analytics d
 ## Next Step
 
 Audit how `recordCost` is called today — what values are passed, from where, and whether they are actual or estimated — before designing any of the above improvements.
+
+## Implementation Spec
+
+See `dev/moat/cost-analytics-unification-implementation.md` for the full implementation plan covering deprecation of self-reported cost tracking, backend-as-source-of-truth, per-flight cost attribution, and cost alerts.

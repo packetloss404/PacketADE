@@ -80,3 +80,7 @@ The most impactful single improvement would be: **connect Insights to the memory
 ## Next Step
 
 Determine whether Insights and Ideation should be merged into one feature or kept separate with a clear UX distinction, before planning any of the above improvements.
+
+## Implementation Spec
+
+See `dev/moat/insights-implementation.md` for the full implementation plan covering memory context injection, send-to-terminal, flight-scoped sessions, and the Ideation bridge.

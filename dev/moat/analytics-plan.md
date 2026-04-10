@@ -80,3 +80,7 @@ The most important prerequisite for any analytics work is: **document what `read
 ## Next Step
 
 Read `src-tauri/src/commands/analytics.rs` to understand the data source before planning any of the above improvements.
+
+## Implementation Spec
+
+See `dev/moat/cost-analytics-unification-implementation.md` for the implementation plan. Analytics and cost are unified together — see that doc for the full plan covering the backend as single source of truth and per-flight attribution.

@@ -71,3 +71,7 @@ The most impactful single improvement would be: **implement actual deploy execut
 ## Next Step
 
 Read `src-tauri/src/commands/deploy.rs` to understand what deploy commands are currently supported and what the execution model should be.
+
+## Implementation Spec
+
+See `dev/moat/deploy-pipeline-implementation.md` for the full implementation plan covering deploy execution via PTY, pre-deploy validation, deploy log capture, and flight integration.

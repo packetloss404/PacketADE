@@ -86,3 +86,7 @@ The most impactful single improvement would be: **scaffold → workspace**, so t
 ## Next Step
 
 Audit what templates are currently available in `src-tauri/src/commands/scaffold.rs` and how they are defined, before planning any of the above improvements.
+
+## Implementation Spec
+
+See `dev/moat/scaffold-to-workspace-implementation.md` for the full implementation plan covering the "Create Workspace" button in ResultStep, workspace template picker, and optional scaffold → flight flow.
