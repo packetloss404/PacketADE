@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, ShieldCheck } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -44,11 +44,13 @@ export function Toolbar() {
   const moduleStates = useModuleStore((s) => s.states);
 
   const flights = useFlightStore((s) => s.flights);
-  const computeFlightStatus = useFlightStore((s) => s.computeFlightStatus);
-  const attentionCount = flights.filter((f) => {
-    const status = computeFlightStatus(f.id);
-    return status === "paused" || status === "failed";
-  }).length;
+  const attentionCount = useMemo(() => {
+    const { computeFlightStatus } = useFlightStore.getState();
+    return flights.filter((f) => {
+      const status = computeFlightStatus(f.id);
+      return status === "paused" || status === "failed";
+    }).length;
+  }, [flights]);
 
   const approvalCount = flights.reduce((count, f) =>
     count + f.milestones.reduce((mc, m) =>
