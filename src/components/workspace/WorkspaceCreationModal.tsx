@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { LayoutGrid, Check, User, FileText } from "lucide-react";
+import { LayoutGrid, Check, User, FileText, ShieldOff } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -41,6 +41,7 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
   );
   const [includeMemory, setIncludeMemory] = useState(true);
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});
+  const [bypassPermissions, setBypassPermissions] = useState(false);
   const [prompt, setPrompt] = useState("");
 
   const agents = useAgentStore((s) => s.agents);
@@ -109,6 +110,7 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
       profileId: selectedProfileId ?? undefined,
       modelOverrides,
       includeMemory,
+      bypassPermissions,
     });
 
     useAppStore.getState().setActiveView("workspace");
@@ -242,6 +244,24 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
               />
               <span className="text-[11px] text-text-secondary">
                 Include memory context
+              </span>
+            </label>
+          </div>
+        )}
+
+        {/* Bypass permissions toggle */}
+        {selectedAiAgents.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bypassPermissions}
+                onChange={(e) => setBypassPermissions(e.target.checked)}
+                className="w-3 h-3 rounded border-bg-border accent-accent-amber"
+              />
+              <ShieldOff size={11} className={bypassPermissions ? "text-accent-amber" : "text-text-muted"} />
+              <span className={`text-[11px] ${bypassPermissions ? "text-accent-amber" : "text-text-secondary"}`}>
+                Bypass permissions
               </span>
             </label>
           </div>
