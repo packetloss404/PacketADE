@@ -9,10 +9,13 @@ import { useMemoryStore } from "@/stores/memoryStore";
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
 import { computeGridLayout } from "@/lib/gridLayout";
-import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS } from "@/lib/models";
+import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
 
 type AgentChoice = "claude-code" | "codex" | "gemini" | "opencode";
+
+/** Agents that support the --effort flag */
+const EFFORT_SUPPORTED = new Set<string>(["claude-code"]);
 
 const AGENT_SLOTS: { id: WorkspaceAgentSlot; cliId: AgentChoice | null; label: string; cliCommand: string }[] = [
   { id: "terminal", cliId: null, label: "Terminal", cliCommand: "bash" },
@@ -41,6 +44,7 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
   );
   const [includeMemory, setIncludeMemory] = useState(true);
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});
+  const [effortOverrides, setEffortOverrides] = useState<Record<string, EffortLevel | null>>({});
   const [bypassPermissions, setBypassPermissions] = useState(false);
   const [prompt, setPrompt] = useState("");
 
@@ -109,6 +113,7 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
       prompt: finalPrompt.trim() || undefined,
       profileId: selectedProfileId ?? undefined,
       modelOverrides,
+      effortOverrides,
       includeMemory,
       bypassPermissions,
     });
@@ -301,6 +306,36 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
                     }`}
                   >
                     {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Effort level per selected AI agent */}
+        {selectedAiAgents.map((slot) => {
+          if (!EFFORT_SUPPORTED.has(slot.id)) {
+            return null;
+          }
+          const currentEffort = effortOverrides[slot.id] ?? null;
+          return (
+            <div key={`effort-${slot.id}`}>
+              <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+                {slot.label} Effort
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {EFFORT_LEVELS.map((e) => (
+                  <button
+                    key={e.value}
+                    onClick={() => setEffortOverrides((prev) => ({ ...prev, [slot.id]: e.value }))}
+                    className={`px-2.5 py-1 text-[11px] rounded border transition-colors ${
+                      currentEffort === e.value
+                        ? "bg-accent-purple/15 border-accent-purple/40 text-accent-purple font-medium"
+                        : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+                    }`}
+                  >
+                    {e.label}
                   </button>
                 ))}
               </div>

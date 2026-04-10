@@ -36,13 +36,21 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const Icon = ICON_MAP[iconName] ?? Terminal;
   const command = agentConfig?.command ?? pane.agentId;
 
-  // Build CLI args with bypass flag if workspace has it enabled
+  // Build CLI args from workspace config (bypass flag, effort level)
   const cliArgs: string[] | undefined = (() => {
+    const args: string[] = [];
+
     if (workspace?.bypassPermissions) {
       const flag = BYPASS_FLAGS[pane.agentId];
-      if (flag) return [flag];
+      if (flag) args.push(flag);
     }
-    return undefined;
+
+    const effort = workspace?.effortOverrides?.[pane.agentId];
+    if (effort) {
+      args.push("--effort", effort);
+    }
+
+    return args.length > 0 ? args : undefined;
   })();
 
   return (

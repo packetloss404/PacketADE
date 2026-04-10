@@ -6,6 +6,7 @@ export interface WorkspaceSessionConfig {
   prompt?: string;
   profileId?: string;
   modelOverrides?: Record<string, string | null>;
+  effortOverrides?: Record<string, string | null>;
   includeMemory?: boolean;
   bypassPermissions?: boolean;
 }
@@ -81,6 +82,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       updatedAt: now,
       status: "active",
       bypassPermissions: sessionConfig?.bypassPermissions ?? false,
+      effortOverrides: sessionConfig?.effortOverrides,
     };
     set((s) => {
       const workspaces = [...s.workspaces, workspace];
