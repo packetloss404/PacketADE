@@ -1,159 +1,103 @@
 # PacketCode
 
-**A local-first desktop command center for orchestrating AI software work.**
+**A local-first desktop IDE for orchestrating AI software work.**
 
-PacketCode is a native desktop IDE built on Tauri v2 that unifies Claude Code and OpenAI Codex CLI into a multi-pane development environment with flight planning, issue tracking, session management, GitHub integration, a persistent memory layer, and a deploy pipeline. It's not a wrapper — it's the cockpit.
+PacketCode is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, deployment tooling, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
----
+## What It Does
 
-## Features
+- Run multiple agent sessions side-by-side in PTY-backed panes
+- Manage work at several levels: sessions, issues, flights, review queues, and mission/workspace views
+- Keep project context close with memory summaries, history, GitHub integration, and AI-assisted tools
+- Scaffold projects, manage MCP servers, inspect crashes, and run deploy workflows from the same UI
+- Share orchestration logic between the desktop GUI and the standalone `packetcode-tui` binary
 
-### Flights & Flight Deck
+## Supported Agent CLIs
 
-Plan, track, and supervise AI-driven work at a higher level than individual sessions or tickets.
+PacketCode currently includes session support for:
 
-- **AI-assisted flight planning** — create flights through a split-view modal with an integrated AI chat panel that suggests titles, objectives, and priorities; apply suggestions with one click or refine through conversation
-- **Planning surface** — create, browse, search, and edit flights from a dedicated view with status and priority filters
-- **Issue linking** — assign issues to flights; status automatically rolls up from linked issues (draft → active → blocked → done)
-- **Session launch** — start Claude or Codex sessions directly from a flight with context-rich prompts that include the objective, priority, and all linked issue details with acceptance criteria
-- **Flight Deck** — fleet-style supervision dashboard with a status strip showing flight counts by state, an attention queue that surfaces blocked and needs-human flights, and an active flights grid with progress tracking
-- **Board integration** — flight badges on issue cards, flight filter on the kanban board, flight assignment from issue detail and issue creation views
-- **Inline editing** — edit flight title, objective, status, and priority directly in the detail panel
-- **Session auto-linking** — sessions launched from a flight are automatically linked back for traceability
+- Claude Code
+- OpenAI Codex CLI
+- Gemini CLI
+- OpenCode
 
-### Multi-Pane AI Sessions
+Each session can be launched with agent-specific arguments and model selections exposed through the UI.
 
-- Run multiple Claude Code or Codex CLI sessions side-by-side in resizable panes
-- Full PTY terminal emulation via xterm.js
-- Real-time status line monitoring for both Claude and Codex
-- Model selection (Opus 4.6, Opus 4.5, Sonnet 4.5, Haiku 4.5) per session
-- Session tab bar with live status labels
-- Session history and status tracking
-- **Session Inspect** — view session metadata and state at a glance
-- **Agent Chat Panel** — inline chat interface for interacting with agents within a session
-- **Approval Overlay** — review and approve agent actions directly in the terminal pane
+## Main Features
 
-### Agent Profiles
+### Multi-Agent Sessions
 
-- 5 built-in profiles: **Auto**, **Speed Runner**, **Thorough Reviewer**, **Security Auditor**, **Refactor Pro**
-- Each profile injects a system prompt, sets a default model, and has a distinct icon/color
-- Create custom profiles with your own system prompts
-- Quick-switch between profiles from the toolbar
+- Multi-pane terminal workflow built on `xterm.js` and `portable-pty`
+- Live status bars for supported agent CLIs
+- Session inspect, transcript handling, and approval-oriented UX
+- Quick-start flows from the toolbar, command palette, and flight/mission workflows
 
-### Issue Tracker (Kanban Board)
+### Flights, Issues, and Supervision
 
-- Full kanban board: To Do, In Progress, QA, Done, Blocked, Needs Human
-- Priority levels, labels, epics, and acceptance criteria
-- Drag-and-drop between columns
-- Link issues to AI sessions
-- **Spec2Tick**: paste a spec and let Claude parse it into structured tickets
+- Flight planning and supervision for larger units of work
+- Kanban issue tracking with priorities, labels, acceptance criteria, and flight linkage
+- Review queue for items needing human attention
+- Mission and workspace views for coordinating broader workstreams
 
-### GitHub Integration
+### AI Context and Tooling
 
-- Connect with a personal access token (backend memory only — not persisted across restarts)
-- Browse repositories and open issues
-- View full issue details with labels and metadata
-- Import GitHub issues into local kanban tickets
-- **Investigate with AI**: run Claude against your codebase to analyze any issue
-- Create PRs directly from the app
+- Memory scanning, session summaries, and learned-pattern extraction
+- Insights chat for project-aware Q&A
+- Ideation and code-quality tooling
+- Spec import flows for turning rough requirements into actionable work
 
-### Memory Layer
+### GitHub and Git Workflow
 
-- **File Map**: AI-powered codebase scan with 1-line summaries for key files
-- **Session History**: summarize completed sessions, extract key decisions and modified files
-- **Learned Patterns**: AI extracts recurring patterns (architecture, conventions, preferences, pitfalls) with confidence scores
-- **Context Injection**: automatically prepend memory context to new sessions
+- GitHub issue browsing and import
+- PR creation support
+- Git status, branch awareness, and safety checks surfaced through the app
+- Tokens are kept in backend memory and are not persisted across restarts
 
-### AI Tools
+### Project Operations
 
-- **Vibe Architect** — interactive AI project scaffolding and architecture design
-- **Insights Chat** — conversational codebase Q&A with full project context
-- **Ideation Scanner** — AI-generated feature ideas, improvements, and suggestions
-- **Code Quality** — on-demand AI code quality analysis
+- MCP server management for project and global scopes
+- Built-in scaffolding flows for new projects
+- Deploy configuration and terminal-backed deploy runs
+- Local crash report browsing and cleanup
+- Analytics and cost tracking views
 
-### MCP Server Management
+### Terminal UI
 
-- Manage Claude Code's MCP server configurations from within PacketCode
-- View, add, edit, and delete servers across **global** (`~/.claude/settings.json`) and **project** (`.mcp.json`) scopes
-- Server list grouped by scope with inline edit and delete controls
-- Add/Edit modal with name, command, args, environment variables, and scope selector
+PacketCode also ships a Ratatui-based TUI:
 
-### Project Scaffolding
-
-- "New Project" wizard: template selection → configuration → result
-- 6 built-in templates: Next.js, React+Vite, Python FastAPI, Rust CLI, Node Express, Blank
-- Automatic tool availability detection (node, cargo, python)
-- Directory picker and auto-switch to new project on success
-
-### Deploy Pipeline
-
-- One-click deploy with live terminal output via PTY
-- Auto-detects configs from `packetcode.deploy.json`, `package.json` scripts, `vercel.json`, `netlify.toml`, and `Dockerfile`
-- Custom deploy config creation and persistence
-- Deploy run history with status tracking and duration
-- Toolbar deploy button with Rocket icon
-
-### Terminal UI (TUI)
-
-A standalone Ratatui-based terminal interface sharing the same orchestration engine as the GUI.
-
-- **Dashboard** — flight counts by status, attention queue, active flight metrics
-- **Flight editor** — create and edit flights with milestones, tasks, and agent assignments
-- **Session viewer** — real-time agent output with markdown and diff rendering
-- **Agent management** — list agents and check installation status
-- **5 color themes** — default dark, tokyonight, catppuccin mocha, gruvbox dark, nord
-- **Command palette** — fuzzy-matched commands with keyboard shortcuts
-- Run with `cargo run --bin packetcode-tui` from `src-tauri/`
-
-### Analytics & Cost Tracking
-
-- **Usage analytics** — track session activity, token usage, and AI tool invocations
-- **Cost dashboard** — monitor spend across sessions and flights
-
-### Review Queue & Notifications
-
-- **Review Queue** — centralized view of items needing human attention across all flights and sessions
-- **Notification settings** — configurable notification preferences with per-category toggles, persisted to localStorage
-
-### Crash Reporting
-
-- **Crash viewer** — browse, inspect, and delete local crash reports with timestamps and full stack traces
-- Local crash report storage (no remote upload yet)
-
-### UI/UX
-
-- Custom frameless window with native title bar controls
-- Dark theme with carefully designed color tokens
-- File explorer panel
-- Git branch display in toolbar
-- Keyboard shortcuts for core navigation
-
----
+- Binary: `packetcode-tui`
+- Source: `src-tauri/src/tui/`
+- Purpose: terminal-first access to the same orchestration engine used by the desktop app
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Desktop | Tauri v2 (Rust) |
-| Frontend | React 19 + TypeScript |
-| Bundler | Vite 6 |
-| State | Zustand 5 |
-| Styling | Tailwind CSS 3 |
-| Terminal | xterm.js + portable-pty |
-| Icons | lucide-react |
-| Markdown | react-markdown + remark-gfm |
-| HTTP | reqwest (Rust, for GitHub API) |
-
----
+| Layer    | Technology                   |
+| -------- | ---------------------------- |
+| Desktop  | Tauri v2                     |
+| Frontend | React 19 + TypeScript + Vite |
+| State    | Zustand                      |
+| Styling  | Tailwind CSS                 |
+| Terminal | xterm.js + portable-pty      |
+| Backend  | Rust                         |
+| Markdown | react-markdown + remark-gfm  |
+| Icons    | lucide-react                 |
+| Testing  | Vitest + Playwright          |
 
 ## Getting Started
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18+)
-- [pnpm](https://pnpm.io/)
-- [Rust](https://rustup.rs/) (stable toolchain)
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and on PATH
+- Node.js 18+
+- `pnpm`
+- Rust stable toolchain
+- One or more supported agent CLIs installed and available on `PATH`
+
+Examples:
+
+- Claude Code for Claude sessions
+- Codex CLI for Codex sessions
+- Gemini CLI for Gemini sessions
+- OpenCode for OpenCode sessions
 
 ### Install
 
@@ -163,7 +107,7 @@ cd PacketCode
 pnpm install
 ```
 
-### Development
+### Run The Desktop App
 
 ```bash
 pnpm tauri dev
@@ -175,117 +119,80 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-The built app will be in `src-tauri/target/release/bundle/`.
+Build artifacts are written under `src-tauri/target/release/bundle/`.
 
-### Lint & Type Check
+### Quality Checks
 
 ```bash
 pnpm lint
-pnpm build        # runs tsc && vite build
+pnpm test
+pnpm build
+pnpm e2e
 ```
 
----
+### Rust Checks
 
-## Project Structure
-
+```bash
+cargo check --manifest-path src-tauri/Cargo.toml
 ```
+
+### Run The TUI
+
+```bash
+cargo run --manifest-path src-tauri/Cargo.toml --bin packetcode-tui
+```
+
+### Windows Note
+
+If Tauri builds cannot find the Rust toolchain, ensure the Rust binary path is on `PATH`.
+
+Example:
+
+```bash
+set PATH=C:\Users\ianwalmsley\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;%PATH%
+```
+
+## Project Layout
+
+```text
 PacketCode/
   src/
-    App.tsx                        # Root component, view routing
-    main.tsx                       # React entry point
+    App.tsx                    # Root app shell and view routing
     components/
-      common/                      # Shared components (MarkdownRenderer)
-      explorer/                    # File explorer panel
-      flights/                     # NewFlightModal (AI chat + form), FlightChatPanel
-      issues/                      # Kanban board (IssueBoard, IssueCard, etc.)
-      layout/                      # TitleBar, Toolbar, PaneContainer, StatusBar, SessionTabBar
-      session/                     # TerminalPane, SessionInspect, AgentChatPanel, ApprovalOverlay, status bars
-      ui/                          # Button, Dropdown, ErrorBoundary, Modal
-      views/
-        FlightsView.tsx            # Flight planning surface
-        FlightDeckView.tsx         # Fleet supervision dashboard
-        GitHubView.tsx             # GitHub integration
-        MemoryView.tsx             # Memory layer
-        InsightsView.tsx           # AI codebase Q&A chat
-        IdeationView.tsx           # AI feature ideation
-        VibeArchitectView.tsx      # Architecture design
-        McpHubView.tsx             # MCP server management
-        ScaffoldView.tsx           # Project scaffolding
-        DeployView.tsx             # Deploy pipeline
-        AnalyticsView.tsx          # Usage analytics
-        CostDashboardView.tsx      # Cost tracking
-        ReviewQueueView.tsx        # Review queue for items needing attention
-        MissionWorkspaceView.tsx   # Mission workspace
-        tools/                     # NotificationSettingsCard, CrashViewerCard
-    hooks/                         # useGitInfo, useStatusLine, useCodexStatusLine, useFlightChat, useVoiceInput
-    lib/
-      tauri.ts                     # All Tauri invoke wrappers
-      flight-colors.ts             # Flight/issue status color config
-      time.ts                      # Relative time formatting
-    stores/                        # Zustand stores (23 total)
-      appStore.ts                  # View routing, app state
-      layoutStore.ts               # Pane layout
-      issueStore.ts                # Kanban issues
-      flightStore.ts               # Flight state and operations
-      insightsStore.ts             # AI chat sessions
-      profileStore.ts              # Agent profiles
-      orchestrationStore.ts        # Flight orchestration state
-      costStore.ts                 # Cost tracking
-      mcpStore.ts                  # MCP server config
-      scaffoldStore.ts             # Scaffolding state
-      deployStore.ts               # Deploy pipeline state
-    types/
-      flight.ts                    # Flight, FlightStatus, FlightPriority
-    modules/
-      registry.ts                  # Module registration
+      layout/                  # Title bar, toolbar, pane container, status bar
+      session/                 # Terminal panes, session modals, status bars, inspect UI
+      issues/                  # Kanban issue board and issue detail UI
+      flights/                 # Flight planning and flight-related panels
+      views/                   # First-class application views
+      workspace/               # Workspace creation and coordination UI
+      common/                  # Shared presentation components
+      ui/                      # Shared UI primitives
+    stores/                    # Zustand stores for app, layout, flights, issues, tools, etc.
+    modules/                   # Module registration and module metadata
+    lib/                       # Tauri bindings, shared utilities, model lists
+    hooks/                     # UI and agent interaction hooks
+    types/                     # Shared TypeScript types
 
   src-tauri/
     src/
-      lib.rs                       # Tauri app builder, command registration
-      commands/
-        pty.rs                     # PTY session management
-        git.rs                     # Git branch/status
-        github.rs                  # GitHub API (reqwest)
-        memory.rs                  # AI memory commands
-        insights.rs                # Insights chat streaming
-        flight_chat.rs             # Flight planning AI chat streaming
-        ideation.rs                # Ideation scanner
-        spec.rs                    # Spec-to-tickets parser
-        code_quality.rs            # Code quality analysis
-        statusline.rs              # Claude/Codex status line polling
-        fs.rs                      # Directory listing
-        mcp.rs                     # MCP server config read/write/delete
-        scaffold.rs                # Project template scaffolding
-        deploy.rs                  # Deploy config read/write
-        orchestration.rs           # Flight orchestration engine
-        agent.rs                   # Agent detection
-        analytics.rs               # Usage analytics
-        state.rs                   # Persisted state management
-      claude/                      # Claude CLI interaction helpers
-      tui/                         # Standalone TUI binary (packetcode-tui)
+      lib.rs                   # Tauri app bootstrap and command registration
+      commands/                # Tauri commands exposed to the frontend
+      claude/                  # Claude CLI integration helpers
+      tui/                     # Standalone packetcode-tui binary
 
-  public/                          # Static assets
-  docs/                            # Website
+  e2e/                         # Playwright tests
+  docs/                        # Documentation site assets
+  public/                      # Static frontend assets
 ```
 
----
+## Contributor Notes
 
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+\` | Split — new session pane |
-| `Ctrl+1-4` | Switch to pane 1–4 |
-| `Ctrl+Shift+1` | Claude sessions view |
-| `Ctrl+Shift+2` | Codex sessions view |
-| `Ctrl+Shift+3` | Issues board |
-| `Ctrl+Shift+4` | History view |
-| `Ctrl+Shift+5` | Tools / Settings |
-| `Ctrl+Shift+6` | Vibe Architect |
-| `Ctrl+Enter` | Start session (in modal) |
-
----
+- Core views are declared in `src/stores/appStore.ts`
+- Tauri commands live in `src-tauri/src/commands/` and are bound in `src/lib/tauri.ts`
+- App modules are registered through `src/modules/registry.ts`
+- Session management is PTY-based rather than JSONL-session based
+- Shared backend/frontend orchestration concepts are used by both the GUI and `packetcode-tui`
 
 ## License
 
-PacketCode is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for details.
+PacketCode is licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
