@@ -62,10 +62,21 @@ export function WorkspaceSidebar() {
   const [projectsOpen, setProjectsOpen] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
 
+  // Filter workspaces to current project only
   const activeWorkspaces = useMemo(
-    () => workspaces.filter((w) => w.status === "active"),
-    [workspaces]
+    () => workspaces.filter(
+      (w) => w.status === "active" && normalizePath(w.projectPath) === normalizePath(projectPath)
+    ),
+    [workspaces, projectPath]
   );
+
+  // Clear active workspace when switching to a different project
+  useEffect(() => {
+    const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
+    if (activeWs && normalizePath(activeWs.projectPath) !== normalizePath(projectPath)) {
+      setActiveWorkspace(null);
+    }
+  }, [projectPath, activeWorkspaceId, workspaces, setActiveWorkspace]);
 
   const filteredWorkspaces = useMemo(() => {
     if (!filter.trim()) return activeWorkspaces;

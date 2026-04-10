@@ -16,12 +16,14 @@ export function moduleViewId(id: string): AppView {
 }
 
 interface AppStore {
+  initialized: boolean;
   activeView: AppView;
   gitBranch: string | null;
   claudeVersion: string | null;
   isMaximized: boolean;
   commandPaletteOpen: boolean;
   theme: "dark" | "light";
+  setInitialized: (initialized: boolean) => void;
   setActiveView: (view: AppView) => void;
   setGitBranch: (branch: string | null) => void;
   setClaudeVersion: (version: string | null) => void;
@@ -32,12 +34,14 @@ interface AppStore {
 }
 
 export const useAppStore = create<AppStore>((set) => ({
+  initialized: false,
   activeView: "workspace",
   gitBranch: null,
   claudeVersion: null,
   isMaximized: false,
   commandPaletteOpen: false,
   theme: "dark",
+  setInitialized: (initialized) => set({ initialized }),
   setActiveView: (view) => set({ activeView: view }),
   setGitBranch: (branch) => set({ gitBranch: branch }),
   setClaudeVersion: (version) => set({ claudeVersion: version }),

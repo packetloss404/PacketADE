@@ -73,6 +73,7 @@ function makePersistedState(flights: Flight[]): PersistedState {
       selectedView: null,
       theme: null,
     },
+    workspaces: [],
   };
 }
 

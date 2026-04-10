@@ -70,8 +70,10 @@ export function MosaicContainer() {
     }
   }, [panes, setTree]);
 
-  // Initialize mosaic tree on first mount
+  // Initialize mosaic tree on first mount — set session context for scoped persistence
   useEffect(() => {
+    useMosaicStore.getState().setContext("session");
+
     const currentIds = panes.map((p) => p.id);
     if (currentIds.length === 0) return;
 
