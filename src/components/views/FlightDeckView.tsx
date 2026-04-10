@@ -307,7 +307,6 @@ function FlightGroupSection({ statusKey, flights }: { statusKey: FlightStatus; f
 
 export function FlightDeckView() {
   const flights = useFlightStore((s) => s.flights);
-  const computeFlightStatus = useFlightStore((s) => s.computeFlightStatus);
   const [showCreate, setShowCreate] = useState(false);
 
   // B2.4: Auto-refresh heartbeat (5s polling)
@@ -326,8 +325,10 @@ export function FlightDeckView() {
     useAppStore.getState().setActiveView("mission");
   }
 
-  // Compute status for every flight
+  // Compute status for every flight — call computeFlightStatus via getState()
+  // to avoid an unstable function reference in the dependency array.
   const flightsByStatus = useMemo(() => {
+    const { computeFlightStatus } = useFlightStore.getState();
     const map: Record<FlightStatus, { flight: Flight; status: FlightStatus }[]> = {
       draft: [],
       planning: [],
@@ -344,7 +345,8 @@ export function FlightDeckView() {
       map[status].push({ flight: f, status });
     }
     return map;
-  }, [flights, computeFlightStatus]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flights]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<FlightStatus, number> = { draft: 0, planning: 0, ready: 0, active: 0, paused: 0, review: 0, done: 0, failed: 0, cancelled: 0 };
