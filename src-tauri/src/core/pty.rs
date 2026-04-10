@@ -395,7 +395,6 @@ impl PtyManager {
         let start = std::time::Instant::now();
         let mut results = Vec::new();
         for sid in session_ids {
-            let remaining = timeout.saturating_sub(start.elapsed());
             let exited = loop {
                 if !self.sessions.contains_key(sid) {
                     break true;

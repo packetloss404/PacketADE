@@ -12,6 +12,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useMosaicStore } from "@/stores/mosaicStore";
 import { useAppStore, getModuleId, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
+import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { getModule } from "@/modules/registry";
 import { useStatusLinePoller, useCodexStatusLinePoller, useGeminiStatusLinePoller, useOpenCodeStatusLinePoller } from "@/hooks/useStatusLine";
 import { initializeApp, persistUiState } from "@/lib/bootstrap";
@@ -74,9 +75,7 @@ export default function App() {
   useEffect(() => {
     if (!projectPath) return;
     localStorage.setItem("packetcode:project-path", projectPath);
-    import("@/stores/projectHistoryStore").then(({ useProjectHistoryStore }) => {
-      useProjectHistoryStore.getState().recordOpen(projectPath);
-    });
+    useProjectHistoryStore.getState().recordOpen(projectPath);
   }, [projectPath]);
 
   // Persist UI state (active view, theme) to backend on change

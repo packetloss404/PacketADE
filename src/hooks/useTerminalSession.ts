@@ -3,9 +3,11 @@ import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createPtySession, writePty, killPty } from "@/lib/tauri";
+import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useActivityStore } from "@/stores/activityStore";
+import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { usePtyStateDetector, type PtyDetectorState } from "@/hooks/usePtyStateDetector";
 import {
   notifyApprovalNeeded,
@@ -13,18 +15,19 @@ import {
   notifySessionError,
 } from "@/lib/notifications";
 
-interface PtyOutput {
-  session_id: string;
-  data: string;
-}
-
 interface UseTerminalSessionOptions {
   paneId: string;
   cliCommand: string;
   cliArgs?: string[];
+  projectPath?: string;
+  initialPrompt?: string;
+  issueId?: string;
+  taskId?: string;
   xtermRef: RefObject<Terminal | null>;
   fitAddonRef: RefObject<FitAddon | null>;
   sessionIdRef: RefObject<string | null>;
+  onSessionCreated?: (sessionId: string) => void;
+  onSessionEnded?: () => void;
 }
 
 export interface TerminalActivityInfo {
@@ -39,13 +42,20 @@ export function useTerminalSession({
   paneId,
   cliCommand,
   cliArgs,
+  projectPath: paneProjectPath,
+  initialPrompt,
+  issueId,
+  taskId,
   xtermRef,
   fitAddonRef,
   sessionIdRef,
+  onSessionCreated,
+  onSessionEnded,
 }: UseTerminalSessionOptions) {
   const tabIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const unlistenersRef = useRef<UnlistenFn[]>([]);
+  const exitRequestedRef = useRef(false);
 
   const [alive, setAlive] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +67,8 @@ export function useTerminalSession({
   });
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
-  const projectPath = useLayoutStore((s) => s.projectPath);
+  const globalProjectPath = useLayoutStore((s) => s.projectPath);
+  const projectPath = paneProjectPath ?? globalProjectPath;
 
   const handleStateChange = useCallback((prev: PtyDetectorState, next: PtyDetectorState) => {
     const tabId = tabIdRef.current;
@@ -86,11 +97,17 @@ export function useTerminalSession({
         if (sessionId && tab) {
           notifyApprovalNeeded(sessionId, tab.name);
         }
+        if (taskId) {
+          void useOrchestrationStore.getState().onTaskApprovalNeeded(taskId);
+        }
       } else if (!next.needsApproval && prev.needsApproval) {
         useTabStore.getState().updateTabStatus(tabId, "running");
+        if (taskId) {
+          void useOrchestrationStore.getState().onTaskApprovalResolved(taskId);
+        }
       }
     }
-  }, []);
+  }, [taskId]);
 
   const detectorResult = usePtyStateDetector({
     sessionId: currentSessionId,
@@ -123,6 +140,7 @@ export function useTerminalSession({
     // Kill any existing PTY session before starting a new one to prevent orphans
     const prevSid = sessionIdRef.current;
     if (prevSid) {
+      exitRequestedRef.current = true;
       await killPty(prevSid).catch(() => {});
       sessionIdRef.current = null;
     }
@@ -136,6 +154,7 @@ export function useTerminalSession({
     setError(null);
     setShowApproval(false);
     setActivityInfo({ tool: null, file: null, state: "idle" });
+    exitRequestedRef.current = false;
     term.reset();
 
     try {
@@ -156,7 +175,7 @@ export function useTerminalSession({
         id: tabId,
         ptySessionId: "",
         name: `Session ${sessionCounter}`,
-        ticketId: null,
+        ticketId: issueId ?? null,
         status: "starting",
         startedAt: Date.now(),
         projectPath,
@@ -175,6 +194,10 @@ export function useTerminalSession({
       setAlive(true);
 
       useLayoutStore.getState().setPaneSession(paneId, sessionId);
+      onSessionCreated?.(sessionId);
+      if (taskId) {
+        useOrchestrationStore.getState().attachSessionToTask(taskId, sessionId);
+      }
 
       useTabStore.getState().updateTabStatus(tabId, "running");
       useTabStore.setState((s) => ({
@@ -183,31 +206,40 @@ export function useTerminalSession({
 
       startDurationTimer(tabId);
 
-      const outputUnlisten = await listen<PtyOutput>("pty:output", (event) => {
-        if (event.payload.session_id === sessionId) {
-          term.write(event.payload.data);
-        }
+      const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
+        term.write(event.payload);
       });
 
-      const exitUnlisten = await listen<string>("pty:exit", (event) => {
-        if (event.payload === sessionId) {
-          setAlive(false);
-          setShowApproval(false);
-          setCurrentSessionId(null);
-          term.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
-          useTabStore.getState().updateTabStatus(tabId, "done");
-          stopDurationTimer();
+      const exitUnlisten = await listen<string>(ptyExitEvent(sessionId), () => {
+        const wasRequested = exitRequestedRef.current;
+        setAlive(false);
+        setShowApproval(false);
+        setCurrentSessionId(null);
+        sessionIdRef.current = null;
+        useLayoutStore.getState().setPaneSession(paneId, null);
+        onSessionEnded?.();
+        term.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
+        useTabStore.getState().updateTabStatus(tabId, "done");
+        stopDurationTimer();
 
-          const tab = useTabStore.getState().getTab(tabId);
-          if (tab) {
-            notifySessionComplete(sessionId, tab.name);
-          }
+        const tab = useTabStore.getState().getTab(tabId);
+        if (tab) {
+          notifySessionComplete(sessionId, tab.name);
+        }
 
-          useActivityStore.getState().clearActivity(tabId);
+        useActivityStore.getState().clearActivity(tabId);
+
+        if (taskId) {
+          const success = !wasRequested;
+          void useOrchestrationStore.getState().onTaskComplete(taskId, success);
         }
       });
 
       unlistenersRef.current = [outputUnlisten, exitUnlisten];
+
+      if (initialPrompt?.trim()) {
+        writePty(sessionId, `${initialPrompt.trim()}\n`).catch(() => {});
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -226,8 +258,13 @@ export function useTerminalSession({
     startDurationTimer,
     stopDurationTimer,
     paneId,
+    issueId,
+    initialPrompt,
     xtermRef,
     fitAddonRef,
+    onSessionCreated,
+    onSessionEnded,
+    taskId,
   ]);
 
   // Auto-start on mount
@@ -238,31 +275,6 @@ export function useTerminalSession({
     return () => clearTimeout(timer);
   }, [startSession]);
 
-  // Issue prompt listener
-  useEffect(() => {
-    function handleIssuePrompt(e: Event) {
-      const detail = (e as CustomEvent).detail;
-      if (!detail?.prompt) return;
-      const sid = sessionIdRef.current;
-      if (!sid) return;
-
-      const prompt = detail.prompt as string;
-      writePty(sid, prompt + "\n").catch(() => {});
-
-      if (detail.issueId) {
-        const tid = tabIdRef.current;
-        if (tid) {
-          useTabStore.getState().setTabTicket(tid, detail.issueId);
-        }
-      }
-
-      window.removeEventListener("packetcode:issue-prompt", handleIssuePrompt);
-    }
-
-    window.addEventListener("packetcode:issue-prompt", handleIssuePrompt);
-    return () => window.removeEventListener("packetcode:issue-prompt", handleIssuePrompt);
-  }, []);
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -272,41 +284,51 @@ export function useTerminalSession({
       stopDurationTimer();
       const sid = sessionIdRef.current;
       if (sid) {
+        exitRequestedRef.current = true;
         killPty(sid).catch(() => {});
       }
+      useLayoutStore.getState().setPaneSession(paneId, null);
+      onSessionEnded?.();
       const tid = tabIdRef.current;
       if (tid) {
         useTabStore.getState().removeTab(tid);
         useActivityStore.getState().clearActivity(tid);
       }
     };
-  }, [stopDurationTimer]);
+  }, [onSessionEnded, paneId, stopDurationTimer]);
 
   const handleKill = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (sid) {
+      exitRequestedRef.current = true;
       await killPty(sid).catch(() => {});
       setAlive(false);
     }
     setShowApproval(false);
     setCurrentSessionId(null);
+    sessionIdRef.current = null;
+    useLayoutStore.getState().setPaneSession(paneId, null);
+    onSessionEnded?.();
     stopDurationTimer();
     const tid = tabIdRef.current;
     if (tid) {
       useTabStore.getState().updateTabStatus(tid, "done");
       useActivityStore.getState().clearActivity(tid);
     }
-  }, [stopDurationTimer]);
+  }, [onSessionEnded, paneId, stopDurationTimer]);
 
   const handleRestart = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (sid) {
+      exitRequestedRef.current = true;
       await killPty(sid).catch(() => {});
     }
     sessionIdRef.current = null;
     setAlive(false);
     setShowApproval(false);
     setCurrentSessionId(null);
+    useLayoutStore.getState().setPaneSession(paneId, null);
+    onSessionEnded?.();
     stopDurationTimer();
 
     const tid = tabIdRef.current;
@@ -317,7 +339,7 @@ export function useTerminalSession({
     tabIdRef.current = null;
 
     await startSession();
-  }, [startSession, stopDurationTimer]);
+  }, [onSessionEnded, paneId, startSession, stopDurationTimer]);
 
   const handleApprove = useCallback(() => {
     const sid = sessionIdRef.current;

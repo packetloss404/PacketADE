@@ -37,12 +37,12 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const Icon = ICON_MAP[iconName] ?? Terminal;
   const command = agentConfig?.command ?? pane.agentId;
 
-  // Build CLI args from workspace config (bypass flag, effort level).
-  // Memoize to keep a stable reference — an unstable array here causes
-  // startSession's useCallback to recreate, which re-triggers the auto-start
-  // effect and spawns orphaned PTY processes on every render.
+  // Keep CLI args stable so terminal startup is only driven by real config changes.
   const bypassPermissions = workspace?.bypassPermissions ?? false;
+  const model = workspace?.modelOverrides?.[pane.agentId] ?? null;
   const effort = workspace?.effortOverrides?.[pane.agentId] ?? null;
+  const initialPrompt =
+    pane.agentId !== "terminal" ? workspace?.prompt : undefined;
 
   const cliArgs: string[] | undefined = useMemo(() => {
     const args: string[] = [];
@@ -52,12 +52,16 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
       if (flag) args.push(flag);
     }
 
+    if (model) {
+      args.push("--model", model);
+    }
+
     if (effort) {
       args.push("--effort", effort);
     }
 
     return args.length > 0 ? args : undefined;
-  }, [bypassPermissions, effort, pane.agentId]);
+  }, [bypassPermissions, effort, model, pane.agentId]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden border border-bg-border rounded">
@@ -76,6 +80,14 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
           paneId={pane.id}
           cliCommand={command}
           cliArgs={cliArgs}
+          projectPath={workspace?.projectPath}
+          initialPrompt={initialPrompt}
+          onSessionCreated={(sessionId) =>
+            useWorkspaceStore.getState().setPaneSession(workspaceId, pane.id, sessionId)
+          }
+          onSessionEnded={() =>
+            useWorkspaceStore.getState().setPaneSession(workspaceId, pane.id, null)
+          }
           showCloseButton={false}
         />
       </div>

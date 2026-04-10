@@ -11,6 +11,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useFlightStore } from "@/stores/flightStore";
 import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
 import { SpecImportModal } from "@/components/views/SpecImportModal";
+import { gitCommit, gitPull, gitPush } from "@/lib/tauri";
 
 const TABS: { key: AppView; label: string }[] = [
   { key: "workspace", label: "Workspaces" },
@@ -328,7 +329,6 @@ function GitActionButtons() {
     if (busy) return;
     setBusy(action);
     try {
-      const { gitPull, gitPush, gitCommit } = await import("@/lib/tauri");
       if (action === "pull") {
         await gitPull(projectPath);
       } else if (action === "push") {

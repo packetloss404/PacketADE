@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { InsightsMessage, InsightsSession } from "@/types/insights";
 import { askInsightsStream } from "@/lib/tauri";
+import { insightsChunkEvent, insightsDoneEvent, insightsErrorEvent } from "@/lib/events";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { loadFromStorage, saveToStorage, generateId } from "@/lib/storage";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -28,10 +29,21 @@ function loadSessions(): InsightsSession[] {
 
 const MAX_SESSIONS = 50;
 
+type StreamErrorEvent = {
+  message: string;
+  suggestion: string;
+};
+
 function saveSessions(sessions: InsightsSession[]) {
   // Prune oldest sessions to prevent localStorage quota exhaustion
   const pruned = sessions.length > MAX_SESSIONS ? sessions.slice(0, MAX_SESSIONS) : sessions;
   saveToStorage(STORAGE_KEY, pruned);
+}
+
+function cleanupListener(listener: UnlistenFn | null) {
+  if (listener) {
+    listener();
+  }
 }
 
 export const useInsightsStore = create<InsightsStore>((set, get) => ({
@@ -122,9 +134,14 @@ export const useInsightsStore = create<InsightsStore>((set, get) => ({
       }
     }
 
+    let unlistenChunk: UnlistenFn | null = null;
+    let unlistenError: UnlistenFn | null = null;
+    let unlistenDone: UnlistenFn | null = null;
+
     try {
       const session = sessions.find((s) => s.id === sessionId)!;
       const projectPath = useLayoutStore.getState().projectPath;
+      const requestId = crypto.randomUUID();
 
       const messagesForApi = session.messages.map((m) => ({
         role: m.role,
@@ -133,34 +150,40 @@ export const useInsightsStore = create<InsightsStore>((set, get) => ({
 
       // Set up event listeners for streaming
       let accumulated = "";
-      const unlistenChunk: UnlistenFn = await listen<string>("insights:chunk", (event) => {
+      unlistenChunk = await listen<string>(insightsChunkEvent(requestId), (event) => {
         accumulated += event.payload + "\n";
         set({ streamingContent: accumulated });
       });
 
       // Listen for classified errors
       const errorRef: { current: { message: string; suggestion: string } | null } = { current: null };
-      const unlistenError: UnlistenFn = await listen<{ message: string; suggestion: string }>(
-        "insights:error",
-        (event) => { errorRef.current = event.payload; },
+      unlistenError = await listen<StreamErrorEvent>(
+        insightsErrorEvent(requestId),
+        (event) => {
+          errorRef.current = {
+            message: event.payload.message,
+            suggestion: event.payload.suggestion,
+          };
+        },
       );
 
       const donePromise = new Promise<boolean>((resolve) => {
-        listen<boolean>("insights:done", (event) => {
+        listen<boolean>(insightsDoneEvent(requestId), (event) => {
           resolve(event.payload);
+          unlistenDone?.();
         }).then((unlisten) => {
-          // Store unlisten for cleanup after done fires
-          setTimeout(() => unlisten(), 100);
+          unlistenDone = unlisten;
         });
       });
 
       // Start streaming
-      await askInsightsStream(projectPath, messagesForApi, sessionContext);
+      await askInsightsStream(projectPath, messagesForApi, sessionContext, requestId);
 
       // Wait for completion
       await donePromise;
-      unlistenChunk();
-      unlistenError();
+      cleanupListener(unlistenChunk);
+      cleanupListener(unlistenError);
+      cleanupListener(unlistenDone);
 
       // If the stream failed and we got a classified error, use it
       const finalContent = accumulated.trim()
@@ -181,6 +204,9 @@ export const useInsightsStore = create<InsightsStore>((set, get) => ({
       set({ sessions, isLoading: false, streamingContent: "" });
       saveSessions(sessions);
     } catch (err) {
+      cleanupListener(unlistenChunk);
+      cleanupListener(unlistenError);
+      cleanupListener(unlistenDone);
       const errorMsg: InsightsMessage = {
         id: generateId("msg"),
         role: "assistant",

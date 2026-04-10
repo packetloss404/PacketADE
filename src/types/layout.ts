@@ -4,4 +4,9 @@ export interface PaneConfig {
   cliCommand: string;
   cliArgs?: string[];
   initialPrompt?: string;
+  projectPath?: string;
+  agentConfigId?: string;
+  taskId?: string;
+  flightId?: string;
+  issueId?: string;
 }

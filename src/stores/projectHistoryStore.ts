@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
+import { listSubdirectories } from "@/lib/tauri";
 
 const STORAGE_KEY = "packetcode:project-history";
 const FOLDER_KEY = "packetcode:projects-folder";
@@ -72,7 +73,6 @@ export const useProjectHistoryStore = create<ProjectHistoryStore>((set, get) => 
     const folder = get().projectsFolder;
     if (!folder) return;
     try {
-      const { listSubdirectories } = await import("@/lib/tauri");
       const dirs = await listSubdirectories(folder);
       set({ scannedProjects: dirs });
     } catch {

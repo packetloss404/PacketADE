@@ -4,8 +4,30 @@ use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::info;
 
-/// Emitted as the `insights:error` or `agent-chat:error` event payload when
-/// the Claude CLI process fails, so the frontend can show actionable messages.
+fn insights_chunk_event(request_id: &str) -> String {
+    format!("insights:chunk:{}", request_id)
+}
+
+fn insights_error_event(request_id: &str) -> String {
+    format!("insights:error:{}", request_id)
+}
+
+fn insights_done_event(request_id: &str) -> String {
+    format!("insights:done:{}", request_id)
+}
+
+fn agent_chat_chunk_event(request_id: &str) -> String {
+    format!("agent-chat:chunk:{}", request_id)
+}
+
+fn agent_chat_error_event(request_id: &str) -> String {
+    format!("agent-chat:error:{}", request_id)
+}
+
+fn agent_chat_done_event(request_id: &str) -> String {
+    format!("agent-chat:done:{}", request_id)
+}
+
 #[derive(Clone, Serialize)]
 struct StreamError {
     category: String,
@@ -63,12 +85,14 @@ pub async fn ask_insights_stream(
     project_path: String,
     messages: Vec<InsightsMessage>,
     session_context: Option<String>,
+    request_id: Option<String>,
 ) -> Result<(), String> {
     super::validate_project_path(&project_path)?;
     info!(project_path = %project_path, message_count = messages.len(), streaming = true, "Insights stream query");
     let prompt = build_insights_prompt(&messages, session_context.as_deref());
     super::validate_input_size(&prompt, super::MAX_INPUT_SIZE, "Insights stream prompt")?;
 
+    let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let mut cmd = claude_command()?;
     cmd.args(&["-p", &prompt, "--output-format", "text"]);
     cmd.current_dir(&project_path);
@@ -92,7 +116,7 @@ pub async fn ask_insights_stream(
         let mut lines = reader.lines();
 
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = handle.emit("insights:chunk", &line);
+            let _ = handle.emit(&insights_chunk_event(&request_id), &line);
         }
 
         // Collect stderr for error classification
@@ -110,7 +134,7 @@ pub async fn ask_insights_stream(
 
         if !success && !stderr_text.trim().is_empty() {
             let classified = super::error_classifier::classify_cli_error(&stderr_text);
-            let _ = handle.emit("insights:error", StreamError {
+            let _ = handle.emit(&insights_error_event(&request_id), StreamError {
                 category: format!("{:?}", classified.category).to_lowercase(),
                 message: classified.message,
                 suggestion: classified.suggestion,
@@ -118,7 +142,7 @@ pub async fn ask_insights_stream(
             });
         }
 
-        let _ = handle.emit("insights:done", success);
+        let _ = handle.emit(&insights_done_event(&request_id), success);
     });
 
     Ok(())
@@ -130,12 +154,14 @@ pub async fn ask_agent_chat_stream(
     project_path: String,
     messages: Vec<InsightsMessage>,
     session_context: Option<String>,
+    request_id: Option<String>,
 ) -> Result<(), String> {
     super::validate_project_path(&project_path)?;
     info!(project_path = %project_path, message_count = messages.len(), streaming = true, "Agent chat stream query");
     let prompt = build_insights_prompt(&messages, session_context.as_deref());
     super::validate_input_size(&prompt, super::MAX_INPUT_SIZE, "Agent chat stream prompt")?;
 
+    let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let mut cmd = claude_command()?;
     cmd.args(&["-p", &prompt, "--output-format", "text"]);
     cmd.current_dir(&project_path);
@@ -159,7 +185,7 @@ pub async fn ask_agent_chat_stream(
         let mut lines = reader.lines();
 
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = handle.emit("agent-chat:chunk", &line);
+            let _ = handle.emit(&agent_chat_chunk_event(&request_id), &line);
         }
 
         let stderr_text = if let Some(se) = stderr {
@@ -176,7 +202,7 @@ pub async fn ask_agent_chat_stream(
 
         if !success && !stderr_text.trim().is_empty() {
             let classified = super::error_classifier::classify_cli_error(&stderr_text);
-            let _ = handle.emit("agent-chat:error", StreamError {
+            let _ = handle.emit(&agent_chat_error_event(&request_id), StreamError {
                 category: format!("{:?}", classified.category).to_lowercase(),
                 message: classified.message,
                 suggestion: classified.suggestion,
@@ -184,7 +210,7 @@ pub async fn ask_agent_chat_stream(
             });
         }
 
-        let _ = handle.emit("agent-chat:done", success);
+        let _ = handle.emit(&agent_chat_done_event(&request_id), success);
     });
 
     Ok(())

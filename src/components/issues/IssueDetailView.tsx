@@ -140,16 +140,11 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
     // Switch to Claude view
     useAppStore.getState().setActiveView("claude");
 
-    // Add a new pane (which auto-starts a session)
-    useLayoutStore.getState().addPane();
-
-    // Dispatch event with the prompt data — TerminalPane will pick this up
-    // We need a small delay to let the session start, then write the prompt
-    setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("packetcode:issue-prompt", { detail: { prompt, issueId: issue.id } })
-      );
-    }, 1500);
+    useLayoutStore.getState().addPane({
+      cliCommand: "claude",
+      initialPrompt: prompt,
+      issueId: issue.id,
+    });
 
     onClose();
   }

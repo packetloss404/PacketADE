@@ -1,7 +1,10 @@
 import { loadPersistedState, getCwd, saveUiSlice } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
+import { useAgentStore } from "@/stores/agentStore";
+import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import type { AppView } from "@/stores/appStore";
 
 /**
@@ -13,33 +16,13 @@ export async function initializeApp(): Promise<void> {
     const state = await loadPersistedState();
 
     // Hydrate stores in parallel (each accepts the pre-loaded state to avoid extra round-trips)
-    const hydrations: Promise<void>[] = [];
-
     // Workspace store — synchronous hydration
     useWorkspaceStore.getState().hydrateFromBackend(state.workspaces);
-
-    // Flight store — async (handles localStorage migration)
-    hydrations.push(
-      import("@/stores/flightStore").then(({ useFlightStore }) =>
-        useFlightStore.getState().hydrateFromBackend(state),
-      ),
-    );
-
-    // Agent store — async (handles localStorage migration + detection)
-    hydrations.push(
-      import("@/stores/agentStore").then(({ useAgentStore }) =>
-        useAgentStore.getState().hydrateFromBackend(state),
-      ),
-    );
-
-    // Orchestration store — async
-    hydrations.push(
-      import("@/stores/orchestrationStore").then(({ useOrchestrationStore }) =>
-        useOrchestrationStore.getState().hydrateFromBackend(state),
-      ),
-    );
-
-    await Promise.allSettled(hydrations);
+    await Promise.allSettled([
+      useFlightStore.getState().hydrateFromBackend(state),
+      useAgentStore.getState().hydrateFromBackend(state),
+      useOrchestrationStore.getState().hydrateFromBackend(state),
+    ]);
 
     // Restore UI state
     if (state.ui.theme === "dark" || state.ui.theme === "light") {

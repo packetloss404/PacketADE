@@ -3,6 +3,7 @@ import { Send, Bot, User, Loader2, Sparkles } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { askAgentChatStream } from "@/lib/tauri";
+import { agentChatChunkEvent, agentChatDoneEvent } from "@/lib/events";
 import { useLayoutStore } from "@/stores/layoutStore";
 
 interface AgentChatMessage {
@@ -112,10 +113,11 @@ export function AgentChatPanel({ agentId, title }: AgentChatPanelProps) {
       cleanupListeners();
 
       let accumulated = "";
+      const requestId = crypto.randomUUID();
 
       try {
         const unlistenChunk = await listen<string>(
-          "agent-chat:chunk",
+          agentChatChunkEvent(requestId),
           (event) => {
             accumulated += event.payload + "\n";
             if (mountedRef.current) {
@@ -126,7 +128,7 @@ export function AgentChatPanel({ agentId, title }: AgentChatPanelProps) {
         unlistenChunkRef.current = unlistenChunk;
 
         const donePromise = new Promise<boolean>((resolve) => {
-          listen<boolean>("agent-chat:done", (event) => {
+          listen<boolean>(agentChatDoneEvent(requestId), (event) => {
             resolve(event.payload);
           }).then((unlisten) => {
             unlistenDoneRef.current = unlisten;
@@ -134,7 +136,7 @@ export function AgentChatPanel({ agentId, title }: AgentChatPanelProps) {
         });
 
         const projectPath = useLayoutStore.getState().projectPath;
-        await askAgentChatStream(projectPath, allMessages, `agent:${agentId}`);
+        await askAgentChatStream(projectPath, allMessages, `agent:${agentId}`, requestId);
         await donePromise;
 
         cleanupListeners();

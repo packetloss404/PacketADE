@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::Serialize;
 use tracing::{info, warn};
 
 use super::agent_config::AgentConfig;
@@ -93,41 +93,17 @@ pub fn ensure_data_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// Load a JSON file from the data directory. Returns default if file doesn't exist.
-pub fn load<T: DeserializeOwned + Default>(filename: &str) -> T {
-    let path = data_dir().join(filename);
-    match fs::read_to_string(&path) {
-        Ok(content) => {
-            serde_json::from_str(&content).unwrap_or_else(|e| {
-                warn!("Failed to parse {:?}: {}, using default", path, e);
-                T::default()
-            })
-        }
-        Err(_) => T::default(),
-    }
-}
-
-/// Save a value as JSON to the data directory.
-pub fn save<T: Serialize>(filename: &str, data: &T) -> Result<(), String> {
-    let dir = ensure_data_dir()?;
-    let path = dir.join(filename);
-    let json = serde_json::to_string_pretty(data)
-        .map_err(|e| format!("Failed to serialize: {}", e))?;
-    write_with_backup(&path, &json)?;
-    Ok(())
-}
-
 pub fn load_state() -> PersistedState {
     let path = data_dir().join(STATE_FILENAME);
     match fs::read_to_string(&path) {
         Ok(content) => match serde_json::from_str::<PersistedState>(&content) {
             Ok(state) => state,
             Err(e) => {
-                warn!("Failed to parse {:?}: {}, falling back to legacy files", path, e);
-                load_legacy_state()
+                warn!("Failed to parse {:?}: {}, using default state", path, e);
+                PersistedState::default()
             }
         },
-        Err(_) => load_legacy_state(),
+        Err(_) => PersistedState::default(),
     }
 }
 
@@ -177,20 +153,6 @@ pub fn save_ui(ui: PersistedUiState) -> Result<(), String> {
     state.ui = ui;
     state.version += 1;
     save_state_inner(&state)
-}
-
-fn load_legacy_state() -> PersistedState {
-    PersistedState {
-        version: 1,
-        flights: load("flights.json"),
-        agents: load("agents.json"),
-        settings: load("settings.json"),
-        ui: PersistedUiState::default(),
-        issues: Vec::new(),
-        approval_log: Vec::new(),
-        workspaces: Vec::new(),
-        retrospectives: Vec::new(),
-    }
 }
 
 pub fn save_issues(issues: Vec<Issue>) -> Result<(), String> {

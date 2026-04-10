@@ -22,7 +22,6 @@ pub struct DiffLine {
 
 #[derive(Debug, Clone)]
 pub struct DiffFile {
-    pub path: String,
     pub lines: Vec<DiffLine>,
 }
 
@@ -51,7 +50,6 @@ pub fn parse_unified_diff(input: &str) -> Vec<DiffFile> {
                 .unwrap_or("unknown")
                 .to_string();
             current_file = Some(DiffFile {
-                path: path.clone(),
                 lines: vec![DiffLine {
                     kind: DiffLineKind::FileHeader,
                     old_lineno: None,

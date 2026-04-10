@@ -4,6 +4,18 @@ use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::{info, warn};
 
+fn flight_chat_chunk_event(request_id: &str) -> String {
+    format!("flight-chat:chunk:{}", request_id)
+}
+
+fn flight_chat_error_event(request_id: &str) -> String {
+    format!("flight-chat:error:{}", request_id)
+}
+
+fn flight_chat_done_event(request_id: &str) -> String {
+    format!("flight-chat:done:{}", request_id)
+}
+
 #[derive(Clone, Serialize)]
 struct StreamError {
     category: String,
@@ -84,6 +96,7 @@ pub async fn ask_flight_chat_stream(
     messages: Vec<FlightChatMessage>,
     flight_state: FlightState,
     retrospectives: Option<String>,
+    request_id: Option<String>,
 ) -> Result<(), String> {
     super::validate_project_path(&project_path)?;
 
@@ -99,6 +112,7 @@ pub async fn ask_flight_chat_stream(
         message_count = messages.len(),
         "Flight chat stream query"
     );
+    let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let prompt = build_flight_chat_prompt(&messages, &flight_state, retrospectives.as_deref());
     super::validate_input_size(&prompt, super::MAX_INPUT_SIZE, "Flight chat prompt")?;
 
@@ -125,7 +139,7 @@ pub async fn ask_flight_chat_stream(
         let mut lines = reader.lines();
 
         while let Ok(Some(line)) = lines.next_line().await {
-            if let Err(e) = handle.emit("flight-chat:chunk", &line) {
+            if let Err(e) = handle.emit(&flight_chat_chunk_event(&request_id), &line) {
                 warn!("Failed to emit flight-chat:chunk: {}", e);
                 break;
             }
@@ -145,7 +159,7 @@ pub async fn ask_flight_chat_stream(
 
         if !success && !stderr_text.trim().is_empty() {
             let classified = super::error_classifier::classify_cli_error(&stderr_text);
-            let _ = handle.emit("flight-chat:error", StreamError {
+            let _ = handle.emit(&flight_chat_error_event(&request_id), StreamError {
                 category: format!("{:?}", classified.category).to_lowercase(),
                 message: classified.message,
                 suggestion: classified.suggestion,
@@ -153,7 +167,7 @@ pub async fn ask_flight_chat_stream(
             });
         }
 
-        if let Err(e) = handle.emit("flight-chat:done", success) {
+        if let Err(e) = handle.emit(&flight_chat_done_event(&request_id), success) {
             warn!("Failed to emit flight-chat:done: {}", e);
         }
     });

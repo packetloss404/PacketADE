@@ -7,7 +7,6 @@ use super::super::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastLevel {
-    Info,
     Success,
     Warning,
     Error,
@@ -78,7 +77,6 @@ impl ToastManager {
             let toast_area = Rect::new(x, y.saturating_sub(height), width, height);
 
             let border_color = match toast.level {
-                ToastLevel::Info => theme.status_info,
                 ToastLevel::Success => theme.status_done,
                 ToastLevel::Warning => theme.status_warning,
                 ToastLevel::Error => theme.status_failed,

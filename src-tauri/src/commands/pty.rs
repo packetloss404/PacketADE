@@ -10,6 +10,14 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
+fn pty_output_event(session_id: &str) -> String {
+    format!("pty:output:{}", session_id)
+}
+
+fn pty_exit_event(session_id: &str) -> String {
+    format!("pty:exit:{}", session_id)
+}
+
 /// Commands allowed to be spawned in a PTY session.
 const ALLOWED_COMMANDS: &[&str] = &[
     "claude",
@@ -54,13 +62,6 @@ fn resolve_windows_command(command: &str) -> String {
 
     // Fallback: try .cmd extension (legacy behavior)
     format!("{}.cmd", command)
-}
-
-/// Data emitted to the frontend for each chunk of PTY output
-#[derive(Clone, Serialize)]
-pub struct PtyOutput {
-    pub session_id: String,
-    pub data: String,
 }
 
 /// Info about a running PTY session
@@ -262,13 +263,8 @@ pub fn create_pty_session(
                 Ok(0) => break, // EOF — process exited
                 Ok(n) => {
                     let data = crate::core::pty::decode_terminal_chunk(&buf[..n], &mut pending);
-
-                    let event = PtyOutput {
-                        session_id: sid.clone(),
-                        data,
-                    };
-                    if let Err(e) = app_handle.emit("pty:output", &event) {
-                        warn!(session_id = %sid, error = %e, "Failed to emit pty:output");
+                    if let Err(e) = app_handle.emit(&pty_output_event(&sid), &data) {
+                        warn!(session_id = %sid, error = %e, "Failed to emit scoped pty output");
                     }
                 }
                 Err(e) => {
@@ -292,8 +288,8 @@ pub fn create_pty_session(
         }
 
         info!(session_id = %sid, "PTY session exited");
-        if let Err(e) = app_handle.emit("pty:exit", &sid) {
-            warn!(session_id = %sid, error = %e, "Failed to emit pty:exit");
+        if let Err(e) = app_handle.emit(&pty_exit_event(&sid), &sid) {
+            warn!(session_id = %sid, error = %e, "Failed to emit scoped pty exit");
         }
     });
 

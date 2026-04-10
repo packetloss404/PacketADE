@@ -1,7 +1,8 @@
 use std::sync::{Arc, Mutex};
 
+use crate::api::{OrchestratorSnapshotDto, PersistedStateDto, TaskSpawnRequestDto};
 use crate::commands::pty::SharedPtyManager;
-use crate::core::orchestrator::{Orchestrator, OrchestratorSettings, TaskSpawnRequest};
+use crate::core::orchestrator::{Orchestrator, TaskSpawnRequest};
 use crate::core::storage::{self, PersistedState};
 use crate::core::shared::lock_mutex;
 
@@ -16,11 +17,6 @@ pub fn create_shared_orchestrator() -> SharedOrchestrator {
     // Save recovered state (tasks moved to paused, sessions cleared)
     let _ = storage::save_state(&state);
     Arc::new(Mutex::new(orchestrator))
-}
-
-#[derive(serde::Deserialize)]
-pub struct TickRuntimeSnapshot {
-    pub running_task_ids: Vec<String>,
 }
 
 /// Serializable snapshot of a single running task for the frontend
@@ -61,7 +57,7 @@ where
 pub fn launch_flight(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
     flight_id: String,
-) -> Result<PersistedState, String> {
+) -> Result<PersistedStateDto, String> {
     with_orchestrator_and_flights(&orchestrator, |orch, state| {
         let flight = state
             .flights
@@ -69,7 +65,7 @@ pub fn launch_flight(
             .find(|f| f.id == flight_id)
             .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
         orch.launch_flight(flight);
-        Ok(state.clone())
+        Ok(state.clone().into())
     })
 }
 
@@ -78,7 +74,7 @@ pub fn pause_flight(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
     pty_manager: tauri::State<'_, SharedPtyManager>,
     flight_id: String,
-) -> Result<PersistedState, String> {
+) -> Result<PersistedStateDto, String> {
     // Step 1: Collect session IDs and pause flight (under orchestrator lock)
     let (result, session_ids) = {
         let mut orch = lock_mutex(&orchestrator)?;
@@ -100,7 +96,7 @@ pub fn pause_flight(
         orch.pause_flight(flight);
         storage::save_state(&state)?;
 
-        (state, session_ids)
+        (PersistedStateDto::from(state), session_ids)
     }; // orchestrator lock released here
 
     // Step 2: Kill PTY sessions (under pty lock, orchestrator already released)
@@ -117,7 +113,7 @@ pub fn pause_flight(
 pub fn resume_flight(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
     flight_id: String,
-) -> Result<PersistedState, String> {
+) -> Result<PersistedStateDto, String> {
     with_orchestrator_and_flights(&orchestrator, |orch, state| {
         let flight = state
             .flights
@@ -125,7 +121,7 @@ pub fn resume_flight(
             .find(|f| f.id == flight_id)
             .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
         orch.resume_flight(flight);
-        Ok(state.clone())
+        Ok(state.clone().into())
     })
 }
 
@@ -134,7 +130,7 @@ pub fn cancel_flight(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
     pty_manager: tauri::State<'_, SharedPtyManager>,
     flight_id: String,
-) -> Result<PersistedState, String> {
+) -> Result<PersistedStateDto, String> {
     // Step 1: Collect session IDs and cancel flight (under orchestrator lock)
     let (result, session_ids) = {
         let mut orch = lock_mutex(&orchestrator)?;
@@ -156,7 +152,7 @@ pub fn cancel_flight(
         orch.cancel_flight(flight);
         storage::save_state(&state)?;
 
-        (state, session_ids)
+        (PersistedStateDto::from(state), session_ids)
     }; // orchestrator lock released here
 
     // Step 2: Kill PTY sessions (under pty lock, orchestrator already released)
@@ -172,16 +168,16 @@ pub fn cancel_flight(
 #[tauri::command]
 pub fn orchestration_tick(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
-) -> Result<Vec<TaskSpawnRequest>, String> {
+) -> Result<Vec<TaskSpawnRequestDto>, String> {
     let mut orch = lock_mutex(&orchestrator)?;
     let state = storage::load_state();
-    Ok(orch.tick(&state.flights, &state.agents))
+    Ok(orch.tick(&state.flights, &state.agents).into_iter().map(Into::into).collect())
 }
 
 #[tauri::command]
 pub fn get_orchestration_state(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
-) -> Result<OrchestratorSnapshot, String> {
+) -> Result<OrchestratorSnapshotDto, String> {
     let orch = lock_mutex(&orchestrator)?;
     Ok(OrchestratorSnapshot {
         running_task_ids: orch.running_tasks.keys().cloned().collect(),
@@ -195,7 +191,7 @@ pub fn get_orchestration_state(
         }).collect(),
         active_flight_ids: orch.active_flight_ids.iter().cloned().collect(),
         paused_at_milestone: orch.paused_at_milestone.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-    })
+    }.into())
 }
 
 #[tauri::command]
@@ -232,10 +228,10 @@ pub fn notify_task_complete(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
     task_id: String,
     success: bool,
-) -> Result<PersistedState, String> {
+) -> Result<PersistedStateDto, String> {
     with_orchestrator_and_flights(&orchestrator, |orch, state| {
         orch.on_task_complete(&task_id, success, &mut state.flights);
-        Ok(state.clone())
+        Ok(state.clone().into())
     })
 }
 
@@ -243,10 +239,10 @@ pub fn notify_task_complete(
 pub fn notify_approval_needed(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
     task_id: String,
-) -> Result<PersistedState, String> {
+) -> Result<PersistedStateDto, String> {
     with_orchestrator_and_flights(&orchestrator, |orch, state| {
         orch.on_task_approval_needed(&task_id, &mut state.flights);
-        Ok(state.clone())
+        Ok(state.clone().into())
     })
 }
 
@@ -254,9 +250,9 @@ pub fn notify_approval_needed(
 pub fn notify_approval_resolved(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
     task_id: String,
-) -> Result<PersistedState, String> {
+) -> Result<PersistedStateDto, String> {
     with_orchestrator_and_flights(&orchestrator, |orch, state| {
         orch.on_task_approval_resolved(&task_id, &mut state.flights);
-        Ok(state.clone())
+        Ok(state.clone().into())
     })
 }

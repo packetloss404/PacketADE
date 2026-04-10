@@ -17,11 +17,6 @@ pub struct OpenCodeStatusLineData {
     pub timestamp: u64,
 }
 
-impl super::helpers::StatusLineEntry for OpenCodeStatusLineData {
-    fn cwd(&self) -> &str { &self.cwd }
-    fn timestamp(&self) -> u64 { self.timestamp }
-}
-
 #[tauri::command]
 pub fn read_opencode_statusline_states() -> Vec<OpenCodeStatusLineData> {
     let home = match home_dir() {

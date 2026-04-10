@@ -1,3 +1,4 @@
+pub mod api;
 pub mod core;
 mod claude;
 mod commands;

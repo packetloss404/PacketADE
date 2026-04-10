@@ -13,10 +13,12 @@ export interface Workspace {
   agents: WorkspaceAgentSlot[];
   panes: WorkspacePane[];
   projectPath: string;
+  prompt?: string;
   createdAt: number;
   updatedAt: number;
   status: "active" | "archived";
   bypassPermissions?: boolean;
+  modelOverrides?: Record<string, string | null>;
   effortOverrides?: Record<string, string | null>;
   flightId?: string;
 }

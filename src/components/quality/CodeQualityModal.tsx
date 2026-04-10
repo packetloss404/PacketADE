@@ -85,10 +85,10 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
 
     const prompt = lines.join("\n");
     useAppStore.getState().setActiveView("claude");
-    useLayoutStore.getState().addPane();
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent("packetcode:issue-prompt", { detail: { prompt } }));
-    }, 1500);
+    useLayoutStore.getState().addPane({
+      cliCommand: "claude",
+      initialPrompt: prompt,
+    });
     onClose();
   }
 

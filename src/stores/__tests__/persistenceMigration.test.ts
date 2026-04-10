@@ -37,8 +37,6 @@ vi.mock("@/stores/issueStore", () => ({
 
 // --- Helpers ---
 
-const STORAGE_KEY = "packetcode:flights";
-
 function makeFlight(overrides: Partial<Flight> = {}): Flight {
   return {
     id: `flight_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -79,7 +77,7 @@ function makePersistedState(flights: Flight[]): PersistedState {
 
 // --- Tests ---
 
-describe("flightStore persistence migration", () => {
+describe("flightStore backend persistence", () => {
   beforeEach(async () => {
     // Clear localStorage
     localStorage.clear();
@@ -111,57 +109,17 @@ describe("flightStore persistence migration", () => {
     expect(flights[0].title).toBe("Backend Flight");
   });
 
-  it("migrates from localStorage when backend is empty", async () => {
-    // Pre-populate localStorage with 2 flights
-    const localFlight1 = makeFlight({ id: "flight_local_1", title: "Local Flight 1" });
-    const localFlight2 = makeFlight({ id: "flight_local_2", title: "Local Flight 2" });
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        flights: [localFlight1, localFlight2],
-        activeFlightId: null,
-      }),
-    );
-
-    // Backend returns empty flights
+  it("uses backend state when backend is empty", async () => {
     mockLoadPersistedState.mockResolvedValue(makePersistedState([]));
 
     const store = await getStore();
     await store.getState().hydrateFromBackend();
 
     const { flights } = store.getState();
-    // The current hydrateFromBackend overwrites with backend state (empty).
-    // Once the dual-write agent adds migration logic, this should show 2 flights
-    // and saveFlightsSlice should be called. For now we test the TARGET behavior:
-    // If backend is empty and localStorage has data, migration should preserve local data.
-    //
-    // Current behavior: backend wins (0 flights). Target behavior: local wins (2 flights).
-    // This test documents the TARGET behavior for the migration sprint.
-    if (flights.length === 2) {
-      // Target behavior: migration happened
-      expect(flights[0].id).toBe("flight_local_1");
-      expect(flights[1].id).toBe("flight_local_2");
-      expect(mockSaveFlightsSlice).toHaveBeenCalled();
-      // localStorage key should be cleaned up after migration
-      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
-    } else {
-      // Current behavior before migration agent runs: backend wins with 0 flights
-      expect(flights).toHaveLength(0);
-    }
+    expect(flights).toHaveLength(0);
   });
 
-  it("prefers backend over localStorage when both have data", async () => {
-    // localStorage has 1 flight
-    const localFlight = makeFlight({ id: "flight_local_only", title: "Local Only" });
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        flights: [localFlight],
-        activeFlightId: null,
-      }),
-    );
-
-    // Backend has 3 flights
+  it("prefers backend state when backend has data", async () => {
     const backendFlights = [
       makeFlight({ id: "flight_b1", title: "Backend 1" }),
       makeFlight({ id: "flight_b2", title: "Backend 2" }),
@@ -177,27 +135,14 @@ describe("flightStore persistence migration", () => {
     expect(flights.map((f) => f.id)).toEqual(["flight_b1", "flight_b2", "flight_b3"]);
   });
 
-  it("falls back to localStorage when backend fails", async () => {
-    // localStorage has 1 flight
-    const localFlight = makeFlight({ id: "flight_fallback_1", title: "Fallback Flight" });
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        flights: [localFlight],
-        activeFlightId: null,
-      }),
-    );
-
-    // Backend rejects
+  it("keeps the current in-memory state when backend fails", async () => {
     mockLoadPersistedState.mockRejectedValue(new Error("Backend unavailable"));
 
     const store = await getStore();
     await store.getState().hydrateFromBackend();
 
     const { flights } = store.getState();
-    // After backend failure, store should keep its initial state loaded from localStorage
-    expect(flights).toHaveLength(1);
-    expect(flights[0].id).toBe("flight_fallback_1");
+    expect(flights).toHaveLength(0);
   });
 
   it("saves to backend via saveFlightsSlice when addFlight is called", async () => {
