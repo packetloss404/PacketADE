@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, Zap, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, Radio, ShieldCheck, Target } from "lucide-react";
+import { GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, Radio, ShieldCheck, Target } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
@@ -10,27 +10,19 @@ import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useFlightStore } from "@/stores/flightStore";
 import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
-import { NewSessionModal } from "@/components/session/NewSessionModal";
 import { SpecImportModal } from "@/components/views/SpecImportModal";
 
 const TABS: { key: AppView; label: string }[] = [
-  { key: "claude", label: "Claude" },
-  { key: "codex", label: "Codex" },
-  { key: "gemini", label: "Gemini" },
-  { key: "opencode", label: "OpenCode" },
   { key: "workspace", label: "Workspaces" },
   { key: "issues", label: "Issues" },
   { key: "history", label: "History" },
 ];
-
-const SESSION_VIEWS = new Set<AppView>(["claude", "codex", "gemini", "opencode"]);
 
 export function Toolbar() {
   const projectPath = useLayoutStore((s) => s.projectPath);
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
   const gitBranch = useGitInfo();
   const [showCodeQuality, setShowCodeQuality] = useState(false);
-  const [newSessionCli, setNewSessionCli] = useState<"claude" | "codex" | "gemini" | "opencode" | null>(null);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showSpecImport, setShowSpecImport] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -48,7 +40,6 @@ export function Toolbar() {
 
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
-  const quickStartSession = useAppStore((s) => s.quickStartSession);
   const moduleStates = useModuleStore((s) => s.states);
 
   const flights = useFlightStore((s) => s.flights);
@@ -90,53 +81,20 @@ export function Toolbar() {
     }
   }
 
-  function handleSplit() {
-    setNewSessionCli(SESSION_VIEWS.has(activeView) ? (activeView as "claude" | "codex" | "gemini" | "opencode") : "claude");
-  }
-
   function handleTabClick(key: AppView) {
-    if (SESSION_VIEWS.has(key)) {
-      setNewSessionCli(key as "claude" | "codex" | "gemini" | "opencode");
-    } else {
-      setActiveView(key);
-    }
-  }
-
-
-  function handleNewSessionClose() {
-    if (newSessionCli) {
-      setActiveView(newSessionCli);
-    }
-    setNewSessionCli(null);
+    setActiveView(key);
   }
 
   return (
     <div className="flex items-center h-9 px-3 bg-bg-tertiary border-b border-bg-border gap-2">
       {/* Left section — view tabs + actions */}
       <div className="flex items-center gap-1 flex-1">
-        {/* Sessions — navigate to sessions view without opening modal */}
-        <button
-          onClick={() => {
-            if (!SESSION_VIEWS.has(activeView)) {
-              setActiveView("claude");
-            }
-          }}
-          className={`px-2.5 py-1 text-xs rounded transition-colors ${
-            SESSION_VIEWS.has(activeView)
-              ? "text-accent-green bg-bg-elevated"
-              : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-          }`}
-        >
-          Sessions
-        </button>
-
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => handleTabClick(tab.key)}
             className={`px-2.5 py-1 text-xs rounded transition-colors ${
-              activeView === tab.key ||
-              (SESSION_VIEWS.has(tab.key) && SESSION_VIEWS.has(activeView))
+              activeView === tab.key
                 ? "text-accent-green bg-bg-elevated"
                 : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
             }`}
@@ -199,27 +157,6 @@ export function Toolbar() {
 
         <div className="w-px h-4 bg-bg-border ml-1" />
 
-        {/* Quick Session + Split pane buttons — in Claude or Codex view */}
-        {SESSION_VIEWS.has(activeView) && (
-          <>
-            <button
-              onClick={() => quickStartSession(activeView as "claude" | "codex" | "gemini" | "opencode")}
-              className="flex items-center gap-1.5 px-2 py-1 text-xs text-accent-green hover:bg-accent-green/10 rounded transition-colors ml-1"
-              title="Quick session with profile defaults"
-            >
-              <Zap size={12} />
-              <span>Quick</span>
-            </button>
-            <button
-              onClick={handleSplit}
-              className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
-              title="New session pane (with options)"
-            >
-              <Plus size={12} />
-              <span>Split</span>
-            </button>
-          </>
-        )}
       </div>
 
       {/* Profile quick-switch */}
@@ -399,12 +336,6 @@ export function Toolbar() {
       {/* Modals */}
       {showCodeQuality && (
         <CodeQualityModal onClose={() => setShowCodeQuality(false)} />
-      )}
-      {newSessionCli && (
-        <NewSessionModal
-          defaultCli={newSessionCli}
-          onClose={handleNewSessionClose}
-        />
       )}
       {showSpecImport && (
         <SpecImportModal onClose={() => setShowSpecImport(false)} />

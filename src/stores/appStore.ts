@@ -32,7 +32,7 @@ interface AppStore {
 }
 
 export const useAppStore = create<AppStore>((set) => ({
-  activeView: "welcome",
+  activeView: "workspace",
   gitBranch: null,
   claudeVersion: null,
   isMaximized: false,

@@ -2,12 +2,19 @@ import { create } from "zustand";
 import type { Workspace, WorkspacePane, WorkspaceAgentSlot } from "@/types/workspace";
 import { computeGridLayout } from "@/lib/gridLayout";
 
+export interface WorkspaceSessionConfig {
+  prompt?: string;
+  profileId?: string;
+  modelOverrides?: Record<string, string | null>;
+  includeMemory?: boolean;
+}
+
 interface WorkspaceStore {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   keepTerminalsAlive: boolean;
 
-  createWorkspace: (name: string, agents: WorkspaceAgentSlot[], projectPath: string) => string;
+  createWorkspace: (name: string, agents: WorkspaceAgentSlot[], projectPath: string, sessionConfig?: WorkspaceSessionConfig) => string;
   archiveWorkspace: (id: string) => void;
   deleteWorkspace: (id: string) => void;
   setActiveWorkspace: (id: string | null) => void;
@@ -20,6 +27,15 @@ interface WorkspaceStore {
 const KEEP_ALIVE_KEY = "packetcode:workspace-keep-alive";
 
 let wsCounter = 0;
+
+// Ephemeral map of workspace ID → session config, consumed once when WorkspaceView launches panes.
+const pendingSessionConfigs = new Map<string, WorkspaceSessionConfig>();
+
+export function consumePendingSessionConfig(workspaceId: string): WorkspaceSessionConfig | undefined {
+  const config = pendingSessionConfigs.get(workspaceId);
+  if (config) pendingSessionConfigs.delete(workspaceId);
+  return config;
+}
 
 function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
   const layout = computeGridLayout(agents.length);
@@ -51,7 +67,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ keepTerminalsAlive: keep });
   },
 
-  createWorkspace: (name, agents, projectPath) => {
+  createWorkspace: (name, agents, projectPath, sessionConfig) => {
     const id = crypto.randomUUID();
     const now = Date.now();
     const workspace: Workspace = {
@@ -69,6 +85,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       syncToBackend(workspaces);
       return { workspaces, activeWorkspaceId: id };
     });
+
+    // If session config provided, store it for WorkspaceView to pick up when launching panes
+    if (sessionConfig) {
+      pendingSessionConfigs.set(id, sessionConfig);
+    }
+
     return id;
   },
 
