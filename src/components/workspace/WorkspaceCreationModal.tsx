@@ -44,7 +44,7 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
   );
   const [includeMemory, setIncludeMemory] = useState(true);
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});
-  const [effortOverrides, setEffortOverrides] = useState<Record<string, EffortLevel | null>>({});
+  const [effortOverrides, setEffortOverrides] = useState<Record<string, EffortLevel | null>>({ "claude-code": "medium" });
   const [bypassPermissions, setBypassPermissions] = useState(false);
   const [prompt, setPrompt] = useState("");
 
