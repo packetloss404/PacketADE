@@ -6,27 +6,34 @@ export default {
     extend: {
       colors: {
         bg: {
-          primary: "var(--color-bg-primary, #0d1117)",
-          secondary: "var(--color-bg-secondary, #161b22)",
-          tertiary: "var(--color-bg-tertiary, #1c2333)",
-          elevated: "var(--color-bg-elevated, #21262d)",
-          hover: "var(--color-bg-hover, #30363d)",
-          border: "var(--color-bg-border, #30363d)",
+          primary: "var(--color-bg-primary, #1e1e2e)",
+          secondary: "var(--color-bg-secondary, #252537)",
+          tertiary: "var(--color-bg-tertiary, #2b2b3d)",
+          elevated: "var(--color-bg-elevated, #313147)",
+          hover: "var(--color-bg-hover, #3b3b52)",
+          border: "var(--color-bg-border, #3b3b52)",
         },
         text: {
-          primary: "var(--color-text-primary, #c9d1d9)",
-          secondary: "var(--color-text-secondary, #8b949e)",
-          muted: "var(--color-text-muted, #484f58)",
+          primary: "var(--color-text-primary, #e4e4e8)",
+          secondary: "var(--color-text-secondary, #9d9db5)",
+          muted: "var(--color-text-muted, #5c5c7a)",
         },
         accent: {
-          green: "var(--color-accent-green, #00ff41)",
-          amber: "var(--color-accent-amber, #f0b400)",
-          blue: "var(--color-accent-blue, #58a6ff)",
-          red: "var(--color-accent-red, #f85149)",
-          purple: "var(--color-accent-purple, #bc8cff)",
+          green: "var(--color-accent-green, #4ec9b0)",
+          amber: "var(--color-accent-amber, #dcdcaa)",
+          blue: "var(--color-accent-blue, #569cd6)",
+          red: "var(--color-accent-red, #f44747)",
+          purple: "var(--color-accent-purple, #7b61ff)",
         },
       },
       fontFamily: {
+        sans: [
+          "Inter",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "sans-serif",
+        ],
         mono: [
           "JetBrains Mono",
           "Cascadia Code",

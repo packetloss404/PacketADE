@@ -36,7 +36,7 @@ export function TitleBar() {
   }, []);
 
   return (
-    <div className="flex items-center h-8 bg-bg-secondary border-b border-bg-border select-none">
+    <div className="flex items-center h-8 bg-bg-tertiary select-none">
       {/* Drag region — data-tauri-drag-region handles dragging natively */}
       <div
         className="flex-1 h-full flex items-center px-3"

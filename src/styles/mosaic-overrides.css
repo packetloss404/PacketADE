@@ -38,7 +38,7 @@
 
 .mosaic-split:hover .mosaic-split-line,
 .mosaic-split.-dragging .mosaic-split-line {
-  background: color-mix(in srgb, var(--color-accent-green) 50%, transparent);
+  background: color-mix(in srgb, var(--color-accent-purple) 50%, transparent);
 }
 
 /* Window chrome — we render our own headers via MosaicTile */
@@ -59,8 +59,8 @@
 
 /* Drop target preview during drag */
 .mosaic-drop-target .drop-target-container .drop-target {
-  border: 2px solid color-mix(in srgb, var(--color-accent-green) 60%, transparent);
-  background: color-mix(in srgb, var(--color-accent-green) 8%, transparent);
+  border: 2px solid color-mix(in srgb, var(--color-accent-purple) 60%, transparent);
+  background: color-mix(in srgb, var(--color-accent-purple) 8%, transparent);
   border-radius: 4px;
   opacity: 1;
 }
