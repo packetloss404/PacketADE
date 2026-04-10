@@ -7,6 +7,7 @@ import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { FileExplorer } from "@/components/explorer/FileExplorer";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, getModuleId, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
@@ -199,6 +200,7 @@ export default function App() {
   }, [handleKeyDown]);
 
   const isSessionsView = activeView === "claude" || activeView === "codex" || activeView === "gemini" || activeView === "opencode";
+  const showWorkspaceSidebar = activeView === "workspace" || activeView === "flight_deck" || activeView === "mission" || activeView === "issues" || activeView === "history";
 
   return (
     <ErrorBoundary fallbackMessage="PacketCode encountered an error">
@@ -233,6 +235,9 @@ export default function App() {
               </Suspense>
             </ErrorBoundary>
           </div>
+
+          {/* Workspace sidebar — persistent across core views */}
+          {showWorkspaceSidebar && <WorkspaceSidebar />}
         </div>
         <StatusBar />
         {commandPaletteOpen && <CommandPalette />}
