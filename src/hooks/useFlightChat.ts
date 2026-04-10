@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { askFlightChatStream } from "@/lib/tauri";
+import { flightChatChunkEvent, flightChatDoneEvent, flightChatErrorEvent } from "@/lib/events";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useRetrospectiveStore } from "@/stores/retrospectiveStore";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -15,6 +16,12 @@ export interface FlightSuggestion {
   title?: string;
   objective?: string;
   priority?: FlightPriority;
+}
+
+interface StreamErrorEvent {
+  category: string;
+  message: string;
+  suggestion: string;
 }
 
 function parseFlightSuggestion(content: string): FlightSuggestion | null {
@@ -106,10 +113,11 @@ export function useFlightChat() {
       cleanupListeners();
 
       let accumulated = "";
+      const requestId = crypto.randomUUID();
 
       try {
         const unlistenChunk = await listen<string>(
-          "flight-chat:chunk",
+          flightChatChunkEvent(requestId),
           (event) => {
             accumulated += event.payload + "\n";
             if (mountedRef.current) {
@@ -120,8 +128,8 @@ export function useFlightChat() {
         unlistenChunkRef.current = unlistenChunk;
 
         // Listen for classified errors from the backend
-        listen<{ category: string; message: string; suggestion: string }>(
-          "flight-chat:error",
+        listen<StreamErrorEvent>(
+          flightChatErrorEvent(requestId),
           (event) => {
             if (mountedRef.current) setLastError(event.payload);
           },
@@ -130,7 +138,7 @@ export function useFlightChat() {
         });
 
         const donePromise = new Promise<boolean>((resolve) => {
-          listen<boolean>("flight-chat:done", (event) => {
+          listen<boolean>(flightChatDoneEvent(requestId), (event) => {
             resolve(event.payload);
           }).then((unlisten) => {
             unlistenDoneRef.current = unlisten;
@@ -139,7 +147,13 @@ export function useFlightChat() {
 
         const projectPath = useLayoutStore.getState().projectPath;
         const retroContext = useRetrospectiveStore.getState().getRetrospectiveContext();
-        await askFlightChatStream(projectPath, allMessages, flightState, retroContext || undefined);
+        await askFlightChatStream(
+          projectPath,
+          allMessages,
+          flightState,
+          retroContext || undefined,
+          requestId,
+        );
         await donePromise;
 
         // Clean up listeners immediately after done

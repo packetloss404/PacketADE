@@ -40,11 +40,23 @@ describe("layoutStore", () => {
     });
 
     it("adds a pane with custom cli options", () => {
-      const id = store().addPane({ cliCommand: "codex", cliArgs: ["-v"], initialPrompt: "hi" });
+      const id = store().addPane({
+        cliCommand: "codex",
+        cliArgs: ["-v"],
+        initialPrompt: "hi",
+        projectPath: "/tmp/project",
+        taskId: "task-1",
+        flightId: "flight-1",
+        issueId: "issue-1",
+      });
       const pane = store().panes.find((p) => p.id === id)!;
       expect(pane.cliCommand).toBe("codex");
       expect(pane.cliArgs).toEqual(["-v"]);
       expect(pane.initialPrompt).toBe("hi");
+      expect(pane.projectPath).toBe("/tmp/project");
+      expect(pane.taskId).toBe("task-1");
+      expect(pane.flightId).toBe("flight-1");
+      expect(pane.issueId).toBe("issue-1");
     });
 
     it("generates unique pane ids on successive calls", () => {

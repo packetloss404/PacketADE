@@ -126,6 +126,9 @@ export function MosaicContainer() {
               cliCommand={pane.cliCommand}
               cliArgs={pane.cliArgs}
               initialPrompt={pane.initialPrompt}
+              projectPath={pane.projectPath}
+              issueId={pane.issueId}
+              taskId={pane.taskId}
               onClose={() => handleRemovePane(id)}
               showCloseButton={panes.length > 1}
             />

@@ -15,13 +15,11 @@ import {
 } from "@/lib/tauri";
 import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useTabStore } from "@/stores/tabStore";
 import {
   notifyApprovalNeeded as notifyApprovalNeededDesktop,
   notifyFlightFailed as notifyFlightFailedDesktop,
   notifyTaskComplete as notifyTaskCompleteDesktop,
 } from "@/lib/notifications";
-// Flight types used only for type reference in approval fallback paths
 
 // === Types ===
 
@@ -33,6 +31,10 @@ interface RunningTask {
   sessionId: string | null;
   agentConfigId: string;
   startedAt: number;
+  command: string;
+  args: string[];
+  prompt: string;
+  projectPath: string;
 }
 
 interface OrchestrationState {
@@ -58,7 +60,7 @@ interface OrchestrationStore extends OrchestrationState {
   cancelFlight: (flightId: string) => Promise<void>;
 
   // Task lifecycle
-  onTaskComplete: (taskId: string, success: boolean) => void;
+  onTaskComplete: (taskId: string, success: boolean) => Promise<void>;
   onTaskApprovalNeeded: (taskId: string) => Promise<void>;
   onTaskApprovalResolved: (taskId: string) => Promise<void>;
   attachSessionToTask: (taskId: string, sessionId: string) => void;
@@ -91,6 +93,14 @@ async function patchPersistedSettings(
   }
 }
 
+async function hydrateFlightsAndRuntime(
+  persisted: Awaited<ReturnType<typeof loadPersistedState>>,
+  syncRuntime: () => Promise<void>,
+) {
+  await useFlightStore.getState().hydrateFromBackend(persisted);
+  await syncRuntime();
+}
+
 let loopInterval: ReturnType<typeof setInterval> | null = null;
 
 export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
@@ -104,8 +114,7 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
   launchFlight: async (flightId) => {
     try {
       const persisted = await launchFlightInBackend(flightId);
-      await useFlightStore.getState().hydrateFromBackend(persisted);
-      await get().syncFromBackend();
+      await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
     } catch {
       return;
     }
@@ -115,8 +124,7 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
   pauseFlight: async (flightId) => {
     try {
       const persisted = await pauseFlightInBackend(flightId);
-      await useFlightStore.getState().hydrateFromBackend(persisted);
-      await get().syncFromBackend();
+      await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
     } catch {
       // Keep local state when backend is unavailable.
     }
@@ -125,8 +133,7 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
   resumeFlight: async (flightId) => {
     try {
       const persisted = await resumeFlightInBackend(flightId);
-      await useFlightStore.getState().hydrateFromBackend(persisted);
-      await get().syncFromBackend();
+      await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
     } catch {
       return;
     }
@@ -136,16 +143,51 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
   cancelFlight: async (flightId) => {
     try {
       const persisted = await cancelFlightInBackend(flightId);
-      await useFlightStore.getState().hydrateFromBackend(persisted);
-      await get().syncFromBackend();
+      await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
     } catch {
       // Keep local state when backend is unavailable.
     }
   },
 
-  onTaskComplete: (_taskId: string, _success: boolean) => {
-    // DEPRECATED: Task completion is now handled by the Rust backend
-    // via notify_task_complete. See setupExitListener.
+  onTaskComplete: async (taskId, success) => {
+    const state = get();
+    const rt = state.runningTasks.get(taskId);
+    if (!rt) return;
+
+    const flightStoreBefore = useFlightStore.getState();
+    const flightBefore = flightStoreBefore.flights.find((f) => f.id === rt.flightId);
+    const taskBefore = flightBefore?.milestones
+      .flatMap((m) => m.tasks)
+      .find((t) => t.id === taskId);
+    const taskName = taskBefore?.title ?? "Task";
+    const flightName = flightBefore?.title ?? "Flight";
+    const flightStatusBefore = flightBefore?.status;
+
+    if (success) {
+      void notifyTaskCompleteDesktop(taskId, taskName);
+    }
+
+    try {
+      const persisted = await notifyTaskComplete(taskId, success);
+      await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
+
+      const flightAfter = useFlightStore
+        .getState()
+        .flights.find((f) => f.id === rt.flightId);
+      if (
+        flightAfter &&
+        flightAfter.status === "failed" &&
+        flightStatusBefore !== "failed"
+      ) {
+        void notifyFlightFailedDesktop(flightName);
+      }
+    } catch {
+      useOrchestrationStore.setState((s) => {
+        const runningTasks = new Map(s.runningTasks);
+        runningTasks.delete(taskId);
+        return { runningTasks };
+      });
+    }
   },
 
   onTaskApprovalNeeded: async (taskId) => {
@@ -225,6 +267,18 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
     useFlightStore.getState().updateTask(rt.flightId, rt.milestoneId, taskId, {
       sessionId,
     });
+
+    void recordTaskSpawn({
+      sessionId,
+      flightId: rt.flightId,
+      milestoneId: rt.milestoneId,
+      taskId,
+      agentConfigId: rt.agentConfigId,
+      command: rt.command,
+      args: rt.args,
+      prompt: rt.prompt,
+      projectPath: rt.projectPath,
+    });
   },
 
   tick: async () => {
@@ -252,19 +306,6 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
         flightId: request.flightId,
       });
 
-      // Notify Rust orchestrator about the spawn (it updates flight/task state)
-      void recordTaskSpawn({
-        sessionId: "", // Will be attached later via attachSessionToTask
-        flightId: request.flightId,
-        milestoneId: request.milestoneId,
-        taskId: request.taskId,
-        agentConfigId: request.agentConfigId,
-        command: request.command,
-        args: request.args,
-        prompt: request.prompt,
-        projectPath: request.projectPath,
-      });
-
       set((s) => {
         const runningTasks = new Map(s.runningTasks);
         runningTasks.set(request.taskId, {
@@ -275,6 +316,10 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
           sessionId: null,
           agentConfigId: request.agentConfigId,
           startedAt: Date.now(),
+          command: request.command,
+          args: request.args,
+          prompt: request.prompt,
+          projectPath: request.projectPath,
         });
         return { runningTasks };
       });
@@ -338,6 +383,10 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
           sessionId: rt.sessionId || null,
           agentConfigId: rt.agentConfigId,
           startedAt: rt.startedAt,
+          command: existing?.command ?? "",
+          args: existing?.args ?? [],
+          prompt: existing?.prompt ?? "",
+          projectPath: existing?.projectPath ?? "",
         });
       }
       set({
@@ -362,83 +411,3 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
     }
   },
 }));
-
-// === Session Exit Listener ===
-// Listen for PTY exit events and mark tasks as complete
-
-let exitListenerSetup = false;
-
-export function setupExitListener() {
-  if (exitListenerSetup) return;
-  exitListenerSetup = true;
-
-  // Import dynamically to avoid circular deps
-  import("@tauri-apps/api/event").then(({ listen }) => {
-    listen<{ session_id: string; success?: boolean; killed?: boolean }>("pty:exit", async (event) => {
-      const store = useOrchestrationStore.getState();
-      const sessionId = event.payload.session_id;
-
-      // Find the running task for this session
-      for (const [taskId, rt] of store.runningTasks) {
-        if (rt.sessionId === sessionId) {
-          if (event.payload.killed) {
-            // Killed manually — just remove from local tracking, backend already handled
-            useOrchestrationStore.setState((s) => {
-              const runningTasks = new Map(s.runningTasks);
-              runningTasks.delete(taskId);
-              return { runningTasks };
-            });
-            break;
-          }
-
-          // Determine success/failure
-          const tab = useTabStore.getState().tabs.find((t) => t.ptySessionId === sessionId);
-          const success =
-            event.payload.success ?? (!event.payload.killed && tab?.status !== "error");
-
-          // Capture task + flight info for notifications before hydration
-          const flightStoreBefore = useFlightStore.getState();
-          const flightBefore = flightStoreBefore.flights.find((f) => f.id === rt.flightId);
-          const taskBefore = flightBefore?.milestones
-            .flatMap((m) => m.tasks)
-            .find((t) => t.id === taskId);
-          const taskName = taskBefore?.title ?? "Task";
-          const flightName = flightBefore?.title ?? "Flight";
-          const flightStatusBefore = flightBefore?.status;
-
-          // Fire task-complete notification on success
-          if (success) {
-            void notifyTaskCompleteDesktop(taskId, taskName);
-          }
-
-          // Notify the Rust backend — this is the single source of truth
-          try {
-            const persisted = await notifyTaskComplete(taskId, success);
-            await useFlightStore.getState().hydrateFromBackend(persisted);
-            await store.syncFromBackend();
-
-            // Detect flight failure transition post-hydration
-            const flightAfter = useFlightStore
-              .getState()
-              .flights.find((f) => f.id === rt.flightId);
-            if (
-              flightAfter &&
-              flightAfter.status === "failed" &&
-              flightStatusBefore !== "failed"
-            ) {
-              void notifyFlightFailedDesktop(flightName);
-            }
-          } catch {
-            // If backend is unavailable, fall back to local cleanup only
-            useOrchestrationStore.setState((s) => {
-              const runningTasks = new Map(s.runningTasks);
-              runningTasks.delete(taskId);
-              return { runningTasks };
-            });
-          }
-          break;
-        }
-      }
-    });
-  });
-}

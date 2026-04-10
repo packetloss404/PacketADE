@@ -143,6 +143,10 @@ describe("orchestrationStore", () => {
           sessionId: "s1",
           agentConfigId: "agent-1",
           startedAt: Date.now(),
+          command: "claude",
+          args: [],
+          prompt: "prompt",
+          projectPath: "/test",
         },
       ],
       [
@@ -155,6 +159,10 @@ describe("orchestrationStore", () => {
           sessionId: "s2",
           agentConfigId: "agent-1",
           startedAt: Date.now(),
+          command: "claude",
+          args: [],
+          prompt: "prompt",
+          projectPath: "/test",
         },
       ],
       [
@@ -167,6 +175,10 @@ describe("orchestrationStore", () => {
           sessionId: "s3",
           agentConfigId: "agent-1",
           startedAt: Date.now(),
+          command: "claude",
+          args: [],
+          prompt: "prompt",
+          projectPath: "/test",
         },
       ],
     ]);

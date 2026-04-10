@@ -110,10 +110,8 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
 
     createWorkspace(name.trim(), orderedAgents, projectPath, {
       prompt: finalPrompt.trim() || undefined,
-      profileId: selectedProfileId ?? undefined,
       modelOverrides,
       effortOverrides,
-      includeMemory,
       bypassPermissions,
     });
 

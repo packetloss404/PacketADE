@@ -1,4 +1,7 @@
 import { create } from "zustand";
+import { useLayoutStore } from "@/stores/layoutStore";
+import { useMemoryStore } from "@/stores/memoryStore";
+import { useProfileStore } from "@/stores/profileStore";
 
 export type CoreView = "welcome" | "claude" | "codex" | "gemini" | "opencode" | "issues" | "flight_deck" | "history" | "tools" | "insights" | "github" | "memory" | "analytics" | "deploy" | "review_queue" | "workspace" | "mission";
 export type AppView = CoreView | `mod:${string}`;
@@ -49,11 +52,6 @@ export const useAppStore = create<AppStore>((set) => ({
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setTheme: (theme) => set({ theme }),
   quickStartSession: async (cli = "claude") => {
-    // Dynamic imports to avoid circular deps at module init time
-    const { useProfileStore } = await import("@/stores/profileStore");
-    const { useMemoryStore } = await import("@/stores/memoryStore");
-    const { useLayoutStore } = await import("@/stores/layoutStore");
-
     const profileStore = useProfileStore.getState();
     const memoryStore = useMemoryStore.getState();
     const layoutStore = useLayoutStore.getState();

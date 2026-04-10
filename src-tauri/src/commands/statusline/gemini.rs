@@ -18,11 +18,6 @@ pub struct GeminiStatusLineData {
     pub timestamp: u64,
 }
 
-impl super::helpers::StatusLineEntry for GeminiStatusLineData {
-    fn cwd(&self) -> &str { &self.cwd }
-    fn timestamp(&self) -> u64 { self.timestamp }
-}
-
 #[tauri::command]
 pub fn read_gemini_statusline_states() -> Vec<GeminiStatusLineData> {
     let home = match home_dir() {

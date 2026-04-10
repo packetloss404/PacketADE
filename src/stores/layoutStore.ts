@@ -10,7 +10,7 @@ interface LayoutStore {
   setProjectPath: (path: string) => void;
   setExplorerOpen: (open: boolean) => void;
   toggleExplorer: () => void;
-  addPane: (opts?: { cliCommand?: string; cliArgs?: string[]; initialPrompt?: string; projectPath?: string; agentConfigId?: string; taskId?: string; flightId?: string }) => string;
+  addPane: (opts?: { cliCommand?: string; cliArgs?: string[]; initialPrompt?: string; projectPath?: string; agentConfigId?: string; taskId?: string; flightId?: string; issueId?: string }) => string;
   removePane: (paneId: string) => void;
   setActivePaneId: (paneId: string) => void;
   setPaneSession: (paneId: string, sessionId: string | null) => void;
@@ -43,6 +43,11 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
           cliCommand: opts?.cliCommand ?? "claude",
           cliArgs: opts?.cliArgs,
           initialPrompt: opts?.initialPrompt,
+          projectPath: opts?.projectPath,
+          agentConfigId: opts?.agentConfigId,
+          taskId: opts?.taskId,
+          flightId: opts?.flightId,
+          issueId: opts?.issueId,
         },
       ],
       activePaneId: id,

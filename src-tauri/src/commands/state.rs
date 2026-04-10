@@ -1,37 +1,43 @@
-use crate::core::storage::{self, PersistedState, PersistedUiState};
-use crate::core::flight::{Flight, Issue};
-use crate::core::agent_config::AgentConfig;
-use crate::core::orchestrator::OrchestratorSettings;
-use crate::core::workspace::Workspace;
+use crate::api::{
+    AgentConfigDto, FlightDto, OrchestratorSettingsDto, PersistedStateDto, PersistedUiStateDto,
+    WorkspaceDto,
+};
+use crate::core::flight::Issue;
+use crate::core::storage::{self};
 
 #[tauri::command]
-pub fn load_persisted_state() -> Result<PersistedState, String> {
-    Ok(storage::load_state())
+pub fn load_persisted_state() -> Result<PersistedStateDto, String> {
+    Ok(storage::load_state().into())
 }
 
 #[tauri::command]
-pub fn save_persisted_state(state: PersistedState) -> Result<(), String> {
+pub fn save_persisted_state(state: PersistedStateDto) -> Result<(), String> {
+    let existing = storage::load_state();
+    let mut state: crate::core::storage::PersistedState = state.into();
+    state.issues = existing.issues;
+    state.approval_log = existing.approval_log;
+    state.retrospectives = existing.retrospectives;
     storage::save_state(&state)
 }
 
 #[tauri::command]
-pub fn save_flights_slice(flights: Vec<Flight>) -> Result<(), String> {
-    storage::save_flights(flights)
+pub fn save_flights_slice(flights: Vec<FlightDto>) -> Result<(), String> {
+    storage::save_flights(flights.into_iter().map(Into::into).collect())
 }
 
 #[tauri::command]
-pub fn save_agents_slice(agents: Vec<AgentConfig>) -> Result<(), String> {
-    storage::save_agents(agents)
+pub fn save_agents_slice(agents: Vec<AgentConfigDto>) -> Result<(), String> {
+    storage::save_agents(agents.into_iter().map(Into::into).collect())
 }
 
 #[tauri::command]
-pub fn save_settings_slice(settings: OrchestratorSettings) -> Result<(), String> {
-    storage::save_settings(settings)
+pub fn save_settings_slice(settings: OrchestratorSettingsDto) -> Result<(), String> {
+    storage::save_settings(settings.into())
 }
 
 #[tauri::command]
-pub fn save_ui_slice(ui: PersistedUiState) -> Result<(), String> {
-    storage::save_ui(ui)
+pub fn save_ui_slice(ui: PersistedUiStateDto) -> Result<(), String> {
+    storage::save_ui(ui.into())
 }
 
 #[tauri::command]
@@ -40,6 +46,6 @@ pub fn save_issues_slice(issues: Vec<Issue>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_workspaces_slice(workspaces: Vec<Workspace>) -> Result<(), String> {
-    storage::save_workspaces(workspaces)
+pub fn save_workspaces_slice(workspaces: Vec<WorkspaceDto>) -> Result<(), String> {
+    storage::save_workspaces(workspaces.into_iter().map(Into::into).collect())
 }

@@ -16,6 +16,11 @@ interface TerminalPaneProps {
   cliCommand?: string;
   cliArgs?: string[];
   initialPrompt?: string;
+  projectPath?: string;
+  issueId?: string;
+  taskId?: string;
+  onSessionCreated?: (sessionId: string) => void;
+  onSessionEnded?: () => void;
 }
 
 export function TerminalPane({
@@ -24,7 +29,12 @@ export function TerminalPane({
   showCloseButton = false,
   cliCommand = "claude",
   cliArgs,
-  initialPrompt: _initialPrompt,
+  initialPrompt,
+  projectPath: paneProjectPath,
+  issueId,
+  taskId,
+  onSessionCreated,
+  onSessionEnded,
 }: TerminalPaneProps) {
   const termContainerRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -53,9 +63,15 @@ export function TerminalPane({
     paneId,
     cliCommand,
     cliArgs,
+    projectPath: paneProjectPath,
+    initialPrompt,
+    issueId,
+    taskId,
     xtermRef,
     fitAddonRef,
     sessionIdRef,
+    onSessionCreated,
+    onSessionEnded,
   });
 
   clearApprovalRef.current = clearApproval;

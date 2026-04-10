@@ -7,6 +7,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useActivityStore } from "@/stores/activityStore";
 import { useTerminalSession } from "@/hooks/useTerminalSession";
+import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
 
 const listeners: Record<string, ((event: { payload: unknown }) => void) | undefined> = {};
 
@@ -25,6 +26,22 @@ vi.mock("@/lib/tauri", () => ({
   killPty: vi.fn(),
 }));
 
+const attachSessionToTask = vi.fn();
+const onTaskApprovalNeeded = vi.fn();
+const onTaskApprovalResolved = vi.fn();
+const onTaskComplete = vi.fn();
+
+vi.mock("@/stores/orchestrationStore", () => ({
+  useOrchestrationStore: {
+    getState: vi.fn(() => ({
+      attachSessionToTask,
+      onTaskApprovalNeeded,
+      onTaskApprovalResolved,
+      onTaskComplete,
+    })),
+  },
+}));
+
 vi.mock("@/hooks/usePtyStateDetector", () => ({
   usePtyStateDetector: vi.fn(() => ({
     clearApproval: vi.fn(),
@@ -37,10 +54,11 @@ vi.mock("@/lib/notifications", () => ({
   notifySessionError: vi.fn(),
 }));
 
-import { createPtySession, killPty } from "@/lib/tauri";
+import { createPtySession, killPty, writePty } from "@/lib/tauri";
 
 const mockCreatePtySession = vi.mocked(createPtySession);
 const mockKillPty = vi.mocked(killPty);
+const mockWritePty = vi.mocked(writePty);
 
 function createTerminalRef() {
   const term = {
@@ -77,6 +95,10 @@ async function startHook() {
     useTerminalSession({
       paneId: "pane-1",
       cliCommand: "claude",
+      projectPath: "/project-a",
+      initialPrompt: "hello world",
+      issueId: "issue-1",
+      taskId: "task-1",
       xtermRef,
       fitAddonRef,
       sessionIdRef,
@@ -89,7 +111,7 @@ async function startHook() {
     await Promise.resolve();
   });
 
-  expect(mockCreatePtySession).toHaveBeenCalledWith("/workspace", 120, 40, "claude", null);
+  expect(mockCreatePtySession).toHaveBeenCalledWith("/project-a", 120, 40, "claude", null);
 
   return { ...hook, term, fitAddon };
 }
@@ -114,6 +136,11 @@ describe("useTerminalSession", () => {
 
     mockCreatePtySession.mockResolvedValue("sess-1");
     mockKillPty.mockResolvedValue(undefined);
+    mockWritePty.mockResolvedValue(undefined);
+    attachSessionToTask.mockReset();
+    onTaskApprovalNeeded.mockReset();
+    onTaskApprovalResolved.mockReset();
+    onTaskComplete.mockReset();
   });
 
   afterEach(() => {
@@ -134,15 +161,48 @@ describe("useTerminalSession", () => {
     const ansiChunk = "\x1b[31mred\x1b[0m\r\n";
 
     await act(async () => {
-      listeners["pty:output"]?.({
-        payload: {
-          session_id: "sess-1",
-          data: ansiChunk,
-        },
-      });
+      listeners[ptyOutputEvent("sess-1")]?.({ payload: ansiChunk });
     });
 
     expect(term.write).toHaveBeenCalledWith(ansiChunk);
+
+    unmount();
+  });
+
+  it("writes the initial prompt and links the spawned task session", async () => {
+    const { unmount } = await startHook();
+
+    expect(mockWritePty).toHaveBeenCalledWith("sess-1", "hello world\n");
+    expect(attachSessionToTask).toHaveBeenCalledWith("task-1", "sess-1");
+    expect(useTabStore.getState().tabs[0]?.ticketId).toBe("issue-1");
+
+    unmount();
+  });
+
+  it("marks an exited task as complete when the session ends naturally", async () => {
+    const { unmount } = await startHook();
+
+    await act(async () => {
+      listeners[ptyExitEvent("sess-1")]?.({ payload: "sess-1" });
+    });
+
+    expect(onTaskComplete).toHaveBeenCalledWith("task-1", true);
+
+    unmount();
+  });
+
+  it("treats a manually killed session as unsuccessful task completion", async () => {
+    const { result, unmount } = await startHook();
+
+    await act(async () => {
+      await result.current.handleKill();
+    });
+
+    await act(async () => {
+      listeners[ptyExitEvent("sess-1")]?.({ payload: "sess-1" });
+    });
+
+    expect(onTaskComplete).toHaveBeenCalledWith("task-1", false);
 
     unmount();
   });

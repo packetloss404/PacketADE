@@ -1,13 +1,12 @@
 import { create } from "zustand";
 import type { Workspace, WorkspacePane, WorkspaceAgentSlot } from "@/types/workspace";
+import { saveWorkspacesSlice } from "@/lib/tauri";
 
 
 export interface WorkspaceSessionConfig {
   prompt?: string;
-  profileId?: string;
   modelOverrides?: Record<string, string | null>;
   effortOverrides?: Record<string, string | null>;
-  includeMemory?: boolean;
   bypassPermissions?: boolean;
 }
 
@@ -30,15 +29,6 @@ const KEEP_ALIVE_KEY = "packetcode:workspace-keep-alive";
 
 let wsCounter = 0;
 
-// Ephemeral map of workspace ID → session config, consumed once when WorkspaceView launches panes.
-const pendingSessionConfigs = new Map<string, WorkspaceSessionConfig>();
-
-export function consumePendingSessionConfig(workspaceId: string): WorkspaceSessionConfig | undefined {
-  const config = pendingSessionConfigs.get(workspaceId);
-  if (config) pendingSessionConfigs.delete(workspaceId);
-  return config;
-}
-
 function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
   return agents.map((agent) => ({
     id: `ws-pane-${++wsCounter}`,
@@ -48,9 +38,19 @@ function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
 }
 
 function syncToBackend(workspaces: Workspace[]) {
-  import("@/lib/tauri").then(({ saveWorkspacesSlice }) => {
-    saveWorkspacesSlice(workspaces).catch(() => {});
-  });
+  saveWorkspacesSlice(workspaces).catch(() => {});
+}
+
+function commitWorkspaces(
+  updater: (state: Pick<WorkspaceStore, "workspaces" | "activeWorkspaceId">) => Partial<WorkspaceStore>,
+) {
+  return (state: WorkspaceStore): Partial<WorkspaceStore> => {
+    const next = updater(state);
+    if (next.workspaces) {
+      syncToBackend(next.workspaces);
+    }
+    return next;
+  };
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -74,44 +74,37 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       agents,
       panes: buildPanes(agents),
       projectPath,
+      prompt: sessionConfig?.prompt,
       createdAt: now,
       updatedAt: now,
       status: "active",
       bypassPermissions: sessionConfig?.bypassPermissions ?? false,
+      modelOverrides: sessionConfig?.modelOverrides,
       effortOverrides: sessionConfig?.effortOverrides,
     };
-    set((s) => {
+    set(commitWorkspaces((s) => {
       const workspaces = [...s.workspaces, workspace];
-      syncToBackend(workspaces);
       return { workspaces, activeWorkspaceId: id };
-    });
-
-    // If session config provided, store it for WorkspaceView to pick up when launching panes
-    if (sessionConfig) {
-      pendingSessionConfigs.set(id, sessionConfig);
-    }
-
+    }));
     return id;
   },
 
   archiveWorkspace: (id) => {
-    set((s) => {
+    set(commitWorkspaces((s) => {
       const workspaces = s.workspaces.map((w) =>
         w.id === id ? { ...w, status: "archived" as const, updatedAt: Date.now() } : w
       );
       const activeWorkspaceId = s.activeWorkspaceId === id ? null : s.activeWorkspaceId;
-      syncToBackend(workspaces);
       return { workspaces, activeWorkspaceId };
-    });
+    }));
   },
 
   deleteWorkspace: (id) => {
-    set((s) => {
+    set(commitWorkspaces((s) => {
       const workspaces = s.workspaces.filter((w) => w.id !== id);
       const activeWorkspaceId = s.activeWorkspaceId === id ? null : s.activeWorkspaceId;
-      syncToBackend(workspaces);
       return { workspaces, activeWorkspaceId };
-    });
+    }));
   },
 
   setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
@@ -122,7 +115,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   setPaneSession: (workspaceId, paneId, sessionId) => {
-    set((s) => {
+    set(commitWorkspaces((s) => {
       const workspaces = s.workspaces.map((w) => {
         if (w.id !== workspaceId) return w;
         return {
@@ -133,9 +126,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           updatedAt: Date.now(),
         };
       });
-      syncToBackend(workspaces);
       return { workspaces };
-    });
+    }));
   },
 
   hydrateFromBackend: (workspaces) => {

@@ -84,7 +84,6 @@ pub struct FlightEditorState {
 pub struct SessionBuffer {
     pub session_id: String,
     pub flight_id: String,
-    pub milestone_id: String,
     pub task_id: String,
     pub agent_config_id: String,
     pub title: String,
@@ -114,7 +113,6 @@ pub struct AttentionItem {
     pub flight_id: String,
     pub milestone_title: String,
     pub task_title: Option<String>,
-    pub session_id: Option<String>,
     pub kind: AttentionKind,
     pub detail: String,
 }
@@ -243,7 +241,6 @@ pub struct App {
     pub session_filter_input: bool,
     pub help_overlay: HelpOverlay,
     pub retrospectives: Vec<storage::FlightRetrospective>,
-    persisted_ui: PersistedUiState,
     suppressed_exit_sessions: HashSet<String>,
 }
 
@@ -295,7 +292,6 @@ impl App {
             session_filter_input: false,
             help_overlay: HelpOverlay::new(),
             retrospectives: Vec::new(),
-            persisted_ui,
             suppressed_exit_sessions: HashSet::new(),
         }
     }
@@ -1646,7 +1642,6 @@ impl App {
             SessionBuffer {
                 session_id: session_id.to_string(),
                 flight_id: req.flight_id.clone(),
-                milestone_id: req.milestone_id.clone(),
                 task_id: req.task_id.clone(),
                 agent_config_id: req.agent_config_id.clone(),
                 title,
@@ -1735,7 +1730,6 @@ impl App {
                             flight_id: flight.id.clone(),
                             milestone_title: milestone.title.clone(),
                             task_title: Some(task.title.clone()),
-                            session_id: task.session_id.clone(),
                             kind: AttentionKind::Approval,
                             detail: "Agent is waiting for approval".to_string(),
                         }),
@@ -1743,7 +1737,6 @@ impl App {
                             flight_id: flight.id.clone(),
                             milestone_title: milestone.title.clone(),
                             task_title: Some(task.title.clone()),
-                            session_id: task.session_id.clone(),
                             kind: AttentionKind::FailedTask,
                             detail: task
                                 .result
@@ -1766,7 +1759,6 @@ impl App {
                         .map(|ms| ms.title.clone())
                         .unwrap_or_else(|| flight.title.clone()),
                     task_title: None,
-                    session_id: None,
                     kind: AttentionKind::FlightReview,
                     detail: "Milestone review is waiting for operator confirmation".to_string(),
                 }),
@@ -1774,7 +1766,6 @@ impl App {
                     flight_id: flight.id.clone(),
                     milestone_title: flight.title.clone(),
                     task_title: None,
-                    session_id: None,
                     kind: AttentionKind::FlightPaused,
                     detail: "Flight is paused and not progressing".to_string(),
                 }),
@@ -1783,13 +1774,12 @@ impl App {
         }
 
         // Add doom loop detection items
-        for (session_id, buffer) in &self.session_buffers {
+        for buffer in self.session_buffers.values() {
             if buffer.doom_loop_detected && !buffer.exited {
                 items.push(AttentionItem {
                     flight_id: buffer.flight_id.clone(),
                     milestone_title: buffer.title.clone(),
                     task_title: Some("Doom loop".to_string()),
-                    session_id: Some(session_id.clone()),
                     kind: AttentionKind::FailedTask,
                     detail: format!(
                         "Agent stuck repeating: {}",

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { loadFromStorage, removeFromStorage, generateId as genId } from "@/lib/storage";
+import { generateId as genId } from "@/lib/storage";
 import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
 import type { Flight, FlightStatus, Milestone, Task } from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
@@ -9,8 +9,6 @@ type FlightState = {
   flights: Flight[];
   activeFlightId: string | null;
 };
-
-const STORAGE_KEY = "packetcode:flights";
 
 const generateId = (prefix: string) => genId(prefix);
 
@@ -27,9 +25,7 @@ async function syncFlightsToBackend(state: FlightState) {
   try {
     await saveFlightsSlice(state.flights);
     await saveUiSlice({ selectedFlightId: state.activeFlightId });
-  } catch {
-    // Keep localStorage as fallback when the Tauri bridge is unavailable.
-  }
+  } catch {}
 }
 
 // === Helpers ===
@@ -121,7 +117,7 @@ interface FlightStore {
   linkSessionToFlight: (flightId: string, sessionId: string) => void;
   unlinkSessionFromFlight: (flightId: string, sessionId: string) => void;
 
-  // Issue linking (PacketCode-specific legacy)
+  // Issue linking
   addIssueToFlight: (flightId: string, issueId: string) => void;
   removeIssueFromFlight: (flightId: string, issueId: string) => void;
   getFlightForIssue: (issueId: string) => Flight | null;
@@ -423,37 +419,11 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   hydrateFromBackend: async (persisted) => {
     try {
       const state = persisted ?? (await loadPersistedState());
-      let flights = state.flights;
-      let activeFlightId = state.ui.selectedFlightId ?? null;
-
-      // One-time migration: if the backend has zero flights, import from localStorage
-      if (flights.length === 0) {
-        const legacy = loadFromStorage<FlightState>(STORAGE_KEY, {
-          flights: [],
-          activeFlightId: null,
-        });
-        if (legacy.flights.length > 0) {
-          flights = legacy.flights;
-          activeFlightId = legacy.activeFlightId;
-          // Persist migrated data to backend
-          await saveFlightsSlice(flights);
-          if (activeFlightId) await saveUiSlice({ selectedFlightId: activeFlightId });
-          // Remove legacy localStorage copy
-          removeFromStorage(STORAGE_KEY);
-        }
-      }
-
-      set({ flights, activeFlightId });
-    } catch {
-      // Fallback: try localStorage when backend is unavailable (dev mode)
-      const legacy = loadFromStorage<FlightState>(STORAGE_KEY, {
-        flights: [],
-        activeFlightId: null,
+      set({
+        flights: state.flights,
+        activeFlightId: state.ui.selectedFlightId ?? null,
       });
-      if (legacy.flights.length > 0) {
-        set(legacy);
-      }
-    }
+    } catch {}
   },
 
   reconcileLiveSessions: (liveSessionIds) => {

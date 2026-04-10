@@ -21,7 +21,11 @@ pub struct Workspace {
     pub agents: Vec<String>,
     pub panes: Vec<WorkspacePane>,
     pub project_path: String,
+    pub prompt: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
     pub status: String,
+    pub bypass_permissions: Option<bool>,
+    pub model_overrides: Option<std::collections::HashMap<String, Option<String>>>,
+    pub effort_overrides: Option<std::collections::HashMap<String, Option<String>>>,
 }

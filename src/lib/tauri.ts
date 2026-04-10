@@ -1,6 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentConfig, AgentStatusPatterns } from "@/types/agent";
-import type { Flight, Milestone, Task, TaskResult, ReviewType } from "@/types/flight";
+import type {
+  AgentConfigDto,
+  OrchestratorSnapshotDto,
+  PersistedStateDto,
+  PersistedUiStateDto,
+  TaskSpawnRequestDto,
+  WorkspaceDto,
+} from "@/generated/tauri-schema";
+import type { AgentConfig } from "@/types/agent";
+import type { Flight, Milestone, ReviewType, Task, TaskResult } from "@/types/flight";
 import type { StatusLineData, CodexStatusLineData, GeminiStatusLineData, OpenCodeStatusLineData } from "@/types/statusline";
 import type { Workspace } from "@/types/workspace";
 
@@ -204,169 +212,24 @@ export async function detectAgent(command: string): Promise<boolean> {
   return invoke<boolean>("detect_agent", { command });
 }
 
-// === Rust <-> TypeScript type conversion layer ===
-
-type RustWorkspace = {
-  id: string;
-  name: string;
-  agents: string[];
-  panes: { id: string; agent_id: string; session_id: string | null; grid_position?: { row: number; col: number } }[];
-  project_path: string;
-  created_at: number;
-  updated_at: number;
-  status: "active" | "archived";
-  bypass_permissions?: boolean;
-  effort_overrides?: Record<string, string | null>;
+type PersistedSettings = {
+  maxParallelSessions: number;
+  milestoneGating: boolean;
+  projectPath: string;
 };
 
-type PersistedStatePayload = {
-  version: number;
-  flights: RustFlight[];
-  agents: RustAgentConfig[];
-  settings: {
-    max_parallel_sessions: number;
-    milestone_gating: boolean;
-    project_path: string;
-  };
-  ui: {
-    selected_flight_id?: string | null;
-    selected_view?: string | null;
-    theme?: "dark" | "light" | null;
-  };
-  workspaces?: RustWorkspace[];
-};
-
-type RustFlight = {
-  id: string;
-  title: string;
-  objective: string;
-  status: Flight["status"];
-  priority: Flight["priority"];
-  project_path: string;
-  git_branch?: string | null;
-  milestones: RustMilestone[];
-  linked_session_ids: string[];
-  created_at: number;
-  updated_at: number;
-  completed_at?: number | null;
-  total_cost: number;
-  total_tokens: number;
-};
-
-type RustMilestone = {
-  id: string;
-  flight_id: string;
-  title: string;
-  description: string;
-  order: number;
-  status: Milestone["status"];
-  tasks: RustTask[];
-  validation_criteria: string[];
-};
-
-type RustTask = {
-  id: string;
-  milestone_id: string;
-  flight_id: string;
-  title: string;
-  description: string;
-  order: number;
-  status: Task["status"];
-  task_type: Task["type"];
-  agent_config_id: string;
-  agent_args?: string[] | null;
-  model?: string | null;
-  depends_on: string[];
-  session_id?: string | null;
-  result?: RustTaskResult | null;
-  review_packet?: {
-    id: string;
-    task_id: string;
-    flight_id: string;
-    milestone_id: string;
-    requested_at: number;
-    review_type: ReviewType;
-    summary: string;
-    diff?: string | null;
-    command?: string | null;
-    file_paths: string[];
-    agent_id?: string | null;
-    session_id?: string | null;
-  } | null;
-  created_at: number;
-  started_at?: number | null;
-  completed_at?: number | null;
-  cost: number;
-  tokens: number;
-};
-
-type RustTaskResult = {
-  exit_code: number | null;
-  summary: string;
-  files_changed: string[];
-  errors: string[];
-  duration_ms: number;
-  handoff?: RustTaskHandoff | null;
-  validation?: RustTaskValidationReport | null;
-};
-
-type RustTaskHandoff = {
-  summary: string;
-  files_changed: string[];
-  tests_needed: string[];
-  follow_ups: string[];
-};
-
-type RustTaskValidationAssertion = {
-  label: string;
-  status: "pass" | "fail" | "warn";
-  details?: string | null;
-};
-
-type RustTaskValidationReport = {
-  verdict: "pass" | "fail" | "warn";
-  summary: string;
-  assertions: RustTaskValidationAssertion[];
-};
-
-type RustAgentConfig = {
-  id: string;
-  name: string;
-  command: string;
-  default_args: string[];
-  description: string;
-  installed: boolean;
-  capabilities: AgentConfig["capabilities"];
-  icon: string;
-  color: string;
-  status_patterns: {
-    approval: string[];
-    thinking: string[];
-    tool_use: { pattern: string; tool: string; file_group?: number | null }[];
-    idle: string[];
-  };
-  is_builtin: boolean;
-  approval_actions: {
-    approve: string;
-    deny: string;
-    abort: string;
-  };
+type PersistedUi = {
+  selectedFlightId?: string | null;
+  selectedView?: string | null;
+  theme?: "dark" | "light" | null;
 };
 
 export type PersistedState = {
   version: number;
   flights: Flight[];
   agents: AgentConfig[];
-  settings: {
-    maxParallelSessions: number;
-    milestoneGating: boolean;
-    projectPath: string;
-  };
-  ui: {
-    selectedFlightId?: string | null;
-    selectedView?: string | null;
-    theme?: "dark" | "light" | null;
-  };
+  settings: PersistedSettings;
+  ui: PersistedUi;
   workspaces: Workspace[];
 };
 
@@ -380,112 +243,6 @@ export type OrchestrationSpawnRequest = {
   prompt: string;
   projectPath: string;
 };
-
-// === Persisted state ===
-
-export async function loadPersistedState(): Promise<PersistedState> {
-  const payload = await invoke<PersistedStatePayload>("load_persisted_state");
-  return fromRustPersistedState(payload);
-}
-
-export async function savePersistedState(state: PersistedState): Promise<void> {
-  return invoke("save_persisted_state", { state: toRustPersistedState(state) });
-}
-
-export async function saveFlightsSlice(flights: Flight[]): Promise<void> {
-  return invoke("save_flights_slice", { flights: flights.map(toRustFlight) });
-}
-
-export async function saveAgentsSlice(agents: AgentConfig[]): Promise<void> {
-  return invoke("save_agents_slice", { agents: agents.map(toRustAgent) });
-}
-
-export async function saveWorkspacesSlice(workspaces: Workspace[]): Promise<void> {
-  const rustWorkspaces = workspaces.map((w) => ({
-    id: w.id,
-    name: w.name,
-    agents: w.agents,
-    panes: w.panes.map((p) => ({
-      id: p.id,
-      agent_id: p.agentId,
-      session_id: p.sessionId ?? null,
-      grid_position: p.gridPosition,
-    })),
-    project_path: w.projectPath,
-    created_at: w.createdAt,
-    updated_at: w.updatedAt,
-    status: w.status,
-  }));
-  return invoke("save_workspaces_slice", { workspaces: rustWorkspaces });
-}
-
-export async function saveSettingsSlice(settings: PersistedState["settings"]): Promise<void> {
-  return invoke("save_settings_slice", {
-    settings: {
-      max_parallel_sessions: settings.maxParallelSessions,
-      milestone_gating: settings.milestoneGating,
-      project_path: settings.projectPath,
-    },
-  });
-}
-
-export async function saveUiSlice(ui: PersistedState["ui"]): Promise<void> {
-  return invoke("save_ui_slice", {
-    ui: {
-      selected_flight_id: ui.selectedFlightId ?? null,
-      selected_view: ui.selectedView ?? null,
-      theme: ui.theme ?? null,
-    },
-  });
-}
-
-// === Flight orchestration ===
-
-export async function launchFlightInBackend(flightId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStatePayload>("launch_flight", { flightId });
-  return fromRustPersistedState(payload);
-}
-
-export async function pauseFlightInBackend(flightId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStatePayload>("pause_flight", { flightId });
-  return fromRustPersistedState(payload);
-}
-
-export async function resumeFlightInBackend(flightId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStatePayload>("resume_flight", { flightId });
-  return fromRustPersistedState(payload);
-}
-
-export async function cancelFlightInBackend(flightId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStatePayload>("cancel_flight", { flightId });
-  return fromRustPersistedState(payload);
-}
-
-export async function orchestrationTick(): Promise<OrchestrationSpawnRequest[]> {
-  const payload = await invoke<
-    Array<{
-      flight_id: string;
-      milestone_id: string;
-      task_id: string;
-      agent_config_id: string;
-      command: string;
-      args: string[];
-      prompt: string;
-      project_path: string;
-    }>
-  >("orchestration_tick");
-
-  return payload.map((entry) => ({
-    flightId: entry.flight_id,
-    milestoneId: entry.milestone_id,
-    taskId: entry.task_id,
-    agentConfigId: entry.agent_config_id,
-    command: entry.command,
-    args: entry.args,
-    prompt: entry.prompt,
-    projectPath: entry.project_path,
-  }));
-}
 
 export type RunningTaskSnapshot = {
   taskId: string;
@@ -503,32 +260,439 @@ export type OrchestratorSnapshot = {
   pausedAtMilestone: [string, string][];
 };
 
-export async function getOrchestrationState(): Promise<OrchestratorSnapshot> {
-  const payload = await invoke<{
-    running_task_ids: string[];
-    running_tasks: Array<{
-      task_id: string;
-      milestone_id: string;
-      flight_id: string;
-      session_id: string;
-      agent_config_id: string;
-      started_at: number;
-    }>;
-    active_flight_ids: string[];
-    paused_at_milestone: [string, string][];
-  }>("get_orchestration_state");
+function normalizeOptionalRecord(
+  record?: { [key: string]: string | null | undefined },
+): Record<string, string | null> | undefined {
+  if (!record) return undefined;
+  const normalized: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (value !== undefined) {
+      normalized[key] = value;
+    }
+  }
+  return normalized;
+}
+
+function toOptional<T>(value: T | null | undefined): T | undefined {
+  return value ?? undefined;
+}
+
+function fromDtoAgent(agent: AgentConfigDto): AgentConfig {
   return {
-    runningTaskIds: payload.running_task_ids,
-    runningTasks: payload.running_tasks.map(rt => ({
-      taskId: rt.task_id,
-      milestoneId: rt.milestone_id,
-      flightId: rt.flight_id,
-      sessionId: rt.session_id,
-      agentConfigId: rt.agent_config_id,
-      startedAt: rt.started_at,
+    id: agent.id,
+    name: agent.name,
+    command: agent.command,
+    defaultArgs: agent.defaultArgs,
+    description: agent.description,
+    installed: agent.installed,
+    capabilities: agent.capabilities,
+    icon: agent.icon,
+    color: agent.color,
+    statusPatterns: {
+      approval: agent.statusPatterns.approval,
+      thinking: agent.statusPatterns.thinking,
+      toolUse: agent.statusPatterns.toolUse.map((tool) => ({
+        pattern: tool.pattern,
+        tool: tool.tool,
+        fileGroup: tool.fileGroup,
+      })),
+      idle: agent.statusPatterns.idle,
+    },
+    approvalActions: agent.approvalActions,
+    isBuiltin: agent.isBuiltin,
+  };
+}
+
+function toDtoAgent(agent: AgentConfig): AgentConfigDto {
+  return {
+    id: agent.id,
+    name: agent.name,
+    command: agent.command,
+    defaultArgs: agent.defaultArgs,
+    description: agent.description,
+    installed: agent.installed,
+    capabilities: agent.capabilities,
+    icon: agent.icon,
+    color: agent.color,
+    statusPatterns: {
+      approval: agent.statusPatterns.approval,
+      thinking: agent.statusPatterns.thinking,
+      toolUse: agent.statusPatterns.toolUse.map((tool) => ({
+        pattern: tool.pattern,
+        tool: tool.tool,
+        fileGroup: tool.fileGroup,
+      })),
+      idle: agent.statusPatterns.idle,
+    },
+    approvalActions: agent.approvalActions ?? { approve: "y\n", deny: "n\n", abort: "\u0003" },
+    isBuiltin: agent.isBuiltin,
+  };
+}
+
+function fromDtoTaskResult(result: NonNullable<PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number]["result"]>): TaskResult {
+  return {
+    exitCode: result.exitCode,
+    summary: result.summary,
+    filesChanged: result.filesChanged,
+    errors: result.errors,
+    duration: result.duration,
+    handoff: result.handoff
+      ? {
+          summary: result.handoff.summary,
+          filesChanged: result.handoff.filesChanged,
+          testsNeeded: result.handoff.testsNeeded,
+          followUps: result.handoff.followUps,
+        }
+      : undefined,
+    validation: result.validation
+      ? {
+          verdict: result.validation.verdict,
+          summary: result.validation.summary,
+          assertions: result.validation.assertions.map((assertion): NonNullable<TaskResult["validation"]>["assertions"][number] => ({
+            label: assertion.label,
+            status: assertion.status,
+            details: assertion.details,
+          })),
+        }
+      : undefined,
+  };
+}
+
+function toDtoTaskResult(result: TaskResult): NonNullable<PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number]["result"]> {
+  return {
+    exitCode: result.exitCode,
+    summary: result.summary,
+    filesChanged: result.filesChanged,
+    errors: result.errors,
+    duration: result.duration,
+    handoff: result.handoff
+      ? {
+          summary: result.handoff.summary,
+          filesChanged: result.handoff.filesChanged,
+          testsNeeded: result.handoff.testsNeeded,
+          followUps: result.handoff.followUps,
+        }
+      : undefined,
+    validation: result.validation
+      ? {
+          verdict: result.validation.verdict,
+          summary: result.validation.summary,
+          assertions: result.validation.assertions.map((assertion) => ({
+            label: assertion.label,
+            status: assertion.status,
+            details: assertion.details,
+          })),
+        }
+      : undefined,
+  };
+}
+
+function fromDtoTask(task: PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number]): Task {
+  return {
+    id: task.id,
+    milestoneId: task.milestoneId,
+    flightId: task.flightId,
+    title: task.title,
+    description: task.description,
+    order: task.order,
+    status: task.status,
+    type: task.type,
+    agentConfigId: task.agentConfigId,
+    agentArgs: task.agentArgs,
+    model: task.model,
+    dependsOn: task.dependsOn,
+    sessionId: task.sessionId,
+    result: task.result ? fromDtoTaskResult(task.result) : undefined,
+    reviewPacket: task.reviewPacket
+      ? {
+          id: task.reviewPacket.id,
+          taskId: task.reviewPacket.taskId,
+          flightId: task.reviewPacket.flightId,
+          milestoneId: task.reviewPacket.milestoneId,
+          requestedAt: task.reviewPacket.requestedAt,
+          reviewType: task.reviewPacket.reviewType as ReviewType,
+          summary: task.reviewPacket.summary,
+          diff: task.reviewPacket.diff,
+          command: task.reviewPacket.command,
+          filePaths: task.reviewPacket.filePaths,
+          agentId: task.reviewPacket.agentId,
+          sessionId: task.reviewPacket.sessionId,
+        }
+      : undefined,
+    createdAt: task.createdAt,
+    startedAt: task.startedAt,
+    completedAt: task.completedAt,
+    cost: task.cost,
+    tokens: task.tokens,
+  };
+}
+
+function toDtoTask(task: Task): PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number] {
+  return {
+    id: task.id,
+    milestoneId: task.milestoneId,
+    flightId: task.flightId,
+    title: task.title,
+    description: task.description,
+    order: task.order,
+    status: task.status,
+    type: task.type,
+    agentConfigId: task.agentConfigId,
+    agentArgs: task.agentArgs,
+    model: task.model,
+    dependsOn: task.dependsOn,
+    sessionId: task.sessionId,
+    result: task.result ? toDtoTaskResult(task.result) : undefined,
+    reviewPacket: task.reviewPacket
+      ? {
+          id: task.reviewPacket.id,
+          taskId: task.reviewPacket.taskId,
+          flightId: task.reviewPacket.flightId,
+          milestoneId: task.reviewPacket.milestoneId,
+          requestedAt: task.reviewPacket.requestedAt,
+          reviewType: task.reviewPacket.reviewType,
+          summary: task.reviewPacket.summary,
+          diff: task.reviewPacket.diff,
+          command: task.reviewPacket.command,
+          filePaths: task.reviewPacket.filePaths,
+          agentId: task.reviewPacket.agentId,
+          sessionId: task.reviewPacket.sessionId,
+        }
+      : undefined,
+    createdAt: task.createdAt,
+    startedAt: task.startedAt,
+    completedAt: task.completedAt,
+    cost: task.cost,
+    tokens: task.tokens,
+  };
+}
+
+function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
+  return {
+    id: flight.id,
+    title: flight.title,
+    objective: flight.objective,
+    status: flight.status,
+    priority: flight.priority,
+    projectPath: flight.projectPath,
+    gitBranch: flight.gitBranch,
+    milestones: flight.milestones.map((milestone): Milestone => ({
+      id: milestone.id,
+      flightId: milestone.flightId,
+      title: milestone.title,
+      description: milestone.description,
+      order: milestone.order,
+      status: milestone.status,
+      tasks: milestone.tasks.map(fromDtoTask),
+      validationCriteria: milestone.validationCriteria,
     })),
-    activeFlightIds: payload.active_flight_ids,
-    pausedAtMilestone: payload.paused_at_milestone,
+    linkedSessionIds: flight.linkedSessionIds,
+    issueIds: flight.issueIds ?? [],
+    createdAt: flight.createdAt,
+    updatedAt: flight.updatedAt,
+    completedAt: flight.completedAt,
+    totalCost: flight.totalCost,
+    totalTokens: flight.totalTokens,
+  };
+}
+
+function toDtoFlight(flight: Flight): PersistedStateDto["flights"][number] {
+  return {
+    id: flight.id,
+    title: flight.title,
+    objective: flight.objective,
+    status: flight.status,
+    priority: flight.priority,
+    projectPath: flight.projectPath,
+    gitBranch: flight.gitBranch,
+    milestones: flight.milestones.map((milestone) => ({
+      id: milestone.id,
+      flightId: milestone.flightId,
+      title: milestone.title,
+      description: milestone.description,
+      order: milestone.order,
+      status: milestone.status,
+      tasks: milestone.tasks.map(toDtoTask),
+      validationCriteria: milestone.validationCriteria,
+    })),
+    linkedSessionIds: flight.linkedSessionIds,
+    issueIds: flight.issueIds,
+    createdAt: flight.createdAt,
+    updatedAt: flight.updatedAt,
+    completedAt: flight.completedAt,
+    totalCost: flight.totalCost,
+    totalTokens: flight.totalTokens,
+  };
+}
+
+function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    agents: workspace.agents,
+    panes: workspace.panes.map((pane) => ({
+      id: pane.id,
+      agentId: pane.agentId,
+      sessionId: pane.sessionId,
+      gridPosition: pane.gridPosition,
+    })),
+    projectPath: workspace.projectPath,
+    prompt: workspace.prompt,
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
+    status: workspace.status,
+    bypassPermissions: workspace.bypassPermissions,
+    modelOverrides: normalizeOptionalRecord(workspace.modelOverrides),
+    effortOverrides: normalizeOptionalRecord(workspace.effortOverrides),
+  };
+}
+
+function toDtoWorkspace(workspace: Workspace): WorkspaceDto {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    agents: workspace.agents,
+    panes: workspace.panes.map((pane, index) => ({
+      id: pane.id,
+      agentId: pane.agentId,
+      sessionId: pane.sessionId,
+      gridPosition: pane.gridPosition ?? { row: 0, col: index },
+    })),
+    projectPath: workspace.projectPath,
+    prompt: workspace.prompt,
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
+    status: workspace.status,
+    bypassPermissions: workspace.bypassPermissions,
+    modelOverrides: workspace.modelOverrides,
+    effortOverrides: workspace.effortOverrides,
+  };
+}
+
+function fromDtoPersistedState(state: PersistedStateDto): PersistedState {
+  return {
+    version: state.version,
+    flights: state.flights.map(fromDtoFlight),
+    agents: state.agents.map(fromDtoAgent),
+    settings: {
+      maxParallelSessions: state.settings.maxParallelSessions,
+      milestoneGating: state.settings.milestoneGating,
+      projectPath: state.settings.projectPath,
+    },
+    ui: {
+      selectedFlightId: state.ui.selectedFlightId ?? null,
+      selectedView: state.ui.selectedView ?? null,
+      theme: state.ui.theme ?? null,
+    },
+    workspaces: state.workspaces.map(fromDtoWorkspace),
+  };
+}
+
+function toDtoPersistedState(state: PersistedState): PersistedStateDto {
+  return {
+    version: state.version,
+    flights: state.flights.map(toDtoFlight),
+    agents: state.agents.map(toDtoAgent),
+    settings: {
+      maxParallelSessions: state.settings.maxParallelSessions,
+      milestoneGating: state.settings.milestoneGating,
+      projectPath: state.settings.projectPath,
+    },
+    ui: {
+      selectedFlightId: toOptional(state.ui.selectedFlightId),
+      selectedView: toOptional(state.ui.selectedView),
+      theme: toOptional(state.ui.theme),
+    },
+    workspaces: state.workspaces.map(toDtoWorkspace),
+  };
+}
+
+// === Persisted state ===
+
+export async function loadPersistedState(): Promise<PersistedState> {
+  const payload = await invoke<PersistedStateDto>("load_persisted_state");
+  return fromDtoPersistedState(payload);
+}
+
+export async function savePersistedState(state: PersistedState): Promise<void> {
+  return invoke("save_persisted_state", { state: toDtoPersistedState(state) });
+}
+
+export async function saveFlightsSlice(flights: Flight[]): Promise<void> {
+  return invoke("save_flights_slice", { flights: flights.map(toDtoFlight) });
+}
+
+export async function saveAgentsSlice(agents: AgentConfig[]): Promise<void> {
+  return invoke("save_agents_slice", { agents: agents.map(toDtoAgent) });
+}
+
+export async function saveWorkspacesSlice(workspaces: Workspace[]): Promise<void> {
+  return invoke("save_workspaces_slice", { workspaces: workspaces.map(toDtoWorkspace) });
+}
+
+export async function saveSettingsSlice(settings: PersistedState["settings"]): Promise<void> {
+  return invoke("save_settings_slice", { settings });
+}
+
+export async function saveUiSlice(ui: PersistedState["ui"]): Promise<void> {
+  const payload: PersistedUiStateDto = {
+    selectedFlightId: toOptional(ui.selectedFlightId),
+    selectedView: toOptional(ui.selectedView),
+    theme: toOptional(ui.theme),
+  };
+  return invoke("save_ui_slice", { ui: payload });
+}
+
+// === Flight orchestration ===
+
+export async function launchFlightInBackend(flightId: string): Promise<PersistedState> {
+  const payload = await invoke<PersistedStateDto>("launch_flight", { flightId });
+  return fromDtoPersistedState(payload);
+}
+
+export async function pauseFlightInBackend(flightId: string): Promise<PersistedState> {
+  const payload = await invoke<PersistedStateDto>("pause_flight", { flightId });
+  return fromDtoPersistedState(payload);
+}
+
+export async function resumeFlightInBackend(flightId: string): Promise<PersistedState> {
+  const payload = await invoke<PersistedStateDto>("resume_flight", { flightId });
+  return fromDtoPersistedState(payload);
+}
+
+export async function cancelFlightInBackend(flightId: string): Promise<PersistedState> {
+  const payload = await invoke<PersistedStateDto>("cancel_flight", { flightId });
+  return fromDtoPersistedState(payload);
+}
+
+export async function orchestrationTick(): Promise<OrchestrationSpawnRequest[]> {
+  const payload = await invoke<TaskSpawnRequestDto[]>("orchestration_tick");
+  return payload.map((request) => ({
+    flightId: request.flightId,
+    milestoneId: request.milestoneId,
+    taskId: request.taskId,
+    agentConfigId: request.agentConfigId,
+    command: request.command,
+    args: request.args,
+    prompt: request.prompt,
+    projectPath: request.projectPath,
+  }));
+}
+
+export async function getOrchestrationState(): Promise<OrchestratorSnapshot> {
+  const payload = await invoke<OrchestratorSnapshotDto>("get_orchestration_state");
+  return {
+    runningTaskIds: payload.runningTaskIds,
+    runningTasks: payload.runningTasks.map((task) => ({
+      taskId: task.taskId,
+      milestoneId: task.milestoneId,
+      flightId: task.flightId,
+      sessionId: task.sessionId,
+      agentConfigId: task.agentConfigId,
+      startedAt: task.startedAt,
+    })),
+    activeFlightIds: payload.activeFlightIds,
+    pausedAtMilestone: payload.pausedAtMilestone,
   };
 }
 
@@ -557,354 +721,21 @@ export async function recordTaskSpawn(params: {
 }
 
 export async function notifyApprovalNeeded(taskId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStatePayload>("notify_approval_needed", { taskId });
-  return fromRustPersistedState(payload);
+  const payload = await invoke<PersistedStateDto>("notify_approval_needed", { taskId });
+  return fromDtoPersistedState(payload);
 }
 
 export async function notifyApprovalResolved(taskId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStatePayload>("notify_approval_resolved", { taskId });
-  return fromRustPersistedState(payload);
+  const payload = await invoke<PersistedStateDto>("notify_approval_resolved", { taskId });
+  return fromDtoPersistedState(payload);
 }
 
 export async function notifyTaskComplete(taskId: string, success: boolean): Promise<PersistedState> {
-  const payload = await invoke<PersistedStatePayload>("notify_task_complete", {
+  const payload = await invoke<PersistedStateDto>("notify_task_complete", {
     taskId,
     success,
   });
-  return fromRustPersistedState(payload);
-}
-
-// === Rust <-> TypeScript conversion functions ===
-
-function fromRustPersistedState(payload: PersistedStatePayload): PersistedState {
-  return {
-    version: payload.version,
-    flights: payload.flights.map(fromRustFlight),
-    agents: payload.agents.map(fromRustAgent),
-    settings: {
-      maxParallelSessions: payload.settings.max_parallel_sessions,
-      milestoneGating: payload.settings.milestone_gating,
-      projectPath: payload.settings.project_path,
-    },
-    ui: {
-      selectedFlightId: payload.ui.selected_flight_id ?? null,
-      selectedView: payload.ui.selected_view ?? null,
-      theme: payload.ui.theme ?? null,
-    },
-    workspaces: (payload.workspaces ?? []).map((w) => ({
-      id: w.id,
-      name: w.name,
-      agents: w.agents as Workspace["agents"],
-      panes: w.panes.map((p) => ({
-        id: p.id,
-        agentId: p.agent_id as Workspace["agents"][number],
-        sessionId: p.session_id,
-        gridPosition: p.grid_position,
-      })),
-      projectPath: w.project_path,
-      createdAt: w.created_at,
-      updatedAt: w.updated_at,
-      status: w.status,
-      bypassPermissions: w.bypass_permissions,
-      effortOverrides: w.effort_overrides,
-    })),
-  };
-}
-
-function toRustPersistedState(state: PersistedState): PersistedStatePayload {
-  return {
-    version: state.version,
-    flights: state.flights.map(toRustFlight),
-    agents: state.agents.map(toRustAgent),
-    settings: {
-      max_parallel_sessions: state.settings.maxParallelSessions,
-      milestone_gating: state.settings.milestoneGating,
-      project_path: state.settings.projectPath,
-    },
-    ui: {
-      selected_flight_id: state.ui.selectedFlightId ?? null,
-      selected_view: state.ui.selectedView ?? null,
-      theme: state.ui.theme ?? null,
-    },
-    workspaces: state.workspaces.map((w) => ({
-      id: w.id,
-      name: w.name,
-      agents: w.agents,
-      panes: w.panes.map((p) => ({
-        id: p.id,
-        agent_id: p.agentId,
-        session_id: p.sessionId ?? null,
-        grid_position: p.gridPosition,
-      })),
-      project_path: w.projectPath,
-      created_at: w.createdAt,
-      updated_at: w.updatedAt,
-      status: w.status,
-      bypass_permissions: w.bypassPermissions,
-      effort_overrides: w.effortOverrides,
-    })),
-  };
-}
-
-function fromRustFlight(flight: RustFlight): Flight {
-  return {
-    id: flight.id,
-    title: flight.title,
-    objective: flight.objective,
-    status: flight.status,
-    priority: flight.priority,
-    projectPath: flight.project_path,
-    gitBranch: flight.git_branch ?? undefined,
-    milestones: flight.milestones.map(fromRustMilestone),
-    linkedSessionIds: flight.linked_session_ids,
-    issueIds: [],
-    createdAt: flight.created_at,
-    updatedAt: flight.updated_at,
-    completedAt: flight.completed_at ?? undefined,
-    totalCost: flight.total_cost,
-    totalTokens: flight.total_tokens,
-  };
-}
-
-function toRustFlight(flight: Flight): RustFlight {
-  return {
-    id: flight.id,
-    title: flight.title,
-    objective: flight.objective,
-    status: flight.status,
-    priority: flight.priority,
-    project_path: flight.projectPath,
-    git_branch: flight.gitBranch ?? null,
-    milestones: flight.milestones.map(toRustMilestone),
-    linked_session_ids: flight.linkedSessionIds,
-    created_at: flight.createdAt,
-    updated_at: flight.updatedAt,
-    completed_at: flight.completedAt ?? null,
-    total_cost: flight.totalCost,
-    total_tokens: flight.totalTokens,
-  };
-}
-
-function fromRustMilestone(milestone: RustMilestone): Milestone {
-  return {
-    id: milestone.id,
-    flightId: milestone.flight_id,
-    title: milestone.title,
-    description: milestone.description,
-    order: milestone.order,
-    status: milestone.status,
-    tasks: milestone.tasks.map(fromRustTask),
-    validationCriteria: milestone.validation_criteria,
-  };
-}
-
-function toRustMilestone(milestone: Milestone): RustMilestone {
-  return {
-    id: milestone.id,
-    flight_id: milestone.flightId,
-    title: milestone.title,
-    description: milestone.description,
-    order: milestone.order,
-    status: milestone.status,
-    tasks: milestone.tasks.map(toRustTask),
-    validation_criteria: milestone.validationCriteria,
-  };
-}
-
-function fromRustTask(task: RustTask): Task {
-  return {
-    id: task.id,
-    milestoneId: task.milestone_id,
-    flightId: task.flight_id,
-    title: task.title,
-    description: task.description,
-    order: task.order,
-    status: task.status,
-    type: task.task_type,
-    agentConfigId: task.agent_config_id,
-    agentArgs: task.agent_args ?? undefined,
-    model: task.model ?? undefined,
-    dependsOn: task.depends_on,
-    sessionId: task.session_id ?? null,
-    result: task.result ? fromRustTaskResult(task.result) : undefined,
-    reviewPacket: task.review_packet ? {
-      id: task.review_packet.id,
-      taskId: task.review_packet.task_id,
-      flightId: task.review_packet.flight_id,
-      milestoneId: task.review_packet.milestone_id,
-      requestedAt: task.review_packet.requested_at,
-      reviewType: task.review_packet.review_type,
-      summary: task.review_packet.summary,
-      diff: task.review_packet.diff ?? undefined,
-      command: task.review_packet.command ?? undefined,
-      filePaths: task.review_packet.file_paths,
-      agentId: task.review_packet.agent_id ?? undefined,
-      sessionId: task.review_packet.session_id ?? undefined,
-    } : undefined,
-    createdAt: task.created_at,
-    startedAt: task.started_at ?? undefined,
-    completedAt: task.completed_at ?? undefined,
-    cost: task.cost,
-    tokens: task.tokens,
-  };
-}
-
-function toRustTask(task: Task): RustTask {
-  return {
-    id: task.id,
-    milestone_id: task.milestoneId,
-    flight_id: task.flightId,
-    title: task.title,
-    description: task.description,
-    order: task.order,
-    status: task.status,
-    task_type: task.type,
-    agent_config_id: task.agentConfigId,
-    agent_args: task.agentArgs ?? null,
-    model: task.model ?? null,
-    depends_on: task.dependsOn,
-    session_id: task.sessionId,
-    result: task.result ? toRustTaskResult(task.result) : null,
-    review_packet: task.reviewPacket ? {
-      id: task.reviewPacket.id,
-      task_id: task.reviewPacket.taskId,
-      flight_id: task.reviewPacket.flightId,
-      milestone_id: task.reviewPacket.milestoneId,
-      requested_at: task.reviewPacket.requestedAt,
-      review_type: task.reviewPacket.reviewType,
-      summary: task.reviewPacket.summary,
-      diff: task.reviewPacket.diff ?? null,
-      command: task.reviewPacket.command ?? null,
-      file_paths: task.reviewPacket.filePaths,
-      agent_id: task.reviewPacket.agentId ?? null,
-      session_id: task.reviewPacket.sessionId ?? null,
-    } : null,
-    created_at: task.createdAt,
-    started_at: task.startedAt ?? null,
-    completed_at: task.completedAt ?? null,
-    cost: task.cost,
-    tokens: task.tokens,
-  };
-}
-
-function fromRustTaskResult(result: RustTaskResult): TaskResult {
-  return {
-    exitCode: result.exit_code,
-    summary: result.summary,
-    filesChanged: result.files_changed,
-    errors: result.errors,
-    duration: result.duration_ms,
-    handoff: result.handoff
-      ? {
-          summary: result.handoff.summary,
-          filesChanged: result.handoff.files_changed,
-          testsNeeded: result.handoff.tests_needed,
-          followUps: result.handoff.follow_ups,
-        }
-      : undefined,
-    validation: result.validation
-      ? {
-          verdict: result.validation.verdict,
-          summary: result.validation.summary,
-          assertions: result.validation.assertions.map((assertion) => ({
-            label: assertion.label,
-            status: assertion.status,
-            details: assertion.details ?? undefined,
-          })),
-        }
-      : undefined,
-  };
-}
-
-function toRustTaskResult(result: TaskResult): RustTaskResult {
-  return {
-    exit_code: result.exitCode,
-    summary: result.summary,
-    files_changed: result.filesChanged,
-    errors: result.errors,
-    duration_ms: result.duration,
-    handoff: result.handoff
-      ? {
-          summary: result.handoff.summary,
-          files_changed: result.handoff.filesChanged,
-          tests_needed: result.handoff.testsNeeded,
-          follow_ups: result.handoff.followUps,
-        }
-      : null,
-    validation: result.validation
-      ? {
-          verdict: result.validation.verdict,
-          summary: result.validation.summary,
-          assertions: result.validation.assertions.map((assertion) => ({
-            label: assertion.label,
-            status: assertion.status,
-            details: assertion.details ?? null,
-          })),
-        }
-      : null,
-  };
-}
-
-function fromRustAgent(agent: RustAgentConfig): AgentConfig {
-  const statusPatterns: AgentStatusPatterns = {
-    approval: agent.status_patterns.approval,
-    thinking: agent.status_patterns.thinking,
-    toolUse: agent.status_patterns.tool_use.map((tool) => ({
-      pattern: tool.pattern,
-      tool: tool.tool,
-      fileGroup: tool.file_group ?? undefined,
-    })),
-    idle: agent.status_patterns.idle,
-  };
-
-  return {
-    id: agent.id,
-    name: agent.name,
-    command: agent.command,
-    defaultArgs: agent.default_args,
-    description: agent.description,
-    installed: agent.installed,
-    capabilities: agent.capabilities,
-    icon: agent.icon,
-    color: agent.color,
-    statusPatterns,
-    approvalActions: {
-      approve: agent.approval_actions.approve,
-      deny: agent.approval_actions.deny,
-      abort: agent.approval_actions.abort,
-    },
-    isBuiltin: agent.is_builtin,
-  };
-}
-
-function toRustAgent(agent: AgentConfig): RustAgentConfig {
-  return {
-    id: agent.id,
-    name: agent.name,
-    command: agent.command,
-    default_args: agent.defaultArgs,
-    description: agent.description,
-    installed: agent.installed,
-    capabilities: agent.capabilities,
-    icon: agent.icon,
-    color: agent.color,
-    status_patterns: {
-      approval: agent.statusPatterns.approval,
-      thinking: agent.statusPatterns.thinking,
-      tool_use: agent.statusPatterns.toolUse.map((tool) => ({
-        pattern: tool.pattern,
-        tool: tool.tool,
-        file_group: tool.fileGroup ?? null,
-      })),
-      idle: agent.statusPatterns.idle,
-    },
-    approval_actions: {
-      approve: agent.approvalActions?.approve ?? "y\n",
-      deny: agent.approvalActions?.deny ?? "n\n",
-      abort: agent.approvalActions?.abort ?? "\u0003",
-    },
-    is_builtin: agent.isBuiltin,
-  };
+  return fromDtoPersistedState(payload);
 }
 
 export async function parseSpecToFlight(specText: string): Promise<string> {
@@ -925,24 +756,28 @@ export async function askInsights(
 export async function askInsightsStream(
   projectPath: string,
   messages: { role: string; content: string }[],
-  sessionContext?: string
+  sessionContext?: string,
+  requestId?: string,
 ): Promise<void> {
   return invoke("ask_insights_stream", {
     projectPath,
     messages,
     sessionContext: sessionContext || null,
+    requestId: requestId || null,
   });
 }
 
 export async function askAgentChatStream(
   projectPath: string,
   messages: { role: string; content: string }[],
-  sessionContext?: string
+  sessionContext?: string,
+  requestId?: string,
 ): Promise<void> {
   return invoke("ask_agent_chat_stream", {
     projectPath,
     messages,
     sessionContext: sessionContext || null,
+    requestId: requestId || null,
   });
 }
 
@@ -951,12 +786,14 @@ export async function askFlightChatStream(
   messages: { role: string; content: string }[],
   flightState: { title: string; objective: string; priority: string },
   retrospectives?: string,
+  requestId?: string,
 ): Promise<void> {
   return invoke("ask_flight_chat_stream", {
     projectPath,
     messages,
     flightState,
     retrospectives: retrospectives || null,
+    requestId: requestId || null,
   });
 }
 

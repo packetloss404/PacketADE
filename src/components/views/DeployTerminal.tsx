@@ -3,12 +3,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
 import "@xterm/xterm/css/xterm.css";
-
-interface PtyOutput {
-  session_id: string;
-  data: string;
-}
 
 interface DeployTerminalProps {
   sessionId: string | null;
@@ -91,9 +87,9 @@ export function DeployTerminal({ sessionId, onExit }: DeployTerminalProps) {
 
     let unlisten: UnlistenFn | null = null;
 
-    listen<PtyOutput>("pty:output", (event) => {
-      if (event.payload.session_id === sessionId && xtermRef.current) {
-        xtermRef.current.write(event.payload.data);
+    listen<string>(ptyOutputEvent(sessionId), (event) => {
+      if (xtermRef.current) {
+        xtermRef.current.write(event.payload);
       }
     }).then((u) => {
       unlisten = u;
@@ -101,10 +97,8 @@ export function DeployTerminal({ sessionId, onExit }: DeployTerminalProps) {
 
     // Listen for exit
     let unlistenExit: UnlistenFn | null = null;
-    listen<{ session_id: string; code: number }>("pty:exit", (event) => {
-      if (event.payload.session_id === sessionId) {
-        onExit?.(event.payload.code);
-      }
+    listen<string>(ptyExitEvent(sessionId), () => {
+      onExit?.(0);
     }).then((u) => {
       unlistenExit = u;
     });

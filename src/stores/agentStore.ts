@@ -1,14 +1,11 @@
 import { create } from "zustand";
-import { loadFromStorage, removeFromStorage } from "@/lib/storage";
-import { loadPersistedState, saveAgentsSlice } from "@/lib/tauri";
+import { detectAgent, loadPersistedState, saveAgentsSlice } from "@/lib/tauri";
 import type { AgentConfig } from "@/types/agent";
 import { CLAUDE_CODE_CONFIG } from "@/agents/claude-code";
 import { OPENCODE_CONFIG } from "@/agents/opencode";
 import { CODEX_CONFIG } from "@/agents/codex";
 import { GEMINI_CONFIG } from "@/agents/gemini";
 import { TERMINAL_CONFIG } from "@/agents/terminal";
-
-const STORAGE_KEY = "packetcode:agents";
 
 // Built-in agent configs (always present, user can override args/model)
 const BUILTIN_AGENTS: AgentConfig[] = [CLAUDE_CODE_CONFIG, OPENCODE_CONFIG, CODEX_CONFIG, GEMINI_CONFIG, TERMINAL_CONFIG];
@@ -34,8 +31,6 @@ interface AgentStore extends AgentStoreState {
   hydrateFromBackend: (persisted?: Awaited<ReturnType<typeof loadPersistedState>>) => Promise<void>;
 }
 
-const OVERRIDES_KEY = "packetcode:agent-overrides";
-
 function loadState(): AgentStoreState {
   // Backend is the sole source of truth; real data arrives via hydrateFromBackend.
   return {
@@ -51,9 +46,7 @@ function saveState(agents: AgentConfig[]) {
 async function syncAgentsToBackend(agents: AgentConfig[]) {
   try {
     await saveAgentsSlice(agents);
-  } catch {
-    // Keep localStorage as fallback when the Tauri bridge is unavailable.
-  }
+  } catch {}
 }
 
 const initial = loadState();
@@ -99,7 +92,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   detectInstalled: async () => {
     set({ detecting: true });
     try {
-      const { detectAgent } = await import("@/lib/tauri");
       const agents = get().agents;
       const updates: { id: string; installed: boolean }[] = [];
 
@@ -147,60 +139,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   hydrateFromBackend: async (persisted) => {
     try {
       const state = persisted ?? (await loadPersistedState());
-      let agents = state.agents;
-
-      // One-time migration: if the backend has no custom agents, import from localStorage
-      const hasCustomFromBackend = agents.some((a) => !a.isBuiltin);
-      if (!hasCustomFromBackend) {
-        const legacySaved = loadFromStorage<{ customAgents?: AgentConfig[] }>(STORAGE_KEY, {});
-        const legacyCustom = (legacySaved.customAgents || []).filter((a) => !a.isBuiltin);
-
-        // Also check for built-in overrides in localStorage
-        const legacyOverrides = loadFromStorage<Record<string, Partial<AgentConfig>>>(
-          OVERRIDES_KEY,
-          {},
-        );
-
-        if (legacyCustom.length > 0 || Object.keys(legacyOverrides).length > 0) {
-          // Merge built-in overrides into backend agents
-          const mergedBuiltins = agents
-            .filter((a) => a.isBuiltin)
-            .map((b) => ({
-              ...b,
-              ...(legacyOverrides[b.id] || {}),
-              id: b.id,
-              isBuiltin: true as const,
-            }));
-          const nonBuiltins = agents.filter((a) => !a.isBuiltin);
-          agents = [...mergedBuiltins, ...nonBuiltins, ...legacyCustom];
-
-          // Persist migrated data to backend
-          await saveAgentsSlice(agents);
-          // Remove legacy localStorage copies
-          removeFromStorage(STORAGE_KEY);
-          removeFromStorage(OVERRIDES_KEY);
-        }
-      }
-
-      set({ agents });
-    } catch {
-      // Fallback: try localStorage when backend is unavailable (dev mode)
-      const legacySaved = loadFromStorage<{ customAgents?: AgentConfig[] }>(STORAGE_KEY, {});
-      const legacyCustom = (legacySaved.customAgents || []).filter((a) => !a.isBuiltin);
-      const legacyOverrides = loadFromStorage<Record<string, Partial<AgentConfig>>>(
-        OVERRIDES_KEY,
-        {},
-      );
-
-      if (legacyCustom.length > 0 || Object.keys(legacyOverrides).length > 0) {
-        const builtins = BUILTIN_AGENTS.map((b) => ({
-          ...b,
-          ...(legacyOverrides[b.id] || {}),
-          id: b.id,
-          isBuiltin: true as const,
-        }));
-        set({ agents: [...builtins, ...legacyCustom] });
-      }
-    }
+      set({ agents: state.agents });
+    } catch {}
   },
 }));
