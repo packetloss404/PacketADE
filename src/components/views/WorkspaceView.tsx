@@ -6,7 +6,6 @@ import { useModuleStore } from "@/stores/moduleStore";
 import { WorkspaceGrid } from "@/components/workspace/WorkspaceGrid";
 import { BroadcastBar } from "@/components/workspace/BroadcastBar";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
-import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { killPty } from "@/lib/tauri";
 import { relativeTime } from "@/lib/time";
 
@@ -145,8 +144,6 @@ export function WorkspaceView() {
         )}
       </div>
 
-      {/* Persistent right sidebar — visible in both modes */}
-      <WorkspaceSidebar />
     </div>
   );
 }
