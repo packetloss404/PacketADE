@@ -5,6 +5,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const STALE_SECONDS: u64 = 300;
 
+/// Trait for statusline entries that have a cwd and timestamp.
+pub trait StatusLineEntry {
+    fn cwd(&self) -> &str;
+    fn timestamp(&self) -> u64;
+}
+
 pub fn now_epoch_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

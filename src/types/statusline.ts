@@ -31,3 +31,19 @@ export interface CodexStatusLineData {
   cli_version: string;
   timestamp: number;
 }
+
+export interface GeminiStatusLineData {
+  session_id: string;
+  model: string;
+  cwd: string;
+  message_count: number;
+  last_role: string;
+  timestamp: number;
+}
+
+export interface OpenCodeStatusLineData {
+  model: string;
+  provider: string;
+  cwd: string;
+  timestamp: number;
+}
