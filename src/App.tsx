@@ -14,7 +14,7 @@ import { useAppStore, getModuleId, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModule } from "@/modules/registry";
 import { useStatusLinePoller, useCodexStatusLinePoller, useGeminiStatusLinePoller, useOpenCodeStatusLinePoller } from "@/hooks/useStatusLine";
-import { getCwd } from "@/lib/tauri";
+import { initializeApp, persistUiState } from "@/lib/bootstrap";
 import type { AppView } from "@/stores/appStore";
 
 // Lazy-loaded views — split into separate chunks to reduce initial bundle size
@@ -54,6 +54,11 @@ export default function App() {
   useGeminiStatusLinePoller();
   useOpenCodeStatusLinePoller();
 
+  // Bootstrap: load backend state and hydrate all stores on first mount
+  useEffect(() => {
+    initializeApp();
+  }, []);
+
   // Apply theme class to document
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -64,29 +69,22 @@ export default function App() {
     localStorage.setItem("packetcode:pane-count", String(panes.length));
   }, [panes.length]);
 
-  // Persist project path — resolve from CWD if empty
-  useEffect(() => {
-    const saved = localStorage.getItem("packetcode:project-path");
-    if (saved) {
-      useLayoutStore.getState().setProjectPath(saved);
-    } else {
-      getCwd()
-        .then((cwd) => {
-          if (cwd) useLayoutStore.getState().setProjectPath(cwd);
-        })
-        .catch(() => {});
-    }
-  }, []);
-
+  // Persist project path to localStorage and record in history
   const projectPath = useLayoutStore((s) => s.projectPath);
   useEffect(() => {
+    if (!projectPath) return;
     localStorage.setItem("packetcode:project-path", projectPath);
-    if (projectPath) {
-      import("@/stores/projectHistoryStore").then(({ useProjectHistoryStore }) => {
-        useProjectHistoryStore.getState().recordOpen(projectPath);
-      });
-    }
+    import("@/stores/projectHistoryStore").then(({ useProjectHistoryStore }) => {
+      useProjectHistoryStore.getState().recordOpen(projectPath);
+    });
   }, [projectPath]);
+
+  // Persist UI state (active view, theme) to backend on change
+  useEffect(() => {
+    // Skip initial render before bootstrap completes
+    if (!useAppStore.getState().initialized) return;
+    persistUiState();
+  }, [activeView, theme]);
 
   // Guard: if active view is a disabled module, redirect to tools
   useEffect(() => {

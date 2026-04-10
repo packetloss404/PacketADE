@@ -206,6 +206,19 @@ export async function detectAgent(command: string): Promise<boolean> {
 
 // === Rust <-> TypeScript type conversion layer ===
 
+type RustWorkspace = {
+  id: string;
+  name: string;
+  agents: string[];
+  panes: { id: string; agent_id: string; session_id: string | null; grid_position?: { row: number; col: number } }[];
+  project_path: string;
+  created_at: number;
+  updated_at: number;
+  status: "active" | "archived";
+  bypass_permissions?: boolean;
+  effort_overrides?: Record<string, string | null>;
+};
+
 type PersistedStatePayload = {
   version: number;
   flights: RustFlight[];
@@ -220,6 +233,7 @@ type PersistedStatePayload = {
     selected_view?: string | null;
     theme?: "dark" | "light" | null;
   };
+  workspaces?: RustWorkspace[];
 };
 
 type RustFlight = {
@@ -353,6 +367,7 @@ export type PersistedState = {
     selectedView?: string | null;
     theme?: "dark" | "light" | null;
   };
+  workspaces: Workspace[];
 };
 
 export type OrchestrationSpawnRequest = {
@@ -576,6 +591,23 @@ function fromRustPersistedState(payload: PersistedStatePayload): PersistedState 
       selectedView: payload.ui.selected_view ?? null,
       theme: payload.ui.theme ?? null,
     },
+    workspaces: (payload.workspaces ?? []).map((w) => ({
+      id: w.id,
+      name: w.name,
+      agents: w.agents as Workspace["agents"],
+      panes: w.panes.map((p) => ({
+        id: p.id,
+        agentId: p.agent_id as Workspace["agents"][number],
+        sessionId: p.session_id,
+        gridPosition: p.grid_position,
+      })),
+      projectPath: w.project_path,
+      createdAt: w.created_at,
+      updatedAt: w.updated_at,
+      status: w.status,
+      bypassPermissions: w.bypass_permissions,
+      effortOverrides: w.effort_overrides,
+    })),
   };
 }
 
@@ -594,6 +626,23 @@ function toRustPersistedState(state: PersistedState): PersistedStatePayload {
       selected_view: state.ui.selectedView ?? null,
       theme: state.ui.theme ?? null,
     },
+    workspaces: state.workspaces.map((w) => ({
+      id: w.id,
+      name: w.name,
+      agents: w.agents,
+      panes: w.panes.map((p) => ({
+        id: p.id,
+        agent_id: p.agentId,
+        session_id: p.sessionId ?? null,
+        grid_position: p.gridPosition,
+      })),
+      project_path: w.projectPath,
+      created_at: w.createdAt,
+      updated_at: w.updatedAt,
+      status: w.status,
+      bypass_permissions: w.bypassPermissions,
+      effort_overrides: w.effortOverrides,
+    })),
   };
 }
 
