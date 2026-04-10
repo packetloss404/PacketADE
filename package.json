@@ -30,7 +30,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.3",
-    "react-resizable-panels": "^2.1.7",
+    "react-mosaic-component": "7.0.0-beta0",
     "react-syntax-highlighter": "^15.6.1",
     "remark-gfm": "^4.0.0",
     "zustand": "^5.0.3"

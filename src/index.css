@@ -1,3 +1,6 @@
+@import "react-mosaic-component/react-mosaic-component.css";
+@import "./styles/mosaic-overrides.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -86,17 +89,7 @@
     user-select: text;
   }
 
-  /* Resize handle styling */
-  [data-panel-group-direction="horizontal"] > [data-resize-handle] {
-    width: 3px;
-    background: #21262d;
-    transition: background 150ms ease;
-  }
 
-  [data-panel-group-direction="horizontal"] > [data-resize-handle]:hover,
-  [data-panel-group-direction="horizontal"] > [data-resize-handle][data-resize-handle-active] {
-    background: #00ff41;
-  }
 }
 
 /* Markdown content styling */

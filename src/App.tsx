@@ -1,7 +1,7 @@
 import { useEffect, useCallback, lazy, Suspense } from "react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Toolbar } from "@/components/layout/Toolbar";
-import { PaneContainer } from "@/components/layout/PaneContainer";
+import { MosaicContainer } from "@/components/layout/MosaicContainer";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
@@ -9,6 +9,7 @@ import { FileExplorer } from "@/components/explorer/FileExplorer";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useMosaicStore } from "@/stores/mosaicStore";
 import { useAppStore, getModuleId, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModule } from "@/modules/registry";
@@ -152,13 +153,13 @@ export default function App() {
         const cli = view === "codex" ? "codex" : "claude";
         addPane({ cliCommand: cli });
       }
-      // Ctrl+1/2/3/4 to switch panes
+      // Ctrl+1/2/3/4 to switch panes (uses mosaic leaf order for spatial consistency)
       if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "4") {
         e.preventDefault();
-        const currentPanes = useLayoutStore.getState().panes;
+        const orderedIds = useMosaicStore.getState().getLeafOrder();
         const idx = parseInt(e.key) - 1;
-        if (idx < currentPanes.length) {
-          useLayoutStore.getState().setActivePaneId(currentPanes[idx].id);
+        if (idx < orderedIds.length) {
+          useLayoutStore.getState().setActivePaneId(orderedIds[idx]);
         }
       }
       // Ctrl+Shift+1/2/3/4/5/6 to switch views
@@ -222,12 +223,12 @@ export default function App() {
                   <WelcomeScreen />
                 </div>
               )}
-              {/* Unified PaneContainer for both Claude and Codex */}
+              {/* Mosaic tiling container for CLI sessions */}
               <div
                 className="flex flex-col flex-1 overflow-hidden"
                 style={{ display: isSessionsView ? "flex" : "none" }}
               >
-                <PaneContainer />
+                <MosaicContainer />
               </div>
               {/* Other views render conditionally */}
               <Suspense fallback={<ViewLoader />}>

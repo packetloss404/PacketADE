@@ -3,7 +3,7 @@ import { LayoutGrid, Plus, Archive, Trash2, Play, FolderPlus } from "lucide-reac
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
-import { WorkspaceGrid } from "@/components/workspace/WorkspaceGrid";
+import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
 import { BroadcastBar } from "@/components/workspace/BroadcastBar";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { killPty } from "@/lib/tauri";
@@ -69,7 +69,7 @@ export function WorkspaceView() {
             </div>
 
             <BroadcastBar workspace={activeWorkspace} />
-            <WorkspaceGrid workspace={activeWorkspace} />
+            <WorkspaceMosaicContainer workspace={activeWorkspace} />
           </>
         ) : (
           // Empty / list view

@@ -4,5 +4,4 @@ export interface PaneConfig {
   cliCommand: string;
   cliArgs?: string[];
   initialPrompt?: string;
-  flexSize?: number; // relative size for resizing (default 1)
 }
