@@ -11,7 +11,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, getModuleId, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModule } from "@/modules/registry";
-import { useStatusLinePoller, useCodexStatusLinePoller } from "@/hooks/useStatusLine";
+import { useStatusLinePoller, useCodexStatusLinePoller, useGeminiStatusLinePoller, useOpenCodeStatusLinePoller } from "@/hooks/useStatusLine";
 import { getCwd } from "@/lib/tauri";
 import type { AppView } from "@/stores/appStore";
 
@@ -46,10 +46,11 @@ export default function App() {
   const explorerOpen = useLayoutStore((s) => s.explorerOpen);
   const toggleExplorer = useLayoutStore((s) => s.toggleExplorer);
 
-  // Poll Claude Code status line data
+  // Poll status line data for all agents
   useStatusLinePoller();
-  // Poll Codex status line data
   useCodexStatusLinePoller();
+  useGeminiStatusLinePoller();
+  useOpenCodeStatusLinePoller();
 
   // Apply theme class to document
   useEffect(() => {

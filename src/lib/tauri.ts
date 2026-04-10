@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentConfig, AgentStatusPatterns } from "@/types/agent";
 import type { Flight, Milestone, Task, TaskResult, ReviewType } from "@/types/flight";
-import type { StatusLineData, CodexStatusLineData } from "@/types/statusline";
+import type { StatusLineData, CodexStatusLineData, GeminiStatusLineData, OpenCodeStatusLineData } from "@/types/statusline";
 import type { Workspace } from "@/types/workspace";
 
 // Filesystem
@@ -136,6 +136,14 @@ export async function readStatusLineStates(): Promise<StatusLineData[]> {
 
 export async function readCodexStatusLineStates(): Promise<CodexStatusLineData[]> {
   return invoke<CodexStatusLineData[]>("read_codex_statusline_states");
+}
+
+export async function readGeminiStatusLineStates(): Promise<GeminiStatusLineData[]> {
+  return invoke<GeminiStatusLineData[]>("read_gemini_statusline_states");
+}
+
+export async function readOpenCodeStatusLineStates(): Promise<OpenCodeStatusLineData[]> {
+  return invoke<OpenCodeStatusLineData[]>("read_opencode_statusline_states");
 }
 
 // PTY session management (extended)
