@@ -64,6 +64,10 @@ A full memory layer plan would need to address:
 5. **How pattern extraction feeds back into future sessions** — is the pattern output stored and injected automatically
 6. **How to handle team-shared memory** — if multiple agents contribute, should memory accumulate across all of them
 
+## Implementation Spec
+
+See `dev/moat/memory-layer-implementation.md` for the full implementation plan.
+
 ## Recommendation
 
 This doc is currently a gap audit. A full plan is needed before significant memory layer work begins.
@@ -73,3 +77,7 @@ The most important single improvement would be: **connect session-end to memory 
 ## Next Step
 
 Create a dedicated memory layer plan doc with user research on how memory is actually used today, before designing any of the above improvements.
+
+## Implementation Spec
+
+See `dev/moat/memory-layer-implementation.md` for the full implementation plan covering session-end hooks, pattern refresh thresholds, and flight-scoped memory snapshots.
