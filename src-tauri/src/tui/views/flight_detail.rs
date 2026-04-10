@@ -178,6 +178,52 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, flight_id: &str, theme: 
         lines.push(Line::from(""));
     }
 
+    // Retrospective section (if flight is done/failed and a retrospective exists)
+    if matches!(flight.status, FlightStatus::Done | FlightStatus::Failed) {
+        if let Some(retro) = app.retrospectives.iter().find(|r| r.flight_id == flight.id) {
+            lines.push(Line::from(vec![
+                Span::styled("  ─── Retrospective ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+                Span::styled("───", Style::default().fg(theme.border)),
+            ]));
+            lines.push(Line::from(Span::styled(
+                format!("  {}", retro.summary),
+                Style::default().fg(theme.fg),
+            )));
+
+            if !retro.lessons_learned.is_empty() {
+                lines.push(Line::from(Span::styled("  Lessons:", Style::default().fg(theme.status_info))));
+                for lesson in &retro.lessons_learned {
+                    lines.push(Line::from(Span::styled(
+                        format!("    • {}", lesson),
+                        Style::default().fg(theme.fg_dim),
+                    )));
+                }
+            }
+
+            if !retro.what_worked.is_empty() {
+                lines.push(Line::from(Span::styled("  What worked:", Style::default().fg(theme.status_done))));
+                for item in &retro.what_worked {
+                    lines.push(Line::from(Span::styled(
+                        format!("    ✓ {}", item),
+                        Style::default().fg(theme.fg_dim),
+                    )));
+                }
+            }
+
+            if !retro.what_failed.is_empty() {
+                lines.push(Line::from(Span::styled("  What failed:", Style::default().fg(theme.status_failed))));
+                for item in &retro.what_failed {
+                    lines.push(Line::from(Span::styled(
+                        format!("    ✗ {}", item),
+                        Style::default().fg(theme.fg_dim),
+                    )));
+                }
+            }
+
+            lines.push(Line::from(""));
+        }
+    }
+
     let milestones = Paragraph::new(lines)
         .scroll((0, 0));
     frame.render_widget(milestones, layout[2]);

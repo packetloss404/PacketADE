@@ -110,6 +110,9 @@ fn render_session_list(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) 
                     theme.status_failed
                 };
 
+                // Agent CLI badge color
+                let agent_color = agent_badge_color(&session.agent_config_id);
+
                 let mut spans = vec![
                     Span::styled("  ● ", Style::default().fg(status_color)),
                     Span::styled(
@@ -119,6 +122,10 @@ fn render_session_list(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) 
                         } else {
                             Style::default().fg(theme.fg)
                         },
+                    ),
+                    Span::styled(
+                        format!("  {}", agent_badge_label(&session.agent_config_id)),
+                        Style::default().fg(agent_color),
                     ),
                     Span::styled(
                         format!("  {}", session.status_label()),
@@ -266,5 +273,27 @@ fn truncate(value: &str, max_len: usize) -> String {
     } else {
         let truncated: String = value.chars().take(max_len.saturating_sub(1)).collect();
         format!("{}…", truncated)
+    }
+}
+
+/// Color badge for CLI agent type in session list.
+fn agent_badge_color(agent_config_id: &str) -> Color {
+    match agent_config_id {
+        "claude-code" => Color::Rgb(240, 180, 0),   // amber
+        "codex" => Color::Rgb(88, 166, 255),         // blue
+        "gemini" => Color::Rgb(138, 180, 248),       // light blue
+        "opencode" => Color::Rgb(63, 185, 80),       // green
+        _ => Color::Rgb(139, 148, 158),              // muted
+    }
+}
+
+/// Short label for CLI agent type in session list.
+fn agent_badge_label(agent_config_id: &str) -> &str {
+    match agent_config_id {
+        "claude-code" => "Claude",
+        "codex" => "Codex",
+        "gemini" => "Gemini",
+        "opencode" => "OpenCode",
+        _ => "Agent",
     }
 }

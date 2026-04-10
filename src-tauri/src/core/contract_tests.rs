@@ -81,6 +81,7 @@ mod tests {
             issues: vec![],
             approval_log: vec![],
             workspaces: vec![],
+            retrospectives: vec![],
         }
     }
 
