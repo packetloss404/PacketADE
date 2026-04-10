@@ -74,22 +74,6 @@ export function WorkspaceView() {
         ) : (
           // Empty / list view
           <div className="flex flex-col flex-1 overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <LayoutGrid size={16} className="text-accent-green" />
-                <h1 className="text-sm font-semibold text-text-primary">Workspaces</h1>
-                <span className="text-[10px] text-text-muted">
-                  Isolated multi-agent grids
-                </span>
-              </div>
-              <button
-                onClick={() => setShowCreate(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent-green/20 text-accent-green rounded hover:bg-accent-green/30 transition-colors"
-              >
-                <Plus size={12} />
-                New Workspace
-              </button>
-            </div>
 
             {activeNonArchived.length === 0 ? (
               <WelcomePane onCreateWorkspace={() => setShowCreate(true)} />
@@ -155,7 +139,8 @@ function WelcomePane({ onCreateWorkspace }: { onCreateWorkspace: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 select-none">
       <img src="/favicon.png" alt="PacketCode" className="w-16 h-16 mb-4" />
-      <h1 className="text-2xl font-semibold text-text-primary mb-2">PacketCode</h1>
+      <h1 className="text-2xl font-semibold text-text-primary mb-1">PacketCode</h1>
+      <p className="text-[11px] text-text-muted mb-1">Isolated multi-agent grids</p>
       <p className="text-sm text-text-secondary mb-6">
         Create a <span className="text-text-primary font-medium">Workspace</span> to start coding with AI agents
       </p>
