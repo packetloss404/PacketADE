@@ -173,9 +173,7 @@ function OverviewTab() {
 function HistoryTab() {
   const entries = useCostStore((s) => s.entries);
   const clearEntries = useCostStore((s) => s.clearEntries);
-  const getSummary = useCostStore((s) => s.getSummary);
-
-  const summary = useMemo(() => getSummary(), [getSummary]);
+  const summary = useMemo(() => useCostStore.getState().getSummary(), [entries]);
 
   const days = useMemo(() => {
     const result: { day: string; cost: number }[] = [];

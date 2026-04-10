@@ -13,8 +13,8 @@ interface IssueCardProps {
 
 export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCardProps) {
   const deleteIssue = useIssueStore((s) => s.deleteIssue);
-  const getFlightForIssue = useFlightStore((s) => s.getFlightForIssue);
-  const flight = getFlightForIssue(issue.id);
+  const flights = useFlightStore((s) => s.flights);
+  const flight = flights.find((f) => f.issueIds.includes(issue.id)) ?? null;
 
   const timeAgo = relativeTime(issue.updatedAt);
   const checkedCount = issue.acceptanceCriteria.filter((c) => c.checked).length;
