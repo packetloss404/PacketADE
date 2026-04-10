@@ -4,6 +4,7 @@ import { useFlightStore } from "@/stores/flightStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useActivityStore } from "@/stores/activityStore";
 import { relativeTime } from "@/lib/time";
 import {
@@ -93,7 +94,7 @@ export function MissionWorkspaceView() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left column — milestones + issues */}
         <div className="flex flex-col flex-1 overflow-y-auto border-r border-bg-border">
-          <LaunchSessionPanel flight={flight} />
+          <LaunchWorkspacePanel flight={flight} />
           <MilestonesPanel flight={flight} />
           <LinkedIssuesPanel flight={flight} />
         </div>
@@ -326,14 +327,53 @@ function MissionHeader({
 }
 
 // ---------------------------------------------------------------------------
-// Launch Session panel
+// Launch Workspace panel
 // ---------------------------------------------------------------------------
 
-function LaunchSessionPanel({ flight }: { flight: Flight }) {
-  const issues = useIssueStore((s) => s.issues);
-  const linkSessionToFlight = useFlightStore((s) => s.linkSessionToFlight);
+function LaunchWorkspacePanel({ flight }: { flight: Flight }) {
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
 
-  function handleLaunch(cli: "claude" | "codex") {
+  // Find an existing workspace linked to this flight
+  const linkedWorkspace = workspaces.find(
+    (w) => w.flightId === flight.id && w.status === "active"
+  );
+
+  function handleLaunch() {
+    if (linkedWorkspace) {
+      // Navigate to existing workspace
+      setActiveWorkspace(linkedWorkspace.id);
+      useAppStore.getState().setActiveView("workspace");
+      return;
+    }
+
+    // Derive agents from flight tasks, deduplicated
+    const taskAgents = new Set<string>();
+    for (const milestone of flight.milestones) {
+      for (const task of milestone.tasks) {
+        if (task.agentConfigId) taskAgents.add(task.agentConfigId);
+      }
+    }
+
+    // Map agent config IDs to workspace agent slots
+    const agentSlotMap: Record<string, import("@/types/workspace").WorkspaceAgentSlot> = {
+      "claude-code": "claude-code",
+      codex: "codex",
+      gemini: "gemini",
+      opencode: "opencode",
+    };
+
+    const agents: import("@/types/workspace").WorkspaceAgentSlot[] = [];
+    for (const agentId of taskAgents) {
+      const slot = agentSlotMap[agentId];
+      if (slot) agents.push(slot);
+    }
+
+    // Default to Claude if no agents derived from tasks
+    if (agents.length === 0) agents.push("claude-code");
+
+    // Build flight context prompt
+    const issues = useIssueStore.getState().issues;
     const linkedIssues = issues.filter((i) => flight.issueIds.includes(i.id));
     const lines: string[] = [];
     lines.push(`Work on this flight:`);
@@ -345,7 +385,6 @@ function LaunchSessionPanel({ flight }: { flight: Flight }) {
     }
     lines.push(``);
     lines.push(`Priority: ${flight.priority}`);
-
     if (linkedIssues.length > 0) {
       lines.push(``);
       lines.push(`### Linked Issues (${linkedIssues.length})`);
@@ -353,11 +392,9 @@ function LaunchSessionPanel({ flight }: { flight: Flight }) {
         const statusStr = ISSUE_STATUS_LABELS[issue.status];
         lines.push(``);
         lines.push(`- **${issue.ticketId}: ${issue.title}** [${statusStr}]`);
-        if (issue.description) {
-          lines.push(`  ${issue.description}`);
-        }
+        if (issue.description) lines.push(`  ${issue.description}`);
         const criteria = issue.acceptanceCriteria;
-        if (criteria && criteria.length > 0) {
+        if (criteria?.length) {
           for (const c of criteria) {
             lines.push(`  - [${c.checked ? "x" : " "}] ${c.text}`);
           }
@@ -365,25 +402,24 @@ function LaunchSessionPanel({ flight }: { flight: Flight }) {
       }
     }
 
-    const prompt = lines.join("\n");
+    // Create workspace linked to this flight
+    const { createWorkspace } = useWorkspaceStore.getState();
+    const wsId = createWorkspace(
+      flight.title,
+      agents,
+      flight.projectPath,
+      { prompt: lines.join("\n") },
+    );
 
-    useAppStore.getState().setActiveView(cli);
-    const paneId = useLayoutStore.getState().addPane({ cliCommand: cli });
+    // Tag the workspace with the flight ID
+    useWorkspaceStore.setState((s) => ({
+      workspaces: s.workspaces.map((w) =>
+        w.id === wsId ? { ...w, flightId: flight.id } : w
+      ),
+    }));
 
-    const unsub = useLayoutStore.subscribe((state) => {
-      const pane = state.panes.find((p) => p.id === paneId);
-      if (pane?.sessionId) {
-        linkSessionToFlight(flight.id, pane.sessionId);
-        unsub();
-      }
-    });
-    setTimeout(() => unsub(), 30_000);
-
-    setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("packetcode:issue-prompt", { detail: { prompt } })
-      );
-    }, 1500);
+    setActiveWorkspace(wsId);
+    useAppStore.getState().setActiveView("workspace");
   }
 
   return (
@@ -391,25 +427,22 @@ function LaunchSessionPanel({ flight }: { flight: Flight }) {
       <div className="flex items-center gap-2 mb-2">
         <Play size={12} className="text-accent-green" />
         <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">
-          Launch Session
+          Launch Workspace
         </span>
       </div>
       <div className="flex items-center gap-2">
         <button
-          onClick={() => handleLaunch("claude")}
+          onClick={handleLaunch}
           className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-accent-green bg-accent-green/10 border border-accent-green/20 rounded hover:bg-accent-green/20 transition-colors"
         >
           <Play size={11} />
-          Claude
+          {linkedWorkspace ? "Open Workspace" : "Create & Launch"}
         </button>
-        <button
-          onClick={() => handleLaunch("codex")}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-accent-blue bg-accent-blue/10 border border-accent-blue/20 rounded hover:bg-accent-blue/20 transition-colors"
-        >
-          <Play size={11} />
-          Codex
-        </button>
-        <span className="text-[10px] text-text-muted ml-1">with flight context</span>
+        <span className="text-[10px] text-text-muted ml-1">
+          {linkedWorkspace
+            ? `Workspace: ${linkedWorkspace.name}`
+            : "with flight context"}
+        </span>
       </div>
     </div>
   );

@@ -18,4 +18,5 @@ export interface Workspace {
   status: "active" | "archived";
   bypassPermissions?: boolean;
   effortOverrides?: Record<string, string | null>;
+  flightId?: string;
 }
