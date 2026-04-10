@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -7,6 +7,7 @@ import {
   Plus,
   Folder,
   FolderOpen,
+  FolderSearch,
   LayoutGrid,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -17,6 +18,10 @@ import { WorkspaceCreationModal } from "./WorkspaceCreationModal";
 
 function shortName(path: string): string {
   return path.split(/[/\\]/).pop() || path;
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").toLowerCase();
 }
 
 function compactRelative(ts: number): string {
@@ -41,8 +46,16 @@ export function WorkspaceSidebar() {
   const setKeepTerminalsAlive = useWorkspaceStore((s) => s.setKeepTerminalsAlive);
 
   const projects = useProjectHistoryStore((s) => s.projects);
+  const scannedProjects = useProjectHistoryStore((s) => s.scannedProjects);
+  const projectsFolder = useProjectHistoryStore((s) => s.projectsFolder);
+  const scanProjectsFolder = useProjectHistoryStore((s) => s.scanProjectsFolder);
   const projectPath = useLayoutStore((s) => s.projectPath);
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
+
+  // Scan projects folder on mount
+  useEffect(() => {
+    if (projectsFolder) scanProjectsFolder();
+  }, [projectsFolder, scanProjectsFolder]);
 
   const [filter, setFilter] = useState("");
   const [workspacesOpen, setWorkspacesOpen] = useState(true);
@@ -61,11 +74,20 @@ export function WorkspaceSidebar() {
   }, [activeWorkspaces, filter]);
 
   const filteredProjects = useMemo(() => {
+    // Start with manual history sorted by recency
     const sorted = [...projects].sort((a, b) => b.lastOpened - a.lastOpened);
-    if (!filter.trim()) return sorted;
+    const historyPaths = new Set(sorted.map((p) => normalizePath(p.path)));
+
+    // Add scanned projects that aren't already in history
+    const scannedEntries = scannedProjects
+      .filter((path) => !historyPaths.has(normalizePath(path)))
+      .map((path) => ({ path, lastOpened: 0 }));
+
+    const all = [...sorted, ...scannedEntries];
+    if (!filter.trim()) return all;
     const f = filter.toLowerCase();
-    return sorted.filter((p) => shortName(p.path).toLowerCase().includes(f));
-  }, [projects, filter]);
+    return all.filter((p) => shortName(p.path).toLowerCase().includes(f));
+  }, [projects, scannedProjects, filter]);
 
   async function handleOpenFolder() {
     const selected = await open({
@@ -236,7 +258,9 @@ export function WorkspaceSidebar() {
                       {shortName(p.path)}
                     </span>
                     <span className="text-[9px] text-text-muted flex-shrink-0">
-                      {compactRelative(p.lastOpened)}
+                      {p.lastOpened > 0 ? compactRelative(p.lastOpened) : (
+                        <span title="From projects folder"><FolderSearch size={9} className="text-accent-amber" /></span>
+                      )}
                     </span>
                   </button>
                 );
