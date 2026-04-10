@@ -15,6 +15,13 @@ import {
   notifySessionError,
 } from "@/lib/notifications";
 
+/** Keep a stable ref for a callback so it can be used inside effects without adding it as a dependency. */
+function useLatestRef<T>(value: T): RefObject<T> {
+  const ref = useRef(value);
+  ref.current = value;
+  return ref;
+}
+
 interface UseTerminalSessionOptions {
   paneId: string;
   cliCommand: string;
@@ -56,6 +63,10 @@ export function useTerminalSession({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const unlistenersRef = useRef<UnlistenFn[]>([]);
   const exitRequestedRef = useRef(false);
+
+  // Store callbacks in refs so they never destabilize memoised effects.
+  const onSessionCreatedRef = useLatestRef(onSessionCreated);
+  const onSessionEndedRef = useLatestRef(onSessionEnded);
 
   const [alive, setAlive] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +205,7 @@ export function useTerminalSession({
       setAlive(true);
 
       useLayoutStore.getState().setPaneSession(paneId, sessionId);
-      onSessionCreated?.(sessionId);
+      onSessionCreatedRef.current?.(sessionId);
       if (taskId) {
         useOrchestrationStore.getState().attachSessionToTask(taskId, sessionId);
       }
@@ -217,7 +228,7 @@ export function useTerminalSession({
         setCurrentSessionId(null);
         sessionIdRef.current = null;
         useLayoutStore.getState().setPaneSession(paneId, null);
-        onSessionEnded?.();
+        onSessionEndedRef.current?.();
         term.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
         useTabStore.getState().updateTabStatus(tabId, "done");
         stopDurationTimer();
@@ -262,8 +273,6 @@ export function useTerminalSession({
     initialPrompt,
     xtermRef,
     fitAddonRef,
-    onSessionCreated,
-    onSessionEnded,
     taskId,
   ]);
 
@@ -288,14 +297,14 @@ export function useTerminalSession({
         killPty(sid).catch(() => {});
       }
       useLayoutStore.getState().setPaneSession(paneId, null);
-      onSessionEnded?.();
+      onSessionEndedRef.current?.();
       const tid = tabIdRef.current;
       if (tid) {
         useTabStore.getState().removeTab(tid);
         useActivityStore.getState().clearActivity(tid);
       }
     };
-  }, [onSessionEnded, paneId, stopDurationTimer]);
+  }, [paneId, stopDurationTimer]);
 
   const handleKill = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -308,14 +317,14 @@ export function useTerminalSession({
     setCurrentSessionId(null);
     sessionIdRef.current = null;
     useLayoutStore.getState().setPaneSession(paneId, null);
-    onSessionEnded?.();
+    onSessionEndedRef.current?.();
     stopDurationTimer();
     const tid = tabIdRef.current;
     if (tid) {
       useTabStore.getState().updateTabStatus(tid, "done");
       useActivityStore.getState().clearActivity(tid);
     }
-  }, [onSessionEnded, paneId, stopDurationTimer]);
+  }, [paneId, stopDurationTimer]);
 
   const handleRestart = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -328,7 +337,7 @@ export function useTerminalSession({
     setShowApproval(false);
     setCurrentSessionId(null);
     useLayoutStore.getState().setPaneSession(paneId, null);
-    onSessionEnded?.();
+    onSessionEndedRef.current?.();
     stopDurationTimer();
 
     const tid = tabIdRef.current;
@@ -339,7 +348,7 @@ export function useTerminalSession({
     tabIdRef.current = null;
 
     await startSession();
-  }, [onSessionEnded, paneId, startSession, stopDurationTimer]);
+  }, [paneId, startSession, stopDurationTimer]);
 
   const handleApprove = useCallback(() => {
     const sid = sessionIdRef.current;
