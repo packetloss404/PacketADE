@@ -17,4 +17,5 @@ export interface Workspace {
   updatedAt: number;
   status: "active" | "archived";
   bypassPermissions?: boolean;
+  effortOverrides?: Record<string, string | null>;
 }
