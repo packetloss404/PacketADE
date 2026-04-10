@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useMemo } from "react";
 import { Clock, Search, Copy, Check, Filter, RefreshCw } from "lucide-react";
 import { useTabStore } from "@/stores/tabStore";
 import { useHistoryStore, type HistoryEntry } from "@/stores/historyStore";
@@ -71,8 +71,16 @@ function PromptHistoryTab() {
   const setSearchQuery = useHistoryStore((s) => s.setSearchQuery);
   const setProjectFilter = useHistoryStore((s) => s.setProjectFilter);
   const load = useHistoryStore((s) => s.load);
-  const filteredEntries = useHistoryStore((s) => s.filteredEntries);
-  const uniqueProjects = useHistoryStore((s) => s.uniqueProjects);
+  const filteredEntries = useMemo(
+    () => useHistoryStore.getState().filteredEntries(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entries, searchQuery, projectFilter]
+  );
+  const uniqueProjects = useMemo(
+    () => useHistoryStore.getState().uniqueProjects(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entries]
+  );
 
   useEffect(() => {
     if (entries.length === 0 && !loading) {
@@ -80,8 +88,8 @@ function PromptHistoryTab() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = filteredEntries();
-  const projects = uniqueProjects();
+  const filtered = filteredEntries;
+  const projects = uniqueProjects;
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden px-4">

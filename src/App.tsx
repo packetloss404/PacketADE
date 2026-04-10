@@ -246,7 +246,8 @@ export default function App() {
 }
 
 function OtherViewContent({ activeView }: { activeView: AppView }) {
-  const isModuleEnabled = useModuleStore((s) => s.isEnabled);
+  const moduleStates = useModuleStore((s) => s.states);
+  const isModuleEnabled = (id: string) => moduleStates[id]?.enabled ?? false;
 
   switch (activeView) {
     case "welcome":

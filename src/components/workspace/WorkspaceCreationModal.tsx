@@ -52,7 +52,6 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
   const projectPath = useLayoutStore((s) => s.projectPath);
   const profiles = useProfileStore((s) => s.profiles);
-  const getContextForSession = useMemoryStore((s) => s.getContextForSession);
 
   const preview = useMemo(() => {
     if (selected.size === 0) return null;
@@ -96,7 +95,7 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
       finalPrompt += selectedProfile.systemPrompt + "\n\n";
     }
     if (includeMemory) {
-      const memoryContext = getContextForSession();
+      const memoryContext = useMemoryStore.getState().getContextForSession();
       if (memoryContext.trim()) {
         finalPrompt += memoryContext + "\n\n";
       }

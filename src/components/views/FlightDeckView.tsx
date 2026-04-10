@@ -26,7 +26,11 @@ const ACTIVITY_DOT_COLORS: Record<string, string> = {
 };
 
 function SessionIndicators({ flightId }: { flightId: string }) {
-  const runningTasks = useOrchestrationStore((s) => s.getRunningTasksForFlight(flightId));
+  const allRunningTasks = useOrchestrationStore((s) => s.runningTasks);
+  const runningTasks = useMemo(
+    () => Array.from(allRunningTasks.values()).filter((rt) => rt.flightId === flightId),
+    [allRunningTasks, flightId]
+  );
   const activities = useActivityStore((s) => s.activities);
 
   if (runningTasks.length === 0) return null;
