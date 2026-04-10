@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { LayoutGrid, Plus, Archive, Trash2, Play } from "lucide-react";
+import { LayoutGrid, Plus, Archive, Trash2, Play, FolderPlus } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useAppStore, moduleViewId } from "@/stores/appStore";
+import { useModuleStore } from "@/stores/moduleStore";
 import { WorkspaceGrid } from "@/components/workspace/WorkspaceGrid";
 import { BroadcastBar } from "@/components/workspace/BroadcastBar";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
@@ -91,11 +93,7 @@ export function WorkspaceView() {
             </div>
 
             {activeNonArchived.length === 0 ? (
-              <div className="flex flex-col items-center justify-center flex-1 text-text-muted">
-                <LayoutGrid size={32} className="mb-3 opacity-30" />
-                <p className="text-xs mb-1">No workspaces yet</p>
-                <p className="text-[10px]">Create a workspace to run multiple AI agents side by side</p>
-              </div>
+              <WelcomePane onCreateWorkspace={() => setShowCreate(true)} />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {activeNonArchived.map((ws) => (
@@ -149,6 +147,56 @@ export function WorkspaceView() {
 
       {/* Persistent right sidebar — visible in both modes */}
       <WorkspaceSidebar />
+    </div>
+  );
+}
+
+function WelcomePane({ onCreateWorkspace }: { onCreateWorkspace: () => void }) {
+  const setActiveView = useAppStore((s) => s.setActiveView);
+  const scaffoldEnabled = useModuleStore((s) => s.isEnabled("scaffold"));
+
+  return (
+    <div className="flex flex-col items-center justify-center flex-1 select-none">
+      <img src="/favicon.png" alt="PacketCode" className="w-16 h-16 mb-4" />
+      <h1 className="text-2xl font-semibold text-text-primary mb-2">PacketCode</h1>
+      <p className="text-sm text-text-secondary mb-6">
+        Create a <span className="text-text-primary font-medium">Workspace</span> to start coding with AI agents
+      </p>
+
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={onCreateWorkspace}
+          className="flex items-center gap-2 px-4 py-2 bg-accent-green/20 text-accent-green text-xs font-medium rounded-lg hover:bg-accent-green/30 transition-colors"
+        >
+          <Plus size={14} />
+          New Workspace
+        </button>
+
+        {scaffoldEnabled && (
+          <button
+            onClick={() => setActiveView(moduleViewId("scaffold"))}
+            className="flex items-center gap-2 px-4 py-2 bg-accent-amber/20 text-accent-amber text-xs font-medium rounded-lg hover:bg-accent-amber/30 transition-colors"
+          >
+            <FolderPlus size={14} />
+            New Project
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5 text-[11px] text-text-muted">
+        <div className="flex items-center gap-3">
+          <kbd className="px-1.5 py-0.5 bg-bg-elevated border border-bg-border rounded text-[10px]">Ctrl+Shift+1</kbd>
+          <span>Workspaces</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <kbd className="px-1.5 py-0.5 bg-bg-elevated border border-bg-border rounded text-[10px]">Ctrl+Shift+3</kbd>
+          <span>Issues</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <kbd className="px-1.5 py-0.5 bg-bg-elevated border border-bg-border rounded text-[10px]">Ctrl+Shift+5</kbd>
+          <span>Tools</span>
+        </div>
+      </div>
     </div>
   );
 }
