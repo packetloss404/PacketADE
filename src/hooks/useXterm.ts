@@ -2,6 +2,7 @@ import { useEffect, useRef, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { writePty, resizePty } from "@/lib/tauri";
 
@@ -66,6 +67,23 @@ export function useXterm({ containerRef, sessionIdRef, onUserInput }: UseXtermOp
     term.unicode.activeVersion = "11";
     term.open(containerRef.current);
 
+    // Use WebGL renderer for GPU-accelerated 60fps rendering.
+    // Keep a reference so we can dispose it explicitly on cleanup.
+    let webglAddon: WebglAddon | null = null;
+    try {
+      webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        // GPU context was lost (e.g. too many contexts, system sleep).
+        // Dispose the addon — xterm falls back to its default canvas renderer.
+        webglAddon?.dispose();
+        webglAddon = null;
+      });
+      term.loadAddon(webglAddon);
+    } catch {
+      // WebGL not available — falls back to default canvas renderer
+      webglAddon = null;
+    }
+
     try {
       fitAddon.fit();
     } catch {
@@ -101,6 +119,11 @@ export function useXterm({ containerRef, sessionIdRef, onUserInput }: UseXtermOp
 
     return () => {
       resizeObserver.disconnect();
+      // Dispose WebGL addon explicitly before terminal to release GPU context
+      if (webglAddon) {
+        webglAddon.dispose();
+        webglAddon = null;
+      }
       term.dispose();
       xtermRef.current = null;
       fitAddonRef.current = null;

@@ -124,15 +124,23 @@ pub fn create_pty_session(
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
     // Build the command: launch the specified CLI interactively
-    // On Windows, npm global installs use .cmd wrappers (e.g. codex.cmd, claude.cmd)
-    // CommandBuilder doesn't resolve .cmd like a shell does, so we must add the extension.
-    let resolved_command =
-        if cfg!(windows) && !command.ends_with(".cmd") && !command.ends_with(".exe") {
-            format!("{}.cmd", command)
-        } else {
+    // On Windows, npm global installs use .cmd wrappers (e.g. codex.cmd, claude.cmd).
+    // .cmd files are batch scripts — they cannot be spawned directly via CreateProcessW.
+    // We must run them through cmd.exe /c, or resolve to the full path of a real executable.
+    let mut cmd = if cfg!(windows) && !command.ends_with(".exe") {
+        // Spawn via cmd.exe /c so .cmd wrappers are handled natively
+        let cmd_name = if command.ends_with(".cmd") {
             command.clone()
+        } else {
+            format!("{}.cmd", command)
         };
-    let mut cmd = CommandBuilder::new(&resolved_command);
+        let mut c = CommandBuilder::new("cmd.exe");
+        c.arg("/c");
+        c.arg(&cmd_name);
+        c
+    } else {
+        CommandBuilder::new(&command)
+    };
     cmd.cwd(&project_path);
 
     // Append any extra arguments (e.g. --model)
