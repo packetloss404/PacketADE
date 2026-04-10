@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
 
@@ -52,6 +53,18 @@ export function DeployTerminal({ sessionId, onExit }: DeployTerminalProps) {
     xterm.loadAddon(fitAddon);
     xterm.open(termRef.current);
 
+    let webglAddon: WebglAddon | null = null;
+    try {
+      webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon?.dispose();
+        webglAddon = null;
+      });
+      xterm.loadAddon(webglAddon);
+    } catch {
+      webglAddon = null;
+    }
+
     // Delay initial fit to ensure container is rendered
     requestAnimationFrame(() => fitAddon.fit());
 
@@ -62,6 +75,10 @@ export function DeployTerminal({ sessionId, onExit }: DeployTerminalProps) {
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      if (webglAddon) {
+        webglAddon.dispose();
+        webglAddon = null;
+      }
       xterm.dispose();
       xtermRef.current = null;
       fitAddonRef.current = null;

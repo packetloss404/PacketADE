@@ -120,6 +120,13 @@ export function useTerminalSession({
     const fitAddon = fitAddonRef.current;
     if (!term || !fitAddon) return;
 
+    // Kill any existing PTY session before starting a new one to prevent orphans
+    const prevSid = sessionIdRef.current;
+    if (prevSid) {
+      await killPty(prevSid).catch(() => {});
+      sessionIdRef.current = null;
+    }
+
     for (const fn of unlistenersRef.current) {
       fn();
     }

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { TerminalPane } from "@/components/session/TerminalPane";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -36,22 +37,27 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const Icon = ICON_MAP[iconName] ?? Terminal;
   const command = agentConfig?.command ?? pane.agentId;
 
-  // Build CLI args from workspace config (bypass flag, effort level)
-  const cliArgs: string[] | undefined = (() => {
+  // Build CLI args from workspace config (bypass flag, effort level).
+  // Memoize to keep a stable reference — an unstable array here causes
+  // startSession's useCallback to recreate, which re-triggers the auto-start
+  // effect and spawns orphaned PTY processes on every render.
+  const bypassPermissions = workspace?.bypassPermissions ?? false;
+  const effort = workspace?.effortOverrides?.[pane.agentId] ?? null;
+
+  const cliArgs: string[] | undefined = useMemo(() => {
     const args: string[] = [];
 
-    if (workspace?.bypassPermissions) {
+    if (bypassPermissions) {
       const flag = BYPASS_FLAGS[pane.agentId];
       if (flag) args.push(flag);
     }
 
-    const effort = workspace?.effortOverrides?.[pane.agentId];
     if (effort) {
       args.push("--effort", effort);
     }
 
     return args.length > 0 ? args : undefined;
-  })();
+  }, [bypassPermissions, effort, pane.agentId]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden border border-bg-border rounded">
