@@ -2,6 +2,10 @@
 
 Last updated: 2026-04-09
 
+## Context
+
+> This plan complements `dev/zen-workspace/workspace-project-model-plan.md`. Workspace templates, pane UX, and editor features in this doc build on top of the workspace-per-project model. Complete Phase 1 of that plan before starting work here.
+
 ## Goal
 
 Strengthen PacketCode's workspace product so it feels purpose-built for multi-agent execution, not just a generic grid of terminals.

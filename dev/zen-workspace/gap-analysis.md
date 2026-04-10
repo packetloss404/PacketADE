@@ -119,6 +119,8 @@ That lets PacketCode support:
 2. Add a workspace-scoped git panel and diff editor after that model is in place
 3. Upgrade prompt templates into a lightweight prompt library that targets active workspace terminals and chat surfaces
 
+For workspace UX improvements beyond project-per-workspace — templates, pane labels, dense layouts, and editor integration — see `dev/bridgemind/workspace-editor-scale-plan.md`.
+
 ## Recommended Build Order
 
 1. workspace project model
