@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from "react";
-import { Target, Clock, ListChecks, Users, Flag, Activity, ChevronDown, MoreVertical, Trash2, Play, Plus, X } from "lucide-react";
+import { Target, Clock, ListChecks, Users, Flag, Activity, ChevronDown, MoreVertical, Trash2, Play, Plus, X, ArrowLeft } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { useAppStore } from "@/stores/appStore";
@@ -68,8 +68,18 @@ export function MissionWorkspaceView() {
     );
   }
 
+  const setActiveView = useAppStore((s) => s.setActiveView);
+
   return (
     <div className="flex flex-col flex-1 h-full overflow-hidden bg-bg-primary">
+      {/* Back to Flights */}
+      <button
+        onClick={() => setActiveView("flight_deck")}
+        className="flex items-center gap-1 px-3 py-1 text-[11px] text-text-muted hover:text-text-primary transition-colors self-start"
+      >
+        <ArrowLeft size={12} />
+        Flights
+      </button>
       <MissionHeader
         flight={flight}
         allFlights={flights}

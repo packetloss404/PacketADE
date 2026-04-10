@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, Radio, ShieldCheck, Target } from "lucide-react";
+import { GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, ShieldCheck } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
@@ -14,6 +14,7 @@ import { SpecImportModal } from "@/components/views/SpecImportModal";
 
 const TABS: { key: AppView; label: string }[] = [
   { key: "workspace", label: "Workspaces" },
+  { key: "flight_deck", label: "Flights" },
   { key: "issues", label: "Issues" },
   { key: "history", label: "History" },
 ];
@@ -93,13 +94,18 @@ export function Toolbar() {
           <button
             key={tab.key}
             onClick={() => handleTabClick(tab.key)}
-            className={`px-2.5 py-1 text-xs rounded transition-colors ${
-              activeView === tab.key
+            className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
+              activeView === tab.key || (tab.key === "flight_deck" && activeView === "mission")
                 ? "text-accent-green bg-bg-elevated"
                 : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
             }`}
           >
             {tab.label}
+            {tab.key === "flight_deck" && attentionCount > 0 && (
+              <span className="px-1.5 py-0 text-[9px] font-bold rounded-full bg-accent-amber/20 text-accent-amber">
+                {attentionCount}
+              </span>
+            )}
           </button>
         ))}
 
@@ -213,39 +219,6 @@ export function Toolbar() {
 
       {/* Right section */}
       <div className="flex items-center gap-2">
-        {/* Mission Workspace */}
-        <button
-          onClick={() => setActiveView("mission")}
-          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
-            activeView === "mission"
-              ? "bg-bg-elevated text-accent-green"
-              : "text-text-muted hover:text-accent-green"
-          }`}
-          title="Flight"
-        >
-          <Target size={12} />
-          <span>Flight</span>
-        </button>
-
-        {/* Flight Deck */}
-        <button
-          onClick={() => setActiveView("flight_deck")}
-          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
-            activeView === "flight_deck"
-              ? "bg-bg-elevated text-accent-green"
-              : "text-text-muted hover:text-accent-green"
-          }`}
-          title="Flight Ops"
-        >
-          <Radio size={11} />
-          <span>Flight Ops</span>
-          {attentionCount > 0 && (
-            <span className="ml-0.5 px-1.5 py-0 text-[9px] font-bold rounded-full bg-accent-amber/20 text-accent-amber">
-              {attentionCount}
-            </span>
-          )}
-        </button>
-
         {/* Review Queue */}
         <button
           onClick={() => setActiveView("review_queue")}
