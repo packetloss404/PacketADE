@@ -23,6 +23,39 @@ const ALLOWED_COMMANDS: &[&str] = &[
     "cmd",
 ];
 
+/// Resolve a command name to its actual path on Windows.
+/// Uses `where` to find the binary — returns the first match.
+/// Prefers .exe over .cmd when both exist.
+#[cfg(windows)]
+fn resolve_windows_command(command: &str) -> String {
+    use super::shared::hide_window;
+
+    let mut where_cmd = std::process::Command::new("where");
+    where_cmd.arg(command);
+    hide_window(&mut where_cmd);
+
+    if let Ok(output) = where_cmd.output() {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let lines: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+
+            // Prefer .exe over .cmd
+            if let Some(exe) = lines.iter().find(|l| l.ends_with(".exe")) {
+                return exe.to_string();
+            }
+            if let Some(cmd_file) = lines.iter().find(|l| l.ends_with(".cmd")) {
+                return cmd_file.to_string();
+            }
+            if let Some(first) = lines.first() {
+                return first.to_string();
+            }
+        }
+    }
+
+    // Fallback: try .cmd extension (legacy behavior)
+    format!("{}.cmd", command)
+}
+
 /// Data emitted to the frontend for each chunk of PTY output
 #[derive(Clone, Serialize)]
 pub struct PtyOutput {
@@ -123,21 +156,22 @@ pub fn create_pty_session(
         })
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    // Build the command: launch the specified CLI interactively
-    // On Windows, npm global installs use .cmd wrappers (e.g. codex.cmd, claude.cmd).
-    // .cmd files are batch scripts — they cannot be spawned directly via CreateProcessW.
-    // We must run them through cmd.exe /c, or resolve to the full path of a real executable.
-    let mut cmd = if cfg!(windows) && !command.ends_with(".exe") {
-        // Spawn via cmd.exe /c so .cmd wrappers are handled natively
-        let cmd_name = if command.ends_with(".cmd") {
-            command.clone()
+    // Build the command: launch the specified CLI interactively.
+    // On Windows, CLIs may be installed as .exe (e.g. claude.exe) or .cmd wrappers
+    // (e.g. codex.cmd). We use `where` to resolve the actual binary path and choose
+    // the right spawn strategy.
+    let mut cmd = if cfg!(windows) {
+        let resolved = resolve_windows_command(&command);
+        if resolved.ends_with(".cmd") {
+            // .cmd batch scripts must go through cmd.exe /c
+            let mut c = CommandBuilder::new("cmd.exe");
+            c.arg("/c");
+            c.arg(&resolved);
+            c
         } else {
-            format!("{}.cmd", command)
-        };
-        let mut c = CommandBuilder::new("cmd.exe");
-        c.arg("/c");
-        c.arg(&cmd_name);
-        c
+            // Native .exe — spawn directly
+            CommandBuilder::new(&resolved)
+        }
     } else {
         CommandBuilder::new(&command)
     };

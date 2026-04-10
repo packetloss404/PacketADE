@@ -14,6 +14,37 @@ use uuid::Uuid;
 use super::shared::MAX_PTY_WRITE_SIZE;
 use super::storage;
 
+/// Resolve a command name to its actual path, preferring .exe over .cmd on Windows.
+fn resolve_command_path(command: &str) -> String {
+    #[cfg(windows)]
+    {
+        use super::shared::hide_window;
+        let mut where_cmd = std::process::Command::new("where");
+        where_cmd.arg(command);
+        hide_window(&mut where_cmd);
+        if let Ok(output) = where_cmd.output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let lines: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+                if let Some(exe) = lines.iter().find(|l| l.ends_with(".exe")) {
+                    return exe.to_string();
+                }
+                if let Some(cmd_file) = lines.iter().find(|l| l.ends_with(".cmd")) {
+                    return cmd_file.to_string();
+                }
+                if let Some(first) = lines.first() {
+                    return first.to_string();
+                }
+            }
+        }
+        format!("{}.cmd", command)
+    }
+    #[cfg(not(windows))]
+    {
+        command.to_string()
+    }
+}
+
 const PTY_TRANSCRIPT_LIMIT_BYTES: usize = 256 * 1024;
 
 pub(crate) fn decode_terminal_chunk(bytes: &[u8], pending: &mut Vec<u8>) -> String {
@@ -124,15 +155,15 @@ impl PtyManager {
             })
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-        // Resolve .cmd wrappers on Windows
-        let resolved_command =
-            if cfg!(windows) && !command.ends_with(".cmd") && !command.ends_with(".exe") {
-                format!("{}.cmd", command)
-            } else {
-                command.to_string()
-            };
-
-        let mut cmd = CommandBuilder::new(&resolved_command);
+        // Resolve command on Windows — prefer .exe over .cmd
+        let resolved_command = resolve_command_path(command);
+        let mut cmd = if cfg!(windows) && resolved_command.ends_with(".cmd") {
+            let mut c = CommandBuilder::new("cmd.exe");
+            c.args(&["/c", &resolved_command]);
+            c
+        } else {
+            CommandBuilder::new(&resolved_command)
+        };
         cmd.cwd(project_path);
 
         for arg in args {
