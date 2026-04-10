@@ -7,6 +7,7 @@ export interface WorkspaceSessionConfig {
   profileId?: string;
   modelOverrides?: Record<string, string | null>;
   includeMemory?: boolean;
+  bypassPermissions?: boolean;
 }
 
 interface WorkspaceStore {
@@ -79,6 +80,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       createdAt: now,
       updatedAt: now,
       status: "active",
+      bypassPermissions: sessionConfig?.bypassPermissions ?? false,
     };
     set((s) => {
       const workspaces = [...s.workspaces, workspace];

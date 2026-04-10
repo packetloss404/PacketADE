@@ -16,4 +16,5 @@ export interface Workspace {
   createdAt: number;
   updatedAt: number;
   status: "active" | "archived";
+  bypassPermissions?: boolean;
 }
