@@ -203,7 +203,7 @@ export default function App() {
 
   return (
     <ErrorBoundary fallbackMessage="PacketCode encountered an error">
-      <div className="flex flex-col h-screen bg-bg-primary text-text-primary font-mono">
+      <div className="flex flex-col h-screen bg-bg-primary text-text-primary font-sans">
         <TitleBar />
         <Toolbar />
         <div className="flex flex-1 overflow-hidden">
