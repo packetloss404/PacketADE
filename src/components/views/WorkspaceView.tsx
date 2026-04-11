@@ -2,9 +2,12 @@ import { useState } from "react";
 import { Plus, Trash2, Play, FolderPlus } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
+import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
+import { isOnboardingComplete } from "@/lib/onboarding";
 import { relativeTime } from "@/lib/time";
 
 export function WorkspaceView() {
@@ -12,17 +15,28 @@ export function WorkspaceView() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
   const deleteWorkspace = useWorkspaceStore((s) => s.deleteWorkspace);
+  const initialized = useAppStore((s) => s.initialized);
+  const projectPath = useLayoutStore((s) => s.projectPath);
   const [showCreate, setShowCreate] = useState(false);
+  const [onboardingDone, setOnboardingDone] = useState<boolean>(() => isOnboardingComplete());
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const activeNonArchived = workspaces.filter((w) => w.status === "active");
+
+  // Show onboarding only on a truly fresh state — no workspaces, no project,
+  // and the user hasn't dismissed it before. Gated on `initialized` to avoid
+  // a flash before bootstrap hydration completes.
+  const showOnboarding =
+    initialized && !onboardingDone && activeNonArchived.length === 0 && !projectPath;
 
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* Main content */}
       <div className="flex flex-col flex-1 overflow-hidden">
-        {activeWorkspace ? (
+        {!initialized ? null : activeWorkspace ? (
           <WorkspaceMosaicContainer workspace={activeWorkspace} />
+        ) : showOnboarding ? (
+          <OnboardingPane onComplete={() => setOnboardingDone(true)} />
         ) : (
           // Empty / list view
           <div className="flex flex-col flex-1 overflow-y-auto p-6">
@@ -92,9 +106,11 @@ function WelcomePane({ onCreateWorkspace }: { onCreateWorkspace: () => void }) {
     <div className="flex flex-col items-center justify-center flex-1 select-none">
       <img src="/favicon.png" alt="PacketCode" className="w-16 h-16 mb-4" />
       <h1 className="text-2xl font-semibold text-text-primary mb-1">PacketCode</h1>
-      <p className="text-[11px] text-text-muted mb-1">Isolated multi-agent grids</p>
+      <p className="text-xs text-text-muted mb-1 max-w-md text-center">
+        A Workspace is a tiled set of agent terminals scoped to one project.
+      </p>
       <p className="text-sm text-text-secondary mb-6">
-        Create a <span className="text-text-primary font-medium">Workspace</span> to start coding with AI agents
+        Create one to start coding with AI agents.
       </p>
 
       <div className="flex items-center gap-3 mb-6">

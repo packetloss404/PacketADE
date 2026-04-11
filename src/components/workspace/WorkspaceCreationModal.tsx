@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { LayoutGrid, Check, User, FileText, ShieldOff } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { LayoutGrid, Check, User, FileText, ShieldOff, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -9,6 +9,7 @@ import { useMemoryStore } from "@/stores/memoryStore";
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
 import { computeGridLayout } from "@/lib/gridLayout";
+import { INSTALL_HINTS } from "@/lib/agent-install-hints";
 import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
 
@@ -34,11 +35,12 @@ const CLI_MODEL_MAP: Record<AgentChoice, typeof CLAUDE_MODELS> = {
 
 interface WorkspaceCreationModalProps {
   onClose: () => void;
+  initialSelected?: Set<WorkspaceAgentSlot>;
 }
 
-export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps) {
+export function WorkspaceCreationModal({ onClose, initialSelected }: WorkspaceCreationModalProps) {
   const [name, setName] = useState("");
-  const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(new Set());
+  const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(() => initialSelected ?? new Set());
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     useProfileStore.getState().activeProfileId,
   );
@@ -49,9 +51,16 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
   const [prompt, setPrompt] = useState("");
 
   const agents = useAgentStore((s) => s.agents);
+  const detecting = useAgentStore((s) => s.detecting);
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
   const projectPath = useLayoutStore((s) => s.projectPath);
   const profiles = useProfileStore((s) => s.profiles);
+
+  // Safety net: kick detection on mount in case bootstrap's fire-and-forget
+  // call hasn't run or failed silently. detectInstalled is idempotent.
+  useEffect(() => {
+    void useAgentStore.getState().detectInstalled();
+  }, []);
 
   const preview = useMemo(() => {
     if (selected.size === 0) return null;
@@ -62,6 +71,10 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
   const selectedAiAgents = AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
 
   function toggleAgent(id: WorkspaceAgentSlot) {
+    if (id !== "terminal") {
+      const cfg = agents.find((a) => a.id === id);
+      if (!cfg?.installed) return;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -167,32 +180,51 @@ export function WorkspaceCreationModal({ onClose }: WorkspaceCreationModalProps)
         {/* Agent Selection — multi-toggle buttons */}
         <div>
           <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">Agents</label>
-          <div className="flex flex-wrap gap-1.5">
+          {detecting && (
+            <p className="flex items-center gap-1 text-[10px] text-text-muted italic mb-2">
+              <Loader2 size={10} className="animate-spin" />
+              Checking CLI availability…
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5">
             {AGENT_SLOTS.map((slot) => {
               const agentConfig = agents.find((a) => a.id === slot.id);
-              const installed = slot.id === "terminal" || agentConfig?.installed;
+              const installed = slot.id === "terminal" || !!agentConfig?.installed;
               const isSelected = selected.has(slot.id);
+              const hint = INSTALL_HINTS[slot.id];
 
               return (
-                <button
-                  key={slot.id}
-                  onClick={() => toggleAgent(slot.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded border transition-colors ${
-                    isSelected
-                      ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
-                      : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
-                  }`}
-                >
-                  <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
-                    isSelected ? "bg-accent-green border-accent-green" : "border-bg-border"
-                  }`}>
-                    {isSelected && <Check size={8} className="text-bg-primary" />}
-                  </div>
-                  {slot.label}
-                  {!installed && (
-                    <span className="text-[9px] text-text-muted ml-1">(missing)</span>
+                <div key={slot.id} className="flex items-center gap-1">
+                  <button
+                    onClick={() => toggleAgent(slot.id)}
+                    disabled={!installed}
+                    title={installed ? slot.label : `${slot.label} not found — click the install link to set it up`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded border transition-colors ${
+                      isSelected
+                        ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
+                        : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+                    } ${!installed ? "opacity-50 cursor-not-allowed hover:text-text-muted hover:border-bg-border" : ""}`}
+                  >
+                    <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                      isSelected ? "bg-accent-green border-accent-green" : "border-bg-border"
+                    }`}>
+                      {isSelected && <Check size={8} className="text-bg-primary" />}
+                    </div>
+                    {slot.label}
+                  </button>
+                  {!installed && hint && !detecting && (
+                    <a
+                      href={hint.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-[10px] text-accent-amber underline opacity-80 hover:opacity-100"
+                      title={hint.label}
+                    >
+                      install
+                    </a>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>

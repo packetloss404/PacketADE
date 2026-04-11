@@ -189,9 +189,10 @@ export function Toolbar() {
               ? `${activeProfile.color} bg-bg-elevated`
               : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
           }`}
-          title="Agent Profile"
+          title="Agent Profile — controls model and system prompt defaults for new sessions. Click to switch."
         >
           <User size={11} />
+          <span className="text-text-muted">Profile:</span>
           <span>{activeProfile?.name || "No Profile"}</span>
         </button>
 
