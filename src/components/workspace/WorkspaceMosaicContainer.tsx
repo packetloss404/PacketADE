@@ -3,7 +3,6 @@ import { Mosaic, MosaicWindow } from "react-mosaic-component";
 import type { MosaicNode, MosaicPath } from "@/types/mosaic";
 import { WorkspacePane } from "./WorkspacePane";
 import { MosaicTile } from "@/components/layout/MosaicTile";
-import { MosaicToolbar } from "@/components/layout/MosaicToolbar";
 import type { Workspace } from "@/types/workspace";
 import { buildPresetTree, presetForCount } from "@/lib/mosaicPresets";
 
@@ -63,14 +62,8 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
     [workspace.panes, workspace.id],
   );
 
-  const paneIds = workspace.panes.map((p) => p.id);
-
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <MosaicToolbar
-        paneCount={workspace.panes.length}
-        paneIds={paneIds}
-      />
       <div className="flex-1 relative overflow-hidden">
         <Mosaic<string>
           renderTile={renderTile}

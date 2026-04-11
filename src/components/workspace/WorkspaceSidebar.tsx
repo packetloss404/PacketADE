@@ -9,12 +9,14 @@ import {
   FolderOpen,
   FolderSearch,
   LayoutGrid,
+  X,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { WorkspaceCreationModal } from "./WorkspaceCreationModal";
+import { killPty } from "@/lib/tauri";
 
 function shortName(path: string): string {
   return path.split(/[/\\]/).pop() || path;
@@ -61,6 +63,20 @@ export function WorkspaceSidebar() {
   const [workspacesOpen, setWorkspacesOpen] = useState(true);
   const [projectsOpen, setProjectsOpen] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+
+  async function handleCloseWorkspace(id: string) {
+    if (!keepTerminalsAlive) {
+      const ws = workspaces.find((w) => w.id === id);
+      if (ws) {
+        await Promise.all(
+          ws.panes
+            .filter((p) => p.sessionId)
+            .map((p) => killPty(p.sessionId!).catch(() => {}))
+        );
+      }
+    }
+    setActiveWorkspace(null);
+  }
 
   // Filter workspaces to current project only
   const activeWorkspaces = useMemo(
@@ -179,38 +195,51 @@ export function WorkspaceSidebar() {
               filteredWorkspaces.map((ws) => {
                 const isActive = ws.id === activeWorkspaceId;
                 return (
-                  <button
+                  <div
                     key={ws.id}
-                    onClick={() => setActiveWorkspace(ws.id)}
-                    className={`flex items-start gap-2 w-full px-3 py-1.5 text-left transition-colors ${
+                    className={`flex items-start gap-2 w-full px-3 py-1.5 transition-colors group ${
                       isActive
                         ? "bg-accent-purple/15 border-l-2 border-accent-purple"
                         : "hover:bg-bg-hover border-l-2 border-transparent"
                     }`}
                   >
-                    <LayoutGrid
-                      size={11}
-                      className={`mt-0.5 ${isActive ? "text-accent-purple" : "text-text-muted"}`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div
-                        className={`text-[11px] font-medium truncate ${
-                          isActive ? "text-text-primary" : "text-text-secondary"
-                        }`}
+                    <button
+                      onClick={() => setActiveWorkspace(ws.id)}
+                      className="flex items-start gap-2 flex-1 min-w-0 text-left"
+                    >
+                      <LayoutGrid
+                        size={11}
+                        className={`mt-0.5 flex-shrink-0 ${isActive ? "text-accent-purple" : "text-text-muted"}`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div
+                          className={`text-[11px] font-medium truncate ${
+                            isActive ? "text-text-primary" : "text-text-secondary"
+                          }`}
+                        >
+                          {ws.name}
+                        </div>
+                        <div className="text-[9px] text-text-muted truncate">
+                          {new Date(ws.createdAt).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}
+                        </div>
+                      </div>
+                    </button>
+                    {isActive && (
+                      <button
+                        onClick={() => handleCloseWorkspace(ws.id)}
+                        className="mt-0.5 p-0.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors flex-shrink-0"
+                        title="Close workspace"
                       >
-                        {ws.name}
-                      </div>
-                      <div className="text-[9px] text-text-muted truncate">
-                        {new Date(ws.createdAt).toLocaleString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                          hour12: true,
-                        })}
-                      </div>
-                    </div>
-                  </button>
+                        <X size={11} />
+                      </button>
+                    )}
+                  </div>
                 );
               })
             )}
