@@ -1,76 +1,28 @@
 import { useState } from "react";
-import { LayoutGrid, Plus, Archive, Trash2, Play, FolderPlus } from "lucide-react";
+import { Plus, Trash2, Play, FolderPlus } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
-import { BroadcastBar } from "@/components/workspace/BroadcastBar";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
-import { killPty } from "@/lib/tauri";
 import { relativeTime } from "@/lib/time";
 
 export function WorkspaceView() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
-  const archiveWorkspace = useWorkspaceStore((s) => s.archiveWorkspace);
   const deleteWorkspace = useWorkspaceStore((s) => s.deleteWorkspace);
-  const keepTerminalsAlive = useWorkspaceStore((s) => s.keepTerminalsAlive);
   const [showCreate, setShowCreate] = useState(false);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const activeNonArchived = workspaces.filter((w) => w.status === "active");
-
-  // Cleanup PTY sessions when closing a workspace (unless keepTerminalsAlive)
-  async function handleCloseWorkspace(id: string) {
-    if (!keepTerminalsAlive) {
-      const ws = workspaces.find((w) => w.id === id);
-      if (ws) {
-        await Promise.all(
-          ws.panes
-            .filter((p) => p.sessionId)
-            .map((p) => killPty(p.sessionId!).catch(() => {}))
-        );
-      }
-    }
-    setActiveWorkspace(null);
-  }
 
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* Main content */}
       <div className="flex flex-col flex-1 overflow-hidden">
         {activeWorkspace ? (
-          <>
-            {/* Workspace toolbar */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-secondary border-b border-bg-border">
-              <LayoutGrid size={12} className="text-accent-green" />
-              <span className="text-xs font-medium text-text-primary">{activeWorkspace.name}</span>
-              <span className="text-[10px] text-text-muted">
-                {activeWorkspace.agents.length} agent{activeWorkspace.agents.length !== 1 ? "s" : ""}
-              </span>
-              <div className="flex-1" />
-              <button
-                onClick={() => handleCloseWorkspace(activeWorkspace.id)}
-                className="px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary bg-bg-primary border border-bg-border rounded transition-colors"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  handleCloseWorkspace(activeWorkspace.id);
-                  archiveWorkspace(activeWorkspace.id);
-                }}
-                className="px-2 py-0.5 text-[10px] text-text-muted hover:text-accent-amber bg-bg-primary border border-bg-border rounded transition-colors"
-                title="Archive workspace"
-              >
-                <Archive size={10} />
-              </button>
-            </div>
-
-            <BroadcastBar workspace={activeWorkspace} />
-            <WorkspaceMosaicContainer workspace={activeWorkspace} />
-          </>
+          <WorkspaceMosaicContainer workspace={activeWorkspace} />
         ) : (
           // Empty / list view
           <div className="flex flex-col flex-1 overflow-y-auto p-6">

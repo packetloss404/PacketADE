@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, ShieldCheck } from "lucide-react";
+import { GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ClipboardList, ShieldCheck, LayoutGrid } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
@@ -9,9 +9,21 @@ import { useProfileStore } from "@/stores/profileStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useFlightStore } from "@/stores/flightStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useMosaicStore } from "@/stores/mosaicStore";
 import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
 import { SpecImportModal } from "@/components/views/SpecImportModal";
 import { gitCommit, gitPull, gitPush } from "@/lib/tauri";
+import type { MosaicLayoutPreset } from "@/types/mosaic";
+
+const LAYOUT_PRESETS: { preset: MosaicLayoutPreset; label: string; minPanes: number }[] = [
+  { preset: "1x1", label: "1×1", minPanes: 1 },
+  { preset: "1x2", label: "1×2", minPanes: 2 },
+  { preset: "2x1", label: "2×1", minPanes: 2 },
+  { preset: "2x2", label: "2×2", minPanes: 4 },
+  { preset: "2x3", label: "2×3", minPanes: 5 },
+  { preset: "3x2", label: "3×2", minPanes: 6 },
+];
 
 const TABS: { key: AppView; label: string }[] = [
   { key: "workspace", label: "Workspaces" },
@@ -220,6 +232,9 @@ export function Toolbar() {
         )}
       </div>
 
+      {/* Pane layout presets (visible when a workspace is active) */}
+      <PaneLayoutControls />
+
       {/* Right section */}
       <div className="flex items-center gap-2">
         {/* Review Queue */}
@@ -317,6 +332,38 @@ export function Toolbar() {
         <SpecImportModal onClose={() => setShowSpecImport(false)} />
       )}
 
+    </div>
+  );
+}
+
+function PaneLayoutControls() {
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const applyPreset = useMosaicStore((s) => s.applyPreset);
+
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+  if (!activeWorkspace) return null;
+
+  const paneIds = activeWorkspace.panes.map((p) => p.id);
+  const paneCount = paneIds.length;
+
+  return (
+    <div className="flex items-center gap-1">
+      <div className="w-px h-4 bg-bg-border" />
+      <LayoutGrid size={11} className="text-accent-green flex-shrink-0" />
+      <span className="text-[10px] text-text-secondary">
+        {paneCount} pane{paneCount !== 1 ? "s" : ""}
+      </span>
+      {LAYOUT_PRESETS.filter((p) => p.minPanes <= paneCount).map(({ preset, label }) => (
+        <button
+          key={preset}
+          onClick={() => applyPreset(preset, paneIds)}
+          className="px-1.5 py-0.5 text-[9px] text-text-muted hover:text-text-primary bg-bg-primary border border-bg-border rounded transition-colors hover:border-accent-green/30"
+          title={`Apply ${label} layout`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
