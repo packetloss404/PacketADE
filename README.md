@@ -6,8 +6,9 @@ PacketCode is a Tauri v2 desktop app that brings AI coding agents, planning, iss
 
 ## What It Does
 
-- Run multiple agent sessions side-by-side in PTY-backed panes
-- Manage work at several levels: sessions, issues, flights, review queues, and mission/workspace views
+- Run multiple agent sessions side-by-side in PTY-backed panes inside a **Workspace** (your terminal-CLI command center)
+- Plan and supervise larger units of work from the **Flight Deck** — a single-screen master-detail mission control
+- Track issues on a kanban board and triage approvals from a review queue
 - Keep project context close with memory summaries, history, GitHub integration, and AI-assisted tools
 - Scaffold projects, manage MCP servers, inspect crashes, and run deploy workflows from the same UI
 - Share orchestration logic between the desktop GUI and the standalone `packetcode-tui` binary
@@ -25,19 +26,23 @@ Each session can be launched with agent-specific arguments and model selections 
 
 ## Main Features
 
-### Multi-Agent Sessions
+### Workspaces — Terminal CLI Command Center
 
-- Multi-pane terminal workflow built on `xterm.js` and `portable-pty`
+- Multi-pane terminal workflow built on `xterm.js` and `portable-pty` with a draggable mosaic tiling layout
 - Live status bars for supported agent CLIs
-- Session inspect, transcript handling, and approval-oriented UX
-- Quick-start flows from the toolbar, command palette, and flight/mission workflows
+- Per-pane model and effort overrides, bypass-permissions toggles, and broadcast-style prompts
+- Workspaces can be launched directly from a flight, inheriting its objective and linked issues as context
+- Pane layout presets (1×1, 1×2, 2×1, 2×2, 2×3, 3×2) live in the main toolbar when a workspace is active
 
-### Flights, Issues, and Supervision
+### Flight Deck — Mission Control
 
-- Flight planning and supervision for larger units of work
+- Single-screen master-detail layout: a status-grouped flight list on the left, the selected flight's mission control on the right
+- **Attention** group automatically surfaces paused, failed, and approval-needed flights
+- Live tiles for the selected flight: stat strip (cost, tokens, tasks, approvals, sessions, last update), milestones, live agents, approvals queue, and timeline
+- Inline edit of title and objective; status and priority dropdowns; pause/resume/cancel lifecycle controls
+- One-click **Launch Workspace** that wires the flight's agents, project path, and context into a fresh workspace
 - Kanban issue tracking with priorities, labels, acceptance criteria, and flight linkage
-- Review queue for items needing human attention
-- Mission and workspace views for coordinating broader workstreams
+- Standalone Review Queue view for triaging approvals across all flights
 
 ### AI Context and Tooling
 
@@ -159,17 +164,18 @@ PacketCode/
   src/
     App.tsx                    # Root app shell and view routing
     components/
-      layout/                  # Title bar, toolbar, pane container, status bar
+      layout/                  # Title bar, toolbar, mosaic tiling, status bar
       session/                 # Terminal panes, session modals, status bars, inspect UI
       issues/                  # Kanban issue board and issue detail UI
-      flights/                 # Flight planning and flight-related panels
-      views/                   # First-class application views
-      workspace/               # Workspace creation and coordination UI
+      flights/                 # Flight Deck tiles (FlightList, FlightDetail, FlightHeaderTile, etc.)
+      views/                   # First-class application views (FlightDeckView, WorkspaceView, …)
+      workspace/               # Workspace creation, sidebar, and pane container UI
       common/                  # Shared presentation components
       ui/                      # Shared UI primitives
-    stores/                    # Zustand stores for app, layout, flights, issues, tools, etc.
+    stores/                    # Zustand stores for app, layout, flights, issues, workspaces, etc.
     modules/                   # Module registration and module metadata
-    lib/                       # Tauri bindings, shared utilities, model lists
+    lib/                       # Tauri bindings, shared utilities, model lists, event helpers
+    generated/                 # Generated TypeScript types (Rust ↔ TS DTO contract)
     hooks/                     # UI and agent interaction hooks
     types/                     # Shared TypeScript types
 
@@ -177,9 +183,12 @@ PacketCode/
     src/
       lib.rs                   # Tauri app bootstrap and command registration
       commands/                # Tauri commands exposed to the frontend
+      api/                     # DTO layer that decouples internal Rust types from the TS contract
+      core/                    # Orchestration engine, storage, workspace, PTY core
       claude/                  # Claude CLI integration helpers
       tui/                     # Standalone packetcode-tui binary
 
+  scripts/                     # Build and schema-check scripts
   e2e/                         # Playwright tests
   docs/                        # Documentation site assets
   public/                      # Static frontend assets
