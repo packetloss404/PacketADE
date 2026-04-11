@@ -37,3 +37,12 @@ export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
   blocked: "Blocked",
   needs_human: "Needs Human",
 };
+
+/** Activity dot color per agent state, used by Flight Deck live tiles. */
+export const ACTIVITY_DOT_COLORS: Record<string, string> = {
+  idle: "bg-text-muted",
+  thinking: "bg-accent-blue",
+  tool_use: "bg-accent-green",
+  responding: "bg-accent-green",
+  approval_needed: "bg-accent-amber",
+};

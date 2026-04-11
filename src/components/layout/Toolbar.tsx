@@ -110,7 +110,7 @@ export function Toolbar() {
             key={tab.key}
             onClick={() => handleTabClick(tab.key)}
             className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-              activeView === tab.key || (tab.key === "flight_deck" && activeView === "mission")
+              activeView === tab.key
                 ? "text-accent-green bg-bg-elevated"
                 : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
             }`}
