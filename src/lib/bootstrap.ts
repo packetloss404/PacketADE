@@ -66,6 +66,10 @@ export async function initializeApp(): Promise<void> {
 
   // Mark app as initialized
   useAppStore.getState().setInitialized(true);
+
+  // Kick CLI detection in the background — surfaces installed status to the
+  // onboarding flow and the workspace creation modal. Must not block startup.
+  void useAgentStore.getState().detectInstalled();
 }
 
 /**

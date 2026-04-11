@@ -259,7 +259,7 @@ export function WorkspaceSidebar() {
             <ChevronRight size={10} className="text-text-muted" />
           )}
           <span className="text-[10px] uppercase tracking-wide text-text-secondary font-semibold">
-            Projects
+            Recent Folders
           </span>
           <span className="text-[10px] text-text-muted">({filteredProjects.length})</span>
           <div className="flex-1" />
@@ -271,7 +271,7 @@ export function WorkspaceSidebar() {
         {projectsOpen && (
           <div className="flex-1 overflow-y-auto pb-1">
             {filteredProjects.length === 0 ? (
-              <div className="px-3 py-2 text-[10px] text-text-muted">No projects yet</div>
+              <div className="px-3 py-2 text-[10px] text-text-muted">No recent folders</div>
             ) : (
               filteredProjects.map((p) => {
                 const isActive = p.path === projectPath;
