@@ -784,7 +784,12 @@ export async function askAgentChatStream(
 export async function askFlightChatStream(
   projectPath: string,
   messages: { role: string; content: string }[],
-  flightState: { title: string; objective: string; priority: string },
+  flightState: {
+    title: string;
+    objective: string;
+    priority: string;
+    milestones?: Array<{ title: string; tasks: Array<{ title: string; type: string }> }>;
+  },
   retrospectives?: string,
   requestId?: string,
 ): Promise<void> {

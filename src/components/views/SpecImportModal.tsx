@@ -134,13 +134,13 @@ export function SpecImportModal({ onClose }: SpecImportModalProps) {
   );
 
   return (
-    <Modal onClose={onClose} title="Import Spec to Issues" width="w-[720px]" footer={footerContent}>
-      <div className="p-4">
+    <Modal onClose={onClose} title="Import Spec to Issues" width="w-[860px] max-w-[92vw]" footer={footerContent}>
+      <div className="p-5">
           {/* Phase: Paste */}
           {phase === "paste" && (
             <div className="flex flex-col gap-3">
               <p className="text-[11px] text-text-muted">
-                Paste your project spec from Vibe Architect below. Claude will
+                Paste a project spec or feature description below. Claude will
                 parse it into structured tickets for the Issues board.
               </p>
               {error && (
@@ -153,7 +153,8 @@ export function SpecImportModal({ onClose }: SpecImportModalProps) {
                 value={specText}
                 onChange={(e) => setSpecText(e.target.value)}
                 placeholder="Paste your project spec here..."
-                className="w-full h-64 px-3 py-2 text-[11px] font-mono bg-bg-primary border border-bg-border rounded text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-green resize-none"
+                className="w-full px-3 py-2 text-[11px] font-mono bg-bg-primary border border-bg-border rounded text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-green resize-none"
+                style={{ height: "min(420px, 55vh)" }}
               />
             </div>
           )}
@@ -185,7 +186,7 @@ export function SpecImportModal({ onClose }: SpecImportModalProps) {
                 </button>
               </div>
 
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: "min(460px, 58vh)" }}>
                 {tickets.map((ticket, idx) => (
                   <div
                     key={idx}

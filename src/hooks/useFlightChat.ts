@@ -4,7 +4,7 @@ import { flightChatChunkEvent, flightChatDoneEvent, flightChatErrorEvent } from 
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useRetrospectiveStore } from "@/stores/retrospectiveStore";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { FlightPriority } from "@/types/flight";
+import type { FlightPriority, TaskType } from "@/types/flight";
 
 export interface ChatMessage {
   id: string;
@@ -18,11 +18,35 @@ export interface FlightSuggestion {
   priority?: FlightPriority;
 }
 
+export interface FlightPlanTask {
+  title: string;
+  description: string;
+  type: TaskType;
+  dependsOn: string[];
+}
+
+export interface FlightPlanMilestone {
+  title: string;
+  description: string;
+  validationCriteria: string[];
+  tasks: FlightPlanTask[];
+}
+
+export interface FlightPlanSuggestion {
+  title?: string;
+  objective?: string;
+  priority?: FlightPriority;
+  milestones: FlightPlanMilestone[];
+}
+
 interface StreamErrorEvent {
   category: string;
   message: string;
   suggestion: string;
 }
+
+const VALID_PRIORITIES = ["low", "medium", "high", "critical"];
+const VALID_TASK_TYPES = ["implementation", "testing", "review", "validation", "research", "refactor", "documentation"];
 
 function parseFlightSuggestion(content: string): FlightSuggestion | null {
   const match = content.match(/```json:flight\s*\n([\s\S]*?)```/);
@@ -36,10 +60,60 @@ function parseFlightSuggestion(content: string): FlightSuggestion | null {
     if (typeof parsed.objective === "string") {
       suggestion.objective = parsed.objective.trim();
     }
-    if (["low", "medium", "high", "critical"].includes(parsed.priority)) {
+    if (VALID_PRIORITIES.includes(parsed.priority)) {
       suggestion.priority = parsed.priority;
     }
     return Object.keys(suggestion).length > 0 ? suggestion : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseFlightPlan(content: string): FlightPlanSuggestion | null {
+  const match = content.match(/```json:flight-plan\s*\n([\s\S]*?)```/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    if (!Array.isArray(parsed.milestones) || parsed.milestones.length === 0) return null;
+
+    const milestones: FlightPlanMilestone[] = [];
+    for (const ms of parsed.milestones) {
+      if (typeof ms.title !== "string" || !ms.title.trim()) continue;
+      const tasks: FlightPlanTask[] = [];
+      if (Array.isArray(ms.tasks)) {
+        for (const t of ms.tasks) {
+          if (typeof t.title !== "string" || !t.title.trim()) continue;
+          tasks.push({
+            title: t.title.trim(),
+            description: typeof t.description === "string" ? t.description.trim() : "",
+            type: VALID_TASK_TYPES.includes(t.type) ? t.type : "implementation",
+            dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn.filter((d: unknown) => typeof d === "string") : [],
+          });
+        }
+      }
+      milestones.push({
+        title: ms.title.trim(),
+        description: typeof ms.description === "string" ? ms.description.trim() : "",
+        validationCriteria: Array.isArray(ms.validationCriteria)
+          ? ms.validationCriteria.filter((c: unknown) => typeof c === "string")
+          : [],
+        tasks,
+      });
+    }
+
+    if (milestones.length === 0) return null;
+
+    const plan: FlightPlanSuggestion = { milestones };
+    if (typeof parsed.title === "string" && parsed.title.trim()) {
+      plan.title = parsed.title.trim();
+    }
+    if (typeof parsed.objective === "string") {
+      plan.objective = parsed.objective.trim();
+    }
+    if (VALID_PRIORITIES.includes(parsed.priority)) {
+      plan.priority = parsed.priority;
+    }
+    return plan;
   } catch {
     return null;
   }
@@ -50,6 +124,7 @@ export function useFlightChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [latestSuggestion, setLatestSuggestion] = useState<FlightSuggestion | null>(null);
+  const [latestPlan, setLatestPlan] = useState<FlightPlanSuggestion | null>(null);
   const [lastError, setLastError] = useState<{ category: string; message: string; suggestion: string } | null>(null);
   const msgCounterRef = useRef(0);
   const unlistenChunkRef = useRef<UnlistenFn | null>(null);
@@ -85,7 +160,12 @@ export function useFlightChat() {
   const sendMessage = useCallback(
     async (
       content: string,
-      flightState: { title: string; objective: string; priority: string },
+      flightState: {
+        title: string;
+        objective: string;
+        priority: string;
+        milestones?: Array<{ title: string; tasks: Array<{ title: string; type: string }> }>;
+      },
     ) => {
       if (isLoading) return; // Prevent concurrent requests
 
@@ -107,6 +187,7 @@ export function useFlightChat() {
       setIsLoading(true);
       setStreamingContent("");
       setLatestSuggestion(null);
+      setLatestPlan(null);
       setLastError(null);
 
       // Clean up any stale listeners from prior requests
@@ -171,9 +252,23 @@ export function useFlightChat() {
         setStreamingContent("");
         setIsLoading(false);
 
-        const suggestion = parseFlightSuggestion(finalContent);
-        if (suggestion) {
-          setLatestSuggestion(suggestion);
+        // Try flight-plan first (superset), fall back to basic flight suggestion
+        const plan = parseFlightPlan(finalContent);
+        if (plan) {
+          setLatestPlan(plan);
+          // Also set suggestion for basic fields if present in the plan
+          const suggestion: FlightSuggestion = {};
+          if (plan.title) suggestion.title = plan.title;
+          if (plan.objective) suggestion.objective = plan.objective;
+          if (plan.priority) suggestion.priority = plan.priority;
+          if (Object.keys(suggestion).length > 0) {
+            setLatestSuggestion(suggestion);
+          }
+        } else {
+          const suggestion = parseFlightSuggestion(finalContent);
+          if (suggestion) {
+            setLatestSuggestion(suggestion);
+          }
         }
       } catch (err) {
         cleanupListeners();
@@ -196,13 +291,19 @@ export function useFlightChat() {
     setLatestSuggestion(null);
   }, []);
 
+  const dismissPlan = useCallback(() => {
+    setLatestPlan(null);
+  }, []);
+
   return {
     messages,
     isLoading,
     streamingContent,
     latestSuggestion,
+    latestPlan,
     lastError,
     sendMessage,
     dismissSuggestion,
+    dismissPlan,
   };
 }

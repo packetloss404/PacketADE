@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Search, Eye, EyeOff } from "lucide-react";
+import { Plus, Search, Eye, EyeOff, ClipboardList } from "lucide-react";
 import {
   useIssueStore,
   type Issue,
@@ -9,6 +9,7 @@ import { useFlightStore } from "@/stores/flightStore";
 import { IssueCard } from "./IssueCard";
 import { NewIssueForm } from "./NewIssueForm";
 import { IssueDetailView } from "./IssueDetailView";
+import { SpecImportModal } from "@/components/views/SpecImportModal";
 
 export function IssueBoard() {
   const issues = useIssueStore((s) => s.issues);
@@ -19,6 +20,7 @@ export function IssueBoard() {
   const flights = useFlightStore((s) => s.flights);
 
   const [showNewIssue, setShowNewIssue] = useState(false);
+  const [showSpecImport, setShowSpecImport] = useState(false);
   const [newIssueColumn, setNewIssueColumn] = useState<IssueStatus>("todo");
   const [dragOverColumn, setDragOverColumn] = useState<IssueStatus | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -115,6 +117,13 @@ export function IssueBoard() {
             <span className="text-[10px] text-text-muted">Epics</span>
           )}
           <div className="flex-1" />
+          <button
+            onClick={() => setShowSpecImport(true)}
+            className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-text-secondary hover:text-accent-green bg-bg-secondary border border-bg-border rounded hover:bg-bg-hover transition-colors"
+          >
+            <ClipboardList size={11} />
+            Import from Spec
+          </button>
           <span className="text-[10px] text-text-muted">
             {activeCount} active &middot; {inProgressCount} in progress
           </span>
@@ -299,6 +308,11 @@ export function IssueBoard() {
           issueId={selectedIssueId}
           onClose={() => setSelectedIssueId(null)}
         />
+      )}
+
+      {/* Spec import modal */}
+      {showSpecImport && (
+        <SpecImportModal onClose={() => setShowSpecImport(false)} />
       )}
     </div>
   );
