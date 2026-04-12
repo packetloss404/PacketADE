@@ -9,7 +9,13 @@ import type {
 import { loadFromStorage, saveToStorage, parseJsonFromResponse } from "@/lib/storage";
 
 const STORAGE_KEY = "packetcode:memory";
-const DEFAULT_MEMORY: MemoryState = { fileMap: [], sessionSummaries: [], patterns: [], lastScanAt: null };
+const DEFAULT_MEMORY: MemoryState = {
+  projectPath: null,
+  fileMap: [],
+  sessionSummaries: [],
+  patterns: [],
+  lastScanAt: null,
+};
 
 function loadMemory(): MemoryState {
   return loadFromStorage(STORAGE_KEY, DEFAULT_MEMORY);
@@ -17,6 +23,11 @@ function loadMemory(): MemoryState {
 
 function saveMemory(memory: MemoryState) {
   saveToStorage(STORAGE_KEY, memory);
+}
+
+/** Normalize a project path so case / slash differences don't cause false mismatches. */
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").toLowerCase();
 }
 
 interface MemoryStore {
@@ -34,7 +45,9 @@ interface MemoryStore {
   clearMemory: () => void;
   deletePattern: (id: string) => void;
   deleteSummary: (id: string) => void;
-  getContextForSession: () => string;
+  /** Returns the memory context for a session if (and only if) the memory
+   *  was scanned from the same project path. Pass an empty string to skip. */
+  getContextForSession: (currentProjectPath: string) => string;
 }
 
 export const useMemoryStore = create<MemoryStore>((set, get) => ({
@@ -55,7 +68,20 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
         summary: e.summary,
         lastAnalyzed: Date.now(),
       }));
-      const memory = { ...get().memory, fileMap, lastScanAt: Date.now() };
+      const prev = get().memory;
+      // If the user re-scans a different project, drop the stale data
+      // for the previous one — memory is single-project today.
+      const isSameProject =
+        prev.projectPath && normalizePath(prev.projectPath) === normalizePath(projectPath);
+      const memory: MemoryState = isSameProject
+        ? { ...prev, fileMap, projectPath, lastScanAt: Date.now() }
+        : {
+            projectPath,
+            fileMap,
+            sessionSummaries: [],
+            patterns: [],
+            lastScanAt: Date.now(),
+          };
       saveMemory(memory);
       set({ memory, isScanning: false });
     } catch (e) {
@@ -124,6 +150,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
 
   clearMemory: () => {
     const memory: MemoryState = {
+      projectPath: null,
       fileMap: [],
       sessionSummaries: [],
       patterns: [],
@@ -153,8 +180,18 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     set({ memory });
   },
 
-  getContextForSession: () => {
-    const { patterns, fileMap } = get().memory;
+  getContextForSession: (currentProjectPath: string) => {
+    const memory = get().memory;
+
+    // No memory yet, or no current project to compare against → no context.
+    if (!memory.projectPath || !currentProjectPath) return "";
+
+    // Memory was scanned from a different project — refuse to leak it.
+    if (normalizePath(memory.projectPath) !== normalizePath(currentProjectPath)) {
+      return "";
+    }
+
+    const { patterns, fileMap } = memory;
     const lines: string[] = [];
 
     if (patterns.length > 0) {

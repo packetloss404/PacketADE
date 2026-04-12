@@ -226,6 +226,16 @@ export default function App() {
               >
                 <MosaicContainer />
               </div>
+              {/* Workspace view — always mounted so PTY sessions stay
+                  alive when the user navigates to other tabs. */}
+              <div
+                className="flex flex-col flex-1 overflow-hidden"
+                style={{ display: activeView === "workspace" ? "flex" : "none" }}
+              >
+                <Suspense fallback={<ViewLoader />}>
+                  <WorkspaceView />
+                </Suspense>
+              </div>
               {/* Other views render conditionally */}
               <Suspense fallback={<ViewLoader />}>
                 <OtherViewContent activeView={activeView} />
@@ -271,7 +281,7 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
     case "review_queue":
       return <ReviewQueueView />;
     case "workspace":
-      return <WorkspaceView />;
+      return null; // rendered above as an always-mounted view
   }
 
   // Module views — dynamic lookup

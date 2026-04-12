@@ -3,10 +3,11 @@ export interface ModelOption {
   value: string | null; // null = system default (no --model flag)
 }
 
+// Use un-dated aliases so PacketCode always picks the latest version of each tier.
 export const CLAUDE_MODELS: ModelOption[] = [
-  { label: "Opus 4.6", value: "claude-opus-4-6-20250610" },
-  { label: "Sonnet 4.5", value: "claude-sonnet-4-5-20250514" },
-  { label: "Haiku 4.5", value: "claude-haiku-4-5-20250514" },
+  { label: "Opus 4.6", value: "claude-opus-4-6" },
+  { label: "Sonnet 4.6", value: "claude-sonnet-4-6" },
+  { label: "Haiku 4.5", value: "claude-haiku-4-5" },
 ];
 
 export const CODEX_MODELS: ModelOption[] = [

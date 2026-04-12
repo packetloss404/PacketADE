@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, useRef } from "react";
 import { Mosaic, MosaicWindow } from "react-mosaic-component";
 import type { MosaicNode, MosaicPath } from "@/types/mosaic";
 import { WorkspacePane } from "./WorkspacePane";
-import { MosaicTile } from "@/components/layout/MosaicTile";
 import type { Workspace } from "@/types/workspace";
 import { buildPresetTree, presetForCount } from "@/lib/mosaicPresets";
 
@@ -53,9 +52,7 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
           renderToolbar={null}
           draggable
         >
-          <MosaicTile paneId={id}>
-            <WorkspacePane pane={pane} workspaceId={workspace.id} />
-          </MosaicTile>
+          <WorkspacePane pane={pane} workspaceId={workspace.id} />
         </MosaicWindow>
       );
     },

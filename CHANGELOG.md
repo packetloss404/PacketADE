@@ -2,6 +2,78 @@
 
 All notable changes to PacketCode are documented in this file.
 
+## [0.4.0] - 2026-04-11
+
+### Added
+
+#### Flight Deck — Mission Control Redesign
+- Single-screen master-detail layout replaces the old list + drill-in pair
+- Status-grouped flight list on the left (Attention, Active, Review, Draft, Done, Cancelled)
+- Attention group auto-surfaces paused, failed, and approval-needed flights
+- Right-pane mission control tiles: FlightHeaderTile, FlightStatStrip (cost, tokens, tasks, approvals, sessions, updated), MilestonesPanel, LiveAgentsTile, ApprovalsTile, TimelineTile
+- Inline approve / deny from the per-flight Approvals tile
+- Inline edit of flight title, objective, status, and priority dropdowns
+- Pause / Resume / Cancel lifecycle controls on the selected flight
+- "Try the AI planner →" CTA on the empty Flight Deck to surface the planner chat
+
+#### Workspace Persistence
+- Workspace view stays mounted across tab switches (Flights / Issues / Tools) — PTY sessions, scrollback, and agent state persist
+- All active workspaces mount simultaneously with `display: none` toggling; switching workspaces shows different terminal sets without restarting CLIs
+- Workspace creation from a flight now persists the `flightId` through `commitWorkspaces` (was silently dropping it before)
+- Flight `projectPath` falls back to the global project path when empty, written back to the flight for consistency
+
+#### First-Run Onboarding
+- 3-step onboarding pane on a fresh launch: Open Folder → Pick Agents → Open Workspace / Flight Deck / Skip
+- `AgentDetectionList` component showing installed / not-found / checking states for each AI CLI
+- Install hint links beside each not-found CLI (Claude Code, Codex, Gemini, OpenCode docs)
+- Bootstrap fires `detectInstalled()` on startup so agent availability is known before the user picks one
+- Onboarding completion persisted in `localStorage` (`packetcode:onboarding-complete`)
+
+#### Mosaic Tiling System
+- React Mosaic-based draggable pane tiling replaces the fixed CSS grid
+- Layout presets: 1×1, 1×2, 2×1, 2×2, 2×3, 3×2 — available in the main toolbar when a workspace is active
+- Per-pane drag handle, minimize, and restore via `MosaicTile` wrapper
+- Mosaic tree built from workspace pane count with sensible default preset
+
+#### DTO Layer
+- Rust API DTO module (`src-tauri/src/api/`) decoupling internal types from the TS serialization contract
+- Generated TypeScript schema types (`src/generated/tauri-schema.ts`)
+- Typed event name helpers (`src/lib/events.ts`)
+- All Tauri commands and frontend stores refactored to use DTOs, eliminating manual snake_case/camelCase conversion
+
+#### UI Polish
+- Unified per-pane header bar: drag grip, status dot, agent icon + name, CLI pill, restart button — consolidated from three separate bars (MosaicTile drag handle, WorkspacePane agent header, TerminalHeader)
+- Richer tooltips on all right-side toolbar buttons (Review, Theme, Cost, Deploy, Quality, Git, Project, Profile, Pane layout)
+- Profile button now reads "Profile: Auto (Optimized)" with a descriptive tooltip
+- Workspace empty state: "A Workspace is a tiled set of agent terminals scoped to one project."
+- Flight Deck empty state: Flight definition + AI planner CTA
+- Sidebar "PROJECTS" renamed to "RECENT FOLDERS" to remove Workspace/Project terminology overlap
+- Cursor-inspired dark theme restyle
+
+### Fixed
+- **CMD window flashes on Windows** — `detect_agent` now uses `hide_window` so the `where` probes don't pop console windows; removed redundant safety-net `useEffect` in WorkspaceCreationModal
+- **Memory leaking across projects** — `getContextForSession` now takes the current project path and refuses to return context scanned from a different project; memory store stamps `projectPath` on scan
+- **Model names** — Claude model aliases updated to un-dated identifiers (`claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`) so they always resolve to the latest version
+- **Launch Workspace from flight broken** — `flightId` now persists via `createWorkspace`; empty `projectPath` falls back to global path
+- **Infinite re-render loops** — fixed in FlightDeckView, Toolbar, and workspace creation (unstable function selector subscriptions, inline callback refs in `useTerminalSession`)
+- **PTY spawn failures and orphaned processes** — cleanup on unmount, proper exit-requested tracking
+- **WebGL resource leaks** — explicit WebglAddon disposal before terminal teardown
+- **CLI binary paths on Windows** — `.cmd` wrapper resolution for Claude, Codex, etc.
+- **Terminal PTY output fidelity** — preserving raw byte stream integrity
+- **Disabled not-installed agents in WorkspaceCreationModal** — buttons now show `opacity-50 cursor-not-allowed` with install links instead of silently failing when clicked
+
+### Changed
+- `"mission"` route removed from `AppView`; `MissionWorkspaceView.tsx` deleted — the Flight Deck is now the single entry point for flight management
+- `BroadcastBar` component deleted; broadcast feature removed entirely
+- Workspace toolbar, broadcast bar, and mosaic preset bar consolidated into the main toolbar
+- `WorkspaceView` is always-mounted in `App.tsx` (matching the legacy `MosaicContainer` pattern) so terminals survive view switches
+- `TerminalPane` accepts `renderHeader` prop for custom header injection; `TerminalHeaderRenderState` type exported
+- `WorkspaceSessionConfig` extended with optional `flightId`
+- `MemoryState` gains `projectPath` field; `getContextForSession` requires the current project path argument
+- README updated to reflect the Workspaces vs Flight Deck split and new project layout
+
+---
+
 ## [0.3.0] - 2026-03-16
 
 ### Added

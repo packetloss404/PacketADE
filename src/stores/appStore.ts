@@ -70,7 +70,7 @@ export const useAppStore = create<AppStore>((set) => ({
       prompt += profile.systemPrompt + "\n\n";
     }
 
-    const memoryContext = memoryStore.getContextForSession();
+    const memoryContext = memoryStore.getContextForSession(layoutStore.projectPath);
     if (memoryContext.trim()) {
       prompt += memoryContext + "\n\n";
     }
