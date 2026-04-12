@@ -35,6 +35,22 @@ pub struct FlightState {
     pub title: String,
     pub objective: String,
     pub priority: String,
+    #[serde(default)]
+    pub milestones: Vec<FlightStateMilestone>,
+}
+
+#[derive(Deserialize)]
+pub struct FlightStateMilestone {
+    pub title: String,
+    #[serde(default)]
+    pub tasks: Vec<FlightStateTask>,
+}
+
+#[derive(Deserialize)]
+pub struct FlightStateTask {
+    pub title: String,
+    #[serde(rename = "type")]
+    pub task_type: String,
 }
 
 fn build_flight_chat_prompt(
@@ -50,11 +66,27 @@ fn build_flight_chat_prompt(
 
     // Escape braces in user-controlled fields to prevent format string issues,
     // and use JSON embedding to avoid prompt structure breakout.
-    let state_json = serde_json::json!({
+    let mut state_obj = serde_json::json!({
         "title": flight_state.title,
         "objective": flight_state.objective,
         "priority": flight_state.priority,
     });
+    if !flight_state.milestones.is_empty() {
+        let milestones: Vec<serde_json::Value> = flight_state
+            .milestones
+            .iter()
+            .map(|m| {
+                let tasks: Vec<serde_json::Value> = m
+                    .tasks
+                    .iter()
+                    .map(|t| serde_json::json!({ "title": t.title, "type": t.task_type }))
+                    .collect();
+                serde_json::json!({ "title": m.title, "tasks": tasks })
+            })
+            .collect();
+        state_obj["milestones"] = serde_json::Value::Array(milestones);
+    }
+    let state_json = state_obj;
 
     let retro_section = match retrospectives {
         Some(retros) if !retros.is_empty() => format!(
@@ -65,17 +97,60 @@ fn build_flight_chat_prompt(
     };
 
     format!(
-        r#"You are a flight planning assistant. A "flight" is a structured work unit for a coding project — it has a title, objective, and priority.
+        r#"You are a flight planning assistant for PacketCode, a multi-agent IDE. A "flight" is a structured work plan for a coding project. Flights have a title, objective, priority, milestones, and tasks.
 
-Help the user define and refine their flight. Ask clarifying questions, suggest improvements, and help them articulate their goals clearly.
+Your job is to help the user spec out their project through conversation. Take your time — ask clarifying questions, understand requirements, and help them think through edge cases before proposing a plan. Aim for 3-5 exchanges before finalizing.
 
-When you have a concrete suggestion for the flight fields, include a fenced JSON block tagged with `json:flight` containing any fields you want to suggest. Only include fields you are changing. Example:
+## Capabilities
+
+When you have a concrete suggestion for basic flight fields (title, objective, priority), include a fenced JSON block:
 
 ```json:flight
-{{"title": "Refactor auth middleware", "objective": "Replace legacy session-token storage with JWT to meet compliance requirements", "priority": "high"}}
+{{"title": "...", "objective": "...", "priority": "high"}}
 ```
 
-Valid priority values: "low", "medium", "high", "critical".
+When the spec is solid enough to break into milestones and tasks, emit a full flight plan:
+
+```json:flight-plan
+{{
+  "title": "...",
+  "objective": "...",
+  "priority": "high",
+  "milestones": [
+    {{
+      "title": "Core implementation",
+      "description": "Build the main feature",
+      "validationCriteria": ["Feature works end-to-end", "Tests pass"],
+      "tasks": [
+        {{
+          "title": "Implement the data model",
+          "description": "Create types and store logic",
+          "type": "implementation",
+          "dependsOn": []
+        }},
+        {{
+          "title": "Write unit tests",
+          "description": "Cover the new data model",
+          "type": "testing",
+          "dependsOn": ["Implement the data model"]
+        }}
+      ]
+    }}
+  ]
+}}
+```
+
+## Rules
+
+- Valid priority values: "low", "medium", "high", "critical"
+- Valid task types: "implementation", "testing", "review", "validation", "research", "refactor", "documentation"
+- Each task will be automatically assigned to the best AI agent (Claude Code, Codex, etc.) — you don't need to specify agents
+- `dependsOn` is a list of task titles within the same milestone that must complete first
+- Order milestones logically — they execute sequentially
+- Tasks within a milestone can run in parallel if they don't depend on each other
+- Don't emit a `json:flight-plan` block until you've had enough back-and-forth to understand the scope
+- If the user's request is small (single feature, bug fix), a single milestone with 1-3 tasks is fine
+- Keep task descriptions concise but specific enough for an AI agent to execute
 {retro_section}
 Current flight state (as JSON):
 {state_json}

@@ -78,6 +78,7 @@ function TaskRow({ task }: { task: Task }) {
     <div className="flex items-center gap-2 px-2.5 py-1">
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[task.status] ?? "bg-text-muted"}`} />
       <span className="text-[11px] text-text-secondary truncate flex-1">{task.title}</span>
+      <span className="text-[9px] text-text-muted">{task.agentConfigId}</span>
       <span className="text-[10px] text-text-muted uppercase">{task.type}</span>
     </div>
   );

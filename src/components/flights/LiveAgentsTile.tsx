@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Activity } from "lucide-react";
 import { useActivityStore } from "@/stores/activityStore";
-import { useLayoutStore } from "@/stores/layoutStore";
+import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { ACTIVITY_DOT_COLORS } from "@/lib/flight-colors";
 import { relativeTime } from "@/lib/time";
 import type { Flight } from "@/types/flight";
@@ -12,27 +12,23 @@ interface LiveAgentsTileProps {
 
 export function LiveAgentsTile({ flight }: LiveAgentsTileProps) {
   const activities = useActivityStore((s) => s.activities);
-  const panes = useLayoutStore((s) => s.panes);
+  const runningTasks = useOrchestrationStore((s) => s.getRunningTasksForFlight(flight.id));
+  const allTasks = flight.milestones.flatMap((m) => m.tasks);
 
   const entries = useMemo(() => {
-    const linkedSet = new Set(flight.linkedSessionIds);
-    const out: Array<{
-      paneId: string;
-      sessionId: string;
-      cliCommand: string;
-      activity: (typeof activities)[string] | undefined;
-    }> = [];
-    for (const pane of panes) {
-      if (!pane.sessionId || !linkedSet.has(pane.sessionId)) continue;
-      out.push({
-        paneId: pane.id,
-        sessionId: pane.sessionId,
-        cliCommand: pane.cliCommand ?? "agent",
-        activity: activities[pane.id],
-      });
-    }
-    return out.sort((a, b) => (b.activity?.lastActivityAt ?? 0) - (a.activity?.lastActivityAt ?? 0));
-  }, [flight.linkedSessionIds, panes, activities]);
+    return runningTasks
+      .map((rt) => {
+        const task = allTasks.find((t) => t.id === rt.taskId);
+        return {
+          paneId: rt.paneId,
+          taskId: rt.taskId,
+          agentConfigId: rt.agentConfigId,
+          taskTitle: task?.title ?? rt.agentConfigId,
+          activity: activities[rt.paneId],
+        };
+      })
+      .sort((a, b) => (b.activity?.lastActivityAt ?? 0) - (a.activity?.lastActivityAt ?? 0));
+  }, [runningTasks, allTasks, activities]);
 
   return (
     <div className="flex flex-col h-full">
@@ -46,11 +42,11 @@ export function LiveAgentsTile({ flight }: LiveAgentsTileProps) {
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {entries.length === 0 ? (
           <p className="text-[10px] text-text-muted py-1">
-            No agents linked. Click Launch Workspace to start.
+            No agents linked. Launch the flight to start agents.
           </p>
         ) : (
           <div className="space-y-1.5">
-            {entries.map(({ paneId, cliCommand, activity }) => {
+            {entries.map(({ paneId, agentConfigId, taskTitle, activity }) => {
               const state = activity?.agentState ?? "idle";
               const dotColor = ACTIVITY_DOT_COLORS[state] ?? "bg-text-muted";
               return (
@@ -58,7 +54,8 @@ export function LiveAgentsTile({ flight }: LiveAgentsTileProps) {
                   <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${dotColor}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-[11px] font-medium text-text-primary">{cliCommand}</span>
+                      <span className="text-[11px] font-medium text-text-primary truncate">{taskTitle}</span>
+                      <span className="text-[10px] text-text-muted">{agentConfigId}</span>
                       <span className="text-[10px] text-text-muted">{state}</span>
                     </div>
                     {activity?.currentTool && (

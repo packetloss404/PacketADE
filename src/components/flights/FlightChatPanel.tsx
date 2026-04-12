@@ -1,16 +1,19 @@
 import { useState, useRef, useEffect, memo } from "react";
-import { Send, Bot, User, Loader2, Sparkles, Check, X } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, Check, X, ListTree } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import type { ChatMessage, FlightSuggestion } from "@/hooks/useFlightChat";
+import type { ChatMessage, FlightSuggestion, FlightPlanSuggestion } from "@/hooks/useFlightChat";
 
 interface FlightChatPanelProps {
   messages: ChatMessage[];
   isLoading: boolean;
   streamingContent: string;
   latestSuggestion: FlightSuggestion | null;
+  latestPlan: FlightPlanSuggestion | null;
   onSend: (content: string) => void;
   onApplySuggestion: () => void;
   onDismissSuggestion: () => void;
+  onApplyPlan: () => void;
+  onDismissPlan: () => void;
 }
 
 function SuggestionBanner({
@@ -47,6 +50,53 @@ function SuggestionBanner({
       >
         <X size={12} />
       </button>
+    </div>
+  );
+}
+
+function PlanBanner({
+  plan,
+  onApply,
+  onDismiss,
+}: {
+  plan: FlightPlanSuggestion;
+  onApply: () => void;
+  onDismiss: () => void;
+}) {
+  const totalTasks = plan.milestones.reduce((sum, m) => sum + m.tasks.length, 0);
+  return (
+    <div className="mx-3 mb-2 px-3 py-2 bg-accent-green/10 border border-accent-green/30 rounded-lg">
+      <div className="flex items-center gap-2 mb-2">
+        <ListTree size={12} className="text-accent-green flex-shrink-0" />
+        <span className="text-[11px] font-medium text-accent-green flex-1">
+          Flight Plan: {plan.milestones.length} milestone{plan.milestones.length !== 1 ? "s" : ""}, {totalTasks} task{totalTasks !== 1 ? "s" : ""}
+        </span>
+        <button
+          onClick={onApply}
+          className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-accent-green bg-accent-green/15 border border-accent-green/30 rounded hover:bg-accent-green/25 transition-colors"
+        >
+          <Check size={10} />
+          Apply Plan
+        </button>
+        <button
+          onClick={onDismiss}
+          className="p-0.5 text-text-muted hover:text-text-primary transition-colors"
+        >
+          <X size={12} />
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        {plan.milestones.map((ms, i) => (
+          <div key={i} className="text-[10px]">
+            <span className="text-text-primary font-medium">
+              {i + 1}. {ms.title}
+            </span>
+            <span className="text-text-muted ml-1">
+              ({ms.tasks.length} task{ms.tasks.length !== 1 ? "s" : ""})
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -89,9 +139,12 @@ export function FlightChatPanel({
   isLoading,
   streamingContent,
   latestSuggestion,
+  latestPlan,
   onSend,
   onApplySuggestion,
   onDismissSuggestion,
+  onApplyPlan,
+  onDismissPlan,
 }: FlightChatPanelProps) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -134,7 +187,7 @@ export function FlightChatPanel({
             <Bot size={24} className="text-accent-purple/40" />
             <p className="text-[11px] text-center leading-relaxed">
               Describe what you want to build.<br />
-              I'll help shape the flight.
+              I'll help shape the flight plan.
             </p>
           </div>
         )}
@@ -167,8 +220,17 @@ export function FlightChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Suggestion banner */}
-      {latestSuggestion && (
+      {/* Plan banner (takes priority over suggestion banner) */}
+      {latestPlan && (
+        <PlanBanner
+          plan={latestPlan}
+          onApply={onApplyPlan}
+          onDismiss={onDismissPlan}
+        />
+      )}
+
+      {/* Suggestion banner (only if no plan) */}
+      {!latestPlan && latestSuggestion && (
         <SuggestionBanner
           suggestion={latestSuggestion}
           onApply={onApplySuggestion}

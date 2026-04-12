@@ -10,7 +10,7 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useMosaicStore } from "@/stores/mosaicStore";
-import { useAppStore, getModuleId, moduleViewId } from "@/stores/appStore";
+import { useAppStore, getModuleId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { getModule } from "@/modules/registry";
@@ -173,15 +173,6 @@ export default function App() {
           "$": "history",   // Shift+4
           "%": "tools",     // Shift+5
         };
-        // Shift+6 -> Vibe Architect (only if enabled)
-        if (e.key === "^") {
-          const modView = moduleViewId("vibe-architect");
-          if (useModuleStore.getState().isEnabled("vibe-architect")) {
-            e.preventDefault();
-            setActiveView(modView);
-          }
-          return;
-        }
         if (viewMap[e.key]) {
           e.preventDefault();
           setActiveView(viewMap[e.key]);

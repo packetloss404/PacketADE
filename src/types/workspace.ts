@@ -20,5 +20,4 @@ export interface Workspace {
   bypassPermissions?: boolean;
   modelOverrides?: Record<string, string | null>;
   effortOverrides?: Record<string, string | null>;
-  flightId?: string;
 }

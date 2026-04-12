@@ -7,14 +7,10 @@ import {
   MoreVertical,
   Trash2,
   Rocket,
-  ExternalLink,
-  Check,
 } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
-import { launchWorkspaceFromFlight } from "./launchWorkspaceFromFlight";
 import type { Flight, FlightStatus, FlightPriority } from "@/types/flight";
 
 const ALL_STATUSES: FlightStatus[] = ["draft", "planning", "ready", "active", "paused", "review", "done", "failed", "cancelled"];
@@ -27,19 +23,17 @@ interface FlightHeaderTileProps {
 export function FlightHeaderTile({ flight }: FlightHeaderTileProps) {
   const updateFlight = useFlightStore((s) => s.updateFlight);
   const deleteFlight = useFlightStore((s) => s.deleteFlight);
+  const launchFlight = useOrchestrationStore((s) => s.launchFlight);
   const pauseFlight = useOrchestrationStore((s) => s.pauseFlight);
   const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
   const cancelFlight = useOrchestrationStore((s) => s.cancelFlight);
-  const workspaces = useWorkspaceStore((s) => s.workspaces);
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingObjective, setEditingObjective] = useState(false);
   const [titleDraft, setTitleDraft] = useState(flight.title);
   const [objectiveDraft, setObjectiveDraft] = useState(flight.objective);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [launchToast, setLaunchToast] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset drafts when flight changes
   useEffect(() => {
@@ -47,7 +41,6 @@ export function FlightHeaderTile({ flight }: FlightHeaderTileProps) {
     setObjectiveDraft(flight.objective);
     setEditingTitle(false);
     setEditingObjective(false);
-    setLaunchToast(null);
   }, [flight.id, flight.title, flight.objective]);
 
   // Close menu on outside click
@@ -61,15 +54,6 @@ export function FlightHeaderTile({ flight }: FlightHeaderTileProps) {
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [menuOpen]);
-
-  // Cleanup toast timer
-  useEffect(() => () => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-  }, []);
-
-  const linkedWorkspace = workspaces.find(
-    (w) => w.flightId === flight.id && w.status === "active"
-  );
 
   function commitTitle() {
     setEditingTitle(false);
@@ -94,16 +78,15 @@ export function FlightHeaderTile({ flight }: FlightHeaderTileProps) {
   }
 
   function handleLaunch() {
-    const result = launchWorkspaceFromFlight(flight);
-    setLaunchToast(result.reused ? "Opened existing workspace" : "Workspace created and launched");
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setLaunchToast(null), 2500);
+    void launchFlight(flight.id);
   }
 
   const status = flight.status;
   const cfg = FLIGHT_STATUS_CONFIG[status];
   const priorityColor = FLIGHT_PRIORITY_COLORS[flight.priority];
   const isLifecycleActive = status === "active" || status === "paused";
+  const hasTasks = flight.milestones.some((m) => m.tasks.length > 0);
+  const canLaunch = (status === "draft" || status === "ready") && hasTasks;
 
   return (
     <div className="flex items-start gap-3 px-4 py-3 border-b border-bg-border bg-bg-secondary">
@@ -187,26 +170,31 @@ export function FlightHeaderTile({ flight }: FlightHeaderTileProps) {
             {flight.objective || <span className="text-text-muted italic">Add an objective…</span>}
           </button>
         )}
-
-        {/* Launch toast */}
-        {launchToast && (
-          <div className="flex items-center gap-1.5 text-[10px] text-accent-green mt-1">
-            <Check size={10} />
-            {launchToast}
-          </div>
-        )}
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-1 shrink-0">
-        <button
-          onClick={handleLaunch}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] text-accent-green bg-accent-green/10 border border-accent-green/30 rounded hover:bg-accent-green/20 transition-colors"
-          title={linkedWorkspace ? `Open workspace: ${linkedWorkspace.name}` : "Create and launch a workspace tied to this flight"}
-        >
-          {linkedWorkspace ? <ExternalLink size={11} /> : <Rocket size={11} />}
-          {linkedWorkspace ? "Open Workspace" : "Launch Workspace"}
-        </button>
+        {canLaunch && (
+          <button
+            onClick={handleLaunch}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] text-accent-green bg-accent-green/10 border border-accent-green/30 rounded hover:bg-accent-green/20 transition-colors"
+            title="Launch this flight — the orchestrator will assign agents and begin execution"
+          >
+            <Rocket size={11} />
+            Launch Flight
+          </button>
+        )}
+
+        {status === "review" && (
+          <button
+            onClick={() => void resumeFlight(flight.id)}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] text-accent-green bg-accent-green/10 border border-accent-green/30 rounded hover:bg-accent-green/20 transition-colors"
+            title="Approve milestone and continue to the next"
+          >
+            <Play size={11} />
+            Approve &amp; Continue
+          </button>
+        )}
 
         {isLifecycleActive && status === "active" && (
           <button

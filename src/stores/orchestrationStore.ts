@@ -112,6 +112,28 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
   pausedAtMilestone: new Map(),
 
   launchFlight: async (flightId) => {
+    // Validate agent availability before launching
+    try {
+      const { useAgentStore } = await import("@/stores/agentStore");
+      const agents = useAgentStore.getState().agents;
+      const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+      if (flight) {
+        const installedIds = new Set(agents.filter((a) => a.installed).map((a) => a.id));
+        const fallbackAgent = agents.find((a) => a.installed)?.id ?? "claude-code";
+        for (const ms of flight.milestones) {
+          for (const task of ms.tasks) {
+            if (task.agentConfigId && !installedIds.has(task.agentConfigId)) {
+              useFlightStore.getState().updateTask(flight.id, ms.id, task.id, {
+                agentConfigId: fallbackAgent,
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-fatal: proceed with existing assignments
+    }
+
     try {
       const persisted = await launchFlightInBackend(flightId);
       await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
