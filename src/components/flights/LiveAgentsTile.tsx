@@ -12,7 +12,11 @@ interface LiveAgentsTileProps {
 
 export function LiveAgentsTile({ flight }: LiveAgentsTileProps) {
   const activities = useActivityStore((s) => s.activities);
-  const runningTasks = useOrchestrationStore((s) => s.getRunningTasksForFlight(flight.id));
+  const runningTasksMap = useOrchestrationStore((s) => s.runningTasks);
+  const runningTasks = useMemo(
+    () => Array.from(runningTasksMap.values()).filter((rt) => rt.flightId === flight.id),
+    [runningTasksMap, flight.id],
+  );
   const allTasks = flight.milestones.flatMap((m) => m.tasks);
 
   const entries = useMemo(() => {

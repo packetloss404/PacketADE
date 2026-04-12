@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Activity, Terminal as TerminalIcon } from "lucide-react";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -12,7 +12,11 @@ interface FlightExecutionPanelProps {
 }
 
 export function FlightExecutionPanel({ flight }: FlightExecutionPanelProps) {
-  const runningTasks = useOrchestrationStore((s) => s.getRunningTasksForFlight(flight.id));
+  const runningTasksMap = useOrchestrationStore((s) => s.runningTasks);
+  const runningTasks = useMemo(
+    () => Array.from(runningTasksMap.values()).filter((rt) => rt.flightId === flight.id),
+    [runningTasksMap, flight.id],
+  );
   const panes = useLayoutStore((s) => s.panes);
   const activities = useActivityStore((s) => s.activities);
   const allTasks = flight.milestones.flatMap((m) => m.tasks);
