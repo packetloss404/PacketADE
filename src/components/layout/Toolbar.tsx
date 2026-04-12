@@ -246,7 +246,7 @@ export function Toolbar() {
               ? "bg-bg-elevated text-accent-amber"
               : "text-text-muted hover:text-accent-amber"
           }`}
-          title="Review Queue"
+          title="Review Queue — pending tool / file-write approvals from running flights. Click to triage."
         >
           <ShieldCheck size={11} />
           <span>Review</span>
@@ -261,7 +261,7 @@ export function Toolbar() {
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="p-1 text-text-muted hover:text-text-primary transition-colors"
-          title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+          title={`Theme — currently ${theme}. Click to switch to ${theme === "dark" ? "light" : "dark"} mode.`}
         >
           {theme === "dark" ? <Sun size={12} /> : <Moon size={12} />}
         </button>
@@ -274,7 +274,7 @@ export function Toolbar() {
               ? "bg-bg-elevated text-accent-amber"
               : "text-text-muted hover:text-accent-amber"
           }`}
-          title="Cost & Usage"
+          title="Cost & Usage — daily spend, token totals, and per-model breakdown across all sessions."
         >
           <DollarSign size={11} />
         </button>
@@ -287,7 +287,7 @@ export function Toolbar() {
               ? "bg-bg-elevated text-accent-amber"
               : "bg-bg-elevated text-text-secondary hover:text-accent-amber"
           }`}
-          title="Deploy Pipeline"
+          title="Deploy Pipeline — run configured deploy commands for the current project and watch their output."
         >
           <Rocket size={12} className="text-accent-amber" />
           <span>Deploy</span>
@@ -297,7 +297,7 @@ export function Toolbar() {
         <button
           onClick={() => setShowCodeQuality(true)}
           className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-accent-amber transition-colors"
-          title="Code Quality"
+          title="Code Quality — run lint, type-check, and test suites for the current project from one panel."
         >
           <Diamond size={12} className="text-accent-amber" />
           <span>Quality</span>
@@ -306,7 +306,10 @@ export function Toolbar() {
         {/* Git branch + actions */}
         {gitBranch && (
           <div className="flex items-center gap-0.5">
-            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded-l text-xs">
+            <div
+              className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded-l text-xs"
+              title={`Current git branch: ${gitBranch}`}
+            >
               <GitBranch size={12} className="text-accent-purple" />
               <span className="text-text-secondary">{gitBranch}</span>
             </div>
@@ -318,7 +321,7 @@ export function Toolbar() {
         <button
           onClick={handleOpenFolder}
           className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-text-primary transition-colors"
-          title={projectPath}
+          title={`Current project folder: ${projectPath || "none"}. Click to open a different folder.`}
         >
           <FolderOpen size={12} />
           <span>{projectName}</span>
@@ -349,7 +352,10 @@ function PaneLayoutControls() {
   const paneCount = paneIds.length;
 
   return (
-    <div className="flex items-center gap-1">
+    <div
+      className="flex items-center gap-1"
+      title="Pane layout — current workspace tile count and quick layout presets. Click a preset to rearrange."
+    >
       <div className="w-px h-4 bg-bg-border" />
       <LayoutGrid size={11} className="text-accent-green flex-shrink-0" />
       <span className="text-[10px] text-text-secondary">
@@ -360,7 +366,7 @@ function PaneLayoutControls() {
           key={preset}
           onClick={() => applyPreset(preset, paneIds)}
           className="px-1.5 py-0.5 text-[9px] text-text-muted hover:text-text-primary bg-bg-primary border border-bg-border rounded transition-colors hover:border-accent-green/30"
-          title={`Apply ${label} layout`}
+          title={`Arrange the ${paneCount} workspace panes into a ${label} grid.`}
         >
           {label}
         </button>
@@ -401,7 +407,7 @@ function GitActionButtons() {
         onClick={() => handleGitAction("pull")}
         disabled={busy !== null}
         className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-        title="Git Pull"
+        title="Git Pull — fetch and merge the latest commits from the upstream branch."
       >
         <ArrowDown size={11} />
       </button>
@@ -409,7 +415,7 @@ function GitActionButtons() {
         onClick={() => handleGitAction("push")}
         disabled={busy !== null}
         className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-        title="Git Push"
+        title="Git Push — publish local commits on the current branch to the remote."
       >
         <ArrowUp size={11} />
       </button>
@@ -417,7 +423,7 @@ function GitActionButtons() {
         onClick={() => handleGitAction("commit")}
         disabled={busy !== null}
         className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-        title="Git Commit"
+        title="Git Commit — commit any staged changes with a message you provide. Does not stage files."
       >
         <GitCommit size={11} />
       </button>

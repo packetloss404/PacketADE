@@ -24,6 +24,10 @@ export interface LearnedPattern {
 }
 
 export interface MemoryState {
+  /** The project path this memory was scanned from. Used to scope context
+   *  to the active project so a scan of project A doesn't leak into a
+   *  Claude session opened in project B. */
+  projectPath: string | null;
   fileMap: FileMapEntry[];
   sessionSummaries: SessionSummary[];
   patterns: LearnedPattern[];

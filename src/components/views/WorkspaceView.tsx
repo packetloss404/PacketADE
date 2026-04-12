@@ -32,65 +32,77 @@ export function WorkspaceView() {
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* Main content */}
-      <div className="flex flex-col flex-1 overflow-hidden">
-        {!initialized ? null : activeWorkspace ? (
-          <WorkspaceMosaicContainer workspace={activeWorkspace} />
-        ) : showOnboarding ? (
-          <OnboardingPane onComplete={() => setOnboardingDone(true)} />
-        ) : (
-          // Empty / list view
-          <div className="flex flex-col flex-1 overflow-y-auto p-6">
-
-            {activeNonArchived.length === 0 ? (
-              <WelcomePane onCreateWorkspace={() => setShowCreate(true)} />
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {activeNonArchived.map((ws) => (
-                  <div
-                    key={ws.id}
-                    className="bg-bg-secondary border border-bg-border rounded-lg p-4 hover:border-accent-green/30 transition-colors"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <h3 className="text-xs font-medium text-text-primary">{ws.name}</h3>
-                      <button
-                        onClick={() => deleteWorkspace(ws.id)}
-                        className="p-1 text-text-muted hover:text-red-400 transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={10} />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-                      {ws.agents.map((agentId) => (
-                        <span
-                          key={agentId}
-                          className="px-1.5 py-0.5 text-[9px] bg-bg-primary border border-bg-border rounded text-text-secondary"
-                        >
-                          {agentId}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-text-muted">
-                        {relativeTime(ws.createdAt)}
-                      </span>
-                      <button
-                        onClick={() => setActiveWorkspace(ws.id)}
-                        className="flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
-                      >
-                        <Play size={10} />
-                        Launch
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {showCreate && (
-              <WorkspaceCreationModal onClose={() => setShowCreate(false)} />
-            )}
+      <div className="flex flex-col flex-1 overflow-hidden relative">
+        {/* All active workspaces stay mounted simultaneously so their PTY
+            sessions persist when the user switches workspaces or navigates
+            to other tabs. Only the active one is visible. */}
+        {initialized && activeNonArchived.map((ws) => (
+          <div
+            key={ws.id}
+            className="flex flex-col flex-1 overflow-hidden"
+            style={{ display: ws.id === activeWorkspaceId ? "flex" : "none" }}
+          >
+            <WorkspaceMosaicContainer workspace={ws} />
           </div>
+        ))}
+
+        {/* Foreground UI when no workspace is selected — onboarding or empty list. */}
+        {initialized && !activeWorkspace && (
+          showOnboarding ? (
+            <OnboardingPane onComplete={() => setOnboardingDone(true)} />
+          ) : (
+            <div className="flex flex-col flex-1 overflow-y-auto p-6">
+              {activeNonArchived.length === 0 ? (
+                <WelcomePane onCreateWorkspace={() => setShowCreate(true)} />
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {activeNonArchived.map((ws) => (
+                    <div
+                      key={ws.id}
+                      className="bg-bg-secondary border border-bg-border rounded-lg p-4 hover:border-accent-green/30 transition-colors"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="text-xs font-medium text-text-primary">{ws.name}</h3>
+                        <button
+                          onClick={() => deleteWorkspace(ws.id)}
+                          className="p-1 text-text-muted hover:text-red-400 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                        {ws.agents.map((agentId) => (
+                          <span
+                            key={agentId}
+                            className="px-1.5 py-0.5 text-[9px] bg-bg-primary border border-bg-border rounded text-text-secondary"
+                          >
+                            {agentId}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] text-text-muted">
+                          {relativeTime(ws.createdAt)}
+                        </span>
+                        <button
+                          onClick={() => setActiveWorkspace(ws.id)}
+                          className="flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+                        >
+                          <Play size={10} />
+                          Launch
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showCreate && (
+                <WorkspaceCreationModal onClose={() => setShowCreate(false)} />
+              )}
+            </div>
+          )
         )}
       </div>
 

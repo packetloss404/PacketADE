@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { LayoutGrid, Check, User, FileText, ShieldOff, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useAgentStore } from "@/stores/agentStore";
@@ -56,12 +56,6 @@ export function WorkspaceCreationModal({ onClose, initialSelected }: WorkspaceCr
   const projectPath = useLayoutStore((s) => s.projectPath);
   const profiles = useProfileStore((s) => s.profiles);
 
-  // Safety net: kick detection on mount in case bootstrap's fire-and-forget
-  // call hasn't run or failed silently. detectInstalled is idempotent.
-  useEffect(() => {
-    void useAgentStore.getState().detectInstalled();
-  }, []);
-
   const preview = useMemo(() => {
     if (selected.size === 0) return null;
     return computeGridLayout(selected.size);
@@ -108,7 +102,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected }: WorkspaceCr
       finalPrompt += selectedProfile.systemPrompt + "\n\n";
     }
     if (includeMemory) {
-      const memoryContext = useMemoryStore.getState().getContextForSession();
+      const memoryContext = useMemoryStore.getState().getContextForSession(projectPath);
       if (memoryContext.trim()) {
         finalPrompt += memoryContext + "\n\n";
       }
