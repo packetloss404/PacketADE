@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { createPtySession } from "@/lib/tauri";
+import { createPtySession, writePty } from "@/lib/tauri";
 import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
 import { useServerStore } from "@/stores/serverStore";
 import { buildSshExecArgs, REMOTE_INSTALL_COMMANDS, AGENT_CLI_NAMES } from "@/lib/ssh";
@@ -9,7 +9,8 @@ import type { ServerConfig, ConnectionStep } from "@/types/server";
 /** Agents to auto-install on connect. */
 const AUTO_INSTALL_AGENTS = ["claude-code", "opencode"];
 
-/** Run a one-shot SSH command and collect output until exit. */
+/** Run a one-shot SSH command and collect output until exit.
+ *  For password auth, detects the password prompt and auto-feeds the password. */
 async function sshExec(
   server: ServerConfig,
   remoteCommand: string,
@@ -25,9 +26,21 @@ async function sshExec(
   );
 
   let output = "";
+  let passwordSent = false;
 
   const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
     output += event.payload;
+
+    // Detect password prompt and auto-feed password for password auth
+    if (
+      server.authMethod === "password" &&
+      server.password &&
+      !passwordSent &&
+      /[Pp]assword[:\s]/i.test(output)
+    ) {
+      passwordSent = true;
+      void writePty(sessionId, server.password + "\n");
+    }
   });
 
   const exitPromise = new Promise<boolean>((resolve) => {
@@ -36,8 +49,17 @@ async function sshExec(
     });
   });
 
-  await exitPromise;
+  // Timeout after 15 seconds to avoid hanging forever
+  const timeoutPromise = new Promise<boolean>((resolve) => {
+    setTimeout(() => resolve(false), 15_000);
+  });
+
+  const completed = await Promise.race([exitPromise, timeoutPromise]);
   outputUnlisten();
+
+  if (!completed) {
+    return { output: output + "\n[Connection timed out]", success: false };
+  }
 
   // Check for common SSH error patterns
   const success =

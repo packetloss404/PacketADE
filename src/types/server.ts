@@ -6,6 +6,7 @@ export interface ServerConfig {
   username: string;
   authMethod: "agent" | "key" | "password";
   keyPath?: string;
+  password?: string;
   remotePath?: string;
   lastConnectedAt?: number;
   installedAgents: string[];
