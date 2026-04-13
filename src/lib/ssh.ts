@@ -5,14 +5,13 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
-/** Build SSH command-line args for spawning a remote CLI session via PTY. */
-export function buildSshArgs(
-  server: ServerConfig,
-  remotePath: string,
-  remoteCommand: string,
-  remoteArgs?: string[],
-): string[] {
-  const args: string[] = ["-t"]; // force pseudo-terminal allocation
+/** Common SSH flags shared across all connection types. */
+function baseSshArgs(server: ServerConfig): string[] {
+  const args: string[] = [
+    "-t", // force pseudo-terminal allocation
+    "-o", "StrictHostKeyChecking=accept-new", // auto-accept new host keys, reject changed ones
+    "-o", "ConnectTimeout=10", // don't hang longer than 10s on connection
+  ];
 
   if (server.port !== 22) {
     args.push("-p", String(server.port));
@@ -20,8 +19,25 @@ export function buildSshArgs(
 
   if (server.authMethod === "key" && server.keyPath) {
     args.push("-i", server.keyPath);
+    args.push("-o", "PreferredAuthentications=publickey");
+  } else if (server.authMethod === "agent") {
+    args.push("-o", "PreferredAuthentications=publickey");
+  } else if (server.authMethod === "password") {
+    args.push("-o", "PreferredAuthentications=keyboard-interactive,password");
+    args.push("-o", "PubkeyAuthentication=no");
   }
 
+  return args;
+}
+
+/** Build SSH command-line args for spawning a remote CLI session via PTY. */
+export function buildSshArgs(
+  server: ServerConfig,
+  remotePath: string,
+  remoteCommand: string,
+  remoteArgs?: string[],
+): string[] {
+  const args = baseSshArgs(server);
   args.push(`${server.username}@${server.host}`);
 
   // Build the remote command string
@@ -39,16 +55,7 @@ export function buildSshExecArgs(
   server: ServerConfig,
   remoteCommand: string,
 ): string[] {
-  const args: string[] = ["-t"];
-
-  if (server.port !== 22) {
-    args.push("-p", String(server.port));
-  }
-
-  if (server.authMethod === "key" && server.keyPath) {
-    args.push("-i", server.keyPath);
-  }
-
+  const args = baseSshArgs(server);
   args.push(`${server.username}@${server.host}`);
   args.push(remoteCommand);
 
