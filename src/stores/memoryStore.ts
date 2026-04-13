@@ -1,29 +1,17 @@
 import { create } from "zustand";
-import { scanCodebaseMemory, summarizeSession, extractPatterns } from "@/lib/tauri";
+import { scanCodebaseMemory, saveMemorySlice } from "@/lib/tauri";
+import { parseJsonFromResponse, generateId } from "@/lib/storage";
 import type {
-  MemoryState,
+  MemoryEvent,
+  MemoryEventType,
   FileMapEntry,
-  SessionSummary,
-  LearnedPattern,
+  SessionCompletedPayload,
+  TaskCompletedPayload,
+  FlightCompletedPayload,
 } from "@/types/memory";
-import { loadFromStorage, saveToStorage, parseJsonFromResponse } from "@/lib/storage";
+import type { loadPersistedState } from "@/lib/tauri";
 
-const STORAGE_KEY = "packetcode:memory";
-const DEFAULT_MEMORY: MemoryState = {
-  projectPath: null,
-  fileMap: [],
-  sessionSummaries: [],
-  patterns: [],
-  lastScanAt: null,
-};
-
-function loadMemory(): MemoryState {
-  return loadFromStorage(STORAGE_KEY, DEFAULT_MEMORY);
-}
-
-function saveMemory(memory: MemoryState) {
-  saveToStorage(STORAGE_KEY, memory);
-}
+const MAX_EVENTS = 500;
 
 /** Normalize a project path so case / slash differences don't cause false mismatches. */
 function normalizePath(path: string): string {
@@ -31,29 +19,94 @@ function normalizePath(path: string): string {
 }
 
 interface MemoryStore {
-  memory: MemoryState;
+  events: MemoryEvent[];
+  fileMap: FileMapEntry[];
+  lastScanAt: number | null;
+  scanProjectPath: string | null;
   isScanning: boolean;
   scanError: string | null;
 
+  // Hydration
+  hydrateFromBackend: (persisted: Awaited<ReturnType<typeof loadPersistedState>>) => void;
+
+  // Auto-capture
+  captureSessionCompleted: (payload: SessionCompletedPayload, projectPath: string) => void;
+  captureTaskCompleted: (payload: TaskCompletedPayload, projectPath: string) => void;
+  captureFlightCompleted: (payload: FlightCompletedPayload, projectPath: string) => void;
+
+  // Manual actions
   scanCodebase: (projectPath: string) => Promise<void>;
-  addSessionSummary: (
-    projectPath: string,
-    sessionTitle: string,
-    sessionLog: string
-  ) => Promise<void>;
-  refreshPatterns: (projectPath: string) => Promise<void>;
+  deleteEvent: (id: string) => void;
   clearMemory: () => void;
-  deletePattern: (id: string) => void;
-  deleteSummary: (id: string) => void;
-  /** Returns the memory context for a session if (and only if) the memory
-   *  was scanned from the same project path. Pass an empty string to skip. */
+
+  // Context injection
   getContextForSession: (currentProjectPath: string) => string;
 }
 
+function createEvent<T extends MemoryEventType>(
+  type: T,
+  projectPath: string,
+  payload: T extends "session_completed"
+    ? SessionCompletedPayload
+    : T extends "task_completed"
+      ? TaskCompletedPayload
+      : FlightCompletedPayload,
+): MemoryEvent {
+  return {
+    id: generateId("mem"),
+    type,
+    timestamp: Date.now(),
+    projectPath,
+    payload,
+  } as MemoryEvent;
+}
+
+function capEvents(events: MemoryEvent[]): MemoryEvent[] {
+  if (events.length <= MAX_EVENTS) return events;
+  return events.slice(events.length - MAX_EVENTS);
+}
+
+async function persistEvents(events: MemoryEvent[]) {
+  try {
+    await saveMemorySlice(events);
+  } catch {
+    // Non-fatal: events are still in memory, will persist next time
+  }
+}
+
 export const useMemoryStore = create<MemoryStore>((set, get) => ({
-  memory: loadMemory(),
+  events: [],
+  fileMap: [],
+  lastScanAt: null,
+  scanProjectPath: null,
   isScanning: false,
   scanError: null,
+
+  hydrateFromBackend: (persisted) => {
+    const events = (persisted.memoryEvents ?? []) as MemoryEvent[];
+    set({ events });
+  },
+
+  captureSessionCompleted: (payload, projectPath) => {
+    const event = createEvent("session_completed", projectPath, payload);
+    const events = capEvents([...get().events, event]);
+    set({ events });
+    void persistEvents(events);
+  },
+
+  captureTaskCompleted: (payload, projectPath) => {
+    const event = createEvent("task_completed", projectPath, payload);
+    const events = capEvents([...get().events, event]);
+    set({ events });
+    void persistEvents(events);
+  },
+
+  captureFlightCompleted: (payload, projectPath) => {
+    const event = createEvent("flight_completed", projectPath, payload);
+    const events = capEvents([...get().events, event]);
+    set({ events });
+    void persistEvents(events);
+  },
 
   scanCodebase: async (projectPath) => {
     set({ isScanning: true, scanError: null });
@@ -68,147 +121,80 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
         summary: e.summary,
         lastAnalyzed: Date.now(),
       }));
-      const prev = get().memory;
-      // If the user re-scans a different project, drop the stale data
-      // for the previous one — memory is single-project today.
-      const isSameProject =
-        prev.projectPath && normalizePath(prev.projectPath) === normalizePath(projectPath);
-      const memory: MemoryState = isSameProject
-        ? { ...prev, fileMap, projectPath, lastScanAt: Date.now() }
-        : {
-            projectPath,
-            fileMap,
-            sessionSummaries: [],
-            patterns: [],
-            lastScanAt: Date.now(),
-          };
-      saveMemory(memory);
-      set({ memory, isScanning: false });
+      set({
+        fileMap,
+        lastScanAt: Date.now(),
+        scanProjectPath: projectPath,
+        isScanning: false,
+      });
     } catch (e) {
       set({ scanError: String(e), isScanning: false });
     }
   },
 
-  addSessionSummary: async (projectPath, sessionTitle, sessionLog) => {
-    set({ isScanning: true, scanError: null });
-    try {
-      const result = await summarizeSession(projectPath, sessionLog);
-      const parsed = parseJsonFromResponse(result) as {
-        summary: string;
-        keyDecisions: string[];
-        filesModified: string[];
-      };
-      const summary: SessionSummary = {
-        id: `session-${Date.now()}`,
-        sessionTitle,
-        summary: parsed.summary,
-        keyDecisions: parsed.keyDecisions || [],
-        filesModified: parsed.filesModified || [],
-        createdAt: Date.now(),
-      };
-      const memory = {
-        ...get().memory,
-        sessionSummaries: [...get().memory.sessionSummaries, summary],
-      };
-      saveMemory(memory);
-      set({ memory, isScanning: false });
-    } catch (e) {
-      set({ scanError: String(e), isScanning: false });
-    }
-  },
-
-  refreshPatterns: async (projectPath) => {
-    const { sessionSummaries } = get().memory;
-    if (sessionSummaries.length === 0) return;
-    set({ isScanning: true, scanError: null });
-    try {
-      const summariesText = sessionSummaries
-        .map((s) => `[${s.sessionTitle}]: ${s.summary}`)
-        .join("\n\n");
-      const result = await extractPatterns(projectPath, summariesText);
-      const parsed = parseJsonFromResponse(result) as {
-        pattern: string;
-        category: string;
-        confidence: number;
-      }[];
-      const patterns: LearnedPattern[] = parsed.map((p, i) => ({
-        id: `pattern-${Date.now()}-${i}`,
-        pattern: p.pattern,
-        category: p.category as LearnedPattern["category"],
-        confidence: p.confidence,
-        sources: sessionSummaries.map((s) => s.id),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }));
-      const memory = { ...get().memory, patterns };
-      saveMemory(memory);
-      set({ memory, isScanning: false });
-    } catch (e) {
-      set({ scanError: String(e), isScanning: false });
-    }
+  deleteEvent: (id) => {
+    const events = get().events.filter((e) => e.id !== id);
+    set({ events });
+    void persistEvents(events);
   },
 
   clearMemory: () => {
-    const memory: MemoryState = {
-      projectPath: null,
+    set({
+      events: [],
       fileMap: [],
-      sessionSummaries: [],
-      patterns: [],
       lastScanAt: null,
-    };
-    saveMemory(memory);
-    set({ memory });
-  },
-
-  deletePattern: (id) => {
-    const memory = {
-      ...get().memory,
-      patterns: get().memory.patterns.filter((p) => p.id !== id),
-    };
-    saveMemory(memory);
-    set({ memory });
-  },
-
-  deleteSummary: (id) => {
-    const memory = {
-      ...get().memory,
-      sessionSummaries: get().memory.sessionSummaries.filter(
-        (s) => s.id !== id
-      ),
-    };
-    saveMemory(memory);
-    set({ memory });
+      scanProjectPath: null,
+    });
+    void persistEvents([]);
   },
 
   getContextForSession: (currentProjectPath: string) => {
-    const memory = get().memory;
+    if (!currentProjectPath) return "";
 
-    // No memory yet, or no current project to compare against → no context.
-    if (!memory.projectPath || !currentProjectPath) return "";
+    const normalizedCurrent = normalizePath(currentProjectPath);
+    const { events, fileMap, scanProjectPath } = get();
 
-    // Memory was scanned from a different project — refuse to leak it.
-    if (normalizePath(memory.projectPath) !== normalizePath(currentProjectPath)) {
-      return "";
-    }
+    // Filter events for this project, last 48h or last 10
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+    const relevant = events
+      .filter(
+        (e) =>
+          normalizePath(e.projectPath) === normalizedCurrent &&
+          e.timestamp > cutoff,
+      )
+      .slice(-10);
 
-    const { patterns, fileMap } = memory;
     const lines: string[] = [];
 
-    if (patterns.length > 0) {
-      lines.push("## Codebase Patterns");
-      patterns
-        .filter((p) => p.confidence >= 0.5)
-        .forEach((p) => {
-          lines.push(`- [${p.category}] ${p.pattern}`);
-        });
+    // Lessons from flight retrospectives
+    const lessons = relevant
+      .filter((e): e is Extract<MemoryEvent, { type: "flight_completed" }> => e.type === "flight_completed")
+      .flatMap((e) => e.payload.lessonsLearned);
+    if (lessons.length > 0) {
+      lines.push("## Lessons from Previous Flights");
+      lessons.forEach((l) => lines.push(`- ${l}`));
       lines.push("");
     }
 
-    if (fileMap.length > 0) {
+    // Recent session summaries
+    const sessions = relevant.filter(
+      (e): e is Extract<MemoryEvent, { type: "session_completed" }> =>
+        e.type === "session_completed" && e.payload.summary !== null,
+    );
+    if (sessions.length > 0) {
+      lines.push("## Recent Session Context");
+      sessions.forEach((e) => lines.push(`- ${e.payload.summary}`));
+      lines.push("");
+    }
+
+    // File map
+    if (
+      fileMap.length > 0 &&
+      scanProjectPath &&
+      normalizePath(scanProjectPath) === normalizedCurrent
+    ) {
       lines.push("## Key Files");
-      fileMap.slice(0, 20).forEach((f) => {
-        lines.push(`- ${f.path}: ${f.summary}`);
-      });
+      fileMap.slice(0, 20).forEach((f) => lines.push(`- ${f.path}: ${f.summary}`));
       lines.push("");
     }
 

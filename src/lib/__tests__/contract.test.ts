@@ -142,6 +142,7 @@ describe("TS/Rust contract tests", () => {
         theme: "dark",
       },
       workspaces: [],
+      memoryEvents: [],
     };
 
     expect(state.settings.maxParallelSessions).toBe(3);

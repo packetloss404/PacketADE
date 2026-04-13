@@ -203,6 +203,60 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
       ) {
         void notifyFlightFailedDesktop(flightName);
       }
+
+      // Auto-capture task completion to Memory
+      const taskAfter = flightAfter?.milestones
+        .flatMap((m) => m.tasks)
+        .find((t) => t.id === taskId);
+      if (taskAfter && flightAfter) {
+        import("@/stores/memoryStore").then(({ useMemoryStore }) => {
+          useMemoryStore.getState().captureTaskCompleted(
+            {
+              taskId,
+              taskTitle: taskAfter.title,
+              flightId: rt.flightId,
+              flightTitle: flightAfter.title,
+              milestoneId: rt.milestoneId,
+              success,
+              exitCode: taskAfter.result?.exitCode ?? null,
+              summary: taskAfter.result?.summary ?? "",
+              filesChanged: taskAfter.result?.filesChanged ?? [],
+              errors: taskAfter.result?.errors ?? [],
+              durationMs: taskAfter.result?.duration ?? 0,
+            },
+            rt.projectPath,
+          );
+        }).catch(() => {});
+      }
+
+      // Auto-capture flight completion to Memory (retrospective)
+      if (
+        flightAfter &&
+        (flightAfter.status === "done" || flightAfter.status === "failed") &&
+        flightStatusBefore !== "done" &&
+        flightStatusBefore !== "failed"
+      ) {
+        const allTasks = flightAfter.milestones.flatMap((m) => m.tasks);
+        import("@/stores/memoryStore").then(({ useMemoryStore }) => {
+          useMemoryStore.getState().captureFlightCompleted(
+            {
+              flightId: flightAfter.id,
+              flightTitle: flightAfter.title,
+              summary: `Flight "${flightAfter.title}" ${flightAfter.status}. ${allTasks.filter((t) => t.status === "done").length}/${allTasks.length} tasks completed.`,
+              whatWorked: allTasks
+                .filter((t) => t.status === "done" && t.result?.summary)
+                .map((t) => t.result!.summary),
+              whatFailed: allTasks
+                .filter((t) => t.status === "failed" && t.result?.errors.length)
+                .map((t) => `${t.title}: ${t.result!.errors[0]}`),
+              lessonsLearned: [],
+              suggestedImprovements: [],
+              tags: [flightAfter.priority, flightAfter.status],
+            },
+            rt.projectPath,
+          );
+        }).catch(() => {});
+      }
     } catch {
       useOrchestrationStore.setState((s) => {
         const runningTasks = new Map(s.runningTasks);

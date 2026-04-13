@@ -325,6 +325,7 @@ impl App {
             approval_log: Vec::new(),
             workspaces: Vec::new(),
             retrospectives: self.retrospectives.clone(),
+            memory_events: Vec::new(),
         })
     }
 

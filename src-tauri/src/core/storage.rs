@@ -58,6 +58,8 @@ pub struct PersistedState {
     pub workspaces: Vec<Workspace>,
     #[serde(default)]
     pub retrospectives: Vec<FlightRetrospective>,
+    #[serde(default)]
+    pub memory_events: Vec<serde_json::Value>,
 }
 
 impl Default for PersistedState {
@@ -72,6 +74,7 @@ impl Default for PersistedState {
             approval_log: Vec::new(),
             workspaces: Vec::new(),
             retrospectives: Vec::new(),
+            memory_events: Vec::new(),
         }
     }
 }
@@ -167,6 +170,14 @@ pub fn save_workspaces(workspaces: Vec<Workspace>) -> Result<(), String> {
     let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.workspaces = workspaces;
+    state.version += 1;
+    save_state_inner(&state)
+}
+
+pub fn save_memory_events(events: Vec<serde_json::Value>) -> Result<(), String> {
+    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut state = load_state();
+    state.memory_events = events;
     state.version += 1;
     save_state_inner(&state)
 }

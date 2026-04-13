@@ -240,6 +240,24 @@ export function useTerminalSession({
 
         useActivityStore.getState().clearActivity(tabId);
 
+        // Auto-capture session to Memory (skip task sessions — those are captured via orchestration)
+        if (!taskId && tab && projectPath && tab.durationMs > 30_000) {
+          import("@/stores/memoryStore").then(({ useMemoryStore }) => {
+            useMemoryStore.getState().captureSessionCompleted(
+              {
+                sessionId,
+                agentId: cliCommand,
+                durationMs: tab.durationMs,
+                status: wasRequested ? "killed" : "done",
+                summary: null,
+                filesModified: [],
+                keyDecisions: [],
+              },
+              projectPath,
+            );
+          }).catch(() => {});
+        }
+
         if (taskId) {
           const success = !wasRequested;
           void useOrchestrationStore.getState().onTaskComplete(taskId, success);

@@ -376,6 +376,9 @@ pub struct PersistedStateDto {
     pub ui: PersistedUiStateDto,
     #[serde(default)]
     pub workspaces: Vec<WorkspaceDto>,
+    #[serde(default)]
+    #[ts(type = "any[]")]
+    pub memory_events: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1021,6 +1024,7 @@ impl From<core_storage::PersistedState> for PersistedStateDto {
             settings: value.settings.into(),
             ui: value.ui.into(),
             workspaces: value.workspaces.into_iter().map(Into::into).collect(),
+            memory_events: value.memory_events,
         }
     }
 }
@@ -1037,6 +1041,7 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
             approval_log: Vec::new(),
             workspaces: value.workspaces.into_iter().map(Into::into).collect(),
             retrospectives: Vec::new(),
+            memory_events: value.memory_events,
         }
     }
 }
