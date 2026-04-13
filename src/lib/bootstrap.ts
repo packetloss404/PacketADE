@@ -5,6 +5,7 @@ import { useAgentStore } from "@/stores/agentStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import type { AppView } from "@/stores/appStore";
 
 /**
@@ -16,8 +17,9 @@ export async function initializeApp(): Promise<void> {
     const state = await loadPersistedState();
 
     // Hydrate stores in parallel (each accepts the pre-loaded state to avoid extra round-trips)
-    // Workspace store — synchronous hydration
+    // Workspace + Memory stores — synchronous hydration
     useWorkspaceStore.getState().hydrateFromBackend(state.workspaces);
+    useMemoryStore.getState().hydrateFromBackend(state);
     await Promise.allSettled([
       useFlightStore.getState().hydrateFromBackend(state),
       useAgentStore.getState().hydrateFromBackend(state),

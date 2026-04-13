@@ -11,6 +11,7 @@ import type { AgentConfig } from "@/types/agent";
 import type { Flight, Milestone, ReviewType, Task, TaskResult } from "@/types/flight";
 import type { StatusLineData, CodexStatusLineData, GeminiStatusLineData, OpenCodeStatusLineData } from "@/types/statusline";
 import type { Workspace } from "@/types/workspace";
+import type { MemoryEvent } from "@/types/memory";
 
 // Filesystem
 export async function getCwd(): Promise<string> {
@@ -80,6 +81,10 @@ export async function analyzeCodeQuality(projectPath: string): Promise<unknown> 
 // Memory
 export async function scanCodebaseMemory(projectPath: string): Promise<string> {
   return invoke<string>("scan_codebase_memory", { projectPath });
+}
+
+export async function saveMemorySlice(memoryEvents: MemoryEvent[]): Promise<void> {
+  return invoke("save_memory_slice", { memoryEvents });
 }
 
 export async function summarizeSession(projectPath: string, sessionLog: string): Promise<string> {
@@ -231,6 +236,7 @@ export type PersistedState = {
   settings: PersistedSettings;
   ui: PersistedUi;
   workspaces: Workspace[];
+  memoryEvents: MemoryEvent[];
 };
 
 export type OrchestrationSpawnRequest = {
@@ -585,6 +591,7 @@ function fromDtoPersistedState(state: PersistedStateDto): PersistedState {
       theme: state.ui.theme ?? null,
     },
     workspaces: state.workspaces.map(fromDtoWorkspace),
+    memoryEvents: (state.memoryEvents ?? []) as MemoryEvent[],
   };
 }
 
@@ -604,6 +611,7 @@ function toDtoPersistedState(state: PersistedState): PersistedStateDto {
       theme: toOptional(state.ui.theme),
     },
     workspaces: state.workspaces.map(toDtoWorkspace),
+    memoryEvents: state.memoryEvents,
   };
 }
 

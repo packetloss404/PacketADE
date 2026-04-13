@@ -49,3 +49,8 @@ pub fn save_issues_slice(issues: Vec<Issue>) -> Result<(), String> {
 pub fn save_workspaces_slice(workspaces: Vec<WorkspaceDto>) -> Result<(), String> {
     storage::save_workspaces(workspaces.into_iter().map(Into::into).collect())
 }
+
+#[tauri::command]
+pub fn save_memory_slice(memory_events: Vec<serde_json::Value>) -> Result<(), String> {
+    storage::save_memory_events(memory_events)
+}

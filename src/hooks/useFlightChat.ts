@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { askFlightChatStream } from "@/lib/tauri";
 import { flightChatChunkEvent, flightChatDoneEvent, flightChatErrorEvent } from "@/lib/events";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useRetrospectiveStore } from "@/stores/retrospectiveStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { FlightPriority, TaskType } from "@/types/flight";
 
@@ -227,7 +227,7 @@ export function useFlightChat() {
         });
 
         const projectPath = useLayoutStore.getState().projectPath;
-        const retroContext = useRetrospectiveStore.getState().getRetrospectiveContext();
+        const retroContext = useMemoryStore.getState().getContextForSession(projectPath);
         await askFlightChatStream(
           projectPath,
           allMessages,

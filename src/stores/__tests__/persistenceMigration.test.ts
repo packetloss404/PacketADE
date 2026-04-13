@@ -72,6 +72,7 @@ function makePersistedState(flights: Flight[]): PersistedState {
       theme: null,
     },
     workspaces: [],
+    memoryEvents: [],
   };
 }
 
