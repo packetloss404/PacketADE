@@ -64,18 +64,19 @@ export function WorkspaceSidebar() {
   const [projectsOpen, setProjectsOpen] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
 
-  async function handleCloseWorkspace(id: string) {
-    if (!keepTerminalsAlive) {
-      const ws = workspaces.find((w) => w.id === id);
-      if (ws) {
-        await Promise.all(
-          ws.panes
-            .filter((p) => p.sessionId)
-            .map((p) => killPty(p.sessionId!).catch(() => {}))
-        );
-      }
+  const deleteWorkspace = useWorkspaceStore((s) => s.deleteWorkspace);
+
+  async function handleDeleteWorkspace(id: string) {
+    const ws = workspaces.find((w) => w.id === id);
+    if (ws) {
+      // Kill any running PTY sessions before deleting
+      await Promise.all(
+        ws.panes
+          .filter((p) => p.sessionId)
+          .map((p) => killPty(p.sessionId!).catch(() => {}))
+      );
     }
-    setActiveWorkspace(null);
+    deleteWorkspace(id);
   }
 
   // Filter workspaces to current project only
@@ -230,15 +231,16 @@ export function WorkspaceSidebar() {
                         </div>
                       </div>
                     </button>
-                    {isActive && (
-                      <button
-                        onClick={() => handleCloseWorkspace(ws.id)}
-                        className="mt-0.5 p-0.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors flex-shrink-0"
-                        title="Close workspace"
-                      >
-                        <X size={11} />
-                      </button>
-                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDeleteWorkspace(ws.id);
+                      }}
+                      className="mt-0.5 p-0.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
+                      title="Delete workspace"
+                    >
+                      <X size={11} />
+                    </button>
                   </div>
                 );
               })
