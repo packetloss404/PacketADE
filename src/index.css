@@ -19,15 +19,15 @@
 
   /* Dark theme (default) — Cursor-inspired palette */
   :root {
-    --color-bg-primary: #1e1e2e;
-    --color-bg-secondary: #252537;
-    --color-bg-tertiary: #2b2b3d;
-    --color-bg-elevated: #313147;
-    --color-bg-hover: #3b3b52;
-    --color-bg-border: #3b3b52;
-    --color-text-primary: #e4e4e8;
-    --color-text-secondary: #9d9db5;
-    --color-text-muted: #5c5c7a;
+    --color-bg-primary: #1e1e1e;
+    --color-bg-secondary: #252526;
+    --color-bg-tertiary: #2d2d2d;
+    --color-bg-elevated: #333333;
+    --color-bg-hover: #3e3e42;
+    --color-bg-border: #3e3e42;
+    --color-text-primary: #cccccc;
+    --color-text-secondary: #9d9d9d;
+    --color-text-muted: #6b6b6b;
     --color-accent-green: #4ec9b0;
     --color-accent-amber: #dcdcaa;
     --color-accent-blue: #569cd6;
