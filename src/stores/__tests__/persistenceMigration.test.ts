@@ -73,6 +73,7 @@ function makePersistedState(flights: Flight[]): PersistedState {
     },
     workspaces: [],
     memoryEvents: [],
+    servers: [],
   };
 }
 

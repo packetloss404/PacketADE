@@ -143,6 +143,7 @@ describe("TS/Rust contract tests", () => {
       },
       workspaces: [],
       memoryEvents: [],
+      servers: [],
     };
 
     expect(state.settings.maxParallelSessions).toBe(3);
