@@ -1,10 +1,8 @@
 import type { ModuleManifest } from "@/types/modules";
 import { ideationModule } from "./ideation";
-import { mcpHubModule } from "./mcp-hub";
 
 export const moduleRegistry: ModuleManifest[] = [
   ideationModule,
-  mcpHubModule,
 ];
 
 export function getModule(id: string): ModuleManifest | undefined {

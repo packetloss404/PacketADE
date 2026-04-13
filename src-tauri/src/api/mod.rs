@@ -437,6 +437,9 @@ pub struct PersistedStateDto {
     #[ts(type = "any[]")]
     pub memory_events: Vec<serde_json::Value>,
     #[serde(default)]
+    #[ts(type = "any[]")]
+    pub memory_patterns: Vec<serde_json::Value>,
+    #[serde(default)]
     pub servers: Vec<ServerConfigDto>,
 }
 
@@ -1088,6 +1091,7 @@ impl From<core_storage::PersistedState> for PersistedStateDto {
             ui: value.ui.into(),
             workspaces: value.workspaces.into_iter().map(Into::into).collect(),
             memory_events: value.memory_events,
+            memory_patterns: value.memory_patterns,
             servers: value.servers.into_iter().map(Into::into).collect(),
         }
     }
@@ -1106,6 +1110,7 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
             workspaces: value.workspaces.into_iter().map(Into::into).collect(),
             retrospectives: Vec::new(),
             memory_events: value.memory_events,
+            memory_patterns: value.memory_patterns,
             servers: value.servers.into_iter().map(Into::into).collect(),
         }
     }

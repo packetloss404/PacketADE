@@ -143,6 +143,7 @@ describe("TS/Rust contract tests", () => {
       },
       workspaces: [],
       memoryEvents: [],
+      memoryPatterns: [],
       servers: [],
     };
 

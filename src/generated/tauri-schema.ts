@@ -58,7 +58,7 @@ export type FlightDto = { id: string, title: string, objective: string, status: 
 
 export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath?: string, remotePath?: string, lastConnectedAt?: number, installedAgents: Array<string>, };
 
-export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: Array<any>, servers: Array<ServerConfigDto>, };
+export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: Array<any>, memoryPatterns: Array<any>, servers: Array<ServerConfigDto>, };
 
 export type TaskSpawnRequestDto = { flightId: string, milestoneId: string, taskId: string, agentConfigId: string, command: string, args: Array<string>, prompt: string, projectPath: string, };
 

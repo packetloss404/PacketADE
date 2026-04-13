@@ -15,7 +15,7 @@ Two products operate under the "QuadCode" name — a multi-agent terminal (getqu
 
 | Gap | Source | Effort | Notes |
 |-----|--------|--------|-------|
-| Broadcast mode | getquadcode.com | Medium | Send one prompt to multiple PTY sessions simultaneously. Natural extension of existing multi-pane architecture. |
+| ~~Broadcast mode~~ | getquadcode.com | Medium | ~~Send one prompt to multiple PTY sessions simultaneously.~~ **Removed in v0.4.0** — `BroadcastBar` was deliberately deleted. Revisit only if a new UX pattern emerges (e.g., workspace-scoped prompt fan-out). |
 | Multi-model support | quadcode.ai | Large | Add Gemini, GPT, DeepSeek, Grok beyond Claude/Codex. Requires new PTY startup logic per CLI and potentially API-based backends. |
 | Per-session accent colors | getquadcode.com | Small | Accent color picker per session; update terminal cursor, border, and tab highlight. Stored in session config. |
 | Pinned/quick commands | getquadcode.com | Small | Save up to N quick-run commands per session for one-click execution. Store in sessionStore or per-workspace config. |
@@ -60,7 +60,7 @@ Two products operate under the "QuadCode" name — a multi-agent terminal (getqu
 
 ## Recommendations
 
-1. **Broadcast mode** is the most impactful quick win — it directly addresses multi-agent comparison workflows that QuadCode markets heavily.
+1. ~~**Broadcast mode**~~ was removed in v0.4.0 after evaluation. If revisited, consider a workspace-scoped variant rather than the original global broadcast.
 2. **Per-session theming and pinned commands** are small UX improvements that improve session identity and productivity.
 3. **Pane zoom** is trivial to add and improves focus workflows.
 4. **Multi-model support** is the largest strategic gap — users increasingly expect model flexibility. Consider an abstraction layer for agent backends.

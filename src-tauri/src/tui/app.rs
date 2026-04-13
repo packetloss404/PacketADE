@@ -326,6 +326,7 @@ impl App {
             workspaces: Vec::new(),
             retrospectives: self.retrospectives.clone(),
             memory_events: Vec::new(),
+            memory_patterns: Vec::new(),
             servers: Vec::new(),
         })
     }

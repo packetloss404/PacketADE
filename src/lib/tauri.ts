@@ -11,7 +11,7 @@ import type { AgentConfig } from "@/types/agent";
 import type { Flight, Milestone, ReviewType, Task, TaskResult } from "@/types/flight";
 import type { StatusLineData, CodexStatusLineData, GeminiStatusLineData, OpenCodeStatusLineData } from "@/types/statusline";
 import type { Workspace } from "@/types/workspace";
-import type { MemoryEvent } from "@/types/memory";
+import type { MemoryEvent, LearnedPattern } from "@/types/memory";
 import type { ServerConfig } from "@/types/server";
 
 // Filesystem
@@ -80,16 +80,13 @@ export async function analyzeCodeQuality(projectPath: string): Promise<unknown> 
 }
 
 // Memory
-export async function scanCodebaseMemory(projectPath: string): Promise<string> {
-  return invoke<string>("scan_codebase_memory", { projectPath });
-}
 
 export async function saveServersSlice(servers: ServerConfig[]): Promise<void> {
   return invoke("save_servers_slice", { servers });
 }
 
-export async function saveMemorySlice(memoryEvents: MemoryEvent[]): Promise<void> {
-  return invoke("save_memory_slice", { memoryEvents });
+export async function saveMemorySlice(memoryEvents: MemoryEvent[], memoryPatterns?: LearnedPattern[]): Promise<void> {
+  return invoke("save_memory_slice", { memoryEvents, memoryPatterns: memoryPatterns ?? [] });
 }
 
 export async function summarizeSession(projectPath: string, sessionLog: string): Promise<string> {
@@ -242,6 +239,7 @@ export type PersistedState = {
   ui: PersistedUi;
   workspaces: Workspace[];
   memoryEvents: MemoryEvent[];
+  memoryPatterns: LearnedPattern[];
   servers: ServerConfig[];
 };
 
@@ -598,6 +596,7 @@ function fromDtoPersistedState(state: PersistedStateDto): PersistedState {
     },
     workspaces: state.workspaces.map(fromDtoWorkspace),
     memoryEvents: (state.memoryEvents ?? []) as MemoryEvent[],
+    memoryPatterns: (state.memoryPatterns ?? []) as LearnedPattern[],
     servers: (state.servers ?? []) as ServerConfig[],
   };
 }
@@ -619,6 +618,7 @@ function toDtoPersistedState(state: PersistedState): PersistedStateDto {
     },
     workspaces: state.workspaces.map(toDtoWorkspace),
     memoryEvents: state.memoryEvents,
+    memoryPatterns: state.memoryPatterns,
     servers: state.servers,
   };
 }
