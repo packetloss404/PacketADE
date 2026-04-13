@@ -51,8 +51,8 @@ pub fn save_workspaces_slice(workspaces: Vec<WorkspaceDto>) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn save_memory_slice(memory_events: Vec<serde_json::Value>) -> Result<(), String> {
-    storage::save_memory_events(memory_events)
+pub fn save_memory_slice(memory_events: Vec<serde_json::Value>, memory_patterns: Vec<serde_json::Value>) -> Result<(), String> {
+    storage::save_memory(memory_events, memory_patterns)
 }
 
 #[tauri::command]

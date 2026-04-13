@@ -85,6 +85,8 @@ pub struct PersistedState {
     #[serde(default)]
     pub memory_events: Vec<serde_json::Value>,
     #[serde(default)]
+    pub memory_patterns: Vec<serde_json::Value>,
+    #[serde(default)]
     pub servers: Vec<ServerConfig>,
 }
 
@@ -101,6 +103,7 @@ impl Default for PersistedState {
             workspaces: Vec::new(),
             retrospectives: Vec::new(),
             memory_events: Vec::new(),
+            memory_patterns: Vec::new(),
             servers: Vec::new(),
         }
     }
@@ -209,10 +212,11 @@ pub fn save_servers(servers: Vec<ServerConfig>) -> Result<(), String> {
     save_state_inner(&state)
 }
 
-pub fn save_memory_events(events: Vec<serde_json::Value>) -> Result<(), String> {
+pub fn save_memory(events: Vec<serde_json::Value>, patterns: Vec<serde_json::Value>) -> Result<(), String> {
     let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.memory_events = events;
+    state.memory_patterns = patterns;
     state.version += 1;
     save_state_inner(&state)
 }

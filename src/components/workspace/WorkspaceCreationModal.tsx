@@ -5,7 +5,7 @@ import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useProfileStore } from "@/stores/profileStore";
-import { useMemoryStore } from "@/stores/memoryStore";
+// Memory context is now injected live at session launch, not baked into workspace prompt
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
 import { computeGridLayout } from "@/lib/gridLayout";
@@ -44,7 +44,6 @@ export function WorkspaceCreationModal({ onClose, initialSelected }: WorkspaceCr
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     useProfileStore.getState().activeProfileId,
   );
-  const [includeMemory, setIncludeMemory] = useState(true);
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});
   const [effortOverrides, setEffortOverrides] = useState<Record<string, EffortLevel | null>>({ "claude-code": "medium" });
   const [bypassPermissions, setBypassPermissions] = useState(false);
@@ -100,12 +99,6 @@ export function WorkspaceCreationModal({ onClose, initialSelected }: WorkspaceCr
     let finalPrompt = "";
     if (selectedProfile?.systemPrompt) {
       finalPrompt += selectedProfile.systemPrompt + "\n\n";
-    }
-    if (includeMemory) {
-      const memoryContext = useMemoryStore.getState().getContextForSession(projectPath);
-      if (memoryContext.trim()) {
-        finalPrompt += memoryContext + "\n\n";
-      }
     }
     if (prompt.trim()) {
       finalPrompt += prompt.trim();
@@ -257,23 +250,6 @@ export function WorkspaceCreationModal({ onClose, initialSelected }: WorkspaceCr
                 </button>
               ))}
             </div>
-          </div>
-        )}
-
-        {/* Memory context toggle */}
-        {selectedAiAgents.length > 0 && (
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeMemory}
-                onChange={(e) => setIncludeMemory(e.target.checked)}
-                className="w-3 h-3 rounded border-bg-border accent-accent-green"
-              />
-              <span className="text-[11px] text-text-secondary">
-                Include memory context
-              </span>
-            </label>
           </div>
         )}
 

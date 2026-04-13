@@ -1,4 +1,6 @@
-// === Memory Event Types ===
+// === Memory System Types ===
+// The memory system captures events, auto-summarizes sessions,
+// extracts reusable patterns, and injects live context into workspaces.
 
 export type MemoryEventType = "session_completed" | "task_completed" | "flight_completed";
 
@@ -52,19 +54,23 @@ export type MemoryEvent =
   | (MemoryEventBase & { type: "task_completed"; payload: TaskCompletedPayload })
   | (MemoryEventBase & { type: "flight_completed"; payload: FlightCompletedPayload });
 
-// --- File Map (manual scan, kept separate) ---
+// --- Learned Patterns (extracted from session summaries) ---
 
-export interface FileMapEntry {
-  path: string;
-  summary: string;
-  lastAnalyzed: number;
+export type PatternCategory = "architecture" | "convention" | "preference" | "pitfall";
+
+export interface LearnedPattern {
+  id: string;
+  pattern: string;
+  category: PatternCategory;
+  confidence: number;
+  extractedAt: number;
 }
 
 // --- Top-level Memory State ---
 
 export interface MemoryState {
   events: MemoryEvent[];
-  fileMap: FileMapEntry[];
-  lastScanAt: number | null;
-  scanProjectPath: string | null;
+  patterns: LearnedPattern[];
+  lastPatternRefreshAt: number | null;
+  summariesSinceLastRefresh: number;
 }
