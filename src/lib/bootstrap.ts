@@ -7,7 +7,6 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useServerStore } from "@/stores/serverStore";
-import type { AppView } from "@/stores/appStore";
 
 /**
  * App initialization — called once on mount.
@@ -33,10 +32,8 @@ export async function initializeApp(): Promise<void> {
       useAppStore.getState().setTheme(state.ui.theme);
     }
 
-    const savedView = state.ui.selectedView as AppView | null;
-    if (savedView) {
-      useAppStore.getState().setActiveView(savedView);
-    }
+    // Always open to welcome screen on startup
+    useAppStore.getState().setActiveView("welcome");
 
     // Restore project path: backend settings > localStorage > CWD
     const backendPath = state.settings.projectPath;
