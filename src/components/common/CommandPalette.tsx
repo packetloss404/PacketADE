@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Search, MessageSquare, Ticket, Clock, Wrench, Github, Brain, BarChart3, Rocket, Zap } from "lucide-react";
+import { Search, MessageSquare, Ticket, Clock, Wrench, Github, Brain, Rocket, Zap } from "lucide-react";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModulesSorted } from "@/modules/registry";
@@ -67,14 +67,6 @@ export function CommandPalette() {
         keywords: ["past", "log", "previous"],
       },
       {
-        id: "insights",
-        label: "Insights Chat",
-        description: "AI-powered project insights",
-        icon: <MessageSquare size={14} className="text-accent-blue" />,
-        action: () => setActiveView("insights"),
-        keywords: ["chat", "ai", "ask", "question"],
-      },
-      {
         id: "github",
         label: "GitHub",
         description: "GitHub integration",
@@ -89,14 +81,6 @@ export function CommandPalette() {
         icon: <Brain size={14} className="text-accent-purple" />,
         action: () => setActiveView("memory"),
         keywords: ["context", "knowledge", "files"],
-      },
-      {
-        id: "analytics",
-        label: "Cost & Usage",
-        description: "Cost, tokens, and session analytics",
-        icon: <BarChart3 size={14} className="text-accent-green" />,
-        action: () => setActiveView("analytics"),
-        keywords: ["stats", "usage", "metrics", "cost", "money", "spending", "budget", "tokens"],
       },
       {
         id: "deploy",

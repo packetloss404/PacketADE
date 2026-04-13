@@ -4,8 +4,8 @@ import type { ModuleManifest } from "@/types/modules";
 
 export const mcpHubModule: ModuleManifest = {
   id: "mcp-hub",
-  name: "MCP Servers",
-  description: "Manage Claude Code MCP server configurations",
+  name: "Claude Code MCP",
+  description: "Manage MCP server configurations for Claude Code",
   icon: Plug,
   iconColor: "text-accent-blue",
   component: McpHubView,

@@ -5,11 +5,8 @@ interface LayoutStore {
   panes: PaneConfig[];
   activePaneId: string;
   projectPath: string;
-  explorerOpen: boolean;
 
   setProjectPath: (path: string) => void;
-  setExplorerOpen: (open: boolean) => void;
-  toggleExplorer: () => void;
   addPane: (opts?: { cliCommand?: string; cliArgs?: string[]; initialPrompt?: string; projectPath?: string; agentConfigId?: string; taskId?: string; flightId?: string; issueId?: string }) => string;
   removePane: (paneId: string) => void;
   setActivePaneId: (paneId: string) => void;
@@ -26,11 +23,8 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   panes: [],
   activePaneId: "",
   projectPath: "",
-  explorerOpen: false,
 
   setProjectPath: (path) => set({ projectPath: path }),
-  setExplorerOpen: (open) => set({ explorerOpen: open }),
-  toggleExplorer: () => set((state) => ({ explorerOpen: !state.explorerOpen })),
 
   addPane: (opts) => {
     const id = createPaneId();

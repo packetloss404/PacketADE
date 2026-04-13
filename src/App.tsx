@@ -5,7 +5,6 @@ import { MosaicContainer } from "@/components/layout/MosaicContainer";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
-import { FileExplorer } from "@/components/explorer/FileExplorer";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -22,10 +21,8 @@ import type { AppView } from "@/stores/appStore";
 const IssueBoard = lazy(() => import("@/components/issues/IssueBoard").then((m) => ({ default: m.IssueBoard })));
 const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
 const ToolsView = lazy(() => import("@/components/views/ToolsView").then((m) => ({ default: m.ToolsView })));
-const InsightsView = lazy(() => import("@/components/views/InsightsView").then((m) => ({ default: m.InsightsView })));
 const GitHubView = lazy(() => import("@/components/views/GitHubView").then((m) => ({ default: m.GitHubView })));
 const MemoryView = lazy(() => import("@/components/views/MemoryView").then((m) => ({ default: m.MemoryView })));
-const AnalyticsView = lazy(() => import("@/components/views/AnalyticsView").then((m) => ({ default: m.AnalyticsView })));
 const DeployView = lazy(() => import("@/components/views/DeployView").then((m) => ({ default: m.DeployView })));
 const ReviewQueueView = lazy(() => import("@/components/views/ReviewQueueView").then((m) => ({ default: m.ReviewQueueView })));
 const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })));
@@ -45,9 +42,6 @@ export default function App() {
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const theme = useAppStore((s) => s.theme);
-  const explorerOpen = useLayoutStore((s) => s.explorerOpen);
-  const toggleExplorer = useLayoutStore((s) => s.toggleExplorer);
-
   // Poll status line data for all agents
   useStatusLinePoller();
   useCodexStatusLinePoller();
@@ -136,12 +130,6 @@ export default function App() {
         useAppStore.getState().setCommandPaletteOpen(false);
         return;
       }
-      // Ctrl+B to toggle explorer
-      if (e.ctrlKey && e.key === "b") {
-        e.preventDefault();
-        useLayoutStore.getState().toggleExplorer();
-        return;
-      }
       // Ctrl+\ to split pane
       if (e.ctrlKey && e.key === "\\") {
         e.preventDefault();
@@ -196,11 +184,6 @@ export default function App() {
         <TitleBar />
         <Toolbar />
         <div className="flex flex-1 overflow-hidden">
-          {/* Docked file explorer sidebar */}
-          {explorerOpen && (
-            <FileExplorer onClose={toggleExplorer} docked />
-          )}
-
           {/* Main content area */}
           <div className="flex flex-col flex-1 overflow-hidden">
             <ErrorBoundary fallbackMessage="View error">
@@ -259,14 +242,10 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <HistoryView />;
     case "tools":
       return <ToolsView />;
-    case "insights":
-      return <InsightsView />;
     case "github":
       return <GitHubView />;
     case "memory":
       return <MemoryView />;
-    case "analytics":
-      return <AnalyticsView />;
     case "deploy":
       return <DeployView />;
     case "review_queue":
