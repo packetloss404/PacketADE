@@ -129,7 +129,6 @@ describe("useTerminalSession", () => {
       panes: [],
       activePaneId: "",
       projectPath: "/workspace",
-      explorerOpen: false,
     });
     useTabStore.setState({ tabs: [], activeTabId: null });
     useActivityStore.setState({ activities: {} });

@@ -746,27 +746,6 @@ export async function parseSpecToTickets(specText: string): Promise<string> {
   return invoke<string>("parse_spec_to_tickets", { specText });
 }
 
-export async function askInsights(
-  projectPath: string,
-  messages: { role: string; content: string }[]
-): Promise<string> {
-  return invoke<string>("ask_insights", { projectPath, messages });
-}
-
-export async function askInsightsStream(
-  projectPath: string,
-  messages: { role: string; content: string }[],
-  sessionContext?: string,
-  requestId?: string,
-): Promise<void> {
-  return invoke("ask_insights_stream", {
-    projectPath,
-    messages,
-    sessionContext: sessionContext || null,
-    requestId: requestId || null,
-  });
-}
-
 export async function askAgentChatStream(
   projectPath: string,
   messages: { role: string; content: string }[],
@@ -878,14 +857,8 @@ export async function readPromptHistory(): Promise<string> {
   return invoke<string>("read_prompt_history");
 }
 
-// Usage analytics
-export async function readUsageAnalytics(): Promise<string> {
-  return invoke<string>("read_usage_analytics");
-}
-
 // MCP server management
 import type { McpServerEntry } from "@/types/mcp";
-import type { ScaffoldResult, ToolAvailability } from "@/types/scaffold";
 
 export async function readMcpServers(projectPath: string): Promise<McpServerEntry[]> {
   return invoke<McpServerEntry[]>("read_mcp_servers", { projectPath });
@@ -908,19 +881,6 @@ export async function deleteMcpServer(
   scope: string
 ): Promise<void> {
   return invoke("delete_mcp_server", { projectPath, name, scope });
-}
-
-// Project scaffolding
-export async function scaffoldProject(
-  parentDir: string,
-  projectName: string,
-  template: string
-): Promise<ScaffoldResult> {
-  return invoke<ScaffoldResult>("scaffold_project", { parentDir, projectName, template });
-}
-
-export async function checkScaffoldTools(): Promise<ToolAvailability> {
-  return invoke<ToolAvailability>("check_scaffold_tools");
 }
 
 // Deploy pipeline

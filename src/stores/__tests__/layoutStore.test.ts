@@ -9,23 +9,13 @@ describe("layoutStore", () => {
       panes: [],
       activePaneId: "",
       projectPath: "",
-      explorerOpen: false,
     });
   });
 
-  describe("projectPath and explorer", () => {
+  describe("projectPath", () => {
     it("sets the project path", () => {
       store().setProjectPath("/tmp/foo");
       expect(store().projectPath).toBe("/tmp/foo");
-    });
-
-    it("sets and toggles explorer open state", () => {
-      store().setExplorerOpen(true);
-      expect(store().explorerOpen).toBe(true);
-      store().toggleExplorer();
-      expect(store().explorerOpen).toBe(false);
-      store().toggleExplorer();
-      expect(store().explorerOpen).toBe(true);
     });
   });
 

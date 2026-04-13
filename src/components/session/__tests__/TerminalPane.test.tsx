@@ -52,7 +52,6 @@ describe("TerminalPane", () => {
       panes: [],
       activePaneId: "",
       projectPath: "/workspace",
-      explorerOpen: false,
     });
   });
 

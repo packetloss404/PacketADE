@@ -3,7 +3,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useProfileStore } from "@/stores/profileStore";
 
-export type CoreView = "welcome" | "claude" | "codex" | "gemini" | "opencode" | "issues" | "flight_deck" | "history" | "tools" | "insights" | "github" | "memory" | "analytics" | "deploy" | "review_queue" | "workspace";
+export type CoreView = "welcome" | "claude" | "codex" | "gemini" | "opencode" | "issues" | "flight_deck" | "history" | "tools" | "github" | "memory" | "deploy" | "review_queue" | "workspace";
 export type AppView = CoreView | `mod:${string}`;
 
 export function isModuleView(view: AppView): boolean {

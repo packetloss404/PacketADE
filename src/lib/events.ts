@@ -6,18 +6,6 @@ export function ptyExitEvent(sessionId: string): string {
   return `pty:exit:${sessionId}`;
 }
 
-export function insightsChunkEvent(requestId: string): string {
-  return `insights:chunk:${requestId}`;
-}
-
-export function insightsErrorEvent(requestId: string): string {
-  return `insights:error:${requestId}`;
-}
-
-export function insightsDoneEvent(requestId: string): string {
-  return `insights:done:${requestId}`;
-}
-
 export function agentChatChunkEvent(requestId: string): string {
   return `agent-chat:chunk:${requestId}`;
 }

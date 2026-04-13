@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { GitBranch, FolderOpen, Diamond, Wrench, FolderTree, MessageSquare, Github, Brain, User, BarChart3, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, DollarSign, ShieldCheck, LayoutGrid } from "lucide-react";
+import { GitBranch, FolderOpen, Diamond, Wrench, Github, Brain, User, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
@@ -38,8 +38,6 @@ export function Toolbar() {
   const [showCodeQuality, setShowCodeQuality] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const explorerOpen = useLayoutStore((s) => s.explorerOpen);
-  const toggleExplorer = useLayoutStore((s) => s.toggleExplorer);
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
@@ -127,7 +125,7 @@ export function Toolbar() {
           <button
             onClick={() => setShowToolsMenu(!showToolsMenu)}
             className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-              activeView === "tools" || activeView === "insights" || activeView === "github" || activeView === "memory" || activeView === "analytics" || isModuleView(activeView)
+              activeView === "tools" || activeView === "github" || activeView === "memory" || isModuleView(activeView)
                 ? "text-accent-green bg-bg-elevated"
                 : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
             }`}
@@ -138,12 +136,6 @@ export function Toolbar() {
 
           {showToolsMenu && (
             <div className="absolute top-full left-0 mt-1 w-48 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
-              <DropdownItem
-                icon={<FolderTree size={12} className="text-accent-amber" />}
-                label="Explorer"
-                badge={explorerOpen ? "open" : undefined}
-                onClick={() => { toggleExplorer(); setShowToolsMenu(false); }}
-              />
               {getModulesSorted()
                 .filter((mod) => moduleStates[mod.id]?.enabled ?? false)
                 .map((mod) => {
@@ -157,14 +149,10 @@ export function Toolbar() {
                     />
                   );
                 })}
-              <DropdownItem icon={<MessageSquare size={12} className="text-accent-blue" />} label="Insights Chat"
-                onClick={() => { setActiveView("insights"); setShowToolsMenu(false); }} />
               <DropdownItem icon={<Github size={12} className="text-text-primary" />} label="GitHub"
                 onClick={() => { setActiveView("github"); setShowToolsMenu(false); }} />
               <DropdownItem icon={<Brain size={12} className="text-accent-purple" />} label="Memory"
                 onClick={() => { setActiveView("memory"); setShowToolsMenu(false); }} />
-              <DropdownItem icon={<BarChart3 size={12} className="text-accent-green" />} label="Cost & Usage"
-                onClick={() => { setActiveView("analytics"); setShowToolsMenu(false); }} />
               <div className="h-px bg-bg-border my-0.5" />
               <DropdownItem icon={<Wrench size={12} className="text-text-muted" />} label="Settings"
                 onClick={() => { setActiveView("tools"); setShowToolsMenu(false); }} />
@@ -260,19 +248,6 @@ export function Toolbar() {
           title={`Theme — currently ${theme}. Click to switch to ${theme === "dark" ? "light" : "dark"} mode.`}
         >
           {theme === "dark" ? <Sun size={12} /> : <Moon size={12} />}
-        </button>
-
-        {/* Cost & Usage */}
-        <button
-          onClick={() => setActiveView("analytics")}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
-            activeView === "analytics"
-              ? "bg-bg-elevated text-accent-amber"
-              : "text-text-muted hover:text-accent-amber"
-          }`}
-          title="Cost & Usage — daily spend, token totals, and per-model breakdown across all sessions."
-        >
-          <DollarSign size={11} />
         </button>
 
         {/* Deploy button */}

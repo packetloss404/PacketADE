@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Plus, Trash2, Play, FolderPlus } from "lucide-react";
+import { Plus, Trash2, Play } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useAppStore, moduleViewId } from "@/stores/appStore";
+import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useModuleStore } from "@/stores/moduleStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
@@ -111,9 +110,6 @@ export function WorkspaceView() {
 }
 
 function WelcomePane({ onCreateWorkspace }: { onCreateWorkspace: () => void }) {
-  const setActiveView = useAppStore((s) => s.setActiveView);
-  const scaffoldEnabled = useModuleStore((s) => s.isEnabled("scaffold"));
-
   return (
     <div className="flex flex-col items-center justify-center flex-1 select-none">
       <img src="/favicon.png" alt="PacketCode" className="w-16 h-16 mb-4" />
@@ -133,16 +129,6 @@ function WelcomePane({ onCreateWorkspace }: { onCreateWorkspace: () => void }) {
           <Plus size={14} />
           New Workspace
         </button>
-
-        {scaffoldEnabled && (
-          <button
-            onClick={() => setActiveView(moduleViewId("scaffold"))}
-            className="flex items-center gap-2 px-4 py-2 bg-accent-amber/20 text-accent-amber text-xs font-medium rounded-lg hover:bg-accent-amber/30 transition-colors"
-          >
-            <FolderPlus size={14} />
-            New Project
-          </button>
-        )}
       </div>
 
       <div className="flex flex-col gap-1.5 text-[11px] text-text-muted">
