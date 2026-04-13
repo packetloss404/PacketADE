@@ -77,6 +77,10 @@ pub struct WorkspaceDto {
     pub model_overrides: Option<HashMap<String, Option<String>>>,
     #[ts(optional)]
     pub effort_overrides: Option<HashMap<String, Option<String>>>,
+    #[ts(optional)]
+    pub server_id: Option<String>,
+    #[ts(optional)]
+    pub remote_project_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -368,6 +372,59 @@ pub struct FlightDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct ServerConfigDto {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth_method: String,
+    #[serde(default)]
+    pub key_path: Option<String>,
+    #[serde(default)]
+    pub remote_path: Option<String>,
+    #[serde(default)]
+    pub last_connected_at: Option<u64>,
+    #[serde(default)]
+    pub installed_agents: Vec<String>,
+}
+
+impl From<core_storage::ServerConfig> for ServerConfigDto {
+    fn from(s: core_storage::ServerConfig) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            host: s.host,
+            port: s.port,
+            username: s.username,
+            auth_method: s.auth_method,
+            key_path: s.key_path,
+            remote_path: s.remote_path,
+            last_connected_at: s.last_connected_at,
+            installed_agents: s.installed_agents,
+        }
+    }
+}
+
+impl From<ServerConfigDto> for core_storage::ServerConfig {
+    fn from(s: ServerConfigDto) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            host: s.host,
+            port: s.port,
+            username: s.username,
+            auth_method: s.auth_method,
+            key_path: s.key_path,
+            remote_path: s.remote_path,
+            last_connected_at: s.last_connected_at,
+            installed_agents: s.installed_agents,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct PersistedStateDto {
     pub version: u32,
     pub flights: Vec<FlightDto>,
@@ -379,6 +436,8 @@ pub struct PersistedStateDto {
     #[serde(default)]
     #[ts(type = "any[]")]
     pub memory_events: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub servers: Vec<ServerConfigDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -507,6 +566,8 @@ impl From<core_workspace::Workspace> for WorkspaceDto {
             bypass_permissions: value.bypass_permissions,
             model_overrides: value.model_overrides,
             effort_overrides: value.effort_overrides,
+            server_id: value.server_id,
+            remote_project_path: value.remote_project_path,
         }
     }
 }
@@ -526,6 +587,8 @@ impl From<WorkspaceDto> for core_workspace::Workspace {
             bypass_permissions: value.bypass_permissions,
             model_overrides: value.model_overrides,
             effort_overrides: value.effort_overrides,
+            server_id: value.server_id,
+            remote_project_path: value.remote_project_path,
         }
     }
 }
@@ -1025,6 +1088,7 @@ impl From<core_storage::PersistedState> for PersistedStateDto {
             ui: value.ui.into(),
             workspaces: value.workspaces.into_iter().map(Into::into).collect(),
             memory_events: value.memory_events,
+            servers: value.servers.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -1042,6 +1106,7 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
             workspaces: value.workspaces.into_iter().map(Into::into).collect(),
             retrospectives: Vec::new(),
             memory_events: value.memory_events,
+            servers: value.servers.into_iter().map(Into::into).collect(),
         }
     }
 }

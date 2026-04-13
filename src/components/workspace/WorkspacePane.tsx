@@ -4,6 +4,8 @@ import { MosaicWindowContext } from "react-mosaic-component";
 import { TerminalPane, type TerminalHeaderRenderState } from "@/components/session/TerminalPane";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useServerStore } from "@/stores/serverStore";
+import { buildSshArgs } from "@/lib/ssh";
 import type { WorkspacePane as WorkspacePaneType } from "@/types/workspace";
 
 const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -82,6 +84,22 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     return args.length > 0 ? args : undefined;
   }, [bypassPermissions, effort, model, pane.agentId]);
 
+  // SSH override for remote workspaces
+  const server = workspace?.serverId
+    ? useServerStore.getState().getServer(workspace.serverId)
+    : undefined;
+  const isRemote = !!server;
+  const effectiveCommand = isRemote ? "ssh" : command;
+  const effectiveArgs = useMemo(() => {
+    if (!isRemote || !server) return cliArgs;
+    return buildSshArgs(
+      server,
+      workspace?.remoteProjectPath ?? server.remotePath ?? "",
+      command,
+      cliArgs,
+    );
+  }, [isRemote, server, command, cliArgs, workspace?.remoteProjectPath]);
+
   // Render the unified header bar — combines drag handle, agent identity,
   // CLI status, and lifecycle controls into a single row.
   const renderHeader = useCallback(
@@ -135,8 +153,8 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   return (
     <TerminalPane
       paneId={pane.id}
-      cliCommand={command}
-      cliArgs={cliArgs}
+      cliCommand={effectiveCommand}
+      cliArgs={effectiveArgs}
       projectPath={workspace?.projectPath}
       initialPrompt={initialPrompt}
       renderHeader={renderHeader}

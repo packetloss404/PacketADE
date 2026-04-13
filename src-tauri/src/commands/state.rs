@@ -1,6 +1,6 @@
 use crate::api::{
     AgentConfigDto, FlightDto, OrchestratorSettingsDto, PersistedStateDto, PersistedUiStateDto,
-    WorkspaceDto,
+    ServerConfigDto, WorkspaceDto,
 };
 use crate::core::flight::Issue;
 use crate::core::storage::{self};
@@ -53,4 +53,9 @@ pub fn save_workspaces_slice(workspaces: Vec<WorkspaceDto>) -> Result<(), String
 #[tauri::command]
 pub fn save_memory_slice(memory_events: Vec<serde_json::Value>) -> Result<(), String> {
     storage::save_memory_events(memory_events)
+}
+
+#[tauri::command]
+pub fn save_servers_slice(servers: Vec<ServerConfigDto>) -> Result<(), String> {
+    storage::save_servers(servers.into_iter().map(Into::into).collect())
 }

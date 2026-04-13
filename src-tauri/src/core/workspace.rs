@@ -28,4 +28,8 @@ pub struct Workspace {
     pub bypass_permissions: Option<bool>,
     pub model_overrides: Option<std::collections::HashMap<String, Option<String>>>,
     pub effort_overrides: Option<std::collections::HashMap<String, Option<String>>>,
+    #[serde(default)]
+    pub server_id: Option<String>,
+    #[serde(default)]
+    pub remote_project_path: Option<String>,
 }

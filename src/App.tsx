@@ -27,6 +27,7 @@ const DeployView = lazy(() => import("@/components/views/DeployView").then((m) =
 const ReviewQueueView = lazy(() => import("@/components/views/ReviewQueueView").then((m) => ({ default: m.ReviewQueueView })));
 const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })));
 const FlightDeckView = lazy(() => import("@/components/views/FlightDeckView").then((m) => ({ default: m.FlightDeckView })));
+const ServersView = lazy(() => import("@/components/views/ServersView").then((m) => ({ default: m.ServersView })));
 
 function ViewLoader() {
   return (
@@ -176,7 +177,7 @@ export default function App() {
   }, [handleKeyDown]);
 
   const isSessionsView = activeView === "claude" || activeView === "codex" || activeView === "gemini" || activeView === "opencode";
-  const showWorkspaceSidebar = activeView === "workspace" || activeView === "flight_deck" || activeView === "issues" || activeView === "history";
+  const showWorkspaceSidebar = activeView === "workspace" || activeView === "flight_deck" || activeView === "servers" || activeView === "issues" || activeView === "history";
 
   return (
     <ErrorBoundary fallbackMessage="PacketCode encountered an error">
@@ -238,6 +239,8 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <IssueBoard />;
     case "flight_deck":
       return <FlightDeckView />;
+    case "servers":
+      return <ServersView />;
     case "history":
       return <HistoryView />;
     case "tools":

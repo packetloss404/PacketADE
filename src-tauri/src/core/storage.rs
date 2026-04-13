@@ -32,6 +32,30 @@ pub struct FlightRetrospective {
     pub created_at: u64,
 }
 
+/// A saved SSH server connection configuration.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct ServerConfig {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    #[serde(default = "default_ssh_port")]
+    pub port: u16,
+    pub username: String,
+    pub auth_method: String, // "agent" | "key" | "password"
+    #[serde(default)]
+    pub key_path: Option<String>,
+    #[serde(default)]
+    pub remote_path: Option<String>,
+    #[serde(default)]
+    pub last_connected_at: Option<u64>,
+    #[serde(default)]
+    pub installed_agents: Vec<String>,
+}
+
+fn default_ssh_port() -> u16 {
+    22
+}
+
 pub const STATE_FILENAME: &str = "state.v1.json";
 
 static STATE_LOCK: Mutex<()> = Mutex::new(());
@@ -60,6 +84,8 @@ pub struct PersistedState {
     pub retrospectives: Vec<FlightRetrospective>,
     #[serde(default)]
     pub memory_events: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub servers: Vec<ServerConfig>,
 }
 
 impl Default for PersistedState {
@@ -75,6 +101,7 @@ impl Default for PersistedState {
             workspaces: Vec::new(),
             retrospectives: Vec::new(),
             memory_events: Vec::new(),
+            servers: Vec::new(),
         }
     }
 }
@@ -170,6 +197,14 @@ pub fn save_workspaces(workspaces: Vec<Workspace>) -> Result<(), String> {
     let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.workspaces = workspaces;
+    state.version += 1;
+    save_state_inner(&state)
+}
+
+pub fn save_servers(servers: Vec<ServerConfig>) -> Result<(), String> {
+    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut state = load_state();
+    state.servers = servers;
     state.version += 1;
     save_state_inner(&state)
 }

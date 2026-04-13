@@ -29,6 +29,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
     "zsh",
     "powershell",
     "cmd",
+    "ssh",
 ];
 
 /// Resolve a command name to its actual path on Windows.
@@ -133,14 +134,21 @@ pub fn create_pty_session(
         ));
     }
 
-    // Validate project_path is a real directory
-    let project_dir = std::path::Path::new(&project_path);
-    if !project_dir.is_dir() {
-        return Err(format!(
-            "Project path '{}' is not a valid directory",
-            project_path
-        ));
-    }
+    // Validate project_path is a real directory (skip for SSH — remote path is not local)
+    let project_path = if command == "ssh" {
+        dirs::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| project_path.clone())
+    } else {
+        let project_dir = std::path::Path::new(&project_path);
+        if !project_dir.is_dir() {
+            return Err(format!(
+                "Project path '{}' is not a valid directory",
+                project_path
+            ));
+        }
+        project_path
+    };
 
     info!(command = %command, project_path = %project_path, "Creating PTY session");
 
