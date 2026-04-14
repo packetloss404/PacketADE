@@ -31,15 +31,19 @@ async function sshExec(
   const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
     output += event.payload;
 
-    // Detect password prompt and auto-feed password for password auth
+    // Detect password prompt and auto-feed password for password auth.
+    // Strip ANSI escape sequences before matching — PTY output is full of them.
     if (
       server.authMethod === "password" &&
       server.password &&
-      !passwordSent &&
-      /[Pp]assword[:\s]/i.test(output)
+      !passwordSent
     ) {
-      passwordSent = true;
-      void writePty(sessionId, server.password + "\n");
+      // eslint-disable-next-line no-control-regex
+      const clean = output.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
+      if (/password[:\s]/i.test(clean)) {
+        passwordSent = true;
+        void writePty(sessionId, server.password + "\n");
+      }
     }
   });
 
