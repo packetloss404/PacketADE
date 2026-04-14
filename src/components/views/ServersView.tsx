@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { Server, Plus, Trash2, Edit2, Plug, PlugZap } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Server, Plus, Trash2, Edit2, Plug, PlugZap, Lock } from "lucide-react";
 import { useServerStore } from "@/stores/serverStore";
 import { useServerConnection } from "@/hooks/useServerConnection";
 import { ServerFormModal } from "@/components/servers/ServerFormModal";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { ConnectionProgress } from "@/components/servers/ConnectionProgress";
+import { Modal } from "@/components/ui/Modal";
 import { relativeTime } from "@/lib/time";
 import type { ServerConfig } from "@/types/server";
 
@@ -27,11 +28,16 @@ export function ServersView() {
   const [showForm, setShowForm] = useState(false);
   const [showWorkspaceCreate, setShowWorkspaceCreate] = useState(false);
   const [editingServer, setEditingServer] = useState<ServerConfig | null>(null);
+  const [passwordPromptServer, setPasswordPromptServer] = useState<ServerConfig | null>(null);
 
   const activeServer = servers.find((s) => s.id === activeServerId);
   const activeConnection = activeServerId ? connectionStates[activeServerId] : undefined;
 
   function handleConnect(server: ServerConfig) {
+    if (server.authMethod === "password") {
+      setPasswordPromptServer(server);
+      return;
+    }
     void connect(server);
   }
 
@@ -262,6 +268,78 @@ export function ServersView() {
           remoteProjectPath={activeServer.remotePath}
         />
       )}
+      {passwordPromptServer && (
+        <PasswordPromptModal
+          serverName={passwordPromptServer.name}
+          onSubmit={(pw) => {
+            const server = passwordPromptServer;
+            setPasswordPromptServer(null);
+            void connect(server, pw);
+          }}
+          onClose={() => setPasswordPromptServer(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function PasswordPromptModal({
+  serverName,
+  onSubmit,
+  onClose,
+}: {
+  serverName: string;
+  onSubmit: (password: string) => void;
+  onClose: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  function handleSubmit() {
+    if (!password) return;
+    onSubmit(password);
+  }
+
+  return (
+    <Modal
+      onClose={onClose}
+      title={`Connect to ${serverName}`}
+      icon={<Lock size={14} className="text-accent-amber" />}
+      width="w-[360px]"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!password}
+            className="px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
+          >
+            Connect
+          </button>
+        </div>
+      }
+    >
+      <div className="p-4">
+        <label className="text-[11px] font-medium text-text-secondary block mb-1.5">Password</label>
+        <input
+          ref={inputRef}
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+          placeholder="Enter password"
+          className="w-full bg-bg-primary text-xs text-text-primary px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
+        />
+      </div>
+    </Modal>
   );
 }

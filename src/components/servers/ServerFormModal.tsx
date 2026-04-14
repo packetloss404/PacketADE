@@ -18,7 +18,6 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
     initial?.authMethod ?? "agent",
   );
   const [keyPath, setKeyPath] = useState(initial?.keyPath ?? "");
-  const [password, setPassword] = useState(initial?.password ?? "");
   const [remotePath, setRemotePath] = useState(initial?.remotePath ?? "");
 
   function handleSubmit() {
@@ -30,7 +29,6 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
       username: username.trim(),
       authMethod,
       keyPath: authMethod === "key" ? keyPath.trim() || undefined : undefined,
-      password: authMethod === "password" ? password : undefined,
       remotePath: remotePath.trim() || undefined,
     });
     onClose();
@@ -135,19 +133,6 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
               onChange={(e) => setKeyPath(e.target.value)}
               placeholder="~/.ssh/id_rsa"
               className="bg-bg-primary text-xs text-text-primary font-mono px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
-            />
-          </div>
-        )}
-
-        {authMethod === "password" && (
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-medium text-text-secondary">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
-              className="bg-bg-primary text-xs text-text-primary px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
             />
           </div>
         )}

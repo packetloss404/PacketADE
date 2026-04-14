@@ -45,8 +45,6 @@ pub struct ServerConfig {
     #[serde(default)]
     pub key_path: Option<String>,
     #[serde(default)]
-    pub password: Option<String>,
-    #[serde(default)]
     pub remote_path: Option<String>,
     #[serde(default)]
     pub last_connected_at: Option<u64>,

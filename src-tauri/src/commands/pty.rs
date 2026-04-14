@@ -439,6 +439,13 @@ pub async fn ssh_exec(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
+    // Suppress console window on Windows
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
     let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn ssh: {}", e))?;
 
     // Feed password to stdin if provided
