@@ -39,10 +39,13 @@ async function sshExec(
       !passwordSent
     ) {
       // eslint-disable-next-line no-control-regex
-      const clean = output.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
-      if (/password[:\s]/i.test(clean)) {
+      const clean = output.replace(/\x1b[\[\]()#;?]*[0-9;]*[a-zA-Z@`]/g, "").replace(/[\x00-\x1f]/g, " ");
+      if (/password/i.test(clean)) {
         passwordSent = true;
-        void writePty(sessionId, server.password + "\n");
+        // Small delay to ensure SSH is ready to accept input, then send with \r (PTY Enter)
+        setTimeout(() => {
+          void writePty(sessionId, server.password + "\r");
+        }, 100);
       }
     }
   });
