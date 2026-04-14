@@ -152,9 +152,9 @@ export function useServerConnection() {
         const detectId = `detect-${agentId}`;
         const installId = `install-${agentId}`;
 
-        // Detect
+        // Detect — source profile first so PATH includes npm/nvm/local bins
         updateStep(detectId, { status: "running" });
-        const detectResult = await sshExec(server, `which ${cliName} 2>/dev/null && ${cliName} --version 2>/dev/null || echo NOT_FOUND`);
+        const detectResult = await sshExec(server, `source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; which ${cliName} 2>/dev/null && ${cliName} --version 2>/dev/null || echo NOT_FOUND`);
 
         if (detectResult.output.includes("NOT_FOUND")) {
           updateStep(detectId, { status: "error", detail: "Not installed" });
@@ -163,10 +163,10 @@ export function useServerConnection() {
           const installCmd = REMOTE_INSTALL_COMMANDS[agentId];
           if (installCmd) {
             updateStep(installId, { status: "running", label: `Installing ${cliName}...` });
-            const installResult = await sshExec(server, installCmd);
+            const installResult = await sshExec(server, `source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; ${installCmd}`);
             if (installResult.success) {
               // Verify install
-              const verifyResult = await sshExec(server, `which ${cliName} 2>/dev/null || echo STILL_NOT_FOUND`);
+              const verifyResult = await sshExec(server, `source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; which ${cliName} 2>/dev/null || echo STILL_NOT_FOUND`);
               if (!verifyResult.output.includes("STILL_NOT_FOUND")) {
                 updateStep(installId, { status: "success", detail: "Installed" });
                 installedAgents.push(agentId);
