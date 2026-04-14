@@ -184,8 +184,8 @@ export async function readPtyTranscript(
 }
 
 // SSH helpers
-export async function createSshAskpass(password: string): Promise<string> {
-  return invoke<string>("create_ssh_askpass", { password });
+export async function sshExec(commandArgs: string[], password?: string | null): Promise<string> {
+  return invoke<string>("ssh_exec", { commandArgs, password: password ?? null });
 }
 
 // Git safety check

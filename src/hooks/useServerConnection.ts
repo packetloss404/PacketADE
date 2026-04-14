@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { createPtySession, createSshAskpass } from "@/lib/tauri";
+import { createPtySession, sshExec as tauriSshExec } from "@/lib/tauri";
 import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
 import { useServerStore } from "@/stores/serverStore";
 import { buildSshExecArgs, REMOTE_INSTALL_COMMANDS, AGENT_CLI_NAMES } from "@/lib/ssh";
@@ -9,33 +9,41 @@ import type { ServerConfig, ConnectionStep } from "@/types/server";
 /** Agents to auto-install on connect. */
 const AUTO_INSTALL_AGENTS = ["claude-code", "opencode"];
 
-/** Run a one-shot SSH command and collect output until exit.
- *  For password auth, uses SSH_ASKPASS to feed the password via a helper script. */
+/** Run a one-shot SSH command and collect output.
+ *  For password auth, uses a direct process (not PTY) with stdin piping —
+ *  Windows OpenSSH ignores PTY stdin for password prompts.
+ *  For agent/key auth, uses PTY so interactive SSH features work. */
 async function sshExec(
   server: ServerConfig,
   remoteCommand: string,
 ): Promise<{ output: string; success: boolean }> {
   const args = buildSshExecArgs(server, remoteCommand);
 
-  // For password auth, create an askpass helper script and pass env vars
-  // so SSH calls it instead of prompting interactively.
-  let env: Record<string, string> | null = null;
-  if (server.authMethod === "password" && server.password) {
-    const askpassPath = await createSshAskpass(server.password);
-    env = {
-      SSH_ASKPASS: askpassPath,
-      SSH_ASKPASS_REQUIRE: "force",
-      DISPLAY: "1", // Required to trigger SSH_ASKPASS even with a terminal
-    };
+  // Password auth: use direct process with stdin piping (bypasses Windows terminal issues)
+  if (server.authMethod === "password") {
+    try {
+      const output = await tauriSshExec(args, server.password ?? null);
+
+      const success =
+        !output.includes("Permission denied") &&
+        !output.includes("Connection refused") &&
+        !output.includes("Could not resolve hostname") &&
+        !output.includes("Connection timed out") &&
+        !output.includes("No route to host");
+
+      return { output, success };
+    } catch (e) {
+      return { output: String(e), success: false };
+    }
   }
 
+  // Agent/key auth: use PTY for interactive SSH
   const sessionId = await createPtySession(
-    "", // project path doesn't matter for SSH
+    "",
     120,
     40,
     "ssh",
     args,
-    env,
   );
 
   let output = "";
@@ -50,7 +58,6 @@ async function sshExec(
     });
   });
 
-  // Timeout after 15 seconds
   const timeoutPromise = new Promise<boolean>((resolve) => {
     setTimeout(() => resolve(false), 15_000);
   });
@@ -62,7 +69,6 @@ async function sshExec(
     return { output: output + "\n[Connection timed out]", success: false };
   }
 
-  // Check for common SSH error patterns
   const success =
     !output.includes("Permission denied") &&
     !output.includes("Connection refused") &&
