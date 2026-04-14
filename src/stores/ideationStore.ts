@@ -38,7 +38,18 @@ export const useIdeationStore = create<IdeationStore>((set, get) => ({
     try {
       const raw = await generateIdeasApi(projectPath, types);
 
-      const parsed = parseJsonFromResponse(raw) as Array<{
+      if (!raw || !raw.trim()) {
+        throw new Error("Claude returned an empty response. Try again.");
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = parseJsonFromResponse(raw);
+      } catch {
+        throw new Error(`Failed to parse Claude response. Raw output:\n${raw.slice(0, 500)}`);
+      }
+
+      const ideas_raw = parsed as Array<{
         type: string;
         title: string;
         description: string;
@@ -48,7 +59,11 @@ export const useIdeationStore = create<IdeationStore>((set, get) => ({
         effort: string;
       }>;
 
-      const ideas: Idea[] = parsed.map((item) => ({
+      if (!Array.isArray(ideas_raw)) {
+        throw new Error(`Expected JSON array but got: ${typeof ideas_raw}`);
+      }
+
+      const ideas: Idea[] = ideas_raw.map((item) => ({
         id: generateId("idea"),
         type: item.type as IdeationType,
         title: item.title,
