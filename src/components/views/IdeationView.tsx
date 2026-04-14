@@ -1,18 +1,26 @@
 import { useState } from "react";
-import { Lightbulb, RefreshCw, Loader2, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { Lightbulb, RefreshCw, Loader2, ChevronDown, ChevronRight, Eye, EyeOff, LayoutGrid } from "lucide-react";
 import { useIdeationStore } from "@/stores/ideationStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { Idea, IdeationType } from "@/types/ideation";
 import { TYPE_CONFIG, ALL_TYPES } from "./ideation/ideationConfig";
 import { IdeaCard } from "./ideation/IdeaCard";
 import { IdeaDetail } from "./ideation/IdeaDetail";
 
 export function IdeationView() {
-  const session = useIdeationStore((s) => s.session);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const workspace = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId),
+  );
+
+  const session = useIdeationStore((s) =>
+    activeWorkspaceId ? s.getSession(activeWorkspaceId) : null,
+  );
   const isGenerating = useIdeationStore((s) => s.isGenerating);
   const selectedIdeaId = useIdeationStore((s) => s.selectedIdeaId);
   const generate = useIdeationStore((s) => s.generate);
   const selectIdea = useIdeationStore((s) => s.selectIdea);
-  const clearAll = useIdeationStore((s) => s.clearAll);
+  const clearSession = useIdeationStore((s) => s.clearSession);
 
   const [enabledTypes, setEnabledTypes] = useState<IdeationType[]>(ALL_TYPES);
   const [showDismissed, setShowDismissed] = useState(false);
@@ -33,13 +41,23 @@ export function IdeationView() {
   }
 
   async function handleGenerate() {
-    if (enabledTypes.length === 0) return;
+    if (enabledTypes.length === 0 || !activeWorkspaceId || !workspace) return;
     setError(null);
     try {
-      await generate(enabledTypes);
+      await generate(activeWorkspaceId, workspace.projectPath, enabledTypes);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  // No workspace selected
+  if (!activeWorkspaceId || !workspace) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 bg-bg-primary text-text-muted">
+        <LayoutGrid size={28} className="mb-3 opacity-30" />
+        <p className="text-xs">Select a workspace to scan for ideas</p>
+      </div>
+    );
   }
 
   const ideas = session?.ideas || [];
@@ -67,6 +85,9 @@ export function IdeationView() {
           <div className="flex items-center gap-2">
             <Lightbulb size={16} className="text-accent-amber" />
             <h2 className="text-sm font-medium text-text-primary">Ideation Scanner</h2>
+            <span className="text-[10px] text-text-muted px-1.5 py-0.5 bg-bg-elevated rounded">
+              {workspace.name}
+            </span>
             {ideas.length > 0 && (
               <span className="text-[11px] text-text-muted">
                 {ideas.length} ideas ({activeCount} active
@@ -77,7 +98,7 @@ export function IdeationView() {
           </div>
           <div className="flex items-center gap-2">
             {session && (
-              <button onClick={clearAll} className="px-2.5 py-1 text-[11px] text-text-muted hover:text-text-secondary transition-colors">
+              <button onClick={() => clearSession(activeWorkspaceId)} className="px-2.5 py-1 text-[11px] text-text-muted hover:text-text-secondary transition-colors">
                 Clear
               </button>
             )}
@@ -136,7 +157,7 @@ export function IdeationView() {
           {isGenerating && (
             <div className="flex flex-col items-center justify-center py-16">
               <Loader2 size={24} className="animate-spin text-accent-green mb-3" />
-              <p className="text-sm text-text-secondary">Analyzing your codebase...</p>
+              <p className="text-sm text-text-secondary">Analyzing {workspace.name}...</p>
               <p className="text-[11px] text-text-muted mt-1">This may take a minute</p>
             </div>
           )}
