@@ -74,6 +74,7 @@ pub fn run() {
             commands::pty::kill_pty_and_wait,
             commands::pty::list_pty_sessions,
             commands::pty::read_pty_transcript,
+            commands::pty::create_ssh_askpass,
             // Git
             commands::git::get_git_branch,
             commands::git::get_git_status,

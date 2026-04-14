@@ -125,6 +125,7 @@ pub fn create_pty_session(
     rows: u16,
     command: String,
     args: Option<Vec<String>>,
+    env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<String, String> {
     // Validate command against allowlist
     if !ALLOWED_COMMANDS.iter().any(|&c| c == command) {
@@ -210,6 +211,13 @@ pub fn create_pty_session(
     // enable their interactive UI and 24-bit color output.
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+
+    // Apply any extra environment variables from the frontend
+    if let Some(extra_env) = &env {
+        for (key, value) in extra_env {
+            cmd.env(key, value);
+        }
+    }
 
     // Spawn the child process in the PTY
     let child = pair.slave.spawn_command(cmd).map_err(|e| {
@@ -409,4 +417,16 @@ pub fn kill_pty_and_wait(
 #[tauri::command]
 pub fn read_pty_transcript(session_id: String) -> Result<crate::core::pty::PtyTranscript, String> {
     crate::core::pty::read_transcript(&session_id)
+}
+
+/// Create a temporary askpass helper script that echoes the given password.
+/// Returns the path to the script. Used for SSH password authentication.
+#[tauri::command]
+pub fn create_ssh_askpass(password: String) -> Result<String, String> {
+    let temp_dir = std::env::temp_dir();
+    let script_path = temp_dir.join("packetcode_askpass.bat");
+    let content = format!("@echo off\necho {}\n", password);
+    std::fs::write(&script_path, content)
+        .map_err(|e| format!("Failed to write askpass script: {}", e))?;
+    Ok(script_path.to_string_lossy().to_string())
 }
