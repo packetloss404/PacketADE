@@ -419,14 +419,43 @@ pub fn read_pty_transcript(session_id: String) -> Result<crate::core::pty::PtyTr
     crate::core::pty::read_transcript(&session_id)
 }
 
-/// Create a temporary askpass helper script that echoes the given password.
-/// Returns the path to the script. Used for SSH password authentication.
+/// Run an SSH command as a regular process (not PTY) with optional password piped to stdin.
+/// Used for connection tests and agent detection where we need password auth to work
+/// reliably on Windows (Windows OpenSSH ignores PTY stdin for password prompts).
 #[tauri::command]
-pub fn create_ssh_askpass(password: String) -> Result<String, String> {
-    let temp_dir = std::env::temp_dir();
-    let script_path = temp_dir.join("packetcode_askpass.bat");
-    let content = format!("@echo off\necho {}\n", password);
-    std::fs::write(&script_path, content)
-        .map_err(|e| format!("Failed to write askpass script: {}", e))?;
-    Ok(script_path.to_string_lossy().to_string())
+pub async fn ssh_exec(
+    command_args: Vec<String>,
+    password: Option<String>,
+) -> Result<String, String> {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+
+    let mut cmd = tokio::process::Command::new("ssh");
+    for arg in &command_args {
+        cmd.arg(arg);
+    }
+
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn ssh: {}", e))?;
+
+    // Feed password to stdin if provided
+    if let Some(pw) = password {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(format!("{}\n", pw).as_bytes()).await;
+            drop(stdin);
+        }
+    }
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("SSH process failed: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    Ok(format!("{}{}", stdout, stderr))
 }
