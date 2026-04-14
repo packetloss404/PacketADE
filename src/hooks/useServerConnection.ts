@@ -20,13 +20,14 @@ const PATH_PREFIX = 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.
 async function sshExec(
   server: ServerConfig,
   remoteCommand: string,
+  ephemeralPassword?: string,
 ): Promise<{ output: string; success: boolean }> {
   const args = buildSshExecArgs(server, remoteCommand);
 
   // Password auth: use direct process with stdin piping (bypasses Windows terminal issues)
   if (server.authMethod === "password") {
     try {
-      const output = await tauriSshExec(args, server.password ?? null);
+      const output = await tauriSshExec(args, ephemeralPassword ?? null);
 
       const success =
         !output.includes("Permission denied") &&
@@ -101,7 +102,7 @@ function makeSteps(): ConnectionStep[] {
 export function useServerConnection() {
   const abortRef = useRef(false);
 
-  const connect = useCallback(async (server: ServerConfig) => {
+  const connect = useCallback(async (server: ServerConfig, password?: string) => {
     const store = useServerStore.getState();
     abortRef.current = false;
 
@@ -123,10 +124,13 @@ export function useServerConnection() {
 
     const installedAgents: string[] = [];
 
+    // Curry password into all SSH calls for this connection
+    const exec = (cmd: string) => sshExec(server, cmd, password);
+
     try {
       // Step 1: Test SSH connection
       updateStep("ssh", { status: "running" });
-      const sshTest = await sshExec(server, "echo PACKETCODE_CONNECTED");
+      const sshTest = await exec("echo PACKETCODE_CONNECTED");
       if (!sshTest.success || !sshTest.output.includes("PACKETCODE_CONNECTED")) {
         setError("ssh", sshTest.output.trim().slice(0, 200) || "SSH connection failed");
         return;
@@ -137,7 +141,7 @@ export function useServerConnection() {
 
       // Step 2: Check Node.js
       updateStep("node", { status: "running" });
-      const nodeCheck = await sshExec(server, "node --version 2>/dev/null || echo NOT_FOUND");
+      const nodeCheck = await exec("node --version 2>/dev/null || echo NOT_FOUND");
       if (nodeCheck.output.includes("NOT_FOUND")) {
         updateStep("node", { status: "error", detail: "Node.js not found — npm-based agents cannot be installed" });
         // Non-fatal: continue, but npm installs will fail
@@ -158,7 +162,7 @@ export function useServerConnection() {
 
         // Detect — source profile first so PATH includes npm/nvm/local bins
         updateStep(detectId, { status: "running" });
-        const detectResult = await sshExec(server, `${PATH_PREFIX}which ${cliName} 2>/dev/null && ${cliName} --version 2>/dev/null || echo NOT_FOUND`);
+        const detectResult = await exec(`${PATH_PREFIX}which ${cliName} 2>/dev/null && ${cliName} --version 2>/dev/null || echo NOT_FOUND`);
 
         if (detectResult.output.includes("NOT_FOUND")) {
           updateStep(detectId, { status: "error", detail: "Not installed" });
@@ -167,10 +171,10 @@ export function useServerConnection() {
           const installCmd = REMOTE_INSTALL_COMMANDS[agentId];
           if (installCmd) {
             updateStep(installId, { status: "running", label: `Installing ${cliName}...` });
-            const installResult = await sshExec(server, `${PATH_PREFIX}${installCmd}`);
+            const installResult = await exec(`${PATH_PREFIX}${installCmd}`);
             if (installResult.success) {
               // Verify install
-              const verifyResult = await sshExec(server, `${PATH_PREFIX}which ${cliName} 2>/dev/null || echo STILL_NOT_FOUND`);
+              const verifyResult = await exec(`${PATH_PREFIX}which ${cliName} 2>/dev/null || echo STILL_NOT_FOUND`);
               if (!verifyResult.output.includes("STILL_NOT_FOUND")) {
                 updateStep(installId, { status: "success", detail: "Installed" });
                 installedAgents.push(agentId);

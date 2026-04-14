@@ -382,8 +382,6 @@ pub struct ServerConfigDto {
     #[serde(default)]
     pub key_path: Option<String>,
     #[serde(default)]
-    pub password: Option<String>,
-    #[serde(default)]
     pub remote_path: Option<String>,
     #[serde(default)]
     pub last_connected_at: Option<u64>,
@@ -401,7 +399,6 @@ impl From<core_storage::ServerConfig> for ServerConfigDto {
             username: s.username,
             auth_method: s.auth_method,
             key_path: s.key_path,
-            password: s.password,
             remote_path: s.remote_path,
             last_connected_at: s.last_connected_at,
             installed_agents: s.installed_agents,
@@ -419,7 +416,6 @@ impl From<ServerConfigDto> for core_storage::ServerConfig {
             username: s.username,
             auth_method: s.auth_method,
             key_path: s.key_path,
-            password: s.password,
             remote_path: s.remote_path,
             last_connected_at: s.last_connected_at,
             installed_agents: s.installed_agents,
