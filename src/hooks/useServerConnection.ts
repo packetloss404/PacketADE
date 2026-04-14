@@ -26,29 +26,19 @@ async function sshExec(
   );
 
   let output = "";
-  let passwordSent = false;
 
   const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
     output += event.payload;
-
-    // Detect password prompt and auto-feed password for password auth.
-    // Strip ANSI escape sequences before matching — PTY output is full of them.
-    if (
-      server.authMethod === "password" &&
-      server.password &&
-      !passwordSent
-    ) {
-      // eslint-disable-next-line no-control-regex
-      const clean = output.replace(/\x1b[\[\]()#;?]*[0-9;]*[a-zA-Z@`]/g, "").replace(/[\x00-\x1f]/g, " ");
-      if (/password/i.test(clean)) {
-        passwordSent = true;
-        // Small delay to ensure SSH is ready to accept input, then send with \r (PTY Enter)
-        setTimeout(() => {
-          void writePty(sessionId, server.password + "\r");
-        }, 100);
-      }
-    }
   });
+
+  // For password auth, send the password after a delay to let SSH connect
+  // and show the prompt. SSH reads from stdin buffer, so timing doesn't
+  // need to be exact — the password just needs to arrive while SSH is waiting.
+  if (server.authMethod === "password" && server.password) {
+    setTimeout(() => {
+      void writePty(sessionId, server.password + "\r");
+    }, 3000);
+  }
 
   const exitPromise = new Promise<boolean>((resolve) => {
     listen<string>(ptyExitEvent(sessionId), () => {
@@ -56,9 +46,9 @@ async function sshExec(
     });
   });
 
-  // Timeout after 15 seconds to avoid hanging forever
+  // Timeout after 20 seconds to allow time for password auth
   const timeoutPromise = new Promise<boolean>((resolve) => {
-    setTimeout(() => resolve(false), 15_000);
+    setTimeout(() => resolve(false), 20_000);
   });
 
   const completed = await Promise.race([exitPromise, timeoutPromise]);
