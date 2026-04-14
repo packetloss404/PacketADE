@@ -441,29 +441,19 @@ pub async fn ssh_exec(
 
     let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn ssh: {}", e))?;
 
-    // Feed password to stdin if provided.
-    // We must wait for SSH to connect and prompt before sending — if we send
-    // too early, the password is consumed before SSH reads it.
-    let stdin_handle = child.stdin.take();
-    if let (Some(pw), Some(stdin)) = (password, stdin_handle) {
-        tokio::spawn(async move {
-            let mut stdin = stdin;
-            // Wait for SSH to connect and show the password prompt
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    // Feed password to stdin if provided, then close stdin so SSH proceeds
+    if let Some(pw) = password {
+        if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(format!("{}\n", pw).as_bytes()).await;
             let _ = stdin.flush().await;
             drop(stdin);
-        });
+        }
     }
 
-    // Timeout the entire operation after 30 seconds
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        child.wait_with_output(),
-    )
-    .await
-    .map_err(|_| "SSH connection timed out".to_string())?
-    .map_err(|e| format!("SSH process failed: {}", e))?;
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("SSH process failed: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
