@@ -8,6 +8,8 @@ export interface WorkspaceSessionConfig {
   modelOverrides?: Record<string, string | null>;
   effortOverrides?: Record<string, string | null>;
   bypassPermissions?: boolean;
+  serverId?: string;
+  remoteProjectPath?: string;
 }
 
 interface WorkspaceStore {
@@ -81,6 +83,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       bypassPermissions: sessionConfig?.bypassPermissions ?? false,
       modelOverrides: sessionConfig?.modelOverrides,
       effortOverrides: sessionConfig?.effortOverrides,
+      serverId: sessionConfig?.serverId,
+      remoteProjectPath: sessionConfig?.remoteProjectPath,
     };
     set(commitWorkspaces((s) => {
       const workspaces = [...s.workspaces, workspace];

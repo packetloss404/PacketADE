@@ -36,9 +36,11 @@ const CLI_MODEL_MAP: Record<AgentChoice, typeof CLAUDE_MODELS> = {
 interface WorkspaceCreationModalProps {
   onClose: () => void;
   initialSelected?: Set<WorkspaceAgentSlot>;
+  serverId?: string;
+  remoteProjectPath?: string;
 }
 
-export function WorkspaceCreationModal({ onClose, initialSelected }: WorkspaceCreationModalProps) {
+export function WorkspaceCreationModal({ onClose, initialSelected, serverId, remoteProjectPath }: WorkspaceCreationModalProps) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(() => initialSelected ?? new Set());
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
@@ -113,6 +115,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected }: WorkspaceCr
       modelOverrides,
       effortOverrides,
       bypassPermissions,
+      serverId,
+      remoteProjectPath,
     });
 
     useAppStore.getState().setActiveView("workspace");
