@@ -6,12 +6,17 @@ function shellEscape(s: string): string {
 }
 
 /** Common SSH flags shared across all connection types. */
-function baseSshArgs(server: ServerConfig): string[] {
+function baseSshArgs(server: ServerConfig, { allocatePty = true } = {}): string[] {
   const args: string[] = [
-    "-t", // force pseudo-terminal allocation
-    "-o", "StrictHostKeyChecking=accept-new", // auto-accept new host keys, reject changed ones
-    "-o", "ConnectTimeout=10", // don't hang longer than 10s on connection
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-o", "ConnectTimeout=10",
   ];
+
+  // Only request pseudo-terminal when running through a PTY.
+  // Password auth uses a direct process (no PTY), so -t would warn.
+  if (allocatePty) {
+    args.push("-t");
+  }
 
   if (server.port !== 22) {
     args.push("-p", String(server.port));
@@ -55,7 +60,9 @@ export function buildSshExecArgs(
   server: ServerConfig,
   remoteCommand: string,
 ): string[] {
-  const args = baseSshArgs(server);
+  // Password auth runs via direct process (no PTY), so skip -t to avoid warning
+  const allocatePty = server.authMethod !== "password";
+  const args = baseSshArgs(server, { allocatePty });
   args.push(`${server.username}@${server.host}`);
   args.push(remoteCommand);
 
