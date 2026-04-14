@@ -80,7 +80,7 @@ pub async fn run_claude(prompt: &str, project_path: Option<&str>) -> Result<Stri
 
     for attempt in 0..=MAX_RETRIES {
         let mut cmd = claude_command()?;
-        cmd.args(&["-p", prompt, "--output-format", "text"]);
+        cmd.args(&["-p", prompt, "--output-format", "text", "--allowedTools", "Read,Glob,Grep,Bash(read-only)"]);
         if let Some(cwd) = project_path {
             cmd.current_dir(cwd);
         }
