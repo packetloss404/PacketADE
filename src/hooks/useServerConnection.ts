@@ -9,6 +9,10 @@ import type { ServerConfig, ConnectionStep } from "@/types/server";
 /** Agents to auto-install on connect. */
 const AUTO_INSTALL_AGENTS = ["claude-code", "opencode"];
 
+/** Prefix for remote commands that ensures common bin dirs are on PATH.
+ *  Non-interactive SSH gets a minimal PATH, missing npm/nvm/cargo/local bins. */
+const PATH_PREFIX = 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/.opencode/bin:$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node/ 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH" 2>/dev/null;';
+
 /** Run a one-shot SSH command and collect output.
  *  For password auth, uses a direct process (not PTY) with stdin piping —
  *  Windows OpenSSH ignores PTY stdin for password prompts.
@@ -154,7 +158,7 @@ export function useServerConnection() {
 
         // Detect — source profile first so PATH includes npm/nvm/local bins
         updateStep(detectId, { status: "running" });
-        const detectResult = await sshExec(server, `source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; which ${cliName} 2>/dev/null && ${cliName} --version 2>/dev/null || echo NOT_FOUND`);
+        const detectResult = await sshExec(server, `${PATH_PREFIX}which ${cliName} 2>/dev/null && ${cliName} --version 2>/dev/null || echo NOT_FOUND`);
 
         if (detectResult.output.includes("NOT_FOUND")) {
           updateStep(detectId, { status: "error", detail: "Not installed" });
@@ -163,10 +167,10 @@ export function useServerConnection() {
           const installCmd = REMOTE_INSTALL_COMMANDS[agentId];
           if (installCmd) {
             updateStep(installId, { status: "running", label: `Installing ${cliName}...` });
-            const installResult = await sshExec(server, `source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; ${installCmd}`);
+            const installResult = await sshExec(server, `${PATH_PREFIX}${installCmd}`);
             if (installResult.success) {
               // Verify install
-              const verifyResult = await sshExec(server, `source ~/.bashrc 2>/dev/null; source ~/.profile 2>/dev/null; which ${cliName} 2>/dev/null || echo STILL_NOT_FOUND`);
+              const verifyResult = await sshExec(server, `${PATH_PREFIX}which ${cliName} 2>/dev/null || echo STILL_NOT_FOUND`);
               if (!verifyResult.output.includes("STILL_NOT_FOUND")) {
                 updateStep(installId, { status: "success", detail: "Installed" });
                 installedAgents.push(agentId);
