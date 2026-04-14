@@ -1,9 +1,11 @@
 import { X, ArrowRight, ExternalLink } from "lucide-react";
 import { useIdeationStore } from "@/stores/ideationStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { Idea } from "@/types/ideation";
 import { getTypeConfig, SEVERITY_COLORS, EFFORT_COLORS } from "./ideationConfig";
 
 export function IdeaDetail({ idea }: { idea: Idea }) {
+  const workspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const dismiss = useIdeationStore((s) => s.dismiss);
   const convertToIssue = useIdeationStore((s) => s.convertToIssue);
   const selectIdea = useIdeationStore((s) => s.selectIdea);
@@ -56,12 +58,12 @@ export function IdeaDetail({ idea }: { idea: Idea }) {
 
       {idea.status === "active" && (
         <div className="flex gap-2 pt-2 border-t border-bg-border">
-          <button onClick={() => convertToIssue(idea.id)}
+          <button onClick={() => workspaceId && convertToIssue(workspaceId, idea.id)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent-green/10 text-accent-green border border-accent-green/20 rounded-lg hover:bg-accent-green/20 transition-colors">
             <ArrowRight size={12} />
             Convert to Issue
           </button>
-          <button onClick={() => dismiss(idea.id)}
+          <button onClick={() => workspaceId && dismiss(workspaceId, idea.id)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-bg-elevated text-text-muted rounded-lg hover:text-text-secondary transition-colors">
             <X size={12} />
             Dismiss

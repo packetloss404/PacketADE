@@ -1,46 +1,41 @@
 import { create } from "zustand";
 import type { Idea, IdeationType, IdeationSession } from "@/types/ideation";
 import { generateIdeas as generateIdeasApi } from "@/lib/tauri";
-import { useLayoutStore } from "@/stores/layoutStore";
 import { useIssueStore } from "@/stores/issueStore";
-import { loadFromStorage, saveToStorage, removeFromStorage, parseJsonFromResponse, generateId } from "@/lib/storage";
+import { loadFromStorage, saveToStorage, parseJsonFromResponse, generateId } from "@/lib/storage";
 
-const STORAGE_KEY = "packetcode:ideation-session";
+const STORAGE_KEY = "packetcode:ideation-sessions";
 
 interface IdeationStore {
-  session: IdeationSession | null;
+  sessions: Record<string, IdeationSession>;
   isGenerating: boolean;
   selectedIdeaId: string | null;
 
-  generate: (types: IdeationType[]) => Promise<void>;
-  dismiss: (id: string) => void;
-  convertToIssue: (id: string) => void;
-  clearAll: () => void;
+  generate: (workspaceId: string, projectPath: string, types: IdeationType[]) => Promise<void>;
+  getSession: (workspaceId: string) => IdeationSession | null;
+  dismiss: (workspaceId: string, id: string) => void;
+  convertToIssue: (workspaceId: string, id: string) => void;
+  clearSession: (workspaceId: string) => void;
   selectIdea: (id: string | null) => void;
 }
 
-function loadSession(): IdeationSession | null {
-  return loadFromStorage<IdeationSession | null>(STORAGE_KEY, null);
+function loadSessions(): Record<string, IdeationSession> {
+  return loadFromStorage<Record<string, IdeationSession>>(STORAGE_KEY, {});
 }
 
-function saveSession(session: IdeationSession | null) {
-  if (session) {
-    saveToStorage(STORAGE_KEY, session);
-  } else {
-    removeFromStorage(STORAGE_KEY);
-  }
+function saveSessions(sessions: Record<string, IdeationSession>) {
+  saveToStorage(STORAGE_KEY, sessions);
 }
 
 export const useIdeationStore = create<IdeationStore>((set, get) => ({
-  session: loadSession(),
+  sessions: loadSessions(),
   isGenerating: false,
   selectedIdeaId: null,
 
-  generate: async (types) => {
+  generate: async (workspaceId, projectPath, types) => {
     set({ isGenerating: true });
 
     try {
-      const projectPath = useLayoutStore.getState().projectPath;
       const raw = await generateIdeasApi(projectPath, types);
 
       const parsed = parseJsonFromResponse(raw) as Array<{
@@ -72,16 +67,19 @@ export const useIdeationStore = create<IdeationStore>((set, get) => ({
         generatedAt: Date.now(),
       };
 
-      set({ session, isGenerating: false, selectedIdeaId: null });
-      saveSession(session);
+      const sessions = { ...get().sessions, [workspaceId]: session };
+      set({ sessions, isGenerating: false, selectedIdeaId: null });
+      saveSessions(sessions);
     } catch (err) {
       set({ isGenerating: false });
       throw err;
     }
   },
 
-  dismiss: (id) => {
-    const session = get().session;
+  getSession: (workspaceId) => get().sessions[workspaceId] ?? null,
+
+  dismiss: (workspaceId, id) => {
+    const session = get().sessions[workspaceId];
     if (!session) return;
     const updated = {
       ...session,
@@ -89,12 +87,13 @@ export const useIdeationStore = create<IdeationStore>((set, get) => ({
         i.id === id ? { ...i, status: "dismissed" as const } : i
       ),
     };
-    set({ session: updated, selectedIdeaId: get().selectedIdeaId === id ? null : get().selectedIdeaId });
-    saveSession(updated);
+    const sessions = { ...get().sessions, [workspaceId]: updated };
+    set({ sessions, selectedIdeaId: get().selectedIdeaId === id ? null : get().selectedIdeaId });
+    saveSessions(sessions);
   },
 
-  convertToIssue: (id) => {
-    const session = get().session;
+  convertToIssue: (workspaceId, id) => {
+    const session = get().sessions[workspaceId];
     if (!session) return;
     const idea = session.ideas.find((i) => i.id === id);
     if (!idea || idea.status !== "active") return;
@@ -118,13 +117,15 @@ export const useIdeationStore = create<IdeationStore>((set, get) => ({
         i.id === id ? { ...i, status: "converted" as const, issueId: issue.id } : i
       ),
     };
-    set({ session: updated });
-    saveSession(updated);
+    const sessions = { ...get().sessions, [workspaceId]: updated };
+    set({ sessions });
+    saveSessions(sessions);
   },
 
-  clearAll: () => {
-    set({ session: null, selectedIdeaId: null });
-    saveSession(null);
+  clearSession: (workspaceId) => {
+    const { [workspaceId]: _, ...rest } = get().sessions;
+    set({ sessions: rest, selectedIdeaId: null });
+    saveSessions(rest);
   },
 
   selectIdea: (id) => {
