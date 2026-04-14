@@ -3,6 +3,7 @@ import { Server, Plus, Trash2, Edit2, Plug, PlugZap } from "lucide-react";
 import { useServerStore } from "@/stores/serverStore";
 import { useServerConnection } from "@/hooks/useServerConnection";
 import { ServerFormModal } from "@/components/servers/ServerFormModal";
+import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { ConnectionProgress } from "@/components/servers/ConnectionProgress";
 import { relativeTime } from "@/lib/time";
 import type { ServerConfig } from "@/types/server";
@@ -24,6 +25,7 @@ export function ServersView() {
   const { connect } = useServerConnection();
 
   const [showForm, setShowForm] = useState(false);
+  const [showWorkspaceCreate, setShowWorkspaceCreate] = useState(false);
   const [editingServer, setEditingServer] = useState<ServerConfig | null>(null);
 
   const activeServer = servers.find((s) => s.id === activeServerId);
@@ -222,9 +224,13 @@ export function ServersView() {
                   <p className="text-xs text-text-secondary mb-4">
                     Connected to {activeServer.name}. Create a workspace to start working.
                   </p>
-                  <p className="text-[10px] text-text-muted">
-                    Remote workspace creation coming soon — use the Workspaces tab to create a workspace with SSH agent panes.
-                  </p>
+                  <button
+                    onClick={() => setShowWorkspaceCreate(true)}
+                    className="flex items-center gap-2 mx-auto px-4 py-2 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded-lg font-medium hover:bg-accent-green/25 transition-colors"
+                  >
+                    <Plus size={14} />
+                    Create Remote Workspace
+                  </button>
                 </div>
               </div>
             )}
@@ -247,6 +253,13 @@ export function ServersView() {
             useServerStore.getState().updateServer(editingServer.id, config);
             setEditingServer(null);
           }}
+        />
+      )}
+      {showWorkspaceCreate && activeServer && (
+        <WorkspaceCreationModal
+          onClose={() => setShowWorkspaceCreate(false)}
+          serverId={activeServer.id}
+          remoteProjectPath={activeServer.remotePath}
         />
       )}
     </div>
