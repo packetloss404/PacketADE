@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { createPtySession, writePty } from "@/lib/tauri";
+import { createPtySession, createSshAskpass } from "@/lib/tauri";
 import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
 import { useServerStore } from "@/stores/serverStore";
 import { buildSshExecArgs, REMOTE_INSTALL_COMMANDS, AGENT_CLI_NAMES } from "@/lib/ssh";
@@ -10,12 +10,24 @@ import type { ServerConfig, ConnectionStep } from "@/types/server";
 const AUTO_INSTALL_AGENTS = ["claude-code", "opencode"];
 
 /** Run a one-shot SSH command and collect output until exit.
- *  For password auth, detects the password prompt and auto-feeds the password. */
+ *  For password auth, uses SSH_ASKPASS to feed the password via a helper script. */
 async function sshExec(
   server: ServerConfig,
   remoteCommand: string,
 ): Promise<{ output: string; success: boolean }> {
   const args = buildSshExecArgs(server, remoteCommand);
+
+  // For password auth, create an askpass helper script and pass env vars
+  // so SSH calls it instead of prompting interactively.
+  let env: Record<string, string> | null = null;
+  if (server.authMethod === "password" && server.password) {
+    const askpassPath = await createSshAskpass(server.password);
+    env = {
+      SSH_ASKPASS: askpassPath,
+      SSH_ASKPASS_REQUIRE: "force",
+      DISPLAY: "1", // Required to trigger SSH_ASKPASS even with a terminal
+    };
+  }
 
   const sessionId = await createPtySession(
     "", // project path doesn't matter for SSH
@@ -23,6 +35,7 @@ async function sshExec(
     40,
     "ssh",
     args,
+    env,
   );
 
   let output = "";
@@ -31,24 +44,15 @@ async function sshExec(
     output += event.payload;
   });
 
-  // For password auth, send the password after a delay to let SSH connect
-  // and show the prompt. SSH reads from stdin buffer, so timing doesn't
-  // need to be exact — the password just needs to arrive while SSH is waiting.
-  if (server.authMethod === "password" && server.password) {
-    setTimeout(() => {
-      void writePty(sessionId, server.password + "\r");
-    }, 3000);
-  }
-
   const exitPromise = new Promise<boolean>((resolve) => {
     listen<string>(ptyExitEvent(sessionId), () => {
       resolve(true);
     });
   });
 
-  // Timeout after 20 seconds to allow time for password auth
+  // Timeout after 15 seconds
   const timeoutPromise = new Promise<boolean>((resolve) => {
-    setTimeout(() => resolve(false), 20_000);
+    setTimeout(() => resolve(false), 15_000);
   });
 
   const completed = await Promise.race([exitPromise, timeoutPromise]);

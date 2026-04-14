@@ -39,9 +39,10 @@ export async function createPtySession(
   cols: number,
   rows: number,
   command: string,
-  args: string[] | null
+  args: string[] | null,
+  env?: Record<string, string> | null,
 ): Promise<string> {
-  return invoke<string>("create_pty_session", { projectPath, cols, rows, command, args });
+  return invoke<string>("create_pty_session", { projectPath, cols, rows, command, args, env: env ?? null });
 }
 
 export async function writePty(sessionId: string, data: string): Promise<void> {
@@ -180,6 +181,11 @@ export async function readPtyTranscript(
   sessionId: string,
 ): Promise<{ session_id: string; data: string; truncated: boolean }> {
   return invoke("read_pty_transcript", { sessionId });
+}
+
+// SSH helpers
+export async function createSshAskpass(password: string): Promise<string> {
+  return invoke<string>("create_ssh_askpass", { password });
 }
 
 // Git safety check
