@@ -5,6 +5,9 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+/** Ensure common bin dirs are on PATH for non-login SSH shells. */
+const PATH_SETUP = 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/.opencode/bin:$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node/ 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH" 2>/dev/null;';
+
 /** Common SSH flags shared across all connection types. */
 function baseSshArgs(server: ServerConfig, { allocatePty = true } = {}): string[] {
   const args: string[] = [
@@ -45,11 +48,11 @@ export function buildSshArgs(
   const args = baseSshArgs(server);
   args.push(`${server.username}@${server.host}`);
 
-  // Build the remote command string
+  // Build the remote command string with PATH augmentation
   const cmdParts = [remoteCommand, ...(remoteArgs ?? [])].join(" ");
   const remoteCmd = remotePath
-    ? `cd ${shellEscape(remotePath)} && ${cmdParts}`
-    : cmdParts;
+    ? `${PATH_SETUP} cd ${shellEscape(remotePath)} && ${cmdParts}`
+    : `${PATH_SETUP} ${cmdParts}`;
   args.push(remoteCmd);
 
   return args;
