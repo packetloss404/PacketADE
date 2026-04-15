@@ -83,36 +83,5 @@ export function getComplexityLabel(avg: number): string {
   return "Very Complex";
 }
 
-export interface LanguageStats {
-  name: string;
-  extension: string;
-  files: number;
-  code_lines: number;
-  comment_lines: number;
-  blank_lines: number;
-  total_lines: number;
-}
-
-export interface FileComplexity {
-  path: string;
-  language: string;
-  lines: number;
-  complexity: number;
-}
-
-export interface CodeQualityReport {
-  total_files: number;
-  total_code_lines: number;
-  total_lines: number;
-  total_comment_lines: number;
-  total_blank_lines: number;
-  language_count: number;
-  languages: LanguageStats[];
-  avg_complexity: number;
-  test_files: number;
-  test_lines: number;
-  top_complex_files: FileComplexity[];
-  comment_ratio: number;
-  test_ratio: number;
-  org_score: number;
-}
+// Re-export the canonical type from tauri bindings
+export type { CodeQualityReport } from "@/lib/tauri";

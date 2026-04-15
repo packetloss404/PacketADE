@@ -76,8 +76,25 @@ export async function deleteCrash(path: string): Promise<void> {
   await invoke("delete_crash", { path });
 }
 
-export async function analyzeCodeQuality(projectPath: string): Promise<unknown> {
-  return invoke("analyze_code_quality", { projectPath });
+export async function analyzeCodeQuality(projectPath: string): Promise<CodeQualityReport> {
+  return invoke<CodeQualityReport>("analyze_code_quality", { projectPath });
+}
+
+export interface CodeQualityReport {
+  total_files: number;
+  total_code_lines: number;
+  total_lines: number;
+  total_comment_lines: number;
+  total_blank_lines: number;
+  language_count: number;
+  languages: { name: string; extension: string; files: number; code_lines: number; comment_lines: number; blank_lines: number; total_lines: number }[];
+  avg_complexity: number;
+  test_files: number;
+  test_lines: number;
+  top_complex_files: { path: string; language: string; lines: number; complexity: number }[];
+  comment_ratio: number;
+  test_ratio: number;
+  org_score: number;
 }
 
 // Memory
