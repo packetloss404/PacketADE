@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route, Plug } from "lucide-react";
+import { useState, lazy, Suspense } from "react";
+import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useIssueStore } from "@/stores/issueStore";
@@ -15,7 +15,9 @@ import { CrashViewerCard } from "./tools/CrashViewerCard";
 import { McpServersCard } from "./tools/McpServersCard";
 import type { PromptTemplate } from "@/types/prompt";
 
-type SettingsSection = "project" | "issues" | "profiles" | "routing" | "mcp" | "modules" | "templates";
+const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
+
+type SettingsSection = "project" | "issues" | "profiles" | "routing" | "mcp" | "modules" | "templates" | "history";
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
   { key: "project", label: "Project", icon: FolderOpen },
@@ -25,6 +27,7 @@ const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] =
   { key: "mcp", label: "MCP Servers", icon: Plug },
   { key: "modules", label: "Modules", icon: Puzzle },
   { key: "templates", label: "Templates", icon: FileText },
+  { key: "history", label: "History", icon: Clock },
 ];
 
 export function ToolsView() {
@@ -121,6 +124,14 @@ export function ToolsView() {
         {activeSection === "templates" && (
           <div className="max-w-2xl">
             <PromptTemplatesCard />
+          </div>
+        )}
+
+        {activeSection === "history" && (
+          <div className="max-w-4xl h-full">
+            <Suspense fallback={<div className="text-xs text-text-muted p-4">Loading...</div>}>
+              <HistoryView />
+            </Suspense>
           </div>
         )}
       </div>
