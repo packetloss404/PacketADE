@@ -6,15 +6,14 @@ import {
   ChevronsRight,
   Plus,
   Folder,
-  FolderOpen,
-  FolderSearch,
   LayoutGrid,
   X,
+  Sparkles,
+  Terminal,
 } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import { WorkspaceCreationModal } from "./WorkspaceCreationModal";
 import { killPty } from "@/lib/tauri";
 
@@ -26,19 +25,6 @@ function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").toLowerCase();
 }
 
-function compactRelative(ts: number): string {
-  const diff = Date.now() - ts;
-  const min = Math.floor(diff / 60_000);
-  const hour = Math.floor(diff / 3_600_000);
-  const day = Math.floor(diff / 86_400_000);
-  if (min < 1) return "now";
-  if (min < 60) return `${min}m`;
-  if (hour < 24) return `${hour}h`;
-  if (day < 30) return `${day}d`;
-  // Use absolute month/day for older entries
-  const d = new Date(ts);
-  return d.toLocaleString("en-US", { month: "short", day: "numeric" });
-}
 
 export function WorkspaceSidebar() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
@@ -47,21 +33,11 @@ export function WorkspaceSidebar() {
   const keepTerminalsAlive = useWorkspaceStore((s) => s.keepTerminalsAlive);
   const setKeepTerminalsAlive = useWorkspaceStore((s) => s.setKeepTerminalsAlive);
 
-  const projects = useProjectHistoryStore((s) => s.projects);
-  const scannedProjects = useProjectHistoryStore((s) => s.scannedProjects);
-  const projectsFolder = useProjectHistoryStore((s) => s.projectsFolder);
-  const scanProjectsFolder = useProjectHistoryStore((s) => s.scanProjectsFolder);
   const projectPath = useLayoutStore((s) => s.projectPath);
-  const setProjectPath = useLayoutStore((s) => s.setProjectPath);
-
-  // Scan projects folder on mount
-  useEffect(() => {
-    if (projectsFolder) scanProjectsFolder();
-  }, [projectsFolder, scanProjectsFolder]);
+  const patterns = useMemoryStore((s) => s.patterns);
 
   const [filter, setFilter] = useState("");
   const [workspacesOpen, setWorkspacesOpen] = useState(true);
-  const [projectsOpen, setProjectsOpen] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
 
   const deleteWorkspace = useWorkspaceStore((s) => s.deleteWorkspace);
@@ -101,34 +77,18 @@ export function WorkspaceSidebar() {
     return activeWorkspaces.filter((w) => w.name.toLowerCase().includes(f));
   }, [activeWorkspaces, filter]);
 
-  const filteredProjects = useMemo(() => {
-    // Start with manual history sorted by recency
-    const sorted = [...projects].sort((a, b) => b.lastOpened - a.lastOpened);
-    const historyPaths = new Set(sorted.map((p) => normalizePath(p.path)));
-
-    // Add scanned projects that aren't already in history
-    const scannedEntries = scannedProjects
-      .filter((path) => !historyPaths.has(normalizePath(path)))
-      .map((path) => ({ path, lastOpened: 0 }));
-
-    const all = [...sorted, ...scannedEntries];
-    if (!filter.trim()) return all;
-    const f = filter.toLowerCase();
-    return all.filter((p) => shortName(p.path).toLowerCase().includes(f));
-  }, [projects, scannedProjects, filter]);
-
-  async function handleOpenFolder() {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "Select Project Folder",
-    });
-    if (selected) {
-      setProjectPath(selected as string);
-    }
-  }
-
   const projectName = projectPath ? shortName(projectPath) : "No project";
+
+  // Session stats for active workspaces
+  const totalSessions = activeWorkspaces.reduce(
+    (sum, ws) => sum + ws.panes.filter((p) => p.sessionId).length, 0
+  );
+
+  // Top patterns (max 4)
+  const topPatterns = patterns
+    .filter((p) => p.confidence >= 0.6)
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 4);
 
   return (
     <div className="w-60 flex flex-col bg-bg-secondary border-l border-bg-border overflow-hidden">
@@ -249,67 +209,54 @@ export function WorkspaceSidebar() {
         )}
       </div>
 
-      {/* PROJECTS section */}
+      {/* SESSION STATS */}
+      <div className="border-b border-bg-border px-3 py-2">
+        <span className="text-[10px] uppercase tracking-wide text-text-secondary font-semibold">
+          Session Stats
+        </span>
+        <div className="flex items-center gap-4 mt-1.5">
+          <div className="flex items-center gap-1.5">
+            <LayoutGrid size={10} className="text-text-muted" />
+            <span className="text-[11px] text-text-secondary">{activeWorkspaces.length}</span>
+            <span className="text-[9px] text-text-muted">workspace{activeWorkspaces.length !== 1 ? "s" : ""}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Terminal size={10} className="text-text-muted" />
+            <span className="text-[11px] text-text-secondary">{totalSessions}</span>
+            <span className="text-[9px] text-text-muted">active</span>
+          </div>
+        </div>
+      </div>
+
+      {/* MEMORY PATTERNS */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <button
-          onClick={() => setProjectsOpen((v) => !v)}
-          className="flex items-center gap-1.5 w-full px-3 py-1.5 hover:bg-bg-hover transition-colors flex-shrink-0"
-        >
-          {projectsOpen ? (
-            <ChevronDown size={10} className="text-text-muted" />
-          ) : (
-            <ChevronRight size={10} className="text-text-muted" />
-          )}
-          <span className="text-[10px] uppercase tracking-wide text-text-secondary font-semibold">
-            Recent Folders
-          </span>
-          <span className="text-[10px] text-text-muted">({filteredProjects.length})</span>
-          <div className="flex-1" />
-          <span className="flex items-center gap-0.5 text-[10px] text-text-muted">
-            Recent
-            <ChevronDown size={9} />
-          </span>
-        </button>
-        {projectsOpen && (
-          <div className="flex-1 overflow-y-auto pb-1">
-            {filteredProjects.length === 0 ? (
-              <div className="px-3 py-2 text-[10px] text-text-muted">No recent folders</div>
-            ) : (
-              filteredProjects.map((p) => {
-                const isActive = p.path === projectPath;
-                return (
-                  <button
-                    key={p.path}
-                    onClick={() => setProjectPath(p.path)}
-                    className={`flex items-center gap-2 w-full px-3 py-1 text-left transition-colors ${
-                      isActive
-                        ? "bg-accent-green/10 border-l-2 border-accent-green"
-                        : "hover:bg-bg-hover border-l-2 border-transparent"
-                    }`}
-                    title={p.path}
-                  >
-                    <Folder
-                      size={10}
-                      className={isActive ? "text-accent-green" : "text-text-muted"}
-                    />
-                    <span
-                      className={`flex-1 text-[11px] truncate ${
-                        isActive ? "text-accent-green font-medium" : "text-text-secondary"
-                      }`}
-                    >
-                      {shortName(p.path)}
-                    </span>
-                    <span className="text-[9px] text-text-muted flex-shrink-0">
-                      {p.lastOpened > 0 ? compactRelative(p.lastOpened) : (
-                        <span title="From projects folder"><FolderSearch size={9} className="text-accent-amber" /></span>
-                      )}
-                    </span>
-                  </button>
-                );
-              })
+        <div className="px-3 py-1.5 flex-shrink-0">
+          <div className="flex items-center gap-1.5">
+            <Sparkles size={10} className="text-accent-amber" />
+            <span className="text-[10px] uppercase tracking-wide text-text-secondary font-semibold">
+              Learned Patterns
+            </span>
+            {topPatterns.length > 0 && (
+              <span className="text-[10px] text-text-muted">({topPatterns.length})</span>
             )}
           </div>
-        )}
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 pb-2">
+          {topPatterns.length === 0 ? (
+            <p className="text-[10px] text-text-muted py-1">
+              Patterns will appear here as memory learns from your sessions.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {topPatterns.map((p) => (
+                <div key={p.id} className="text-[10px] text-text-secondary leading-snug">
+                  <span className="text-[9px] text-text-muted">[{p.category}]</span>{" "}
+                  {p.pattern}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Footer */}
@@ -324,13 +271,6 @@ export function WorkspaceSidebar() {
             }`}
           />
           <span className="text-[11px] text-text-secondary">Keep terminals alive</span>
-        </button>
-        <button
-          onClick={handleOpenFolder}
-          className="flex items-center gap-2 w-full px-3 py-2 border-t border-bg-border hover:bg-bg-hover transition-colors text-left"
-        >
-          <FolderOpen size={11} className="text-text-muted" />
-          <span className="text-[11px] text-text-secondary">Open Folder...</span>
         </button>
       </div>
 
