@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
-import { Diamond } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { Diamond, LayoutGrid, Plus, X } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
-import type { CodeQualityReport } from "./codeQualityUtils";
+import { analyzeCodeQuality } from "@/lib/tauri";
+import { writePty } from "@/lib/tauri";
+import type { CodeQualityReport } from "@/lib/tauri";
 import { calcCommentScore, calcTestScore, calcComplexityScore, getLetterGrade, getComplexityLabel } from "./codeQualityUtils";
 import { OverviewTab } from "./OverviewTab";
 import { LanguagesTab } from "./LanguagesTab";
@@ -29,13 +31,17 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
   const [report, setReport] = useState<CodeQualityReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
 
-  const projectPath = useLayoutStore((s) => s.projectPath);
+  const workspace = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId),
+  );
+  const projectPath = workspace?.projectPath ?? useLayoutStore.getState().projectPath;
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    invoke<CodeQualityReport>("analyze_code_quality", { projectPath })
+    analyzeCodeQuality(projectPath)
       .then((r) => { setReport(r); setLoading(false); })
       .catch((err) => { setError(String(err)); setLoading(false); });
   }, [projectPath]);
@@ -48,9 +54,8 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
     commentScore * 0.2 + testScore * 0.3 + complexityScore * 0.3 + orgScore * 0.2
   );
 
-  function handleGetAIInsight() {
-    if (!report) return;
-
+  function buildInsightPrompt(): string {
+    if (!report) return "";
     const lines: string[] = [];
     lines.push("Analyze this codebase's code quality and give specific, actionable recommendations:");
     lines.push("");
@@ -82,30 +87,56 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
     }
     lines.push("");
     lines.push("Please provide 5-7 specific, prioritized recommendations to improve this codebase's quality.");
+    return lines.join("\n");
+  }
 
-    const prompt = lines.join("\n");
-    useAppStore.getState().setActiveView("claude");
-    useLayoutStore.getState().addPane({
-      cliCommand: "claude",
-      initialPrompt: prompt,
-    });
+  async function handleSendToWorkspace(workspaceId: string) {
+    const ws = useWorkspaceStore.getState().workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return;
+    const paneWithSession = ws.panes.find((p) => p.sessionId);
+    if (!paneWithSession?.sessionId) return;
+    await writePty(paneWithSession.sessionId, buildInsightPrompt() + "\r");
+    useWorkspaceStore.getState().setActiveWorkspace(workspaceId);
+    useAppStore.getState().setActiveView("workspace");
+    onClose();
+  }
+
+  function handleCreateAndSend() {
+    const projectName = projectPath.split(/[/\\]/).pop() || "Workspace";
+    const wsId = useWorkspaceStore.getState().createWorkspace(
+      projectName,
+      ["claude-code"],
+      projectPath,
+      { prompt: buildInsightPrompt() },
+    );
+    useWorkspaceStore.getState().setActiveWorkspace(wsId);
+    useAppStore.getState().setActiveView("workspace");
     onClose();
   }
 
   const footerContent = report && !loading ? (
-    <button
-      onClick={handleGetAIInsight}
-      className="flex items-center justify-center gap-2 w-full py-2.5 bg-accent-green/10 border border-accent-green/20 rounded-lg text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-colors"
-    >
-      <Diamond size={12} />
-      Get AI Insight
-    </button>
+    !showWorkspacePicker ? (
+      <button
+        onClick={() => setShowWorkspacePicker(true)}
+        className="flex items-center justify-center gap-2 w-full py-2.5 bg-accent-green/10 border border-accent-green/20 rounded-lg text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-colors"
+      >
+        <Diamond size={12} />
+        Get AI Insight
+      </button>
+    ) : (
+      <InsightWorkspacePicker
+        projectPath={projectPath}
+        onSelect={(wsId) => void handleSendToWorkspace(wsId)}
+        onCreate={handleCreateAndSend}
+        onCancel={() => setShowWorkspacePicker(false)}
+      />
+    )
   ) : undefined;
 
   return (
     <Modal
       onClose={onClose}
-      title="Code Quality"
+      title={`Code Quality${workspace ? ` — ${workspace.name}` : ""}`}
       icon={<Diamond size={14} className="text-accent-amber" />}
       footer={footerContent}
     >
@@ -146,5 +177,65 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
         )}
       </div>
     </Modal>
+  );
+}
+
+function InsightWorkspacePicker({
+  projectPath,
+  onSelect,
+  onCreate,
+  onCancel,
+}: {
+  projectPath: string;
+  onSelect: (workspaceId: string) => void;
+  onCreate: () => void;
+  onCancel: () => void;
+}) {
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const projectName = projectPath.split(/[/\\]/).pop() || "Workspace";
+
+  const norm = (p: string) => p.replace(/\\/g, "/").toLowerCase();
+  const activeWorkspaces = workspaces.filter(
+    (w) => w.status === "active" && norm(w.projectPath) === norm(projectPath),
+  );
+  const workspacesWithSessions = activeWorkspaces.filter((w) =>
+    w.panes.some((p) => p.sessionId),
+  );
+
+  return (
+    <div className="bg-bg-primary border border-bg-border rounded-lg p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
+          Send insight to workspace
+        </span>
+        <button onClick={onCancel} className="text-text-muted hover:text-text-primary">
+          <X size={12} />
+        </button>
+      </div>
+      <div className="flex flex-col gap-1">
+        {workspacesWithSessions.map((ws) => (
+          <button
+            key={ws.id}
+            onClick={() => onSelect(ws.id)}
+            className="flex items-center gap-2 w-full px-3 py-2 text-left bg-bg-secondary border border-bg-border rounded-lg hover:border-accent-green/30 hover:bg-bg-hover transition-colors"
+          >
+            <LayoutGrid size={12} className="text-text-muted flex-shrink-0" />
+            <span className="text-[11px] text-text-primary font-medium truncate">{ws.name}</span>
+            <span className="text-[10px] text-text-muted ml-auto flex-shrink-0">
+              {ws.panes.filter((p) => p.sessionId).length} active
+            </span>
+          </button>
+        ))}
+        <button
+          onClick={onCreate}
+          className="flex items-center gap-2 w-full px-3 py-2 text-left bg-accent-green/5 border border-accent-green/20 rounded-lg hover:bg-accent-green/10 transition-colors"
+        >
+          <Plus size={12} className="text-accent-green flex-shrink-0" />
+          <span className="text-[11px] text-accent-green font-medium truncate">
+            Create workspace "{projectName}"
+          </span>
+        </button>
+      </div>
+    </div>
   );
 }
