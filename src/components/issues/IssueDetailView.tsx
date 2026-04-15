@@ -7,6 +7,7 @@ import {
   Play,
   Target,
   X,
+  LayoutGrid,
 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import {
@@ -17,6 +18,8 @@ import {
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { writePty } from "@/lib/tauri";
 import { getLabelColor, getPriorityColor } from "@/lib/colors";
 import { IssueDependencyList } from "./IssueDependencyList";
 
@@ -79,6 +82,7 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
 
   const [showDepGraph, setShowDepGraph] = useState(false);
   const [newCriterionText, setNewCriterionText] = useState("");
+  const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
 
   const foundIssue = issues.find((i) => i.id === issueId);
   if (!foundIssue) return null;
@@ -110,8 +114,7 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
     setNewCriterionText("");
   }
 
-  function handleWorkOnIssue() {
-    // Build the prompt from the issue
+  function buildIssuePrompt(): string {
     const lines: string[] = [];
     lines.push(`Work on this issue:`);
     lines.push(``);
@@ -134,18 +137,27 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
     if (issue.priority) {
       lines.push(`Priority: ${issue.priority}`);
     }
+    return lines.join("\n");
+  }
 
-    const prompt = lines.join("\n");
+  function handleWorkOnIssue() {
+    setShowWorkspacePicker(true);
+  }
 
-    // Switch to Claude view
-    useAppStore.getState().setActiveView("claude");
+  async function handleSendToWorkspace(workspaceId: string) {
+    const ws = useWorkspaceStore.getState().workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return;
 
-    useLayoutStore.getState().addPane({
-      cliCommand: "claude",
-      initialPrompt: prompt,
-      issueId: issue.id,
-    });
+    // Find the first pane with an active session
+    const paneWithSession = ws.panes.find((p) => p.sessionId);
+    if (!paneWithSession?.sessionId) return;
 
+    const prompt = buildIssuePrompt();
+    await writePty(paneWithSession.sessionId, prompt + "\r");
+
+    // Switch to workspace view and activate this workspace
+    useWorkspaceStore.getState().setActiveWorkspace(workspaceId);
+    useAppStore.getState().setActiveView("workspace");
     onClose();
   }
 
@@ -232,14 +244,21 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
             </div>
           </div>
 
-          {/* Work on this issue button */}
-          <button
-            onClick={handleWorkOnIssue}
-            className="flex items-center justify-center gap-2 py-2.5 bg-accent-green/15 border border-accent-green/30 rounded-lg text-accent-green text-xs font-medium hover:bg-accent-green/25 transition-colors"
-          >
-            <Play size={14} />
-            Work on this issue
-          </button>
+          {/* Work on this issue */}
+          {!showWorkspacePicker ? (
+            <button
+              onClick={handleWorkOnIssue}
+              className="flex items-center justify-center gap-2 py-2.5 bg-accent-green/15 border border-accent-green/30 rounded-lg text-accent-green text-xs font-medium hover:bg-accent-green/25 transition-colors"
+            >
+              <Play size={14} />
+              Work on this issue
+            </button>
+          ) : (
+            <WorkspacePicker
+              onSelect={(wsId) => void handleSendToWorkspace(wsId)}
+              onCancel={() => setShowWorkspacePicker(false)}
+            />
+          )}
 
           {/* Flight assignment */}
           <div>
@@ -385,5 +404,63 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
           </div>
         </div>
     </Modal>
+  );
+}
+
+function WorkspacePicker({
+  onSelect,
+  onCancel,
+}: {
+  onSelect: (workspaceId: string) => void;
+  onCancel: () => void;
+}) {
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const projectPath = useLayoutStore((s) => s.projectPath);
+
+  const activeWorkspaces = workspaces.filter(
+    (w) => w.status === "active" && w.projectPath.replace(/\\/g, "/").toLowerCase() === projectPath.replace(/\\/g, "/").toLowerCase(),
+  );
+
+  const workspacesWithSessions = activeWorkspaces.filter((w) =>
+    w.panes.some((p) => p.sessionId),
+  );
+
+  return (
+    <div className="bg-bg-primary border border-bg-border rounded-lg p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
+          Send to workspace
+        </span>
+        <button
+          onClick={onCancel}
+          className="text-text-muted hover:text-text-primary"
+        >
+          <X size={12} />
+        </button>
+      </div>
+      {workspacesWithSessions.length === 0 ? (
+        <p className="text-[11px] text-text-muted py-2">
+          No workspaces with active sessions. Open a workspace first.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {workspacesWithSessions.map((ws) => (
+            <button
+              key={ws.id}
+              onClick={() => onSelect(ws.id)}
+              className="flex items-center gap-2 w-full px-3 py-2 text-left bg-bg-secondary border border-bg-border rounded-lg hover:border-accent-green/30 hover:bg-bg-hover transition-colors"
+            >
+              <LayoutGrid size={12} className="text-text-muted flex-shrink-0" />
+              <span className="text-[11px] text-text-primary font-medium truncate">
+                {ws.name}
+              </span>
+              <span className="text-[10px] text-text-muted ml-auto flex-shrink-0">
+                {ws.panes.filter((p) => p.sessionId).length} active
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
