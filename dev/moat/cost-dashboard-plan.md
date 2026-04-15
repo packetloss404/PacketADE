@@ -5,12 +5,12 @@
 | Item | Status | Notes |
 |------|--------|-------|
 | `read_usage_analytics` backend | ✅ Done | Returns AnalyticsData with cost, tokens, per-model |
-| CostDashboardView | ❌ Missing | No standalone component |
-| Cost alerts | ❌ Not started | No `set_cost_alert` backend command |
-| Per-flight cost rollup | ❌ Not started | — |
-| Cost/analytics unification | ❌ Not started | costStore and analyticsStore still separate |
+| CostDashboardView | ✅ Done | Standalone view + toolbar dollar sign button |
+| Cost alerts | ❌ Not started | Nice-to-have |
+| Per-flight cost rollup | ⚠️ Partial | Deploy integration tracks per-flight |
+| Cost/analytics unification | ✅ Done | analyticsStore is sole source of truth |
 
-Last updated: 2026-04-09
+Last updated: 2026-04-15
 
 ## What the Cost Dashboard Does Today
 

@@ -6,13 +6,13 @@ Last updated: 2026-04-09
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Phase 1: TaskRole type | ❌ Not started | No `TaskRole` in types/flight.ts |
-| Phase 1: Role badges in UI | ❌ Not started | — |
-| Phase 2: ownedPaths on tasks | ❌ Not started | — |
-| Phase 2: File collision detection | ❌ Not started | — |
-| Phase 3: Coordination feed | ❌ Not started | — |
-| Phase 3: Task handoff log | ⚠️ Partial | `result.handoff` exists but no structured `handoffLog[]` |
-| Phase 4: Escalation | ❌ Not started | — |
+| Phase 1: TaskRole type | ✅ Done | coordinator/builder/reviewer/scout with badges |
+| Phase 1: Role badges in UI | ✅ Done | In MilestonesPanel |
+| Phase 2: ownedPaths on tasks | ✅ Done | On Task interface |
+| Phase 2: File collision detection | ✅ Done | Pre-launch check in orchestrator |
+| Phase 3: Coordination feed | ✅ Done | CoordinationFeed component in FlightDetail |
+| Phase 3: Task handoff log | ✅ Done | handoffLog[] with UI |
+| Phase 4: Escalation | ⚠️ Partial | blockedReason exists, no auto-reassignment |
 
 ## Goal
 

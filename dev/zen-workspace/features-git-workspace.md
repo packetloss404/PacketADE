@@ -4,9 +4,9 @@
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Phase 1: Branch display + changed files | ❌ Not started | git.rs has branch/status but no in-app dashboard |
-| Phase 2: Stage/unstage + commit flow | ❌ Not started | — |
-| Phase 3: Review packet + flight approval ties | ❌ Not started | — |
+| Phase 1: Branch display + changed files | ✅ Done | GitDashboard.tsx in workspace |
+| Phase 2: Stage/unstage + commit flow | ✅ Done | Stage all + commit in GitDashboard |
+| Phase 3: Review packet + flight approval ties | ⚠️ Partial | Not wired to review packets yet |
 
 > Research date: 2026-04-09
 > Source repo: [riftzen-bit/zen-workspace-ide](https://github.com/riftzen-bit/zen-workspace-ide)

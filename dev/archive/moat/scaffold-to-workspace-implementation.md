@@ -4,12 +4,12 @@
 
 | Item | Status | Notes |
 |------|--------|-------|
-| ScaffoldView | ❌ Missing | Entire feature absent from codebase |
-| WorkspaceTemplatePicker | ❌ Not started | — |
-| Scaffold→workspace flow | ❌ Not started | — |
-| Scaffold→flight flow | ❌ Not started | — |
+| ScaffoldView | ✅ Done | 3-step wizard in ScaffoldView.tsx |
+| WorkspaceTemplatePicker | ✅ Done | Built into ScaffoldView result step |
+| Scaffold→workspace flow | ✅ Done | — |
+| Scaffold→flight flow | ✅ Done | — |
 
-Last updated: 2026-04-09
+Last updated: 2026-04-15
 
 ## Goal
 

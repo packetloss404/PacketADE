@@ -5,10 +5,10 @@
 | Item | Status | Notes |
 |------|--------|-------|
 | Prompt storage | ✅ Done | promptStore.ts with add/update/delete |
-| Built-in presets | ❌ Not started | — |
-| Search | ❌ Not started | — |
-| Send-to-terminal | ❌ Not started | — |
-| Send-to-chat | ❌ Not started | — |
+| Built-in presets | ✅ Done | 5 presets auto-seeded |
+| Search | ✅ Done | Search input in PromptLibrary |
+| Send-to-terminal | ✅ Done | Writes to active PTY |
+| Send-to-chat | ✅ Done | Sends to Insights |
 | Command palette integration | ❌ Not started | — |
 
 > Research date: 2026-04-09
