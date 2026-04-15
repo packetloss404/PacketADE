@@ -154,7 +154,7 @@ export default function App() {
   }, [handleKeyDown]);
 
   const isSessionsView = activeView === "claude" || activeView === "codex" || activeView === "gemini" || activeView === "opencode";
-  const showWorkspaceSidebar = activeView === "workspace" || activeView === "flight_deck" || activeView === "servers" || activeView === "agents" || activeView === "issues" || activeView === "history";
+  const showWorkspaceSidebar = activeView === "workspace" || activeView === "servers";
 
   return (
     <ErrorBoundary fallbackMessage="PacketCode encountered an error">

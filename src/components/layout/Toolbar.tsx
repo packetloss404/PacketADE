@@ -30,7 +30,6 @@ const TABS: { key: AppView; label: string }[] = [
   { key: "agents", label: "Agents" },
   { key: "flight_deck", label: "Flights" },
   { key: "issues", label: "Issues" },
-  { key: "history", label: "History" },
 ];
 
 export function Toolbar() {
