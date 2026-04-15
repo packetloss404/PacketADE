@@ -6,16 +6,16 @@
 |------|--------|-------|
 | Session transcripts | ✅ Done | `render_transcript()` in TUI sessions.rs |
 | Retrospective per workspace | ✅ Done | Persisted in state, displayed in flight_detail.rs |
-| Agent polling | ⚠️ Partial | One-shot `detect_agents()` at startup; should be periodic |
+| Agent polling | ✅ Done | Periodic 30s polling implemented |
 | Git context refresh | ✅ Done | `refresh_git_context()` called at startup per workspace |
 | Shared core modules | ✅ Done | flight, git, pty, orchestrator, agent, storage, error_classifier, workspace all present |
-| Phase 2: Leader key model | ❌ Not started | — |
+| Phase 2: Leader key model | ✅ Done | — |
 | Phase 2: Pane-focused layouts | ❌ Not started | — |
-| Phase 2: Search in session output | ❌ Not started | — |
+| Phase 2: Search in session output | ✅ Done | — |
 | Phase 3: Structured logging | ❌ Not started | — |
 | Phase 3: Event stream in shared engine | ❌ Not started | — |
 
-Last updated: 2026-04-09
+Last updated: 2026-04-15
 
 ## Overview
 

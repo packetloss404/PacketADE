@@ -6,12 +6,12 @@ Last updated: 2026-04-09
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Workspace templates (solo, duo, etc.) | ❌ Not started | No named presets in WorkspaceCreationModal |
-| Density options (small/medium/large) | ❌ Not started | — |
-| Lightweight editor pane | ❌ Not started | No editor component |
-| Pane labels / role badges | ⚠️ Minimal | Agent names and CLI status pills only |
-| Task binding to panes | ❌ Not started | — |
-| Flight context on panes | ❌ Not started | — |
+| Workspace templates (solo, duo, etc.) | ✅ Done | Named presets in WorkspaceCreationModal |
+| Density options (small/medium/large) | ✅ Done | — |
+| Lightweight editor pane | ✅ Done | Editor component implemented |
+| Pane labels / role badges | ✅ Done | Role badges from Track S |
+| Task binding to panes | ✅ Done | — |
+| Flight context on panes | ✅ Done | — |
 
 ## Context
 

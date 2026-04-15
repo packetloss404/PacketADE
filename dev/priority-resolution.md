@@ -4,11 +4,11 @@
 
 | Track | Status | Notes |
 |-------|--------|-------|
-| W — Workspace Foundation | ❌ Not started | PaneConfig.projectPath exists but no runtime wiring |
-| X — Workspace UX | ❌ Not started | No templates, no editor, no git dashboard |
-| S — Swarm Orchestration | ❌ Not started | Task handoff primitive exists |
-| M — PacketCode MCP | ❌ Not started | mcp.rs is config management only |
-| T — TUI Evolution | ⚠️ Partial | Transcripts, retrospectives, git refresh done; Phase 2-3 not started |
+| W — Workspace Foundation | ✅ Done | Per-workspace project context with runtime wiring |
+| X — Workspace UX | ✅ Done | Templates, editor, git dashboard implemented |
+| S — Swarm Orchestration | ✅ Done | Roles, file ownership, coordination, escalation |
+| M — PacketCode MCP | ✅ Done | MCP provider exposing PacketCode state |
+| T — TUI Evolution | ✅ Done | Full TUI parity with shared engine |
 
 Last updated: 2026-04-09
 
