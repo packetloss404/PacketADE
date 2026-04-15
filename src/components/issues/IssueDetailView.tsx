@@ -161,6 +161,24 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
     onClose();
   }
 
+  function handleCreateAndSend() {
+    const projectPath = useLayoutStore.getState().projectPath;
+    const projectName = projectPath.split(/[/\\]/).pop() || "Workspace";
+
+    // Create workspace with Claude Code agent
+    const wsId = useWorkspaceStore.getState().createWorkspace(
+      projectName,
+      ["claude-code"],
+      projectPath,
+      { prompt: buildIssuePrompt() },
+    );
+
+    // Switch to workspace view
+    useWorkspaceStore.getState().setActiveWorkspace(wsId);
+    useAppStore.getState().setActiveView("workspace");
+    onClose();
+  }
+
   // Build dependency graph text representation
   function buildDepGraph(): string[] {
     const lines: string[] = [];
@@ -256,6 +274,7 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
           ) : (
             <WorkspacePicker
               onSelect={(wsId) => void handleSendToWorkspace(wsId)}
+              onCreate={handleCreateAndSend}
               onCancel={() => setShowWorkspacePicker(false)}
             />
           )}
@@ -409,13 +428,16 @@ export function IssueDetailView({ issueId, onClose }: IssueDetailViewProps) {
 
 function WorkspacePicker({
   onSelect,
+  onCreate,
   onCancel,
 }: {
   onSelect: (workspaceId: string) => void;
+  onCreate: () => void;
   onCancel: () => void;
 }) {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const projectPath = useLayoutStore((s) => s.projectPath);
+  const projectName = projectPath.split(/[/\\]/).pop() || "Workspace";
 
   const activeWorkspaces = workspaces.filter(
     (w) => w.status === "active" && w.projectPath.replace(/\\/g, "/").toLowerCase() === projectPath.replace(/\\/g, "/").toLowerCase(),
@@ -438,29 +460,32 @@ function WorkspacePicker({
           <X size={12} />
         </button>
       </div>
-      {workspacesWithSessions.length === 0 ? (
-        <p className="text-[11px] text-text-muted py-2">
-          No workspaces with active sessions. Open a workspace first.
-        </p>
-      ) : (
-        <div className="flex flex-col gap-1">
-          {workspacesWithSessions.map((ws) => (
-            <button
-              key={ws.id}
-              onClick={() => onSelect(ws.id)}
-              className="flex items-center gap-2 w-full px-3 py-2 text-left bg-bg-secondary border border-bg-border rounded-lg hover:border-accent-green/30 hover:bg-bg-hover transition-colors"
-            >
-              <LayoutGrid size={12} className="text-text-muted flex-shrink-0" />
-              <span className="text-[11px] text-text-primary font-medium truncate">
-                {ws.name}
-              </span>
-              <span className="text-[10px] text-text-muted ml-auto flex-shrink-0">
-                {ws.panes.filter((p) => p.sessionId).length} active
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-col gap-1">
+        {workspacesWithSessions.map((ws) => (
+          <button
+            key={ws.id}
+            onClick={() => onSelect(ws.id)}
+            className="flex items-center gap-2 w-full px-3 py-2 text-left bg-bg-secondary border border-bg-border rounded-lg hover:border-accent-green/30 hover:bg-bg-hover transition-colors"
+          >
+            <LayoutGrid size={12} className="text-text-muted flex-shrink-0" />
+            <span className="text-[11px] text-text-primary font-medium truncate">
+              {ws.name}
+            </span>
+            <span className="text-[10px] text-text-muted ml-auto flex-shrink-0">
+              {ws.panes.filter((p) => p.sessionId).length} active
+            </span>
+          </button>
+        ))}
+        <button
+          onClick={onCreate}
+          className="flex items-center gap-2 w-full px-3 py-2 text-left bg-accent-green/5 border border-accent-green/20 rounded-lg hover:bg-accent-green/10 transition-colors"
+        >
+          <Plus size={12} className="text-accent-green flex-shrink-0" />
+          <span className="text-[11px] text-accent-green font-medium truncate">
+            Create workspace "{projectName}"
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
