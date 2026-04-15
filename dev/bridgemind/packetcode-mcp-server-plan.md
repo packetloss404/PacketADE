@@ -7,12 +7,12 @@ Last updated: 2026-04-09
 | Item | Status | Notes |
 |------|--------|-------|
 | MCP config management | ✅ Done | mcp.rs reads/writes/deletes server configs |
-| PacketCode as MCP provider | ❌ Not started | mcp.rs is config-only, not a server |
-| MCP resources (flights, tasks, memory) | ❌ Not started | — |
-| MCP tools (get_active_flight, etc.) | ❌ Not started | — |
-| Phase 1: Local read-only server | ❌ Not started | — |
-| Phase 2: Workflow tools | ❌ Not started | — |
-| Phase 3: Ownership-aware tools | ❌ Not started | Depends on swarm Track S |
+| PacketCode as MCP provider | ⚠️ Phase 1 done | Frontend types/store/settings UI |
+| MCP resources (flights, tasks, memory) | ⚠️ Frontend definitions done | No transport yet (deferred to mcp-provider-transport.md) |
+| MCP tools (get_active_flight, etc.) | ⚠️ Frontend definitions done | No transport yet |
+| Phase 1: Local read-only server | ⚠️ Frontend only | Transport deferred |
+| Phase 2: Workflow tools | ❌ Deferred | — |
+| Phase 3: Ownership-aware tools | ❌ Deferred | — |
 
 ## Goal
 

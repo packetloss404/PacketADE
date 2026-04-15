@@ -5,12 +5,12 @@
 | Item | Status | Notes |
 |------|--------|-------|
 | Backend analytics command | ✅ Done | `read_usage_analytics` in commands/analytics.rs |
-| AnalyticsView | ❌ Removed | Removed from CoreView; migration to Tools not complete |
-| AnalyticsCard for Tools | ❌ Not started | Sprint 1 of vibetotext plan |
-| Per-flight analytics | ❌ Not started | — |
-| Analytics write path | ❌ Not started | Read-only only |
+| AnalyticsView | ✅ Done | Migrated to CostCard in Tools + standalone CostDashboardView |
+| AnalyticsCard for Tools | ✅ Done | CostCard.tsx in Tools |
+| Per-flight analytics | ⚠️ Partial | Flight cost rollup exists via deploy integration |
+| Analytics write path | ❌ Not needed | Read from ~/.claude/cost-tally.json |
 
-Last updated: 2026-04-09
+Last updated: 2026-04-15
 
 ## What Analytics Does Today
 

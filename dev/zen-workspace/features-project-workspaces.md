@@ -5,9 +5,9 @@
 | Item | Status | Notes |
 |------|--------|-------|
 | Workspace.projectPath | ✅ Done | Field exists and used in workspace creation |
-| Project picker in creation | ❌ Not started | Uses global path, no selection UI |
-| Workspace activation→project switch | ❌ Not started | Missing reverse binding |
-| Projects list as secondary | ❌ Not started | WorkspaceSidebar still treats Projects/Workspaces as peers |
+| Project picker in creation | ✅ Done | In WorkspaceCreationModal |
+| Workspace activation→project switch | ✅ Done | layoutStore sync |
+| Projects list as secondary | ✅ Done | Sidebar groups by project |
 
 > Research date: 2026-04-09
 > Source repo: [riftzen-bit/zen-workspace-ide](https://github.com/riftzen-bit/zen-workspace-ide)
