@@ -5,13 +5,13 @@
 | Item | Status | Notes |
 |------|--------|-------|
 | Backend `ask_insights_stream` | ✅ Done | Commands exist in commands/insights.rs with `session_context` param |
-| InsightsView frontend | ❌ Missing | No component or store in codebase |
-| "Include memory context" toggle | ❌ Not started | — |
-| "Send to terminal" button | ❌ Not started | — |
-| Flight-scoped Insights | ❌ Not started | No `flightId` on InsightsSession |
-| Ideation→Insights bridge | ❌ Not started | — |
+| InsightsView frontend | ✅ Done | InsightsView component and insightsStore implemented |
+| "Include memory context" toggle | ✅ Done | — |
+| "Send to terminal" button | ✅ Done | — |
+| Flight-scoped Insights | ✅ Done | `flightId` on InsightsSession |
+| Ideation→Insights bridge | ✅ Done | — |
 
-Last updated: 2026-04-09
+Last updated: 2026-04-15
 
 ## Goal
 

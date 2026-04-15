@@ -5,13 +5,13 @@
 | Item | Status | Notes |
 |------|--------|-------|
 | Basic deploy execution via PTY | ✅ Done | DeployView launches PTY sessions |
-| `run_deploy` backend command | ❌ Not started | Uses generic PTY, no dedicated command |
-| `validate_deploy` backend command | ❌ Not started | — |
-| DeployRun.output field | ❌ Not started | Type lacks output array |
-| Pre-deploy validation | ❌ Not started | — |
-| Flight→deploy integration | ❌ Not started | — |
+| `run_deploy` backend command | ✅ Done | Dedicated deploy command implemented |
+| `validate_deploy` backend command | ✅ Done | — |
+| DeployRun.output field | ✅ Done | Type includes output array |
+| Pre-deploy validation | ✅ Done | — |
+| Flight→deploy integration | ✅ Done | — |
 
-Last updated: 2026-04-09
+Last updated: 2026-04-15
 
 ## What the Deploy Pipeline Does Today
 

@@ -12,7 +12,7 @@ Recent changes since last update:
 - ❌ InsightsView: backend ready, frontend missing
 - ❌ ScaffoldView: missing from codebase
 - ❌ Broadcast mode: deliberately removed in v0.4.0
-- ❌ Tracks W, X, S, M: not started
+- ✅ Tracks W, X, S, M: all implemented
 
 Last updated: 2026-04-09
 
@@ -31,8 +31,8 @@ This document maps every significant feature claimed by BridgeMind, QuadCode, an
 | ------------------------------------------------------- | -------------------------- | --------------------------- | -------------- | ---------------- | ----------------------------------------------- |
 | Multi-agent terminal grids                              | Bridgespace                | QuadCode Terminal (4 panes) | Zen Workspaces | ✅               | —                                               |
 | Broadcast mode (one prompt → all panes)                 | —                          | ✅ getquadcode.com          | —              | ❌               | No plan — deprioritized                         |
-| Per-session accent colors                               | —                          | ✅                          | —              | ❌               | `quadcode/gap-analysis.md`                      |
-| Pane zoom-to-focus                                      | —                          | ✅                          | —              | ❌               | `quadcode/gap-analysis.md`                      |
+| Per-session accent colors                               | —                          | ✅                          | —              | ✅               | `quadcode/gap-analysis.md`                      |
+| Pane zoom-to-focus                                      | —                          | ✅                          | —              | ✅               | `quadcode/gap-analysis.md`                      |
 | Named workspace presets                                 | ✅ Bridgespace             | —                           | —              | ❌               | `bridgemind/workspace-editor-scale-plan.md`     |
 | Lightweight embedded editor                             | ✅ BridgeCode (pre-launch) | ✅                          | —              | ❌               | `bridgemind/workspace-editor-scale-plan.md`     |
 | Monaco diff editor                                      | —                          | —                           | ✅             | ❌               | `zen-workspace/features-git-workspace.md`       |
@@ -43,7 +43,7 @@ This document maps every significant feature claimed by BridgeMind, QuadCode, an
 | Project list with pinned/recent                         | ✅                         | ✅                          | ✅             | ⚠️               | `zen-workspace/features-project-workspaces.md`  |
 | Workspace owns project path                             | —                          | —                           | ⚠️             | ⚠️               | `zen-workspace/workspace-project-model-plan.md` |
 | Global project context                                  | ✅                         | ✅                          | ✅             | ✅ (global only) | `zen-workspace/workspace-project-model-plan.md` |
-| Multi-model support                                     | ✅ (BridgeMCP)             | ✅                          | —              | ⚠️               | `quadcode/gap-analysis.md`                      |
+| Multi-model support                                     | ✅ (BridgeMCP)             | ✅                          | —              | ✅               | `quadcode/gap-analysis.md`                      |
 | Formal swarm roles (coordinator/builder/reviewer/scout) | ✅ BridgeSwarm             | —                           | —              | ❌               | `bridgemind/swarm-orchestration-plan.md`        |
 | File ownership and collision prevention                 | ✅ BridgeSwarm             | —                           | —              | ❌               | `bridgemind/swarm-orchestration-plan.md`        |
 | Inter-agent coordination surface                        | ✅ BridgeSwarm             | —                           | —              | ❌               | `bridgemind/swarm-orchestration-plan.md`        |

@@ -17,6 +17,7 @@ interface WorkspaceStore {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   keepTerminalsAlive: boolean;
+  zoomedPaneId: string | null;
 
   createWorkspace: (name: string, agents: WorkspaceAgentSlot[], projectPath: string, sessionConfig?: WorkspaceSessionConfig) => string;
   archiveWorkspace: (id: string) => void;
@@ -24,19 +25,27 @@ interface WorkspaceStore {
   setActiveWorkspace: (id: string | null) => void;
   getActiveWorkspace: () => Workspace | undefined;
   setPaneSession: (workspaceId: string, paneId: string, sessionId: string | null) => void;
+  updatePane: (workspaceId: string, paneId: string, updates: Partial<WorkspacePane>) => void;
+  addPinnedCommand: (workspaceId: string, paneId: string, command: string) => void;
+  setModelOverride: (workspaceId: string, agentId: string, model: string | null) => void;
+  removePinnedCommand: (workspaceId: string, paneId: string, index: number) => void;
   setKeepTerminalsAlive: (keep: boolean) => void;
+  setZoomedPane: (paneId: string | null) => void;
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
 
 const KEEP_ALIVE_KEY = "packetcode:workspace-keep-alive";
 
+const PANE_COLORS = ["accent-green", "accent-blue", "accent-amber", "accent-purple", "accent-red", "accent-cyan"];
+
 let wsCounter = 0;
 
 function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
-  return agents.map((agent) => ({
+  return agents.map((agent, index) => ({
     id: `ws-pane-${++wsCounter}`,
     agentId: agent,
     sessionId: null,
+    accentColor: PANE_COLORS[index % PANE_COLORS.length],
   }));
 }
 
@@ -60,6 +69,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaces: [],
   activeWorkspaceId: null,
   keepTerminalsAlive: typeof localStorage !== "undefined" && localStorage.getItem(KEEP_ALIVE_KEY) === "true",
+  zoomedPaneId: null,
 
   setKeepTerminalsAlive: (keep) => {
     if (typeof localStorage !== "undefined") {
@@ -141,6 +151,82 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       });
       return { workspaces };
     }));
+  },
+
+  updatePane: (workspaceId, paneId, updates) => {
+    set(commitWorkspaces((s) => {
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== workspaceId) return w;
+        return {
+          ...w,
+          panes: w.panes.map((p) =>
+            p.id === paneId ? { ...p, ...updates } : p
+          ),
+          updatedAt: Date.now(),
+        };
+      });
+      return { workspaces };
+    }));
+  },
+
+  setModelOverride: (workspaceId, agentId, model) => {
+    set(commitWorkspaces((s) => {
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== workspaceId) return w;
+        const overrides = { ...(w.modelOverrides ?? {}) };
+        if (model === null) {
+          delete overrides[agentId];
+        } else {
+          overrides[agentId] = model;
+        }
+        return { ...w, modelOverrides: overrides, updatedAt: Date.now() };
+      });
+      return { workspaces };
+    }));
+  },
+
+  addPinnedCommand: (workspaceId, paneId, command) => {
+    const trimmed = command.trim();
+    if (!trimmed) return;
+    set(commitWorkspaces((s) => {
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== workspaceId) return w;
+        return {
+          ...w,
+          panes: w.panes.map((p) => {
+            if (p.id !== paneId) return p;
+            const existing = p.pinnedCommands ?? [];
+            if (existing.includes(trimmed)) return p;
+            if (existing.length >= 5) return p;
+            return { ...p, pinnedCommands: [...existing, trimmed] };
+          }),
+          updatedAt: Date.now(),
+        };
+      });
+      return { workspaces };
+    }));
+  },
+
+  removePinnedCommand: (workspaceId, paneId, index) => {
+    set(commitWorkspaces((s) => {
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== workspaceId) return w;
+        return {
+          ...w,
+          panes: w.panes.map((p) => {
+            if (p.id !== paneId) return p;
+            const existing = p.pinnedCommands ?? [];
+            return { ...p, pinnedCommands: existing.filter((_, i) => i !== index) };
+          }),
+          updatedAt: Date.now(),
+        };
+      });
+      return { workspaces };
+    }));
+  },
+
+  setZoomedPane: (paneId) => {
+    set({ zoomedPaneId: paneId });
   },
 
   hydrateFromBackend: (workspaces) => {

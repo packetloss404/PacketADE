@@ -4,12 +4,12 @@
 
 | Sprint | Status | Notes |
 |--------|--------|-------|
-| Sprint 1: Analytics migration | ❌ Not started | AnalyticsView removed from CoreView but AnalyticsCard not created |
-| Sprint 2: Rust dictation backend | ❌ Not started | No commands/dictation/ module; no whisper-rs dep |
-| Sprint 3: History + Settings backend | ❌ Not started | — |
-| Sprint 4: Frontend store/types/hooks | ❌ Not started | useVoiceInput still Web Speech API only |
-| Sprint 5: DictationView + Tools card | ❌ Not started | — |
-| Sprint 6: Chat integration + polish | ❌ Not started | useVoiceInput now used in AgentInputArea (Agents tab) |
+| Sprint 1: Analytics migration | ✅ Done | AnalyticsCard in Tools page |
+| Sprint 2: Rust dictation backend | ✅ Done | commands/dictation/ module with whisper-rs |
+| Sprint 3: History + Settings backend | ✅ Done | SQLite history + config persistence |
+| Sprint 4: Frontend store/types/hooks | ✅ Done | dictationStore + native mode in useVoiceInput |
+| Sprint 5: DictationView + Tools card | ✅ Done | Full module view + Tools card |
+| Sprint 6: Chat integration + polish | ✅ Done | Native voice in Insights + Flight chat |
 
 Note: useVoiceInput hook is actively used in the new Agents tab with browser Web Speech API.
 

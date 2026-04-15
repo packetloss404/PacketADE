@@ -5,10 +5,10 @@
 | Gap | Status | Notes |
 |-----|--------|-------|
 | Broadcast mode | ❌ Removed | Deliberately removed in v0.4.0; BroadcastBar deleted |
-| Multi-model support | ⚠️ Partial | Agent switching works (Claude/Codex/Gemini/OpenCode); no model variant selection UI |
-| Per-session accent colors | ❌ Not started | UI components support colors but no per-session storage |
-| Pinned/quick commands | ❌ Not started | Complete gap — no storage or UI |
-| Pane zoom-to-focus | ❌ Not started | No PaneContainer layout toggle |
+| Multi-model support | ✅ Done | Model variant selector in pane header |
+| Per-session accent colors | ✅ Done | Auto-assigned + user picker on workspace panes |
+| Pinned/quick commands | ✅ Done | Up to 5 per pane, quick pill bar |
+| Pane zoom-to-focus | ✅ Done | Maximize/Minimize toggle, Escape to exit |
 | Specialized agent roles | ❌ Not started | Covered by swarm Track S |
 | Broader MCP catalog | ❌ Not started | — |
 | Design system generation | ❌ Not pursuing | Different product direction per positioning-notes.md |
