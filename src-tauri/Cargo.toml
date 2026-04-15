@@ -42,3 +42,11 @@ fuzzy-matcher = "0.3"
 dirs = "5"
 keyring = { version = "3", features = ["sync-secret-service", "windows-native", "apple-native"] }
 zeroize = "1"
+cpal = "0.17"
+whisper-rs = "0.16"
+rustfft = "6"
+rusqlite = { version = "0.33", features = ["bundled"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+clipboard-win = "5.0"
+enigo = "0.2"

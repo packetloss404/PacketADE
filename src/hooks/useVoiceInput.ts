@@ -1,4 +1,7 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { listWhisperModels, startRecordingCmd, stopRecordingCmd } from "@/lib/tauri";
+
+type VoiceMode = "web" | "native";
 
 interface UseVoiceInputReturn {
   isListening: boolean;
@@ -6,6 +9,7 @@ interface UseVoiceInputReturn {
   startListening: () => void;
   stopListening: () => void;
   isSupported: boolean;
+  mode: VoiceMode;
 }
 
 // Web Speech API types — not in all TS libs
@@ -24,17 +28,69 @@ interface SpeechRecognitionInstance {
   stop: () => void;
 }
 
-export function useVoiceInput(): UseVoiceInputReturn {
+// Cache native availability check across all hook instances
+let nativeAvailableCache: boolean | null = null;
+let nativeCheckPromise: Promise<boolean> | null = null;
+
+async function checkNativeAvailable(): Promise<boolean> {
+  if (nativeAvailableCache !== null) return nativeAvailableCache;
+  if (nativeCheckPromise) return nativeCheckPromise;
+
+  nativeCheckPromise = (async () => {
+    try {
+      const raw = await listWhisperModels();
+      const models = JSON.parse(raw) as { size: string; downloaded: boolean }[];
+      nativeAvailableCache = models.some((m) => m.downloaded);
+      return nativeAvailableCache;
+    } catch {
+      nativeAvailableCache = false;
+      return false;
+    }
+  })();
+
+  return nativeCheckPromise;
+}
+
+const webSpeechSupported =
+  typeof window !== "undefined" &&
+  ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
+/**
+ * Voice input hook with automatic native Whisper detection.
+ * If a Whisper model is downloaded, uses native mode; otherwise falls back to Web Speech API.
+ * Pass an explicit mode to override auto-detection.
+ */
+export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [detectedMode, setDetectedMode] = useState<VoiceMode>(webSpeechSupported ? "web" : "web");
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
-  const isSupported =
-    typeof window !== "undefined" &&
-    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+  // Auto-detect native Whisper on mount (only if no explicit mode given)
+  useEffect(() => {
+    if (explicitMode) return;
+    checkNativeAvailable().then((available) => {
+      if (available) setDetectedMode("native");
+    });
+  }, [explicitMode]);
+
+  const mode = explicitMode ?? detectedMode;
+
+  // Native mode is always considered supported; web mode depends on browser API
+  const isSupported = mode === "native" ? true : webSpeechSupported;
 
   const startListening = useCallback(() => {
-    if (!isSupported) return;
+    if (mode === "native") {
+      setIsListening(true);
+      setTranscript("");
+      startRecordingCmd().catch(() => {
+        setIsListening(false);
+      });
+      return;
+    }
+
+    // Web Speech API path
+    if (!webSpeechSupported) return;
 
     const w = window as unknown as Record<string, new () => SpeechRecognitionInstance>;
     const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition;
@@ -63,15 +119,28 @@ export function useVoiceInput(): UseVoiceInputReturn {
     recognition.start();
     setIsListening(true);
     setTranscript("");
-  }, [isSupported]);
+  }, [mode]);
 
   const stopListening = useCallback(() => {
+    if (mode === "native") {
+      setIsListening(false);
+      stopRecordingCmd()
+        .then((result) => {
+          setTranscript(result);
+        })
+        .catch(() => {
+          // error handled silently
+        });
+      return;
+    }
+
+    // Web Speech API path
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
     setIsListening(false);
-  }, []);
+  }, [mode]);
 
   return {
     isListening,
@@ -79,5 +148,6 @@ export function useVoiceInput(): UseVoiceInputReturn {
     startListening,
     stopListening,
     isSupported,
+    mode,
   };
 }

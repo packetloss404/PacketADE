@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { GitBranch, FolderOpen, Diamond, Wrench, Github, Brain, User, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid, DollarSign, BookOpen } from "lucide-react";
+import { GitBranch, FolderOpen, Diamond, Wrench, Github, Brain, User, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid, DollarSign, BookOpen, Mic } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
@@ -300,6 +300,20 @@ export function Toolbar() {
         >
           <Diamond size={12} className="text-accent-amber" />
           <span>Quality</span>
+        </button>
+
+        {/* Dictation (VT) button */}
+        <button
+          onClick={() => setActiveView("dictation")}
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+            activeView === "dictation"
+              ? "bg-bg-elevated text-accent-purple"
+              : "bg-bg-elevated text-text-secondary hover:text-accent-purple"
+          }`}
+          title="Dictation — voice-to-text with local Whisper transcription."
+        >
+          <Mic size={12} className="text-accent-purple" />
+          <span>VT</span>
         </button>
 
         {/* Git branch + actions */}

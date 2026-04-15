@@ -31,6 +31,7 @@ const ServersView = lazy(() => import("@/components/views/ServersView").then((m)
 const AgentsView = lazy(() => import("@/components/views/AgentsView").then((m) => ({ default: m.AgentsView })));
 const InsightsView = lazy(() => import("@/components/views/InsightsView").then((m) => ({ default: m.InsightsView })));
 const CostDashboardView = lazy(() => import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })));
+const DictationView = lazy(() => import("@/components/views/DictationView").then((m) => ({ default: m.DictationView })));
 
 function ViewLoader() {
   return (
@@ -238,6 +239,8 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <InsightsView />;
     case "cost_dashboard":
       return <CostDashboardView />;
+    case "dictation":
+      return <DictationView />;
     case "workspace":
       return null; // rendered above as an always-mounted view
   }

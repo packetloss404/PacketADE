@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, memo } from "react";
-import { Send, Bot, User, Loader2, Sparkles, Check, X, ListTree } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, Check, X, ListTree, Mic } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
 import type { ChatMessage, FlightSuggestion, FlightPlanSuggestion } from "@/hooks/useFlightChat";
 
 interface FlightChatPanelProps {
@@ -149,6 +150,16 @@ export function FlightChatPanel({
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { isListening, transcript, startListening, stopListening, isSupported } = useVoiceInput();
+  const prevTranscriptRef = useRef("");
+
+  // Append voice transcript to input
+  useEffect(() => {
+    if (transcript && transcript !== prevTranscriptRef.current) {
+      prevTranscriptRef.current = transcript;
+      setInput((prev) => prev + transcript);
+    }
+  }, [transcript]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -252,6 +263,19 @@ export function FlightChatPanel({
             autoFocus
             className="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-muted outline-none resize-none max-h-[80px]"
           />
+          {isSupported && (
+            <button
+              onClick={isListening ? stopListening : startListening}
+              aria-label={isListening ? "Stop listening" : "Voice input"}
+              className={`p-1 rounded transition-colors ${
+                isListening
+                  ? "text-accent-green bg-accent-green/15 animate-pulse"
+                  : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
+              }`}
+            >
+              <Mic size={12} />
+            </button>
+          )}
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
