@@ -1,6 +1,8 @@
-import { X, ArrowRight, ExternalLink } from "lucide-react";
+import { X, ArrowRight, ExternalLink, MessageSquare } from "lucide-react";
 import { useIdeationStore } from "@/stores/ideationStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useInsightsStore } from "@/stores/insightsStore";
+import { useAppStore } from "@/stores/appStore";
 import type { Idea } from "@/types/ideation";
 import { getTypeConfig, SEVERITY_COLORS, EFFORT_COLORS } from "./ideationConfig";
 
@@ -11,6 +13,17 @@ export function IdeaDetail({ idea }: { idea: Idea }) {
   const selectIdea = useIdeationStore((s) => s.selectIdea);
 
   const { icon: TypeIcon, color: typeColor, label: typeLabel } = getTypeConfig(idea.type);
+
+  function handleAskInsights() {
+    const workspace = useWorkspaceStore.getState().getActiveWorkspace();
+    if (!workspace) return;
+    useInsightsStore.getState().createSession();
+    void useInsightsStore.getState().sendMessage(
+      workspace.projectPath,
+      `Tell me more about this idea: ${idea.title}\n\n${idea.description}${idea.suggestion ? `\n\nSuggestion: ${idea.suggestion}` : ""}`
+    );
+    useAppStore.getState().setActiveView("insights");
+  }
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4 space-y-4">
@@ -62,6 +75,11 @@ export function IdeaDetail({ idea }: { idea: Idea }) {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent-green/10 text-accent-green border border-accent-green/20 rounded-lg hover:bg-accent-green/20 transition-colors">
             <ArrowRight size={12} />
             Convert to Issue
+          </button>
+          <button onClick={handleAskInsights}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent-blue/10 text-accent-blue border border-accent-blue/20 rounded-lg hover:bg-accent-blue/20 transition-colors">
+            <MessageSquare size={12} />
+            Ask Insights
           </button>
           <button onClick={() => workspaceId && dismiss(workspaceId, idea.id)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-bg-elevated text-text-muted rounded-lg hover:text-text-secondary transition-colors">

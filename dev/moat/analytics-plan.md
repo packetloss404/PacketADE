@@ -1,5 +1,15 @@
 # Analytics Plan
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Backend analytics command | ✅ Done | `read_usage_analytics` in commands/analytics.rs |
+| AnalyticsView | ❌ Removed | Removed from CoreView; migration to Tools not complete |
+| AnalyticsCard for Tools | ❌ Not started | Sprint 1 of vibetotext plan |
+| Per-flight analytics | ❌ Not started | — |
+| Analytics write path | ❌ Not started | Read-only only |
+
 Last updated: 2026-04-09
 
 ## What Analytics Does Today

@@ -2,6 +2,17 @@
 
 Last updated: 2026-04-09
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Voice product | ❌ Backlogged | Web Speech API only; VibeToText 0% implemented |
+| True MCP service | ❌ Not started | Config management only |
+| Formal swarm roles | ❌ Not started | — |
+| File ownership | ❌ Not started | — |
+| Coordination surface | ❌ Not started | — |
+| Workspace scaling | ⚠️ Minimal | Workspaces exist but no templates/density/editor |
+
 ## Scope
 
 This document captures the public competitive findings from researching `bridgemind.ai` and comparing those claims against the current PacketCode repository.

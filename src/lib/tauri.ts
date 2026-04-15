@@ -33,6 +33,14 @@ export async function listDirectory(dirPath: string, workspace: string): Promise
   return invoke("list_directory", { dirPath, workspace });
 }
 
+export async function readFileContents(filePath: string, workspace: string): Promise<string> {
+  return invoke<string>("read_file_contents", { filePath, workspace });
+}
+
+export async function writeFileContents(filePath: string, workspace: string, content: string): Promise<void> {
+  return invoke("write_file_contents", { filePath, workspace, content });
+}
+
 // PTY session management
 export async function createPtySession(
   projectPath: string,
@@ -820,6 +828,15 @@ export async function askFlightChatStream(
   });
 }
 
+export async function askInsightsStream(
+  projectPath: string,
+  messages: { role: string; content: string }[],
+  sessionContext: string | null,
+  requestId: string,
+): Promise<void> {
+  return invoke("ask_insights_stream", { projectPath, messages, sessionContext, requestId });
+}
+
 export async function generateIdeas(
   projectPath: string,
   ideaTypes: string[]
@@ -934,10 +951,23 @@ export async function readDeployConfig(projectPath: string): Promise<DeployConfi
   return invoke<DeployConfigFile>("read_deploy_config", { projectPath });
 }
 
+// Usage analytics
+export async function readUsageAnalytics(): Promise<string> {
+  return invoke<string>("read_usage_analytics");
+}
+
 export async function createDeployConfig(
   projectPath: string,
   configs: DeployConfig[]
 ): Promise<void> {
   return invoke("create_deploy_config", { projectPath, configs });
+}
+
+export async function validateDeploy(projectPath: string, command: string): Promise<string> {
+  return invoke<string>("validate_deploy", { projectPath, command });
+}
+
+export async function runDeploy(projectPath: string, command: string, runId: string): Promise<string> {
+  return invoke<string>("run_deploy", { projectPath, command, runId });
 }
 

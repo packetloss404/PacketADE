@@ -1,5 +1,14 @@
 # Scaffold-to-Workspace — Implementation Spec
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| ScaffoldView | ❌ Missing | Entire feature absent from codebase |
+| WorkspaceTemplatePicker | ❌ Not started | — |
+| Scaffold→workspace flow | ❌ Not started | — |
+| Scaffold→flight flow | ❌ Not started | — |
+
 Last updated: 2026-04-09
 
 ## Goal

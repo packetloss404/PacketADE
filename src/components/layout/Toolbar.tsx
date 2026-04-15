@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { GitBranch, FolderOpen, Diamond, Wrench, Github, Brain, User, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid } from "lucide-react";
+import { GitBranch, FolderOpen, Diamond, Wrench, Github, Brain, User, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid, DollarSign, BookOpen } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
@@ -12,6 +12,7 @@ import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useMosaicStore } from "@/stores/mosaicStore";
 import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
+import { PromptLibrary } from "@/components/workspace/PromptLibrary";
 import { gitCommit, gitPull, gitPush } from "@/lib/tauri";
 import type { MosaicLayoutPreset } from "@/types/mosaic";
 
@@ -30,6 +31,7 @@ const TABS: { key: AppView; label: string }[] = [
   { key: "agents", label: "Agents" },
   { key: "flight_deck", label: "Flights" },
   { key: "issues", label: "Issues" },
+  { key: "insights", label: "Insights" },
 ];
 
 export function Toolbar() {
@@ -37,6 +39,7 @@ export function Toolbar() {
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
   const gitBranch = useGitInfo();
   const [showCodeQuality, setShowCodeQuality] = useState(false);
+  const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const theme = useAppStore((s) => s.theme);
@@ -265,6 +268,30 @@ export function Toolbar() {
           <span>Deploy</span>
         </button>
 
+        {/* Cost Dashboard button */}
+        <button
+          onClick={() => setActiveView("cost_dashboard")}
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+            activeView === "cost_dashboard"
+              ? "bg-bg-elevated text-accent-green"
+              : "bg-bg-elevated text-text-secondary hover:text-accent-green"
+          }`}
+          title="Cost Dashboard — view API usage costs and spending trends."
+        >
+          <DollarSign size={12} className="text-accent-green" />
+          <span>Costs</span>
+        </button>
+
+        {/* Prompt Library button */}
+        <button
+          onClick={() => setShowPromptLibrary(true)}
+          className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-accent-green transition-colors"
+          title="Prompt Library — browse, create, and send prompt templates to Terminal or Insights."
+        >
+          <BookOpen size={12} className="text-accent-green" />
+          <span>Prompts</span>
+        </button>
+
         {/* Code Quality button */}
         <button
           onClick={() => setShowCodeQuality(true)}
@@ -303,6 +330,9 @@ export function Toolbar() {
       {/* Modals */}
       {showCodeQuality && (
         <CodeQualityModal onClose={() => setShowCodeQuality(false)} />
+      )}
+      {showPromptLibrary && (
+        <PromptLibrary onClose={() => setShowPromptLibrary(false)} />
       )}
 
     </div>

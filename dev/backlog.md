@@ -1,5 +1,11 @@
 # Backlog
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| B-VOICE-001: Desktop-wide voice | ❌ Not started | All 6 sprints still TODO; useVoiceInput used in Agents tab (Web Speech API only) |
+
 Last updated: 2026-04-09
 
 This file captures ideas that should remain visible but are not active implementation priorities.

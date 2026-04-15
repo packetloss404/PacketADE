@@ -1,5 +1,16 @@
 # Zen Feature Notes — Prompt Library
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Prompt storage | ✅ Done | promptStore.ts with add/update/delete |
+| Built-in presets | ❌ Not started | — |
+| Search | ❌ Not started | — |
+| Send-to-terminal | ❌ Not started | — |
+| Send-to-chat | ❌ Not started | — |
+| Command palette integration | ❌ Not started | — |
+
 > Research date: 2026-04-09
 > Source repo: [riftzen-bit/zen-workspace-ide](https://github.com/riftzen-bit/zen-workspace-ide)
 

@@ -1,5 +1,16 @@
 # Memory Layer Plan
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Session-end hook | ✅ Done | `useTerminalSession.ts` calls `learnFromSession()` on PTY exit |
+| Pattern refresh threshold | ✅ Done | `PATTERN_REFRESH_THRESHOLD = 3` in memoryStore.ts |
+| Bounded memory context | ✅ Done | `CONTEXT_MAX_PATTERNS = 10`, `CONTEXT_MAX_SESSIONS = 5` |
+| `isLearning` flag | ✅ Done | Uses `isLearning` instead of planned `memoryUpdateInProgress` |
+| FlightMemorySnapshot type | ❌ Not started | Type doesn't exist in types/memory.ts |
+| Flight→memory wiring | ❌ Not started | No snapshot created on flight completion |
+
 Last updated: 2026-04-09
 
 ## What the Memory Layer Does Today

@@ -1,18 +1,40 @@
 import { create } from "zustand";
 import { loadFromStorage, saveToStorage, generateId } from "@/lib/storage";
+import { writePty } from "@/lib/tauri";
+import { useLayoutStore } from "@/stores/layoutStore";
+import { useInsightsStore } from "@/stores/insightsStore";
 import type { PromptTemplate } from "@/types/prompt";
 
 const STORAGE_KEY = "packetcode:prompt-templates";
+
+const BUILTIN_TEMPLATES: PromptTemplate[] = [
+  { id: "builtin-review", name: "Code Review", content: "Review the recent changes in this project. Focus on correctness, performance, and security. Highlight any issues found.", category: "review", createdAt: 0, updatedAt: 0 },
+  { id: "builtin-debug", name: "Debug Issue", content: "Help me debug this issue. Look at the error messages and suggest fixes.", category: "debugging", createdAt: 0, updatedAt: 0 },
+  { id: "builtin-explain", name: "Explain Code", content: "Explain how this codebase works. Start with the entry point and trace through the main flow.", category: "general", createdAt: 0, updatedAt: 0 },
+  { id: "builtin-test", name: "Write Tests", content: "Write comprehensive tests for the recent changes. Cover edge cases and error scenarios.", category: "general", createdAt: 0, updatedAt: 0 },
+  { id: "builtin-refactor", name: "Refactor", content: "Suggest refactoring opportunities in this code. Focus on readability and maintainability.", category: "custom", createdAt: 0, updatedAt: 0 },
+];
+
+function loadTemplates(): PromptTemplate[] {
+  const stored = loadFromStorage<PromptTemplate[]>(STORAGE_KEY, []);
+  if (stored.length === 0) {
+    saveToStorage(STORAGE_KEY, BUILTIN_TEMPLATES);
+    return BUILTIN_TEMPLATES;
+  }
+  return stored;
+}
 
 interface PromptStore {
   templates: PromptTemplate[];
   addTemplate: (name: string, content: string, category: PromptTemplate["category"]) => void;
   updateTemplate: (id: string, updates: Partial<Pick<PromptTemplate, "name" | "content" | "category">>) => void;
   deleteTemplate: (id: string) => void;
+  sendToTerminal: (templateId: string) => void;
+  sendToInsights: (templateId: string) => void;
 }
 
 export const usePromptStore = create<PromptStore>((set, get) => ({
-  templates: loadFromStorage<PromptTemplate[]>(STORAGE_KEY, []),
+  templates: loadTemplates(),
 
   addTemplate: (name, content, category) => {
     const now = Date.now();
@@ -41,5 +63,23 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
     const updated = get().templates.filter((t) => t.id !== id);
     set({ templates: updated });
     saveToStorage(STORAGE_KEY, updated);
+  },
+
+  sendToTerminal: (templateId) => {
+    const template = get().templates.find((t) => t.id === templateId);
+    if (!template) return;
+    const activePane = useLayoutStore.getState().getActivePane();
+    if (activePane?.sessionId) {
+      writePty(activePane.sessionId, template.content + "\n");
+    }
+  },
+
+  sendToInsights: (templateId) => {
+    const template = get().templates.find((t) => t.id === templateId);
+    if (!template) return;
+    const projectPath = useLayoutStore.getState().projectPath;
+    const insightsStore = useInsightsStore.getState();
+    insightsStore.createSession();
+    insightsStore.sendMessage(projectPath, template.content);
   },
 }));

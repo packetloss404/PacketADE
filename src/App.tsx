@@ -29,6 +29,8 @@ const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then
 const FlightDeckView = lazy(() => import("@/components/views/FlightDeckView").then((m) => ({ default: m.FlightDeckView })));
 const ServersView = lazy(() => import("@/components/views/ServersView").then((m) => ({ default: m.ServersView })));
 const AgentsView = lazy(() => import("@/components/views/AgentsView").then((m) => ({ default: m.AgentsView })));
+const InsightsView = lazy(() => import("@/components/views/InsightsView").then((m) => ({ default: m.InsightsView })));
+const CostDashboardView = lazy(() => import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })));
 
 function ViewLoader() {
   return (
@@ -232,6 +234,10 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <ReviewQueueView />;
     case "agents":
       return <AgentsView />;
+    case "insights":
+      return <InsightsView />;
+    case "cost_dashboard":
+      return <CostDashboardView />;
     case "workspace":
       return null; // rendered above as an always-mounted view
   }

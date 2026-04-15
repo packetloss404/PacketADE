@@ -239,6 +239,10 @@ pub struct App {
     pub diff_view: DiffViewState,
     pub session_filter: Option<String>,
     pub session_filter_input: bool,
+    pub session_search: Option<String>,
+    pub session_search_input: bool,
+    pub session_search_matches: Vec<usize>,
+    pub session_search_index: usize,
     pub help_overlay: HelpOverlay,
     pub retrospectives: Vec<storage::FlightRetrospective>,
     suppressed_exit_sessions: HashSet<String>,
@@ -290,6 +294,10 @@ impl App {
             diff_view: DiffViewState::default(),
             session_filter: None,
             session_filter_input: false,
+            session_search: None,
+            session_search_input: false,
+            session_search_matches: Vec::new(),
+            session_search_index: 0,
             help_overlay: HelpOverlay::new(),
             retrospectives: Vec::new(),
             suppressed_exit_sessions: HashSet::new(),
@@ -364,16 +372,22 @@ impl App {
             return false;
         }
 
-        // Leader key handling — Ctrl+X starts, next key within 500ms triggers combo
+        // Leader key handling — Space or Ctrl+X starts, next key within 1s triggers combo
         if let Some(started) = self.leader_pending {
             self.leader_pending = None;
-            if started.elapsed() < Duration::from_millis(500) {
+            if started.elapsed() < Duration::from_secs(1) {
                 return self.handle_leader_combo(key);
             }
             // Timed out, fall through to normal handling
         }
 
         if key.code == KeyCode::Char('x') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.leader_pending = Some(Instant::now());
+            return false;
+        }
+
+        // Space activates leader overlay (when not typing in an input field)
+        if key.code == KeyCode::Char(' ') && !self.is_text_input_active() {
             self.leader_pending = Some(Instant::now());
             return false;
         }
@@ -390,16 +404,19 @@ impl App {
 
     fn handle_leader_combo(&mut self, key: KeyEvent) -> bool {
         match key.code {
-            KeyCode::Char('n') => self.start_create_flight(),
-            KeyCode::Char('l') => self.view = AppView::Dashboard,
+            KeyCode::Char('f') => self.view = AppView::Dashboard,
+            KeyCode::Char('d') => self.view = AppView::Dashboard,
             KeyCode::Char('s') => self.view = AppView::Sessions,
             KeyCode::Char('a') => self.view = AppView::Agents,
+            KeyCode::Char('n') => self.start_create_flight(),
             KeyCode::Char('4') => self.view = AppView::Settings,
             KeyCode::Char('t') => {
                 let next = super::theme::next_theme_name(&self.theme.name);
                 self.theme = super::theme::load_theme(Some(next));
                 let _ = self.persist_state();
             }
+            KeyCode::Char('q') => return true, // quit
+            KeyCode::Char('?') => self.help_overlay.toggle(),
             KeyCode::Char('p') => self.open_command_palette(),
             KeyCode::Char('g') => self.refresh_git_context(),
             _ => {} // unknown combo, ignore
@@ -409,6 +426,7 @@ impl App {
 
     fn is_text_input_active(&self) -> bool {
         self.session_filter_input
+            || self.session_search_input
             || self.settings_input.is_some()
             || self
                 .flight_editor
@@ -680,6 +698,47 @@ impl App {
             return false;
         }
 
+        // Session search input mode (transcript search)
+        if self.session_search_input {
+            match key.code {
+                KeyCode::Esc => {
+                    self.session_search = None;
+                    self.session_search_input = false;
+                    self.session_search_matches.clear();
+                    self.session_search_index = 0;
+                }
+                KeyCode::Enter => {
+                    self.session_search_input = false;
+                    // Jump to first match
+                    if !self.session_search_matches.is_empty() {
+                        self.session_search_index = 0;
+                        self.jump_to_search_match();
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let Some(ref mut search) = self.session_search {
+                        search.pop();
+                        if search.is_empty() {
+                            self.session_search = None;
+                            self.session_search_input = false;
+                            self.session_search_matches.clear();
+                            self.session_search_index = 0;
+                        } else {
+                            self.update_search_matches();
+                        }
+                    }
+                }
+                KeyCode::Char(ch) => {
+                    self.session_search
+                        .get_or_insert_with(String::new)
+                        .push(ch);
+                    self.update_search_matches();
+                }
+                _ => {}
+            }
+            return false;
+        }
+
         // Session filter input mode
         if self.session_filter_input {
             match key.code {
@@ -715,7 +774,15 @@ impl App {
             KeyCode::Char('2') => self.view = AppView::Sessions,
             KeyCode::Char('3') => self.view = AppView::Agents,
             KeyCode::Char('4') => self.view = AppView::Settings,
-            KeyCode::Esc => self.view = AppView::Dashboard,
+            KeyCode::Esc => {
+                if self.session_search.is_some() {
+                    self.session_search = None;
+                    self.session_search_matches.clear();
+                    self.session_search_index = 0;
+                } else {
+                    self.view = AppView::Dashboard;
+                }
+            }
             KeyCode::Up if key.modifiers.contains(KeyModifiers::CONTROL) => self.navigate_session_hierarchy_up(),
             KeyCode::Down if key.modifiers.contains(KeyModifiers::CONTROL) => self.navigate_session_hierarchy_down(),
             KeyCode::Up | KeyCode::Char('k') => {
@@ -736,6 +803,24 @@ impl App {
                 }
             }
             KeyCode::Char('y') => self.send_selected_approval_action(ApprovalAction::Approve),
+            KeyCode::Char('n') if self.session_search.is_some() => {
+                // Next search match
+                if !self.session_search_matches.is_empty() {
+                    self.session_search_index = (self.session_search_index + 1) % self.session_search_matches.len();
+                    self.jump_to_search_match();
+                }
+            }
+            KeyCode::Char('N') if self.session_search.is_some() => {
+                // Previous search match
+                if !self.session_search_matches.is_empty() {
+                    if self.session_search_index == 0 {
+                        self.session_search_index = self.session_search_matches.len() - 1;
+                    } else {
+                        self.session_search_index -= 1;
+                    }
+                    self.jump_to_search_match();
+                }
+            }
             KeyCode::Char('n') => self.send_selected_approval_action(ApprovalAction::Deny),
             KeyCode::Char('a') => self.send_selected_approval_action(ApprovalAction::Abort),
             KeyCode::Char('g') => {
@@ -757,6 +842,12 @@ impl App {
             KeyCode::Char('/') => {
                 self.session_filter = Some(String::new());
                 self.session_filter_input = true;
+            }
+            KeyCode::Char('?') => {
+                self.session_search = Some(String::new());
+                self.session_search_input = true;
+                self.session_search_matches.clear();
+                self.session_search_index = 0;
             }
             KeyCode::Char('D') => {
                 // Open diff viewer for current session
@@ -1949,6 +2040,31 @@ impl App {
         }
     }
 
+    fn update_search_matches(&mut self) {
+        self.session_search_matches.clear();
+        self.session_search_index = 0;
+        let Some(ref query) = self.session_search else { return };
+        if query.is_empty() { return; }
+        let query_lower = query.to_lowercase();
+        let Some(session_id) = self.selected_session_id().map(str::to_string) else { return };
+        let Some(session) = self.session_buffers.get(&session_id) else { return };
+        for (i, line) in session.output.lines().enumerate() {
+            if line.to_lowercase().contains(&query_lower) {
+                self.session_search_matches.push(i);
+            }
+        }
+    }
+
+    fn jump_to_search_match(&mut self) {
+        if self.session_search_matches.is_empty() { return; }
+        let line_idx = self.session_search_matches[self.session_search_index];
+        let Some(session_id) = self.selected_session_id().map(str::to_string) else { return };
+        if let Some(session) = self.session_buffers.get_mut(&session_id) {
+            session.scroll = (line_idx as u16).saturating_sub(3);
+            session.auto_scroll = false;
+        }
+    }
+
     fn export_selected_session(&mut self) {
         let Some(session_id) = self.selected_session_id().map(str::to_string) else {
             return;
@@ -2101,9 +2217,80 @@ impl App {
             }
         }
 
+        self.render_leader_overlay(frame, area);
         self.help_overlay.render(frame, area, &self.theme, self.view_name());
         self.command_palette.render(frame, area, &self.theme);
         self.toasts.render(frame, area, &self.theme);
+    }
+
+    fn render_leader_overlay(&self, frame: &mut Frame, area: Rect) {
+        if self.leader_pending.is_none() {
+            return;
+        }
+
+        let t = &self.theme;
+
+        let width = 52u16.min(area.width.saturating_sub(4));
+        let height = 7u16.min(area.height.saturating_sub(4));
+        let x = (area.width.saturating_sub(width)) / 2 + area.x;
+        let y = (area.height.saturating_sub(height)) / 2 + area.y;
+        let overlay = Rect::new(x, y, width, height);
+
+        frame.render_widget(Clear, overlay);
+
+        let block = Block::default()
+            .title(Span::styled(
+                " Leader ",
+                Style::default().fg(t.brand).add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(t.brand))
+            .style(Style::default().bg(t.bg));
+
+        let inner = block.inner(overlay);
+        frame.render_widget(block, overlay);
+
+        if inner.height < 3 {
+            return;
+        }
+
+        let key_style = Style::default().fg(t.brand).add_modifier(Modifier::BOLD);
+        let label_style = Style::default().fg(t.fg);
+        let dim_style = Style::default().fg(t.fg_dim);
+
+        let lines = vec![
+            Line::from(vec![
+                Span::styled("[f]", key_style),
+                Span::styled(" Flights  ", label_style),
+                Span::styled("[s]", key_style),
+                Span::styled(" Sessions  ", label_style),
+                Span::styled("[a]", key_style),
+                Span::styled(" Agents", label_style),
+            ]),
+            Line::from(vec![
+                Span::styled("[g]", key_style),
+                Span::styled(" Git      ", label_style),
+                Span::styled("[d]", key_style),
+                Span::styled(" Dashboard ", label_style),
+                Span::styled("[t]", key_style),
+                Span::styled(" Theme", label_style),
+            ]),
+            Line::from(vec![
+                Span::styled("[p]", key_style),
+                Span::styled(" Palette  ", label_style),
+                Span::styled("[?]", key_style),
+                Span::styled(" Help       ", label_style),
+                Span::styled("[q]", key_style),
+                Span::styled(" Quit", label_style),
+            ]),
+            Line::from(vec![]),
+            Line::from(vec![
+                Span::styled("Press a key or Esc to dismiss", dim_style),
+            ]),
+        ];
+
+        let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
+        frame.render_widget(paragraph, inner);
     }
 
     fn render_nav_bar(&self, frame: &mut Frame, area: Rect) {
@@ -2246,7 +2433,7 @@ impl App {
 
         // Help hint
         spans.push(Span::styled("│ ", Style::default().fg(t.fg_muted)));
-        spans.push(Span::styled("?:help", Style::default().fg(t.fg_muted)));
+        spans.push(Span::styled("SPC:leader ?:help", Style::default().fg(t.fg_muted)));
 
         let bar = Paragraph::new(Line::from(spans))
             .style(Style::default().bg(t.bg));

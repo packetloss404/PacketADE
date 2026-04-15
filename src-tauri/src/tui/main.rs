@@ -1,6 +1,6 @@
 use std::io;
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -74,6 +74,11 @@ fn main() -> io::Result<()> {
 }
 
 fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {
+    let mut last_agent_check = Instant::now();
+    let mut last_git_refresh = Instant::now();
+    const AGENT_POLL_INTERVAL: Duration = Duration::from_secs(30);
+    const GIT_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
     loop {
         terminal.draw(|f| app.render(f))?;
 
@@ -94,7 +99,7 @@ fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result
 
         // Expire leader key if timed out
         if let Some(started) = app.leader_pending {
-            if started.elapsed() > Duration::from_millis(500) {
+            if started.elapsed() > Duration::from_secs(1) {
                 app.leader_pending = None;
             }
         }
@@ -107,6 +112,18 @@ fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result
 
         // Orchestrator tick
         app.orchestrator_tick();
+
+        // Periodic agent detection (every 30s)
+        if last_agent_check.elapsed() >= AGENT_POLL_INTERVAL {
+            app.detect_agents();
+            last_agent_check = Instant::now();
+        }
+
+        // Periodic git context refresh (every 60s)
+        if last_git_refresh.elapsed() >= GIT_REFRESH_INTERVAL {
+            app.refresh_git_context();
+            last_git_refresh = Instant::now();
+        }
     }
 }
 

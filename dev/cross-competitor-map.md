@@ -1,5 +1,19 @@
 # Cross-Competitor Feature Map
 
+## Implementation Status — 2026-04-15
+
+Recent changes since last update:
+- ✅ Memory layer auto-learn: session-end hook active in useTerminalSession.ts
+- ✅ TUI retrospectives: working in flight_detail.rs
+- ✅ TUI session transcripts: render_transcript() in sessions.rs
+- ✅ Agents tab redesigned: repo-grouped sidebar, inline input with autocomplete, SSH server selector
+- ⚠️ AnalyticsView: removed from CoreView, migration to Tools incomplete
+- ❌ CostDashboardView: missing from codebase
+- ❌ InsightsView: backend ready, frontend missing
+- ❌ ScaffoldView: missing from codebase
+- ❌ Broadcast mode: deliberately removed in v0.4.0
+- ❌ Tracks W, X, S, M: not started
+
 Last updated: 2026-04-09
 
 This document maps every significant feature claimed by BridgeMind, QuadCode, and Zen Workspace against PacketCode's current implementation state. It serves as a navigable index into the relevant `dev/` plan docs.

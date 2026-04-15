@@ -30,6 +30,8 @@ export interface Milestone {
 
 // === Task ===
 
+export type TaskRole = "coordinator" | "builder" | "reviewer" | "scout";
+
 export type TaskStatus =
   | "pending"
   | "blocked"
@@ -107,11 +109,15 @@ export interface Task {
   order: number;
   status: TaskStatus;
   type: TaskType;
+  role?: TaskRole;
+  ownedPaths?: string[];
   agentConfigId: string;
   agentArgs?: string[];
   model?: string;
   dependsOn: string[];
   sessionId: string | null;
+  blockedReason?: string;
+  handoffLog?: TaskHandoff[];
   result?: TaskResult;
   reviewPacket?: ReviewPacket;
   createdAt: number;
@@ -119,6 +125,30 @@ export interface Task {
   completedAt?: number;
   cost: number;
   tokens: number;
+}
+
+// === Coordination Events ===
+
+export type CoordinationEventType =
+  | "task_started"
+  | "task_completed"
+  | "task_failed"
+  | "handoff"
+  | "review_requested"
+  | "review_resolved"
+  | "collision_warning"
+  | "escalation";
+
+export interface CoordinationEvent {
+  id: string;
+  flightId: string;
+  type: CoordinationEventType;
+  taskId?: string;
+  taskTitle?: string;
+  agentId?: string;
+  summary: string;
+  timestamp: number;
+  metadata?: Record<string, string>;
 }
 
 // === Flight ===
@@ -150,6 +180,7 @@ export interface Flight {
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
+  coordinationLog?: CoordinationEvent[];
   totalCost: number;
   totalTokens: number;
 }

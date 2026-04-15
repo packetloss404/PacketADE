@@ -1,5 +1,13 @@
 # Zen Feature Notes — Git Workspace Surface
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Phase 1: Branch display + changed files | ❌ Not started | git.rs has branch/status but no in-app dashboard |
+| Phase 2: Stage/unstage + commit flow | ❌ Not started | — |
+| Phase 3: Review packet + flight approval ties | ❌ Not started | — |
+
 > Research date: 2026-04-09
 > Source repo: [riftzen-bit/zen-workspace-ide](https://github.com/riftzen-bit/zen-workspace-ide)
 

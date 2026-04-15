@@ -182,7 +182,7 @@ fn render_session_list(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) 
                     Style::default().fg(theme.brand).add_modifier(Modifier::BOLD),
                 ))
                 .title_bottom(Span::styled(
-                    " j/k:nav  x:kill  /:filter  D:diff ",
+                    " j/k:nav  x:kill  /:filter  ?:search  D:diff ",
                     Style::default().fg(theme.fg_dim),
                 ))
                 .borders(Borders::TOP | Borders::RIGHT),
@@ -204,10 +204,50 @@ fn render_session_list(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) 
 }
 
 fn render_transcript(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
+    // Split area for search bar at bottom if search is active
+    let (transcript_area, search_area) = if app.session_search.is_some() {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
+    // Render search bar
+    if let Some(search_area) = search_area {
+        let search_text = app.session_search.as_deref().unwrap_or("");
+        let cursor = if app.session_search_input { "│" } else { "" };
+        let match_info = if app.session_search_matches.is_empty() {
+            if search_text.is_empty() {
+                String::new()
+            } else {
+                " [no matches]".to_string()
+            }
+        } else {
+            format!(
+                " [{}/{}]",
+                app.session_search_index + 1,
+                app.session_search_matches.len()
+            )
+        };
+        let line = Line::from(vec![
+            Span::styled(" ? ", Style::default().fg(theme.brand)),
+            Span::styled(search_text, Style::default().fg(theme.fg)),
+            Span::styled(cursor, Style::default().fg(theme.fg_dim)),
+            Span::styled(match_info, Style::default().fg(theme.fg_dim)),
+        ]);
+        frame.render_widget(
+            Paragraph::new(line).style(Style::default().bg(theme.bg_highlight)),
+            search_area,
+        );
+    }
+
     let Some(session_id) = app.session_order.get(app.selected_session_idx) else {
         let empty = Paragraph::new("No session selected")
             .block(Block::default().title(" Transcript ").borders(Borders::TOP));
-        frame.render_widget(empty, area);
+        frame.render_widget(empty, transcript_area);
         return;
     };
 
@@ -238,7 +278,7 @@ fn render_transcript(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         ))
         .title_bottom(Span::styled(
             format!(
-                " {}  tool:{}  file:{}  approval:{}  PgUp/PgDn:scroll  g/G:top/bottom  y/n/a:respond ",
+                " {}  tool:{}  file:{}  approval:{}  PgUp/PgDn:scroll  g/G:top/bottom  ?:search ",
                 session.project_path,
                 session.current_tool.as_deref().unwrap_or("-"),
                 session.current_file.as_deref().unwrap_or("-"),
@@ -252,19 +292,78 @@ fn render_transcript(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         let transcript = Paragraph::new("\n  Waiting for output...")
             .block(block)
             .style(Style::default().fg(theme.fg));
-        frame.render_widget(transcript, area);
+        frame.render_widget(transcript, transcript_area);
         return;
     }
 
-    // Use markdown rendering for session output
-    let lines = markdown::markdown_to_lines(&session.output, theme);
+    // Build lines with search highlighting
+    let search_query = app.session_search.as_deref().unwrap_or("");
+    let has_search = !search_query.is_empty();
 
-    let transcript = Paragraph::new(lines)
-        .block(block)
-        .scroll((session.scroll, 0))
-        .wrap(Wrap { trim: false });
+    if has_search {
+        let highlight_style = Style::default().bg(Color::Yellow).fg(Color::Black);
+        let current_match_style = Style::default().bg(Color::Rgb(255, 165, 0)).fg(Color::Black);
+        let query_lower = search_query.to_lowercase();
+        let mut lines: Vec<Line> = Vec::new();
 
-    frame.render_widget(transcript, area);
+        for (line_idx, raw_line) in session.output.lines().enumerate() {
+            let is_match_line = app.session_search_matches.contains(&line_idx);
+            let is_current = is_match_line
+                && !app.session_search_matches.is_empty()
+                && app.session_search_matches.get(app.session_search_index) == Some(&line_idx);
+
+            if is_match_line {
+                // Highlight matching substrings
+                let mut spans: Vec<Span> = Vec::new();
+                let line_lower = raw_line.to_lowercase();
+                let mut pos = 0;
+                while let Some(found) = line_lower[pos..].find(&query_lower) {
+                    let abs_start = pos + found;
+                    let abs_end = abs_start + query_lower.len();
+                    if abs_start > pos {
+                        spans.push(Span::styled(
+                            raw_line[pos..abs_start].to_string(),
+                            Style::default().fg(theme.fg),
+                        ));
+                    }
+                    spans.push(Span::styled(
+                        raw_line[abs_start..abs_end].to_string(),
+                        if is_current { current_match_style } else { highlight_style },
+                    ));
+                    pos = abs_end;
+                }
+                if pos < raw_line.len() {
+                    spans.push(Span::styled(
+                        raw_line[pos..].to_string(),
+                        Style::default().fg(theme.fg),
+                    ));
+                }
+                lines.push(Line::from(spans));
+            } else {
+                lines.push(Line::from(Span::styled(
+                    raw_line.to_string(),
+                    Style::default().fg(theme.fg),
+                )));
+            }
+        }
+
+        let transcript = Paragraph::new(lines)
+            .block(block)
+            .scroll((session.scroll, 0))
+            .wrap(Wrap { trim: false });
+
+        frame.render_widget(transcript, transcript_area);
+    } else {
+        // No search — use markdown rendering as before
+        let lines = markdown::markdown_to_lines(&session.output, theme);
+
+        let transcript = Paragraph::new(lines)
+            .block(block)
+            .scroll((session.scroll, 0))
+            .wrap(Wrap { trim: false });
+
+        frame.render_widget(transcript, transcript_area);
+    }
 }
 
 fn truncate(value: &str, max_len: usize) -> String {

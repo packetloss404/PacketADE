@@ -1,5 +1,16 @@
 # Deploy Pipeline — Implementation Spec
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Basic deploy execution via PTY | ✅ Done | DeployView launches PTY sessions |
+| `run_deploy` backend command | ❌ Not started | Uses generic PTY, no dedicated command |
+| `validate_deploy` backend command | ❌ Not started | — |
+| DeployRun.output field | ❌ Not started | Type lacks output array |
+| Pre-deploy validation | ❌ Not started | — |
+| Flight→deploy integration | ❌ Not started | — |
+
 Last updated: 2026-04-09
 
 ## Goal
