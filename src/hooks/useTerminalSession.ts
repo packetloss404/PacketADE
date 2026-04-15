@@ -261,7 +261,16 @@ export function useTerminalSession({
       unlistenersRef.current = [outputUnlisten, exitUnlisten];
 
       if (initialPrompt?.trim()) {
-        writePty(sessionId, `${initialPrompt.trim()}\n`).catch(() => {});
+        // Claude Code is ready for input immediately; other CLIs (OpenCode, Gemini)
+        // need time to initialize their TUI before accepting stdin.
+        const delay = cliCommand === "claude" ? 0 : 3000;
+        if (delay > 0) {
+          setTimeout(() => {
+            writePty(sessionId, `${initialPrompt.trim()}\n`).catch(() => {});
+          }, delay);
+        } else {
+          writePty(sessionId, `${initialPrompt.trim()}\n`).catch(() => {});
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
