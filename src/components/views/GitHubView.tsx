@@ -92,7 +92,6 @@ export function GitHubView() {
       priority: "medium",
       labels: issue.labels.map((l) => l.name),
       epic: null,
-      sessionId: null,
       acceptanceCriteria: [],
       blockedBy: [],
       blocks: [],

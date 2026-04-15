@@ -87,30 +87,6 @@ export default function App() {
     }
   }, [activeView, setActiveView]);
 
-  // Listen for new session requests
-  useEffect(() => {
-    function handleNewSession() {
-      const view = useAppStore.getState().activeView;
-      if (view !== "claude" && view !== "codex") {
-        useAppStore.getState().setActiveView("claude");
-      }
-      useLayoutStore.getState().addPane({ cliCommand: "claude" });
-    }
-
-    function handleNewCodexSession() {
-      if (useAppStore.getState().activeView !== "codex") {
-        useAppStore.getState().setActiveView("codex");
-      }
-      useLayoutStore.getState().addPane({ cliCommand: "codex" });
-    }
-
-    window.addEventListener("packetcode:new-session", handleNewSession);
-    window.addEventListener("packetcode:new-codex-session", handleNewCodexSession);
-    return () => {
-      window.removeEventListener("packetcode:new-session", handleNewSession);
-      window.removeEventListener("packetcode:new-codex-session", handleNewCodexSession);
-    };
-  }, []);
 
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 

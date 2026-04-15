@@ -83,7 +83,6 @@ export function SpecImportModal({ onClose }: SpecImportModalProps) {
         priority: ticket.priority,
         labels: ticket.labels,
         epic: null,
-        sessionId: null,
         acceptanceCriteria: ticket.acceptanceCriteria.map((text) => ({
           id: generateId("ac", 6),
           text,

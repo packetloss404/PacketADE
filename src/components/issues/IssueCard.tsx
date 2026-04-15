@@ -1,4 +1,4 @@
-import { Trash2, Link, CheckSquare, Target } from "lucide-react";
+import { Trash2, CheckSquare, Target } from "lucide-react";
 import { useIssueStore, type Issue } from "@/stores/issueStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { getLabelColor } from "@/lib/colors";
@@ -89,12 +89,6 @@ export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCard
       {/* Footer: criteria progress + deps + session link + time ago */}
       <div className="flex items-center justify-between mt-1.5 gap-2">
         <div className="flex items-center gap-2">
-          {issue.sessionId && (
-            <span className="flex items-center gap-0.5 text-[9px] text-accent-blue">
-              <Link size={8} />
-              linked
-            </span>
-          )}
           {flight && (
             <span className="flex items-center gap-0.5 text-[9px] text-accent-green truncate max-w-[80px]" title={flight.title}>
               <Target size={8} />
