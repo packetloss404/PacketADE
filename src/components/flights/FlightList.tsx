@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Plus, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, AlertTriangle, X } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
 import { FLIGHT_STATUS_CONFIG } from "@/lib/flight-colors";
 import { NewFlightModal } from "./NewFlightModal";
@@ -172,6 +172,7 @@ function FlightRow({
   onSelect: () => void;
 }) {
   const status = useFlightStore((s) => s.computeFlightStatus)(flight.id);
+  const deleteFlight = useFlightStore((s) => s.deleteFlight);
   const cfg = FLIGHT_STATUS_CONFIG[status];
 
   const tasks = flight.milestones.flatMap((m) => m.tasks);
@@ -179,33 +180,44 @@ function FlightRow({
   const total = tasks.length;
 
   return (
-    <button
-      onClick={onSelect}
-      className={`flex items-start gap-2 w-full px-3 py-1.5 text-left transition-colors border-l-2 ${
+    <div
+      className={`flex items-start gap-2 w-full px-3 py-1.5 text-left transition-colors border-l-2 group ${
         selected
           ? "bg-accent-purple/15 border-accent-purple"
           : "hover:bg-bg-hover border-transparent"
       }`}
     >
-      <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${cfg.dot}`} />
-      <div className="flex-1 min-w-0">
-        <div
-          className={`text-[11px] font-medium truncate ${
-            selected ? "text-text-primary" : "text-text-secondary"
-          }`}
-        >
-          {flight.title || "Untitled"}
+      <button onClick={onSelect} className="flex items-start gap-2 flex-1 min-w-0">
+        <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${cfg.dot}`} />
+        <div className="flex-1 min-w-0">
+          <div
+            className={`text-[11px] font-medium truncate ${
+              selected ? "text-text-primary" : "text-text-secondary"
+            }`}
+          >
+            {flight.title || "Untitled"}
+          </div>
+          <div className="flex items-center gap-1.5 text-[9px] text-text-muted">
+            <span>{cfg.label}</span>
+            {total > 0 && (
+              <>
+                <span>·</span>
+                <span>{done}/{total}</span>
+              </>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 text-[9px] text-text-muted">
-          <span>{cfg.label}</span>
-          {total > 0 && (
-            <>
-              <span>·</span>
-              <span>{done}/{total}</span>
-            </>
-          )}
-        </div>
-      </div>
-    </button>
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          deleteFlight(flight.id);
+        }}
+        className="mt-1 p-0.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
+        title="Delete flight"
+      >
+        <X size={11} />
+      </button>
+    </div>
   );
 }
