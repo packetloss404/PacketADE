@@ -19,7 +19,6 @@ export interface Issue {
   priority: IssuePriority;
   labels: string[];
   epic: string | null;
-  sessionId: string | null;
   flightId: string | null;
   acceptanceCriteria: AcceptanceCriterion[];
   blockedBy: string[]; // issue IDs
@@ -48,7 +47,6 @@ interface IssueStore {
   updateIssue: (id: string, updates: Partial<Issue>) => void;
   deleteIssue: (id: string) => void;
   moveIssue: (id: string, status: IssueStatus) => void;
-  linkSession: (issueId: string, sessionId: string | null) => void;
   assignToFlight: (issueId: string, flightId: string | null) => void;
   addEpic: (epic: string) => void;
   addLabel: (label: string) => void;
@@ -156,10 +154,6 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
 
   moveIssue: (id, status) => {
     get().updateIssue(id, { status });
-  },
-
-  linkSession: (issueId, sessionId) => {
-    get().updateIssue(issueId, { sessionId });
   },
 
   assignToFlight: (issueId, flightId) => {

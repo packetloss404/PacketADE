@@ -13,7 +13,6 @@ function makeIssue(overrides: Record<string, unknown> = {}) {
     priority: "medium" as const,
     labels: [],
     epic: null,
-    sessionId: null,
     acceptanceCriteria: [],
     blockedBy: [],
     blocks: [],
@@ -163,24 +162,6 @@ describe("issueStore", () => {
       const issue = store().addIssue(makeIssue({ flightId: "flight_abc" }));
       store().assignToFlight(issue.id, null);
       expect(store().issues[0].flightId).toBeNull();
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // linkSession
-  // ---------------------------------------------------------------------------
-  describe("linkSession", () => {
-    it("sets sessionId on an issue", () => {
-      const issue = store().addIssue(makeIssue());
-      store().linkSession(issue.id, "sess_42");
-      expect(store().issues[0].sessionId).toBe("sess_42");
-    });
-
-    it("clears sessionId when passed null", () => {
-      const issue = store().addIssue(makeIssue());
-      store().linkSession(issue.id, "sess_42");
-      store().linkSession(issue.id, null);
-      expect(store().issues[0].sessionId).toBeNull();
     });
   });
 

@@ -120,7 +120,6 @@ export const useIdeationStore = create<IdeationStore>((set, get) => ({
       priority: idea.severity === "critical" ? "critical" : idea.severity === "high" ? "high" : idea.severity === "medium" ? "medium" : "low",
       labels: [idea.type, `effort:${idea.effort}`],
       epic: null,
-      sessionId: null,
       acceptanceCriteria: [],
       blockedBy: [],
       blocks: [],

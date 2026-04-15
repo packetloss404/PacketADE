@@ -53,7 +53,6 @@ export function NewIssueForm({ defaultStatus, onClose }: NewIssueFormProps) {
       priority,
       labels: selectedLabels,
       epic: epic || null,
-      sessionId: null,
       acceptanceCriteria: criteria.map((text) => ({
         id: generateId("ac", 6),
         text,
