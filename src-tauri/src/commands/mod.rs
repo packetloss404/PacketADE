@@ -3,6 +3,7 @@ pub mod analytics;
 pub mod code_quality;
 pub mod crashes;
 pub mod deploy;
+pub mod dictation;
 pub mod error_classifier;
 pub mod flight_chat;
 pub mod fs;

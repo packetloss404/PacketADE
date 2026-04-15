@@ -6,6 +6,7 @@ mod commands;
 use commands::github::create_github_auth_state;
 use commands::pty::create_shared_pty_manager;
 use commands::orchestration::create_shared_orchestrator;
+use commands::dictation::audio::create_dictation_state;
 
 fn init_tracing() {
     use tracing_subscriber::{fmt, EnvFilter};
@@ -65,6 +66,7 @@ pub fn run() {
         .manage(create_github_auth_state())
         .manage(create_shared_pty_manager())
         .manage(create_shared_orchestrator())
+        .manage(create_dictation_state())
         .invoke_handler(tauri::generate_handler![
             // PTY-based sessions (primary)
             commands::pty::create_pty_session,
@@ -162,6 +164,19 @@ pub fn run() {
             // Project scaffolding
             commands::scaffold::scaffold_project,
             commands::scaffold::check_scaffold_tools,
+            // Dictation / audio capture
+            commands::dictation::list_audio_devices,
+            commands::dictation::start_recording,
+            commands::dictation::stop_recording,
+            commands::dictation::get_dictation_history,
+            commands::dictation::search_dictation_history,
+            commands::dictation::insert_dictation_entry,
+            commands::dictation::get_dictation_analytics,
+            commands::dictation::get_dictation_settings,
+            commands::dictation::set_dictation_settings,
+            commands::dictation::list_whisper_models,
+            commands::dictation::download_whisper_model,
+            commands::dictation::delete_whisper_model,
             // Deploy pipeline
             commands::deploy::read_deploy_config,
             commands::deploy::create_deploy_config,

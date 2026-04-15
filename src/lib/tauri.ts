@@ -971,3 +971,44 @@ export async function runDeploy(projectPath: string, command: string, runId: str
   return invoke<string>("run_deploy", { projectPath, command, runId });
 }
 
+// Dictation (VibeToText)
+export function listAudioDevices(): Promise<string> {
+  return invoke<string>("list_audio_devices");
+}
+
+export function startRecordingCmd(deviceIndex?: number): Promise<void> {
+  return invoke("start_recording", { deviceIndex: deviceIndex ?? null });
+}
+
+export function stopRecordingCmd(): Promise<string> {
+  return invoke<string>("stop_recording");
+}
+
+export function getDictationHistory(limit: number, offset: number): Promise<string> {
+  return invoke<string>("get_dictation_history", { limit, offset });
+}
+
+export function getDictationAnalytics(): Promise<string> {
+  return invoke<string>("get_dictation_analytics");
+}
+
+export function searchDictationHistory(query: string): Promise<string> {
+  return invoke<string>("search_dictation_history", { query });
+}
+
+export function getDictationSettings(): Promise<string> {
+  return invoke<string>("get_dictation_settings");
+}
+
+export function setDictationSettings(settings: string): Promise<void> {
+  return invoke("set_dictation_settings", { settings });
+}
+
+export function downloadWhisperModel(size: string): Promise<void> {
+  return invoke("download_whisper_model", { size });
+}
+
+export function listWhisperModels(): Promise<string> {
+  return invoke<string>("list_whisper_models");
+}
+

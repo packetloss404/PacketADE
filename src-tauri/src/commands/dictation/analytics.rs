@@ -1,0 +1,253 @@
+use crate::commands::dictation::history::get_db;
+use rusqlite::params;
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
+
+const STOPWORDS: &[&str] = &[
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can", "to",
+    "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through", "during",
+    "before", "after", "above", "below", "between", "under", "again", "further", "then", "once",
+    "and", "but", "or", "nor", "not", "so", "yet", "both", "each", "few", "more", "most", "other",
+    "some", "such", "only", "own", "same", "than", "too", "very", "just", "because", "about", "it",
+    "its", "this", "that", "these", "those", "i", "me", "my", "we", "our", "you", "your", "he",
+    "him", "his", "she", "her", "they", "them", "their", "what", "which", "who", "when", "where",
+    "why", "how", "all", "any", "if", "no",
+];
+
+#[derive(Debug, Serialize)]
+pub struct DictationAnalytics {
+    #[serde(rename = "totalEntries")]
+    pub total_entries: u32,
+    #[serde(rename = "totalWords")]
+    pub total_words: u32,
+    #[serde(rename = "averageWpm")]
+    pub average_wpm: u32,
+    #[serde(rename = "hourlyActivity")]
+    pub hourly_activity: [u32; 24],
+    #[serde(rename = "topWords")]
+    pub top_words: Vec<(String, u32)>,
+    #[serde(rename = "modeBreakdown")]
+    pub mode_breakdown: HashMap<String, u32>,
+    #[serde(rename = "vocabularyDiversity")]
+    pub vocabulary_diversity: f64,
+    #[serde(rename = "dailyStreak")]
+    pub daily_streak: u32,
+    #[serde(rename = "timeSavedMinutes")]
+    pub time_saved_minutes: f64,
+}
+
+#[tauri::command]
+pub fn get_dictation_analytics() -> Result<String, String> {
+    let conn = get_db()?;
+
+    // Fetch all entries
+    let mut stmt = conn
+        .prepare("SELECT text, mode, timestamp, word_count, duration_seconds, wpm FROM entries ORDER BY timestamp ASC")
+        .map_err(|e| format!("SQL error: {e}"))?;
+
+    struct Row {
+        text: String,
+        mode: String,
+        timestamp: String,
+        word_count: Option<i64>,
+        duration_seconds: Option<f64>,
+        wpm: Option<i64>,
+    }
+
+    let rows: Vec<Row> = stmt
+        .query_map(params![], |row| {
+            Ok(Row {
+                text: row.get(0)?,
+                mode: row.get(1)?,
+                timestamp: row.get(2)?,
+                word_count: row.get(3)?,
+                duration_seconds: row.get(4)?,
+                wpm: row.get(5)?,
+            })
+        })
+        .map_err(|e| format!("SQL query error: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let total_entries = rows.len() as u32;
+
+    let stopwords: HashSet<&str> = STOPWORDS.iter().copied().collect();
+
+    let mut total_words: u64 = 0;
+    let mut total_wpm_sum: u64 = 0;
+    let mut wpm_count: u32 = 0;
+    let mut total_duration: f64 = 0.0;
+    let mut hourly_activity = [0u32; 24];
+    let mut mode_breakdown: HashMap<String, u32> = HashMap::new();
+    let mut word_freq: HashMap<String, u32> = HashMap::new();
+    let mut unique_words: HashSet<String> = HashSet::new();
+    let mut days_with_entries: HashSet<String> = HashSet::new();
+
+    for row in &rows {
+        // Word count
+        let wc = row
+            .word_count
+            .unwrap_or_else(|| row.text.split_whitespace().count() as i64);
+        total_words += wc as u64;
+
+        // WPM
+        if let Some(w) = row.wpm {
+            total_wpm_sum += w as u64;
+            wpm_count += 1;
+        }
+
+        // Duration
+        if let Some(d) = row.duration_seconds {
+            total_duration += d;
+        }
+
+        // Mode breakdown
+        *mode_breakdown.entry(row.mode.clone()).or_insert(0) += 1;
+
+        // Hourly activity — parse hour from timestamp (format: ...THH:MM:SS...)
+        if let Some(t_pos) = row.timestamp.find('T') {
+            if let Ok(hour) = row.timestamp[t_pos + 1..t_pos + 3].parse::<usize>() {
+                if hour < 24 {
+                    hourly_activity[hour] += 1;
+                }
+            }
+        }
+
+        // Day for streak calculation (YYYY-MM-DD)
+        if row.timestamp.len() >= 10 {
+            days_with_entries.insert(row.timestamp[..10].to_string());
+        }
+
+        // Word frequency + unique words
+        for word in row.text.split_whitespace() {
+            let clean: String = word
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+                .to_lowercase();
+            if clean.len() > 2 && !stopwords.contains(clean.as_str()) {
+                *word_freq.entry(clean.clone()).or_insert(0) += 1;
+            }
+            if !clean.is_empty() {
+                unique_words.insert(clean);
+            }
+        }
+    }
+
+    // Top 20 words
+    let mut word_vec: Vec<(String, u32)> = word_freq.into_iter().collect();
+    word_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    word_vec.truncate(20);
+
+    // Vocabulary diversity
+    let vocabulary_diversity = if total_words > 0 {
+        unique_words.len() as f64 / total_words as f64
+    } else {
+        0.0
+    };
+
+    // Average WPM
+    let average_wpm = if wpm_count > 0 {
+        (total_wpm_sum / wpm_count as u64) as u32
+    } else {
+        0
+    };
+
+    // Daily streak — count consecutive days ending at the most recent entry day
+    let daily_streak = compute_daily_streak(&days_with_entries);
+
+    // Time saved: (total_words / 40) - (total_duration / 60)
+    // typing at 40 wpm vs dictation duration
+    let time_saved_minutes = (total_words as f64 / 40.0) - (total_duration / 60.0);
+
+    let analytics = DictationAnalytics {
+        total_entries,
+        total_words: total_words as u32,
+        average_wpm,
+        hourly_activity,
+        top_words: word_vec,
+        mode_breakdown,
+        vocabulary_diversity,
+        daily_streak,
+        time_saved_minutes: if time_saved_minutes > 0.0 {
+            time_saved_minutes
+        } else {
+            0.0
+        },
+    };
+
+    serde_json::to_string(&analytics).map_err(|e| format!("JSON serialization error: {e}"))
+}
+
+/// Compute the longest consecutive-day streak ending at the most recent day.
+fn compute_daily_streak(days: &HashSet<String>) -> u32 {
+    if days.is_empty() {
+        return 0;
+    }
+
+    let mut sorted: Vec<&String> = days.iter().collect();
+    sorted.sort();
+
+    // Walk backwards from the last day
+    let mut streak = 1u32;
+    for i in (0..sorted.len() - 1).rev() {
+        let curr = &sorted[i];
+        let next = &sorted[i + 1];
+        if are_consecutive_days(curr, next) {
+            streak += 1;
+        } else {
+            break;
+        }
+    }
+
+    streak
+}
+
+/// Check if two YYYY-MM-DD date strings represent consecutive calendar days.
+fn are_consecutive_days(a: &str, b: &str) -> bool {
+    // Parse simple date strings
+    fn parse_date(s: &str) -> Option<(i32, u32, u32)> {
+        let parts: Vec<&str> = s.split('-').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+        Some((
+            parts[0].parse().ok()?,
+            parts[1].parse().ok()?,
+            parts[2].parse().ok()?,
+        ))
+    }
+
+    fn days_in_month(y: i32, m: u32) -> u32 {
+        match m {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 => {
+                if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 {
+                    29
+                } else {
+                    28
+                }
+            }
+            _ => 30,
+        }
+    }
+
+    fn next_day(y: i32, m: u32, d: u32) -> (i32, u32, u32) {
+        let max_d = days_in_month(y, m);
+        if d < max_d {
+            (y, m, d + 1)
+        } else if m < 12 {
+            (y, m + 1, 1)
+        } else {
+            (y + 1, 1, 1)
+        }
+    }
+
+    if let (Some((ay, am, ad)), Some(b_date)) = (parse_date(a), parse_date(b)) {
+        next_day(ay, am, ad) == b_date
+    } else {
+        false
+    }
+}

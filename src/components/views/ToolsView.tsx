@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower } from "lucide-react";
+import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower, Mic } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useIssueStore } from "@/stores/issueStore";
@@ -15,11 +15,12 @@ import { CrashViewerCard } from "./tools/CrashViewerCard";
 import { McpServersCard } from "./tools/McpServersCard";
 import { McpProviderCard } from "./tools/McpProviderCard";
 import { CostCard } from "./tools/CostCard";
+import { DictationCard } from "./tools/DictationCard";
 import type { PromptTemplate } from "@/types/prompt";
 
 const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
 
-type SettingsSection = "project" | "issues" | "profiles" | "routing" | "mcp" | "mcp-provider" | "modules" | "templates" | "history" | "cost";
+type SettingsSection = "project" | "issues" | "profiles" | "routing" | "mcp" | "mcp-provider" | "modules" | "templates" | "history" | "cost" | "dictation";
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
   { key: "project", label: "Project", icon: FolderOpen },
@@ -32,6 +33,7 @@ const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] =
   { key: "templates", label: "Templates", icon: FileText },
   { key: "history", label: "History", icon: Clock },
   { key: "cost", label: "Cost", icon: DollarSign },
+  { key: "dictation", label: "Dictation", icon: Mic },
 ];
 
 export function ToolsView() {
@@ -148,6 +150,12 @@ export function ToolsView() {
         {activeSection === "cost" && (
           <div className="grid grid-cols-2 gap-4 max-w-2xl">
             <CostCard />
+          </div>
+        )}
+
+        {activeSection === "dictation" && (
+          <div className="max-w-2xl">
+            <DictationCard />
           </div>
         )}
       </div>
