@@ -8,9 +8,10 @@ PacketCode is a Tauri v2 desktop app that brings AI coding agents, planning, iss
 
 - Run multiple agent sessions side-by-side in PTY-backed panes inside a **Workspace** (your terminal-CLI command center)
 - Plan and supervise larger units of work from the **Flight Deck** — a single-screen master-detail mission control
-- Track issues on a kanban board and triage approvals from a review queue
-- Keep project context close with memory summaries, history, GitHub integration, and AI-assisted tools
-- Scaffold projects, manage MCP servers, inspect crashes, and run deploy workflows from the same UI
+- Track issues on a kanban board and send them directly to workspace sessions
+- Connect to remote servers via SSH and run agent sessions over the wire
+- Keep project context close with auto-learning memory, history, and GitHub integration
+- Manage MCP servers, inspect crashes, and run deploy workflows from the same UI
 - Share orchestration logic between the desktop GUI and the standalone `packetcode-tui` binary
 
 ## Supported Agent CLIs
@@ -30,8 +31,8 @@ Each session can be launched with agent-specific arguments and model selections 
 
 - Multi-pane terminal workflow built on `xterm.js` and `portable-pty` with a draggable mosaic tiling layout
 - Live status bars for supported agent CLIs
-- Per-pane model and effort overrides, bypass-permissions toggles, and broadcast-style prompts
-- Workspaces can be launched directly from a flight, inheriting its objective and linked issues as context
+- Per-pane model and effort overrides, bypass-permissions toggles
+- Agent profile system for reusable agent configurations
 - Pane layout presets (1×1, 1×2, 2×1, 2×2, 2×3, 3×2) live in the main toolbar when a workspace is active
 
 ### Flight Deck — Mission Control
@@ -40,31 +41,51 @@ Each session can be launched with agent-specific arguments and model selections 
 - **Attention** group automatically surfaces paused, failed, and approval-needed flights
 - Live tiles for the selected flight: stat strip (cost, tokens, tasks, approvals, sessions, last update), milestones, live agents, approvals queue, and timeline
 - Inline edit of title and objective; status and priority dropdowns; pause/resume/cancel lifecycle controls
-- One-click **Launch Workspace** that wires the flight's agents, project path, and context into a fresh workspace
 - Kanban issue tracking with priorities, labels, acceptance criteria, and flight linkage
 - Standalone Review Queue view for triaging approvals across all flights
 
-### AI Context and Tooling
+### SSH Remote Workspaces
 
-- Memory scanning, session summaries, and learned-pattern extraction
-- Insights chat for project-aware Q&A
-- Ideation and code-quality tooling
-- Spec import flows for turning rough requirements into actionable work
+- Add and manage remote servers with SSH agent, key, or password authentication
+- Auto-detect and install agent CLIs on remote servers (Claude Code, OpenCode)
+- Create workspaces that run agent sessions over SSH on remote machines
+- Password authentication via in-app prompt (never saved to disk)
 
-### GitHub and Git Workflow
+### Issues — Work on This Issue
 
-- GitHub issue browsing and import
-- PR creation support
-- Git status, branch awareness, and safety checks surfaced through the app
-- Tokens are kept in backend memory and are not persisted across restarts
+- Kanban board with drag-and-drop columns (To Do, In Progress, QA, Done, Blocked, Needs Human)
+- Click "Work on this issue" to send the issue prompt to an existing workspace session
+- Or create a new workspace named after the project with the issue pre-loaded
+- Acceptance criteria, dependency graphs, flight assignment, labels, and priorities
+
+### Memory — Auto-Learning System
+
+- Automatically learns from completed sessions: reads PTY transcripts, summarizes via Claude, extracts reusable patterns
+- Learned patterns with confidence scores and categories (architecture, convention, preference, pitfall)
+- Live context injection into workspace sessions (patterns + lessons + recent summaries)
+- Per-project scoping with bounded context to avoid token overflow
+
+### Ideation Scanner
+
+- AI-powered codebase analysis that generates improvement ideas across categories (code quality, security, performance, documentation, UI/UX)
+- Per-workspace scoping — each workspace gets its own scan results
+- Convert ideas directly to issues on the kanban board
+
+### GitHub Integration
+
+- GitHub PAT authentication stored in OS keyring
+- Repository listing and selection
+- Issue browsing with search, labels, and import-to-board
+- Pull request browsing with diff viewer
+- AI investigation of issues via Claude
 
 ### Project Operations
 
-- MCP server management for project and global scopes
-- Built-in scaffolding flows for new projects
+- MCP server management (global and project scope) in the Tools page
 - Deploy configuration and terminal-backed deploy runs
 - Local crash report browsing and cleanup
-- Analytics and cost tracking views
+- Agent profile management and AI routing configuration
+- Prompt template library
 
 ### Terminal UI
 
@@ -73,6 +94,7 @@ PacketCode also ships a Ratatui-based TUI:
 - Binary: `packetcode-tui`
 - Source: `src-tauri/src/tui/`
 - Purpose: terminal-first access to the same orchestration engine used by the desktop app
+- Vim-style keybindings, command palette, context-sensitive help overlay
 
 ## Tech Stack
 
@@ -170,6 +192,7 @@ PacketCode/
       flights/                 # Flight Deck tiles (FlightList, FlightDetail, FlightHeaderTile, etc.)
       views/                   # First-class application views (FlightDeckView, WorkspaceView, …)
       workspace/               # Workspace creation, sidebar, and pane container UI
+      servers/                 # SSH server form modal
       common/                  # Shared presentation components
       ui/                      # Shared UI primitives
     stores/                    # Zustand stores for app, layout, flights, issues, workspaces, etc.
@@ -201,6 +224,8 @@ PacketCode/
 - App modules are registered through `src/modules/registry.ts`
 - Session management is PTY-based rather than JSONL-session based
 - Shared backend/frontend orchestration concepts are used by both the GUI and `packetcode-tui`
+- GitHub PAT is stored in the OS keyring via the `keyring` crate
+- SSH passwords are prompted at connect time and held in memory only
 
 ## License
 
