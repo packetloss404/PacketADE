@@ -2,6 +2,18 @@
 
 Last updated: 2026-04-09
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| MCP config management | ✅ Done | mcp.rs reads/writes/deletes server configs |
+| PacketCode as MCP provider | ❌ Not started | mcp.rs is config-only, not a server |
+| MCP resources (flights, tasks, memory) | ❌ Not started | — |
+| MCP tools (get_active_flight, etc.) | ❌ Not started | — |
+| Phase 1: Local read-only server | ❌ Not started | — |
+| Phase 2: Workflow tools | ❌ Not started | — |
+| Phase 3: Ownership-aware tools | ❌ Not started | Depends on swarm Track S |
+
 ## Goal
 
 Evolve PacketCode from an MCP configuration manager into a real MCP provider that exposes PacketCode context and workflows to external AI clients.

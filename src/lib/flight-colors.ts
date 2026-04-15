@@ -1,4 +1,4 @@
-import type { FlightStatus, FlightPriority } from "@/types/flight";
+import type { FlightStatus, FlightPriority, TaskRole } from "@/types/flight";
 import type { IssueStatus } from "@/stores/issueStore";
 
 export const FLIGHT_STATUS_CONFIG: Record<FlightStatus, { dot: string; bg: string; text: string; label: string }> = {
@@ -36,6 +36,13 @@ export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
   done: "Done",
   blocked: "Blocked",
   needs_human: "Needs Human",
+};
+
+export const TASK_ROLE_CONFIG: Record<TaskRole, { label: string; color: string; icon: string }> = {
+  coordinator: { label: "Coordinator", color: "text-accent-purple", icon: "crown" },
+  builder: { label: "Builder", color: "text-accent-green", icon: "hammer" },
+  reviewer: { label: "Reviewer", color: "text-accent-blue", icon: "eye" },
+  scout: { label: "Scout", color: "text-accent-amber", icon: "compass" },
 };
 
 /** Activity dot color per agent state, used by Flight Deck live tiles. */

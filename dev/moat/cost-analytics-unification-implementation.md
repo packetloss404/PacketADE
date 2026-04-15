@@ -1,5 +1,15 @@
 # Cost and Analytics — Implementation Spec
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `read_usage_analytics` backend | ✅ Done | Returns AnalyticsData with cost, tokens, per-model |
+| CostDashboardView | ❌ Missing | No standalone component |
+| Cost alerts | ❌ Not started | No `set_cost_alert` backend command |
+| Per-flight cost rollup | ❌ Not started | — |
+| Cost/analytics unification | ❌ Not started | costStore and analyticsStore still separate |
+
 Last updated: 2026-04-09
 
 ## Goal

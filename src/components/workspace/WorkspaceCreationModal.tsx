@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { LayoutGrid, Check, User, FileText, ShieldOff, Loader2 } from "lucide-react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { LayoutGrid, Check, User, FileText, ShieldOff, Loader2, FolderOpen, ChevronDown, Zap } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -26,6 +26,14 @@ const AGENT_SLOTS: { id: WorkspaceAgentSlot; cliId: AgentChoice | null; label: s
   { id: "opencode", cliId: "opencode", label: "OpenCode", cliCommand: "opencode" },
 ];
 
+const WORKSPACE_TEMPLATES = [
+  { id: "solo", label: "Solo", description: "One AI agent", agents: ["claude-code"] as WorkspaceAgentSlot[] },
+  { id: "duo", label: "Duo", description: "Two AI agents side-by-side", agents: ["claude-code", "codex"] as WorkspaceAgentSlot[] },
+  { id: "review-trio", label: "Review Trio", description: "Builder + reviewer + terminal", agents: ["claude-code", "codex", "terminal"] as WorkspaceAgentSlot[] },
+  { id: "research", label: "Research", description: "Claude + Gemini for research", agents: ["claude-code", "gemini"] as WorkspaceAgentSlot[] },
+  { id: "full-stack", label: "Full Stack", description: "All available agents", agents: ["claude-code", "codex", "gemini", "terminal"] as WorkspaceAgentSlot[] },
+];
+
 const CLI_MODEL_MAP: Record<AgentChoice, typeof CLAUDE_MODELS> = {
   "claude-code": CLAUDE_MODELS,
   codex: CODEX_MODELS,
@@ -43,6 +51,7 @@ interface WorkspaceCreationModalProps {
 export function WorkspaceCreationModal({ onClose, initialSelected, serverId, remoteProjectPath }: WorkspaceCreationModalProps) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(() => initialSelected ?? new Set());
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     useProfileStore.getState().activeProfileId,
   );
@@ -50,12 +59,35 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
   const [effortOverrides, setEffortOverrides] = useState<Record<string, EffortLevel | null>>({ "claude-code": "medium" });
   const [bypassPermissions, setBypassPermissions] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const projectPath = useLayoutStore((s) => s.projectPath);
+  const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath);
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
 
   const agents = useAgentStore((s) => s.agents);
   const detecting = useAgentStore((s) => s.detecting);
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
-  const projectPath = useLayoutStore((s) => s.projectPath);
   const profiles = useProfileStore((s) => s.profiles);
+
+  // Unique project paths from existing workspaces + current global path
+  const recentProjectPaths = useMemo(() => {
+    const paths = new Set<string>([projectPath]);
+    for (const w of useWorkspaceStore.getState().workspaces) {
+      if (w.projectPath) paths.add(w.projectPath);
+    }
+    return Array.from(paths);
+  }, [projectPath]);
+
+  // Close project dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
+        setProjectDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   const preview = useMemo(() => {
     if (selected.size === 0) return null;
@@ -65,11 +97,20 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
   // Get the AI agents that are selected (not terminal)
   const selectedAiAgents = AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
 
+  function applyTemplate(template: typeof WORKSPACE_TEMPLATES[number]) {
+    setSelectedTemplateId(template.id);
+    setSelected(new Set(template.agents));
+    if (!name.trim()) {
+      setName(template.label);
+    }
+  }
+
   function toggleAgent(id: WorkspaceAgentSlot) {
     if (id !== "terminal") {
       const cfg = agents.find((a) => a.id === id);
       if (!cfg?.installed) return;
     }
+    setSelectedTemplateId(null);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -110,7 +151,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
       useProfileStore.getState().setActiveProfile(selectedProfileId);
     }
 
-    createWorkspace(name.trim(), orderedAgents, projectPath, {
+    createWorkspace(name.trim(), orderedAgents, selectedProjectPath, {
       prompt: finalPrompt.trim() || undefined,
       modelOverrides,
       effortOverrides,
@@ -155,6 +196,51 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
       }
     >
       <div className="px-5 py-4 flex flex-col gap-4 max-h-[70vh] overflow-y-auto" onKeyDown={handleKeyDown}>
+        {/* Project Path */}
+        <div ref={projectDropdownRef}>
+          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Project</label>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
+              className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
+            >
+              <FolderOpen size={12} className="text-accent-green flex-shrink-0" />
+              <span className="flex-1 truncate text-text-primary" title={selectedProjectPath}>
+                {selectedProjectPath.split(/[\\/]/).pop()}
+              </span>
+              <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={selectedProjectPath}>
+                {selectedProjectPath}
+              </span>
+              <ChevronDown
+                size={10}
+                className={`text-text-muted flex-shrink-0 transition-transform ${projectDropdownOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {projectDropdownOpen && recentProjectPaths.length > 1 && (
+              <div className="absolute top-full left-0 mt-1 w-full bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1 max-h-[160px] overflow-y-auto">
+                {recentProjectPaths.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => {
+                      setSelectedProjectPath(p);
+                      setProjectDropdownOpen(false);
+                    }}
+                    className={`flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-bg-hover transition-colors ${
+                      p === selectedProjectPath ? "bg-accent-green/10" : ""
+                    }`}
+                  >
+                    <FolderOpen size={11} className={p === selectedProjectPath ? "text-accent-green" : "text-text-muted"} />
+                    <span className="flex-1 truncate text-[11px] text-text-primary">{p.split(/[\\/]/).pop()}</span>
+                    <span className="text-[10px] text-text-muted truncate max-w-[180px]">{p}</span>
+                    {p === selectedProjectPath && <Check size={10} className="text-accent-green flex-shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Name */}
         <div>
           <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Workspace Name</label>
@@ -166,6 +252,39 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
             className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
             autoFocus
           />
+        </div>
+
+        {/* Workspace Templates */}
+        <div>
+          <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">
+            <Zap size={10} className="inline mr-1 -mt-px" />
+            Templates
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {WORKSPACE_TEMPLATES.map((tpl) => {
+              const isActive = selectedTemplateId === tpl.id;
+              const agentLabels = tpl.agents.map((a) => AGENT_SLOTS.find((s) => s.id === a)?.label ?? a);
+              return (
+                <button
+                  key={tpl.id}
+                  onClick={() => applyTemplate(tpl)}
+                  className={`flex flex-col items-start px-3 py-2 text-[11px] rounded border transition-colors ${
+                    isActive
+                      ? "bg-accent-green/15 border-accent-green/40"
+                      : "bg-bg-primary border-bg-border hover:border-text-muted/30"
+                  }`}
+                >
+                  <span className={`font-medium ${isActive ? "text-accent-green" : "text-text-primary"}`}>
+                    {tpl.label}
+                  </span>
+                  <span className="text-[10px] text-text-muted mt-0.5">{tpl.description}</span>
+                  <span className="text-[10px] text-text-muted mt-1 opacity-70">
+                    {agentLabels.join(" + ")}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Agent Selection — multi-toggle buttons */}

@@ -1,5 +1,17 @@
 # Positioning Notes
 
+## Implementation Status — 2026-04-15
+
+Strategic positions validated against current codebase:
+- ✅ Local-first core: all features work without hosted service
+- ✅ TUI as first-class: transcripts, retrospectives, git refresh working
+- ✅ Windows support: Tauri v2, full Windows build pipeline
+- ✅ Memory layer: session-end auto-learning active
+- ❌ PacketCode MCP: not started (config management only)
+- ❌ Swarm orchestration: not started
+- ❌ Workspace-per-project: not started
+- ❌ Voice product: not pursuing (backlogged per strategy)
+
 Last updated: 2026-04-09
 
 ## Working Thesis

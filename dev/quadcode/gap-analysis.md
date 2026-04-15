@@ -1,5 +1,18 @@
 # QuadCode vs PacketCode — Gap Analysis
 
+## Implementation Status — 2026-04-15
+
+| Gap | Status | Notes |
+|-----|--------|-------|
+| Broadcast mode | ❌ Removed | Deliberately removed in v0.4.0; BroadcastBar deleted |
+| Multi-model support | ⚠️ Partial | Agent switching works (Claude/Codex/Gemini/OpenCode); no model variant selection UI |
+| Per-session accent colors | ❌ Not started | UI components support colors but no per-session storage |
+| Pinned/quick commands | ❌ Not started | Complete gap — no storage or UI |
+| Pane zoom-to-focus | ❌ Not started | No PaneContainer layout toggle |
+| Specialized agent roles | ❌ Not started | Covered by swarm Track S |
+| Broader MCP catalog | ❌ Not started | — |
+| Design system generation | ❌ Not pursuing | Different product direction per positioning-notes.md |
+
 > Research date: 2026-04-09
 > Sources: [getquadcode.com](https://getquadcode.com/), [quadcode.ai](https://quadcode.ai/), [quadslab.io](https://quadslab.io/products)
 

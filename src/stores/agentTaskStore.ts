@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { createPtySession, writePty, killPty } from "@/lib/tauri";
 import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
 import { generateId } from "@/lib/storage";
+import type { GitHubRepo } from "@/types/github";
 
 export type AgentCli = "claude-code" | "codex" | "gemini" | "opencode";
 export type AgentTaskStatus = "running" | "done" | "failed" | "cancelled";
@@ -40,9 +41,25 @@ const BYPASS_FLAGS: Record<AgentCli, string | null> = {
   opencode: "--dangerously-skip-permissions",
 };
 
+export type AgentInputMode = "build" | "plan";
+
+/** Derive a display name for a projectPath (e.g. "owner/repo" or last two segments). */
+export function repoDisplayName(projectPath: string, githubRepos: GitHubRepo[]): string {
+  const segments = projectPath.replace(/\\/g, "/").split("/").filter(Boolean);
+  const folderName = segments[segments.length - 1] ?? projectPath;
+  const match = githubRepos.find((r) => r.name === folderName);
+  if (match) return match.full_name;
+  if (segments.length >= 2) return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+  return folderName;
+}
+
 interface AgentTaskStore {
   tasks: AgentTask[];
   selectedTaskId: string | null;
+  selectedRepo: string | null;
+  inputMode: AgentInputMode;
+  agentInputText: string;
+  selectedServerId: string | null;
 
   launchTask: (title: string, description: string, agent: AgentCli, projectPath: string) => Promise<string>;
   cancelTask: (id: string) => void;
@@ -50,11 +67,19 @@ interface AgentTaskStore {
   selectTask: (id: string | null) => void;
   appendOutput: (id: string, text: string) => void;
   completeTask: (id: string, exitCode: number | null) => void;
+  setSelectedRepo: (repo: string | null) => void;
+  setInputMode: (mode: AgentInputMode) => void;
+  setAgentInputText: (text: string) => void;
+  setSelectedServerId: (id: string | null) => void;
 }
 
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   tasks: [],
   selectedTaskId: null,
+  selectedRepo: null,
+  inputMode: "build",
+  agentInputText: "",
+  selectedServerId: null,
 
   launchTask: async (title, description, agent, projectPath) => {
     const id = generateId("agt");
@@ -143,6 +168,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   },
 
   selectTask: (id) => set({ selectedTaskId: id }),
+  setSelectedRepo: (repo) => set({ selectedRepo: repo }),
+  setInputMode: (mode) => set({ inputMode: mode }),
+  setAgentInputText: (text) => set({ agentInputText: text }),
+  setSelectedServerId: (id) => set({ selectedServerId: id }),
 
   appendOutput: (id, text) => {
     set((s) => ({

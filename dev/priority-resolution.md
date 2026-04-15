@@ -1,5 +1,15 @@
 # Track Priority Resolution
 
+## Implementation Status — 2026-04-15
+
+| Track | Status | Notes |
+|-------|--------|-------|
+| W — Workspace Foundation | ❌ Not started | PaneConfig.projectPath exists but no runtime wiring |
+| X — Workspace UX | ❌ Not started | No templates, no editor, no git dashboard |
+| S — Swarm Orchestration | ❌ Not started | Task handoff primitive exists |
+| M — PacketCode MCP | ❌ Not started | mcp.rs is config management only |
+| T — TUI Evolution | ⚠️ Partial | Transcripts, retrospectives, git refresh done; Phase 2-3 not started |
+
 Last updated: 2026-04-09
 
 ## Context

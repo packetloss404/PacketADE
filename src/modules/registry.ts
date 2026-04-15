@@ -1,8 +1,10 @@
 import type { ModuleManifest } from "@/types/modules";
 import { ideationModule } from "./ideation";
+import { scaffoldModule } from "./scaffold";
 
 export const moduleRegistry: ModuleManifest[] = [
   ideationModule,
+  scaffoldModule,
 ];
 
 export function getModule(id: string): ModuleManifest | undefined {

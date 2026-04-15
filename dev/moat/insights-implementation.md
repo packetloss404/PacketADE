@@ -1,5 +1,16 @@
 # Insights — Implementation Spec
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Backend `ask_insights_stream` | ✅ Done | Commands exist in commands/insights.rs with `session_context` param |
+| InsightsView frontend | ❌ Missing | No component or store in codebase |
+| "Include memory context" toggle | ❌ Not started | — |
+| "Send to terminal" button | ❌ Not started | — |
+| Flight-scoped Insights | ❌ Not started | No `flightId` on InsightsSession |
+| Ideation→Insights bridge | ❌ Not started | — |
+
 Last updated: 2026-04-09
 
 ## Goal

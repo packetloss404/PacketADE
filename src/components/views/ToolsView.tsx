@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock } from "lucide-react";
+import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useIssueStore } from "@/stores/issueStore";
@@ -13,11 +13,13 @@ import { ModulesCard } from "./tools/ModulesCard";
 import { NotificationSettingsCard } from "./tools/NotificationSettingsCard";
 import { CrashViewerCard } from "./tools/CrashViewerCard";
 import { McpServersCard } from "./tools/McpServersCard";
+import { McpProviderCard } from "./tools/McpProviderCard";
+import { CostCard } from "./tools/CostCard";
 import type { PromptTemplate } from "@/types/prompt";
 
 const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
 
-type SettingsSection = "project" | "issues" | "profiles" | "routing" | "mcp" | "modules" | "templates" | "history";
+type SettingsSection = "project" | "issues" | "profiles" | "routing" | "mcp" | "mcp-provider" | "modules" | "templates" | "history" | "cost";
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
   { key: "project", label: "Project", icon: FolderOpen },
@@ -25,9 +27,11 @@ const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] =
   { key: "profiles", label: "Profiles", icon: User },
   { key: "routing", label: "AI Routing", icon: Route },
   { key: "mcp", label: "MCP Servers", icon: Plug },
+  { key: "mcp-provider", label: "MCP Provider", icon: RadioTower },
   { key: "modules", label: "Modules", icon: Puzzle },
   { key: "templates", label: "Templates", icon: FileText },
   { key: "history", label: "History", icon: Clock },
+  { key: "cost", label: "Cost", icon: DollarSign },
 ];
 
 export function ToolsView() {
@@ -115,6 +119,12 @@ export function ToolsView() {
           </div>
         )}
 
+        {activeSection === "mcp-provider" && (
+          <div className="max-w-2xl">
+            <McpProviderCard />
+          </div>
+        )}
+
         {activeSection === "modules" && (
           <div className="max-w-2xl">
             <ModulesCard />
@@ -132,6 +142,12 @@ export function ToolsView() {
             <Suspense fallback={<div className="text-xs text-text-muted p-4">Loading...</div>}>
               <HistoryView />
             </Suspense>
+          </div>
+        )}
+
+        {activeSection === "cost" && (
+          <div className="grid grid-cols-2 gap-4 max-w-2xl">
+            <CostCard />
           </div>
         )}
       </div>

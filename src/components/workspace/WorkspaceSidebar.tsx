@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -24,7 +24,6 @@ function shortName(path: string): string {
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").toLowerCase();
 }
-
 
 export function WorkspaceSidebar() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
@@ -55,27 +54,36 @@ export function WorkspaceSidebar() {
     deleteWorkspace(id);
   }
 
-  // Filter workspaces to current project only
+  // Show all active workspaces regardless of project path
   const activeWorkspaces = useMemo(
-    () => workspaces.filter(
-      (w) => w.status === "active" && normalizePath(w.projectPath) === normalizePath(projectPath)
-    ),
-    [workspaces, projectPath]
+    () => workspaces.filter((w) => w.status === "active"),
+    [workspaces]
   );
-
-  // Clear active workspace when switching to a different project
-  useEffect(() => {
-    const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
-    if (activeWs && normalizePath(activeWs.projectPath) !== normalizePath(projectPath)) {
-      setActiveWorkspace(null);
-    }
-  }, [projectPath, activeWorkspaceId, workspaces, setActiveWorkspace]);
 
   const filteredWorkspaces = useMemo(() => {
     if (!filter.trim()) return activeWorkspaces;
     const f = filter.toLowerCase();
     return activeWorkspaces.filter((w) => w.name.toLowerCase().includes(f));
   }, [activeWorkspaces, filter]);
+
+  // Group filtered workspaces by projectPath, current project first
+  const workspacesByProject = useMemo(() => {
+    const map = new Map<string, typeof filteredWorkspaces>();
+    for (const ws of filteredWorkspaces) {
+      const key = ws.projectPath;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(ws);
+    }
+    const currentNorm = normalizePath(projectPath);
+    const sorted = [...map.entries()].sort(([a], [b]) => {
+      const aIsCurrent = normalizePath(a) === currentNorm;
+      const bIsCurrent = normalizePath(b) === currentNorm;
+      if (aIsCurrent && !bIsCurrent) return -1;
+      if (!aIsCurrent && bIsCurrent) return 1;
+      return shortName(a).localeCompare(shortName(b));
+    });
+    return sorted;
+  }, [filteredWorkspaces, projectPath]);
 
   const projectName = projectPath ? shortName(projectPath) : "No project";
 
@@ -153,54 +161,74 @@ export function WorkspaceSidebar() {
             {filteredWorkspaces.length === 0 ? (
               <div className="px-3 py-2 text-[10px] text-text-muted">No workspaces</div>
             ) : (
-              filteredWorkspaces.map((ws) => {
-                const isActive = ws.id === activeWorkspaceId;
+              workspacesByProject.map(([projPath, projWorkspaces]) => {
+                const isCurrent = normalizePath(projPath) === normalizePath(projectPath);
                 return (
-                  <div
-                    key={ws.id}
-                    className={`flex items-start gap-2 w-full px-3 py-1.5 transition-colors group ${
-                      isActive
-                        ? "bg-accent-purple/15 border-l-2 border-accent-purple"
-                        : "hover:bg-bg-hover border-l-2 border-transparent"
-                    }`}
-                  >
-                    <button
-                      onClick={() => setActiveWorkspace(ws.id)}
-                      className="flex items-start gap-2 flex-1 min-w-0 text-left"
-                    >
-                      <LayoutGrid
-                        size={11}
-                        className={`mt-0.5 flex-shrink-0 ${isActive ? "text-accent-purple" : "text-text-muted"}`}
-                      />
-                      <div className="flex-1 min-w-0">
+                  <div key={projPath}>
+                    {/* Project group header */}
+                    <div className="flex items-center gap-1.5 px-3 py-1 mt-1">
+                      <Folder size={9} className={isCurrent ? "text-accent-green" : "text-text-muted"} />
+                      <span className={`text-[9px] uppercase tracking-wide font-semibold truncate ${
+                        isCurrent ? "text-accent-green" : "text-text-muted"
+                      }`}>
+                        {shortName(projPath)}
+                      </span>
+                      <span className="text-[9px] text-text-muted">({projWorkspaces.length})</span>
+                    </div>
+                    {/* Workspace cards within this project */}
+                    {projWorkspaces.map((ws) => {
+                      const isActive = ws.id === activeWorkspaceId;
+                      return (
                         <div
-                          className={`text-[11px] font-medium truncate ${
-                            isActive ? "text-text-primary" : "text-text-secondary"
+                          key={ws.id}
+                          className={`flex items-start gap-2 w-full px-3 py-1.5 transition-colors group ${
+                            isActive
+                              ? "bg-accent-purple/15 border-l-2 border-accent-purple"
+                              : "hover:bg-bg-hover border-l-2 border-transparent"
                           }`}
                         >
-                          {ws.name}
+                          <button
+                            onClick={() => setActiveWorkspace(ws.id)}
+                            className="flex items-start gap-2 flex-1 min-w-0 text-left"
+                          >
+                            <LayoutGrid
+                              size={11}
+                              className={`mt-0.5 flex-shrink-0 ${isActive ? "text-accent-purple" : "text-text-muted"}`}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div
+                                className={`text-[11px] font-medium truncate ${
+                                  isActive ? "text-text-primary" : "text-text-secondary"
+                                }`}
+                              >
+                                {ws.name}
+                              </div>
+                              <div className="text-[9px] text-text-muted truncate">
+                                {shortName(ws.projectPath)}
+                                {" \u00b7 "}
+                                {new Date(ws.createdAt).toLocaleString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                  hour12: true,
+                                })}
+                              </div>
+                            </div>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleDeleteWorkspace(ws.id);
+                            }}
+                            className="mt-0.5 p-0.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
+                            title="Delete workspace"
+                          >
+                            <X size={11} />
+                          </button>
                         </div>
-                        <div className="text-[9px] text-text-muted truncate">
-                          {new Date(ws.createdAt).toLocaleString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                            hour12: true,
-                          })}
-                        </div>
-                      </div>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleDeleteWorkspace(ws.id);
-                      }}
-                      className="mt-0.5 p-0.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
-                      title="Delete workspace"
-                    >
-                      <X size={11} />
-                    </button>
+                      );
+                    })}
                   </div>
                 );
               })

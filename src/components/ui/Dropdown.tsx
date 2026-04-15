@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import { useState, useRef, useEffect, createContext, useContext, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
+
+const DropdownContext = createContext<{ close: () => void }>({ close: () => {} });
 
 interface DropdownProps {
   trigger: ReactNode;
@@ -38,11 +40,13 @@ export function Dropdown({
         />
       </button>
       {open && (
-        <div
-          className={`absolute top-full mt-1 ${align === "right" ? "right-0" : "left-0"} z-50 min-w-[160px] bg-bg-elevated border border-bg-border rounded-md shadow-xl py-1`}
-        >
-          {children}
-        </div>
+        <DropdownContext.Provider value={{ close: () => setOpen(false) }}>
+          <div
+            className={`absolute top-full mt-1 ${align === "right" ? "right-0" : "left-0"} z-50 min-w-[160px] bg-bg-elevated border border-bg-border rounded-md shadow-xl py-1`}
+          >
+            {children}
+          </div>
+        </DropdownContext.Provider>
       )}
     </div>
   );
@@ -54,9 +58,10 @@ interface DropdownItemProps {
 }
 
 export function DropdownItem({ onClick, children }: DropdownItemProps) {
+  const { close } = useContext(DropdownContext);
   return (
     <button
-      onClick={onClick}
+      onClick={() => { onClick?.(); close(); }}
       className="w-full text-left px-3 py-1.5 text-xs text-text-primary hover:bg-bg-hover transition-colors"
     >
       {children}

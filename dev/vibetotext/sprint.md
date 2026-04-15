@@ -1,5 +1,18 @@
 # VibeToText Integration — Sprint Plan
 
+## Implementation Status — 2026-04-15
+
+| Sprint | Status | Notes |
+|--------|--------|-------|
+| Sprint 1: Analytics migration | ❌ Not started | AnalyticsView removed from CoreView but AnalyticsCard not created |
+| Sprint 2: Rust dictation backend | ❌ Not started | No commands/dictation/ module; no whisper-rs dep |
+| Sprint 3: History + Settings backend | ❌ Not started | — |
+| Sprint 4: Frontend store/types/hooks | ❌ Not started | useVoiceInput still Web Speech API only |
+| Sprint 5: DictationView + Tools card | ❌ Not started | — |
+| Sprint 6: Chat integration + polish | ❌ Not started | useVoiceInput now used in AgentInputArea (Agents tab) |
+
+Note: useVoiceInput hook is actively used in the new Agents tab with browser Web Speech API.
+
 Last updated: 2026-04-09
 
 ## Sprint 1: Analytics Migration to Tools Page

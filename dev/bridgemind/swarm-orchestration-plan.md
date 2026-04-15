@@ -2,6 +2,18 @@
 
 Last updated: 2026-04-09
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Phase 1: TaskRole type | ❌ Not started | No `TaskRole` in types/flight.ts |
+| Phase 1: Role badges in UI | ❌ Not started | — |
+| Phase 2: ownedPaths on tasks | ❌ Not started | — |
+| Phase 2: File collision detection | ❌ Not started | — |
+| Phase 3: Coordination feed | ❌ Not started | — |
+| Phase 3: Task handoff log | ⚠️ Partial | `result.handoff` exists but no structured `handoffLog[]` |
+| Phase 4: Escalation | ❌ Not started | — |
+
 ## Goal
 
 Turn PacketCode's existing flight orchestration into a clear multi-agent swarm system with explicit roles, collision prevention, and visible coordination.

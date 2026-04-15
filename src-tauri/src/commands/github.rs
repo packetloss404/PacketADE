@@ -141,11 +141,29 @@ fn github_client(token: &str) -> Result<reqwest::Client, String> {
         .map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
 
+fn sanitize_github_error(status: reqwest::StatusCode) -> String {
+    let reason = match status.as_u16() {
+        401 => "unauthorized — check your GitHub token",
+        403 => "forbidden — you may lack permissions or be rate-limited",
+        404 => "not found — the resource may not exist or may be private",
+        422 => "validation failed — check your request parameters",
+        429 => "rate limited — try again later",
+        _ if status.is_client_error() => "client error",
+        _ if status.is_server_error() => "GitHub server error — try again later",
+        _ => "unexpected error",
+    };
+    format!("GitHub API error {}: {}", status.as_u16(), reason)
+}
+
 async fn github_response_text(resp: reqwest::Response) -> Result<String, String> {
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("GitHub API error {}: {}", status, body));
+        warn!(
+            "GitHub API error {}: {}",
+            status,
+            resp.text().await.unwrap_or_default()
+        );
+        return Err(sanitize_github_error(status));
     }
     resp.text()
         .await

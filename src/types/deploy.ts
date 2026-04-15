@@ -14,4 +14,13 @@ export interface DeployRun {
   startedAt: number;
   finishedAt: number | null;
   sessionId: string | null;
+  output: string[];
+}
+
+export interface DeployValidation {
+  valid: boolean;
+  warnings: string[];
+  errors: string[];
+  gitBranch: string;
+  hasUncommitted: boolean;
 }

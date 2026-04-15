@@ -2,6 +2,17 @@
 
 Last updated: 2026-04-09
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Workspace templates (solo, duo, etc.) | ❌ Not started | No named presets in WorkspaceCreationModal |
+| Density options (small/medium/large) | ❌ Not started | — |
+| Lightweight editor pane | ❌ Not started | No editor component |
+| Pane labels / role badges | ⚠️ Minimal | Agent names and CLI status pills only |
+| Task binding to panes | ❌ Not started | — |
+| Flight context on panes | ❌ Not started | — |
+
 ## Context
 
 > This plan complements `dev/zen-workspace/workspace-project-model-plan.md`. Workspace templates, pane UX, and editor features in this doc build on top of the workspace-per-project model. Complete Phase 1 of that plan before starting work here.

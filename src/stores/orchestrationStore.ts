@@ -372,6 +372,29 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
       const task = milestone?.tasks.find((entry) => entry.id === request.taskId);
       if (!flight || !milestone || !task || state.runningTasks.has(task.id)) continue;
 
+      // Check for file ownership collisions before launching
+      const collisions = flightStore.checkFileCollisions(request.flightId, request.milestoneId, request.taskId);
+      if (collisions.length > 0) {
+        console.warn(
+          `[orchestration] File collision detected for task "${task.title}": ${collisions.join(", ")}. Blocking task.`,
+        );
+        flightStore.setTaskBlocked(
+          request.flightId,
+          request.milestoneId,
+          request.taskId,
+          `File ownership collision: ${collisions.join("; ")}`,
+        );
+        flightStore.addCoordinationEvent(request.flightId, {
+          flightId: request.flightId,
+          type: "collision_warning",
+          taskId: request.taskId,
+          taskTitle: task.title,
+          agentId: task.agentConfigId,
+          summary: `Task "${task.title}" blocked due to file collisions: ${collisions.join(", ")}`,
+        });
+        continue;
+      }
+
       const paneId = useLayoutStore.getState().addPane({
         cliCommand: request.command,
         cliArgs: request.args,

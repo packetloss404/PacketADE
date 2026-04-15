@@ -1,5 +1,15 @@
 # Workspace Project Model Plan
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Phase 1: Project picker in WorkspaceCreationModal | ❌ Not started | Uses global layoutStore.projectPath |
+| Phase 2: setActiveWorkspace→project context | ❌ Not started | Only sets activeWorkspaceId, no layoutStore sync |
+| Phase 3: PaneConfig.projectPath | ⚠️ Partial | Field exists in types but not enforced at pane startup |
+| Phase 4: Workspace-scoped git/file context | ❌ Not started | — |
+| WorkspaceSidebar reverse binding | ❌ Not started | Filters by project but doesn't set it on click |
+
 > Research date: 2026-04-09
 
 ## Context

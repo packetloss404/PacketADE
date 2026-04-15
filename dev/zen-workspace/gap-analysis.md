@@ -1,5 +1,13 @@
 # Zen Workspace vs PacketCode — Gap Analysis
 
+## Implementation Status — 2026-04-15
+
+| Gap | Status | Notes |
+|-----|--------|-------|
+| Workspace-scoped git dashboard & diff | ❌ Not started | No GitDashboard or GitDiffEditor component |
+| Prompt library workflow | ⚠️ Partial | promptStore.ts exists; no send-to-terminal, no live library panel |
+| Workspace-as-project container | ❌ Not started | Track W Phase 1 not begun |
+
 > Research date: 2026-04-09
 > Source repo: [riftzen-bit/zen-workspace-ide](https://github.com/riftzen-bit/zen-workspace-ide)
 

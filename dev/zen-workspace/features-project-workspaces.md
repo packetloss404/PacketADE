@@ -1,5 +1,14 @@
 # Zen Feature Notes — Project-Centric Workspaces
 
+## Implementation Status — 2026-04-15
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Workspace.projectPath | ✅ Done | Field exists and used in workspace creation |
+| Project picker in creation | ❌ Not started | Uses global path, no selection UI |
+| Workspace activation→project switch | ❌ Not started | Missing reverse binding |
+| Projects list as secondary | ❌ Not started | WorkspaceSidebar still treats Projects/Workspaces as peers |
+
 > Research date: 2026-04-09
 > Source repo: [riftzen-bit/zen-workspace-ide](https://github.com/riftzen-bit/zen-workspace-ide)
 

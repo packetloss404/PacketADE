@@ -93,6 +93,8 @@ pub fn run() {
             commands::fs::list_directory,
             commands::fs::list_subdirectories,
             commands::fs::get_cwd,
+            commands::fs::read_file_contents,
+            commands::fs::write_file_contents,
             // Flight lifecycle orchestration
             commands::orchestration::launch_flight,
             commands::orchestration::pause_flight,
@@ -163,6 +165,8 @@ pub fn run() {
             // Deploy pipeline
             commands::deploy::read_deploy_config,
             commands::deploy::create_deploy_config,
+            commands::deploy::validate_deploy,
+            commands::deploy::run_deploy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

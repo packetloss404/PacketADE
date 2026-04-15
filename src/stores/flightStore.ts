@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { generateId as genId } from "@/lib/storage";
 import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
-import type { Flight, FlightStatus, Milestone, Task } from "@/types/flight";
+import type { Flight, FlightStatus, Milestone, Task, TaskHandoff, CoordinationEvent } from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import { useRoutingStore } from "@/stores/routingStore";
 
 type FlightState = {
@@ -47,32 +48,32 @@ function computeMilestoneStatus(milestone: Milestone): Milestone["status"] {
   return "pending";
 }
 
+function computeStatusFromTasks(flight: Flight): FlightStatus | null {
+  if (flight.milestones.length === 0) return null;
+  const tasks = getAllTasks(flight);
+  if (tasks.length === 0) return null;
+  if (tasks.some((t) => t.status === "approval_needed")) return "active";
+  if (tasks.some((t) => t.status === "failed")) return "failed";
+  if (tasks.every((t) => t.status === "done")) return "review";
+  if (tasks.some((t) => t.status === "running" || t.status === "queued")) return "active";
+  if (tasks.some((t) => t.status === "blocked")) return "active";
+  return null;
+}
+
+function computeStatusFromIssues(flight: Flight): FlightStatus | null {
+  if (!flight.issueIds || flight.issueIds.length === 0) return null;
+  const { issues } = useIssueStore.getState();
+  const linked = issues.filter((i) => flight.issueIds.includes(i.id));
+  if (linked.length === 0) return null;
+  if (linked.some((i) => i.status === "needs_human")) return "paused";
+  if (linked.some((i) => i.status === "blocked")) return "paused";
+  if (linked.every((i) => i.status === "done")) return "done";
+  if (linked.some((i) => i.status === "in_progress" || i.status === "qa")) return "active";
+  return null;
+}
+
 function computeStatus(flight: Flight): FlightStatus {
-  // If the flight has milestones, derive status from tasks
-  if (flight.milestones.length > 0) {
-    const tasks = getAllTasks(flight);
-    if (tasks.length > 0) {
-      if (tasks.some((t) => t.status === "approval_needed")) return "active";
-      if (tasks.some((t) => t.status === "failed")) return "failed";
-      if (tasks.every((t) => t.status === "done")) return "review";
-      if (tasks.some((t) => t.status === "running" || t.status === "queued")) return "active";
-      if (tasks.some((t) => t.status === "blocked")) return "active";
-    }
-  }
-
-  // Legacy issue-based status computation (PacketCode-specific)
-  if (flight.issueIds && flight.issueIds.length > 0) {
-    const { issues } = useIssueStore.getState();
-    const linked = issues.filter((i) => flight.issueIds.includes(i.id));
-    if (linked.length > 0) {
-      if (linked.some((i) => i.status === "needs_human")) return "paused";
-      if (linked.some((i) => i.status === "blocked")) return "paused";
-      if (linked.every((i) => i.status === "done")) return "done";
-      if (linked.some((i) => i.status === "in_progress" || i.status === "qa")) return "active";
-    }
-  }
-
-  return flight.status;
+  return computeStatusFromTasks(flight) ?? computeStatusFromIssues(flight) ?? flight.status;
 }
 
 // === Store ===
@@ -103,7 +104,7 @@ interface FlightStore {
   addTask: (
     flightId: string,
     milestoneId: string,
-    task: Pick<Task, "title" | "description" | "type" | "dependsOn"> & { agentConfigId?: string; model?: string },
+    task: Pick<Task, "title" | "description" | "type" | "dependsOn"> & { agentConfigId?: string; model?: string; role?: Task["role"]; ownedPaths?: string[] },
   ) => string;
   updateTask: (
     flightId: string,
@@ -113,6 +114,10 @@ interface FlightStore {
   ) => void;
   deleteTask: (flightId: string, milestoneId: string, taskId: string) => void;
 
+  // Handoff & blocked
+  appendHandoff: (flightId: string, milestoneId: string, taskId: string, handoff: TaskHandoff) => void;
+  setTaskBlocked: (flightId: string, milestoneId: string, taskId: string, reason: string) => void;
+
   // Session linking
   linkSessionToFlight: (flightId: string, sessionId: string) => void;
   unlinkSessionFromFlight: (flightId: string, sessionId: string) => void;
@@ -121,6 +126,13 @@ interface FlightStore {
   addIssueToFlight: (flightId: string, issueId: string) => void;
   removeIssueFromFlight: (flightId: string, issueId: string) => void;
   getFlightForIssue: (issueId: string) => Flight | null;
+
+  // File ownership collision detection
+  checkFileCollisions: (flightId: string, milestoneId: string, taskId: string) => string[];
+
+  // Coordination log
+  addCoordinationEvent: (flightId: string, event: Omit<CoordinationEvent, "id" | "timestamp">) => void;
+  getCoordinationLog: (flightId: string) => CoordinationEvent[];
 
   // Computed status
   computeFlightStatus: (flightId: string) => FlightStatus;
@@ -163,6 +175,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   updateFlight: (id, updates) => {
+    const oldFlight = get().flights.find((f) => f.id === id);
     set((s) => {
       const flights = s.flights.map((f) =>
         f.id === id ? { ...f, ...updates, updatedAt: Date.now() } : f,
@@ -170,6 +183,16 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       saveState({ flights, activeFlightId: s.activeFlightId });
       return { flights };
     });
+
+    // Capture a memory snapshot when a flight transitions to a terminal status
+    if (
+      oldFlight &&
+      updates.status &&
+      (updates.status === "done" || updates.status === "failed") &&
+      oldFlight.status !== updates.status
+    ) {
+      useMemoryStore.getState().addFlightMemorySnapshot(id);
+    }
   },
 
   deleteFlight: (id) => {
@@ -280,6 +303,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             order: m.tasks.length,
             status: "pending",
             type: input.type,
+            role: input.role ?? "builder",
+            ownedPaths: input.ownedPaths ?? [],
             agentConfigId,
             dependsOn: input.dependsOn,
             sessionId: null,
@@ -299,6 +324,12 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   updateTask: (flightId, milestoneId, taskId, updates) => {
+    // Capture old task for coordination event detection
+    const prevFlight = get().flights.find((f) => f.id === flightId);
+    const prevTask = prevFlight?.milestones
+      .find((m) => m.id === milestoneId)
+      ?.tasks.find((t) => t.id === taskId);
+
     set((s) => {
       const flights = s.flights.map((f) => {
         if (f.id !== flightId) return f;
@@ -313,6 +344,27 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       saveState({ flights, activeFlightId: s.activeFlightId });
       return { flights };
     });
+
+    // Auto-create coordination events on task status transitions
+    if (prevTask && updates.status && updates.status !== prevTask.status) {
+      const statusEventMap: Record<string, { type: CoordinationEvent["type"]; verb: string } | undefined> = {
+        running: { type: "task_started", verb: "started" },
+        done: { type: "task_completed", verb: "completed" },
+        failed: { type: "task_failed", verb: "failed" },
+        approval_needed: { type: "review_requested", verb: "requested review" },
+      };
+      const mapping = statusEventMap[updates.status];
+      if (mapping) {
+        get().addCoordinationEvent(flightId, {
+          flightId,
+          type: mapping.type,
+          taskId,
+          taskTitle: prevTask.title,
+          agentId: prevTask.agentConfigId,
+          summary: `Task "${prevTask.title}" ${mapping.verb}`,
+        });
+      }
+    }
   },
 
   deleteTask: (flightId, milestoneId, taskId) => {
@@ -322,6 +374,51 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
         const milestones = f.milestones.map((m) => {
           if (m.id !== milestoneId) return m;
           return { ...m, tasks: m.tasks.filter((t) => t.id !== taskId) };
+        });
+        return { ...f, milestones, updatedAt: Date.now() };
+      });
+      saveState({ flights, activeFlightId: s.activeFlightId });
+      return { flights };
+    });
+  },
+
+  // === Handoff & blocked ===
+
+  appendHandoff: (flightId, milestoneId, taskId, handoff) => {
+    set((s) => {
+      const flights = s.flights.map((f) => {
+        if (f.id !== flightId) return f;
+        const milestones = f.milestones.map((m) => {
+          if (m.id !== milestoneId) return m;
+          const tasks = m.tasks.map((t) => {
+            if (t.id !== taskId) return t;
+            const handoffLog = [...(t.handoffLog ?? []), handoff];
+            return {
+              ...t,
+              handoffLog,
+              result: { ...(t.result ?? { exitCode: null, summary: "", filesChanged: [], errors: [], duration: 0 }), handoff },
+            };
+          });
+          return { ...m, tasks };
+        });
+        return { ...f, milestones, updatedAt: Date.now() };
+      });
+      saveState({ flights, activeFlightId: s.activeFlightId });
+      return { flights };
+    });
+  },
+
+  setTaskBlocked: (flightId, milestoneId, taskId, reason) => {
+    set((s) => {
+      const flights = s.flights.map((f) => {
+        if (f.id !== flightId) return f;
+        const milestones = f.milestones.map((m) => {
+          if (m.id !== milestoneId) return m;
+          const tasks = m.tasks.map((t) =>
+            t.id === taskId ? { ...t, status: "blocked" as const, blockedReason: reason } : t,
+          );
+          const updatedMilestone = { ...m, tasks, status: computeMilestoneStatus({ ...m, tasks }) };
+          return updatedMilestone;
         });
         return { ...f, milestones, updatedAt: Date.now() };
       });
@@ -388,6 +485,63 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
 
   getFlightForIssue: (issueId) => {
     return get().flights.find((f) => f.issueIds.includes(issueId)) ?? null;
+  },
+
+  // === File ownership collision detection ===
+
+  checkFileCollisions: (flightId, _milestoneId, taskId) => {
+    const flight = get().flights.find((f) => f.id === flightId);
+    if (!flight) return [];
+    const allTasks = getAllTasks(flight);
+    const thisTask = allTasks.find((t) => t.id === taskId);
+    if (!thisTask?.ownedPaths?.length) return [];
+
+    const activeTasks = allTasks.filter(
+      (t) =>
+        t.id !== taskId &&
+        (t.status === "running" || t.status === "queued") &&
+        t.ownedPaths?.length,
+    );
+
+    const conflicts: string[] = [];
+    for (const other of activeTasks) {
+      for (const path of thisTask.ownedPaths) {
+        if (
+          other.ownedPaths!.some(
+            (op) => op === path || path.startsWith(op + "/") || op.startsWith(path + "/"),
+          )
+        ) {
+          conflicts.push(`${path} (owned by "${other.title}")`);
+        }
+      }
+    }
+    return conflicts;
+  },
+
+  // === Coordination log ===
+
+  addCoordinationEvent: (flightId, event) => {
+    set((s) => {
+      const flights = s.flights.map((f) => {
+        if (f.id !== flightId) return f;
+        const entry: CoordinationEvent = {
+          ...event,
+          id: generateId("coord"),
+          timestamp: Date.now(),
+        };
+        const log = [...(f.coordinationLog ?? []), entry];
+        // Cap at 100 events per flight (drop oldest)
+        const capped = log.length > 100 ? log.slice(log.length - 100) : log;
+        return { ...f, coordinationLog: capped, updatedAt: Date.now() };
+      });
+      saveState({ flights, activeFlightId: s.activeFlightId });
+      return { flights };
+    });
+  },
+
+  getCoordinationLog: (flightId) => {
+    const flight = get().flights.find((f) => f.id === flightId);
+    return flight?.coordinationLog ?? [];
   },
 
   // === Computed status ===

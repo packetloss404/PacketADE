@@ -158,6 +158,61 @@ pub async fn list_subdirectories(dir_path: String) -> Result<Vec<String>, String
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// Maximum file size for the text editor (2 MB).
+const MAX_EDITOR_FILE_SIZE: u64 = 2_000_000;
+
+#[tauri::command]
+pub async fn read_file_contents(file_path: String, workspace: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        super::is_within_workspace(&file_path, &workspace)?;
+
+        let path = Path::new(&file_path);
+        if !path.is_file() {
+            return Err(format!("Not a file: {}", file_path));
+        }
+
+        let meta = fs::metadata(path)
+            .map_err(|e| format!("Cannot read file metadata: {}", e))?;
+        if meta.len() > MAX_EDITOR_FILE_SIZE {
+            return Err(format!(
+                "File too large for editor ({} bytes, limit {} bytes)",
+                meta.len(),
+                MAX_EDITOR_FILE_SIZE
+            ));
+        }
+
+        fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read file: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+#[tauri::command]
+pub async fn write_file_contents(
+    file_path: String,
+    workspace: String,
+    content: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        super::is_within_workspace(&file_path, &workspace)?;
+
+        let path = Path::new(&file_path);
+
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                return Err(format!("Parent directory does not exist: {}", parent.display()));
+            }
+        }
+
+        fs::write(path, content)
+            .map_err(|e| format!("Failed to write file: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

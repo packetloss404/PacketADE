@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Workspace, WorkspacePane, WorkspaceAgentSlot } from "@/types/workspace";
 import { saveWorkspacesSlice } from "@/lib/tauri";
+import { useLayoutStore } from "@/stores/layoutStore";
 
 
 export interface WorkspaceSessionConfig {
@@ -111,7 +112,15 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }));
   },
 
-  setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
+  setActiveWorkspace: (id) => {
+    set({ activeWorkspaceId: id });
+    if (id) {
+      const workspace = get().workspaces.find((w) => w.id === id);
+      if (workspace) {
+        useLayoutStore.getState().setProjectPath(workspace.projectPath);
+      }
+    }
+  },
 
   getActiveWorkspace: () => {
     const s = get();
