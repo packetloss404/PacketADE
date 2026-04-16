@@ -972,8 +972,8 @@ export async function runDeploy(projectPath: string, command: string, runId: str
 }
 
 // Dictation (VibeToText)
-export function listAudioDevices(): Promise<string> {
-  return invoke<string>("list_audio_devices");
+export function listAudioDevices(): Promise<unknown> {
+  return invoke("list_audio_devices");
 }
 
 export function startRecordingCmd(deviceIndex?: number): Promise<void> {

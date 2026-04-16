@@ -22,7 +22,7 @@ export function DictationCard() {
     loadSettings();
     listAudioDevices()
       .then((raw) => {
-        const parsed: AudioDevice[] = JSON.parse(raw);
+        const parsed: AudioDevice[] = typeof raw === "string" ? JSON.parse(raw) : raw;
         setDevices(parsed);
       })
       .catch(() => {});
