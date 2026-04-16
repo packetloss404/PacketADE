@@ -16,9 +16,11 @@ pub struct OpenAiCompatConfig {
 }
 
 /// Convert our internal messages to the OpenAI chat format.
+/// If `attachments` is non-empty, inline them into the LAST ChatRole::User message as image_url blocks.
 fn build_openai_messages(
     messages: &[ChatMessage],
     system_prompt: Option<&str>,
+    attachments: &[ImageAttachment],
 ) -> Vec<serde_json::Value> {
     let mut out = Vec::new();
 
@@ -29,13 +31,37 @@ fn build_openai_messages(
         }));
     }
 
-    for msg in messages {
+    let last_user_idx = messages
+        .iter()
+        .rposition(|m| matches!(m.role, ChatRole::User));
+
+    for (idx, msg) in messages.iter().enumerate() {
         match &msg.role {
             ChatRole::User => {
-                out.push(serde_json::json!({
-                    "role": "user",
-                    "content": msg.content.as_text(),
-                }));
+                let is_last_user = Some(idx) == last_user_idx;
+                if is_last_user && !attachments.is_empty() {
+                    let mut parts: Vec<serde_json::Value> = vec![serde_json::json!({
+                        "type": "text",
+                        "text": msg.content.as_text(),
+                    })];
+                    for a in attachments {
+                        parts.push(serde_json::json!({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": format!("data:{};base64,{}", a.media_type, a.data_base64),
+                            },
+                        }));
+                    }
+                    out.push(serde_json::json!({
+                        "role": "user",
+                        "content": parts,
+                    }));
+                } else {
+                    out.push(serde_json::json!({
+                        "role": "user",
+                        "content": msg.content.as_text(),
+                    }));
+                }
             }
             ChatRole::Assistant => {
                 // Check if content has tool call blocks
@@ -132,7 +158,11 @@ pub async fn stream_chat_compat(
     let client = reqwest::Client::new();
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
 
-    let messages = build_openai_messages(&request.messages, request.system_prompt.as_deref());
+    let messages = build_openai_messages(
+        &request.messages,
+        request.system_prompt.as_deref(),
+        &request.attachments,
+    );
     let tools = build_openai_tools(&request.tools);
 
     let mut body = serde_json::json!({

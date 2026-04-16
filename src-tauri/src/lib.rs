@@ -196,10 +196,23 @@ pub fn run() {
             commands::api_agent::cancel_api_agent_session,
             commands::api_agent::close_api_agent_session,
             commands::api_agent::change_model,
+            commands::api_agent::set_plan_mode,
+            commands::api_agent::set_permission_mode,
+            commands::api_agent::respond_permission,
+            commands::api_agent::set_approve_writes,
+            commands::api_agent::respond_edit,
+            commands::api_agent::retry_last_turn,
             // Agent conversation persistence
             commands::conversations::save_conversation,
             commands::conversations::load_conversations,
             commands::conversations::delete_conversation_file,
+            commands::conversations::export_conversation_markdown,
+            // Checkpoints
+            commands::checkpoints::save_checkpoint,
+            commands::checkpoints::list_checkpoints,
+            commands::checkpoints::delete_checkpoint,
+            // Slash commands (user-defined)
+            commands::slash_commands::list_slash_commands,
             // Pricing / cost helpers
             commands::pricing::calculate_turn_cost,
         ])

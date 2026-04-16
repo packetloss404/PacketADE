@@ -50,3 +50,19 @@ export function apiAgentDoneEvent(sessionId: string): string {
 export function apiAgentErrorEvent(sessionId: string): string {
   return `api-agent:error:${sessionId}`;
 }
+
+export function apiAgentThinkingEvent(sessionId: string): string {
+  return `api-agent:thinking:${sessionId}`;
+}
+
+export function apiAgentThinkingStopEvent(sessionId: string): string {
+  return `api-agent:thinking-stop:${sessionId}`;
+}
+
+export function apiAgentPermissionRequestEvent(sessionId: string): string {
+  return `api-agent:permission-request:${sessionId}`;
+}
+
+export function apiAgentPendingEditEvent(sessionId: string): string {
+  return `api-agent:pending-edit:${sessionId}`;
+}

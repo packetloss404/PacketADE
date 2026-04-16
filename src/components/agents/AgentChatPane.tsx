@@ -10,12 +10,22 @@ import {
   Mic,
   ChevronDown,
   ChevronRight,
+  Compass,
+  FileCheck2,
+  RotateCw,
+  Download,
+  MoreVertical,
 } from "lucide-react";
+import { PermissionPrompt } from "./PermissionPrompt";
+import { PendingEditPrompt } from "./PendingEditPrompt";
+import { ThinkingBlock } from "./ThinkingBlock";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { AgentQuickActions } from "./AgentQuickActions";
 import { FileMentionPopover } from "./FileMentionPopover";
-import { SlashCommandPopover, type SlashCommand } from "./SlashCommandPopover";
+import { SlashCommandPopover, type SlashSelection, type BuiltinSlashCommand } from "./SlashCommandPopover";
+import type { SlashCommandDef } from "@/lib/tauri";
+import { listSlashCommands } from "@/lib/tauri";
 import { ToolDiffView } from "./ToolDiffView";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
@@ -121,9 +131,17 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     (s) => s.createApiConversation,
   );
   const selectConversation = useAgentTaskStore((s) => s.selectConversation);
+  const setPlanMode = useAgentTaskStore((s) => s.setPlanMode);
+  const setPermissionMode = useAgentTaskStore((s) => s.setPermissionMode);
+  const setApproveWrites = useAgentTaskStore((s) => s.setApproveWrites);
+  const respondPermission = useAgentTaskStore((s) => s.respondPermission);
+  const respondEdit = useAgentTaskStore((s) => s.respondEdit);
+  const retryLastTurn = useAgentTaskStore((s) => s.retryLastTurn);
+  const exportConversation = useAgentTaskStore((s) => s.exportConversation);
 
   const [input, setInput] = useState("");
   const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
+  const [customSlashCommands, setCustomSlashCommands] = useState<SlashCommandDef[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -162,17 +180,36 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     resizeTextarea();
   }, [input, resizeTextarea]);
 
+  // Load user-defined slash commands from project + global dirs.
+  const projectPathForSlash = conversation?.projectPath ?? "";
+  useEffect(() => {
+    if (!projectPathForSlash) return;
+    let cancelled = false;
+    listSlashCommands(projectPathForSlash)
+      .then((cmds) => {
+        if (!cancelled) setCustomSlashCommands(cmds);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPathForSlash]);
+
   // NOTE: hooks must run in the same order every render — compute popover
   // item count before any early return.
   const popoverItemCount = useMemo(() => {
     if (mentionState.kind === "slash") {
       const q = mentionState.query.toLowerCase();
-      return ["clear", "model", "help", "new"].filter((c) =>
+      const builtins = ["clear", "model", "help", "new"].filter((c) =>
         c.startsWith(q),
       ).length;
+      const custom = customSlashCommands.filter((c) =>
+        c.name.toLowerCase().startsWith(q),
+      ).length;
+      return builtins + custom;
     }
     return 0;
-  }, [mentionState]);
+  }, [mentionState, customSlashCommands]);
 
   if (!conversation) {
     return (
@@ -287,7 +324,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     }, 0);
   }
 
-  function runSlashCommand(cmd: SlashCommand) {
+  function runSlashCommand(sel: SlashSelection) {
     if (mentionState.kind !== "slash") return;
     const before = input.slice(0, mentionState.triggerIndex);
     // Drop the entire "/query" from input.
@@ -295,6 +332,16 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       mentionState.triggerIndex + 1 + mentionState.query.length;
     const after = input.slice(afterStart);
     const remaining = (before + after).trim();
+
+    if (sel.kind === "custom") {
+      // Send the custom command's body as a new user message.
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      sendMessage(conversationId, sel.def.body);
+      return;
+    }
+
+    const cmd = sel.name;
 
     if (cmd === "clear") {
       // Reset conversation messages inline via setState (store action not available).
@@ -466,9 +513,16 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       }
       if (e.key === "Enter" || e.key === "Tab") {
         const q = mentionState.query.toLowerCase();
-        const matches = (["clear", "model", "help", "new"] as SlashCommand[])
+        const builtins = (["clear", "model", "help", "new"] as BuiltinSlashCommand[])
           .filter((c) => c.startsWith(q));
-        const picked = matches[mentionState.highlightedIndex] ?? matches[0];
+        const customMatches = customSlashCommands.filter((c) =>
+          c.name.toLowerCase().startsWith(q),
+        );
+        const all: SlashSelection[] = [
+          ...builtins.map((name) => ({ kind: "builtin" as const, name })),
+          ...customMatches.map((def) => ({ kind: "custom" as const, def })),
+        ];
+        const picked = all[mentionState.highlightedIndex] ?? all[0];
         if (picked) {
           e.preventDefault();
           runSlashCommand(picked);
@@ -561,6 +615,83 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           </div>
         )}
 
+        {/* Plan mode + permission + approve-writes (API mode only) */}
+        {conversation.mode === "api" && (
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void setPlanMode(conversationId, !conversation.planMode)}
+              title={conversation.planMode ? "Plan mode ON — writes/bash disabled" : "Plan mode OFF — all tools enabled"}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
+                conversation.planMode
+                  ? "border-accent-amber/40 text-accent-amber bg-accent-amber/10"
+                  : "border-bg-border text-text-muted hover:text-text-primary"
+              }`}
+            >
+              <Compass size={11} />
+              Plan
+            </button>
+            <select
+              value={conversation.permissionMode ?? "auto"}
+              onChange={(e) =>
+                void setPermissionMode(
+                  conversationId,
+                  e.target.value as "auto" | "ask_for_risky" | "allow_all" | "deny_all",
+                )
+              }
+              title="Permission mode for risky tools"
+              className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
+            >
+              <option value="auto">Auto</option>
+              <option value="ask_for_risky">Ask risky</option>
+              <option value="allow_all">Allow all</option>
+              <option value="deny_all">Deny risky</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => void setApproveWrites(conversationId, !conversation.approveWrites)}
+              title={conversation.approveWrites ? "Approve writes ON — confirm each write_file" : "Approve writes OFF"}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
+                conversation.approveWrites
+                  ? "border-accent-amber/40 text-accent-amber bg-accent-amber/10"
+                  : "border-bg-border text-text-muted hover:text-text-primary"
+              }`}
+            >
+              <FileCheck2 size={11} />
+              Approve
+            </button>
+            <Dropdown
+              align="right"
+              trigger={
+                <span className="p-0.5 text-text-muted hover:text-text-primary inline-flex">
+                  <MoreVertical size={12} />
+                </span>
+              }
+            >
+              <DropdownItem
+                onClick={async () => {
+                  try {
+                    const md = await exportConversation(conversationId);
+                    const blob = new Blob([md], { type: "text/markdown" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${(conversation.title || "conversation").replace(/[^a-z0-9-_ ]/gi, "_")}.md`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch (err) {
+                    console.warn("Export failed:", err);
+                  }
+                }}
+              >
+                <span className="flex items-center gap-1.5 text-[11px]">
+                  <Download size={11} /> Export as Markdown
+                </span>
+              </DropdownItem>
+            </Dropdown>
+          </div>
+        )}
+
         {/* Right: close */}
         <button
           onClick={onClose}
@@ -584,7 +715,16 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
         {messages.map((msg) => (
           <div key={msg.id}>
-            <MessageBubble message={msg} conversation={conversation} />
+            <MessageBubble
+              message={msg}
+              conversation={conversation}
+              isLastAssistant={msg.id === lastAssistantMessage?.id}
+              onRetry={
+                msg.id === lastAssistantMessage?.id && !msg.isStreaming
+                  ? () => void retryLastTurn(conversationId)
+                  : undefined
+              }
+            />
             {showQuickActions && msg.id === lastAssistantMessage?.id && (
               <AgentQuickActions
                 conversationId={conversationId}
@@ -607,6 +747,30 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Pending user-approval prompts */}
+      {(conversation.pendingEdits ?? conversation.pendingPermissions) && (
+        <div className="shrink-0 px-3 py-2 flex flex-col gap-2 border-t border-bg-border bg-bg-primary">
+          {(conversation.pendingEdits ?? []).map((item) => (
+            <PendingEditPrompt
+              key={item.id}
+              item={item}
+              projectPath={conversation.projectPath}
+              onApply={(toolId) => void respondEdit(conversationId, toolId, "apply")}
+              onReject={(toolId) => void respondEdit(conversationId, toolId, "reject")}
+            />
+          ))}
+          {(conversation.pendingPermissions ?? []).map((item) => (
+            <PermissionPrompt
+              key={item.id}
+              item={item}
+              onAllowOnce={(toolId) => void respondPermission(conversationId, toolId, "allow_once")}
+              onAllowAlways={(toolId) => void respondPermission(conversationId, toolId, "allow_always")}
+              onDeny={(toolId) => void respondPermission(conversationId, toolId, "deny")}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Input area */}
       <div className="shrink-0 border-t border-bg-border px-3 py-2 bg-bg-primary relative">
         {/* Popovers anchored above the textarea */}
@@ -624,6 +788,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             onSelect={selectFileMention}
           />
           <SlashCommandPopover
+            customCommands={customSlashCommands}
             visible={mentionState.kind === "slash"}
             query={mentionState.kind === "slash" ? mentionState.query : ""}
             highlightedIndex={
@@ -694,9 +859,13 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 function MessageBubble({
   message,
   conversation,
+  isLastAssistant,
+  onRetry,
 }: {
   message: AgentMessage;
   conversation: AgentConversation;
+  isLastAssistant?: boolean;
+  onRetry?: () => void;
 }) {
   if (message.role === "system") {
     return (
@@ -736,6 +905,11 @@ function MessageBubble({
   return (
     <div className="flex justify-start">
       <div className="max-w-[90%] space-y-1.5">
+        {/* Thinking block (if any) */}
+        {message.thinking && message.thinking.length > 0 && (
+          <ThinkingBlock text={message.thinking} streaming={message.isStreaming} />
+        )}
+
         {/* Tool calls */}
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="flex flex-col gap-1">
@@ -764,11 +938,23 @@ function MessageBubble({
           <span className="inline-block w-1.5 h-3.5 bg-accent-green/70 rounded-sm animate-pulse ml-1" />
         )}
 
-        {/* Cost pill */}
-        <AssistantCostPill
-          message={message}
-          model={conversation.model ?? ""}
-        />
+        {/* Footer row: cost pill + retry */}
+        <div className="flex items-center gap-2">
+          <AssistantCostPill
+            message={message}
+            model={conversation.model ?? ""}
+          />
+          {isLastAssistant && !message.isStreaming && onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              title="Retry this turn"
+              className="text-text-muted hover:text-text-primary text-[10px] p-0.5 rounded transition-colors"
+            >
+              <RotateCw size={11} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
