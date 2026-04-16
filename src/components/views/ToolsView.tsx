@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower, Mic, Key } from "lucide-react";
+import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower, Mic, Key, Server } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useIssueStore } from "@/stores/issueStore";
@@ -17,11 +17,12 @@ import { McpProviderCard } from "./tools/McpProviderCard";
 import { CostCard } from "./tools/CostCard";
 import { DictationCard } from "./tools/DictationCard";
 import { ApiKeysCard } from "./tools/ApiKeysCard";
+import { ServersSettingsCard } from "./tools/ServersSettingsCard";
 import type { PromptTemplate } from "@/types/prompt";
 
 const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
 
-type SettingsSection = "project" | "issues" | "profiles" | "routing" | "api-keys" | "mcp" | "mcp-provider" | "modules" | "templates" | "history" | "cost" | "dictation";
+type SettingsSection = "project" | "issues" | "profiles" | "routing" | "api-keys" | "servers" | "mcp" | "mcp-provider" | "modules" | "templates" | "history" | "cost" | "dictation";
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
   { key: "project", label: "Project", icon: FolderOpen },
@@ -29,6 +30,7 @@ const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] =
   { key: "profiles", label: "Profiles", icon: User },
   { key: "routing", label: "AI Routing", icon: Route },
   { key: "api-keys", label: "API Keys", icon: Key },
+  { key: "servers", label: "Servers", icon: Server },
   { key: "mcp", label: "MCP Servers", icon: Plug },
   { key: "mcp-provider", label: "MCP Provider", icon: RadioTower },
   { key: "modules", label: "Modules", icon: Puzzle },
@@ -120,6 +122,12 @@ export function ToolsView() {
         {activeSection === "api-keys" && (
           <div className="max-w-2xl">
             <ApiKeysCard />
+          </div>
+        )}
+
+        {activeSection === "servers" && (
+          <div className="max-w-2xl">
+            <ServersSettingsCard />
           </div>
         )}
 

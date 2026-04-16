@@ -23,7 +23,7 @@ export function ServerSelectorPopover() {
       }
     >
       {servers.length === 0 ? (
-        <DropdownItem onClick={() => setActiveView("servers")}>
+        <DropdownItem onClick={() => setActiveView("tools")}>
           <span className="text-text-muted">Configure Servers...</span>
         </DropdownItem>
       ) : (

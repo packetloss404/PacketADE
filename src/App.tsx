@@ -27,7 +27,7 @@ const DeployView = lazy(() => import("@/components/views/DeployView").then((m) =
 const ReviewQueueView = lazy(() => import("@/components/views/ReviewQueueView").then((m) => ({ default: m.ReviewQueueView })));
 const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })));
 const FlightDeckView = lazy(() => import("@/components/views/FlightDeckView").then((m) => ({ default: m.FlightDeckView })));
-const ServersView = lazy(() => import("@/components/views/ServersView").then((m) => ({ default: m.ServersView })));
+
 const AgentsView = lazy(() => import("@/components/views/AgentsView").then((m) => ({ default: m.AgentsView })));
 const InsightsView = lazy(() => import("@/components/views/InsightsView").then((m) => ({ default: m.InsightsView })));
 const CostDashboardView = lazy(() => import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })));
@@ -157,7 +157,7 @@ export default function App() {
   }, [handleKeyDown]);
 
   const isSessionsView = activeView === "claude" || activeView === "codex" || activeView === "gemini" || activeView === "opencode";
-  const showWorkspaceSidebar = activeView === "workspace" || activeView === "servers";
+  const showWorkspaceSidebar = activeView === "workspace";
 
   return (
     <ErrorBoundary fallbackMessage="PacketCode encountered an error">
@@ -219,8 +219,6 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <IssueBoard />;
     case "flight_deck":
       return <FlightDeckView />;
-    case "servers":
-      return <ServersView />;
     case "history":
       return <HistoryView />;
     case "tools":
