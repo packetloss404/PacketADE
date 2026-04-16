@@ -232,6 +232,12 @@ pub fn transcribe_audio(
     let cleaned = filter_artifacts(&text);
     let trimmed = cleaned.trim().to_string();
 
+    // Detect numeric garbage hallucination (common on silence/low audio)
+    if is_numeric_hallucination(&trimmed) {
+        warn!("Whisper produced numeric hallucination (likely silence), discarding");
+        return Ok(String::new());
+    }
+
     if trimmed.is_empty() {
         warn!("Whisper produced empty transcription (possible silence)");
     } else {
@@ -256,6 +262,23 @@ fn filter_artifacts(text: &str) -> String {
         result = result.replace("  ", " ");
     }
     result
+}
+
+/// Detect if the transcription is numeric garbage (a common Whisper hallucination
+/// on silence or very low audio). Returns true if the text is mostly numbers,
+/// scientific notation, dashes, and dots with very few actual words.
+fn is_numeric_hallucination(text: &str) -> bool {
+    if text.len() < 10 {
+        return false;
+    }
+    let total = text.len() as f64;
+    let numeric_chars = text
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-' || *c == 'e' || *c == 'E' || *c == '+')
+        .count() as f64;
+
+    // If more than 60% of the text is numeric/scientific notation chars, it's garbage
+    (numeric_chars / total) > 0.6
 }
 
 #[cfg(test)]
