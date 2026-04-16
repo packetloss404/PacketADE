@@ -158,6 +158,11 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const cliArgs: string[] | undefined = useMemo(() => {
     const args: string[] = [];
 
+    // Include agent-specific default args (e.g., opencode needs "." to start TUI)
+    if (agentConfig?.defaultArgs?.length) {
+      args.push(...agentConfig.defaultArgs);
+    }
+
     if (bypassPermissions) {
       const flag = BYPASS_FLAGS[pane.agentId];
       if (flag) args.push(flag);
@@ -172,7 +177,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     }
 
     return args.length > 0 ? args : undefined;
-  }, [bypassPermissions, effort, model, pane.agentId]);
+  }, [agentConfig?.defaultArgs, bypassPermissions, effort, model, pane.agentId]);
 
   // SSH override for remote workspaces
   const server = workspace?.serverId

@@ -5,7 +5,7 @@ export const OPENCODE_CONFIG: AgentConfig = {
   id: "opencode",
   name: "OpenCode",
   command: "opencode",
-  defaultArgs: [],
+  defaultArgs: ["."],
   description: "Open-source AI coding agent. Supports 75+ LLM providers including OpenAI, Anthropic, Google, Ollama.",
   installed: false,
   capabilities: ["code_edit", "code_review", "testing", "research", "shell", "refactor"],
