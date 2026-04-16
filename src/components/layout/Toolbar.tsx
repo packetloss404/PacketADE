@@ -26,9 +26,9 @@ const LAYOUT_PRESETS: { preset: MosaicLayoutPreset; label: string; minPanes: num
 ];
 
 const TABS: { key: AppView; label: string }[] = [
+  { key: "agents", label: "Agents" },
   { key: "workspace", label: "Workspaces" },
   { key: "servers", label: "Servers" },
-  { key: "agents", label: "Agents" },
   { key: "flight_deck", label: "Flights" },
   { key: "issues", label: "Issues" },
   { key: "insights", label: "Insights" },
