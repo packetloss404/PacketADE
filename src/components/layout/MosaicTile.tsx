@@ -13,7 +13,8 @@ interface MosaicTileProps {
  * The actual terminal content (TerminalPane or WorkspacePane) is rendered as children.
  */
 export function MosaicTile({ paneId, children }: MosaicTileProps) {
-  const { mosaicWindowActions } = useContext(MosaicWindowContext);
+  const mosaicCtx = useContext(MosaicWindowContext);
+  const mosaicWindowActions = mosaicCtx?.mosaicWindowActions ?? null;
   const isMinimized = useMosaicStore((s) => s.minimizedPanes.has(paneId));
   const toggleMinimize = useMosaicStore((s) => s.toggleMinimize);
 
