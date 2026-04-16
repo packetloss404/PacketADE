@@ -1,9 +1,32 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { X, Loader2, CheckCircle, XCircle, Send, MessageSquare } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import {
+  X,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Send,
+  MessageSquare,
+  Square,
+  Mic,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { AgentQuickActions } from "./AgentQuickActions";
-import type { AgentMessage, AgentToolCall } from "@/types/agent-conversation";
+import { FileMentionPopover } from "./FileMentionPopover";
+import { SlashCommandPopover, type SlashCommand } from "./SlashCommandPopover";
+import { ToolDiffView } from "./ToolDiffView";
+import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { API_PROVIDERS } from "@/lib/api-models";
+import { calculateTurnCost } from "@/lib/tauri";
+import { generateId } from "@/lib/storage";
+import type {
+  AgentConversation,
+  AgentMessage,
+  AgentToolCall,
+} from "@/types/agent-conversation";
 
 const AGENT_LABELS: Record<string, string> = {
   "claude-code": "Claude Code",
@@ -26,21 +49,101 @@ const STATUS_DISPLAY: Record<string, { label: string; className: string }> = {
   failed: { label: "Failed", className: "text-accent-red" },
 };
 
+const HELP_CHEATSHEET =
+  "**Keybinding cheatsheet**\n" +
+  "\n" +
+  "- Enter — send\n" +
+  "- Shift+Enter — newline\n" +
+  "- @ — mention a file\n" +
+  "- / — run a slash command\n" +
+  "- Ctrl+Enter — also sends\n" +
+  "- Stop button — cancels mid-stream";
+
 interface AgentChatPaneProps {
   conversationId: string;
   onClose: () => void;
 }
 
+type MentionState =
+  | { kind: "none" }
+  | {
+      kind: "file";
+      query: string;
+      /** Index of the `@` in the textarea (zero-based). */
+      triggerIndex: number;
+      highlightedIndex: number;
+    }
+  | {
+      kind: "slash";
+      query: string;
+      /** Index of the `/` in the textarea (zero-based). */
+      triggerIndex: number;
+      highlightedIndex: number;
+    };
+
+/**
+ * Scan backward from `cursor` in `text` for a trigger char (`@` or `/`).
+ * Returns the trigger position and query string if valid, else null.
+ *
+ * Valid trigger: char at start-of-string, or preceded by whitespace, and no
+ * whitespace between trigger and cursor.
+ */
+function findTrigger(
+  text: string,
+  cursor: number,
+  triggerChar: string,
+): { triggerIndex: number; query: string } | null {
+  // Walk backward from cursor looking for the trigger; fail if we hit whitespace first.
+  for (let i = cursor - 1; i >= 0; i--) {
+    const ch = text[i];
+    if (ch === triggerChar) {
+      // Ensure start-of-input or whitespace before trigger.
+      if (i === 0 || /\s/.test(text[i - 1])) {
+        return { triggerIndex: i, query: text.slice(i + 1, cursor) };
+      }
+      return null;
+    }
+    if (/\s/.test(ch)) return null;
+  }
+  return null;
+}
+
 export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const conversation = useAgentTaskStore((s) =>
-    s.conversations.find((c) => c.id === conversationId)
+    s.conversations.find((c) => c.id === conversationId),
   );
   const sendMessage = useAgentTaskStore((s) => s.sendMessage);
+  const cancelActiveConversation = useAgentTaskStore(
+    (s) => s.cancelActiveConversation,
+  );
+  const changeModel = useAgentTaskStore((s) => s.changeModel);
+  const createApiConversation = useAgentTaskStore(
+    (s) => s.createApiConversation,
+  );
+  const selectConversation = useAgentTaskStore((s) => s.selectConversation);
 
   const [input, setInput] = useState("");
+  const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  const {
+    isListening,
+    transcript,
+    startListening,
+    stopListening,
+    isSupported: voiceSupported,
+  } = useVoiceInput();
+  const prevTranscriptRef = useRef("");
+
+  // Append voice transcript to input
+  useEffect(() => {
+    if (transcript && transcript !== prevTranscriptRef.current) {
+      prevTranscriptRef.current = transcript;
+      setInput((prev) => prev + transcript);
+    }
+  }, [transcript]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -59,10 +162,24 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     resizeTextarea();
   }, [input, resizeTextarea]);
 
+  // NOTE: hooks must run in the same order every render — compute popover
+  // item count before any early return.
+  const popoverItemCount = useMemo(() => {
+    if (mentionState.kind === "slash") {
+      const q = mentionState.query.toLowerCase();
+      return ["clear", "model", "help", "new"].filter((c) =>
+        c.startsWith(q),
+      ).length;
+    }
+    return 0;
+  }, [mentionState]);
+
   if (!conversation) {
     return (
       <div className="flex flex-col h-full bg-bg-primary items-center justify-center">
-        <span className="text-[11px] text-text-muted">Conversation not found</span>
+        <span className="text-[11px] text-text-muted">
+          Conversation not found
+        </span>
       </div>
     );
   }
@@ -70,17 +187,23 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const status = STATUS_DISPLAY[conversation.status] ?? STATUS_DISPLAY.idle;
   const agentLabel = AGENT_LABELS[conversation.agent] ?? conversation.agent;
   const dotColor = AGENT_DOT_COLORS[conversation.agent] ?? "bg-text-muted";
-  const folderName = conversation.projectPath
-    .replace(/\\/g, "/")
-    .split("/")
-    .filter(Boolean)
-    .pop() ?? conversation.projectPath;
+  const folderName =
+    conversation.projectPath
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean)
+      .pop() ?? conversation.projectPath;
 
   const isActive = conversation.status === "active";
   const isIdle = conversation.status === "idle";
+  // "running" in the UI sense = actively streaming / waiting for the agent.
+  // Store status for API mode is "active" during a streaming turn.
+  const isRunning = isActive;
   const messages = conversation.messages;
   const lastMessage = messages[messages.length - 1];
-  const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant");
+  const lastAssistantMessage = [...messages]
+    .reverse()
+    .find((m) => m.role === "assistant");
   const showThinking =
     isActive &&
     (!lastMessage || lastMessage.role === "user") &&
@@ -94,19 +217,278 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   // Show quick actions only on the last assistant message when idle
   const showQuickActions = isIdle && lastAssistantMessage !== undefined;
 
+  // Model switcher data
+  const providerInfo = API_PROVIDERS.find(
+    (p) => p.agentCli === conversation.agent,
+  );
+  const currentModelValue = conversation.model ?? "";
+  const currentModelLabel =
+    providerInfo?.models.find((m) => m.value === currentModelValue)?.label ??
+    currentModelValue ??
+    "Model";
+
+  /* ----------------- popover / input handling ----------------- */
+
+  function updateMentionStateFromInput(text: string, cursor: number) {
+    const fileHit = findTrigger(text, cursor, "@");
+    if (fileHit) {
+      setMentionState({
+        kind: "file",
+        query: fileHit.query,
+        triggerIndex: fileHit.triggerIndex,
+        highlightedIndex: 0,
+      });
+      return;
+    }
+    const slashHit = findTrigger(text, cursor, "/");
+    if (slashHit) {
+      setMentionState({
+        kind: "slash",
+        query: slashHit.query,
+        triggerIndex: slashHit.triggerIndex,
+        highlightedIndex: 0,
+      });
+      return;
+    }
+    setMentionState({ kind: "none" });
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const text = e.target.value;
+    setInput(text);
+    const cursor = e.target.selectionStart ?? text.length;
+    updateMentionStateFromInput(text, cursor);
+  }
+
+  function handleSelectionChange() {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const cursor = ta.selectionStart ?? ta.value.length;
+    updateMentionStateFromInput(ta.value, cursor);
+  }
+
+  function selectFileMention(path: string) {
+    if (mentionState.kind !== "file") return;
+    const before = input.slice(0, mentionState.triggerIndex);
+    // Replace "@query" (trigger + current query) with "@path "
+    const afterStart = mentionState.triggerIndex + 1 + mentionState.query.length;
+    const after = input.slice(afterStart);
+    const next = `${before}@${path} ${after}`;
+    setInput(next);
+    setMentionState({ kind: "none" });
+    // Re-focus textarea and place cursor after inserted path
+    setTimeout(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        const pos = before.length + 1 + path.length + 1;
+        ta.focus();
+        ta.setSelectionRange(pos, pos);
+      }
+    }, 0);
+  }
+
+  function runSlashCommand(cmd: SlashCommand) {
+    if (mentionState.kind !== "slash") return;
+    const before = input.slice(0, mentionState.triggerIndex);
+    // Drop the entire "/query" from input.
+    const afterStart =
+      mentionState.triggerIndex + 1 + mentionState.query.length;
+    const after = input.slice(afterStart);
+    const remaining = (before + after).trim();
+
+    if (cmd === "clear") {
+      // Reset conversation messages inline via setState (store action not available).
+      useAgentTaskStore.setState((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === conversationId
+            ? { ...c, messages: [], updatedAt: Date.now() }
+            : c,
+        ),
+      }));
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      return;
+    }
+
+    if (cmd === "model") {
+      // Open the model dropdown by clicking its trigger.
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      setTimeout(() => {
+        const btn = document.querySelector<HTMLButtonElement>(
+          `[data-agent-pane-model-dropdown="${conversationId}"] button`,
+        );
+        btn?.click();
+      }, 0);
+      return;
+    }
+
+    if (cmd === "help") {
+      // Insert a system-style message with the cheatsheet into the conversation.
+      const helpMsg: AgentMessage = {
+        id: generateId("msg"),
+        role: "system",
+        content: HELP_CHEATSHEET,
+        timestamp: Date.now(),
+      };
+      useAgentTaskStore.setState((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === conversationId
+            ? {
+                ...c,
+                messages: [...c.messages, helpMsg],
+                updatedAt: Date.now(),
+              }
+            : c,
+        ),
+      }));
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      return;
+    }
+
+    if (cmd === "new") {
+      // Start a new API conversation using same agent/path/model as this one.
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      const conv = conversation;
+      if (!conv || conv.mode !== "api" || !conv.model) return;
+      const model = conv.model;
+      void (async () => {
+        try {
+          const newId = await createApiConversation(
+            conv.agent,
+            conv.projectPath,
+            model,
+            "",
+            conv.systemPromptOverride ?? null,
+          );
+          selectConversation(newId);
+        } catch (e) {
+          console.warn("Failed to start new conversation:", e);
+        }
+      })();
+      return;
+    }
+  }
+
   function handleSend() {
     const text = input.trim();
-    if (!text || !isActive) return;
+    if (!text) return;
     setInput("");
+    setMentionState({ kind: "none" });
     sendMessage(conversationId, text);
   }
 
+  function handleStop() {
+    void cancelActiveConversation(conversationId);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Popover key handling
+    if (mentionState.kind === "file") {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionState({ kind: "none" });
+        return;
+      }
+      // File mention selection is handled by the popover's onMouseDown; arrow
+      // keys update highlightedIndex purely on our side via a cached count.
+      // FileMentionPopover fetches results async, so we can't easily know the
+      // final length here — we let the dropdown handle selection via click.
+      // Enter/Tab to accept: find the popover's currently-highlighted DOM row.
+      if (e.key === "Enter" || e.key === "Tab") {
+        const el = document.querySelector<HTMLDivElement>(
+          '[data-agent-pane-mention-popover] [role="option"][aria-selected="true"]',
+        );
+        if (el) {
+          e.preventDefault();
+          el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+          return;
+        }
+        // If no file selection available, fall through to send.
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionState((ms) =>
+          ms.kind === "file"
+            ? { ...ms, highlightedIndex: ms.highlightedIndex + 1 }
+            : ms,
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionState((ms) =>
+          ms.kind === "file"
+            ? {
+                ...ms,
+                highlightedIndex: Math.max(0, ms.highlightedIndex - 1),
+              }
+            : ms,
+        );
+        return;
+      }
+    }
+
+    if (mentionState.kind === "slash") {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionState({ kind: "none" });
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionState((ms) =>
+          ms.kind === "slash"
+            ? {
+                ...ms,
+                highlightedIndex: Math.min(
+                  popoverItemCount - 1,
+                  ms.highlightedIndex + 1,
+                ),
+              }
+            : ms,
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionState((ms) =>
+          ms.kind === "slash"
+            ? {
+                ...ms,
+                highlightedIndex: Math.max(0, ms.highlightedIndex - 1),
+              }
+            : ms,
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        const q = mentionState.query.toLowerCase();
+        const matches = (["clear", "model", "help", "new"] as SlashCommand[])
+          .filter((c) => c.startsWith(q));
+        const picked = matches[mentionState.highlightedIndex] ?? matches[0];
+        if (picked) {
+          e.preventDefault();
+          runSlashCommand(picked);
+          return;
+        }
+      }
+    }
+
+    if (e.ctrlKey && e.key === "Enter") {
+      e.preventDefault();
+      handleSend();
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   }
+
+  /* ----------------- render ----------------- */
 
   return (
     <div className="flex flex-col h-full bg-bg-primary">
@@ -117,7 +499,9 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         <span className="text-[11px] font-medium text-text-primary truncate">
           {agentLabel}
         </span>
-        <span className="text-[10px] text-text-muted truncate">{folderName}</span>
+        <span className="text-[10px] text-text-muted truncate">
+          {folderName}
+        </span>
 
         <div className="flex-1" />
 
@@ -144,6 +528,39 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
         <div className="flex-1" />
 
+        {/* Model switcher (API mode only) */}
+        {providerInfo && conversation.mode === "api" && (
+          <div data-agent-pane-model-dropdown={conversationId}>
+            <Dropdown
+              align="right"
+              trigger={
+                <span className="text-[11px] text-text-secondary">
+                  {currentModelLabel}
+                </span>
+              }
+            >
+              {providerInfo.models.map((m) => (
+                <DropdownItem
+                  key={m.value}
+                  onClick={() => {
+                    void changeModel(conversationId, m.value);
+                  }}
+                >
+                  <span
+                    className={
+                      m.value === currentModelValue
+                        ? "text-accent-green text-[11px]"
+                        : "text-[11px]"
+                    }
+                  >
+                    {m.label}
+                  </span>
+                </DropdownItem>
+              ))}
+            </Dropdown>
+          </div>
+        )}
+
         {/* Right: close */}
         <button
           onClick={onClose}
@@ -161,17 +578,18 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       >
         {conversation.messages.length === 0 && (
           <div className="flex items-center justify-center h-full">
-            <span className="text-[11px] text-text-muted">
-              No messages yet
-            </span>
+            <span className="text-[11px] text-text-muted">No messages yet</span>
           </div>
         )}
 
         {messages.map((msg) => (
           <div key={msg.id}>
-            <MessageBubble message={msg} />
+            <MessageBubble message={msg} conversation={conversation} />
             {showQuickActions && msg.id === lastAssistantMessage?.id && (
-              <AgentQuickActions conversationId={conversationId} message={msg} />
+              <AgentQuickActions
+                conversationId={conversationId}
+                message={msg}
+              />
             )}
           </div>
         ))}
@@ -190,26 +608,79 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       </div>
 
       {/* Input area */}
-      <div className="shrink-0 border-t border-bg-border px-3 py-2 bg-bg-primary">
+      <div className="shrink-0 border-t border-bg-border px-3 py-2 bg-bg-primary relative">
+        {/* Popovers anchored above the textarea */}
+        <div
+          className="absolute left-3 right-3 bottom-full"
+          data-agent-pane-mention-popover
+        >
+          <FileMentionPopover
+            visible={mentionState.kind === "file"}
+            projectPath={conversation.projectPath}
+            query={mentionState.kind === "file" ? mentionState.query : ""}
+            highlightedIndex={
+              mentionState.kind === "file" ? mentionState.highlightedIndex : 0
+            }
+            onSelect={selectFileMention}
+          />
+          <SlashCommandPopover
+            visible={mentionState.kind === "slash"}
+            query={mentionState.kind === "slash" ? mentionState.query : ""}
+            highlightedIndex={
+              mentionState.kind === "slash" ? mentionState.highlightedIndex : 0
+            }
+            onSelect={runSlashCommand}
+          />
+        </div>
+
         <div className="flex items-end gap-2">
           <textarea
             ref={textareaRef}
             data-agent-pane-input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
+            onKeyUp={handleSelectionChange}
+            onClick={handleSelectionChange}
             placeholder="Send a message..."
             rows={1}
             className="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-muted focus:outline-none resize-none leading-relaxed"
           />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || !isActive}
-            className="p-1 text-accent-green hover:bg-accent-green/10 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-            title="Send"
-          >
-            <Send size={12} />
-          </button>
+
+          {/* Mic button */}
+          {voiceSupported && (
+            <button
+              onClick={isListening ? stopListening : startListening}
+              className={`p-1 rounded transition-colors shrink-0 ${
+                isListening
+                  ? "bg-accent-green/20 text-accent-green animate-pulse"
+                  : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
+              }`}
+              title={isListening ? "Stop recording" : "Voice input"}
+            >
+              <Mic size={12} />
+            </button>
+          )}
+
+          {/* Send / Stop */}
+          {isRunning ? (
+            <button
+              onClick={handleStop}
+              className="p-1 text-accent-red hover:bg-accent-red/10 rounded transition-colors shrink-0"
+              title="Stop"
+            >
+              <Square size={12} />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!input.trim()}
+              className="p-1 text-accent-green hover:bg-accent-green/10 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+              title="Send (Enter)"
+            >
+              <Send size={12} />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -220,13 +691,22 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 /* Message bubble                                                      */
 /* ------------------------------------------------------------------ */
 
-function MessageBubble({ message }: { message: AgentMessage }) {
+function MessageBubble({
+  message,
+  conversation,
+}: {
+  message: AgentMessage;
+  conversation: AgentConversation;
+}) {
   if (message.role === "system") {
     return (
       <div className="flex justify-center">
-        <span className="text-[10px] text-text-muted italic px-2 py-0.5">
-          {message.content}
-        </span>
+        <div className="text-[10px] text-text-muted px-2 py-1 bg-bg-secondary/50 border border-bg-border rounded max-w-[90%]">
+          <MarkdownRenderer
+            content={message.content}
+            className="text-[10px] leading-relaxed"
+          />
+        </div>
       </div>
     );
   }
@@ -234,8 +714,19 @@ function MessageBubble({ message }: { message: AgentMessage }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] px-3 py-1.5 bg-accent-blue/15 rounded-lg text-xs text-text-primary">
-          {message.content}
+        <div
+          className={`max-w-[85%] px-3 py-1.5 rounded-lg text-xs text-text-primary ${
+            message.queued
+              ? "bg-accent-amber/10 border border-accent-amber/30"
+              : "bg-accent-blue/15"
+          }`}
+        >
+          <div>{message.content}</div>
+          {message.queued && (
+            <span className="text-[10px] text-accent-amber ml-1">
+              (queued)
+            </span>
+          )}
         </div>
       </div>
     );
@@ -249,7 +740,11 @@ function MessageBubble({ message }: { message: AgentMessage }) {
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="flex flex-col gap-1">
             {message.toolCalls.map((tc) => (
-              <ToolCallCard key={tc.id} toolCall={tc} />
+              <ToolCallCard
+                key={tc.id}
+                toolCall={tc}
+                projectPath={conversation.projectPath}
+              />
             ))}
           </div>
         )}
@@ -257,7 +752,10 @@ function MessageBubble({ message }: { message: AgentMessage }) {
         {/* Content */}
         {message.content && (
           <div className="px-3 py-2 bg-bg-secondary border border-bg-border rounded-lg text-xs">
-            <MarkdownRenderer content={message.content} className="text-xs leading-relaxed" />
+            <MarkdownRenderer
+              content={message.content}
+              className="text-xs leading-relaxed"
+            />
           </div>
         )}
 
@@ -265,7 +763,71 @@ function MessageBubble({ message }: { message: AgentMessage }) {
         {message.isStreaming && (
           <span className="inline-block w-1.5 h-3.5 bg-accent-green/70 rounded-sm animate-pulse ml-1" />
         )}
+
+        {/* Cost pill */}
+        <AssistantCostPill
+          message={message}
+          model={conversation.model ?? ""}
+        />
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Cost pill                                                           */
+/* ------------------------------------------------------------------ */
+
+function AssistantCostPill({
+  message,
+  model,
+}: {
+  message: AgentMessage;
+  model: string;
+}) {
+  // Only render if token info is present on the message.
+  // NOTE: the store's `done` handler does not currently persist tokens onto
+  // AgentMessage — this pill stays hidden until that wiring lands. The type
+  // supports the fields so no refactor is needed downstream.
+  const [cost, setCost] = useState<number | null>(null);
+
+  const {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+  } = message;
+
+  useEffect(() => {
+    if (inputTokens == null || outputTokens == null || !model) {
+      setCost(null);
+      return;
+    }
+    let cancelled = false;
+    calculateTurnCost(
+      model,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens ?? 0,
+      cacheWriteTokens ?? 0,
+    )
+      .then((n) => {
+        if (!cancelled) setCost(n);
+      })
+      .catch(() => {
+        if (!cancelled) setCost(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, model]);
+
+  if (inputTokens == null || outputTokens == null) return null;
+  const totalTokens = inputTokens + outputTokens;
+  return (
+    <div className="text-[10px] text-text-muted mt-1 font-mono">
+      {totalTokens} tok
+      {cost != null && ` · $${cost.toFixed(4)}`}
     </div>
   );
 }
@@ -274,19 +836,130 @@ function MessageBubble({ message }: { message: AgentMessage }) {
 /* Tool call card                                                      */
 /* ------------------------------------------------------------------ */
 
-function ToolCallCard({ toolCall }: { toolCall: AgentToolCall }) {
+interface WriteFileInput {
+  path?: string;
+  content?: string;
+}
+
+/**
+ * Parse a tool call's `input` field (if captured on the tool call) for
+ * write_file path+content. Returns null if unavailable or malformed.
+ *
+ * Note: AgentToolCall currently doesn't carry `input` — kept best-effort so
+ * diff rendering lights up automatically once the store records it.
+ */
+function parseWriteFileInput(tc: AgentToolCall): WriteFileInput | null {
+  const anyTc = tc as AgentToolCall & { input?: unknown };
+  const raw = anyTc.input;
+  if (raw == null) return null;
+  try {
+    let obj: unknown = raw;
+    if (typeof raw === "string") obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      const rec = obj as Record<string, unknown>;
+      const path =
+        typeof rec.path === "string"
+          ? rec.path
+          : typeof rec.file_path === "string"
+            ? (rec.file_path as string)
+            : undefined;
+      const content =
+        typeof rec.content === "string" ? rec.content : undefined;
+      if (path && content != null) return { path, content };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function ToolCallCard({
+  toolCall,
+  projectPath,
+}: {
+  toolCall: AgentToolCall;
+  projectPath: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const writeFileInput =
+    toolCall.name === "write_file" ? parseWriteFileInput(toolCall) : null;
+
+  const statusIcon =
+    toolCall.status === "running" ? (
+      <Loader2 size={10} className="animate-spin" />
+    ) : toolCall.status === "error" ? (
+      <XCircle size={10} className="text-accent-red" />
+    ) : (
+      <CheckCircle size={10} className="text-accent-green" />
+    );
+
+  // write_file with parseable input gets a diff view (replaces summary body).
+  if (writeFileInput) {
+    return (
+      <div className="border border-bg-border rounded text-[10px] text-text-muted bg-bg-hover">
+        <div className="flex items-center gap-1.5 px-2 py-1">
+          {statusIcon}
+          <span className="font-mono text-text-secondary">{toolCall.name}</span>
+          {toolCall.file && (
+            <span className="text-text-muted">({toolCall.file})</span>
+          )}
+        </div>
+        <div className="p-1">
+          <ToolDiffView
+            projectPath={projectPath}
+            filePath={writeFileInput.path!}
+            newContent={writeFileInput.content!}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const summary = toolCall.summary ?? "";
+  const fullContent = toolCall.fullContent ?? summary;
+  const summaryPreview = summary
+    .split("\n")
+    .slice(0, 2)
+    .join("\n");
+  const hasMore =
+    (toolCall.fullContent && toolCall.fullContent !== summary) ||
+    summary.split("\n").length > 2 ||
+    summary.length > 160;
+
   return (
-    <div className="flex items-center gap-1.5 px-2 py-1 bg-bg-hover rounded text-[10px] text-text-muted">
-      {toolCall.status === "running" ? (
-        <Loader2 size={10} className="animate-spin" />
-      ) : toolCall.status === "error" ? (
-        <XCircle size={10} className="text-accent-red" />
-      ) : (
-        <CheckCircle size={10} className="text-accent-green" />
-      )}
-      <span className="font-mono">{toolCall.name}</span>
-      {toolCall.file && (
-        <span className="text-text-muted">({toolCall.file})</span>
+    <div className="bg-bg-hover rounded text-[10px] text-text-muted">
+      <button
+        type="button"
+        onClick={() => hasMore && setExpanded((v) => !v)}
+        className={`w-full flex items-center gap-1.5 px-2 py-1 text-left ${
+          hasMore ? "hover:bg-bg-border/50 cursor-pointer" : "cursor-default"
+        } transition-colors rounded`}
+      >
+        {hasMore ? (
+          expanded ? (
+            <ChevronDown size={10} />
+          ) : (
+            <ChevronRight size={10} />
+          )
+        ) : (
+          <span className="w-[10px]" />
+        )}
+        {statusIcon}
+        <span className="font-mono">{toolCall.name}</span>
+        {toolCall.file && (
+          <span className="text-text-muted truncate">({toolCall.file})</span>
+        )}
+        {!expanded && summaryPreview && (
+          <span className="ml-1 truncate text-text-muted/80 flex-1 min-w-0">
+            {summaryPreview.replace(/\n/g, " ↵ ")}
+          </span>
+        )}
+      </button>
+      {expanded && hasMore && (
+        <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 max-h-96 overflow-y-auto mx-1 mb-1 text-text-primary">
+          {fullContent}
+        </pre>
       )}
     </div>
   );

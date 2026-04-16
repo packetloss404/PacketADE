@@ -75,6 +75,7 @@ struct ToolResultPayload {
     name: String,
     content: String,
     is_error: bool,
+    input: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -112,13 +113,17 @@ pub async fn start_api_agent_session(
     model: String,
     project_path: String,
     initial_message: String,
+    system_prompt_override: Option<String>,
 ) -> Result<(), String> {
     super::validate_project_path(&project_path)?;
 
     // Load API key (validates provider exists)
     let _api_key = api_keys::load_api_key(&provider)?;
 
-    let system_prompt = build_system_prompt(&project_path);
+    let system_prompt = match system_prompt_override {
+        Some(p) if !p.is_empty() => p,
+        _ => build_system_prompt(&project_path),
+    };
 
     // Create initial message history
     let messages = vec![ChatMessage {
@@ -255,6 +260,21 @@ pub async fn cancel_api_agent_session(
         let _ = tx.send(());
         info!(session_id = %session_id, "API agent session cancelled");
     }
+    Ok(())
+}
+
+/// Change the model for an active session. Subsequent turns will use the new model.
+#[tauri::command]
+pub async fn change_model(
+    state: tauri::State<'_, Arc<ApiAgentState>>,
+    session_id: String,
+    new_model: String,
+) -> Result<(), String> {
+    let mut configs = state.configs.lock().await;
+    let config = configs
+        .get_mut(&session_id)
+        .ok_or_else(|| format!("No active session: {}", session_id))?;
+    config.model = new_model;
     Ok(())
 }
 
@@ -558,6 +578,7 @@ async fn run_agent_loop(
                     name: tc.name.clone(),
                     content: result.content.clone(),
                     is_error: result.is_error,
+                    input: serde_json::to_string(&tc.arguments).unwrap_or_default(),
                 },
             );
 

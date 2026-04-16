@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useProfileStore } from "@/stores/profileStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
@@ -15,9 +16,16 @@ export function AgentsView() {
   const createApiConversation = useAgentTaskStore((s) => s.createApiConversation);
   const deleteConversation = useAgentTaskStore((s) => s.deleteConversation);
 
+  const profiles = useProfileStore((s) => s.profiles);
+  const activeProfileId = useProfileStore((s) => s.activeProfileId);
+  const setActiveProfile = useProfileStore((s) => s.setActiveProfile);
+
   const projectPath = useLayoutStore((s) => s.projectPath);
   const [selectedAgent, setSelectedAgent] = useState<AgentCli>("api-claude");
   const [selectedModel, setSelectedModel] = useState<string>("claude-sonnet-4-6-20250414");
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(
+    activeProfileId ?? profiles[0]?.id ?? "",
+  );
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const handleNewAgent = useCallback(() => {
@@ -25,13 +33,23 @@ export function AgentsView() {
     setTimeout(() => textareaRef.current?.focus(), 50);
   }, [selectConversation]);
 
+  const handleProfileChange = useCallback(
+    (id: string) => {
+      setSelectedProfileId(id);
+      setActiveProfile(id);
+    },
+    [setActiveProfile],
+  );
+
   const handleLaunch = useCallback(() => {
     const text = agentInputText.trim();
     if (!text) return;
     const path = selectedRepo ?? projectPath;
     const model = selectedModel || getDefaultModel(selectedAgent);
+    const profile = profiles.find((p) => p.id === selectedProfileId);
+    const systemPrompt = profile?.systemPrompt ? profile.systemPrompt : null;
 
-    void createApiConversation(selectedAgent, path, model, text);
+    void createApiConversation(selectedAgent, path, model, text, systemPrompt);
     setAgentInputText("");
   }, [
     agentInputText,
@@ -39,6 +57,8 @@ export function AgentsView() {
     projectPath,
     selectedAgent,
     selectedModel,
+    selectedProfileId,
+    profiles,
     setAgentInputText,
     createApiConversation,
   ]);
@@ -71,8 +91,12 @@ export function AgentsView() {
           onLaunch={handleLaunch}
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
+          selectedProfileId={selectedProfileId}
+          onProfileChange={handleProfileChange}
         />
       )}
+
+      <aside className="w-0 border-l border-bg-border overflow-hidden" aria-hidden="true" />
     </div>
   );
 }

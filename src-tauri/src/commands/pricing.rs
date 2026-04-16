@@ -190,6 +190,19 @@ pub fn calculate_cost(
         + (cache_write as f64 / m) * p.cache_write_per_mtok
 }
 
+/// Tauri command wrapper around `calculate_cost` for per-turn cost display
+/// in the API agent UI.
+#[tauri::command]
+pub fn calculate_turn_cost(
+    model: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read: u64,
+    cache_write: u64,
+) -> f64 {
+    calculate_cost(&model, input_tokens, output_tokens, cache_read, cache_write)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

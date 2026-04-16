@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import {
   createPtySession,
   writePty,
@@ -8,11 +9,32 @@ import {
   sendApiAgentMessage,
   cancelApiAgentSession,
   closeApiAgentSession,
+  saveConversation,
+  loadConversations,
+  deleteConversationFile,
+  changeAgentModel,
 } from "@/lib/tauri";
 import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import type { GitHubRepo } from "@/types/github";
 import type { AgentConversation, AgentMessage, AgentToolCall } from "@/types/agent-conversation";
+
+/** Debounced save: per-conversation timers so rapid streaming events coalesce. */
+const SAVE_DEBOUNCE_MS = 500;
+const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleSave(conv: AgentConversation): void {
+  if (conv.mode !== "api") return; // only persist API conversations
+  const existing = saveTimers.get(conv.id);
+  if (existing) clearTimeout(existing);
+  const handle = setTimeout(() => {
+    saveTimers.delete(conv.id);
+    saveConversation(conv.id, JSON.stringify(conv)).catch((e) => {
+      console.warn("Failed to save conversation:", conv.id, e);
+    });
+  }, SAVE_DEBOUNCE_MS);
+  saveTimers.set(conv.id, handle);
+}
 
 export type AgentCli =
   | "claude-code"
@@ -122,13 +144,21 @@ interface AgentTaskStore {
 
   // --- Conversation actions ---
   createConversation: (agent: AgentCli, projectPath: string) => Promise<string>;
-  createApiConversation: (agent: AgentCli, projectPath: string, model: string, initialMessage: string) => Promise<string>;
+  createApiConversation: (
+    agent: AgentCli,
+    projectPath: string,
+    model: string,
+    initialMessage: string,
+    systemPromptOverride?: string | null,
+  ) => Promise<string>;
   sendMessage: (conversationId: string, content: string) => void;
   addAssistantMessage: (conversationId: string, content: string, toolCalls?: AgentToolCall[]) => void;
   updateAssistantMessage: (conversationId: string, messageId: string, content: string) => void;
   selectConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
   appendRawOutput: (conversationId: string, text: string) => void;
+  cancelActiveConversation: (id: string) => Promise<void>;
+  changeModel: (id: string, newModel: string) => Promise<void>;
 }
 
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
@@ -333,7 +363,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  createApiConversation: async (agent, projectPath, model, initialMessage) => {
+  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride) => {
     const id = generateId("conv");
     const provider = apiAgentProvider(agent);
 
@@ -363,6 +393,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       mode: "api",
       provider,
       model,
+      systemPromptOverride: systemPromptOverride ?? null,
+      queuedMessages: [],
     };
 
     set((s) => ({
@@ -404,6 +436,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
       // Listen for text chunks
       const chunkUnlisten = await listen<string>(apiAgentChunkEvent(id), (event) => {
+        let updated: AgentConversation | undefined;
         set((s) => ({
           conversations: s.conversations.map((c) => {
             if (c.id !== id) return c;
@@ -413,15 +446,19 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
               }
               return m;
             });
-            return { ...c, messages, updatedAt: Date.now() };
+            const next = { ...c, messages, updatedAt: Date.now() };
+            updated = next;
+            return next;
           }),
         }));
+        if (updated) scheduleSave(updated);
       });
 
       // Listen for tool starts
       const toolStartUnlisten = await listen<{ id: string; name: string }>(
         apiAgentToolStartEvent(id),
         (event) => {
+          let updated: AgentConversation | undefined;
           set((s) => ({
             conversations: s.conversations.map((c) => {
               if (c.id !== id) return c;
@@ -435,9 +472,12 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
                 }
                 return m;
               });
-              return { ...c, messages, updatedAt: Date.now() };
+              const next = { ...c, messages, updatedAt: Date.now() };
+              updated = next;
+              return next;
             }),
           }));
+          if (updated) scheduleSave(updated);
         }
       );
 
@@ -447,7 +487,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         name: string;
         content: string;
         is_error: boolean;
+        input: string;
       }>(apiAgentToolResultEvent(id), (event) => {
+        let updated: AgentConversation | undefined;
         set((s) => ({
           conversations: s.conversations.map((c) => {
             if (c.id !== id) return c;
@@ -459,6 +501,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
                         ...tc,
                         status: (event.payload.is_error ? "error" : "done") as AgentToolCall["status"],
                         summary: event.payload.content.slice(0, 200),
+                        fullContent: event.payload.content,
+                        input: event.payload.input,
                       }
                     : tc
                 );
@@ -466,24 +510,66 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
               }
               return m;
             });
-            return { ...c, messages, updatedAt: Date.now() };
+            const next = { ...c, messages, updatedAt: Date.now() };
+            updated = next;
+            return next;
           }),
         }));
+        if (updated) scheduleSave(updated);
       });
 
       // Listen for done
-      const doneUnlisten = await listen<{ input_tokens: number; output_tokens: number }>(
+      const doneUnlisten = await listen<{
+        input_tokens: number;
+        output_tokens: number;
+        cache_read_input_tokens: number;
+        cache_creation_input_tokens: number;
+      }>(
         apiAgentDoneEvent(id),
-        () => {
+        (event) => {
+          let updated: AgentConversation | undefined;
+          let nextQueued: string | undefined;
           set((s) => ({
             conversations: s.conversations.map((c) => {
               if (c.id !== id) return c;
               const messages = c.messages.map((m) =>
-                m.isStreaming ? { ...m, isStreaming: false } : m
+                m.isStreaming
+                  ? {
+                      ...m,
+                      isStreaming: false,
+                      inputTokens: event.payload.input_tokens,
+                      outputTokens: event.payload.output_tokens,
+                      cacheReadTokens: event.payload.cache_read_input_tokens,
+                      cacheWriteTokens: event.payload.cache_creation_input_tokens,
+                    }
+                  : m
               );
-              return { ...c, messages, status: "idle", updatedAt: Date.now() };
+              // Drain first queued message (if any)
+              const queued = c.queuedMessages ?? [];
+              let remainingQueued = queued;
+              if (queued.length > 0) {
+                nextQueued = queued[0];
+                remainingQueued = queued.slice(1);
+              }
+              const next: AgentConversation = {
+                ...c,
+                messages,
+                status: "idle",
+                updatedAt: Date.now(),
+                queuedMessages: remainingQueued,
+              };
+              updated = next;
+              return next;
             }),
           }));
+          if (updated) scheduleSave(updated);
+          // Trigger sendMessage for the dequeued message after state settles
+          if (nextQueued !== undefined) {
+            const drained = nextQueued;
+            setTimeout(() => {
+              get().sendMessage(id, drained);
+            }, 0);
+          }
         }
       );
 
@@ -491,6 +577,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       const errorUnlisten = await listen<{ message: string }>(
         apiAgentErrorEvent(id),
         (event) => {
+          let updated: AgentConversation | undefined;
           set((s) => ({
             conversations: s.conversations.map((c) => {
               if (c.id !== id) return c;
@@ -503,9 +590,12 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
                     }
                   : m
               );
-              return { ...c, messages, status: "failed", updatedAt: Date.now() };
+              const next = { ...c, messages, status: "failed" as const, updatedAt: Date.now() };
+              updated = next;
+              return next;
             }),
           }));
+          if (updated) scheduleSave(updated);
         }
       );
 
@@ -520,7 +610,14 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       });
 
       // Start the API agent session
-      await startApiAgentSession(id, provider, model, projectPath, initialMessage);
+      await startApiAgentSession(
+        id,
+        provider,
+        model,
+        projectPath,
+        initialMessage,
+        systemPromptOverride ?? null,
+      );
     } catch {
       set((s) => ({
         conversations: s.conversations.map((c) =>
@@ -538,6 +635,38 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     const conv = get().conversations.find((c) => c.id === conversationId);
     if (!conv) return;
 
+    // If the agent is still running (API mode), queue the message and show a queued bubble.
+    const isRunning =
+      conv.mode === "api" &&
+      conv.status === "active" &&
+      conv.messages.some((m) => m.isStreaming);
+
+    if (isRunning) {
+      const queuedMsg: AgentMessage = {
+        id: generateId("msg"),
+        role: "user",
+        content,
+        timestamp: Date.now(),
+        queued: true,
+      };
+      let updated: AgentConversation | undefined;
+      set((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== conversationId) return c;
+          const next: AgentConversation = {
+            ...c,
+            messages: [...c.messages, queuedMsg],
+            queuedMessages: [...(c.queuedMessages ?? []), content],
+            updatedAt: Date.now(),
+          };
+          updated = next;
+          return next;
+        }),
+      }));
+      if (updated) scheduleSave(updated);
+      return;
+    }
+
     const msg: AgentMessage = {
       id: generateId("msg"),
       role: "user",
@@ -545,31 +674,25 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       timestamp: Date.now(),
     };
 
+    let updatedAfterUser: AgentConversation | undefined;
     set((s) => ({
-      conversations: s.conversations.map((c) =>
-        c.id === conversationId
-          ? { ...c, messages: [...c.messages, msg], updatedAt: Date.now(), status: "active" }
-          : c
-      ),
+      conversations: s.conversations.map((c) => {
+        if (c.id !== conversationId) return c;
+        const next: AgentConversation = {
+          ...c,
+          messages: [...c.messages, msg],
+          updatedAt: Date.now(),
+          status: "active",
+        };
+        updatedAfterUser = next;
+        return next;
+      }),
     }));
+    if (updatedAfterUser) scheduleSave(updatedAfterUser);
 
     if (conv.mode === "api") {
       // For API mode, create a new streaming assistant message and call the backend
       const assistantMsgId = generateId("msg");
-      set((s) => ({
-        conversations: s.conversations.map((c) =>
-          c.id === conversationId
-            ? {
-                ...c,
-                messages: [
-                  ...c.messages,
-                  // The user msg was already added above; this set will include it
-                  // Actually we need to add to the already-updated messages
-                ],
-              }
-            : c
-        ),
-      }));
 
       // Add streaming assistant message
       set((s) => ({
@@ -661,10 +784,60 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         void killPty(conv.sessionId).catch(() => {});
       }
     }
+    // Best-effort remove persisted file (API mode only)
+    if (conv?.mode === "api") {
+      deleteConversationFile(id).catch((e) => console.warn("Failed to delete conversation file:", e));
+    }
+    // Cancel any pending debounced save
+    const timer = saveTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      saveTimers.delete(id);
+    }
     set((s) => ({
       conversations: s.conversations.filter((c) => c.id !== id),
       selectedConversationId: s.selectedConversationId === id ? null : s.selectedConversationId,
     }));
+  },
+
+  cancelActiveConversation: async (id) => {
+    try {
+      await invoke("cancel_api_agent_session", { sessionId: id });
+    } catch (e) {
+      console.warn("cancel_api_agent_session failed:", e);
+    }
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const messages = c.messages.map((m) =>
+          m.isStreaming ? { ...m, isStreaming: false } : m
+        );
+        const next: AgentConversation = {
+          ...c,
+          messages,
+          status: "idle",
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  changeModel: async (id, newModel) => {
+    await changeAgentModel(id, newModel);
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = { ...c, model: newModel, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
   },
 
   appendRawOutput: (conversationId, text) => {
@@ -683,3 +856,28 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }));
   },
 }));
+
+// Hydrate persisted API conversations on module load.
+// Reset runtime-only fields so we don't resume mid-stream after a cold start.
+loadConversations()
+  .then((rawList) => {
+    const parsed: AgentConversation[] = [];
+    for (const raw of rawList) {
+      try {
+        const conv = JSON.parse(raw) as AgentConversation;
+        if (conv.mode !== "api") continue; // PTY sessions died with the app
+        conv.status = "idle";
+        conv.messages = (conv.messages ?? []).map((m) => ({ ...m, isStreaming: false }));
+        conv.queuedMessages = [];
+        parsed.push(conv);
+      } catch (e) {
+        console.warn("Skipping malformed conversation:", e);
+      }
+    }
+    if (parsed.length > 0) {
+      useAgentTaskStore.setState((state) => ({
+        conversations: [...parsed, ...state.conversations],
+      }));
+    }
+  })
+  .catch((e) => console.warn("Failed to hydrate conversations:", e));

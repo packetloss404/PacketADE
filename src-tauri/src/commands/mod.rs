@@ -3,6 +3,7 @@ pub mod analytics;
 pub mod api_agent;
 pub mod api_keys;
 pub mod code_quality;
+pub mod conversations;
 pub mod crashes;
 pub mod deploy;
 pub mod dictation;
