@@ -23,6 +23,14 @@ pub struct DictationAnalytics {
     pub total_words: u32,
     #[serde(rename = "averageWpm")]
     pub average_wpm: u32,
+    #[serde(rename = "fastestWpm")]
+    pub fastest_wpm: u32,
+    #[serde(rename = "averageSentiment")]
+    pub average_sentiment: f64,
+    #[serde(rename = "totalDurationMinutes")]
+    pub total_duration_minutes: f64,
+    #[serde(rename = "longestEntryWords")]
+    pub longest_entry_words: u32,
     #[serde(rename = "hourlyActivity")]
     pub hourly_activity: [u32; 24],
     #[serde(rename = "topWords")]
@@ -43,7 +51,7 @@ pub fn get_dictation_analytics() -> Result<String, String> {
 
     // Fetch all entries
     let mut stmt = conn
-        .prepare("SELECT text, mode, timestamp, word_count, duration_seconds, wpm FROM entries ORDER BY timestamp ASC")
+        .prepare("SELECT text, mode, timestamp, word_count, duration_seconds, wpm, sentiment FROM entries ORDER BY timestamp ASC")
         .map_err(|e| format!("SQL error: {e}"))?;
 
     struct Row {
@@ -53,6 +61,7 @@ pub fn get_dictation_analytics() -> Result<String, String> {
         word_count: Option<i64>,
         duration_seconds: Option<f64>,
         wpm: Option<i64>,
+        sentiment: Option<f64>,
     }
 
     let rows: Vec<Row> = stmt
@@ -64,6 +73,7 @@ pub fn get_dictation_analytics() -> Result<String, String> {
                 word_count: row.get(3)?,
                 duration_seconds: row.get(4)?,
                 wpm: row.get(5)?,
+                sentiment: row.get(6)?,
             })
         })
         .map_err(|e| format!("SQL query error: {e}"))?
@@ -77,7 +87,11 @@ pub fn get_dictation_analytics() -> Result<String, String> {
     let mut total_words: u64 = 0;
     let mut total_wpm_sum: u64 = 0;
     let mut wpm_count: u32 = 0;
+    let mut fastest_wpm: u32 = 0;
+    let mut longest_entry_words: u32 = 0;
     let mut total_duration: f64 = 0.0;
+    let mut sentiment_sum: f64 = 0.0;
+    let mut sentiment_count: u32 = 0;
     let mut hourly_activity = [0u32; 24];
     let mut mode_breakdown: HashMap<String, u32> = HashMap::new();
     let mut word_freq: HashMap<String, u32> = HashMap::new();
@@ -90,16 +104,28 @@ pub fn get_dictation_analytics() -> Result<String, String> {
             .word_count
             .unwrap_or_else(|| row.text.split_whitespace().count() as i64);
         total_words += wc as u64;
+        if wc as u32 > longest_entry_words {
+            longest_entry_words = wc as u32;
+        }
 
         // WPM
         if let Some(w) = row.wpm {
             total_wpm_sum += w as u64;
             wpm_count += 1;
+            if w as u32 > fastest_wpm {
+                fastest_wpm = w as u32;
+            }
         }
 
         // Duration
         if let Some(d) = row.duration_seconds {
             total_duration += d;
+        }
+
+        // Sentiment
+        if let Some(s) = row.sentiment {
+            sentiment_sum += s;
+            sentiment_count += 1;
         }
 
         // Mode breakdown
@@ -161,10 +187,22 @@ pub fn get_dictation_analytics() -> Result<String, String> {
     // typing at 40 wpm vs dictation duration
     let time_saved_minutes = (total_words as f64 / 40.0) - (total_duration / 60.0);
 
+    let average_sentiment = if sentiment_count > 0 {
+        sentiment_sum / sentiment_count as f64
+    } else {
+        0.0
+    };
+
+    let total_duration_minutes = total_duration / 60.0;
+
     let analytics = DictationAnalytics {
         total_entries,
         total_words: total_words as u32,
         average_wpm,
+        fastest_wpm,
+        average_sentiment,
+        total_duration_minutes,
+        longest_entry_words,
         hourly_activity,
         top_words: word_vec,
         mode_breakdown,

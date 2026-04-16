@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Mic, MicOff, Loader2, Check, BarChart3, Flame, Clock, Hash, BookOpen, TrendingUp, Search, ChevronDown, ChevronRight } from "lucide-react";
+import { Mic, MicOff, Loader2, Check, BarChart3, Flame, Clock, Hash, BookOpen, TrendingUp, Search, ChevronDown, ChevronRight, Zap, SmilePlus, Timer } from "lucide-react";
 import { useDictationStore } from "@/stores/dictationStore";
 import type { DictationAnalytics, DictationEntry } from "@/types/dictation";
 
@@ -208,11 +208,64 @@ function AnalyticsPanel({ analytics, history }: { analytics: DictationAnalytics;
       <div className="grid grid-cols-3 gap-3">
         <StatCard icon={Hash} label="Total Words" value={analytics.totalWords.toLocaleString()} color="text-accent-green" />
         <StatCard icon={TrendingUp} label="Avg WPM" value={String(Math.round(analytics.averageWpm))} color="text-accent-blue" />
+        <StatCard icon={Zap} label="Fastest WPM" value={String(analytics.fastestWpm)} color="text-accent-amber" />
+        <StatCard icon={SmilePlus} label="Avg Sentiment" value={sentimentLabel(analytics.averageSentiment)} color={sentimentColor(analytics.averageSentiment)} />
+        <StatCard icon={Timer} label="Total Time" value={formatDuration(analytics.totalDurationMinutes)} color="text-accent-cyan" />
         <StatCard icon={BookOpen} label="Entries" value={String(analytics.totalEntries)} color="text-accent-purple" />
         <StatCard icon={Flame} label="Daily Streak" value={`${analytics.dailyStreak} days`} color="text-accent-amber" />
-        <StatCard icon={Clock} label="Time Saved" value={`${Math.round(analytics.timeSavedMinutes)} min`} color="text-accent-cyan" />
+        <StatCard icon={Clock} label="Time Saved" value={`${Math.round(analytics.timeSavedMinutes)} min`} color="text-accent-green" />
         <StatCard icon={BarChart3} label="Vocab Diversity" value={`${Math.round(analytics.vocabularyDiversity * 100)}%`} color="text-text-secondary" />
       </div>
+
+      {/* Sentiment over time (from history entries) */}
+      {history.filter((e) => e.sentiment != null).length > 1 && (
+        <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
+          <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Sentiment Over Time</span>
+          <div className="relative h-16 mt-3">
+            {/* Neutral line */}
+            <div className="absolute left-0 right-0 top-1/2 border-t border-bg-border border-dashed" />
+            <div className="flex items-center gap-[2px] h-full">
+              {history
+                .filter((e) => e.sentiment != null)
+                .slice(-50)
+                .map((entry, i) => {
+                  // Sentiment ranges from -1 (negative) to +1 (positive), 0 = neutral
+                  const s = entry.sentiment ?? 0;
+                  const isPositive = s >= 0;
+                  const magnitude = Math.abs(s) * 50; // 50% of height max
+                  return (
+                    <div
+                      key={entry.id ?? i}
+                      className="flex-1 min-w-[3px] max-w-[12px] relative h-full flex items-center"
+                    >
+                      <div
+                        className={`w-full rounded-sm transition-colors ${
+                          isPositive
+                            ? "bg-accent-green/50 hover:bg-accent-green/80"
+                            : "bg-accent-red/50 hover:bg-accent-red/80"
+                        }`}
+                        style={{
+                          height: `${Math.max(2, magnitude)}%`,
+                          position: "absolute",
+                          ...(isPositive
+                            ? { bottom: "50%", left: 0, right: 0 }
+                            : { top: "50%", left: 0, right: 0 }),
+                        }}
+                        title={`${s > 0 ? "+" : ""}${s.toFixed(2)} — ${formatTimestamp(entry.timestamp)}`}
+                      />
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+          <div className="flex justify-between mt-1">
+            <span className="text-[8px] text-text-muted">Oldest</span>
+            <span className="text-[8px] text-accent-green">Positive</span>
+            <span className="text-[8px] text-accent-red">Negative</span>
+            <span className="text-[8px] text-text-muted">Recent</span>
+          </div>
+        </div>
+      )}
 
       {/* WPM over time chart (from history entries) */}
       {history.length > 1 && (
@@ -419,6 +472,11 @@ function HistoryPanel({
                     {entry.text.slice(0, 80)}{entry.text.length > 80 ? "..." : ""}
                   </span>
                   <div className="flex items-center gap-3 shrink-0">
+                    {entry.sentiment != null && (
+                      <span className={`text-[9px] ${sentimentColor(entry.sentiment)}`}>
+                        {sentimentEmoji(entry.sentiment)}
+                      </span>
+                    )}
                     {entry.wpm != null && (
                       <span className="text-[9px] text-accent-blue">{entry.wpm} WPM</span>
                     )}
@@ -440,6 +498,11 @@ function HistoryPanel({
                       )}
                       {entry.wpm != null && <span>WPM: {entry.wpm}</span>}
                       {entry.wordCount != null && <span>Words: {entry.wordCount}</span>}
+                      {entry.sentiment != null && (
+                        <span className={sentimentColor(entry.sentiment)}>
+                          Sentiment: {entry.sentiment > 0 ? "+" : ""}{entry.sentiment.toFixed(2)} {sentimentEmoji(entry.sentiment)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -474,6 +537,38 @@ function StatCard({
       <span className={`text-sm font-semibold ${color}`}>{value}</span>
     </div>
   );
+}
+
+function sentimentLabel(s: number): string {
+  if (s >= 0.3) return "Positive";
+  if (s >= 0.1) return "Slightly +";
+  if (s <= -0.3) return "Negative";
+  if (s <= -0.1) return "Slightly -";
+  return "Neutral";
+}
+
+function sentimentColor(s: number): string {
+  if (s >= 0.3) return "text-accent-green";
+  if (s >= 0.1) return "text-accent-green";
+  if (s <= -0.3) return "text-accent-red";
+  if (s <= -0.1) return "text-accent-amber";
+  return "text-text-muted";
+}
+
+function sentimentEmoji(s: number): string {
+  if (s >= 0.3) return "+";
+  if (s >= 0.1) return "+";
+  if (s <= -0.3) return "-";
+  if (s <= -0.1) return "-";
+  return "~";
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 1) return `${Math.round(minutes * 60)}s`;
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return `${h}h ${m}m`;
 }
 
 function formatTimestamp(ts: string): string {
