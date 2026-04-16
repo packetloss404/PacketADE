@@ -139,7 +139,7 @@ export function FlightDetail({ flight }: FlightDetailProps) {
       <div className="flex flex-1 items-center justify-center bg-bg-primary">
         <div className="text-center max-w-sm">
           <Target size={32} className="mx-auto text-text-muted mb-3" />
-          <p className="text-xs text-text-secondary">Select a flight from the left to see its mission control.</p>
+          <p className="text-xs text-text-secondary">Select a mission from the left to see its mission control.</p>
         </div>
       </div>
     );
