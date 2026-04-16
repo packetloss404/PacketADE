@@ -29,6 +29,8 @@ interface WorkspaceStore {
   addPinnedCommand: (workspaceId: string, paneId: string, command: string) => void;
   setModelOverride: (workspaceId: string, agentId: string, model: string | null) => void;
   removePinnedCommand: (workspaceId: string, paneId: string, index: number) => void;
+  addPane: (workspaceId: string, agentId: WorkspaceAgentSlot) => string | null;
+  removePane: (workspaceId: string, paneId: string) => void;
   setKeepTerminalsAlive: (keep: boolean) => void;
   setZoomedPane: (paneId: string | null) => void;
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
@@ -223,6 +225,59 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       });
       return { workspaces };
     }));
+  },
+
+  addPane: (workspaceId, agentId) => {
+    const newPaneId = `ws-pane-${++wsCounter}`;
+    const ws = get().workspaces.find((w) => w.id === workspaceId);
+    const colorIndex = ws ? ws.panes.length : 0;
+    set(commitWorkspaces((s) => {
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== workspaceId) return w;
+        const newPane: WorkspacePane = {
+          id: newPaneId,
+          agentId,
+          sessionId: null,
+          accentColor: PANE_COLORS[colorIndex % PANE_COLORS.length],
+        };
+        return {
+          ...w,
+          agents: [...w.agents, agentId],
+          panes: [...w.panes, newPane],
+          updatedAt: Date.now(),
+        };
+      });
+      return { workspaces };
+    }));
+    return newPaneId;
+  },
+
+  removePane: (workspaceId, paneId) => {
+    set(commitWorkspaces((s) => {
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== workspaceId) return w;
+        const pane = w.panes.find((p) => p.id === paneId);
+        if (!pane) return w;
+        return {
+          ...w,
+          panes: w.panes.filter((p) => p.id !== paneId),
+          agents: (() => {
+            // Remove one occurrence of this agent from the agents list
+            const idx = w.agents.indexOf(pane.agentId);
+            if (idx === -1) return w.agents;
+            const copy = [...w.agents];
+            copy.splice(idx, 1);
+            return copy;
+          })(),
+          updatedAt: Date.now(),
+        };
+      });
+      return { workspaces };
+    }));
+    // Clear zoom if the zoomed pane was removed
+    if (get().zoomedPaneId === paneId) {
+      set({ zoomedPaneId: null });
+    }
   },
 
   setZoomedPane: (paneId) => {
