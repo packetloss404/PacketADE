@@ -49,7 +49,7 @@ These are four separate product tracks that operate at different layers. They ca
 | **X** — Workspace UX         | Templates, git surface, prompt library, pane labels                   | `zen-workspace/gap-analysis.md`, `bridgemind/workspace-editor-scale-plan.md` |
 | **S** — Swarm Orchestration  | Roles, file ownership, coordination feed, escalation                  | `bridgemind/swarm-orchestration-plan.md`                                     |
 | **M** — PacketCode MCP       | MCP provider exposing PacketCode state to external clients            | `bridgemind/packetcode-mcp-server-plan.md`                                   |
-| **T** — TUI Evolution        | `packetcode-tui` binary and shared `packetcode_lib::core` engine      | `tui-shared-engine-plan.md`                                                  |
+| **T** — TUI Evolution        | Extracted 2026-04-16 into sibling repo **FlightDeck** (`d:\projects\flightdeck`). Not tracked here anymore. | (see FlightDeck repo)                                                        |
 
 ## Dependency Chain
 
@@ -93,11 +93,12 @@ PacketCode MCP (M) is also independent:
 
 ## Why T Runs Continuous
 
+> Historical note (2026-04-16): The TUI was extracted into a sibling project called **FlightDeck** (`d:\projects\flightdeck`, fork-and-own model). The text below is preserved for context but no longer reflects the current architecture — Track T is effectively handed off.
+
 The TUI and shared engine affect every other track:
 
-- any new backend command added for W, S, M, or X needs to be accessible from the TUI
-- the shared `packetcode_lib::core` engine is the integration point
-- TUI planning should happen in parallel so that track teams can coordinate on engine changes
+- any new backend command added for W, S, M, or X needs to be accessible from the TUI (before the split)
+- TUI planning should happen in parallel so that track teams can coordinate on engine changes (before the split)
 
 ## Summary
 

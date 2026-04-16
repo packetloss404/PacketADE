@@ -279,7 +279,6 @@ footer.manual-foot a{color:var(--text-secondary)}
         <li><a href="#ch4-crash">Crash Viewer</a></li>
         <li><a href="#ch4-dictation">Dictation &amp; voice-to-text</a></li>
         <li><a href="#ch4-cost">Cost Dashboard</a></li>
-        <li><a href="#ch4-tui">Terminal UI (TUI)</a></li>
         <li><a href="#ch4-tools-hub">Settings &amp; Tools hub</a></li>
         <li><a href="#ch4-modules">Module system</a></li>
       </ul>
@@ -1006,7 +1005,7 @@ ollama pull llama3.3:70b</code></pre>
 <section class="chapter" id="chapter-4">
 <span class="chapter-badge">Chapter 04</span>
 <h2 class="chapter-title">Integrations, Tools &amp; Settings</h2>
-<p class="chapter-lede">PacketCode is most useful when it is wired into the rest of your toolchain: GitHub for tickets and PRs, a deploy pipeline that runs from the app, MCP servers that extend every agent's toolbelt, quality analysis on demand, and a single Tools hub that exposes every knob. This chapter is the reference for each of those surfaces, plus the standalone TUI, the Cost Dashboard, and the module system that keeps the sidebar extensible.</p>
+<p class="chapter-lede">PacketCode is most useful when it is wired into the rest of your toolchain: GitHub for tickets and PRs, a deploy pipeline that runs from the app, MCP servers that extend every agent's toolbelt, quality analysis on demand, and a single Tools hub that exposes every knob. This chapter is the reference for each of those surfaces, plus the Cost Dashboard and the module system that keeps the sidebar extensible.</p>
 
 <h3 class="section-title" id="ch4-github">GitHub integration</h3>
 <p>The GitHub view is reachable from the sidebar or the toolbar. On first launch you will see an empty auth screen &mdash; paste a Personal Access Token with <code>repo</code> scope and hit Connect. The token is handed to the Rust backend and kept in the OS credential store (Windows Credential Manager, macOS Keychain), but it is <strong>not persisted across app restarts</strong> &mdash; you reconnect on every launch. Treat it like a session cookie.</p>
@@ -1142,35 +1141,6 @@ ollama pull llama3.3:70b</code></pre>
 <div class="callout callout-info">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
   <div class="callout-body"><strong>Coverage gaps:</strong> Gemini and OpenCode CLIs do not expose token data, so they are not tracked. Cache metrics only populate for the Claude API. There is no date-range filter yet (the chart is last-30 and the table is all-time) and no budget alerts.</div>
-</div>
-
-<h3 class="section-title" id="ch4-tui">Terminal UI (TUI)</h3>
-<p><code>packetcode-tui</code> is a standalone Ratatui binary that shares the exact same orchestration engine &mdash; flights, sessions, agents &mdash; as the GUI. Use it when you want to drive PacketCode from a remote shell, a tmux pane, or a lightweight laptop where you don't want Tauri running.</p>
-
-<h4 class="subsection-title">Launching</h4>
-<p>Run the binary directly (<code>packetcode-tui</code> if it is on your PATH), or from the repo use <code>cargo run -p packetcode-tui</code>. Five main views are wired in: <strong>Dashboard</strong>, <strong>Sessions</strong>, <strong>Flight Editor</strong>, <strong>Flight Detail</strong>, <strong>Agents</strong>, and <strong>Settings</strong>.</p>
-
-<h4 class="subsection-title">Navigation</h4>
-<p>Open the command palette with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>P</kbd></span> and the help overlay with <span class="kbd-row"><kbd>?</kbd></span>. Arrow keys or the mouse move focus; <kbd>Enter</kbd> confirms. Toast notifications, a diff widget, and a markdown widget are built in, so agent output renders the same way it does in the GUI.</p>
-
-<h4 class="subsection-title">Themes</h4>
-<table class="ref-table">
-  <thead><tr><th>Theme</th><th>Notes</th></tr></thead>
-  <tbody>
-    <tr><td><code>default_dark</code></td><td>Matches the GUI's theme tokens.</td></tr>
-    <tr><td><code>catppuccin_mocha</code></td><td>Warm pastel palette.</td></tr>
-    <tr><td><code>gruvbox_dark</code></td><td>Retro warm palette.</td></tr>
-    <tr><td><code>tokyonight</code></td><td>Cool blues and purples.</td></tr>
-    <tr><td><code>nord</code></td><td>Muted arctic palette.</td></tr>
-  </tbody>
-</table>
-<p>Switch from the Settings view or by selecting <em>Next Theme</em> in the palette. Drop custom themes in <code>~/.packetcode/themes/</code> and they appear in the picker on next launch.</p>
-
-<p>State auto-persists to <code>~/.packetcode/state.json</code> on exit and reloads on the next launch. The minimum terminal size is <strong>40&times;20</strong>; mouse support works in xterm, Windows Terminal, and iTerm2.</p>
-
-<div class="callout callout-warn">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-  <div class="callout-body"><strong>Don't double-drive:</strong> running the GUI and TUI against the same project at the same time can cause state conflicts on the shared JSON files. Pick one per project session.</div>
 </div>
 
 <h3 class="section-title" id="ch4-tools-hub">Settings &amp; Tools hub</h3>
