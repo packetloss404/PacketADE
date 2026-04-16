@@ -94,11 +94,8 @@ export function repoDisplayName(projectPath: string, githubRepos: GitHubRepo[]):
 /** Max conversation raw output buffer (256 KB) */
 const MAX_RAW_OUTPUT_SIZE = 256 * 1024;
 
-/** Maximum number of conversations visible in panes simultaneously */
-const MAX_ACTIVE_CONVERSATIONS = 4;
-
 interface AgentTaskStore {
-  // --- Existing task state ---
+  // --- Existing task state (used by Workspace/Flights) ---
   tasks: AgentTask[];
   selectedTaskId: string | null;
   selectedRepo: string | null;
@@ -108,7 +105,6 @@ interface AgentTaskStore {
 
   // --- Conversation state ---
   conversations: AgentConversation[];
-  activeConversationIds: string[];
   selectedConversationId: string | null;
 
   // --- Existing task actions ---
@@ -129,9 +125,7 @@ interface AgentTaskStore {
   sendMessage: (conversationId: string, content: string) => void;
   addAssistantMessage: (conversationId: string, content: string, toolCalls?: AgentToolCall[]) => void;
   updateAssistantMessage: (conversationId: string, messageId: string, content: string) => void;
-  setActiveConversations: (ids: string[]) => void;
-  addToActiveConversations: (id: string) => void;
-  removeFromActiveConversations: (id: string) => void;
+  selectConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
   appendRawOutput: (conversationId: string, text: string) => void;
 }
@@ -146,7 +140,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
   // --- Conversation state ---
   conversations: [],
-  activeConversationIds: [],
   selectedConversationId: null,
 
   launchTask: async (title, description, agent, projectPath) => {
@@ -296,7 +289,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     set((s) => ({
       conversations: [conversation, ...s.conversations],
       selectedConversationId: id,
-      activeConversationIds: [id, ...s.activeConversationIds].slice(0, MAX_ACTIVE_CONVERSATIONS),
     }));
 
     try {
@@ -375,7 +367,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     set((s) => ({
       conversations: [conversation, ...s.conversations],
       selectedConversationId: id,
-      activeConversationIds: [id, ...s.activeConversationIds].slice(0, MAX_ACTIVE_CONVERSATIONS),
     }));
 
     try {
@@ -650,25 +641,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }));
   },
 
-  setActiveConversations: (ids) => {
-    set({ activeConversationIds: ids.slice(0, MAX_ACTIVE_CONVERSATIONS) });
-  },
-
-  addToActiveConversations: (id) => {
-    set((s) => {
-      if (s.activeConversationIds.includes(id)) return s;
-      return {
-        activeConversationIds: [...s.activeConversationIds, id].slice(0, MAX_ACTIVE_CONVERSATIONS),
-        selectedConversationId: id,
-      };
-    });
-  },
-
-  removeFromActiveConversations: (id) => {
-    set((s) => ({
-      activeConversationIds: s.activeConversationIds.filter((cid) => cid !== id),
-      selectedConversationId: s.selectedConversationId === id ? null : s.selectedConversationId,
-    }));
+  selectConversation: (id) => {
+    set({ selectedConversationId: id });
   },
 
   deleteConversation: (id) => {
@@ -688,7 +662,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }
     set((s) => ({
       conversations: s.conversations.filter((c) => c.id !== id),
-      activeConversationIds: s.activeConversationIds.filter((cid) => cid !== id),
       selectedConversationId: s.selectedConversationId === id ? null : s.selectedConversationId,
     }));
   },
