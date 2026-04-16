@@ -132,7 +132,9 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
 
   // Reach the mosaic drag source from the surrounding MosaicWindow so the
   // unified header bar acts as the drag handle for reordering tiles.
-  const { mosaicWindowActions } = useContext(MosaicWindowContext);
+  // Context may be null when pane is rendered outside Mosaic (e.g. zoomed overlay).
+  const mosaicCtx = useContext(MosaicWindowContext);
+  const mosaicWindowActions = mosaicCtx?.mosaicWindowActions ?? null;
 
   const agentName = agentConfig?.name ?? pane.agentId;
   const iconName = agentConfig?.icon ?? "Terminal";
