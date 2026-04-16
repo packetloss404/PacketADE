@@ -13,6 +13,10 @@ export interface DictationAnalytics {
   totalEntries: number;
   totalWords: number;
   averageWpm: number;
+  fastestWpm: number;
+  averageSentiment: number;
+  totalDurationMinutes: number;
+  longestEntryWords: number;
   hourlyActivity: number[];
   topWords: [string, number][];
   modeBreakdown: Record<string, number>;
