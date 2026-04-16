@@ -2,7 +2,6 @@ import { useEffect, useCallback, lazy, Suspense } from "react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { MosaicContainer } from "@/components/layout/MosaicContainer";
-import { StatusBar } from "@/components/layout/StatusBar";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -201,7 +200,6 @@ export default function App() {
           {/* Workspace sidebar — persistent across core views */}
           {showWorkspaceSidebar && <WorkspaceSidebar />}
         </div>
-        <StatusBar />
         {commandPaletteOpen && <CommandPalette />}
       </div>
     </ErrorBoundary>
