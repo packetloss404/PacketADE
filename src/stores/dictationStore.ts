@@ -163,10 +163,11 @@ export const useDictationStore = create<DictationStore>((set, get) => {
     async loadModels() {
       try {
         const raw = await listWhisperModels();
-        const models: WhisperModel[] = JSON.parse(raw);
+        // Tauri returns the Vec directly as a parsed array, not a JSON string
+        const models: WhisperModel[] = typeof raw === "string" ? JSON.parse(raw) : raw;
         set({ models });
       } catch (err) {
-        set({ error: String(err) });
+        set({ error: String(err), models: [] });
       }
     },
 

@@ -124,10 +124,21 @@ export function DictationView() {
                   isDownloading={downloadingModel === model.size}
                 />
               ))}
-              {models.length === 0 && (
+              {models.length === 0 && !error && (
                 <div className="text-center py-6 text-[11px] text-text-muted">
                   <Loader2 size={14} className="animate-spin mx-auto mb-2" />
                   Loading available models...
+                </div>
+              )}
+              {models.length === 0 && error && (
+                <div className="text-center py-6 text-[11px] text-accent-red">
+                  Failed to load models: {error}
+                  <button
+                    onClick={loadModels}
+                    className="block mx-auto mt-2 text-[10px] text-accent-green hover:underline"
+                  >
+                    Retry
+                  </button>
                 </div>
               )}
             </div>
