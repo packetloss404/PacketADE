@@ -89,8 +89,8 @@ These features have no direct equivalent in any of the three competitors:
 - **Cost dashboard** — track AI token usage and costs
 - **Analytics** — usage analytics across sessions
 - **GitHub integration** — native GitHub API integration (not just MCP)
-- **TUI** — standalone Ratatui binary sharing the same orchestration engine
-- **Flight orchestration** — multi-agent orchestration engine shared between GUI and TUI
+- **FlightDeck TUI** — sibling terminal-native product in a separate repo (`d:\projects\flightdeck`), mirroring the same orchestration model
+- **Flight orchestration** — multi-agent orchestration engine
 - **Windows support** — full Windows support via Tauri; QuadCode terminal is macOS/Linux only
 
 ### Where PacketCode Needs to Catch Up
@@ -145,8 +145,7 @@ The TUI is the purest expression of local-first:
 
 - it runs anywhere without a display server
 - it works offline
-- it shares the same engine as the GUI
-- improvements to `packetcode_lib::core` benefit both frontends simultaneously
+- since the 2026-04-16 FlightDeck extraction, FlightDeck and PacketCode have forked copies of the orchestration core — they're now cousin products that evolve independently
 
 ## What We Are Not Optimizing For
 
