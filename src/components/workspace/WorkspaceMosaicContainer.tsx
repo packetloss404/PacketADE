@@ -5,7 +5,7 @@ import type { MosaicNode, MosaicPath } from "@/types/mosaic";
 import { WorkspacePane } from "./WorkspacePane";
 import type { Workspace } from "@/types/workspace";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { buildPresetTree, presetForCount } from "@/lib/mosaicPresets";
+import { buildPresetTree, presetForCount, addToTree, removeFromTree, getLeafOrder } from "@/lib/mosaicPresets";
 
 interface WorkspaceMosaicContainerProps {
   workspace: Workspace;
@@ -41,25 +41,65 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [zoomedPaneId, setZoomedPane]);
 
-  // Build tree when workspace changes or panes are added/removed
+  // Build or update the tree when workspace changes or panes are added/removed.
+  const paneKey = workspace.panes.map((p) => p.id).join(",");
   useEffect(() => {
     const paneIds = workspace.panes.map((p) => p.id);
-    const workspaceChanged = prevWorkspaceIdRef.current !== workspace.id;
-    const paneCountChanged = prevPaneCountRef.current !== paneIds.length;
 
-    if (!workspaceChanged && !paneCountChanged) return;
+    if (prevWorkspaceIdRef.current !== workspace.id) {
+      // Workspace changed — full rebuild
+      prevWorkspaceIdRef.current = workspace.id;
+      prevPaneCountRef.current = paneIds.length;
+      if (paneIds.length === 0) {
+        setTree(null);
+      } else if (paneIds.length === 1) {
+        setTree(paneIds[0]);
+      } else {
+        setTree(buildPresetTree(presetForCount(paneIds.length), paneIds));
+      }
+      return;
+    }
 
-    prevWorkspaceIdRef.current = workspace.id;
+    if (prevPaneCountRef.current === paneIds.length) return;
+
+    const prevCount = prevPaneCountRef.current;
     prevPaneCountRef.current = paneIds.length;
 
-    if (paneIds.length === 0) {
-      setTree(null);
-    } else if (paneIds.length === 1) {
-      setTree(paneIds[0]);
-    } else {
-      setTree(buildPresetTree(presetForCount(paneIds.length), paneIds));
-    }
-  }, [workspace.id, workspace.panes]);
+    setTree((currentTree) => {
+      if (paneIds.length === 0) return null;
+      if (paneIds.length === 1) return paneIds[0];
+
+      // Pane added — insert new pane into existing tree
+      if (paneIds.length > prevCount && currentTree) {
+        const existingLeaves = getLeafOrder(currentTree);
+        const newPanes = paneIds.filter((id) => !existingLeaves.includes(id));
+        let updated = currentTree;
+        for (const newId of newPanes) {
+          const lastLeaf = getLeafOrder(updated).pop();
+          if (lastLeaf) {
+            updated = addToTree(updated, lastLeaf, newId, "row");
+          }
+        }
+        return updated;
+      }
+
+      // Pane removed — prune from existing tree
+      if (paneIds.length < prevCount && currentTree) {
+        const currentLeaves = getLeafOrder(currentTree);
+        const removedPanes = currentLeaves.filter((id) => !paneIds.includes(id));
+        let updated: MosaicNode<string> | null = currentTree;
+        for (const removedId of removedPanes) {
+          if (updated) {
+            updated = removeFromTree(updated, removedId);
+          }
+        }
+        return updated;
+      }
+
+      // Fallback — full rebuild
+      return buildPresetTree(presetForCount(paneIds.length), paneIds);
+    });
+  }, [workspace.id, paneKey]);
 
   const handleChange = useCallback(
     (newTree: MosaicNode<string> | null) => {
