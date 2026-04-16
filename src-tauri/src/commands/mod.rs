@@ -17,12 +17,14 @@ pub mod insights;
 pub mod mcp;
 pub mod memory;
 pub mod orchestration;
+pub mod pricing;
 pub mod pty;
 pub mod scaffold;
 pub mod shared;
 pub mod spec;
 pub mod state;
 pub mod statusline;
+pub mod usage;
 
 use std::path::Path;
 

@@ -20,6 +20,7 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     name: "Claude (API)",
     needsKey: true,
     models: [
+      { label: "Claude Opus 4.7", value: "claude-opus-4-7" },
       { label: "Claude Opus 4.6", value: "claude-opus-4-6-20250415" },
       { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6-20250414" },
       { label: "Claude Haiku 4.5", value: "claude-haiku-4-5-20251001" },
@@ -53,6 +54,7 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     needsKey: true,
     models: [
       { label: "Auto (best available)", value: "openrouter/auto" },
+      { label: "Claude Opus 4.7", value: "anthropic/claude-opus-4-7" },
       { label: "Claude Opus 4.6", value: "anthropic/claude-opus-4-6" },
       { label: "Claude Sonnet 4.6", value: "anthropic/claude-sonnet-4-6" },
       { label: "ChatGPT 5.4", value: "openai/chatgpt-5.4" },
