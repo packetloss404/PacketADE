@@ -99,6 +99,8 @@ pub fn run() {
             commands::fs::get_cwd,
             commands::fs::read_file_contents,
             commands::fs::write_file_contents,
+            commands::fs::list_project_files,
+            commands::fs::read_file_for_diff,
             // Flight lifecycle orchestration
             commands::orchestration::launch_flight,
             commands::orchestration::pause_flight,
@@ -193,6 +195,13 @@ pub fn run() {
             commands::api_agent::send_api_agent_message,
             commands::api_agent::cancel_api_agent_session,
             commands::api_agent::close_api_agent_session,
+            commands::api_agent::change_model,
+            // Agent conversation persistence
+            commands::conversations::save_conversation,
+            commands::conversations::load_conversations,
+            commands::conversations::delete_conversation_file,
+            // Pricing / cost helpers
+            commands::pricing::calculate_turn_cost,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

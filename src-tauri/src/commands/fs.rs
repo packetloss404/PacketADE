@@ -213,6 +213,155 @@ pub async fn write_file_contents(
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// Directories excluded when enumerating project files for pickers/diffs.
+const PROJECT_FILES_SKIP_DIRS: &[&str] = &[
+    "node_modules",
+    "target",
+    ".git",
+    "dist",
+    "build",
+    ".next",
+    ".venv",
+    "__pycache__",
+];
+
+const PROJECT_FILES_DEFAULT_LIMIT: usize = 100;
+const PROJECT_FILES_MAX_LIMIT: usize = 500;
+
+/// Recursively walk a directory and collect project-relative file paths (forward slashes).
+fn walk_collect(
+    root: &Path,
+    current: &Path,
+    filter_lower: Option<&str>,
+    limit: usize,
+    out: &mut Vec<String>,
+) {
+    if out.len() >= limit {
+        return;
+    }
+    let read_dir = match fs::read_dir(current) {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
+    for entry in read_dir.flatten() {
+        if out.len() >= limit {
+            return;
+        }
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        if metadata.is_dir() {
+            if PROJECT_FILES_SKIP_DIRS.contains(&file_name.as_str()) {
+                continue;
+            }
+            walk_collect(root, &path, filter_lower, limit, out);
+        } else if metadata.is_file() {
+            let rel = match path.strip_prefix(root) {
+                Ok(r) => r.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            if let Some(f) = filter_lower {
+                if !rel.to_lowercase().contains(f) {
+                    continue;
+                }
+            }
+            out.push(rel);
+        }
+    }
+}
+
+/// List project files (relative paths, forward slashes) with optional
+/// substring filter and cap. Used by the API-agent file picker / diff view.
+#[tauri::command]
+pub async fn list_project_files(
+    project_path: String,
+    filter: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        let root = Path::new(&project_path);
+        let canonical_root = fs::canonicalize(root)
+            .map_err(|e| format!("Cannot resolve project path '{}': {}", project_path, e))?;
+
+        let effective_limit = limit
+            .map(|l| l as usize)
+            .unwrap_or(PROJECT_FILES_DEFAULT_LIMIT)
+            .min(PROJECT_FILES_MAX_LIMIT)
+            .max(1);
+
+        let filter_lower = filter
+            .as_deref()
+            .map(|s| s.to_lowercase())
+            .filter(|s| !s.is_empty());
+
+        let mut out: Vec<String> = Vec::new();
+        walk_collect(
+            &canonical_root,
+            &canonical_root,
+            filter_lower.as_deref(),
+            effective_limit,
+            &mut out,
+        );
+        out.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Read a project-relative file for display in a diff view.
+///
+/// Returns `Ok(Some(content))` on success, `Ok(None)` if the file does not
+/// exist, and `Err(...)` for path-escape, canonicalization, or non-UTF8
+/// failures.
+#[tauri::command]
+pub async fn read_file_for_diff(
+    project_path: String,
+    rel_path: String,
+) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+
+        let root = Path::new(&project_path);
+        let canonical_root = fs::canonicalize(root)
+            .map_err(|e| format!("Cannot resolve project path '{}': {}", project_path, e))?;
+
+        let rel = Path::new(&rel_path);
+        if rel.is_absolute() {
+            return Err(format!("rel_path must be relative: {}", rel_path));
+        }
+
+        let joined = canonical_root.join(rel);
+        if !joined.exists() {
+            return Ok(None);
+        }
+
+        let canonical_joined = fs::canonicalize(&joined)
+            .map_err(|e| format!("Cannot resolve file '{}': {}", rel_path, e))?;
+        if !canonical_joined.starts_with(&canonical_root) {
+            return Err(format!(
+                "Path '{}' escapes project root",
+                rel_path
+            ));
+        }
+
+        if !canonical_joined.is_file() {
+            return Ok(None);
+        }
+
+        match fs::read_to_string(&canonical_joined) {
+            Ok(content) => Ok(Some(content)),
+            Err(e) => Err(format!("Failed to read file: {}", e)),
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

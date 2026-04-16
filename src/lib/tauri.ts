@@ -1032,6 +1032,7 @@ export async function startApiAgentSession(
   model: string,
   projectPath: string,
   initialMessage: string,
+  systemPromptOverride?: string | null,
 ): Promise<void> {
   return invoke("start_api_agent_session", {
     sessionId,
@@ -1039,6 +1040,7 @@ export async function startApiAgentSession(
     model,
     projectPath,
     initialMessage,
+    systemPromptOverride: systemPromptOverride ?? null,
   });
 }
 
@@ -1055,5 +1057,57 @@ export async function cancelApiAgentSession(sessionId: string): Promise<void> {
 
 export async function closeApiAgentSession(sessionId: string): Promise<void> {
   return invoke("close_api_agent_session", { sessionId });
+}
+
+// API Agent: persistence + utilities
+export async function saveConversation(id: string, data: string): Promise<void> {
+  return invoke("save_conversation", { id, data });
+}
+
+export async function loadConversations(): Promise<string[]> {
+  return invoke<string[]>("load_conversations");
+}
+
+export async function deleteConversationFile(id: string): Promise<void> {
+  return invoke("delete_conversation_file", { id });
+}
+
+export async function changeAgentModel(sessionId: string, newModel: string): Promise<void> {
+  return invoke("change_model", { sessionId, newModel });
+}
+
+export async function calculateTurnCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheRead: number,
+  cacheWrite: number,
+): Promise<number> {
+  return invoke<number>("calculate_turn_cost", {
+    model,
+    inputTokens,
+    outputTokens,
+    cacheRead,
+    cacheWrite,
+  });
+}
+
+export async function listProjectFiles(
+  projectPath: string,
+  filter?: string,
+  limit?: number,
+): Promise<string[]> {
+  return invoke<string[]>("list_project_files", {
+    projectPath,
+    filter: filter ?? null,
+    limit: limit ?? null,
+  });
+}
+
+export async function readFileForDiff(
+  projectPath: string,
+  relPath: string,
+): Promise<string | null> {
+  return invoke<string | null>("read_file_for_diff", { projectPath, relPath });
 }
 
