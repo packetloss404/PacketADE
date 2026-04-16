@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Plus, Monitor, Mic, File, Folder, Link, Square, Trash2, Clock, Loader2, CheckCircle, XCircle, AlertCircle, Zap } from "lucide-react";
-import { useAgentTaskStore, repoDisplayName, isApiAgent } from "@/stores/agentTaskStore";
-import { useAgentStore } from "@/stores/agentStore";
+import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
+
 import { useGitHubStore } from "@/stores/githubStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -70,7 +70,6 @@ export function AgentInputArea({ textareaRef, selectedAgent, onAgentChange, onLa
   const cancelTask = useAgentTaskStore((s) => s.cancelTask);
   const deleteTask = useAgentTaskStore((s) => s.deleteTask);
   const repos = useGitHubStore((s) => s.repos);
-  const agents = useAgentStore((s) => s.agents);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const projectPath = useLayoutStore((s) => s.projectPath);
 
@@ -104,7 +103,6 @@ export function AgentInputArea({ textareaRef, selectedAgent, onAgentChange, onLa
 
   const currentRepoPath = selectedRepo ?? projectPath;
   const currentDisplayName = repoDisplayName(currentRepoPath, repos);
-  const installedAgents = agents.filter((a) => a.installed);
 
   const placeholder = inputMode === "plan"
     ? "Describe your idea to plan..."
@@ -248,28 +246,15 @@ export function AgentInputArea({ textareaRef, selectedAgent, onAgentChange, onLa
                 </DropdownItem>
               </Dropdown>
 
-              {/* Agent selector */}
+              {/* Provider selector (API only — CLI agents use Workspace) */}
               <Dropdown
                 trigger={
                   <span className="text-text-secondary flex items-center gap-1">
-                    {isApiAgent(selectedAgent) && <Zap size={10} className="text-accent-amber" />}
-                    {AGENT_LABELS[selectedAgent] ?? selectedAgent}
+                    <Zap size={10} className="text-accent-amber" />
+                    {API_PROVIDERS.find((p) => p.agentCli === selectedAgent)?.name ?? "Select Provider"}
                   </span>
                 }
               >
-                {/* CLI agents */}
-                {installedAgents.length > 0 && (
-                  <>
-                    <div className="px-3 py-1 text-[9px] text-text-muted uppercase tracking-wider">CLI Agents</div>
-                    {installedAgents.map((a) => (
-                      <DropdownItem key={a.id} onClick={() => onAgentChange(a.id as AgentCli)}>
-                        {a.name}
-                      </DropdownItem>
-                    ))}
-                  </>
-                )}
-                {/* API agents */}
-                <div className="px-3 py-1 text-[9px] text-text-muted uppercase tracking-wider border-t border-bg-border mt-1 pt-1">API Agents</div>
                 {API_PROVIDERS.map((p) => (
                   <DropdownItem key={p.agentCli} onClick={() => {
                     onAgentChange(p.agentCli);
@@ -283,8 +268,8 @@ export function AgentInputArea({ textareaRef, selectedAgent, onAgentChange, onLa
                 ))}
               </Dropdown>
 
-              {/* Model selector (API agents only) */}
-              {isApiAgent(selectedAgent) && (() => {
+              {/* Model selector */}
+              {(() => {
                 const provider = API_PROVIDERS.find((p) => p.agentCli === selectedAgent);
                 if (!provider) return null;
                 const currentModel = provider.models.find((m) => m.value === selectedModel) ?? provider.models[0];
