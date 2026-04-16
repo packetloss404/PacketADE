@@ -139,7 +139,20 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   hydrateFromBackend: async (persisted) => {
     try {
       const state = persisted ?? (await loadPersistedState());
-      set({ agents: state.agents });
+      // Merge persisted agents with current builtins so code-level changes
+      // (like new defaultArgs) take effect even if the user has persisted state.
+      const builtinIds = new Set(BUILTIN_AGENTS.map((a) => a.id));
+      const merged = BUILTIN_AGENTS.map((builtin) => {
+        const persisted_agent = state.agents.find((a) => a.id === builtin.id);
+        if (persisted_agent) {
+          // Keep persisted overrides (installed status) but use current code defaults
+          return { ...builtin, installed: persisted_agent.installed };
+        }
+        return builtin;
+      });
+      // Add any custom (non-builtin) agents from persisted state
+      const custom = state.agents.filter((a) => !builtinIds.has(a.id));
+      set({ agents: [...merged, ...custom] });
     } catch {}
   },
 }));
