@@ -18,6 +18,7 @@ interface WorkspaceMosaicContainerProps {
 export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainerProps) {
   const [tree, setTree] = useState<MosaicNode<string> | null>(null);
   const prevWorkspaceIdRef = useRef<string | null>(null);
+  const prevPaneCountRef = useRef<number>(workspace.panes.length);
   const zoomedPaneId = useWorkspaceStore((s) => s.zoomedPaneId);
   const setZoomedPane = useWorkspaceStore((s) => s.setZoomedPane);
 
@@ -40,12 +41,17 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [zoomedPaneId, setZoomedPane]);
 
-  // Build tree when workspace changes
+  // Build tree when workspace changes or panes are added/removed
   useEffect(() => {
-    if (prevWorkspaceIdRef.current === workspace.id) return;
-    prevWorkspaceIdRef.current = workspace.id;
-
     const paneIds = workspace.panes.map((p) => p.id);
+    const workspaceChanged = prevWorkspaceIdRef.current !== workspace.id;
+    const paneCountChanged = prevPaneCountRef.current !== paneIds.length;
+
+    if (!workspaceChanged && !paneCountChanged) return;
+
+    prevWorkspaceIdRef.current = workspace.id;
+    prevPaneCountRef.current = paneIds.length;
+
     if (paneIds.length === 0) {
       setTree(null);
     } else if (paneIds.length === 1) {

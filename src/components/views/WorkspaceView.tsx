@@ -7,7 +7,7 @@ import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
 import { EditorPane } from "@/components/editor/EditorPane";
 import { isOnboardingComplete } from "@/lib/onboarding";
 import { useState, useRef, useEffect } from "react";
-import { LayoutGrid, FolderOpen, ChevronDown, Layers, GitBranch, FileText } from "lucide-react";
+import { LayoutGrid, FolderOpen, ChevronDown, Layers, GitBranch, FileText, Plus } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
 
@@ -41,7 +41,10 @@ export function WorkspaceView() {
   const [onboardingDone, setOnboardingDone] = useState<boolean>(() => isOnboardingComplete());
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
+  const [addAgentOpen, setAddAgentOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
+  const addAgentRef = useRef<HTMLDivElement>(null);
+  const addPane = useWorkspaceStore((s) => s.addPane);
 
   const openFiles = useEditorStore((s) => s.openFiles);
   const activeFileId = useEditorStore((s) => s.activeFileId);
@@ -68,6 +71,18 @@ export function WorkspaceView() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [switcherOpen]);
+
+  // Close add-agent popover on outside click
+  useEffect(() => {
+    if (!addAgentOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (addAgentRef.current && !addAgentRef.current.contains(e.target as Node)) {
+        setAddAgentOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [addAgentOpen]);
 
   // Count agents per type for the active workspace
   const agentCounts: Partial<Record<WorkspaceAgentSlot, number>> = {};
@@ -132,6 +147,37 @@ export function WorkspaceView() {
                   {(count as number) > 1 && ` x${count}`}
                 </span>
               ))}
+              <div className="relative" ref={addAgentRef}>
+                <button
+                  onClick={() => setAddAgentOpen((v) => !v)}
+                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                    addAgentOpen
+                      ? "bg-accent-green/20 text-accent-green"
+                      : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
+                  }`}
+                  title="Add agent to workspace"
+                >
+                  <Plus size={11} />
+                  Add Agent
+                </button>
+                {addAgentOpen && activeWorkspace && (
+                  <div className="absolute right-0 top-full mt-1 bg-bg-tertiary border border-bg-border rounded shadow-lg z-50 min-w-[150px] py-1">
+                    {(["claude-code", "codex", "gemini", "opencode", "terminal"] as WorkspaceAgentSlot[]).map((agent) => (
+                      <button
+                        key={agent}
+                        onClick={() => {
+                          addPane(activeWorkspace.id, agent);
+                          setAddAgentOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-[11px] text-text-secondary hover:text-text-primary hover:bg-bg-secondary transition-colors flex items-center gap-2"
+                      >
+                        <span className={`w-2 h-2 rounded-full ${agentColor[agent]?.split(" ")[0] ?? "bg-text-muted/20"}`} />
+                        {agentLabel[agent]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 onClick={() => setGitPanelOpen((v) => !v)}
                 className={`p-1 rounded transition-colors ${

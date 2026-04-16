@@ -351,6 +351,18 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
           >
             {state.alive ? <RotateCcw size={11} /> : <Plus size={11} />}
           </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (state.alive) state.onKill();
+              useWorkspaceStore.getState().removePane(workspaceId, pane.id);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="p-0.5 text-text-muted hover:text-accent-red transition-colors shrink-0"
+            title="Close pane"
+          >
+            <X size={11} />
+          </button>
         </div>
       );
 
