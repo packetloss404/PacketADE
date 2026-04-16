@@ -13,11 +13,34 @@ import {
   loadConversations,
   deleteConversationFile,
   changeAgentModel,
+  setPlanMode as tauriSetPlanMode,
+  setPermissionMode as tauriSetPermissionMode,
+  respondPermission as tauriRespondPermission,
+  setApproveWrites as tauriSetApproveWrites,
+  respondEdit as tauriRespondEdit,
+  retryLastTurn as tauriRetryLastTurn,
+  saveCheckpoint as tauriSaveCheckpoint,
+  listCheckpoints as tauriListCheckpoints,
+  exportConversationMarkdown,
 } from "@/lib/tauri";
-import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
+import {
+  ptyOutputEvent,
+  ptyExitEvent,
+  apiAgentThinkingEvent,
+  apiAgentThinkingStopEvent,
+  apiAgentPermissionRequestEvent,
+  apiAgentPendingEditEvent,
+} from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import type { GitHubRepo } from "@/types/github";
-import type { AgentConversation, AgentMessage, AgentToolCall } from "@/types/agent-conversation";
+import type {
+  AgentConversation,
+  AgentMessage,
+  AgentToolCall,
+  PermissionMode,
+  PendingPermission,
+  PendingEdit,
+} from "@/types/agent-conversation";
 
 /** Debounced save: per-conversation timers so rapid streaming events coalesce. */
 const SAVE_DEBOUNCE_MS = 500;
@@ -150,6 +173,8 @@ interface AgentTaskStore {
     model: string,
     initialMessage: string,
     systemPromptOverride?: string | null,
+    thinkingEnabled?: boolean,
+    planMode?: boolean,
   ) => Promise<string>;
   sendMessage: (conversationId: string, content: string) => void;
   addAssistantMessage: (conversationId: string, content: string, toolCalls?: AgentToolCall[]) => void;
@@ -159,6 +184,16 @@ interface AgentTaskStore {
   appendRawOutput: (conversationId: string, text: string) => void;
   cancelActiveConversation: (id: string) => Promise<void>;
   changeModel: (id: string, newModel: string) => Promise<void>;
+  setPlanMode: (id: string, enabled: boolean) => Promise<void>;
+  setPermissionMode: (id: string, mode: PermissionMode) => Promise<void>;
+  setApproveWrites: (id: string, enabled: boolean) => Promise<void>;
+  respondPermission: (id: string, toolId: string, decision: "allow_once" | "allow_always" | "deny") => Promise<void>;
+  respondEdit: (id: string, toolId: string, decision: "apply" | "reject") => Promise<void>;
+  retryLastTurn: (id: string, newModel?: string) => Promise<void>;
+  saveCheckpoint: (id: string) => Promise<string | null>;
+  listCheckpoints: (id: string) => Promise<Array<{ id: string; createdAt: string; messageCount: number; messages: AgentMessage[] }>>;
+  restoreCheckpoint: (id: string, rawJson: string) => void;
+  exportConversation: (id: string) => Promise<string>;
 }
 
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
@@ -363,7 +398,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride) => {
+  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode) => {
     const id = generateId("conv");
     const provider = apiAgentProvider(agent);
 
@@ -395,6 +430,13 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       model,
       systemPromptOverride: systemPromptOverride ?? null,
       queuedMessages: [],
+      planMode: planMode ?? false,
+      permissionMode: "auto",
+      approveWrites: false,
+      pendingPermissions: [],
+      pendingEdits: [],
+      thinkingEnabled: thinkingEnabled ?? false,
+      thinkingStream: "",
     };
 
     set((s) => ({
@@ -599,6 +641,77 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         }
       );
 
+      // Thinking deltas (Anthropic extended thinking)
+      const thinkingUnlisten = await listen<{ text: string }>(
+        apiAgentThinkingEvent(id),
+        (event) => {
+          let updated: AgentConversation | undefined;
+          set((s) => ({
+            conversations: s.conversations.map((c) => {
+              if (c.id !== id) return c;
+              const nextStream = (c.thinkingStream ?? "") + event.payload.text;
+              const messages = c.messages.map((m) =>
+                m.isStreaming && m.role === "assistant"
+                  ? { ...m, thinking: (m.thinking ?? "") + event.payload.text }
+                  : m,
+              );
+              const next = { ...c, messages, thinkingStream: nextStream, updatedAt: Date.now() };
+              updated = next;
+              return next;
+            }),
+          }));
+          if (updated) scheduleSave(updated);
+        },
+      );
+
+      // Thinking block stop
+      const thinkingStopUnlisten = await listen<unknown>(
+        apiAgentThinkingStopEvent(id),
+        () => {
+          set((s) => ({
+            conversations: s.conversations.map((c) =>
+              c.id === id ? { ...c, thinkingStream: "" } : c,
+            ),
+          }));
+        },
+      );
+
+      // Permission requests
+      const permissionReqUnlisten = await listen<PendingPermission>(
+        apiAgentPermissionRequestEvent(id),
+        (event) => {
+          let updated: AgentConversation | undefined;
+          set((s) => ({
+            conversations: s.conversations.map((c) => {
+              if (c.id !== id) return c;
+              const pending = [...(c.pendingPermissions ?? []), event.payload];
+              const next = { ...c, pendingPermissions: pending, updatedAt: Date.now() };
+              updated = next;
+              return next;
+            }),
+          }));
+          if (updated) scheduleSave(updated);
+        },
+      );
+
+      // Pending write-file edits
+      const pendingEditUnlisten = await listen<PendingEdit>(
+        apiAgentPendingEditEvent(id),
+        (event) => {
+          let updated: AgentConversation | undefined;
+          set((s) => ({
+            conversations: s.conversations.map((c) => {
+              if (c.id !== id) return c;
+              const pending = [...(c.pendingEdits ?? []), event.payload];
+              const next = { ...c, pendingEdits: pending, updatedAt: Date.now() };
+              updated = next;
+              return next;
+            }),
+          }));
+          if (updated) scheduleSave(updated);
+        },
+      );
+
       // Store unlisten functions for cleanup (using rawOutput field as we don't need it for API mode)
       // We'll store them in a module-level map instead
       apiConversationCleanup.set(id, () => {
@@ -607,6 +720,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         toolResultUnlisten();
         doneUnlisten();
         errorUnlisten();
+        thinkingUnlisten();
+        thinkingStopUnlisten();
+        permissionReqUnlisten();
+        pendingEditUnlisten();
       });
 
       // Start the API agent session
@@ -617,6 +734,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         projectPath,
         initialMessage,
         systemPromptOverride ?? null,
+        thinkingEnabled ?? false,
+        undefined, // attachments — not wired in UI yet
+        planMode ?? false,
       );
     } catch {
       set((s) => ({
@@ -840,6 +960,189 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     if (updated) scheduleSave(updated);
   },
 
+  setPlanMode: async (id, enabled) => {
+    await tauriSetPlanMode(id, enabled);
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next = { ...c, planMode: enabled, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  setPermissionMode: async (id, mode) => {
+    await tauriSetPermissionMode(id, mode);
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next = { ...c, permissionMode: mode, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  setApproveWrites: async (id, enabled) => {
+    await tauriSetApproveWrites(id, enabled);
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next = { ...c, approveWrites: enabled, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  respondPermission: async (id, toolId, decision) => {
+    await tauriRespondPermission(id, toolId, decision);
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const pending = (c.pendingPermissions ?? []).filter((p) => p.id !== toolId);
+        const next = { ...c, pendingPermissions: pending, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  respondEdit: async (id, toolId, decision) => {
+    await tauriRespondEdit(id, toolId, decision);
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const pending = (c.pendingEdits ?? []).filter((p) => p.id !== toolId);
+        const next = { ...c, pendingEdits: pending, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  retryLastTurn: async (id, newModel) => {
+    // Truncate messages locally: drop the last assistant message (and any trailing tool outputs).
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const msgs = c.messages.slice();
+        // Find last assistant index (from end) and truncate.
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === "assistant") {
+            msgs.length = i;
+            break;
+          }
+        }
+        // Append a fresh streaming assistant shell.
+        msgs.push({
+          id: generateId("msg"),
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          isStreaming: true,
+        });
+        const next = {
+          ...c,
+          messages: msgs,
+          status: "active" as const,
+          model: newModel ?? c.model,
+          thinkingStream: "",
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    await tauriRetryLastTurn(id, newModel);
+    if (updated) scheduleSave(updated);
+  },
+
+  saveCheckpoint: async (id) => {
+    const conv = get().conversations.find((c) => c.id === id);
+    if (!conv) return null;
+    const payload = JSON.stringify({
+      createdAt: new Date().toISOString(),
+      messageCount: conv.messages.length,
+      messages: conv.messages,
+    });
+    try {
+      return await tauriSaveCheckpoint(id, payload);
+    } catch (e) {
+      console.warn("Failed to save checkpoint:", e);
+      return null;
+    }
+  },
+
+  listCheckpoints: async (id) => {
+    try {
+      const raw = await tauriListCheckpoints(id);
+      const parsed: Array<{ id: string; createdAt: string; messageCount: number; messages: AgentMessage[] }> = [];
+      for (let i = 0; i < raw.length; i++) {
+        try {
+          const obj = JSON.parse(raw[i]);
+          parsed.push({
+            id: `chk_${i}`,
+            createdAt: obj.createdAt ?? "",
+            messageCount: obj.messageCount ?? (Array.isArray(obj.messages) ? obj.messages.length : 0),
+            messages: Array.isArray(obj.messages) ? obj.messages : (Array.isArray(obj) ? obj : []),
+          });
+        } catch {
+          continue;
+        }
+      }
+      return parsed;
+    } catch (e) {
+      console.warn("Failed to list checkpoints:", e);
+      return [];
+    }
+  },
+
+  restoreCheckpoint: (id, rawJson) => {
+    try {
+      const obj = JSON.parse(rawJson);
+      const messages: AgentMessage[] = Array.isArray(obj) ? obj : (Array.isArray(obj.messages) ? obj.messages : []);
+      let updated: AgentConversation | undefined;
+      set((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const next = {
+            ...c,
+            messages: messages.map((m) => ({ ...m, isStreaming: false })),
+            updatedAt: Date.now(),
+          };
+          updated = next;
+          return next;
+        }),
+      }));
+      if (updated) scheduleSave(updated);
+    } catch (e) {
+      console.warn("Failed to restore checkpoint:", e);
+    }
+  },
+
+  exportConversation: async (id) => {
+    const conv = get().conversations.find((c) => c.id === id);
+    if (!conv) return "";
+    return await exportConversationMarkdown(
+      conv.title,
+      conv.model ?? "unknown",
+      JSON.stringify(conv.messages),
+    );
+  },
+
   appendRawOutput: (conversationId, text) => {
     set((s) => ({
       conversations: s.conversations.map((c) => {
@@ -869,6 +1172,9 @@ loadConversations()
         conv.status = "idle";
         conv.messages = (conv.messages ?? []).map((m) => ({ ...m, isStreaming: false }));
         conv.queuedMessages = [];
+        conv.pendingPermissions = [];
+        conv.pendingEdits = [];
+        conv.thinkingStream = "";
         parsed.push(conv);
       } catch (e) {
         console.warn("Skipping malformed conversation:", e);

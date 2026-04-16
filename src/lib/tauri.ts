@@ -1025,6 +1025,18 @@ export async function deleteApiKey(provider: string): Promise<void> {
   return invoke("delete_api_key", { provider });
 }
 
+export interface ImageAttachment {
+  media_type: string;
+  data_base64: string;
+}
+
+export interface SlashCommandDef {
+  name: string;
+  description: string;
+  body: string;
+  source: string;
+}
+
 // API Agent Sessions
 export async function startApiAgentSession(
   sessionId: string,
@@ -1033,6 +1045,9 @@ export async function startApiAgentSession(
   projectPath: string,
   initialMessage: string,
   systemPromptOverride?: string | null,
+  thinkingEnabled?: boolean,
+  attachments?: ImageAttachment[],
+  planMode?: boolean,
 ): Promise<void> {
   return invoke("start_api_agent_session", {
     sessionId,
@@ -1041,14 +1056,81 @@ export async function startApiAgentSession(
     projectPath,
     initialMessage,
     systemPromptOverride: systemPromptOverride ?? null,
+    thinkingEnabled: thinkingEnabled ?? null,
+    attachments: attachments ?? null,
+    planMode: planMode ?? null,
   });
 }
 
 export async function sendApiAgentMessage(
   sessionId: string,
   message: string,
+  attachments?: ImageAttachment[],
 ): Promise<void> {
-  return invoke("send_api_agent_message", { sessionId, message });
+  return invoke("send_api_agent_message", {
+    sessionId,
+    message,
+    attachments: attachments ?? null,
+  });
+}
+
+export async function setPlanMode(sessionId: string, enabled: boolean): Promise<void> {
+  return invoke("set_plan_mode", { sessionId, enabled });
+}
+
+export async function setPermissionMode(
+  sessionId: string,
+  mode: "auto" | "ask_for_risky" | "allow_all" | "deny_all",
+): Promise<void> {
+  return invoke("set_permission_mode", { sessionId, mode });
+}
+
+export async function respondPermission(
+  sessionId: string,
+  toolId: string,
+  decision: "allow_once" | "allow_always" | "deny",
+): Promise<void> {
+  return invoke("respond_permission", { sessionId, toolId, decision });
+}
+
+export async function setApproveWrites(sessionId: string, enabled: boolean): Promise<void> {
+  return invoke("set_approve_writes", { sessionId, enabled });
+}
+
+export async function respondEdit(
+  sessionId: string,
+  toolId: string,
+  decision: "apply" | "reject",
+): Promise<void> {
+  return invoke("respond_edit", { sessionId, toolId, decision });
+}
+
+export async function retryLastTurn(sessionId: string, newModel?: string): Promise<void> {
+  return invoke("retry_last_turn", { sessionId, newModel: newModel ?? null });
+}
+
+export async function saveCheckpoint(sessionId: string, data: string): Promise<string> {
+  return invoke<string>("save_checkpoint", { sessionId, data });
+}
+
+export async function listCheckpoints(sessionId: string): Promise<string[]> {
+  return invoke<string[]>("list_checkpoints", { sessionId });
+}
+
+export async function deleteCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
+  return invoke("delete_checkpoint", { sessionId, checkpointId });
+}
+
+export async function exportConversationMarkdown(
+  title: string,
+  model: string,
+  messagesJson: string,
+): Promise<string> {
+  return invoke<string>("export_conversation_markdown", { title, model, messagesJson });
+}
+
+export async function listSlashCommands(projectPath: string): Promise<SlashCommandDef[]> {
+  return invoke<SlashCommandDef[]>("list_slash_commands", { projectPath });
 }
 
 export async function cancelApiAgentSession(sessionId: string): Promise<void> {

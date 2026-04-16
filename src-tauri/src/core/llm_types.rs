@@ -63,6 +63,17 @@ pub enum ContentBlock {
         #[serde(default)]
         is_error: bool,
     },
+    #[serde(rename = "image")]
+    Image {
+        media_type: String,
+        data_base64: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageAttachment {
+    pub media_type: String,
+    pub data_base64: String,
 }
 
 /// Tool definition sent to the LLM.
@@ -117,6 +128,10 @@ pub enum StreamChunk {
         #[serde(default)]
         cache_creation_input_tokens: u64,
     },
+    /// A delta of extended-thinking (reasoning) text.
+    ThinkingDelta { text: String },
+    /// The current extended-thinking block is complete.
+    ThinkingStop,
     /// An error occurred.
     Error { message: String },
 }
@@ -133,6 +148,19 @@ pub struct LlmRequest {
     pub max_tokens: u32,
     #[serde(default)]
     pub temperature: Option<f32>,
+    /// Attach images to the last user message. Providers that don't support vision ignore this.
+    #[serde(default)]
+    pub attachments: Vec<ImageAttachment>,
+    /// Enable Anthropic extended thinking. OpenAI-compat providers silently ignore.
+    #[serde(default)]
+    pub thinking_enabled: bool,
+    /// Budget for extended thinking tokens (Anthropic). Ignored when thinking_enabled is false.
+    #[serde(default = "default_thinking_budget")]
+    pub thinking_budget_tokens: u32,
+}
+
+fn default_thinking_budget() -> u32 {
+    8000
 }
 
 fn default_max_tokens() -> u32 {

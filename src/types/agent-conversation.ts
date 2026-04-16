@@ -30,6 +30,22 @@ export interface AgentMessage {
   cacheReadTokens?: number;
   /** Cached input tokens written on this turn. */
   cacheWriteTokens?: number;
+  /** Extended thinking text produced by this turn (Anthropic). */
+  thinking?: string;
+}
+
+export type PermissionMode = "auto" | "ask_for_risky" | "allow_all" | "deny_all";
+
+export interface PendingPermission {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+export interface PendingEdit {
+  id: string;
+  path: string;
+  content: string;
 }
 
 export type AgentMode = "pty" | "api";
@@ -55,4 +71,18 @@ export interface AgentConversation {
   systemPromptOverride?: string | null;
   /** Messages queued while the agent was running. Drained when status returns to idle. */
   queuedMessages?: string[];
+  /** Plan mode active — write_file and bash are disabled. */
+  planMode?: boolean;
+  /** Permission mode for risky tool calls. */
+  permissionMode?: PermissionMode;
+  /** Require user approval before each write_file. */
+  approveWrites?: boolean;
+  /** Pending permission prompts awaiting user decision. */
+  pendingPermissions?: PendingPermission[];
+  /** Pending write-file edits awaiting user decision. */
+  pendingEdits?: PendingEdit[];
+  /** Extended-thinking (Anthropic) enabled for this session. */
+  thinkingEnabled?: boolean;
+  /** Accumulating thinking text during the current streaming turn. */
+  thinkingStream?: string;
 }

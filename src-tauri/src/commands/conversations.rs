@@ -99,6 +99,89 @@ pub fn delete_conversation_file(id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Render a conversation's messages as a Markdown string for export.
+/// `messages_json` is the serialized Vec<AgentMessage> from the frontend.
+#[tauri::command]
+pub fn export_conversation_markdown(
+    title: String,
+    model: String,
+    messages_json: String,
+) -> Result<String, String> {
+    use serde_json::Value;
+
+    let msgs: Value = serde_json::from_str(&messages_json)
+        .map_err(|e| format!("Invalid messages JSON: {}", e))?;
+    let arr = msgs
+        .as_array()
+        .ok_or_else(|| "messages JSON must be an array".to_string())?;
+
+    let mut out = String::new();
+    out.push_str(&format!("# {}\n\n", title));
+    out.push_str(&format!("**Model:** {}\n", model));
+    out.push_str(&format!(
+        "**Exported:** {}\n\n---\n\n",
+        crate::commands::usage::current_timestamp_iso()
+    ));
+
+    for msg in arr {
+        let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let content = msg
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim();
+        if role == "user" {
+            out.push_str("## User\n\n");
+            if !content.is_empty() {
+                out.push_str(content);
+                out.push_str("\n\n");
+            }
+        } else if role == "assistant" {
+            out.push_str("## Assistant\n\n");
+            if !content.is_empty() {
+                out.push_str(content);
+                out.push_str("\n\n");
+            }
+            if let Some(tool_calls) = msg.get("toolCalls").and_then(|v| v.as_array()) {
+                if !tool_calls.is_empty() {
+                    out.push_str("### Tool calls\n\n");
+                    for tc in tool_calls {
+                        let name = tc
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        let status = tc
+                            .get("status")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        out.push_str(&format!("- **{}** ({})\n", name, status));
+                        if let Some(full) = tc.get("fullContent").and_then(|v| v.as_str()) {
+                            let preview: String = full.chars().take(500).collect();
+                            out.push_str("  ```\n");
+                            for line in preview.lines() {
+                                out.push_str("  ");
+                                out.push_str(line);
+                                out.push('\n');
+                            }
+                            out.push_str("  ```\n");
+                        }
+                    }
+                    out.push('\n');
+                }
+            }
+        } else if role == "system" {
+            if !content.is_empty() {
+                out.push_str("## System\n\n");
+                out.push_str("> ");
+                out.push_str(&content.replace('\n', "\n> "));
+                out.push_str("\n\n");
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

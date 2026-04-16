@@ -12,16 +12,50 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 pub struct AnthropicProvider;
 
 /// Convert our messages to Anthropic format (system prompt is separate, tool results use specific format).
-fn build_anthropic_messages(messages: &[ChatMessage]) -> Vec<serde_json::Value> {
+/// If `attachments` is non-empty, inline them into the LAST ChatRole::User message as image blocks.
+fn build_anthropic_messages(
+    messages: &[ChatMessage],
+    attachments: &[ImageAttachment],
+) -> Vec<serde_json::Value> {
     let mut out = Vec::new();
 
-    for msg in messages {
+    // Find the index of the last ChatRole::User message so we can attach images to it.
+    let last_user_idx = messages
+        .iter()
+        .rposition(|m| matches!(m.role, ChatRole::User));
+
+    for (idx, msg) in messages.iter().enumerate() {
         match &msg.role {
             ChatRole::User => {
-                out.push(serde_json::json!({
-                    "role": "user",
-                    "content": msg.content.as_text(),
-                }));
+                let is_last_user = Some(idx) == last_user_idx;
+                if is_last_user && !attachments.is_empty() {
+                    let mut content_blocks: Vec<serde_json::Value> = attachments
+                        .iter()
+                        .map(|a| {
+                            serde_json::json!({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": a.media_type,
+                                    "data": a.data_base64,
+                                },
+                            })
+                        })
+                        .collect();
+                    content_blocks.push(serde_json::json!({
+                        "type": "text",
+                        "text": msg.content.as_text(),
+                    }));
+                    out.push(serde_json::json!({
+                        "role": "user",
+                        "content": content_blocks,
+                    }));
+                } else {
+                    out.push(serde_json::json!({
+                        "role": "user",
+                        "content": msg.content.as_text(),
+                    }));
+                }
             }
             ChatRole::Assistant => {
                 match &msg.content {
@@ -113,7 +147,7 @@ impl LlmProvider for AnthropicProvider {
     ) -> Result<(), String> {
         let client = reqwest::Client::new();
 
-        let messages = build_anthropic_messages(&request.messages);
+        let messages = build_anthropic_messages(&request.messages, &request.attachments);
         let tools = build_anthropic_tools(&request.tools);
 
         let mut body = serde_json::json!({
@@ -131,6 +165,12 @@ impl LlmProvider for AnthropicProvider {
         }
         if let Some(temp) = request.temperature {
             body["temperature"] = serde_json::json!(temp);
+        }
+        if request.thinking_enabled {
+            body["thinking"] = serde_json::json!({
+                "type": "enabled",
+                "budget_tokens": request.thinking_budget_tokens,
+            });
         }
 
         let response = client
@@ -162,6 +202,7 @@ impl LlmProvider for AnthropicProvider {
         let mut current_tool_id = String::new();
         let mut current_tool_name = String::new();
         let mut current_tool_args = String::new();
+        let mut current_block_type: &str = "";
         let mut input_tokens: u64 = 0;
         let mut output_tokens: u64 = 0;
         let mut cache_read_input_tokens: u64 = 0;
@@ -216,6 +257,7 @@ impl LlmProvider for AnthropicProvider {
                                     let cb_type =
                                         cb.get("type").and_then(|t| t.as_str()).unwrap_or("");
                                     if cb_type == "tool_use" {
+                                        current_block_type = "tool_use";
                                         current_tool_id = cb
                                             .get("id")
                                             .and_then(|id| id.as_str())
@@ -233,6 +275,10 @@ impl LlmProvider for AnthropicProvider {
                                                 name: current_tool_name.clone(),
                                             })
                                             .await;
+                                    } else if cb_type == "thinking" {
+                                        current_block_type = "thinking";
+                                    } else if cb_type == "text" {
+                                        current_block_type = "text";
                                     }
                                 }
                             }
@@ -265,12 +311,23 @@ impl LlmProvider for AnthropicProvider {
                                                     .await;
                                             }
                                         }
+                                        "thinking_delta" => {
+                                            if let Some(text) =
+                                                delta.get("thinking").and_then(|t| t.as_str())
+                                            {
+                                                let _ = tx
+                                                    .send(StreamChunk::ThinkingDelta {
+                                                        text: text.to_string(),
+                                                    })
+                                                    .await;
+                                            }
+                                        }
                                         _ => {}
                                     }
                                 }
                             }
                             "content_block_stop" => {
-                                if !current_tool_id.is_empty() {
+                                if current_block_type == "tool_use" && !current_tool_id.is_empty() {
                                     let args = serde_json::from_str(&current_tool_args)
                                         .unwrap_or(serde_json::Value::Object(
                                             serde_json::Map::new(),
@@ -285,7 +342,10 @@ impl LlmProvider for AnthropicProvider {
                                     current_tool_id.clear();
                                     current_tool_name.clear();
                                     current_tool_args.clear();
+                                } else if current_block_type == "thinking" {
+                                    let _ = tx.send(StreamChunk::ThinkingStop).await;
                                 }
+                                current_block_type = "";
                             }
                             "message_delta" => {
                                 if let Some(usage) = parsed.get("usage") {
