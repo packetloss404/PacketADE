@@ -48,12 +48,18 @@ fn resolve_windows_command(command: &str) -> String {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let lines: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
 
-            // Prefer .exe over .cmd
+            // Prefer .exe over .cmd; skip extensionless entries (npm shell stubs)
             if let Some(exe) = lines.iter().find(|l| l.ends_with(".exe")) {
                 return exe.to_string();
             }
             if let Some(cmd_file) = lines.iter().find(|l| l.ends_with(".cmd")) {
                 return cmd_file.to_string();
+            }
+            // Last resort: any entry with a file extension
+            if let Some(with_ext) = lines.iter().find(|l| {
+                l.rsplit('\\').next().map(|f| f.contains('.')).unwrap_or(false)
+            }) {
+                return with_ext.to_string();
             }
             if let Some(first) = lines.first() {
                 return first.to_string();
