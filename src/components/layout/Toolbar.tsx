@@ -28,7 +28,7 @@ const LAYOUT_PRESETS: { preset: MosaicLayoutPreset; label: string; minPanes: num
 const TABS: { key: AppView; label: string }[] = [
   { key: "agents", label: "Agents" },
   { key: "workspace", label: "Workspaces" },
-  { key: "flight_deck", label: "Flights" },
+  { key: "missions", label: "Missions" },
   { key: "issues", label: "Issues" },
   { key: "insights", label: "Insights" },
 ];
@@ -115,7 +115,7 @@ export function Toolbar() {
             }`}
           >
             {tab.label}
-            {tab.key === "flight_deck" && attentionCount > 0 && (
+            {tab.key === "missions" && attentionCount > 0 && (
               <span className="px-1.5 py-0 text-[9px] font-bold rounded-full bg-accent-amber/20 text-accent-amber">
                 {attentionCount}
               </span>
@@ -233,7 +233,7 @@ export function Toolbar() {
               ? "bg-bg-elevated text-accent-amber"
               : "text-text-muted hover:text-accent-amber"
           }`}
-          title="Review Queue — pending tool / file-write approvals from running flights. Click to triage."
+          title="Review Queue — pending tool / file-write approvals from running missions. Click to triage."
         >
           <ShieldCheck size={11} />
           <span>Review</span>

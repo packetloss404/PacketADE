@@ -12,7 +12,8 @@ PacketCode is a Tauri v2 desktop app that brings AI coding agents, planning, iss
 - Connect to remote servers via SSH and run agent sessions over the wire
 - Keep project context close with auto-learning memory, history, and GitHub integration
 - Manage MCP servers, inspect crashes, and run deploy workflows from the same UI
-- Share orchestration logic between the desktop GUI and the standalone `packetcode-tui` binary
+
+> Looking for a terminal-native orchestration experience? See [**FlightDeck**](https://github.com/packetloss404/flightdeck) — the TUI-first sibling project, split out of this repo and evolving independently.
 
 ## Supported Agent CLIs
 
@@ -87,15 +88,6 @@ Each session can be launched with agent-specific arguments and model selections 
 - Agent profile management and AI routing configuration
 - Prompt template library
 
-### Terminal UI
-
-PacketCode also ships a Ratatui-based TUI:
-
-- Binary: `packetcode-tui`
-- Source: `src-tauri/src/tui/`
-- Purpose: terminal-first access to the same orchestration engine used by the desktop app
-- Vim-style keybindings, command palette, context-sensitive help overlay
-
 ## Tech Stack
 
 | Layer    | Technology                   |
@@ -163,12 +155,6 @@ pnpm e2e
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
-### Run The TUI
-
-```bash
-cargo run --manifest-path src-tauri/Cargo.toml --bin packetcode-tui
-```
-
 ### Windows Note
 
 If Tauri builds cannot find the Rust toolchain, ensure the Rust binary path is on `PATH`.
@@ -209,7 +195,6 @@ PacketCode/
       api/                     # DTO layer that decouples internal Rust types from the TS contract
       core/                    # Orchestration engine, storage, workspace, PTY core
       claude/                  # Claude CLI integration helpers
-      tui/                     # Standalone packetcode-tui binary
 
   scripts/                     # Build and schema-check scripts
   e2e/                         # Playwright tests
@@ -223,7 +208,7 @@ PacketCode/
 - Tauri commands live in `src-tauri/src/commands/` and are bound in `src/lib/tauri.ts`
 - App modules are registered through `src/modules/registry.ts`
 - Session management is PTY-based rather than JSONL-session based
-- Shared backend/frontend orchestration concepts are used by both the GUI and `packetcode-tui`
+- Backend orchestration concepts (Flights, PTY sessions, agent configs) are mirrored by FlightDeck, PacketCode's sibling TUI project in a separate repo
 - GitHub PAT is stored in the OS keyring via the `keyring` crate
 - SSH passwords are prompted at connect time and held in memory only
 

@@ -70,8 +70,8 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
     complete();
   }
 
-  function handleOpenFlightDeck() {
-    useAppStore.getState().setActiveView("flight_deck");
+  function handleOpenMissions() {
+    useAppStore.getState().setActiveView("missions");
     complete();
   }
 
@@ -149,7 +149,7 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
         {/* Step 3 — Choose destination */}
         <StepCard step={3} title="What do you want to do next?" done={false} disabled={!step1Done || !step2Done}>
           <p className="text-[11px] text-text-muted mb-2">
-            A <strong>Workspace</strong> is a tiled set of agent terminals. The <strong>Flight Deck</strong> plans missions and hands work to a Workspace.
+            A <strong>Workspace</strong> is a tiled set of agent terminals. <strong>Missions</strong> plan work and hand it to a Workspace.
           </p>
           <div className="flex flex-col gap-1.5">
             <button
@@ -161,11 +161,11 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
               <ArrowRight size={11} className="ml-auto" />
             </button>
             <button
-              onClick={handleOpenFlightDeck}
+              onClick={handleOpenMissions}
               className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-accent-purple bg-accent-purple/10 border border-accent-purple/30 rounded hover:bg-accent-purple/20 transition-colors"
             >
               <Target size={12} />
-              Open the Flight Deck
+              Open Missions
               <ArrowRight size={11} className="ml-auto" />
             </button>
           </div>

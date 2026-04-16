@@ -45,7 +45,7 @@ export const TASK_ROLE_CONFIG: Record<TaskRole, { label: string; color: string; 
   scout: { label: "Scout", color: "text-accent-amber", icon: "compass" },
 };
 
-/** Activity dot color per agent state, used by Flight Deck live tiles. */
+/** Activity dot color per agent state, used by Flights live tiles. */
 export const ACTIVITY_DOT_COLORS: Record<string, string> = {
   idle: "bg-text-muted",
   thinking: "bg-accent-blue",

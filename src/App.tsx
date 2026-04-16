@@ -25,7 +25,7 @@ const MemoryView = lazy(() => import("@/components/views/MemoryView").then((m) =
 const DeployView = lazy(() => import("@/components/views/DeployView").then((m) => ({ default: m.DeployView })));
 const ReviewQueueView = lazy(() => import("@/components/views/ReviewQueueView").then((m) => ({ default: m.ReviewQueueView })));
 const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })));
-const FlightDeckView = lazy(() => import("@/components/views/FlightDeckView").then((m) => ({ default: m.FlightDeckView })));
+const MissionsView = lazy(() => import("@/components/views/MissionsView").then((m) => ({ default: m.MissionsView })));
 
 const AgentsView = lazy(() => import("@/components/views/AgentsView").then((m) => ({ default: m.AgentsView })));
 const InsightsView = lazy(() => import("@/components/views/InsightsView").then((m) => ({ default: m.InsightsView })));
@@ -215,8 +215,8 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return null; // rendered above
     case "issues":
       return <IssueBoard />;
-    case "flight_deck":
-      return <FlightDeckView />;
+    case "missions":
+      return <MissionsView />;
     case "history":
       return <HistoryView />;
     case "tools":
