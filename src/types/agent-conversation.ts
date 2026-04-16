@@ -17,6 +17,8 @@ export interface AgentMessage {
   isStreaming?: boolean;
 }
 
+export type AgentMode = "pty" | "api";
+
 export interface AgentConversation {
   id: string;
   title: string;
@@ -28,4 +30,10 @@ export interface AgentConversation {
   rawOutput: string;
   createdAt: number;
   updatedAt: number;
+  /** Whether this conversation uses PTY (CLI) or API mode. */
+  mode: AgentMode;
+  /** API provider (e.g., "anthropic", "openai"). Only set for API mode. */
+  provider?: string;
+  /** Model identifier (e.g., "claude-sonnet-4-6-20250414"). Only set for API mode. */
+  model?: string;
 }

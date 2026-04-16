@@ -3,6 +3,7 @@ pub mod core;
 mod claude;
 mod commands;
 
+use commands::api_agent::ApiAgentState;
 use commands::github::create_github_auth_state;
 use commands::pty::create_shared_pty_manager;
 use commands::orchestration::create_shared_orchestrator;
@@ -67,6 +68,7 @@ pub fn run() {
         .manage(create_shared_pty_manager())
         .manage(create_shared_orchestrator())
         .manage(create_dictation_state())
+        .manage(std::sync::Arc::new(ApiAgentState::new()))
         .invoke_handler(tauri::generate_handler![
             // PTY-based sessions (primary)
             commands::pty::create_pty_session,
@@ -182,6 +184,15 @@ pub fn run() {
             commands::deploy::create_deploy_config,
             commands::deploy::validate_deploy,
             commands::deploy::run_deploy,
+            // API keys
+            commands::api_keys::set_api_key,
+            commands::api_keys::get_api_key_exists,
+            commands::api_keys::delete_api_key,
+            // API agent sessions
+            commands::api_agent::start_api_agent_session,
+            commands::api_agent::send_api_agent_message,
+            commands::api_agent::cancel_api_agent_session,
+            commands::api_agent::close_api_agent_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

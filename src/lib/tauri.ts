@@ -1012,3 +1012,48 @@ export function listWhisperModels(): Promise<string> {
   return invoke<string>("list_whisper_models");
 }
 
+// API Keys
+export async function setApiKey(provider: string, key: string): Promise<void> {
+  return invoke("set_api_key", { provider, key });
+}
+
+export async function getApiKeyExists(provider: string): Promise<boolean> {
+  return invoke<boolean>("get_api_key_exists", { provider });
+}
+
+export async function deleteApiKey(provider: string): Promise<void> {
+  return invoke("delete_api_key", { provider });
+}
+
+// API Agent Sessions
+export async function startApiAgentSession(
+  sessionId: string,
+  provider: string,
+  model: string,
+  projectPath: string,
+  initialMessage: string,
+): Promise<void> {
+  return invoke("start_api_agent_session", {
+    sessionId,
+    provider,
+    model,
+    projectPath,
+    initialMessage,
+  });
+}
+
+export async function sendApiAgentMessage(
+  sessionId: string,
+  message: string,
+): Promise<void> {
+  return invoke("send_api_agent_message", { sessionId, message });
+}
+
+export async function cancelApiAgentSession(sessionId: string): Promise<void> {
+  return invoke("cancel_api_agent_session", { sessionId });
+}
+
+export async function closeApiAgentSession(sessionId: string): Promise<void> {
+  return invoke("close_api_agent_session", { sessionId });
+}
+
