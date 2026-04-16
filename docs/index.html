@@ -4,9 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketCode | Open-Source AI Desktop IDE</title>
-<meta name="description" content="PacketCode is a 100% open-source desktop IDE that wraps Claude Code and Codex CLI into one multi-pane workspace with autonomous Flight Deck orchestration, GitHub integration, and deploy tools." />
+<meta name="description" content="PacketCode is a 100% open-source desktop IDE that unifies Claude Code, Codex, Gemini, OpenCode and 5 API providers (Anthropic, OpenAI, MiniMax, OpenRouter, Ollama) into one multi-pane cockpit with autonomous Flight Deck orchestration, BYOK, and cross-provider cost tracking." />
 <meta property="og:title" content="PacketCode — One cockpit. Every AI agent." />
-<meta property="og:description" content="Open-source AI desktop IDE with Flight Deck autonomous orchestration, multi-pane sessions, and deploy pipeline." />
+<meta property="og:description" content="Open-source AI desktop IDE: CLI + API agents, BYOK, conversational chat with tool diffs, Flight Deck orchestration, cross-provider cost tracking." />
 <meta property="og:image" content="https://packetcode.app/screenshot.png" />
 <meta property="og:url" content="https://packetcode.app" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -369,6 +369,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
     <div class="nav-links" id="nav-links">
       <a href="#features">Features</a>
       <a href="#flight-deck">Flight Deck</a>
+      <a href="#providers">Providers</a>
       <a href="#modules">Modules</a>
       <a href="#download">Download</a>
     </div>
@@ -394,7 +395,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
     Open Source &mdash; 100% Free
   </div>
   <h1 class="reveal" style="--delay:0.1s">One cockpit.<br><span class="gradient-text">Every AI agent.</span><br>Ship faster.</h1>
-  <p class="hero-lead reveal" style="--delay:0.2s">PacketCode wraps Claude Code and Codex CLI into a unified multi-pane desktop IDE with autonomous Flight Deck orchestration, GitHub integration, and deploy tools.</p>
+  <p class="hero-lead reveal" style="--delay:0.2s">PacketCode unifies Claude Code, Codex, Gemini, OpenCode and five API providers into a conversational multi-pane desktop IDE &mdash; BYOK, tool diffs, Flight Deck orchestration, and cross-provider cost tracking in one native app.</p>
   <div class="typed-line reveal" style="--delay:0.3s">Built to <span id="typed-target"></span><span class="typed-cursor"></span></div>
   <div class="hero-buttons reveal" style="--delay:0.35s">
     <a href="https://github.com/packetloss404/PacketCode/releases" class="btn-primary">Download for Free</a>
@@ -402,7 +403,8 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   </div>
   <div class="tag-chips reveal" style="--delay:0.4s">
     <span class="tag-chip">Tauri v2</span>
-    <span class="tag-chip">React + Rust</span>
+    <span class="tag-chip">5 API Providers</span>
+    <span class="tag-chip">BYOK</span>
     <span class="tag-chip">Apache 2.0</span>
     <span class="tag-chip">Local-First</span>
   </div>
@@ -415,7 +417,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <span class="window-dot g"></span>
         <span class="window-title">PacketCode</span>
       </div>
-      <img src="screenshot.png" alt="PacketCode desktop IDE showing multi-pane AI sessions, kanban board, and Flight Deck orchestration" loading="lazy" />
+      <img src="screenshot.png" alt="PacketCode desktop IDE showing multi-pane AI sessions, API agents with tool diffs, kanban board, and Flight Deck orchestration" loading="lazy" />
     </div>
   </div>
 </section>
@@ -425,19 +427,19 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <div class="stats-grid">
       <div>
-        <div class="stat-number green" data-target="19">0</div>
-        <div class="stat-label">Views & Tools</div>
+        <div class="stat-number green" data-target="22">0</div>
+        <div class="stat-label">Views &amp; Tools</div>
       </div>
       <div>
         <div class="stat-number purple" data-target="5">0</div>
-        <div class="stat-label">Agent Profiles</div>
+        <div class="stat-label">API Providers</div>
       </div>
       <div>
-        <div class="stat-number blue" data-target="2">0</div>
-        <div class="stat-label">AI Runtimes</div>
+        <div class="stat-number blue" data-target="9">0</div>
+        <div class="stat-label">CLI + API Agents</div>
       </div>
       <div>
-        <div class="stat-number amber" data-target="240" data-suffix="+">0</div>
+        <div class="stat-number amber" data-target="300" data-suffix="+">0</div>
         <div class="stat-label">Source Files</div>
       </div>
     </div>
@@ -449,71 +451,78 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <div class="section-header reveal">
       <h2>Everything you need. Nothing you don't.</h2>
-      <p>Nine core capabilities designed to keep you in flow.</p>
+      <p>Ten core capabilities designed to keep you in flow.</p>
     </div>
     <div class="features-grid">
       <div class="feature-card reveal" style="--delay:0s">
+        <div class="feature-icon purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        </div>
+        <h3>API Agents with BYOK</h3>
+        <p>Bring your own key for Anthropic, OpenAI, MiniMax, OpenRouter, and local Ollama. Full tool use, streaming, and agentic loops in Rust &mdash; Opus 4.7 to Llama 4.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.08s">
         <div class="feature-icon green">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="12" y1="3" x2="12" y2="17"/></svg>
         </div>
-        <h3>Multi-Pane Sessions</h3>
-        <p>Run Claude Code and Codex CLI side-by-side in real PTY terminals. Split, resize, and monitor in real time.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.08s">
-        <div class="feature-icon purple">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-        </div>
-        <h3>Kanban Issue Tracker</h3>
-        <p>Drag-and-drop board with priorities, labels, epics, and acceptance criteria. Link issues directly to AI sessions.</p>
+        <h3>Multi-Pane CLI Sessions</h3>
+        <p>Claude Code, Codex, Gemini, and OpenCode running side-by-side in real PTY terminals. Split, resize, and monitor live.</p>
       </div>
       <div class="feature-card wide reveal" style="--delay:0.16s">
         <div class="feature-icon cyan">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         </div>
         <h3>Flight Deck</h3>
-        <p>Autonomous orchestration layer. Create flights, link issues, and let agents build while you review. Status rolls up automatically.</p>
+        <p>Autonomous orchestration layer. Create flights, link issues, and let agents build while you review. Status rolls up automatically across sessions and providers.</p>
       </div>
       <div class="feature-card reveal" style="--delay:0.24s">
         <div class="feature-icon amber">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>
+        </div>
+        <h3>Conversational Chat</h3>
+        <p>Slash commands, @-file mentions, inline tool diffs, and voice input &mdash; a Claude Code-style experience across every agent and model you use.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.32s">
+        <div class="feature-icon red">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        </div>
+        <h3>Kanban Issue Tracker</h3>
+        <p>Drag-and-drop board with priorities, labels, epics, and acceptance criteria. Link issues directly into flights and agent sessions.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.4s">
+        <div class="feature-icon blue">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </div>
         <h3>Agent Profiles</h3>
-        <p>Switch between 5 built-in personalities or create your own. Each injects custom prompts and model defaults.</p>
+        <p>Switch between 5 built-in personalities or create your own. Each injects custom system prompts and model defaults.</p>
       </div>
-      <div class="feature-card reveal" style="--delay:0.32s">
-        <div class="feature-icon blue">
+      <div class="feature-card reveal" style="--delay:0.48s">
+        <div class="feature-icon purple">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg>
         </div>
         <h3>GitHub Integration</h3>
-        <p>Connect repos, browse issues, create PRs, and import tickets &mdash; without leaving the cockpit.</p>
+        <p>Connect repos, browse issues, create PRs, and import tickets &mdash; all from inside the cockpit.</p>
       </div>
-      <div class="feature-card reveal" style="--delay:0.4s">
-        <div class="feature-icon red">
+      <div class="feature-card reveal" style="--delay:0.56s">
+        <div class="feature-icon green">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
         </div>
         <h3>Deploy Pipeline</h3>
         <p>Configure and trigger deployments from a single panel. Run history, environment variables, live terminal output.</p>
       </div>
-      <div class="feature-card reveal" style="--delay:0.48s">
+      <div class="feature-card reveal" style="--delay:0.64s">
         <div class="feature-icon cyan">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        </div>
-        <h3>Insights Chat</h3>
-        <p>Conversational codebase Q&amp;A. Ask Claude about your project with full repository context injected automatically.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.56s">
-        <div class="feature-icon purple">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
         </div>
-        <h3>Analytics &amp; Cost Tracking</h3>
-        <p>Monitor session activity, token usage, and AI spend across sessions and flights with dedicated dashboards.</p>
+        <h3>Cross-Provider Cost Dashboard</h3>
+        <p>Unified spend tracking across Claude CLI, Codex, and every API provider. Cache-aware token metrics, per-model breakdowns, per-flight totals.</p>
       </div>
-      <div class="feature-card reveal" style="--delay:0.64s">
-        <div class="feature-icon green">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      <div class="feature-card reveal" style="--delay:0.72s">
+        <div class="feature-icon red">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </div>
-        <h3>Terminal UI (TUI)</h3>
-        <p>Standalone Ratatui-based terminal interface sharing the same orchestration engine. Five color themes, command palette, and full flight management.</p>
+        <h3>Voice-to-Text</h3>
+        <p>Native Whisper dictation with waveform visualization, WPM analytics, and one-tap transcript injection into any agent chat.</p>
       </div>
     </div>
   </div>
@@ -526,7 +535,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       <h2>Flight Deck</h2>
       <p>Autonomous AI Orchestration</p>
     </div>
-    <p class="flight-deck-body reveal" style="--delay:0.1s">Define an objective. Link your issues. Flight Deck coordinates agents across sessions, tracks blockers, and surfaces what needs your attention &mdash; so you steer instead of type.</p>
+    <p class="flight-deck-body reveal" style="--delay:0.1s">Define an objective. Link your issues. Flight Deck coordinates CLI and API agents across sessions, tracks blockers, captures memory snapshots, and surfaces what needs your attention &mdash; so you steer instead of type.</p>
 
     <div class="pipeline reveal" style="--delay:0.15s">
       <div class="pipeline-step">
@@ -588,43 +597,95 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   </div>
 </section>
 
+<!-- ===== API PROVIDERS ===== -->
+<section class="profiles" id="providers">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Five providers. One chat interface.</h2>
+      <p>Bring your own keys &mdash; route every conversation to the right model without swapping apps.</p>
+    </div>
+    <div class="profiles-row reveal" style="--delay:0.1s">
+      <div class="profile-card purple-top">
+        <div class="profile-icon purple-bg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        </div>
+        <h3>Anthropic</h3>
+        <p class="profile-desc">Opus 4.7, Opus 4.6, Sonnet 4.6, Haiku 4.5</p>
+        <p class="profile-prompt">Native Claude API with cache-aware token metrics</p>
+      </div>
+      <div class="profile-card green-top">
+        <div class="profile-icon green-bg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        </div>
+        <h3>OpenAI</h3>
+        <p class="profile-desc">ChatGPT 5.4, GPT-4o, o3, o4-mini</p>
+        <p class="profile-prompt">OpenAI-compatible streaming with tool use</p>
+      </div>
+      <div class="profile-card amber-top">
+        <div class="profile-icon amber-bg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <h3>MiniMax</h3>
+        <p class="profile-desc">M2.7</p>
+        <p class="profile-prompt">Long-context reasoning via BYOK API</p>
+      </div>
+      <div class="profile-card blue-top">
+        <div class="profile-icon blue-bg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        </div>
+        <h3>OpenRouter</h3>
+        <p class="profile-desc">Auto + Claude, GPT, Gemini 2.5, Llama 4</p>
+        <p class="profile-prompt">One key, every frontier model</p>
+      </div>
+      <div class="profile-card red-top">
+        <div class="profile-icon red-bg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        </div>
+        <h3>Ollama (Local)</h3>
+        <p class="profile-desc">Llama 3.3 70B, Qwen 3, DeepSeek, CodeLlama</p>
+        <p class="profile-prompt">100% offline &mdash; no key required</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ===== MODULES ===== -->
 <section class="modules" id="modules">
   <div class="container">
     <div class="section-header reveal">
       <h2>Extensible by Design</h2>
-      <p>A modular architecture with six built-in modules that grows with your workflow</p>
+      <p>Pluggable modules and a Tools hub that grow with your workflow</p>
     </div>
     <div class="modules-grid">
-      <div class="module-card purple-border reveal" style="--delay:0s">
-        <span class="module-tag">AI</span>
-        <h3>Vibe Architect</h3>
-        <p>AI project spec generator. Describe what you want to build, get structured specs, import as kanban issues.</p>
-      </div>
-      <div class="module-card amber-border reveal" style="--delay:0.08s">
-        <span class="module-tag">Analysis</span>
+      <div class="module-card amber-border reveal" style="--delay:0s">
+        <span class="module-tag">Module</span>
         <h3>Ideation Scanner</h3>
-        <p>Scans your codebase and surfaces improvement ideas, refactoring opportunities, and security concerns.</p>
+        <p>Scans your codebase and surfaces improvement ideas, refactoring opportunities, and security concerns &mdash; filter, promote, or drop each idea.</p>
       </div>
-      <div class="module-card blue-border reveal" style="--delay:0.16s">
-        <span class="module-tag">Integration</span>
-        <h3>MCP Servers</h3>
-        <p>Manage Claude Code MCP server configurations. Add, edit, and toggle servers across scopes.</p>
+      <div class="module-card green-border reveal" style="--delay:0.08s">
+        <span class="module-tag">Module</span>
+        <h3>Scaffold</h3>
+        <p>Spin up new projects from built-in templates. Next.js, React, FastAPI, Rust CLI, and more &mdash; wired directly into your workspace.</p>
       </div>
-      <div class="module-card green-border reveal" style="--delay:0.24s">
-        <span class="module-tag">Utility</span>
-        <h3>New Project</h3>
-        <p>Create new projects from built-in templates. Next.js, React, FastAPI, Rust CLI, and more.</p>
+      <div class="module-card purple-border reveal" style="--delay:0.16s">
+        <span class="module-tag">Module</span>
+        <h3>Dictation</h3>
+        <p>Native Whisper voice-to-text with waveform, history search, sentiment trend, and WPM analytics. Stream transcripts straight into any chat.</p>
+      </div>
+      <div class="module-card blue-border reveal" style="--delay:0.24s">
+        <span class="module-tag">Tools Hub</span>
+        <h3>MCP Hub</h3>
+        <p>Browse, configure, and toggle Claude Code MCP servers across user, project, and local scopes. Provider enablement and routing from one card.</p>
       </div>
       <div class="module-card purple-border reveal" style="--delay:0.32s">
-        <span class="module-tag">Quality</span>
+        <span class="module-tag">Tools Hub</span>
         <h3>Code Quality</h3>
-        <p>On-demand AI code quality analysis. Surface issues, complexity hotspots, and improvement opportunities.</p>
+        <p>On-demand AI analysis with language breakdown, complexity hotspots, test coverage ratios, and comment density &mdash; all workspace-scoped.</p>
       </div>
       <div class="module-card amber-border reveal" style="--delay:0.4s">
-        <span class="module-tag">Reliability</span>
+        <span class="module-tag">Tools Hub</span>
         <h3>Crash Viewer</h3>
-        <p>Browse, inspect, and manage crash reports locally. Timestamps, summaries, and full stack traces in one panel.</p>
+        <p>Browse, inspect, and manage local crash reports with timestamps, summaries, and full stack traces in a single panel.</p>
       </div>
     </div>
   </div>
@@ -635,7 +696,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <div class="section-header reveal">
       <h2>Five personalities. One keystroke.</h2>
-      <p>Switch agent behavior on the fly &mdash; from rapid-fire code to thorough security audits.</p>
+      <p>Switch agent behavior on the fly &mdash; from rapid-fire code to thorough security audits. Stack on top of any provider.</p>
     </div>
     <div class="profiles-row reveal" style="--delay:0.1s">
       <div class="profile-card green-top">
@@ -745,7 +806,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       <div class="workflow-step">
         <div class="workflow-num">1</div>
         <h3>Plan</h3>
-        <p>Define objectives. Vibe Architect generates specs, issues auto-populate the board, Flight Deck coordinates.</p>
+        <p>Ideation Scanner surfaces opportunities, issues auto-populate the kanban board, Flight Deck coordinates the work.</p>
       </div>
       <div class="workflow-arrow" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
@@ -753,7 +814,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       <div class="workflow-step">
         <div class="workflow-num">2</div>
         <h3>Execute</h3>
-        <p>Agents work across sessions. Memory informs context. Profiles shape behavior. You review what matters.</p>
+        <p>Pick a provider or CLI. Memory informs context. Profiles shape behavior. Tool diffs show every change. You review what matters.</p>
       </div>
       <div class="workflow-arrow" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
@@ -761,7 +822,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       <div class="workflow-step">
         <div class="workflow-num">3</div>
         <h3>Release</h3>
-        <p>Deploy pipeline ships. GitHub handles PRs. Flight Deck confirms all issues resolved.</p>
+        <p>Deploy pipeline ships. GitHub handles PRs. Flight Deck confirms all issues resolved &mdash; with unified cost totals on the way out.</p>
       </div>
     </div>
   </div>
@@ -780,8 +841,10 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <tbody>
           <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+\</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Split &mdash; new session pane</td></tr>
           <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+1-4</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Switch to pane 1&ndash;4</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+1-6</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Claude, Codex, Issues, History, Tools, Architect</td></tr>
-          <tr><td style="padding:8px 16px;font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Enter</td><td style="padding:8px 16px;color:var(--text-secondary)">Start session (in modal)</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+1-6</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Agents, Claude, Codex, Issues, Tools, Flight Deck</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">/</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Slash commands in chat (/clear, /model, /help, /new)</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">@</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Mention a file from the workspace</td></tr>
+          <tr><td style="padding:8px 16px;font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Enter</td><td style="padding:8px 16px;color:var(--text-secondary)">Send message &middot; start session</td></tr>
         </tbody>
       </table>
     </div>
@@ -826,7 +889,7 @@ cd PacketCode &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
     <div class="section-header reveal">
       <h2>Built in the open. Built for builders.</h2>
     </div>
-    <p class="oss-body reveal" style="--delay:0.1s">PacketCode is Apache 2.0 licensed and free forever. No telemetry, no vendor lock-in, no paywalls. Contributions welcome.</p>
+    <p class="oss-body reveal" style="--delay:0.1s">PacketCode is Apache 2.0 licensed and free forever. No telemetry, no vendor lock-in, no paywalls. Bring your own keys, run your own models, contribute back.</p>
     <div class="oss-buttons reveal" style="--delay:0.15s">
       <a href="https://github.com/packetloss404/PacketCode" class="btn-primary" target="_blank" rel="noopener">Star on GitHub</a>
       <a href="https://github.com/packetloss404/PacketCode#readme" class="btn-outline" target="_blank" rel="noopener">Read the Docs</a>
@@ -920,7 +983,7 @@ cd PacketCode &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
 
   /* ===== TYPED TEXT ===== */
   var typedEl = document.getElementById('typed-target');
-  var phrases = ['orchestrate agents', 'ship autonomously', 'deploy with confidence', 'learn from every session'];
+  var phrases = ['orchestrate agents', 'bring your own key', 'run every model', 'ship autonomously', 'track costs across providers', 'learn from every session'];
   var phraseIdx = 0;
   var charIdx = 0;
   var isDeleting = false;
