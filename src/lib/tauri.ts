@@ -1008,8 +1008,8 @@ export function downloadWhisperModel(size: string): Promise<void> {
   return invoke("download_whisper_model", { size });
 }
 
-export function listWhisperModels(): Promise<string> {
-  return invoke<string>("list_whisper_models");
+export function listWhisperModels(): Promise<unknown> {
+  return invoke("list_whisper_models");
 }
 
 // API Keys

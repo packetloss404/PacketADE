@@ -39,7 +39,7 @@ async function checkNativeAvailable(): Promise<boolean> {
   nativeCheckPromise = (async () => {
     try {
       const raw = await listWhisperModels();
-      const models = JSON.parse(raw) as { size: string; downloaded: boolean }[];
+      const models = (typeof raw === "string" ? JSON.parse(raw) : raw) as { size: string; downloaded: boolean }[];
       nativeAvailableCache = models.some((m) => m.downloaded);
       return nativeAvailableCache;
     } catch {
