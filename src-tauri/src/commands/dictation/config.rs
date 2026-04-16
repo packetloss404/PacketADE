@@ -4,6 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DictationConfig {
     pub model_size: String,
     pub device_index: Option<u32>,
