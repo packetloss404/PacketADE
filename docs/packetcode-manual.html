@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PacketCode Manual | The Complete User Guide</title>
+<meta name="description" content="Complete user manual for PacketCode — the open-source AI desktop IDE. Setup, agents, workspaces, Flight Deck, integrations, and settings." />
+<link rel="canonical" href="https://packetcode.app/packetcode-manual.html" />
+<link rel="icon" type="image/png" href="favicon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-primary:#0d1117;--bg-secondary:#161b22;--bg-tertiary:#1c2333;--bg-elevated:#21283b;
+  --border:#30363d;--border-soft:rgba(48,54,61,0.5);
+  --text-primary:#e6edf3;--text-secondary:#8b949e;--text-muted:#484f58;
+  --green:#3fb950;--neon:#00ff41;--blue:#58a6ff;--purple:#bc8cff;--amber:#d29922;--red:#f85149;--cyan:#39d2c0;
+  --font-sans:'Sora',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace;
+  --nav-h:56px;--toc-w:280px;
+}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:72px}
+body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-primary);line-height:1.7;-webkit-font-smoothing:antialiased}
+a{color:var(--cyan);text-decoration:none;transition:color 0.2s}
+a:hover{color:var(--green)}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+ul,ol{list-style:none}
+section{position:relative}
+
+/* ===== AURORA ===== */
+.aurora{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;overflow:hidden}
+.aurora::before,.aurora::after{content:'';position:absolute;border-radius:50%;filter:blur(120px);animation:drift 25s ease-in-out infinite alternate}
+.aurora::before{width:700px;height:700px;top:-20%;left:-10%;background:radial-gradient(circle,rgba(63,185,80,0.05) 0%,transparent 70%)}
+.aurora::after{width:600px;height:600px;bottom:-10%;right:-5%;background:radial-gradient(circle,rgba(57,210,192,0.04) 0%,transparent 70%);animation-delay:-8s}
+@keyframes drift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(40px,-30px) scale(1.05)}}
+.grid-bg{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(63,185,80,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(63,185,80,0.025) 1px,transparent 1px);
+  background-size:64px 64px}
+
+/* ===== TOP NAV ===== */
+nav.top{position:fixed;top:0;left:0;right:0;z-index:100;height:var(--nav-h);display:flex;align-items:center;
+  background:rgba(13,17,23,0.9);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border-soft)}
+nav.top .nav-inner{max-width:1400px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between;width:100%}
+.nav-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1rem;letter-spacing:-0.02em}
+.nav-brand img{width:28px;height:28px;border-radius:6px}
+.nav-brand .sub{font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px}
+.nav-actions{display:flex;align-items:center;gap:12px}
+.btn-nav{padding:6px 14px;border:1px solid var(--border);border-radius:8px;font-size:0.8rem;font-weight:500;color:var(--text-secondary);transition:all 0.2s}
+.btn-nav:hover{border-color:var(--text-muted);color:var(--text-primary)}
+.btn-nav.primary{background:linear-gradient(135deg,var(--green),#2ea043);color:#fff;border-color:transparent;box-shadow:0 0 20px rgba(63,185,80,0.15)}
+.btn-nav.primary:hover{box-shadow:0 0 30px rgba(63,185,80,0.3);color:#fff}
+.toc-toggle{display:none;background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text-secondary);font-size:0.8rem}
+
+/* ===== LAYOUT ===== */
+.layout{display:flex;max-width:1400px;margin:0 auto;padding-top:var(--nav-h);position:relative;z-index:1}
+
+/* ===== TOC SIDEBAR ===== */
+aside.toc{width:var(--toc-w);flex-shrink:0;position:sticky;top:var(--nav-h);height:calc(100vh - var(--nav-h));overflow-y:auto;padding:28px 20px 28px 24px;border-right:1px solid var(--border-soft)}
+aside.toc::-webkit-scrollbar{width:4px}
+aside.toc::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.toc-title{font-family:var(--font-mono);font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:14px;font-weight:600}
+.toc ol{display:flex;flex-direction:column;gap:4px}
+.toc .ch-item{border-left:2px solid transparent;padding:0}
+.toc .ch-item > a{display:block;padding:6px 12px;font-size:0.82rem;font-weight:600;color:var(--text-primary);border-radius:6px;transition:all 0.15s}
+.toc .ch-item > a:hover{background:rgba(255,255,255,0.03);color:var(--green)}
+.toc .ch-item.active > a{color:var(--green)}
+.toc .ch-num{font-family:var(--font-mono);color:var(--text-muted);margin-right:8px;font-weight:500;font-size:0.72rem}
+.toc .ch-item.active .ch-num{color:var(--cyan)}
+.toc ul.subs{margin:4px 0 8px 12px;padding-left:12px;border-left:1px solid var(--border-soft);display:flex;flex-direction:column;gap:2px}
+.toc ul.subs a{display:block;padding:4px 10px;font-size:0.77rem;color:var(--text-secondary);border-radius:4px;line-height:1.5}
+.toc ul.subs a:hover{background:rgba(255,255,255,0.03);color:var(--text-primary)}
+.toc ul.subs a.active{color:var(--green);background:rgba(63,185,80,0.07)}
+
+/* ===== MAIN CONTENT ===== */
+main.manual{flex:1;min-width:0;padding:40px 48px 120px;max-width:960px}
+main.manual > header.doc-head{margin-bottom:56px;padding-bottom:32px;border-bottom:1px solid var(--border-soft)}
+main.manual > header.doc-head .eyebrow{font-family:var(--font-mono);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--cyan);margin-bottom:14px;font-weight:600}
+main.manual > header.doc-head h1{font-size:clamp(2rem,4.5vw,3.2rem);font-weight:800;letter-spacing:-0.03em;line-height:1.1;margin-bottom:16px}
+main.manual > header.doc-head h1 span{background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+main.manual > header.doc-head .lede{color:var(--text-secondary);font-size:1.05rem;max-width:640px;line-height:1.7}
+main.manual > header.doc-head .meta{display:flex;gap:20px;margin-top:20px;flex-wrap:wrap;color:var(--text-muted);font-size:0.8rem;font-family:var(--font-mono)}
+main.manual > header.doc-head .meta span{display:inline-flex;align-items:center;gap:6px}
+
+/* ===== CHAPTERS ===== */
+.chapter{margin-bottom:72px;scroll-margin-top:80px}
+.chapter > .chapter-badge{display:inline-flex;align-items:center;gap:8px;padding:4px 12px;background:rgba(57,210,192,0.1);color:var(--cyan);font-family:var(--font-mono);font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;font-weight:600;border-radius:999px;border:1px solid rgba(57,210,192,0.2);margin-bottom:14px}
+.chapter > h2.chapter-title{font-size:clamp(1.6rem,3vw,2.2rem);font-weight:800;letter-spacing:-0.02em;margin-bottom:12px;line-height:1.2}
+.chapter > p.chapter-lede{color:var(--text-secondary);font-size:1rem;margin-bottom:36px;max-width:680px;line-height:1.7}
+h3.section-title{font-size:1.35rem;font-weight:700;letter-spacing:-0.015em;margin-top:48px;margin-bottom:14px;padding-top:8px;scroll-margin-top:80px}
+h3.section-title::before{content:'§ ';color:var(--cyan);font-family:var(--font-mono);font-weight:400;font-size:0.95rem;opacity:0.6}
+h4.subsection-title{font-size:1.02rem;font-weight:700;margin-top:32px;margin-bottom:10px;color:var(--text-primary);scroll-margin-top:80px}
+h5.subtle-title{font-size:0.88rem;font-weight:600;margin-top:20px;margin-bottom:8px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em;font-family:var(--font-mono)}
+.chapter p{color:var(--text-secondary);margin-bottom:14px;font-size:0.95rem}
+.chapter p strong, .chapter li strong{color:var(--text-primary);font-weight:600}
+.chapter a{color:var(--cyan);border-bottom:1px dotted rgba(57,210,192,0.4)}
+.chapter a:hover{color:var(--green);border-bottom-color:var(--green)}
+
+/* ===== LISTS ===== */
+.bullet-list,.step-list{margin:14px 0 20px 0;padding-left:22px;color:var(--text-secondary);font-size:0.95rem}
+.bullet-list{list-style:disc}
+.step-list{list-style:decimal}
+.bullet-list li,.step-list li{margin-bottom:8px;padding-left:4px}
+.bullet-list li::marker{color:var(--cyan)}
+.step-list li::marker{color:var(--green);font-weight:600}
+
+/* ===== CALLOUTS ===== */
+.callout{padding:16px 20px;border-radius:10px;margin:20px 0;display:flex;gap:14px;align-items:flex-start;font-size:0.9rem;line-height:1.65}
+.callout svg{flex-shrink:0;width:18px;height:18px;margin-top:2px}
+.callout .callout-body{flex:1;color:var(--text-secondary)}
+.callout .callout-body strong{color:var(--text-primary)}
+.callout-tip{background:rgba(63,185,80,0.07);border:1px solid rgba(63,185,80,0.2)}
+.callout-tip svg{color:var(--green)}
+.callout-warn{background:rgba(210,153,34,0.07);border:1px solid rgba(210,153,34,0.2)}
+.callout-warn svg{color:var(--amber)}
+.callout-info{background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.2)}
+.callout-info svg{color:var(--blue)}
+.callout-danger{background:rgba(248,81,73,0.06);border:1px solid rgba(248,81,73,0.2)}
+.callout-danger svg{color:var(--red)}
+
+/* ===== CODE ===== */
+code{font-family:var(--font-mono);font-size:0.85em;color:var(--neon);background:rgba(0,255,65,0.07);padding:2px 6px;border-radius:4px;border:1px solid rgba(0,255,65,0.15)}
+pre{background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:16px 18px;overflow-x:auto;margin:16px 0;position:relative}
+pre code{display:block;background:transparent;border:0;padding:0;color:var(--text-primary);font-size:0.82rem;line-height:1.7}
+pre::-webkit-scrollbar{height:6px}
+pre::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+
+/* ===== KEYBOARD ===== */
+kbd{display:inline-block;padding:2px 7px;font-family:var(--font-mono);font-size:0.75em;color:var(--text-primary);background:var(--bg-tertiary);border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;box-shadow:inset 0 -1px 0 rgba(0,0,0,0.2);line-height:1.3;min-width:20px;text-align:center}
+.kbd-row{display:inline-flex;align-items:center;gap:4px}
+.kbd-row .plus{color:var(--text-muted);font-size:0.8em;margin:0 1px}
+
+/* ===== TABLES ===== */
+.ref-table{width:100%;border-collapse:collapse;margin:20px 0;font-size:0.85rem;background:rgba(22,27,34,0.4);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.ref-table thead{background:var(--bg-tertiary)}
+.ref-table th{padding:10px 14px;text-align:left;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);border-bottom:1px solid var(--border)}
+.ref-table td{padding:10px 14px;border-bottom:1px solid var(--border-soft);color:var(--text-secondary);vertical-align:top}
+.ref-table tbody tr:last-child td{border-bottom:none}
+.ref-table tbody tr:hover{background:rgba(255,255,255,0.015)}
+.ref-table td code, .ref-table td kbd{white-space:nowrap}
+.ref-table td:first-child{color:var(--text-primary);font-weight:500}
+
+/* ===== PILLS ===== */
+.pill{display:inline-block;padding:2px 9px;font-family:var(--font-mono);font-size:0.68rem;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-radius:999px;border:1px solid transparent;vertical-align:middle}
+.pill-green{background:rgba(63,185,80,0.12);color:var(--green);border-color:rgba(63,185,80,0.25)}
+.pill-cyan{background:rgba(57,210,192,0.12);color:var(--cyan);border-color:rgba(57,210,192,0.25)}
+.pill-blue{background:rgba(88,166,255,0.12);color:var(--blue);border-color:rgba(88,166,255,0.25)}
+.pill-purple{background:rgba(188,140,255,0.12);color:var(--purple);border-color:rgba(188,140,255,0.25)}
+.pill-amber{background:rgba(210,153,34,0.12);color:var(--amber);border-color:rgba(210,153,34,0.25)}
+.pill-red{background:rgba(248,81,73,0.12);color:var(--red);border-color:rgba(248,81,73,0.25)}
+.pill-muted{background:rgba(139,148,158,0.08);color:var(--text-muted);border-color:rgba(139,148,158,0.2)}
+
+/* ===== FEATURE BOXES ===== */
+.feature-box{background:rgba(22,27,34,0.5);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin:18px 0}
+.feature-box h4{margin-top:0;margin-bottom:10px}
+.feature-box > :last-child{margin-bottom:0}
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:20px 0}
+.feature-grid .feature-box{margin:0}
+
+/* ===== DEFINITION LIST ===== */
+dl.def-list{display:grid;grid-template-columns:180px 1fr;gap:10px 20px;margin:16px 0;font-size:0.9rem}
+dl.def-list dt{font-weight:600;color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem}
+dl.def-list dd{color:var(--text-secondary)}
+
+/* ===== BACK TO TOP ===== */
+.back-top{position:fixed;bottom:24px;right:24px;width:40px;height:40px;border-radius:50%;background:var(--bg-elevated);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-secondary);opacity:0;pointer-events:none;transition:all 0.25s;z-index:50;backdrop-filter:blur(10px)}
+.back-top.show{opacity:1;pointer-events:all}
+.back-top:hover{border-color:var(--green);color:var(--green);transform:translateY(-2px)}
+.back-top svg{width:18px;height:18px}
+
+/* ===== FOOTER ===== */
+footer.manual-foot{border-top:1px solid var(--border-soft);padding:28px 48px;margin-top:48px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;color:var(--text-muted);font-size:0.8rem}
+footer.manual-foot a{color:var(--text-secondary)}
+
+/* ===== RESPONSIVE ===== */
+@media(max-width:960px){
+  :root{--toc-w:260px}
+  main.manual{padding:32px 32px 100px}
+}
+@media(max-width:820px){
+  aside.toc{position:fixed;top:var(--nav-h);left:-100%;width:280px;background:var(--bg-primary);border-right:1px solid var(--border);transition:left 0.3s;z-index:90;box-shadow:8px 0 30px rgba(0,0,0,0.3)}
+  aside.toc.open{left:0}
+  main.manual{padding:28px 24px 100px;max-width:none}
+  .toc-toggle{display:inline-flex;align-items:center;gap:6px}
+  dl.def-list{grid-template-columns:1fr;gap:4px 0}
+  dl.def-list dd{margin-bottom:10px}
+  .ref-table{font-size:0.8rem}
+  .ref-table th, .ref-table td{padding:8px 10px}
+}
+@media(prefers-reduced-motion:reduce){
+  .aurora::before,.aurora::after{animation:none}
+  *{transition-duration:0.01ms !important;animation-duration:0.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<div class="aurora" aria-hidden="true"></div>
+<div class="grid-bg" aria-hidden="true"></div>
+
+<!-- ===== NAV ===== -->
+<nav class="top">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-brand" aria-label="PacketCode Home">
+      <img src="icon-192.png" alt="" width="28" height="28" />
+      PacketCode
+      <span class="sub">Manual</span>
+    </a>
+    <div class="nav-actions">
+      <button class="toc-toggle" id="toc-toggle" aria-label="Toggle table of contents">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        Contents
+      </button>
+      <a href="index.html" class="btn-nav">&larr; Home</a>
+      <a href="https://github.com/packetloss404/PacketCode" class="btn-nav" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/packetloss404/PacketCode/releases" class="btn-nav primary">Download</a>
+    </div>
+  </div>
+</nav>
+
+<div class="layout">
+
+<!-- ===== TABLE OF CONTENTS ===== -->
+<aside class="toc" id="toc" aria-label="Table of contents">
+  <div class="toc-title">Contents</div>
+  <ol>
+    <li class="ch-item">
+      <a href="#chapter-1"><span class="ch-num">01</span>Getting Started</a>
+      <ul class="subs">
+        <li><a href="#ch1-overview">What is PacketCode?</a></li>
+        <li><a href="#ch1-install">Install &amp; first run</a></li>
+        <li><a href="#ch1-cli-tools">Required CLIs &amp; tools</a></li>
+        <li><a href="#ch1-views">Views at a glance</a></li>
+        <li><a href="#ch1-shortcuts">Global keyboard shortcuts</a></li>
+        <li><a href="#ch1-tour">A five-minute tour</a></li>
+      </ul>
+    </li>
+    <li class="ch-item">
+      <a href="#chapter-2"><span class="ch-num">02</span>Agents &amp; Chat</a>
+      <ul class="subs">
+        <li><a href="#ch2-modes">CLI vs API agents</a></li>
+        <li><a href="#ch2-agentsview">The Agents view</a></li>
+        <li><a href="#ch2-providers">Providers &amp; models</a></li>
+        <li><a href="#ch2-byok">API keys &amp; BYOK</a></li>
+        <li><a href="#ch2-profiles">Agent profiles</a></li>
+        <li><a href="#ch2-chat">Conversational features</a></li>
+        <li><a href="#ch2-slash">Slash commands</a></li>
+        <li><a href="#ch2-mentions">File mentions (@)</a></li>
+        <li><a href="#ch2-diffs">Tool diff view</a></li>
+        <li><a href="#ch2-voice">Voice input</a></li>
+        <li><a href="#ch2-tools">Tool runtime</a></li>
+        <li><a href="#ch2-persistence">Conversation persistence</a></li>
+      </ul>
+    </li>
+    <li class="ch-item">
+      <a href="#chapter-3"><span class="ch-num">03</span>Workspaces, Flights &amp; Planning</a>
+      <ul class="subs">
+        <li><a href="#ch3-workspace">Workspaces &amp; panes</a></li>
+        <li><a href="#ch3-pty">PTY sessions</a></li>
+        <li><a href="#ch3-status">Status bars &amp; git info</a></li>
+        <li><a href="#ch3-history">Session history</a></li>
+        <li><a href="#ch3-flightdeck">Flight Deck</a></li>
+        <li><a href="#ch3-flights">Creating &amp; editing flights</a></li>
+        <li><a href="#ch3-issues">Kanban issues</a></li>
+        <li><a href="#ch3-insights">Insights chat</a></li>
+        <li><a href="#ch3-ideation">Ideation scanner</a></li>
+        <li><a href="#ch3-memory">Memory layer</a></li>
+        <li><a href="#ch3-scaffold">Scaffold module</a></li>
+      </ul>
+    </li>
+    <li class="ch-item">
+      <a href="#chapter-4"><span class="ch-num">04</span>Integrations, Tools &amp; Settings</a>
+      <ul class="subs">
+        <li><a href="#ch4-github">GitHub integration</a></li>
+        <li><a href="#ch4-deploy">Deploy pipeline</a></li>
+        <li><a href="#ch4-mcp">MCP Hub</a></li>
+        <li><a href="#ch4-quality">Code Quality</a></li>
+        <li><a href="#ch4-crash">Crash Viewer</a></li>
+        <li><a href="#ch4-dictation">Dictation &amp; voice-to-text</a></li>
+        <li><a href="#ch4-cost">Cost Dashboard</a></li>
+        <li><a href="#ch4-tui">Terminal UI (TUI)</a></li>
+        <li><a href="#ch4-tools-hub">Settings &amp; Tools hub</a></li>
+        <li><a href="#ch4-modules">Module system</a></li>
+      </ul>
+    </li>
+    <li class="ch-item">
+      <a href="#appendix"><span class="ch-num">A</span>Appendix</a>
+      <ul class="subs">
+        <li><a href="#ap-files">File locations</a></li>
+        <li><a href="#ap-shortcuts">Shortcut reference</a></li>
+        <li><a href="#ap-troubleshoot">Troubleshooting</a></li>
+      </ul>
+    </li>
+  </ol>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<main class="manual">
+  <header class="doc-head">
+    <div class="eyebrow">The Complete User Guide</div>
+    <h1>PacketCode <span>Manual</span></h1>
+    <p class="lede">Everything you need to run every agent, orchestrate flights, wire up integrations, and ship from one cockpit. Written to be readable top-to-bottom or dipped into by topic.</p>
+    <div class="meta">
+      <span>Apache 2.0</span>
+      <span>Tauri v2 &middot; React &middot; Rust</span>
+      <span>v2026.04</span>
+    </div>
+  </header>
+
+<section class="chapter" id="chapter-1">
+<span class="chapter-badge">Chapter 01</span>
+<h2 class="chapter-title">Getting Started</h2>
+<p class="chapter-lede">A fast, opinionated tour of PacketCode &mdash; what it is, how to install it, and what you'll see the first time you launch it.</p>
+
+<h3 class="section-title" id="ch1-overview">What is PacketCode?</h3>
+<p>PacketCode is a Tauri v2 desktop IDE that unifies every AI coding agent you use into a single multi-pane cockpit. It wraps the major CLI agents &mdash; Claude Code, OpenAI Codex, Google Gemini, and OpenCode &mdash; alongside API agents for five providers (Anthropic, OpenAI, MiniMax, OpenRouter, and local Ollama) so you can run them side-by-side, share context between them, and stop paying for the same work twice.</p>
+<p>If you've spent a week bouncing between three terminal tabs, a kanban board, a browser full of dashboards, and a notes app tracking which agent knows what, PacketCode is the fix. Flight Deck orchestrates multi-step work across agents. Cross-provider cost tracking shows you exactly where your tokens went. BYOK means your keys stay local. Memory and Insights keep the useful context, so your next session doesn't start from scratch.</p>
+<p>It's built for solo developers and small teams who want an AI-first IDE without committing to a single vendor's walled garden. You bring the keys; PacketCode brings the cockpit.</p>
+
+<h4 class="subsection-title">Key concepts</h4>
+<dl class="def-list">
+  <dt>Workspace</dt><dd>A project folder PacketCode has opened. Sessions, flights, issues, and memory are scoped per workspace.</dd>
+  <dt>Session</dt><dd>A single running PTY pane &mdash; a shell, a CLI agent, or a terminal process tied to the workspace.</dd>
+  <dt>Flight</dt><dd>The top-level unit of work. A flight bundles issues, sessions, a plan, and status rollup under one name.</dd>
+  <dt>Agent profile</dt><dd>A saved configuration of provider, model, system prompt, tools, and defaults. Reusable across conversations.</dd>
+  <dt>API agent</dt><dd>A conversation driven directly through a provider's API with full tool use and streaming. No CLI required.</dd>
+  <dt>CLI agent</dt><dd>A conversation driven through a locally-installed vendor CLI (<code>claude</code>, <code>codex</code>, etc.) running in a PTY.</dd>
+  <dt>Memory</dt><dd>A persistent, searchable store of patterns, decisions, and events PacketCode has learned about your codebase.</dd>
+</dl>
+
+<h3 class="section-title" id="ch1-install">Install &amp; first run</h3>
+
+<h4 class="subsection-title">Prerequisites</h4>
+<ul class="bullet-list">
+  <li>Node.js 18 or later</li>
+  <li>pnpm 8 or later</li>
+  <li>Rust toolchain (<code>rustc</code> and <code>cargo</code>) 1.70 or later</li>
+  <li>Tauri OS prerequisites: <strong>Windows</strong> &mdash; Visual Studio Build Tools with the C++ workload. <strong>macOS</strong> &mdash; Xcode Command Line Tools. <strong>Linux</strong> &mdash; <code>libgtk-3-dev</code> and <code>webkit2gtk-4.1</code>.</li>
+</ul>
+
+<h4 class="subsection-title">Option 1 &mdash; Download a release</h4>
+<p>Grab a signed installer for Windows, macOS, or Linux from the GitHub Releases page. Run it, open PacketCode, and skip ahead to the first-run section below.</p>
+
+<h4 class="subsection-title">Option 2 &mdash; Build from source</h4>
+<pre><code>git clone https://github.com/packetloss404/PacketCode.git
+cd PacketCode
+pnpm install
+pnpm tauri dev      # hot-reload dev mode
+pnpm tauri build    # production build</code></pre>
+<p>The first <code>pnpm tauri dev</code> will compile the Rust backend, which takes a few minutes. Subsequent runs reuse the build cache.</p>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div class="callout-body"><strong>Windows note:</strong> the Rust stable target's <code>bin</code> directory must be on <code>PATH</code> for Tauri dev builds. Add <code>C:\Users\&lt;you&gt;\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin</code> to your environment before running <code>pnpm tauri dev</code>.</div>
+</div>
+
+<h4 class="subsection-title">First run</h4>
+<ol class="step-list">
+  <li>PacketCode opens to the <strong>Welcome</strong> screen when no workspace is active.</li>
+  <li>Click <strong>Open Project</strong> and pick a folder. PacketCode scans it and reports the CLIs it finds on your <code>PATH</code>.</li>
+  <li>If a CLI is detected, you can start using it immediately &mdash; zero configuration.</li>
+  <li>API agents need keys. Open <strong>Tools</strong> <span class="pill pill-muted">settings hub</span> and add keys under <strong>API Keys</strong>. Chapter 2 covers this in detail.</li>
+</ol>
+
+<h3 class="section-title" id="ch1-cli-tools">Required CLIs &amp; tools</h3>
+<p>Nothing is strictly required &mdash; PacketCode will run with no CLIs installed, using only API agents. But the more CLIs it finds, the more panes you can spin up.</p>
+
+<table class="ref-table">
+  <thead><tr><th>Tool</th><th>What it unlocks</th><th>Required?</th></tr></thead>
+  <tbody>
+    <tr><td><code>claude</code></td><td>Claude Code CLI &mdash; primary agent, Insights, investigations, flight chat</td><td><span class="pill pill-green">Recommended</span></td></tr>
+    <tr><td><code>codex</code></td><td>OpenAI Codex CLI &mdash; secondary agent pane</td><td><span class="pill pill-muted">Optional</span></td></tr>
+    <tr><td><code>gemini</code></td><td>Google Gemini CLI &mdash; additional agent pane</td><td><span class="pill pill-muted">Optional</span></td></tr>
+    <tr><td><code>opencode</code></td><td>OpenCode CLI &mdash; additional agent pane</td><td><span class="pill pill-muted">Optional</span></td></tr>
+    <tr><td>bash / zsh / pwsh</td><td>Terminal panes and shell sessions</td><td><span class="pill pill-cyan">Built-in</span></td></tr>
+    <tr><td><code>ollama</code></td><td>Local API agent &mdash; run models on your own hardware</td><td><span class="pill pill-muted">Optional</span></td></tr>
+  </tbody>
+</table>
+<p>API agents do not require any CLI. The only exception is Ollama, which needs the <code>ollama</code> binary installed and <code>ollama serve</code> running on <code>localhost:11434</code> before PacketCode can talk to it.</p>
+<p>On Windows, PacketCode resolves <code>.cmd</code> wrappers automatically (for example, <code>claude.cmd</code> is found when you reference <code>claude</code>) and prefers native <code>.exe</code> binaries when both exist. You shouldn't need to rename anything.</p>
+
+<h3 class="section-title" id="ch1-views">Views at a glance</h3>
+<p>Every top-level screen is a "view." You can jump between them from the toolbar, the command palette, or keyboard shortcuts.</p>
+
+<table class="ref-table">
+  <thead><tr><th>View</th><th>Purpose</th><th>How to reach it</th></tr></thead>
+  <tbody>
+    <tr><td>Welcome</td><td>Landing screen shown when no workspace is open</td><td>Auto on first launch</td></tr>
+    <tr><td>Workspace</td><td>Multi-pane session container &mdash; terminals and CLI agents</td><td>Toolbar / default after open</td></tr>
+    <tr><td>Agents</td><td>Conversational multi-pane chat for CLI and API agents</td><td>Toolbar / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></td></tr>
+    <tr><td>Issues</td><td>Kanban board for backlog, in-progress, and done</td><td>Toolbar / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd></td></tr>
+    <tr><td>Flight Deck</td><td>Autonomous orchestration of flights across agents</td><td>Toolbar / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>6</kbd></td></tr>
+    <tr><td>Flights</td><td>List and CRUD of flights</td><td>Toolbar</td></tr>
+    <tr><td>Insights</td><td>Conversational Q&amp;A over your codebase</td><td>Toolbar</td></tr>
+    <tr><td>Ideation</td><td>Improvement scanner &mdash; surfaces suggested fixes</td><td>Toolbar</td></tr>
+    <tr><td>Memory</td><td>Learned patterns and events across sessions</td><td>Toolbar</td></tr>
+    <tr><td>History</td><td>Session history browser</td><td>Toolbar</td></tr>
+    <tr><td>GitHub</td><td>PR and issue integration</td><td>Toolbar</td></tr>
+    <tr><td>Deploy</td><td>Deploy pipeline configuration and triggers</td><td>Toolbar (Rocket icon)</td></tr>
+    <tr><td>Cost Dashboard</td><td>Cross-provider spend breakdown</td><td>Toolbar</td></tr>
+    <tr><td>Dictation</td><td>Voice-to-text via Whisper</td><td>Toolbar</td></tr>
+    <tr><td>Tools</td><td>Settings hub &mdash; API keys, agent profiles, MCP servers</td><td>Toolbar / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd></td></tr>
+    <tr><td>Review Queue</td><td>Pending approvals for agent tool calls</td><td>Toolbar</td></tr>
+  </tbody>
+</table>
+
+<h3 class="section-title" id="ch1-shortcuts">Global keyboard shortcuts</h3>
+<p>PacketCode is keyboard-first. Learn these six and you'll rarely touch the mouse.</p>
+
+<table class="ref-table">
+  <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>\</kbd></span></td><td>Split the active pane</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>1</kbd></span> &hellip; <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>4</kbd></span></td><td>Focus pane 1 through 4</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span></td><td>Jump to Agents view</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>2</kbd></span></td><td>Jump to Claude</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>3</kbd></span></td><td>Jump to Codex</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>4</kbd></span></td><td>Jump to Issues</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>5</kbd></span></td><td>Jump to Tools</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>6</kbd></span></td><td>Jump to Flight Deck</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>K</kbd></span></td><td>Toggle the command palette</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>N</kbd></span></td><td>New agent conversation (in Agents view)</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Enter</kbd></span></td><td>Send / confirm</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Enter</kbd></span></td><td>Send message</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Shift</kbd><span class="plus">+</span><kbd>Enter</kbd></span></td><td>Insert newline</td></tr>
+    <tr><td><span class="kbd-row"><kbd>@</kbd></span></td><td>Open file mention popover in chat</td></tr>
+    <tr><td><span class="kbd-row"><kbd>/</kbd></span></td><td>Open slash command popover in chat</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Y</kbd></span> / <span class="kbd-row"><kbd>N</kbd></span> / <span class="kbd-row"><kbd>Esc</kbd></span></td><td>Approve, reject, or abort in approval overlays</td></tr>
+    <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>V</kbd></span></td><td>Paste into an xterm.js terminal</td></tr>
+  </tbody>
+</table>
+
+<h3 class="section-title" id="ch1-tour">A five-minute tour</h3>
+<p>The fastest way to understand PacketCode is to use it. Follow these steps in order.</p>
+
+<ol class="step-list">
+  <li>Launch PacketCode and pick a project folder from the Welcome screen. The workspace opens with an empty pane.</li>
+  <li>Press <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span> to open the <strong>Agents</strong> view. Click <strong>+ New Agent</strong>. Pick a provider &mdash; try <span class="pill pill-cyan">Ollama</span> if you want free and local &mdash; choose a model, type <em>"explain the architecture of this project"</em>, and press <span class="kbd-row"><kbd>Enter</kbd></span>. Watch the response stream in.</li>
+  <li>Try a slash command. Type <code>/help</code> to open the cheatsheet; type <code>/model</code> to switch models mid-conversation without losing context.</li>
+  <li>Mention a file. Type <code>@</code> and start typing a path &mdash; the popover filters as you type. Press <span class="kbd-row"><kbd>Tab</kbd></span> to insert the reference. The agent receives the file contents inline.</li>
+  <li>Open <strong>Flight Deck</strong> with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>6</kbd></span>. Click <strong>+ New Flight</strong>, give it a title, chat with Claude to draft milestones, then click <strong>Create &amp; Launch</strong>. Your flight now coordinates issues and sessions under one roof.</li>
+  <li>Open <strong>Cost Dashboard</strong> from the toolbar. Your first conversation is already there, broken down by provider, model, and token type.</li>
+</ol>
+
+<div class="callout callout-tip">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 00-4 12.74V17h8v-2.26A7 7 0 0012 2z"/></svg>
+  <div class="callout-body"><strong>Tip:</strong> That's the ten-thousand-foot view. Chapter 2 is a full deep dive on the Agents view &mdash; profiles, slash commands, file mentions, tool-use approvals, and how to mix CLI and API agents in the same conversation thread.</div>
+</div>
+
+</section>
+<section class="chapter" id="chapter-2">
+<span class="chapter-badge">Chapter 02</span>
+<h2 class="chapter-title">Agents &amp; Chat</h2>
+<p class="chapter-lede">PacketCode runs two kinds of AI agents side by side: the familiar terminal-based CLIs you already know, and a first-class API-backed agent with streaming, tool use, and inline diffs. This chapter covers both &mdash; when to pick each, how to wire up keys, and every surface of the Agents view from slash commands to the voice mic.</p>
+
+<h3 class="section-title" id="ch2-modes">CLI vs API agents</h3>
+<p>PacketCode treats agents as a duality. A <strong>CLI agent</strong> is a real terminal session: PacketCode spawns the upstream binary (<code>claude</code>, <code>codex</code>, <code>gemini</code>, or <code>opencode</code>) inside a PTY and renders its output verbatim. You get the exact UI the vendor ships, warts and all. An <strong>API agent</strong> is a Rust-side agentic loop driven by the provider's raw inference API &mdash; PacketCode owns the system prompt, the tool schema, the streaming, and the UI.</p>
+<p>Both modes live in the same Agents view. You decide per conversation which one you want.</p>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>Feature</th><th>CLI (PTY)</th><th>API</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Setup</td><td>Install the vendor CLI on <code>PATH</code></td><td>Paste an API key (or run Ollama locally)</td></tr>
+    <tr><td>Tool use</td><td>Whatever the CLI implements</td><td>5 built-in tools, runtime-enforced</td></tr>
+    <tr><td>Streaming</td><td>Raw terminal bytes</td><td>Token-level chunks via Tauri events</td></tr>
+    <tr><td>Persistence</td><td>Ephemeral &mdash; exits with the PTY</td><td>JSON files under <code>~/.packetcode/conversations/</code></td></tr>
+    <tr><td>Permissions</td><td>Vendor-controlled bypass flags</td><td>You own the sandbox; tools run in project root</td></tr>
+    <tr><td>Cost tracking</td><td>Best-effort from vendor output</td><td>Exact token + dollar cost per turn</td></tr>
+    <tr><td>Use when</td><td>You want the real agent UI unchanged</td><td>You want diffs, audit, and reproducibility</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Rule of thumb:</strong> API mode gives you tool use plus reviewable diffs. CLI mode gives you the real agent UI. Pick API when you want to trust-but-verify; pick CLI when you want the vendor experience as-shipped.</div>
+</div>
+
+<h3 class="section-title" id="ch2-agentsview">The Agents view</h3>
+<p>The Agents view is a three-column surface. On the left is the <strong>AgentSidebar</strong>, a 240-pixel rail listing every conversation you've ever started. The center/right is either the <strong>AgentInputArea</strong> (when no conversation is selected, a blank-slate composer for starting something new) or the <strong>AgentChatPane</strong> (when one is selected, the full conversation transcript).</p>
+
+<h4 class="subsection-title">AgentSidebar</h4>
+<ul class="bullet-list">
+  <li>Conversations are grouped by project folder so workspaces stay separated.</li>
+  <li>Each row shows a status dot, agent label, message preview, and relative timestamp.</li>
+  <li>A trash icon appears on hover and removes the conversation file from disk.</li>
+  <li>The active conversation is highlighted; click to switch, or hit <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>N</kbd></span> for a fresh one.</li>
+</ul>
+
+<h4 class="subsection-title">AgentInputArea</h4>
+<p>The blank-slate composer surfaces every knob you need to start a new conversation:</p>
+<ul class="bullet-list">
+  <li><strong>Provider dropdown</strong> &mdash; pick between CLI agents and the five API providers.</li>
+  <li><strong>Model dropdown</strong> &mdash; filtered to whatever the selected provider supports.</li>
+  <li><strong>Profile dropdown</strong> &mdash; defaults to <span class="pill pill-green">Auto (Optimized)</span>.</li>
+  <li><strong>Mic button</strong> &mdash; one-tap voice capture (see <a href="#ch2-voice">Voice input</a>).</li>
+  <li><strong>Project/repo selector</strong> &mdash; sets the working directory for the agent.</li>
+  <li><strong>Textarea</strong> &mdash; placeholder reads <em>"What would you like to work on?"</em>.</li>
+</ul>
+<p>Beneath the textarea, a help strip reminds you: <em>Enter to send &middot; Shift+Enter for newline &middot; Ctrl+N for new agent &middot; @ to mention a file</em>.</p>
+
+<h4 class="subsection-title">AgentChatPane</h4>
+<p>Once a conversation is active, the pane swaps in. The header carries a status dot, the agent label, the project folder, message count, an inline model switcher, and a close button. User messages are right-aligned in blue. Assistant messages are left-aligned and may contain plain text, tool-call cards, and a cost pill. When the agent is idle, three <strong>Quick Action</strong> buttons appear: <strong>Continue</strong>, <strong>Explain</strong>, and <strong>Undo</strong>. The composer at the bottom reads <em>"Send a message..."</em> and the send button is green when idle, red (as a Stop control) while streaming.</p>
+
+<h5 class="subtle-title">Start your first conversation</h5>
+<ol class="step-list">
+  <li>Open the Agents view from the toolbar.</li>
+  <li>Pick a provider. For a zero-setup path, choose <strong>Ollama</strong>.</li>
+  <li>Pick a model, profile, and project folder.</li>
+  <li>Type your request and press <kbd>Enter</kbd>.</li>
+  <li>Watch the transcript stream in; use <kbd>Esc</kbd> or the red Stop button to cancel.</li>
+</ol>
+
+<h3 class="section-title" id="ch2-providers">Providers &amp; models</h3>
+<p>PacketCode ships five API providers, each with a curated model list. Free, local, and BYOK tiers are distinguished by the pill color on each card.</p>
+
+<div class="feature-grid">
+  <div class="feature-box">
+    <h4 class="subsection-title">Anthropic <span class="pill pill-amber">BYOK</span></h4>
+    <ul class="bullet-list">
+      <li>Claude Opus 4.7</li>
+      <li>Claude Opus 4.6</li>
+      <li>Claude Sonnet 4.6 <span class="pill pill-muted">default</span></li>
+      <li>Claude Haiku 4.5</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4 class="subsection-title">OpenAI <span class="pill pill-amber">BYOK</span></h4>
+    <ul class="bullet-list">
+      <li>ChatGPT 5.4</li>
+      <li>GPT-4o</li>
+      <li>o3</li>
+      <li>o4-mini</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4 class="subsection-title">MiniMax <span class="pill pill-amber">BYOK</span></h4>
+    <ul class="bullet-list">
+      <li>M2.7</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4 class="subsection-title">OpenRouter <span class="pill pill-amber">BYOK</span></h4>
+    <ul class="bullet-list">
+      <li>Auto <span class="pill pill-muted">default</span></li>
+      <li>Claude Opus 4.7</li>
+      <li>Claude Opus 4.6</li>
+      <li>Claude Sonnet 4.6</li>
+      <li>ChatGPT 5.4</li>
+      <li>Gemini 2.5 Pro</li>
+      <li>Llama 4 Maverick</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4 class="subsection-title">Ollama <span class="pill pill-green">Local, no key</span></h4>
+    <ul class="bullet-list">
+      <li>Llama 3.3 70B</li>
+      <li>Qwen 3 32B</li>
+      <li>DeepSeek Coder V2</li>
+      <li>CodeLlama 34B</li>
+    </ul>
+  </div>
+</div>
+
+<h3 class="section-title" id="ch2-byok">API keys &amp; BYOK</h3>
+<p>Every BYOK provider needs one key, stored once. Keys live in your operating system's native keyring &mdash; Keychain on macOS, Credential Manager on Windows, Secret Service on Linux &mdash; under the namespace <code>packetcode:api-key-{provider}</code>. They are never written to disk in plaintext and never exposed to the frontend JavaScript context.</p>
+
+<ol class="step-list">
+  <li>Open <strong>Tools &rarr; API Keys</strong>.</li>
+  <li>Find the card for your provider (anthropic, openai, minimax, or openrouter).</li>
+  <li>Paste the key into the input and click <strong>Save</strong>.</li>
+  <li>Return to the Agents view; the provider is now selectable.</li>
+</ol>
+
+<p>If you try to run an API agent without a key set, you'll see the error <code>No API key configured for {provider}. Set one in Settings &gt; API Keys.</code></p>
+
+<h4 class="subsection-title">Ollama: zero-key setup</h4>
+<p>Ollama runs entirely on your machine, so it needs no API key. Install it from <code>ollama.com</code>, then:</p>
+<pre><code>ollama serve
+ollama pull llama3.3:70b</code></pre>
+<p>Once the daemon is listening on the default port, PacketCode will discover it automatically. Any model you've pulled will appear in the Ollama dropdown.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Keys on disk:</strong> keys live in the OS keyring, never as plaintext on the filesystem, and the frontend process never sees them &mdash; the Rust backend attaches them at request time.</div>
+</div>
+
+<h3 class="section-title" id="ch2-profiles">Agent profiles</h3>
+<p>A profile is a named system-prompt override. PacketCode ships five, any of which can be selected from the profile dropdown in the input area. The choice rides along with each turn as <code>system_prompt_override</code>. Profiles persist in <code>localStorage</code> under <code>packetcode:profiles</code>, and the active pick under <code>packetcode:active-profile</code>.</p>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>ID</th><th>Name</th><th>Prompt</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>auto</code></td><td><span class="pill pill-green">Auto (Optimized)</span></td><td><em>empty &mdash; no override, uses workspace default</em></td></tr>
+    <tr><td><code>speed-runner</code></td><td><span class="pill pill-amber">Speed Runner</span></td><td>Be concise. Minimal explanation. Code-first. Skip confirmations. Output code immediately without lengthy preambles.</td></tr>
+    <tr><td><code>thorough-reviewer</code></td><td><span class="pill pill-blue">Thorough Reviewer</span></td><td>Think step-by-step. Explain reasoning. Consider edge cases. Review before executing. Be thorough in analysis.</td></tr>
+    <tr><td><code>security-auditor</code></td><td><span class="pill pill-red">Security Auditor</span></td><td>Focus on security vulnerabilities, injection risks, auth issues. Flag OWASP top 10. Review for XSS, CSRF, SQLi, and other common attack vectors.</td></tr>
+    <tr><td><code>refactor-pro</code></td><td><span class="pill pill-purple">Refactor Pro</span></td><td>Focus on clean code, DRY, SOLID principles. Suggest refactoring opportunities. Improve readability and maintainability.</td></tr>
+  </tbody>
+</table>
+
+<h5 class="subtle-title">Create a custom profile</h5>
+<ol class="step-list">
+  <li>Open the profile dropdown and choose <strong>New profile&hellip;</strong>.</li>
+  <li>Give it a name, a pill color, and write a system prompt.</li>
+  <li>Save. The profile appears at the bottom of the list and is immediately selectable.</li>
+  <li>Switching profiles mid-conversation affects only subsequent turns; past messages are not rewritten.</li>
+</ol>
+
+<h3 class="section-title" id="ch2-chat">Conversational features</h3>
+<p>A conversation is a stream of turns. You type, the agent streams back. If the agent is an API agent, it may interleave tool calls: each call shows up as a collapsible card in the transcript, followed by its result. At the end of a turn, a cost pill (for example <code>245 tok &middot; $0.0034</code>) is rendered beneath the assistant message when pricing data is available for that model.</p>
+
+<p>Every conversation exposes a lifecycle status that governs what the UI lets you do:</p>
+
+<dl class="def-list">
+  <dt><span class="pill pill-green">active</span></dt>
+  <dd>The agent is streaming. The send button is red and acts as Stop. Anything you type and submit is queued; it will send automatically when the turn ends, tagged with a <em>(queued)</em> badge.</dd>
+  <dt><span class="pill pill-cyan">idle</span></dt>
+  <dd>Turn complete, awaiting your next message. Quick Action buttons (Continue, Explain, Undo) appear. Queued messages drain here.</dd>
+  <dt><span class="pill pill-muted">done</span></dt>
+  <dd>Conversation finished cleanly. You can still send a follow-up, which flips it back to active.</dd>
+  <dt><span class="pill pill-red">failed</span></dt>
+  <dd>The last turn errored &mdash; typically a missing key, network failure, or provider refusal. The error message stays in the transcript so you can retry.</dd>
+</dl>
+
+<p>Under the hood, the API agent loop emits events scoped by session ID: <code>api-agent:chunk:{id}</code>, <code>api-agent:tool-start:{id}</code>, <code>api-agent:tool-result:{id}</code>, <code>api-agent:done:{id}</code>, and <code>api-agent:error:{id}</code>. The chat pane subscribes to these to render in real time.</p>
+
+<h3 class="section-title" id="ch2-slash">Slash commands</h3>
+<p>Type <code>/</code> at the start of the composer (or immediately after whitespace) to open the slash popover. Four commands are available:</p>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>Command</th><th>Action</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>/clear</code></td><td>Clear the message list, keeping model, project, and profile.</td></tr>
+    <tr><td><code>/model</code></td><td>Open the model dropdown in the chat header.</td></tr>
+    <tr><td><code>/help</code></td><td>Insert a system message with the full keybinding cheatsheet.</td></tr>
+    <tr><td><code>/new</code></td><td>Start a fresh conversation with the same agent, model, and profile.</td></tr>
+  </tbody>
+</table>
+
+<p>Navigate with <span class="kbd-row"><kbd>&uarr;</kbd><kbd>&darr;</kbd></span>, accept with <span class="kbd-row"><kbd>Tab</kbd></span> or <span class="kbd-row"><kbd>Enter</kbd></span>, dismiss with <span class="kbd-row"><kbd>Esc</kbd></span>.</p>
+
+<h3 class="section-title" id="ch2-mentions">File mentions (@)</h3>
+<p>Typing <code>@</code> opens the file mention popover. It fuzzy-matches against the project's file tree and returns up to 20 results, debounced at 100 ms so fast typing stays smooth. Under the hood this calls <code>list_project_files</code> with your filter string.</p>
+
+<ol class="step-list">
+  <li>Place your cursor where you want the reference to land.</li>
+  <li>Type <code>@</code> followed by any part of the path &mdash; <code>@authctrl</code> happily finds <code>src/auth/controller.ts</code>.</li>
+  <li>Arrow to the result, press <kbd>Enter</kbd> or <kbd>Tab</kbd>.</li>
+  <li>The path is inserted as <code>@src/auth/controller.ts</code> with a trailing space, ready for the next word.</li>
+</ol>
+
+<p>API agents treat mentioned paths as strong hints: they will typically call <code>read_file</code> on them before answering.</p>
+
+<h3 class="section-title" id="ch2-diffs">Tool diff view</h3>
+<p>Whenever an API agent invokes the <code>write_file</code> tool, the corresponding tool card renders as an inline diff rather than a collapsed JSON blob. The header shows <code>+N / &minus;M</code> line stats, and the body shows a line-by-line diff computed with <code>diffLines</code>. The original file is fetched via <code>read_file_for_diff</code> so the comparison is against what's on disk at diff time, not at agent-request time.</p>
+
+<p>The component renders in three states:</p>
+<ul class="bullet-list">
+  <li><strong>Loading diff&hellip;</strong> &mdash; the original is still being read.</li>
+  <li><strong>New file</strong> badge + full content &mdash; the agent is creating a file that didn't exist.</li>
+  <li><strong>Side-by-side diff</strong> &mdash; the usual case: additions in green, removals in red.</li>
+</ul>
+
+<div class="callout callout-tip">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Tip:</strong> inline diffs make autonomous edits auditable. You scroll the transcript and see every write the agent made, in context, without opening a separate review pane.</div>
+</div>
+
+<h3 class="section-title" id="ch2-voice">Voice input</h3>
+<p>The mic button in the input area starts voice capture. If you have a native Whisper model downloaded, PacketCode uses it &mdash; it calls <code>listWhisperModels()</code> on startup, and the presence of any installed model flips the hook into native mode. Otherwise it falls back to the browser's Web Speech API. Recognition is locked to <code>en-US</code>.</p>
+
+<p>The mic is gray when idle and turns a pulsing green while listening. When you stop, the transcript is <em>appended</em> to whatever is already in the composer &mdash; it never overwrites &mdash; so you can dictate in bursts, edit by keyboard, then dictate again. Note that if you pause mid-sentence with repeated numbers or digits, Whisper's built-in dedupe may collapse them; the Web Speech fallback does not.</p>
+
+<h3 class="section-title" id="ch2-tools">Tool runtime</h3>
+<p>API agents get exactly five tools. They are implemented in Rust and enforced at the runtime boundary &mdash; the agent cannot access anything else, no matter what the prompt asks for.</p>
+
+<table class="ref-table">
+  <thead>
+    <tr><th>Tool</th><th>Parameters</th><th>Limits &amp; notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>read_file</code></td><td><code>{ path }</code></td><td>Returns file text. Max 2 MB.</td></tr>
+    <tr><td><code>write_file</code></td><td><code>{ path, content }</code></td><td>Creates or overwrites. Auto-creates parent directories. Triggers the inline diff view.</td></tr>
+    <tr><td><code>list_directory</code></td><td><code>{ path }</code></td><td>Returns entries; directories are prefixed with <code>[DIR]</code>.</td></tr>
+    <tr><td><code>bash</code></td><td><code>{ command, timeout? }</code></td><td>Runs in the project root. Output capped at 256 KB. Default 30 s, max 120 s. Returns <code>{ stdout, stderr }</code>.</td></tr>
+    <tr><td><code>grep</code></td><td><code>{ pattern, path?, include? }</code></td><td>Returns <code>file:line:content</code> rows.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>25-iteration ceiling:</strong> the agentic loop is hard-limited to 25 tool calls per turn. When the cap is hit, the loop exits cleanly with a summary message rather than looping forever. If you see a turn terminate at the limit, split the task or raise it to a thorough-reviewer profile and let the agent plan more deliberately.</div>
+</div>
+
+<h3 class="section-title" id="ch2-persistence">Conversation persistence</h3>
+<p>API conversations are saved to <code>~/.packetcode/conversations/{id}.json</code>, debounced at 500 ms so streaming doesn't hammer the disk. On startup, the frontend calls <code>load_conversations</code> and populates the sidebar. Everything you see in the sidebar corresponds to a file on disk, one-to-one.</p>
+
+<ul class="bullet-list">
+  <li><strong>Export</strong> &mdash; copy the relevant <code>.json</code> file out of <code>~/.packetcode/conversations/</code>. It's a plain, human-readable record.</li>
+  <li><strong>Backup</strong> &mdash; sync the whole directory to your dotfiles repo or a cloud drive.</li>
+  <li><strong>Delete</strong> &mdash; the trash icon on each sidebar row removes the file from disk and the row from the list. There is no soft-delete.</li>
+</ul>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>PTY sessions do not persist.</strong> Only API conversations are written to disk. When you close a CLI agent session, its scrollback is gone &mdash; that's a property of the underlying vendor CLI, not a PacketCode choice. If you need a record, switch to the matching API provider.</div>
+</div>
+</section>
+<section class="chapter" id="chapter-3"><span class="chapter-badge">Chapter 03</span><h2 class="chapter-title">Workspaces, Flights &amp; Planning</h2><p class="chapter-lede">PacketCode organizes work in three tiers: workspaces bundle the panes, agents, and terminals you use day to day; flights capture the missions those agents run against; and the planning surfaces &mdash; issues, insights, ideation, and memory &mdash; keep the whole thing honest. This chapter walks through each layer, from splitting your first pane to retiring a flight.</p>
+
+<h3 class="section-title" id="ch3-workspace">Workspaces &amp; panes</h3>
+<p>A <strong>workspace</strong> is a named project context that bundles multiple AI agents and terminal panes scoped to a single project directory. It is deliberately more than a generic "project" &mdash; where a project is just a path, a workspace remembers <em>which</em> agents run in <em>which</em> panes, which models they use, which system prompts are injected, and whether bypass-permission toggles are on. Open a workspace and your entire rig comes back exactly as you left it.</p>
+
+<h4 class="subsection-title">Creating and switching</h4>
+<p>There are three ways to create a workspace:</p>
+<ul class="bullet-list">
+  <li>From the Welcome screen, click <strong>New Workspace</strong>.</li>
+  <li>From the Toolbar, use the workspace tab and choose <strong>New</strong>.</li>
+  <li>Press <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>W</kbd></span> from anywhere in the app.</li>
+</ul>
+<p>Switch between workspaces using the dropdown at the top of the Workspace view. Each entry shows the name and project path, and switching is near-instant &mdash; state is restored from local persistence.</p>
+
+<h4 class="subsection-title">The tiling layout</h4>
+<p>Workspaces use a tiling pane system. Split the focused pane with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>\</kbd></span>, focus panes by index with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>1</kbd></span> through <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>4</kbd></span>, and drag the divider between any two panes to resize. The toolbar also exposes preset layouts for quick reflow:</p>
+<div class="feature-box">
+  <span class="pill pill-muted">1x1</span>
+  <span class="pill pill-muted">1x2</span>
+  <span class="pill pill-muted">2x1</span>
+  <span class="pill pill-muted">2x2</span>
+  <span class="pill pill-muted">2x3</span>
+  <span class="pill pill-muted">3x2</span>
+</div>
+<p>Close a pane with its <code>X</code>. If only one pane remains, the close affordance is hidden &mdash; there must always be at least one pane in a workspace. Per-pane state that gets persisted includes the session ID, model override, system prompt, the bypass-permission toggle, and an optional <em>keep terminals alive</em> flag so PTYs survive when you switch away to Issues or Insights and back.</p>
+
+<div class="callout callout-tip">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Tip:</strong> Enable <em>keep terminals alive</em> for long-running agents. Without it, PTYs are torn down when the workspace view unmounts.</div>
+</div>
+
+<h3 class="section-title" id="ch3-pty">PTY sessions</h3>
+<p>Every terminal inside a pane is a real pseudo-terminal (backed by <code>portable-pty</code>) running one of the following:</p>
+<div class="feature-box">
+  <span class="pill pill-blue">claude</span>
+  <span class="pill pill-blue">codex</span>
+  <span class="pill pill-blue">gemini</span>
+  <span class="pill pill-blue">opencode</span>
+  <span class="pill pill-muted">bash</span>
+  <span class="pill pill-muted">zsh</span>
+  <span class="pill pill-muted">powershell</span>
+  <span class="pill pill-muted">cmd</span>
+  <span class="pill pill-muted">ssh</span>
+</div>
+
+<h4 class="subsection-title">Starting a session</h4>
+<ol class="step-list">
+  <li>Click a pane's CLI icon to open the session picker, or</li>
+  <li>Run <em>Quick Claude Session</em> (or the Codex/Gemini equivalent) from the command palette, or</li>
+  <li>Add an agent to the workspace &mdash; a session is launched for that pane automatically.</li>
+</ol>
+<p>The launch dialog exposes the CLI choice, an agent profile, a model override, extra CLI flags, and environment variables. For Claude, the bypass-permission toggle lives here. Recent history includes a fix that stopped PacketCode from passing Claude's bypass flag to OpenCode by accident &mdash; if you use both CLIs, you benefit from that transparently.</p>
+
+<h4 class="subsection-title">Working in the terminal</h4>
+<p>Terminals are powered by xterm.js with roughly 1000 lines of scrollback. Mouse selection auto-copies to the clipboard; paste with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>V</kbd></span>. Resizing the pane sends <code>SIGWINCH</code> to the child &mdash; run <code>stty size</code> to confirm the new dimensions were received.</p>
+
+<h4 class="subsection-title">Lifecycle</h4>
+<p>A session moves through three states: <span class="pill pill-muted">start</span> &rarr; <span class="pill pill-green">running</span> &rarr; <span class="pill pill-red">stopped</span>. The pane's kill button sends <code>SIGTERM</code> first and escalates to <code>SIGKILL</code> if the child does not exit. For a graceful interrupt, press <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>C</kbd></span> inside the terminal.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Windows:</strong> PacketCode auto-resolves <code>.cmd</code> wrappers (for example, <code>claude.cmd</code>, <code>codex.cmd</code>) and prefers <code>.exe</code> binaries. You do not need to configure anything explicitly.</div>
+</div>
+
+<h3 class="section-title" id="ch3-status">Status bars &amp; git info</h3>
+<p>Each pane has a local status bar; the global status bar sits at the bottom of the window. They share a polling cadence: the <code>useStatusLine</code> hook ticks every 5 seconds, and <code>useGitInfo</code> refreshes every 10 seconds. If a status bar has not received an update in 30 seconds, it dims to 50% opacity so you know the data is stale.</p>
+
+<h4 class="subsection-title">Claude pane status bar</h4>
+<p>Shows the model name in blue, the context usage percentage (<span class="pill pill-green">&lt; 60</span> <span class="pill pill-amber">60-80</span> <span class="pill pill-red">&gt;= 80</span>), accumulated cost in dollars, the current git branch, and the session duration. Hover the context pill for a breakdown of input, output, and cached tokens.</p>
+
+<h4 class="subsection-title">Codex pane status bar</h4>
+<p>Shows model, context percent, rate-limit headroom, reasoning-effort setting, and CLI version. Hover for detailed token usage.</p>
+
+<h4 class="subsection-title">Global status bar</h4>
+<p>Counts panes by type (Claude, Codex, shell, etc.), shows total active sessions, and rotates through keyboard-shortcut hints.</p>
+
+<h3 class="section-title" id="ch3-history">Session history</h3>
+<p>Reach Session History from the Toolbar History button or with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>4</kbd></span>. Two tabs sit at the top:</p>
+<dl class="def-list">
+  <dt>Prompt History</dt><dd>Every prompt you have sent across every session, newest first.</dd>
+  <dt>Active Sessions</dt><dd>The panes currently running, with uptime and token counters.</dd>
+</dl>
+<p>A search bar at the top filters by message content; a project dropdown narrows to a specific folder. The <strong>Refresh</strong> button re-reads history from disk, which is useful after another tool has written to the transcripts.</p>
+
+<h3 class="section-title" id="ch3-flightdeck">Flight Deck</h3>
+<p>A <strong>flight</strong> is PacketCode's top-level planning unit &mdash; a mission composed of milestones, tasks, and linked issues. Flights roll their status up automatically from their contents, so the board tells you what needs attention without manual grooming.</p>
+
+<h4 class="subsection-title">Layout</h4>
+<p>Flight Deck is a two-panel view. The left rail groups flights by status:</p>
+<div class="feature-box">
+  <span class="pill pill-red">Attention</span>
+  <span class="pill pill-green">Active</span>
+  <span class="pill pill-amber">Review</span>
+  <span class="pill pill-muted">Draft</span>
+  <span class="pill pill-blue">Done</span>
+  <span class="pill pill-muted">Cancelled</span>
+</div>
+<p>The right panel shows the selected flight: milestones, the execution tile, approvals, a chronological timeline, a coordination feed from participating agents, and a deploy section if the flight has a release tied to it.</p>
+
+<h4 class="subsection-title">Status rollup order</h4>
+<p>The rollup is evaluated in three tiers. Tasks are evaluated first &mdash; if any task is <code>approval_needed</code> the flight lands in <strong>Attention</strong>; if any task is <code>failed</code> the flight is <strong>failed</strong>; if all are <code>done</code> the flight moves to <strong>review</strong>; any <code>running</code> or <code>queued</code> task keeps it <strong>active</strong>; <code>blocked</code> also surfaces as <strong>active</strong>. If there are no tasks, linked issues decide: <code>blocked</code> or <code>needs_human</code> pause the flight; all <code>done</code> marks it <strong>done</strong>; any <code>in_progress</code> or <code>qa</code> keeps it <strong>active</strong>. Finally, if nothing upstream applies, the manual status you set is respected.</p>
+
+<h4 class="subsection-title">Blockers and collisions</h4>
+<p>Tasks in <code>approval_needed</code> always bubble into the Attention group. Issues in <code>blocked</code> or <code>needs_human</code> pause whichever flight they are linked to. PacketCode also runs file-collision detection: two tasks cannot simultaneously claim the same files, preventing agents from stomping each other.</p>
+
+<h3 class="section-title" id="ch3-flights">Creating &amp; editing flights</h3>
+<p>Click <strong>+ New Flight</strong> in Flight Deck, the Flights view, or the main toolbar. The modal opens with two panels side-by-side: an AI chat on the left for drafting the plan, a form on the right for the data you will actually save.</p>
+
+<h4 class="subsection-title">The chat panel</h4>
+<p>The chat streams Claude responses via <code>flight-chat:chunk</code> and <code>flight-chat:done</code> events (separate channels from Insights to avoid collision). Claude may embed JSON codeblocks that unlock one-click actions:</p>
+<dl class="def-list">
+  <dt><code>json:flight</code></dt><dd>A suggestion for title, objective, and priority. An <strong>Apply Suggestion</strong> button copies the fields into the form.</dd>
+  <dt><code>json:flight-plan</code></dt><dd>A full plan including milestones and tasks. An <strong>Apply Plan</strong> button populates the preview tree.</dd>
+</dl>
+
+<h4 class="subsection-title">The form panel</h4>
+<ul class="bullet-list">
+  <li><strong>Title</strong> (required).</li>
+  <li><strong>Objective</strong> &mdash; multiline, supports markdown.</li>
+  <li><strong>Priority</strong> buttons: Low, Medium, High, Critical.</li>
+  <li><strong>Flight plan preview</strong> &mdash; a tree of milestones and tasks, editable inline.</li>
+</ul>
+<p>The footer offers <strong>Create Flight</strong> or <strong>Create &amp; Launch</strong>. Submit the form with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Enter</kbd></span>.</p>
+
+<h4 class="subsection-title">Status lifecycle</h4>
+<dl class="def-list">
+  <dt>draft</dt><dd>You are still thinking. Not visible in Active.</dd>
+  <dt>planning</dt><dd>Milestones and tasks being assembled, often via the AI plan.</dd>
+  <dt>ready</dt><dd>Launchable, waiting on a go signal.</dd>
+  <dt>active</dt><dd>Work is in flight; tasks or issues are moving.</dd>
+  <dt>paused</dt><dd>Temporarily halted; toggles with active.</dd>
+  <dt>review</dt><dd>All tasks done, awaiting human sign-off.</dd>
+  <dt>done</dt><dd>Closed cleanly.</dd>
+  <dt>failed</dt><dd>Terminal. A task or agent failed unrecoverably.</dd>
+  <dt>cancelled</dt><dd>Terminal. Abandoned intentionally.</dd>
+</dl>
+
+<h4 class="subsection-title">Picking a priority</h4>
+<ul class="bullet-list">
+  <li><span class="pill pill-muted">Low</span> Background polish, non-urgent cleanup.</li>
+  <li><span class="pill pill-blue">Medium</span> The default &mdash; normal feature work.</li>
+  <li><span class="pill pill-amber">High</span> Time-sensitive; surfaces above default in sorts.</li>
+  <li><span class="pill pill-red">Critical</span> Incident, outage, or release blocker.</li>
+</ul>
+
+<h4 class="subsection-title">Editing and deleting</h4>
+<p>Click a flight in the left list to open its detail. Titles are edited inline; milestones and tasks are edited in place. Changes auto-save through <code>syncFlightsToBackend</code>. To delete, hover the flight in the sidebar and click the <code>X</code>. There is <strong>no confirmation dialog</strong> &mdash; this is destructive.</p>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>No undo.</strong> Delete is immediate and unconfirmed. If you want to keep a record, move the flight to <em>cancelled</em> instead.</div>
+</div>
+
+<h4 class="subsection-title">Linking issues</h4>
+<p>From either the New Issue form or the Issue Detail view, pick a flight from the dropdown. PacketCode calls <code>flightStore.addIssueToFlight</code> and <code>issueStore.assignToFlight</code> together so both sides of the link stay in sync. Unlink via the remove button on the flight card. One caveat: deleting an issue does not auto-unlink it from its flight &mdash; you need to clean that up manually.</p>
+
+<h3 class="section-title" id="ch3-issues">Kanban issues</h3>
+<p>Open the issue board from Toolbar &rarr; Issues or with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>3</kbd></span>. Columns, left to right:</p>
+<div class="feature-box">
+  <span class="pill pill-muted">To Do</span>
+  <span class="pill pill-blue">In Progress</span>
+  <span class="pill pill-amber">QA</span>
+  <span class="pill pill-green">Done</span>
+  <span class="pill pill-red">Blocked</span>
+  <span class="pill pill-purple">Needs Human</span>
+</div>
+<p>The <strong>Done</strong> column is hidden unless you toggle <em>Show completed</em>.</p>
+
+<h4 class="subsection-title">Creating an issue</h4>
+<p>Click <strong>+ New Issue</strong>. The form exposes:</p>
+<ul class="bullet-list">
+  <li><strong>Title</strong> (required) and <strong>Description</strong> (markdown).</li>
+  <li><strong>Priority</strong> buttons and a <strong>Status</strong> dropdown that defaults to whichever column you clicked from.</li>
+  <li><strong>Labels</strong> &mdash; multi-select; defaults include <code>bug</code>, <code>feature</code>, <code>enhancement</code>, <code>refactor</code>, <code>docs</code>, <code>api</code>, <code>frontend</code>, <code>working</code>, <code>devops</code>.</li>
+  <li><strong>Epic</strong> dropdown.</li>
+  <li><strong>Acceptance Criteria</strong> &mdash; add as many checkboxes as you need.</li>
+  <li><strong>Flight</strong> dropdown.</li>
+  <li><strong>Dependencies</strong> &mdash; either <em>blocked by</em> or <em>blocks</em>.</li>
+</ul>
+<p>The ticket ID is auto-generated in the form <code>PKT-003</code>. Drag-and-drop between columns triggers <code>moveIssue</code>; if the issue has open blockers, you will see a warning on drop.</p>
+
+<h4 class="subsection-title">Filters</h4>
+<p>Filter by Epic, Priority, Label, or Flight (the Flight filter includes an <em>Unassigned</em> option). A search box does full-text across titles and descriptions. <em>Show completed</em> toggles the Done column.</p>
+
+<h4 class="subsection-title">Label &amp; priority colors</h4>
+<table class="ref-table">
+  <thead><tr><th>Label</th><th>Color</th></tr></thead>
+  <tbody>
+    <tr><td>api</td><td><span class="pill pill-green">green</span></td></tr>
+    <tr><td>frontend</td><td><span class="pill pill-amber">amber</span></td></tr>
+    <tr><td>bug</td><td><span class="pill pill-red">red</span></td></tr>
+    <tr><td>feature</td><td><span class="pill pill-blue">blue</span></td></tr>
+    <tr><td>docs</td><td><span class="pill pill-muted">muted</span></td></tr>
+    <tr><td>devops</td><td><span class="pill pill-amber">amber</span></td></tr>
+    <tr><td>refactor</td><td><span class="pill pill-purple">purple</span></td></tr>
+    <tr><td>enhancement</td><td><span class="pill pill-blue">blue</span></td></tr>
+  </tbody>
+</table>
+<p>Priority colors: <span class="pill pill-red">critical</span> <span class="pill pill-amber">high</span> <span class="pill pill-blue">medium</span> <span class="pill pill-muted">low</span>.</p>
+
+<h4 class="subsection-title">Acceptance criteria and dependencies</h4>
+<p>Tick acceptance-criteria boxes as work progresses &mdash; they auto-save. One sharp edge: <strong>criteria cannot be edited once added</strong>. If you need to change wording, delete the item and add a replacement. Dependencies (blocks / blocked-by) are bidirectional, but <strong>circular dependencies are not prevented</strong>. Take care not to create loops manually.</p>
+
+<h3 class="section-title" id="ch3-insights">Insights chat</h3>
+<p>Open Insights from the Toolbar (lightbulb icon). The view has a sessions list on the left with a <strong>+ New Conversation</strong> button and the chat transcript on the right. Ask natural-language questions about the codebase; Claude streams answers with full project context, using the standard event channels <code>insights:chunk</code>, <code>insights:done</code>, and <code>insights:error</code>.</p>
+<p>The brain icon in the header toggles <span class="pill pill-green">Memory active</span> / <span class="pill pill-muted">Memory off</span>. When active, learned patterns are injected as extra context at the top of each prompt. Under each assistant message a <strong>Send to terminal</strong> button forwards suggested commands to your currently focused session, so you can go from question to execution without copy-pasting.</p>
+
+<h3 class="section-title" id="ch3-ideation">Ideation scanner</h3>
+<p>The Ideation Scanner lives in the sidebar under its own lightbulb icon &mdash; distinct from Insights, despite the visual similarity. Use it to surface improvement suggestions proactively.</p>
+<ol class="step-list">
+  <li>Pick the workspace to scan.</li>
+  <li>Choose idea types: Code Improvements, Security, Performance, Code Quality, Documentation, UI/UX. All six are enabled by default.</li>
+  <li>Click <strong>Scan Now</strong>. Claude streams ideas in grouped batches.</li>
+</ol>
+<p>Each idea shows a title, a severity pill (<span class="pill pill-muted">Low</span> <span class="pill pill-blue">Medium</span> <span class="pill pill-amber">High</span> <span class="pill pill-red">Critical</span>), the affected files, and a suggestion. Ideas carry a status of <strong>Active</strong>, <strong>Promoted</strong>, or <strong>Dismissed</strong>.</p>
+
+<h4 class="subsection-title">Actions per idea</h4>
+<ul class="bullet-list">
+  <li><strong>Promote</strong> &mdash; pins the idea to the top of its group.</li>
+  <li><strong>Dismiss</strong> &mdash; hides it unless <em>Show dismissed</em> is on.</li>
+  <li><strong>View Details</strong> &mdash; expands the full suggestion.</li>
+  <li><strong>Convert to Issue</strong> &mdash; creates a new issue with the title, description, priority, labels, and acceptance criteria pre-filled.</li>
+</ul>
+<p>Groups can be collapsed and expanded. A header count summarises state like <em>42 ideas (31 active, 7 converted, 4 dismissed)</em>. Ideas are stored per-workspace, so switching workspaces yields a different backlog.</p>
+
+<h3 class="section-title" id="ch3-memory">Memory layer</h3>
+<p>Open the Memory view from its brain icon in the sidebar. Memory auto-captures three event types:</p>
+<dl class="def-list">
+  <dt>session_completed</dt><dd>Duration, summary, tokens, files touched.</dd>
+  <dt>task_completed</dt><dd>Outcome of a flight task, including results and affected files.</dd>
+  <dt>flight_completed</dt><dd>Final flight summary with milestones achieved.</dd>
+</dl>
+
+<h4 class="subsection-title">Tabs</h4>
+<p>The view has two tabs: <strong>Patterns</strong> and <strong>Timeline</strong>. Patterns are extracted by the backend after every 3 new session summaries (<code>PATTERN_REFRESH_THRESHOLD = 3</code>) and fall into four categories:</p>
+<div class="feature-box">
+  <span class="pill pill-blue">architecture</span>
+  <span class="pill pill-green">convention</span>
+  <span class="pill pill-purple">preference</span>
+  <span class="pill pill-red">pitfall</span>
+</div>
+<p>Each pattern carries a confidence score between 0 and 1. Storage is capped at 200 events and 20 patterns, both FIFO.</p>
+
+<h4 class="subsection-title">Manual controls</h4>
+<ul class="bullet-list">
+  <li><strong>Refresh Patterns</strong> &mdash; re-runs extraction on demand.</li>
+  <li><strong>Delete Event</strong> &mdash; removes one timeline entry.</li>
+  <li><strong>Delete Pattern</strong> &mdash; removes one pattern.</li>
+  <li><strong>Clear Memory</strong> &mdash; destructive, confirms before wiping.</li>
+</ul>
+
+<h4 class="subsection-title">Context injection</h4>
+<p>When Memory is on, <code>getContextForSession(projectPath, flightId?)</code> returns the top 10 patterns by confidence, the 5 most recent session summaries, and 5 relevant flight lessons. Those get prepended to your Insights prompts automatically.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body">Deleting events does <strong>not</strong> retrigger pattern extraction. Click <em>Refresh Patterns</em> manually if the deletions should change what is being matched.</div>
+</div>
+
+<h3 class="section-title" id="ch3-scaffold">Scaffold module</h3>
+<p>Scaffold lives in the sidebar under the hammer icon. It bootstraps a new project from a template, checks which toolchains you have installed, and drops the result into a directory you pick.</p>
+
+<h4 class="subsection-title">Templates</h4>
+<table class="ref-table">
+  <thead><tr><th>Template</th><th>Requires</th></tr></thead>
+  <tbody>
+    <tr><td>React + Vite</td><td>Node.js</td></tr>
+    <tr><td>Next.js</td><td>Node.js + pnpm</td></tr>
+    <tr><td>Node.js Express</td><td>Node.js</td></tr>
+    <tr><td>Rust CLI</td><td>cargo</td></tr>
+    <tr><td>Python FastAPI</td><td>Python 3.8+</td></tr>
+    <tr><td>Blank</td><td>No dependencies</td></tr>
+  </tbody>
+</table>
+<p>Above the template grid you will see a tool-availability check &mdash; entries like <code>Node.js installed</code> or <code>Cargo not found</code>. If a prerequisite is missing, the template is still selectable, but scaffolding will fail with a clear error.</p>
+
+<h4 class="subsection-title">Running a scaffold</h4>
+<ol class="step-list">
+  <li>Pick a template.</li>
+  <li>Configure the project name and output directory.</li>
+  <li>Click <strong>Scaffold</strong>. On success you get <strong>Open Workspace</strong> and <strong>Start Over</strong> buttons.</li>
+</ol>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Gotchas:</strong> the parent of the output directory must exist &mdash; Scaffold creates the project folder but not the tree above it. Scaffold does <em>not</em> run <code>npm install</code> or <code>cargo build</code>; do that in a terminal afterward. And the Next.js template can take 30 to 60 seconds &mdash; don't assume it hung.</div>
+</div>
+
+<p>With workspaces tiling your panes, flights orchestrating the mission, issues tracking the atomic work, and the planning surfaces feeding context back into your agents, you have the full loop. Chapter 4 covers the integrations and settings that wire this loop into the rest of your toolchain.</p>
+</section>
+<section class="chapter" id="chapter-4">
+<span class="chapter-badge">Chapter 04</span>
+<h2 class="chapter-title">Integrations, Tools &amp; Settings</h2>
+<p class="chapter-lede">PacketCode is most useful when it is wired into the rest of your toolchain: GitHub for tickets and PRs, a deploy pipeline that runs from the app, MCP servers that extend every agent's toolbelt, quality analysis on demand, and a single Tools hub that exposes every knob. This chapter is the reference for each of those surfaces, plus the standalone TUI, the Cost Dashboard, and the module system that keeps the sidebar extensible.</p>
+
+<h3 class="section-title" id="ch4-github">GitHub integration</h3>
+<p>The GitHub view is reachable from the sidebar or the toolbar. On first launch you will see an empty auth screen &mdash; paste a Personal Access Token with <code>repo</code> scope and hit Connect. The token is handed to the Rust backend and kept in the OS credential store (Windows Credential Manager, macOS Keychain), but it is <strong>not persisted across app restarts</strong> &mdash; you reconnect on every launch. Treat it like a session cookie.</p>
+
+<h4 class="subsection-title">Generating a token</h4>
+<ol class="step-list">
+  <li>Go to <em>GitHub &rarr; Settings &rarr; Developer settings &rarr; Personal access tokens</em>.</li>
+  <li>Click <em>Generate new token</em> (classic or fine-grained both work).</li>
+  <li>Give it <code>repo</code> scope. Add <code>workflow</code> only if you need to push workflow files.</li>
+  <li>Copy the token and paste it into PacketCode. It will not be shown to you again.</li>
+</ol>
+
+<h4 class="subsection-title">Browsing issues and PRs</h4>
+<p>Once connected, select a repo from the dropdown. Two tabs sit at the top: <strong>Issues</strong> and <strong>Pull Requests</strong>. A search box filters the visible list by title or number. Clicking an item opens the detail pane on the right with labels rendered as color-coded pills, the full markdown body, author, open date, and an <em>Open in GitHub</em> external link.</p>
+
+<h4 class="subsection-title">Triaging into the board</h4>
+<p>The green <strong>Import to Board</strong> button creates a kanban card using the template <code>[GH-{number}] {title}</code>, copies the body into the card description, preserves labels, and sets status <span class="pill pill-muted">todo</span> with priority <span class="pill pill-amber">medium</span>. From there the card behaves like any other PacketCode issue and can be linked to flights or launched into a session.</p>
+
+<h4 class="subsection-title">Opening pull requests</h4>
+<p>The purple <strong>New PR</strong> button opens a modal with fields for title, description (markdown), head branch (required), and base branch (defaults to <code>main</code>). On success the new PR URL is returned and surfaced inline; click it to jump into GitHub.</p>
+
+<h4 class="subsection-title">Investigate with AI</h4>
+<p>The blue <strong>Investigate with AI</strong> button on any issue spawns Claude against the current project. It takes 10&ndash;30 seconds and renders the result as markdown in an <em>AI Investigation</em> panel. Use it to ask "which files are likely to change" or "what is the minimal repro" before committing engineering time.</p>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div class="callout-body"><strong>Heads up:</strong> the PAT is intentionally not persisted. REST calls share a 5000 req/h rate limit, so if you script bulk imports keep an eye on headers. The Review Queue view is a separate surface that collects pending approvals generated by flights &mdash; click an entry to triage.</div>
+</div>
+
+<h3 class="section-title" id="ch4-deploy">Deploy pipeline</h3>
+<p>The Deploy view is a core view, not a module. Reach it via the rocket icon in the toolbar. You can either create a deploy config manually or let PacketCode auto-detect one from project files.</p>
+
+<h4 class="subsection-title">Auto-detection sources</h4>
+<p>On first open, Deploy scans the project in this priority order:</p>
+<ol class="step-list">
+  <li><code>packetcode.deploy.json</code> at the project root (explicit wins).</li>
+  <li><code>package.json</code> scripts: <code>build</code>, <code>deploy</code>, <code>start</code>.</li>
+  <li>Framework hints: <code>vercel.json</code>, <code>netlify.toml</code>, <code>Dockerfile</code>.</li>
+</ol>
+
+<h4 class="subsection-title">Running a deploy</h4>
+<p>The <strong>Add Config</strong> modal asks for a name, a command (e.g. <code>npm run build &amp;&amp; npx vercel --prod</code>), and a working directory that defaults to the project root. Select the config on the left pane and click the green <strong>Play</strong> icon. Validation runs first; then live terminal output streams on the right.</p>
+<p>Status moves through a spinning loader and resolves to a <span class="pill pill-green">check</span> on exit 0 or a <span class="pill pill-red">red X</span> on any non-zero code. The <strong>Run History</strong> list at the bottom records timestamp and duration for each run &mdash; click a row to expand the captured output inline.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Known gaps:</strong> no environment-variable UI yet (use a <code>.env</code> file loaded by your tool of choice), no cancel button once a run starts, and every command runs from the project root. Windows shell quirks like <code>npm</code> vs <code>npm.cmd</code> are handled for you.</div>
+</div>
+
+<h3 class="section-title" id="ch4-mcp">MCP Hub</h3>
+<p>The <em>Model Context Protocol</em> is an open spec for tool and resource exposure: an MCP server publishes callable tools (e.g. "read_file", "query_db"), and a client like Claude or Codex discovers and invokes them. A common example is <code>@modelcontextprotocol/server-filesystem</code>, which adds sandboxed disk access to any client that connects. PacketCode exposes two cards in the Tools hub to manage this: <strong>MCP Servers</strong> and <strong>MCP Provider</strong>.</p>
+
+<h4 class="subsection-title">Adding a server</h4>
+<p>The <strong>Add server</strong> modal takes:</p>
+<dl class="def-list">
+  <dt>Name</dt><dd>Identifier used by clients. Must be unique within its scope.</dd>
+  <dt>Command</dt><dd>The executable &mdash; typically <code>npx</code>, <code>python</code>, <code>node</code>, or an absolute path.</dd>
+  <dt>Arguments</dt><dd>Space-separated arguments passed to the command.</dd>
+  <dt>Environment variables</dt><dd>KEY=VALUE pairs; one per line.</dd>
+  <dt>Scope</dt><dd><span class="pill pill-blue">Global</span> for cross-project use, or <span class="pill pill-cyan">Project</span> for this project only.</dd>
+</dl>
+<p>Global servers land in <code>~/.claude/settings.json</code>; project servers land in <code>./.mcp.json</code> at the project root. The pencil icon reopens the modal for edits (the name is locked once created); disabled servers show a badge in the list; the trash icon deletes with a confirmation dialog.</p>
+
+<h4 class="subsection-title">MCP Provider card</h4>
+<p>The Provider card turns PacketCode itself into an MCP server for other clients. Toggle the provider on, set a port (defaults start at 3000), and pick a scope (Global vs Project + Global). The <strong>Available Tools</strong> list has a per-tool enable checkbox so you can expose only what you trust. Tool routing &mdash; which agent or model handles which task type &mdash; is configured from <strong>Provider Routing</strong> in the Tools hub.</p>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div class="callout-body"><strong>Collisions:</strong> two servers exposing the same tool name is undefined behavior &mdash; last-loaded wins. Namespace your tools if you run more than one server with overlapping features.</div>
+</div>
+
+<h3 class="section-title" id="ch4-quality">Code Quality</h3>
+<p>Open Code Quality from the Tools hub card or the Quality button in the toolbar. Pick a workspace from the dropdown (or accept the current one) and analysis runs in 10&ndash;30 seconds. Results appear in four tabs: <strong>Overview</strong>, <strong>Languages</strong>, <strong>Complexity</strong>, and <strong>Tests</strong>.</p>
+
+<h4 class="subsection-title">What the scores mean</h4>
+<dl class="def-list">
+  <dt>Comment ratio</dt><dd>Percentage of lines that are comments. Ideal band is 15&ndash;30%. Very high ratios usually mean stale docblocks, not helpful commentary.</dd>
+  <dt>Test coverage</dt><dd>Percentage of files matching <code>*.test.*</code> or <code>*.spec.*</code>. Ideal is &gt; 40%. This is <em>file</em> coverage, not line coverage &mdash; a rough proxy, not a replacement for a real coverage tool.</dd>
+  <dt>Cyclomatic complexity</dt><dd>Average branch count across functions. Ideal is &lt; 5. Above 10 in any file is a refactor candidate.</dd>
+  <dt>Organization</dt><dd>Heuristic combining folder depth, file-size distribution, and module count.</dd>
+</dl>
+<p>The overall 0&ndash;100 score blends these with weights <strong>comment 20% / tests 30% / complexity 30% / organization 20%</strong>, then maps to a letter grade A&ndash;F. Overview also shows file count and a one-line language breakdown; the Languages tab drills down by language; Complexity lists hotspots sorted by score; Tests enumerates detected test files.</p>
+
+<p>The green <strong>Get AI Insight</strong> button picks or creates a workspace and hands Claude 5&ndash;7 recommendations as a pre-loaded chat prompt &mdash; useful when the raw numbers don't point at an obvious fix.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Limitations:</strong> results are best for JavaScript, TypeScript, Python, Go, and Rust. Monorepos above 100k LOC can take 1&ndash;2 minutes to analyze. No historical trend tracking yet &mdash; each run is a snapshot.</div>
+</div>
+
+<h3 class="section-title" id="ch4-crash">Crash Viewer</h3>
+<p>Open the Crash Viewer from the Tools hub <strong>Crash Reports</strong> card. It reads reports out of <code>~/.packetcode/crashes/</code> (on Windows that resolves to <code>%APPDATA%\packetcode\crashes\</code>). Each entry shows a timestamp and a one-line summary; the eye icon opens the full stack trace in a modal; the trash icon deletes a single report.</p>
+<p>Reports persist indefinitely &mdash; there is no automatic cleanup, so prune them by hand when the list gets long. If you hit a reproducible bug, open the stack trace, copy it, and paste it into a GitHub issue against the PacketCode repo.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Bug reports:</strong> stack traces make good attachments. Grab one from the Crash Viewer, redact paths if needed, and attach it when filing issues.</div>
+</div>
+
+<h3 class="section-title" id="ch4-dictation">Dictation &amp; voice-to-text</h3>
+<p>The full Dictation view is reachable from the VT purple button in the toolbar or the <strong>Dictation</strong> card in Tools. The center of the view is a large microphone button ringed in green &mdash; click it to start, and it pulses red while recording. A 32-bar live waveform visualizes audio level.</p>
+<p>Stop by clicking again or pressing the bound shortcut. Audio is handed to a local Whisper model for transcription; the status line shows <em>Transcribing&hellip;</em> while processing. Completed transcripts auto-append to history and are searchable by keyword.</p>
+
+<h4 class="subsection-title">Analytics</h4>
+<p>The dashboard surfaces Total Words, Avg WPM, Fastest WPM, Avg Sentiment, Total Time, Entries, Daily Streak, an estimated Time Saved, and a Vocab Diversity score. Charts include Sentiment over Time (bar), WPM over Time (line), Activity by Hour (histogram), Top Words (frequency bars), and Words per Entry (distribution).</p>
+
+<h4 class="subsection-title">Voice in agent chat</h4>
+<p>A mic button lives inside every agent chat input. Transcripts <em>append</em> to the current input text rather than replacing it, so you can dictate a paragraph, stop, type a tweak, and send.</p>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div class="callout-body"><strong>Gotchas:</strong> native mode requires a Whisper model to be downloaded (checked via <code>listWhisperModels()</code>); the Web Speech API is a fallback but less accurate. Sentiment is a heuristic over word polarity, not an ML emotion classifier.</div>
+</div>
+
+<h3 class="section-title" id="ch4-cost">Cost Dashboard</h3>
+<p>Reach the Cost Dashboard from the Tools hub <strong>Cost</strong> card or the <code>$</code> icon in the toolbar. It aggregates usage across every source PacketCode can observe: Claude CLI, Codex CLI, Claude API, OpenAI API, OpenRouter, and Ollama (local runs are almost always $0 but still counted for session totals).</p>
+
+<p>Four summary cards sit at the top: Total Cost, Total Sessions, Input Tokens, and Output Tokens. When the Claude API is in use, two extra pills surface <code>cache_read_input_tokens</code> and <code>cache_creation_input_tokens</code> &mdash; a material discount once prompt caching kicks in. Below the cards, a daily chart renders the last 30 days as green bars; hover for per-day totals.</p>
+
+<p>The model usage table is the main reference surface:</p>
+<table class="ref-table">
+  <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Source</td><td>Pill tag: claude-cli, codex-cli, claude-api, openai-api, openrouter, ollama.</td></tr>
+    <tr><td>Model</td><td>Model name reported by the provider.</td></tr>
+    <tr><td>Sessions</td><td>Distinct sessions touching that model.</td></tr>
+    <tr><td>Input / Output</td><td>Token counts, rolled up.</td></tr>
+    <tr><td>Cost</td><td>USD, computed from the price table for that model.</td></tr>
+  </tbody>
+</table>
+<p>A filter dropdown above the table narrows by source. Usage is persisted per-session to <code>~/.packetcode/usage.jsonl</code>; API agents write on each <em>Done</em> event, keeping the file append-only.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Coverage gaps:</strong> Gemini and OpenCode CLIs do not expose token data, so they are not tracked. Cache metrics only populate for the Claude API. There is no date-range filter yet (the chart is last-30 and the table is all-time) and no budget alerts.</div>
+</div>
+
+<h3 class="section-title" id="ch4-tui">Terminal UI (TUI)</h3>
+<p><code>packetcode-tui</code> is a standalone Ratatui binary that shares the exact same orchestration engine &mdash; flights, sessions, agents &mdash; as the GUI. Use it when you want to drive PacketCode from a remote shell, a tmux pane, or a lightweight laptop where you don't want Tauri running.</p>
+
+<h4 class="subsection-title">Launching</h4>
+<p>Run the binary directly (<code>packetcode-tui</code> if it is on your PATH), or from the repo use <code>cargo run -p packetcode-tui</code>. Five main views are wired in: <strong>Dashboard</strong>, <strong>Sessions</strong>, <strong>Flight Editor</strong>, <strong>Flight Detail</strong>, <strong>Agents</strong>, and <strong>Settings</strong>.</p>
+
+<h4 class="subsection-title">Navigation</h4>
+<p>Open the command palette with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>P</kbd></span> and the help overlay with <span class="kbd-row"><kbd>?</kbd></span>. Arrow keys or the mouse move focus; <kbd>Enter</kbd> confirms. Toast notifications, a diff widget, and a markdown widget are built in, so agent output renders the same way it does in the GUI.</p>
+
+<h4 class="subsection-title">Themes</h4>
+<table class="ref-table">
+  <thead><tr><th>Theme</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>default_dark</code></td><td>Matches the GUI's theme tokens.</td></tr>
+    <tr><td><code>catppuccin_mocha</code></td><td>Warm pastel palette.</td></tr>
+    <tr><td><code>gruvbox_dark</code></td><td>Retro warm palette.</td></tr>
+    <tr><td><code>tokyonight</code></td><td>Cool blues and purples.</td></tr>
+    <tr><td><code>nord</code></td><td>Muted arctic palette.</td></tr>
+  </tbody>
+</table>
+<p>Switch from the Settings view or by selecting <em>Next Theme</em> in the palette. Drop custom themes in <code>~/.packetcode/themes/</code> and they appear in the picker on next launch.</p>
+
+<p>State auto-persists to <code>~/.packetcode/state.json</code> on exit and reloads on the next launch. The minimum terminal size is <strong>40&times;20</strong>; mouse support works in xterm, Windows Terminal, and iTerm2.</p>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div class="callout-body"><strong>Don't double-drive:</strong> running the GUI and TUI against the same project at the same time can cause state conflicts on the shared JSON files. Pick one per project session.</div>
+</div>
+
+<h3 class="section-title" id="ch4-tools-hub">Settings &amp; Tools hub</h3>
+<p>The Tools hub is the settings surface of the app. Open it from the toolbar Tools button or the cog icon. The layout is a sidebar of categories plus a grid of cards; the sidebar sections are <em>Project, Issues, Profiles, AI Routing, API Keys, Servers, MCP Servers, MCP Provider, Modules, Templates, History, Cost, Dictation,</em> and <em>Notifications</em>.</p>
+
+<table class="ref-table">
+  <thead><tr><th>Card</th><th>Purpose</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>ProjectInfoCard</code></td><td>Current project path and git branch.</td><td>Read-only; reflects what the app is pointed at.</td></tr>
+    <tr><td><code>IssueSettingsCard</code></td><td>Ticket prefix used for new issues.</td><td>E.g. <code>PKT</code>, <code>TASK</code>.</td></tr>
+    <tr><td><code>AgentProfilesCard</code></td><td>Built-in and custom agent profiles.</td><td>Clone, edit, and delete profiles here.</td></tr>
+    <tr><td><code>ApiKeysCard</code></td><td>BYOK entries per provider.</td><td>Stored in the OS keyring.</td></tr>
+    <tr><td><code>ProviderRoutingCard</code></td><td>Task type &rarr; agent/model mapping.</td><td>Covers Code Review, Code Generation, Debugging, Testing, Planning, Analysis.</td></tr>
+    <tr><td><code>ServersSettingsCard</code></td><td>PTY host/port, shell, env vars.</td><td>Change only if the defaults fight your shell.</td></tr>
+    <tr><td><code>McpServersCard</code></td><td>Add, edit, delete MCP servers.</td><td>See the MCP Hub section above.</td></tr>
+    <tr><td><code>McpProviderCard</code></td><td>Toggle PacketCode as an MCP provider.</td><td>Port + per-tool enable checkboxes.</td></tr>
+    <tr><td><code>ModulesCard</code></td><td>Enable or disable sidebar modules.</td><td>See the next section.</td></tr>
+    <tr><td><code>TagListCard</code></td><td>Manage Epics and Labels.</td><td>Color-coded; used across issues and flights.</td></tr>
+    <tr><td><code>NotificationSettingsCard</code></td><td>Sound and desktop notifications.</td><td>Off by default.</td></tr>
+    <tr><td><code>CrashViewerCard</code></td><td>Crash list with delete.</td><td>Opens the viewer covered in <a href="#ch4-crash">Crash Viewer</a>.</td></tr>
+    <tr><td><code>CostCard</code></td><td>Shortcut to the Cost Dashboard.</td><td>Same view as the toolbar <code>$</code> button.</td></tr>
+    <tr><td><code>DictationCard</code></td><td>Shortcut to the Dictation view.</td><td>Same view as the VT toolbar button.</td></tr>
+  </tbody>
+</table>
+
+<h3 class="section-title" id="ch4-modules">Module system</h3>
+<p>Modules are optional sidebar extensions declared as <code>ModuleManifest</code> objects in <code>src/types/modules.ts</code>. The registry lives in <code>src/modules/registry.ts</code> and currently ships three built-ins:</p>
+<ul class="bullet-list">
+  <li><span class="pill pill-purple">AI</span> <strong>Ideation</strong> &mdash; codebase opportunity scanner.</li>
+  <li><span class="pill pill-cyan">Utility</span> <strong>Scaffold</strong> &mdash; project templating.</li>
+  <li><span class="pill pill-purple">AI</span> <strong>Dictation</strong> &mdash; voice-to-text workspace.</li>
+</ul>
+
+<p>Toggle modules on or off from the Tools hub <strong>Modules</strong> card. Disabled modules disappear from the sidebar immediately, and if you happen to be viewing one when you disable it the view closes itself. A manifest has these fields:</p>
+
+<dl class="def-list">
+  <dt>id</dt><dd>Stable identifier, used for persistence.</dd>
+  <dt>name</dt><dd>Display name in the sidebar.</dd>
+  <dt>description</dt><dd>Tooltip and Modules-card copy.</dd>
+  <dt>icon</dt><dd>A Lucide icon component.</dd>
+  <dt>iconColor</dt><dd>A theme token such as <code>text-accent-blue</code>.</dd>
+  <dt>component</dt><dd>The React view rendered when the module is active.</dd>
+  <dt>category</dt><dd><code>ai</code>, <code>utility</code>, <code>integration</code>, or <code>analysis</code>.</dd>
+  <dt>enabledByDefault</dt><dd>Initial state on first run.</dd>
+  <dt>shortcutHint</dt><dd>Optional keybinding hint shown in the sidebar.</dd>
+</dl>
+
+<h4 class="subsection-title">Adding a custom module</h4>
+<p>Create <code>src/modules/my-module.ts</code>, export a <code>ModuleManifest</code>, and register it in <code>registry.ts</code> by pushing it into <code>moduleRegistry</code>.</p>
+
+<pre><code>import { Zap } from "lucide-react";
+import MyFeature from "./my-feature-view";
+
+export const myModule: ModuleManifest = {
+  id: "my-feature",
+  name: "My Feature",
+  description: "A custom module",
+  icon: Zap,
+  iconColor: "text-accent-blue",
+  component: MyFeature,
+  category: "utility",
+  enabledByDefault: true,
+};</code></pre>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>No lazy loading:</strong> every registered module is imported at app startup, enabled or not. Keep module entry points light &mdash; lift heavy dependencies into the view component itself rather than the manifest file.</div>
+</div>
+</section>
+
+  <!-- ===== APPENDIX ===== -->
+  <section class="chapter" id="appendix">
+    <span class="chapter-badge">Appendix</span>
+    <h2 class="chapter-title">Reference</h2>
+    <p class="chapter-lede">Quick-reference tables for file locations, keyboard shortcuts, and common issues.</p>
+
+    <h3 class="section-title" id="ap-files">File locations</h3>
+    <p>PacketCode persists state under your OS home directory. Most paths are relative to <code>~/.packetcode/</code> on macOS and Linux, and <code>%APPDATA%\packetcode\</code> on Windows.</p>
+    <table class="ref-table">
+      <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>~/.packetcode/conversations/</code></td><td>One JSON file per API agent conversation</td></tr>
+        <tr><td><code>~/.packetcode/usage.jsonl</code></td><td>Per-session token and cost records</td></tr>
+        <tr><td><code>~/.packetcode/crashes/</code></td><td>Stack traces captured by the crash reporter</td></tr>
+        <tr><td><code>~/.packetcode/state.json</code></td><td>TUI UI state, persisted on exit</td></tr>
+        <tr><td><code>.mcp.json</code> (project root)</td><td>Project-scoped MCP servers</td></tr>
+        <tr><td><code>~/.claude/settings.json</code></td><td>Global MCP server configuration</td></tr>
+        <tr><td><code>packetcode.deploy.json</code> (project root)</td><td>Deploy pipeline configs (when present)</td></tr>
+        <tr><td>OS keyring (<code>packetcode:api-key-*</code>)</td><td>BYOK API keys per provider</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="section-title" id="ap-shortcuts">Shortcut reference</h3>
+    <p>The complete catalog of keyboard shortcuts available in the desktop GUI.</p>
+    <table class="ref-table">
+      <thead><tr><th>Shortcut</th><th>Action</th><th>Context</th></tr></thead>
+      <tbody>
+        <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>\</kbd></span></td><td>Split the active pane</td><td>CLI session views</td></tr>
+        <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>1</kbd></span> &hellip; <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>4</kbd></span></td><td>Focus pane 1&ndash;4</td><td>Multi-pane workspace</td></tr>
+        <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span> &hellip; <span class="kbd-row"><kbd>6</kbd></span></td><td>Jump to a top-level view</td><td>Global</td></tr>
+        <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>K</kbd></span></td><td>Open command palette</td><td>Global (toggle)</td></tr>
+        <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>N</kbd></span></td><td>New agent conversation</td><td>Agents view</td></tr>
+        <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Enter</kbd></span></td><td>Send message / confirm modal</td><td>Chat, modals</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Send message</td><td>Chat input</td></tr>
+        <tr><td><span class="kbd-row"><kbd>Shift</kbd><span class="plus">+</span><kbd>Enter</kbd></span></td><td>Newline</td><td>Chat input</td></tr>
+        <tr><td><kbd>@</kbd></td><td>Mention a file</td><td>Chat input</td></tr>
+        <tr><td><kbd>/</kbd></td><td>Slash commands</td><td>Chat input, start of line</td></tr>
+        <tr><td><kbd>Y</kbd> / <kbd>N</kbd> / <kbd>Esc</kbd></td><td>Approve / reject / abort</td><td>Approval overlay</td></tr>
+        <tr><td><span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>V</kbd></span></td><td>Paste</td><td>xterm.js terminal</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="section-title" id="ap-troubleshoot">Troubleshooting</h3>
+    <table class="ref-table">
+      <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td>CLI agent pane shows "command not found"</td><td>CLI not on PATH</td><td>Install the agent CLI (<code>claude</code>, <code>codex</code>, &hellip;) and restart PacketCode</td></tr>
+        <tr><td>API agent errors "No API key configured"</td><td>Keyring entry missing</td><td>Tools &rarr; API Keys &rarr; paste key for the provider</td></tr>
+        <tr><td>Ollama agent fails to respond</td><td>Ollama daemon not running</td><td><code>ollama serve</code> and verify <code>http://localhost:11434</code></td></tr>
+        <tr><td>GitHub disconnects after restart</td><td>Token is not persisted by design</td><td>Re-paste your PAT each launch (backend-only auth)</td></tr>
+        <tr><td>PTY session on Windows shows "help" instead of starting</td><td><code>.cmd</code> wrapper resolved incorrectly</td><td>Ensure the CLI&rsquo;s <code>.exe</code> is reachable; check recent commit history for Windows PTY fixes</td></tr>
+        <tr><td>Flight never leaves <code>draft</code></td><td>No milestones added</td><td>Open the flight, add at least one milestone with one task, then launch</td></tr>
+        <tr><td>Cost dashboard shows $0 for a provider</td><td>Pricing data missing for that model</td><td>Update PacketCode; verify the model ID is registered in the pricing table</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout-info">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <div class="callout-body"><strong>Still stuck?</strong> Open an issue at <a href="https://github.com/packetloss404/PacketCode/issues" target="_blank" rel="noopener">github.com/packetloss404/PacketCode/issues</a> with your OS, PacketCode version, and the crash file from <code>~/.packetcode/crashes/</code> if one was generated.</div>
+    </div>
+  </section>
+
+  <footer class="manual-foot">
+    <div>&copy; PacketCode &mdash; Apache 2.0 licensed. No telemetry. Your keys, your models.</div>
+    <div><a href="index.html">Home</a> &middot; <a href="https://github.com/packetloss404/PacketCode" target="_blank" rel="noopener">Source</a> &middot; <a href="https://github.com/packetloss404/PacketCode/releases" target="_blank" rel="noopener">Releases</a></div>
+  </footer>
+</main>
+</div>
+
+<button class="back-top" id="back-top" aria-label="Back to top">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+</button>
+
+<script>
+(function(){
+  'use strict';
+
+  /* TOC toggle (mobile) */
+  var toc = document.getElementById('toc');
+  var tocToggle = document.getElementById('toc-toggle');
+  if (tocToggle) {
+    tocToggle.addEventListener('click', function(){ toc.classList.toggle('open'); });
+  }
+  toc.querySelectorAll('a').forEach(function(a){
+    a.addEventListener('click', function(){ toc.classList.remove('open'); });
+  });
+
+  /* Active section highlighting */
+  var headings = Array.prototype.slice.call(document.querySelectorAll('section.chapter[id], section.chapter h3[id], section.chapter h4[id]'));
+  var tocLinks = {};
+  toc.querySelectorAll('a[href^="#"]').forEach(function(link){
+    tocLinks[link.getAttribute('href').slice(1)] = link;
+  });
+
+  function onScroll(){
+    var y = window.scrollY + 120;
+    var current = null;
+    for (var i = 0; i < headings.length; i++) {
+      if (headings[i].offsetTop <= y) current = headings[i].id;
+    }
+    Object.keys(tocLinks).forEach(function(id){
+      tocLinks[id].classList.toggle('active', id === current);
+    });
+    // chapter-level highlight
+    document.querySelectorAll('.toc .ch-item').forEach(function(item){ item.classList.remove('active'); });
+    if (current) {
+      var chapterId = current.split('-')[0] === 'ch' + current.split('-')[1].slice(0,1) ? current.split('-')[0] : null;
+      var chapterAnchor = toc.querySelector('a[href="#chapter-' + (current.match(/^ch(\d)/) ? current.match(/^ch(\d)/)[1] : '') + '"]');
+      if (chapterAnchor) chapterAnchor.closest('.ch-item').classList.add('active');
+      else if (current.indexOf('chapter-') === 0) {
+        var a = toc.querySelector('a[href="#' + current + '"]');
+        if (a) a.closest('.ch-item').classList.add('active');
+      } else if (current === 'appendix' || current.indexOf('ap-') === 0) {
+        var aA = toc.querySelector('a[href="#appendix"]');
+        if (aA) aA.closest('.ch-item').classList.add('active');
+      }
+    }
+    /* back-to-top */
+    document.getElementById('back-top').classList.toggle('show', window.scrollY > 400);
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  /* Back to top */
+  document.getElementById('back-top').addEventListener('click', function(){
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  /* Copy code blocks on click */
+  document.querySelectorAll('pre').forEach(function(pre){
+    pre.style.cursor = 'pointer';
+    pre.title = 'Click to copy';
+    pre.addEventListener('click', function(){
+      var code = pre.querySelector('code') ? pre.querySelector('code').textContent : pre.textContent;
+      navigator.clipboard && navigator.clipboard.writeText(code);
+      var original = pre.style.borderColor;
+      pre.style.borderColor = 'var(--green)';
+      setTimeout(function(){ pre.style.borderColor = original; }, 600);
+    });
+  });
+})();
+</script>
+</body>
+</html>
