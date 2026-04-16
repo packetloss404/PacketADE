@@ -29,3 +29,24 @@ export function flightChatErrorEvent(requestId: string): string {
 export function flightChatDoneEvent(requestId: string): string {
   return `flight-chat:done:${requestId}`;
 }
+
+// API agent events
+export function apiAgentChunkEvent(sessionId: string): string {
+  return `api-agent:chunk:${sessionId}`;
+}
+
+export function apiAgentToolStartEvent(sessionId: string): string {
+  return `api-agent:tool-start:${sessionId}`;
+}
+
+export function apiAgentToolResultEvent(sessionId: string): string {
+  return `api-agent:tool-result:${sessionId}`;
+}
+
+export function apiAgentDoneEvent(sessionId: string): string {
+  return `api-agent:done:${sessionId}`;
+}
+
+export function apiAgentErrorEvent(sessionId: string): string {
+  return `api-agent:error:${sessionId}`;
+}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Plus, Monitor, Mic, File, Folder, Link, Square, Trash2, Clock, Loader2, CheckCircle, XCircle, AlertCircle } from "lucide-react";
-import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
+import { Plus, Monitor, Mic, File, Folder, Link, Square, Trash2, Clock, Loader2, CheckCircle, XCircle, AlertCircle, Zap } from "lucide-react";
+import { useAgentTaskStore, repoDisplayName, isApiAgent } from "@/stores/agentTaskStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useGitHubStore } from "@/stores/githubStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -10,12 +10,18 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { ServerSelectorPopover } from "./ServerSelectorPopover";
 import type { AgentCli, AgentTaskStatus } from "@/stores/agentTaskStore";
+import { API_PROVIDERS } from "@/lib/api-models";
 
 const AGENT_LABELS: Record<string, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
   gemini: "Gemini",
   opencode: "OpenCode",
+  "api-claude": "Claude (API)",
+  "api-openai": "OpenAI (API)",
+  "api-minimax": "MiniMax (API)",
+  "api-openrouter": "OpenRouter (API)",
+  "api-ollama": "Ollama (API)",
 };
 
 const COMMAND_ITEMS = ["/plan", "/build", "/review", "/test", "/explain"];
@@ -48,9 +54,11 @@ interface AgentInputAreaProps {
   selectedAgent: AgentCli;
   onAgentChange: (agent: AgentCli) => void;
   onLaunch: () => void;
+  selectedModel: string;
+  onModelChange: (model: string) => void;
 }
 
-export function AgentInputArea({ textareaRef, selectedAgent, onAgentChange, onLaunch }: AgentInputAreaProps) {
+export function AgentInputArea({ textareaRef, selectedAgent, onAgentChange, onLaunch, selectedModel, onModelChange }: AgentInputAreaProps) {
   const inputMode = useAgentTaskStore((s) => s.inputMode);
   const setInputMode = useAgentTaskStore((s) => s.setInputMode);
   const agentInputText = useAgentTaskStore((s) => s.agentInputText);
@@ -243,17 +251,59 @@ export function AgentInputArea({ textareaRef, selectedAgent, onAgentChange, onLa
               {/* Agent selector */}
               <Dropdown
                 trigger={
-                  <span className="text-text-secondary">
+                  <span className="text-text-secondary flex items-center gap-1">
+                    {isApiAgent(selectedAgent) && <Zap size={10} className="text-accent-amber" />}
                     {AGENT_LABELS[selectedAgent] ?? selectedAgent}
                   </span>
                 }
               >
-                {installedAgents.map((a) => (
-                  <DropdownItem key={a.id} onClick={() => onAgentChange(a.id as AgentCli)}>
-                    {a.name}
+                {/* CLI agents */}
+                {installedAgents.length > 0 && (
+                  <>
+                    <div className="px-3 py-1 text-[9px] text-text-muted uppercase tracking-wider">CLI Agents</div>
+                    {installedAgents.map((a) => (
+                      <DropdownItem key={a.id} onClick={() => onAgentChange(a.id as AgentCli)}>
+                        {a.name}
+                      </DropdownItem>
+                    ))}
+                  </>
+                )}
+                {/* API agents */}
+                <div className="px-3 py-1 text-[9px] text-text-muted uppercase tracking-wider border-t border-bg-border mt-1 pt-1">API Agents</div>
+                {API_PROVIDERS.map((p) => (
+                  <DropdownItem key={p.agentCli} onClick={() => {
+                    onAgentChange(p.agentCli);
+                    onModelChange(p.models[0]?.value ?? "");
+                  }}>
+                    <span className="flex items-center gap-1.5">
+                      <Zap size={10} className="text-accent-amber" />
+                      {p.name}
+                    </span>
                   </DropdownItem>
                 ))}
               </Dropdown>
+
+              {/* Model selector (API agents only) */}
+              {isApiAgent(selectedAgent) && (() => {
+                const provider = API_PROVIDERS.find((p) => p.agentCli === selectedAgent);
+                if (!provider) return null;
+                const currentModel = provider.models.find((m) => m.value === selectedModel) ?? provider.models[0];
+                return (
+                  <Dropdown
+                    trigger={
+                      <span className="text-text-muted text-[10px]">
+                        {currentModel?.label ?? "Select model"}
+                      </span>
+                    }
+                  >
+                    {provider.models.map((m) => (
+                      <DropdownItem key={m.value} onClick={() => onModelChange(m.value)}>
+                        {m.label}
+                      </DropdownItem>
+                    ))}
+                  </Dropdown>
+                );
+              })()}
             </div>
 
             {/* Mic button */}

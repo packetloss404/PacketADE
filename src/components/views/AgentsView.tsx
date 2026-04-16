@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
+import { useAgentTaskStore, isApiAgent, type AgentCli } from "@/stores/agentTaskStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentPaneContainer } from "@/components/agents/AgentPaneContainer";
+import { getDefaultModel } from "@/lib/api-models";
 
 export function AgentsView() {
   const launchTask = useAgentTaskStore((s) => s.launchTask);
@@ -15,11 +16,13 @@ export function AgentsView() {
 
   const activeConversationIds = useAgentTaskStore((s) => s.activeConversationIds);
   const createConversation = useAgentTaskStore((s) => s.createConversation);
+  const createApiConversation = useAgentTaskStore((s) => s.createApiConversation);
   const addToActiveConversations = useAgentTaskStore((s) => s.addToActiveConversations);
   const removeFromActiveConversations = useAgentTaskStore((s) => s.removeFromActiveConversations);
 
   const projectPath = useLayoutStore((s) => s.projectPath);
   const [selectedAgent, setSelectedAgent] = useState<AgentCli>("claude-code");
+  const [selectedModel, setSelectedModel] = useState<string>("");
   const [showAgentSelector, setShowAgentSelector] = useState(false);
   const [focusedPaneIndex, setFocusedPaneIndex] = useState<number>(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -32,15 +35,21 @@ export function AgentsView() {
     const text = agentInputText.trim();
     if (!text) return;
     const path = selectedRepo ?? projectPath;
-    const title = text.slice(0, 60);
 
-    // Launch the PTY task
-    void launchTask(title, text, selectedAgent, path);
-
-    // Create a conversation and add it to active panes
-    void createConversation(selectedAgent, path).then((conversationId) => {
-      addToActiveConversations(conversationId);
-    });
+    if (isApiAgent(selectedAgent)) {
+      // API agent: create an API conversation directly
+      const model = selectedModel || getDefaultModel(selectedAgent);
+      void createApiConversation(selectedAgent, path, model, text).then((conversationId) => {
+        addToActiveConversations(conversationId);
+      });
+    } else {
+      // CLI agent: launch PTY task + conversation
+      const title = text.slice(0, 60);
+      void launchTask(title, text, selectedAgent, path);
+      void createConversation(selectedAgent, path).then((conversationId) => {
+        addToActiveConversations(conversationId);
+      });
+    }
 
     setAgentInputText("");
   }, [
@@ -48,9 +57,11 @@ export function AgentsView() {
     selectedRepo,
     projectPath,
     selectedAgent,
+    selectedModel,
     launchTask,
     setAgentInputText,
     createConversation,
+    createApiConversation,
     addToActiveConversations,
   ]);
 
@@ -69,12 +80,19 @@ export function AgentsView() {
   const handleAgentSelectedForPane = useCallback(
     (agent: AgentCli) => {
       const path = selectedRepo ?? projectPath;
-      void createConversation(agent, path).then((conversationId) => {
-        addToActiveConversations(conversationId);
-      });
+      if (isApiAgent(agent)) {
+        const model = getDefaultModel(agent);
+        void createApiConversation(agent, path, model, "Hello, I need help with this project.").then((conversationId) => {
+          addToActiveConversations(conversationId);
+        });
+      } else {
+        void createConversation(agent, path).then((conversationId) => {
+          addToActiveConversations(conversationId);
+        });
+      }
       setShowAgentSelector(false);
     },
-    [selectedRepo, projectPath, createConversation, addToActiveConversations],
+    [selectedRepo, projectPath, createConversation, createApiConversation, addToActiveConversations],
   );
 
   // Global keyboard shortcuts
@@ -145,6 +163,8 @@ export function AgentsView() {
           selectedAgent={selectedAgent}
           onAgentChange={setSelectedAgent}
           onLaunch={handleLaunch}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
         />
       )}
 
@@ -162,6 +182,7 @@ export function AgentsView() {
               Select Agent for New Pane
             </h3>
             <div className="space-y-1">
+              <div className="text-[9px] text-text-muted uppercase tracking-wider px-3 py-1">CLI</div>
               {(
                 ["claude-code", "codex", "gemini", "opencode"] as AgentCli[]
               ).map((agent) => (
@@ -177,6 +198,26 @@ export function AgentsView() {
                       : agent === "gemini"
                         ? "Gemini"
                         : "OpenCode"}
+                </button>
+              ))}
+              <div className="text-[9px] text-text-muted uppercase tracking-wider px-3 py-1 border-t border-bg-border mt-1 pt-1">API</div>
+              {(
+                ["api-claude", "api-openai", "api-minimax", "api-openrouter", "api-ollama"] as AgentCli[]
+              ).map((agent) => (
+                <button
+                  key={agent}
+                  onClick={() => handleAgentSelectedForPane(agent)}
+                  className="w-full text-left px-3 py-2 text-[11px] text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+                >
+                  {agent === "api-claude"
+                    ? "Claude (API)"
+                    : agent === "api-openai"
+                      ? "OpenAI (API)"
+                      : agent === "api-minimax"
+                        ? "MiniMax (API)"
+                        : agent === "api-openrouter"
+                          ? "OpenRouter"
+                          : "Ollama (Local)"}
                 </button>
               ))}
             </div>
