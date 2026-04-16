@@ -368,8 +368,11 @@ export function useTerminalSession({
     }
     tabIdRef.current = null;
 
+    // Clear the terminal so restart feels like a fresh session
+    xtermRef.current?.clear();
+
     await startSession();
-  }, [paneId, startSession, stopDurationTimer]);
+  }, [paneId, startSession, stopDurationTimer, xtermRef]);
 
   const handleApprove = useCallback(() => {
     const sid = sessionIdRef.current;
