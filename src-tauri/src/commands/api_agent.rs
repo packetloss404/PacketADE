@@ -81,6 +81,20 @@ struct ToolResultPayload {
 struct DonePayload {
     input_tokens: u64,
     output_tokens: u64,
+    cache_read_input_tokens: u64,
+    cache_creation_input_tokens: u64,
+}
+
+/// Map a provider name to the usage-log source string.
+fn provider_to_source(provider: &str) -> &'static str {
+    match provider {
+        "claude" | "anthropic" | "api-claude" => "api-claude",
+        "openai" | "api-openai" => "api-openai",
+        "minimax" | "api-minimax" => "api-minimax",
+        "openrouter" | "api-openrouter" => "api-openrouter",
+        "ollama" | "api-ollama" => "api-ollama",
+        _ => "api-claude",
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -295,6 +309,10 @@ async fn run_agent_loop(
     let tools = tool_runtime::tool_definitions();
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
+    let mut total_cache_read: u64 = 0;
+    let mut total_cache_write: u64 = 0;
+
+    let source = provider_to_source(&provider_name);
 
     for iteration in 0..MAX_TOOL_ITERATIONS {
         // Check cancellation
@@ -304,8 +322,30 @@ async fn run_agent_loop(
                 DonePayload {
                     input_tokens: total_input_tokens,
                     output_tokens: total_output_tokens,
+                    cache_read_input_tokens: total_cache_read,
+                    cache_creation_input_tokens: total_cache_write,
                 },
             );
+            let cost = crate::commands::pricing::calculate_cost(
+                &model,
+                total_input_tokens,
+                total_output_tokens,
+                total_cache_read,
+                total_cache_write,
+            );
+            let entry = crate::commands::usage::UsageEntry {
+                ts: crate::commands::usage::current_timestamp_iso(),
+                source: source.to_string(),
+                model: model.clone(),
+                agent_id: None,
+                session_id: session_id.to_string(),
+                input_tokens: total_input_tokens,
+                output_tokens: total_output_tokens,
+                cache_read: total_cache_read,
+                cache_write: total_cache_write,
+                cost_usd: cost,
+            };
+            let _ = crate::commands::usage::append_usage_entry(&entry);
             return Ok(());
         }
 
@@ -352,8 +392,33 @@ async fn run_agent_loop(
                 _ = &mut cancel_rx => {
                     let _ = app_handle.emit(
                         &done_event(session_id),
-                        DonePayload { input_tokens: total_input_tokens, output_tokens: total_output_tokens },
+                        DonePayload {
+                            input_tokens: total_input_tokens,
+                            output_tokens: total_output_tokens,
+                            cache_read_input_tokens: total_cache_read,
+                            cache_creation_input_tokens: total_cache_write,
+                        },
                     );
+                    let cost = crate::commands::pricing::calculate_cost(
+                        &model,
+                        total_input_tokens,
+                        total_output_tokens,
+                        total_cache_read,
+                        total_cache_write,
+                    );
+                    let entry = crate::commands::usage::UsageEntry {
+                        ts: crate::commands::usage::current_timestamp_iso(),
+                        source: source.to_string(),
+                        model: model.clone(),
+                        agent_id: None,
+                        session_id: session_id.to_string(),
+                        input_tokens: total_input_tokens,
+                        output_tokens: total_output_tokens,
+                        cache_read: total_cache_read,
+                        cache_write: total_cache_write,
+                        cost_usd: cost,
+                    };
+                    let _ = crate::commands::usage::append_usage_entry(&entry);
                     return Ok(());
                 }
                 chunk = rx.recv() => {
@@ -381,9 +446,16 @@ async fn run_agent_loop(
                             current_tool_name.clear();
                             current_tool_args.clear();
                         }
-                        Some(StreamChunk::Done { input_tokens, output_tokens }) => {
+                        Some(StreamChunk::Done {
+                            input_tokens,
+                            output_tokens,
+                            cache_read_input_tokens,
+                            cache_creation_input_tokens,
+                        }) => {
                             total_input_tokens += input_tokens;
                             total_output_tokens += output_tokens;
+                            total_cache_read += cache_read_input_tokens;
+                            total_cache_write += cache_creation_input_tokens;
                             break;
                         }
                         Some(StreamChunk::Error { message }) => {
@@ -447,8 +519,30 @@ async fn run_agent_loop(
                 DonePayload {
                     input_tokens: total_input_tokens,
                     output_tokens: total_output_tokens,
+                    cache_read_input_tokens: total_cache_read,
+                    cache_creation_input_tokens: total_cache_write,
                 },
             );
+            let cost = crate::commands::pricing::calculate_cost(
+                &model,
+                total_input_tokens,
+                total_output_tokens,
+                total_cache_read,
+                total_cache_write,
+            );
+            let entry = crate::commands::usage::UsageEntry {
+                ts: crate::commands::usage::current_timestamp_iso(),
+                source: source.to_string(),
+                model: model.clone(),
+                agent_id: None,
+                session_id: session_id.to_string(),
+                input_tokens: total_input_tokens,
+                output_tokens: total_output_tokens,
+                cache_read: total_cache_read,
+                cache_write: total_cache_write,
+                cost_usd: cost,
+            };
+            let _ = crate::commands::usage::append_usage_entry(&entry);
             return Ok(());
         }
 
@@ -500,7 +594,29 @@ async fn run_agent_loop(
         DonePayload {
             input_tokens: total_input_tokens,
             output_tokens: total_output_tokens,
+            cache_read_input_tokens: total_cache_read,
+            cache_creation_input_tokens: total_cache_write,
         },
     );
+    let cost = crate::commands::pricing::calculate_cost(
+        &model,
+        total_input_tokens,
+        total_output_tokens,
+        total_cache_read,
+        total_cache_write,
+    );
+    let entry = crate::commands::usage::UsageEntry {
+        ts: crate::commands::usage::current_timestamp_iso(),
+        source: source.to_string(),
+        model: model.clone(),
+        agent_id: None,
+        session_id: session_id.to_string(),
+        input_tokens: total_input_tokens,
+        output_tokens: total_output_tokens,
+        cache_read: total_cache_read,
+        cache_write: total_cache_write,
+        cost_usd: cost,
+    };
+    let _ = crate::commands::usage::append_usage_entry(&entry);
     Ok(())
 }

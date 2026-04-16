@@ -7,6 +7,7 @@ export interface ModelUsage {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  source: string;
 }
 
 export interface DailyCost {

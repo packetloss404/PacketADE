@@ -112,6 +112,10 @@ pub enum StreamChunk {
         input_tokens: u64,
         #[serde(default)]
         output_tokens: u64,
+        #[serde(default)]
+        cache_read_input_tokens: u64,
+        #[serde(default)]
+        cache_creation_input_tokens: u64,
     },
     /// An error occurred.
     Error { message: String },

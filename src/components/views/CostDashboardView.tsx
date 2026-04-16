@@ -1,7 +1,29 @@
-import { useEffect } from "react";
-import { DollarSign, Hash, ArrowDownRight, ArrowUpRight, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { DollarSign, Hash, ArrowDownRight, ArrowUpRight, Loader2, AlertCircle, RefreshCw, Info, X } from "lucide-react";
 import { useAnalyticsStore } from "@/stores/analyticsStore";
 import type { AnalyticsData } from "@/stores/analyticsStore";
+
+const SOURCE_LABELS: Record<string, string> = {
+  "claude-cli": "Claude CLI",
+  "codex": "Codex CLI",
+  "api-claude": "Claude API",
+  "api-openai": "OpenAI API",
+  "api-minimax": "MiniMax API",
+  "api-openrouter": "OpenRouter",
+  "api-ollama": "Ollama (local)",
+};
+function sourceLabel(s: string): string { return SOURCE_LABELS[s] ?? s; }
+
+const SOURCE_PILL_CLASSES: Record<string, string> = {
+  "claude-cli": "text-accent-amber border-accent-amber/30",
+  "api-claude": "text-accent-amber border-accent-amber/30",
+  "codex": "text-accent-blue border-accent-blue/30",
+  "api-openai": "text-accent-green border-accent-green/30",
+  "api-openrouter": "text-accent-purple border-accent-purple/30",
+};
+function sourcePillClass(s: string): string {
+  return SOURCE_PILL_CLASSES[s] ?? "text-text-secondary border-bg-border";
+}
 
 function formatNumber(n: number): string {
   return n.toLocaleString("en-US");
@@ -28,8 +50,10 @@ function SummaryCard({ label, value, icon: Icon, iconClass }: {
   );
 }
 
-function ModelUsageTable({ data }: { data: AnalyticsData }) {
-  const sorted = [...data.modelUsage].sort((a, b) => b.costUsd - a.costUsd);
+function ModelUsageTable({ data, sourceFilter }: { data: AnalyticsData; sourceFilter: string }) {
+  const sorted = [...data.modelUsage]
+    .filter((m) => sourceFilter === "all" || m.source === sourceFilter)
+    .sort((a, b) => b.costUsd - a.costUsd);
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
@@ -41,6 +65,7 @@ function ModelUsageTable({ data }: { data: AnalyticsData }) {
           <table className="w-full text-[11px]">
             <thead>
               <tr className="text-text-secondary border-b border-bg-border">
+                <th className="text-left py-2 pr-4 font-medium">Source</th>
                 <th className="text-left py-2 pr-4 font-medium">Model</th>
                 <th className="text-right py-2 px-3 font-medium">Sessions</th>
                 <th className="text-right py-2 px-3 font-medium">Input Tokens</th>
@@ -50,7 +75,12 @@ function ModelUsageTable({ data }: { data: AnalyticsData }) {
             </thead>
             <tbody>
               {sorted.map((m) => (
-                <tr key={m.model} className="border-b border-bg-border/50 hover:bg-bg-hover transition-colors">
+                <tr key={`${m.source}:${m.model}`} className="border-b border-bg-border/50 hover:bg-bg-hover transition-colors">
+                  <td className="py-2 pr-4">
+                    <span className={`inline-block text-[10px] px-1.5 py-0.5 border rounded ${sourcePillClass(m.source)}`}>
+                      {sourceLabel(m.source)}
+                    </span>
+                  </td>
                   <td className="py-2 pr-4 font-mono text-text-primary">{m.model}</td>
                   <td className="py-2 px-3 text-right font-mono text-text-secondary">{formatNumber(m.sessions)}</td>
                   <td className="py-2 px-3 text-right font-mono text-text-secondary">{formatNumber(m.inputTokens)}</td>
@@ -123,6 +153,15 @@ export function CostDashboardView() {
   const loading = useAnalyticsStore((s) => s.loading);
   const error = useAnalyticsStore((s) => s.error);
   const load = useAnalyticsStore((s) => s.load);
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [showInfo, setShowInfo] = useState(true);
+
+  const uniqueSources = useMemo(() => {
+    if (!data) return [];
+    const set = new Set<string>();
+    for (const m of data.modelUsage) set.add(m.source);
+    return Array.from(set).sort();
+  }, [data]);
 
   useEffect(() => {
     load();
@@ -173,6 +212,17 @@ export function CostDashboardView() {
         </button>
       </div>
 
+      {/* Info pill */}
+      {showInfo && (
+        <div className="bg-bg-secondary border border-bg-border rounded-lg p-3 flex items-start gap-2 text-[11px] text-text-secondary">
+          <Info size={12} className="mt-0.5 flex-shrink-0" />
+          <span className="flex-1">Gemini and OpenCode usage tracking isn't available — those CLIs don't expose token data.</span>
+          <button onClick={() => setShowInfo(false)} className="text-text-muted hover:text-text-primary">
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-3">
         <SummaryCard
@@ -204,8 +254,21 @@ export function CostDashboardView() {
       {/* Daily cost chart */}
       <DailyCostChart data={data} />
 
+      {/* Source filter */}
+      <div className="flex items-center gap-2">
+        <label className="text-[11px] text-text-secondary">Filter by source:</label>
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          className="bg-bg-secondary border border-bg-border rounded text-xs px-2 py-1 text-text-primary"
+        >
+          <option value="all">All sources</option>
+          {uniqueSources.map((s) => <option key={s} value={s}>{sourceLabel(s)}</option>)}
+        </select>
+      </div>
+
       {/* Model usage table */}
-      <ModelUsageTable data={data} />
+      <ModelUsageTable data={data} sourceFilter={sourceFilter} />
     </div>
   );
 }

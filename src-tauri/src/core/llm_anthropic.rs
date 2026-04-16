@@ -164,6 +164,8 @@ impl LlmProvider for AnthropicProvider {
         let mut current_tool_args = String::new();
         let mut input_tokens: u64 = 0;
         let mut output_tokens: u64 = 0;
+        let mut cache_read_input_tokens: u64 = 0;
+        let mut cache_creation_input_tokens: u64 = 0;
 
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
@@ -197,6 +199,14 @@ impl LlmProvider for AnthropicProvider {
                                 {
                                     input_tokens = usage
                                         .get("input_tokens")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0);
+                                    cache_read_input_tokens = usage
+                                        .get("cache_read_input_tokens")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0);
+                                    cache_creation_input_tokens = usage
+                                        .get("cache_creation_input_tokens")
                                         .and_then(|v| v.as_u64())
                                         .unwrap_or(0);
                                 }
@@ -283,6 +293,14 @@ impl LlmProvider for AnthropicProvider {
                                         .get("output_tokens")
                                         .and_then(|v| v.as_u64())
                                         .unwrap_or(output_tokens);
+                                    cache_read_input_tokens = usage
+                                        .get("cache_read_input_tokens")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(cache_read_input_tokens);
+                                    cache_creation_input_tokens = usage
+                                        .get("cache_creation_input_tokens")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(cache_creation_input_tokens);
                                 }
                             }
                             "message_stop" => {
@@ -290,6 +308,8 @@ impl LlmProvider for AnthropicProvider {
                                     .send(StreamChunk::Done {
                                         input_tokens,
                                         output_tokens,
+                                        cache_read_input_tokens,
+                                        cache_creation_input_tokens,
                                     })
                                     .await;
                                 return Ok(());
@@ -319,6 +339,8 @@ impl LlmProvider for AnthropicProvider {
             .send(StreamChunk::Done {
                 input_tokens,
                 output_tokens,
+                cache_read_input_tokens,
+                cache_creation_input_tokens,
             })
             .await;
         Ok(())
