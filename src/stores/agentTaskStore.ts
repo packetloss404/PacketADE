@@ -68,12 +68,13 @@ const CLI_COMMANDS: Partial<Record<AgentCli, string>> = {
   opencode: "opencode",
 };
 
-/** Bypass-permissions flags for autonomous execution */
+/** Bypass-permissions flags for autonomous execution.
+ * OpenCode is intentionally omitted — it has no equivalent launch flag and
+ * passing one makes it print `--help` and exit. */
 const BYPASS_FLAGS: Partial<Record<AgentCli, string>> = {
   "claude-code": "--dangerously-skip-permissions",
   codex: "--full-auto",
   gemini: "--yolo",
-  opencode: "--dangerously-skip-permissions",
 };
 
 export type AgentInputMode = "build" | "plan";

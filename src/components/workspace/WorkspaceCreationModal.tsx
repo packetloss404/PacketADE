@@ -378,7 +378,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
 
         {/* Bypass permissions toggle */}
         {selectedAiAgents.length > 0 && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-1">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -391,6 +391,11 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
                 Bypass permissions
               </span>
             </label>
+            {bypassPermissions && selected.has("opencode") && (
+              <span className="text-[10px] text-text-muted ml-5">
+                Not applied to OpenCode — no equivalent CLI flag in current release. Approve tools in the TUI or set rules in opencode.json.
+              </span>
+            )}
           </div>
         )}
 

@@ -18,12 +18,14 @@ const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: 
   TerminalSquare,
 };
 
-/** Per-agent CLI flag to bypass all permission prompts. */
+/** Per-agent CLI flag to bypass all permission prompts.
+ * OpenCode is intentionally omitted — it has no equivalent launch flag and
+ * passing one makes it print `--help` and exit. Permissions are configured
+ * inside the OpenCode TUI/config instead. */
 const BYPASS_FLAGS: Record<string, string> = {
   "claude-code": "--dangerously-skip-permissions",
   codex: "--full-auto",
   gemini: "--yolo",
-  opencode: "--dangerously-skip-permissions",
 };
 
 const CLI_PILL_COLOR: Record<string, string> = {
