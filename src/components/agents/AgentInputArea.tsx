@@ -200,7 +200,7 @@ export function AgentInputArea({ textareaRef, selectedAgent, onAgentChange, onLa
         </div>
 
         {/* Input box */}
-        <div className="relative border border-bg-border rounded-lg bg-bg-primary overflow-hidden">
+        <div className="relative border border-bg-border rounded-lg bg-bg-primary">
           <textarea
             ref={textareaRef}
             value={agentInputText}
