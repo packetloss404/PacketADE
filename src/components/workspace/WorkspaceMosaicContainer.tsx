@@ -17,8 +17,7 @@ interface WorkspaceMosaicContainerProps {
  */
 export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainerProps) {
   const [tree, setTree] = useState<MosaicNode<string> | null>(null);
-  const prevWorkspaceIdRef = useRef<string | null>(null);
-  const prevPaneCountRef = useRef<number>(workspace.panes.length);
+  const prevPaneKeyRef = useRef<string>("");
   const zoomedPaneId = useWorkspaceStore((s) => s.zoomedPaneId);
   const setZoomedPane = useWorkspaceStore((s) => s.setZoomedPane);
 
@@ -41,65 +40,61 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [zoomedPaneId, setZoomedPane]);
 
-  // Build or update the tree when workspace changes or panes are added/removed.
+  // Sync the mosaic tree with workspace panes.
+  // Uses a stable paneKey string to detect actual changes and avoid double-fires.
   const paneKey = workspace.panes.map((p) => p.id).join(",");
   useEffect(() => {
-    const paneIds = workspace.panes.map((p) => p.id);
+    // Skip if the set of pane IDs hasn't actually changed
+    if (paneKey === prevPaneKeyRef.current) return;
 
-    if (prevWorkspaceIdRef.current !== workspace.id) {
-      // Workspace changed — full rebuild
-      prevWorkspaceIdRef.current = workspace.id;
-      prevPaneCountRef.current = paneIds.length;
-      if (paneIds.length === 0) {
-        setTree(null);
-      } else if (paneIds.length === 1) {
-        setTree(paneIds[0]);
-      } else {
-        setTree(buildPresetTree(presetForCount(paneIds.length), paneIds));
-      }
+    const prevIds = prevPaneKeyRef.current ? prevPaneKeyRef.current.split(",") : [];
+    const nextIds = paneKey ? paneKey.split(",") : [];
+    prevPaneKeyRef.current = paneKey;
+
+    if (nextIds.length === 0 || (nextIds.length === 1 && nextIds[0] === "")) {
+      setTree(null);
+      return;
+    }
+    if (nextIds.length === 1) {
+      setTree(nextIds[0]);
       return;
     }
 
-    if (prevPaneCountRef.current === paneIds.length) return;
-
-    const prevCount = prevPaneCountRef.current;
-    prevPaneCountRef.current = paneIds.length;
-
     setTree((currentTree) => {
-      if (paneIds.length === 0) return null;
-      if (paneIds.length === 1) return paneIds[0];
+      // If no previous tree or workspace switched, full rebuild
+      if (!currentTree || prevIds.length === 0) {
+        return buildPresetTree(presetForCount(nextIds.length), nextIds);
+      }
 
-      // Pane added — insert new pane into existing tree
-      if (paneIds.length > prevCount && currentTree) {
-        const existingLeaves = getLeafOrder(currentTree);
-        const newPanes = paneIds.filter((id) => !existingLeaves.includes(id));
-        let updated = currentTree;
-        for (const newId of newPanes) {
+      const currentLeaves = new Set(getLeafOrder(currentTree));
+      const nextSet = new Set(nextIds);
+
+      // Find added and removed panes
+      const added = nextIds.filter((id) => !currentLeaves.has(id));
+      const removed = [...currentLeaves].filter((id) => !nextSet.has(id));
+
+      let updated: MosaicNode<string> | null = currentTree;
+
+      // Remove panes first
+      for (const id of removed) {
+        if (updated) updated = removeFromTree(updated, id);
+      }
+
+      // Add new panes
+      for (const newId of added) {
+        if (!updated) {
+          updated = newId;
+        } else {
           const lastLeaf = getLeafOrder(updated).pop();
           if (lastLeaf) {
             updated = addToTree(updated, lastLeaf, newId, "row");
           }
         }
-        return updated;
       }
 
-      // Pane removed — prune from existing tree
-      if (paneIds.length < prevCount && currentTree) {
-        const currentLeaves = getLeafOrder(currentTree);
-        const removedPanes = currentLeaves.filter((id) => !paneIds.includes(id));
-        let updated: MosaicNode<string> | null = currentTree;
-        for (const removedId of removedPanes) {
-          if (updated) {
-            updated = removeFromTree(updated, removedId);
-          }
-        }
-        return updated;
-      }
-
-      // Fallback — full rebuild
-      return buildPresetTree(presetForCount(paneIds.length), paneIds);
+      return updated;
     });
-  }, [workspace.id, paneKey]);
+  }, [paneKey]);
 
   const handleChange = useCallback(
     (newTree: MosaicNode<string> | null) => {
