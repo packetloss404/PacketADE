@@ -146,6 +146,11 @@ pub async fn execute_custom_agent(
     args: &serde_json::Value,
     parent_target: &ExecutionTarget,
 ) -> Result<String, String> {
+    // Share the sub-agent recursion-depth counter with spawn_subagent so a
+    // malicious prompt can't chain `agent_a -> agent_a -> agent_a` beyond
+    // MAX_SUBAGENT_DEPTH.
+    let _depth_guard = crate::core::tool_subagent::SubagentDepthGuard::acquire()?;
+
     let task = args
         .get("task")
         .and_then(|t| t.as_str())

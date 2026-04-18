@@ -211,12 +211,18 @@ pub fn execute_task_list(_args: &serde_json::Value) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    /// Test-only serialization. The global TASKS state means parallel test
+    /// execution leaks between cases; each test acquires this lock so the
+    /// suite is deterministic without needing an external `serial_test` dep.
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn reset() {
         tasks().lock().unwrap().clear();
     }
 
     #[test]
     fn create_update_list_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset();
         let id = execute_task_create(&serde_json::json!({ "title": "alpha" })).unwrap();
         let _ = execute_task_create(&serde_json::json!({
@@ -238,6 +244,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_status() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset();
         let err = execute_task_create(&serde_json::json!({
             "title": "x",
@@ -245,5 +252,27 @@ mod tests {
         }))
         .unwrap_err();
         assert!(err.contains("Unknown status"));
+    }
+
+    /// v1 caveat captured: all tasks live in one process-wide list, so two
+    /// "sessions" creating their own tasks see each other's work. When
+    /// session-keyed storage lands, this test flips to asserting isolation.
+    #[test]
+    fn global_state_leaks_across_sessions_v1_caveat() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        // "Session A" creates a task.
+        let _ = execute_task_create(&serde_json::json!({
+            "title": "session-a-task"
+        }))
+        .unwrap();
+
+        // "Session B" lists and sees session A's work. In a per-session
+        // world this should be empty; today it's not. Document the leak.
+        let md = execute_task_list(&serde_json::json!({})).unwrap();
+        assert!(
+            md.contains("session-a-task"),
+            "v1 task list is globally shared; update this test when storage becomes session-keyed"
+        );
     }
 }
