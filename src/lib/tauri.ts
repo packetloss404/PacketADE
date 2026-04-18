@@ -1029,15 +1029,6 @@ export async function askFlightChatStream(
   });
 }
 
-export async function askInsightsStream(
-  projectPath: string,
-  messages: { role: string; content: string }[],
-  sessionContext: string | null,
-  requestId: string,
-): Promise<void> {
-  return invoke("ask_insights_stream", { projectPath, messages, sessionContext, requestId });
-}
-
 export async function generateIdeas(
   projectPath: string,
   ideaTypes: string[]
@@ -1258,6 +1249,7 @@ export async function startApiAgentSession(
   attachments?: ImageAttachment[],
   planMode?: boolean,
   sshConfig?: SshConfigInput | null,
+  allowedTools?: string[] | null,
 ): Promise<void> {
   return invoke("start_api_agent_session", {
     sessionId,
@@ -1270,6 +1262,7 @@ export async function startApiAgentSession(
     attachments: attachments ?? null,
     planMode: planMode ?? null,
     sshConfig: sshConfig ?? null,
+    allowedTools: allowedTools ?? null,
   });
 }
 

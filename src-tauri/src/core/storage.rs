@@ -106,10 +106,10 @@ impl Default for PersistedState {
     }
 }
 
-/// Get the PacketCode data directory (~/.packetcode/)
+/// Get the PacketADE data directory (~/.packetade/)
 pub fn data_dir() -> PathBuf {
     let home = home_dir().unwrap_or_else(|| ".".to_string());
-    PathBuf::from(home).join(".packetcode")
+    PathBuf::from(home).join(crate::core::brand::DATA_DIR_NAME)
 }
 
 /// Ensure the data directory exists.
@@ -118,7 +118,7 @@ pub fn ensure_data_dir() -> Result<PathBuf, String> {
     if !dir.exists() {
         fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create data dir {:?}: {}", dir, e))?;
-        info!("Created PacketCode data dir: {:?}", dir);
+        info!("Created {} data dir: {:?}", crate::core::brand::APP_NAME, dir);
     }
     Ok(dir)
 }

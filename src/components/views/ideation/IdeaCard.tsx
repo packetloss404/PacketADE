@@ -1,7 +1,9 @@
 import { ChevronRight, MessageSquare } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useInsightsStore } from "@/stores/insightsStore";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useProfileStore } from "@/stores/profileStore";
 import { useAppStore } from "@/stores/appStore";
+import { getDefaultModel } from "@/lib/api-models";
 import type { Idea } from "@/types/ideation";
 import { getTypeConfig, SEVERITY_COLORS, EFFORT_COLORS } from "./ideationConfig";
 
@@ -14,16 +16,28 @@ interface IdeaCardProps {
 export function IdeaCard({ idea, isSelected, onSelect }: IdeaCardProps) {
   const { icon: TypeIcon, color: typeColor } = getTypeConfig(idea.type);
 
-  function handleAskInsights(e: React.MouseEvent) {
+  async function handleAskScout(e: React.MouseEvent) {
     e.stopPropagation();
     const workspace = useWorkspaceStore.getState().getActiveWorkspace();
     if (!workspace) return;
-    useInsightsStore.getState().createSession();
-    void useInsightsStore.getState().sendMessage(
+    const scout = useProfileStore.getState().getProfile("scout");
+    const agent = "api-claude";
+    const id = await useAgentTaskStore.getState().createApiConversation(
+      agent,
       workspace.projectPath,
-      `Tell me more about this idea: ${idea.title}\n\n${idea.description}`
+      scout?.defaultModel || getDefaultModel(agent),
+      `Tell me more about this idea: ${idea.title}\n\n${idea.description}`,
+      scout?.systemPrompt ?? null,
+      false,
+      false,
+      null,
+      undefined,
+      false,
+      scout?.allowedTools ?? null,
+      scout?.memoryContextDefault ?? false,
     );
-    useAppStore.getState().setActiveView("insights");
+    useAgentTaskStore.getState().selectConversation(id);
+    useAppStore.getState().setActiveView("agents");
   }
 
   return (
@@ -60,9 +74,9 @@ export function IdeaCard({ idea, isSelected, onSelect }: IdeaCardProps) {
           </div>
         </div>
         <button
-          onClick={handleAskInsights}
-          title="Ask Insights about this idea"
-          className="p-1 rounded text-text-muted hover:text-accent-blue hover:bg-accent-blue/10 flex-shrink-0 transition-colors"
+          onClick={handleAskScout}
+          title="Ask Scout (read-only agent with project memory)"
+          className="p-1 rounded text-text-muted hover:text-accent-cyan hover:bg-accent-cyan/10 flex-shrink-0 transition-colors"
         >
           <MessageSquare size={11} />
         </button>

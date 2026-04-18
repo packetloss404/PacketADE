@@ -2,8 +2,8 @@ import { create } from "zustand";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 import { listSubdirectories } from "@/lib/tauri";
 
-const STORAGE_KEY = "packetcode:project-history";
-const FOLDER_KEY = "packetcode:projects-folder";
+const STORAGE_KEY = "packetade:project-history";
+const FOLDER_KEY = "packetade:projects-folder";
 
 export interface ProjectHistoryEntry {
   path: string;

@@ -4,7 +4,7 @@ import { generateIdeas as generateIdeasApi } from "@/lib/tauri";
 import { useIssueStore } from "@/stores/issueStore";
 import { loadFromStorage, saveToStorage, parseJsonFromResponse, generateId } from "@/lib/storage";
 
-const STORAGE_KEY = "packetcode:ideation-sessions";
+const STORAGE_KEY = "packetade:ideation-sessions";
 
 interface IdeationStore {
   sessions: Record<string, IdeationSession>;

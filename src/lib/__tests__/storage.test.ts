@@ -12,9 +12,9 @@ describe("storage utilities", () => {
   });
 
   it("saves and loads a value", () => {
-    saveToStorage("test-key", { name: "PacketCode", version: 1 });
+    saveToStorage("test-key", { name: "PacketADE", version: 1 });
     const result = loadFromStorage("test-key", {});
-    expect(result).toEqual({ name: "PacketCode", version: 1 });
+    expect(result).toEqual({ name: "PacketADE", version: 1 });
   });
 
   it("returns fallback on corrupt JSON", () => {

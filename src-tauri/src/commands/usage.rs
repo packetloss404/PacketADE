@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::commands::shared::home_dir;
+use crate::core::brand::DATA_DIR_NAME;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageEntry {
@@ -20,11 +21,11 @@ pub struct UsageEntry {
     pub cost_usd: f64,
 }
 
-/// Returns `<home>/.packetcode/usage.jsonl` if the home directory is resolvable.
+/// Returns `<home>/.packetade/usage.jsonl` if the home directory is resolvable.
 pub fn usage_log_path() -> Option<PathBuf> {
     let home = home_dir()?;
     let mut p = PathBuf::from(home);
-    p.push(".packetcode");
+    p.push(DATA_DIR_NAME);
     p.push("usage.jsonl");
     Some(p)
 }
@@ -130,7 +131,7 @@ mod tests {
         if let Some(p) = usage_log_path() {
             let s = p.to_string_lossy().to_string();
             assert!(s.ends_with("usage.jsonl"));
-            assert!(s.contains(".packetcode"));
+            assert!(s.contains(DATA_DIR_NAME));
         }
     }
 }

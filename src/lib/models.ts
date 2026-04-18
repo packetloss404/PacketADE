@@ -3,7 +3,7 @@ export interface ModelOption {
   value: string | null; // null = system default (no --model flag)
 }
 
-// Use un-dated aliases so PacketCode always picks the latest version of each tier.
+// Use un-dated aliases so PacketADE always picks the latest version of each tier.
 export const CLAUDE_MODELS: ModelOption[] = [
   { label: "Opus 4.7", value: "claude-opus-4-7" },
   { label: "Opus 4.6", value: "claude-opus-4-6" },

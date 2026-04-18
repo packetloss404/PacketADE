@@ -27,7 +27,7 @@ fn home_dir() -> Option<PathBuf> {
     }
 }
 
-/// Path to the global Claude/PacketCode settings file that holds `mcpServers`.
+/// Path to the global Claude/PacketADE settings file that holds `mcpServers`.
 fn global_settings_path() -> PathBuf {
     home_dir()
         .unwrap_or_else(|| PathBuf::from("."))

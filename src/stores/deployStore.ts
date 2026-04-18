@@ -62,7 +62,7 @@ export const useDeployStore = create<DeployStore>((set, get) => ({
   saveConfigs: async (configs) => {
     const projectPath = useLayoutStore.getState().projectPath;
     await createDeployConfig(projectPath, configs);
-    set({ configs, configSource: "packetcode.deploy.json" });
+    set({ configs, configSource: "packetade.deploy.json" });
   },
 
   addConfig: async (config) => {

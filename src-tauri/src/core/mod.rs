@@ -1,5 +1,7 @@
 pub mod agent;
 pub mod agent_config;
+pub mod brand;
+pub mod migration;
 pub mod error_classifier;
 pub mod execution;
 pub mod flight;

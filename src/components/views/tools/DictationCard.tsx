@@ -29,7 +29,7 @@ export function DictationCard() {
       })
       .catch(() => {});
     // Load saved Gemini key indicator
-    const saved = localStorage.getItem("packetcode:gemini-api-key");
+    const saved = localStorage.getItem("packetade:gemini-api-key");
     if (saved) setGeminiKeySaved(true);
   }, [loadModels, loadSettings]);
 
@@ -62,13 +62,13 @@ export function DictationCard() {
 
   const handleSaveGeminiKey = () => {
     if (!geminiKey.trim()) return;
-    localStorage.setItem("packetcode:gemini-api-key", geminiKey.trim());
+    localStorage.setItem("packetade:gemini-api-key", geminiKey.trim());
     setGeminiKeySaved(true);
     setGeminiKey("");
   };
 
   const handleClearGeminiKey = () => {
-    localStorage.removeItem("packetcode:gemini-api-key");
+    localStorage.removeItem("packetade:gemini-api-key");
     setGeminiKeySaved(false);
   };
 

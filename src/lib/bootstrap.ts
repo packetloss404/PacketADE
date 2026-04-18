@@ -37,7 +37,7 @@ export async function initializeApp(): Promise<void> {
 
     // Restore project path: backend settings > localStorage > CWD
     const backendPath = state.settings.projectPath;
-    const localPath = localStorage.getItem("packetcode:project-path");
+    const localPath = localStorage.getItem("packetade:project-path");
     const projectPath = backendPath || localPath || null;
 
     if (projectPath) {
@@ -52,7 +52,7 @@ export async function initializeApp(): Promise<void> {
     }
   } catch {
     // Backend unavailable — fall back to localStorage defaults
-    const localPath = localStorage.getItem("packetcode:project-path");
+    const localPath = localStorage.getItem("packetade:project-path");
     if (localPath) {
       useLayoutStore.getState().setProjectPath(localPath);
     } else {

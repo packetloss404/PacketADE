@@ -119,7 +119,7 @@ const HALLUCINATION_ARTIFACTS: &[&str] = &[
 /// # Arguments
 /// * `whisper_state` - Shared Whisper context state managed by Tauri
 /// * `audio` - PCM audio samples as f32, mono channel, 16 kHz sample rate
-/// * `model_path` - Path to the GGML model file (e.g. `~/.packetcode/models/ggml-base.bin`)
+/// * `model_path` - Path to the GGML model file (e.g. `~/.packetade/models/ggml-base.bin`)
 ///
 /// # Returns
 /// The transcribed text with hallucination artifacts removed, or an error string.

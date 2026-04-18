@@ -1,20 +1,17 @@
-use crate::claude::binary::{claude_command, run_claude};
+//! Side-panel agent chat streaming (context-aware Claude-CLI query).
+//!
+//! Historical note: this file was originally the "Insights Chat" feature.
+//! Insights was folded into the unified Agents pane (see the Scout profile).
+//! Only the agent-chat streaming command remains here, used by
+//! `src/components/session/AgentChatPanel.tsx`. Filename is kept for now to
+//! avoid churning the registration list; consider renaming to `agent_chat.rs`
+//! in a follow-up.
+
+use crate::claude::binary::claude_command;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::info;
-
-fn insights_chunk_event(request_id: &str) -> String {
-    format!("insights:chunk:{}", request_id)
-}
-
-fn insights_error_event(request_id: &str) -> String {
-    format!("insights:error:{}", request_id)
-}
-
-fn insights_done_event(request_id: &str) -> String {
-    format!("insights:done:{}", request_id)
-}
 
 fn agent_chat_chunk_event(request_id: &str) -> String {
     format!("agent-chat:chunk:{}", request_id)
@@ -37,12 +34,12 @@ struct StreamError {
 }
 
 #[derive(Deserialize)]
-pub struct InsightsMessage {
+pub struct AgentChatMessage {
     pub role: String,
     pub content: String,
 }
 
-fn build_insights_prompt(messages: &[InsightsMessage], context: Option<&str>) -> String {
+fn build_agent_chat_prompt(messages: &[AgentChatMessage], context: Option<&str>) -> String {
     let mut conversation = String::new();
     for msg in messages {
         let prefix = if msg.role == "user" { "User" } else { "Assistant" };
@@ -68,97 +65,16 @@ Provide a helpful response to the user's latest message."#,
 }
 
 #[tauri::command]
-pub async fn ask_insights(
-    project_path: String,
-    messages: Vec<InsightsMessage>,
-) -> Result<String, String> {
-    super::validate_project_path(&project_path)?;
-    info!(project_path = %project_path, message_count = messages.len(), "Insights query");
-    let prompt = build_insights_prompt(&messages, None);
-    super::validate_input_size(&prompt, super::MAX_INPUT_SIZE, "Insights prompt")?;
-    run_claude(&prompt, Some(&project_path)).await
-}
-
-#[tauri::command]
-pub async fn ask_insights_stream(
-    app_handle: tauri::AppHandle,
-    project_path: String,
-    messages: Vec<InsightsMessage>,
-    session_context: Option<String>,
-    request_id: Option<String>,
-) -> Result<(), String> {
-    super::validate_project_path(&project_path)?;
-    info!(project_path = %project_path, message_count = messages.len(), streaming = true, "Insights stream query");
-    let prompt = build_insights_prompt(&messages, session_context.as_deref());
-    super::validate_input_size(&prompt, super::MAX_INPUT_SIZE, "Insights stream prompt")?;
-
-    let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let mut cmd = claude_command()?;
-    cmd.args(&["-p", &prompt, "--output-format", "text"]);
-    cmd.current_dir(&project_path);
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn Claude CLI: {}", e))?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to capture stdout".to_string())?;
-
-    let stderr = child.stderr.take();
-
-    let handle = app_handle.clone();
-    tokio::spawn(async move {
-        let reader = BufReader::new(stdout);
-        let mut lines = reader.lines();
-
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = handle.emit(&insights_chunk_event(&request_id), &line);
-        }
-
-        // Collect stderr for error classification
-        let stderr_text = if let Some(se) = stderr {
-            let mut buf = String::new();
-            let mut sr = BufReader::new(se);
-            let _ = tokio::io::AsyncReadExt::read_to_string(&mut sr, &mut buf).await;
-            buf
-        } else {
-            String::new()
-        };
-
-        let status = child.wait().await;
-        let success = status.map(|s| s.success()).unwrap_or(false);
-
-        if !success && !stderr_text.trim().is_empty() {
-            let classified = super::error_classifier::classify_cli_error(&stderr_text);
-            let _ = handle.emit(&insights_error_event(&request_id), StreamError {
-                category: format!("{:?}", classified.category).to_lowercase(),
-                message: classified.message,
-                suggestion: classified.suggestion,
-                is_transient: classified.is_transient,
-            });
-        }
-
-        let _ = handle.emit(&insights_done_event(&request_id), success);
-    });
-
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn ask_agent_chat_stream(
     app_handle: tauri::AppHandle,
     project_path: String,
-    messages: Vec<InsightsMessage>,
+    messages: Vec<AgentChatMessage>,
     session_context: Option<String>,
     request_id: Option<String>,
 ) -> Result<(), String> {
     super::validate_project_path(&project_path)?;
     info!(project_path = %project_path, message_count = messages.len(), streaming = true, "Agent chat stream query");
-    let prompt = build_insights_prompt(&messages, session_context.as_deref());
+    let prompt = build_agent_chat_prompt(&messages, session_context.as_deref());
     super::validate_input_size(&prompt, super::MAX_INPUT_SIZE, "Agent chat stream prompt")?;
 
     let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());

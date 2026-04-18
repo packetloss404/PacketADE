@@ -111,7 +111,7 @@ export function SshConnectModal({ onClose, onConnected }: SshConnectModalProps) 
     >
       <div className="p-5 flex flex-col gap-3">
         <p className="text-[11px] text-text-muted leading-relaxed">
-          PacketCode will run an `echo` over SSH to verify the credentials, then
+          PacketADE will run an `echo` over SSH to verify the credentials, then
           save the target. Passwords are stored in your OS keychain so you don't
           have to re-enter them — leave blank to use key-based auth only.
         </p>

@@ -31,7 +31,7 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
   const updateTemplate = usePromptStore((s) => s.updateTemplate);
   const deleteTemplate = usePromptStore((s) => s.deleteTemplate);
   const sendToTerminal = usePromptStore((s) => s.sendToTerminal);
-  const sendToInsights = usePromptStore((s) => s.sendToInsights);
+  const sendToAgentChat = usePromptStore((s) => s.sendToAgentChat);
 
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<PromptTemplate["category"] | "all">("all");
@@ -92,8 +92,8 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
     onClose();
   }
 
-  function handleSendInsights(id: string) {
-    sendToInsights(id);
+  function handleSendScout(id: string) {
+    void sendToAgentChat(id);
     onClose();
   }
 
@@ -253,12 +253,12 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
                       Terminal
                     </button>
                     <button
-                      onClick={() => handleSendInsights(t.id)}
-                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-accent-blue bg-bg-secondary rounded transition-colors"
-                      title="Send to Insights — creates a new Insights conversation with this prompt."
+                      onClick={() => handleSendScout(t.id)}
+                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-accent-cyan bg-bg-secondary rounded transition-colors"
+                      title="Send to Scout — opens a read-only agent chat with this prompt and project memory."
                     >
                       <MessageSquare size={10} />
-                      Insights
+                      Scout
                     </button>
                     <button
                       onClick={() => handleCopy(t.content)}

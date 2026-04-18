@@ -2,10 +2,13 @@ import { create } from "zustand";
 import { loadFromStorage, saveToStorage, generateId } from "@/lib/storage";
 import { writePty } from "@/lib/tauri";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useInsightsStore } from "@/stores/insightsStore";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useProfileStore } from "@/stores/profileStore";
+import { useAppStore } from "@/stores/appStore";
+import { getDefaultModel } from "@/lib/api-models";
 import type { PromptTemplate } from "@/types/prompt";
 
-const STORAGE_KEY = "packetcode:prompt-templates";
+const STORAGE_KEY = "packetade:prompt-templates";
 
 const BUILTIN_TEMPLATES: PromptTemplate[] = [
   { id: "builtin-review", name: "Code Review", content: "Review the recent changes in this project. Focus on correctness, performance, and security. Highlight any issues found.", category: "review", createdAt: 0, updatedAt: 0 },
@@ -30,7 +33,7 @@ interface PromptStore {
   updateTemplate: (id: string, updates: Partial<Pick<PromptTemplate, "name" | "content" | "category">>) => void;
   deleteTemplate: (id: string) => void;
   sendToTerminal: (templateId: string) => void;
-  sendToInsights: (templateId: string) => void;
+  sendToAgentChat: (templateId: string) => Promise<void>;
 }
 
 export const usePromptStore = create<PromptStore>((set, get) => ({
@@ -74,12 +77,28 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
     }
   },
 
-  sendToInsights: (templateId) => {
+  sendToAgentChat: async (templateId) => {
     const template = get().templates.find((t) => t.id === templateId);
     if (!template) return;
     const projectPath = useLayoutStore.getState().projectPath;
-    const insightsStore = useInsightsStore.getState();
-    insightsStore.createSession();
-    insightsStore.sendMessage(projectPath, template.content);
+    if (!projectPath) return;
+    const scout = useProfileStore.getState().getProfile("scout");
+    const agent = "api-claude";
+    const id = await useAgentTaskStore.getState().createApiConversation(
+      agent,
+      projectPath,
+      scout?.defaultModel || getDefaultModel(agent),
+      template.content,
+      scout?.systemPrompt ?? null,
+      false,
+      false,
+      null,
+      undefined,
+      false,
+      scout?.allowedTools ?? null,
+      scout?.memoryContextDefault ?? false,
+    );
+    useAgentTaskStore.getState().selectConversation(id);
+    useAppStore.getState().setActiveView("agents");
   },
 }));

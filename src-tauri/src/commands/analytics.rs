@@ -114,8 +114,8 @@ pub fn read_usage_analytics() -> String {
         }
     }
 
-    // Ingest ~/.packetcode/usage.jsonl (written by API agents)
-    let usage_jsonl_path = PathBuf::from(&home).join(".packetcode").join("usage.jsonl");
+    // Ingest ~/.packetade/usage.jsonl (written by API agents)
+    let usage_jsonl_path = PathBuf::from(&home).join(crate::core::brand::DATA_DIR_NAME).join("usage.jsonl");
     if let Ok(contents) = fs::read_to_string(&usage_jsonl_path) {
         for line in contents.lines() {
             let line = line.trim();

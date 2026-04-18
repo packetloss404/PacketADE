@@ -102,4 +102,11 @@ export interface AgentConversation {
    * the sidebar by default but accessible via the "Archived" filter. Treat
    * undefined as false. */
   archived?: boolean;
+  /** Restrict this conversation's agent to this tool subset. Undefined = all tools.
+   * Populated from the selected profile's `allowedTools` at conversation creation. */
+  allowedTools?: string[];
+  /** Inject project-memory context into the system prompt for this conversation.
+   * Default true for conversations opened with read-only profiles (e.g. Scout),
+   * false otherwise. Toggleable from the chat header. */
+  memoryContextEnabled?: boolean;
 }

@@ -1,4 +1,5 @@
 use crate::commands::shared::home_dir;
+use crate::core::brand::DATA_DIR_NAME;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::fs;
@@ -16,12 +17,12 @@ pub struct DictationEntry {
     pub sentiment: Option<f64>,
 }
 
-/// Return the path to ~/.packetcode/dictation.db, creating the directory if needed.
+/// Return the path to ~/.packetade/dictation.db, creating the directory if needed.
 fn db_path() -> Result<PathBuf, String> {
     let home = home_dir().ok_or("Could not resolve home directory")?;
-    let dir = PathBuf::from(&home).join(".packetcode");
+    let dir = PathBuf::from(&home).join(DATA_DIR_NAME);
     if !dir.exists() {
-        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create .packetcode dir: {e}"))?;
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {DATA_DIR_NAME} dir: {e}"))?;
     }
     Ok(dir.join("dictation.db"))
 }

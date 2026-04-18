@@ -190,7 +190,7 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
             }
         },
         "web_fetch" => {
-            // Host-agnostic: always runs from the PacketCode process.
+            // Host-agnostic: always runs from the PacketADE process.
             let _ = target;
             crate::core::tool_web::execute_web_fetch(&call.arguments).await
         }
@@ -207,7 +207,7 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
             crate::core::tool_pull_request::execute_create_pull_request(&call.arguments, target).await
         }
         "task_create" => {
-            // Host-agnostic: tasks live in the PacketCode process.
+            // Host-agnostic: tasks live in the PacketADE process.
             let _ = target;
             crate::core::tool_tasks::execute_task_create(&call.arguments)
         }
@@ -223,7 +223,7 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
             crate::core::mcp_bridge::execute_mcp_tool(name, &call.arguments).await
         }
         name if name.starts_with("gh_") => {
-            // Host-agnostic: GitHub API calls go from the PacketCode process.
+            // Host-agnostic: GitHub API calls go from the PacketADE process.
             let _ = target;
             crate::core::tool_github::execute_github_tool(name, &call.arguments).await
         }

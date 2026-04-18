@@ -1,14 +1,14 @@
 [package]
-name = "packetcode"
+name = "packetade"
 version = "0.2.0"
-description = "A custom IDE for Claude Code"
-authors = ["PacketCode"]
+description = "PacketADE — Agent Development Environment (IDE + multi-agent orchestration)"
+authors = ["PacketADE"]
 edition = "2021"
 license = "Apache-2.0"
-default-run = "packetcode"
+default-run = "packetade"
 
 [lib]
-name = "packetcode_lib"
+name = "packetade_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

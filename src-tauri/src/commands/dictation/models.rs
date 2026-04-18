@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::core::brand::DATA_DIR_NAME;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use tracing::{info, warn};
@@ -51,14 +52,14 @@ const MODEL_SIZES: &[(&str, u32)] = &[
     ("large-v3", 3000),
 ];
 
-/// Returns the directory where Whisper models are stored: `~/.packetcode/models/`
+/// Returns the directory where Whisper models are stored: `~/.packetade/models/`
 pub fn models_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
-    Ok(home.join(".packetcode").join("models"))
+    Ok(home.join(DATA_DIR_NAME).join("models"))
 }
 
 /// Returns the full path to a model file for the given size.
-/// e.g. `~/.packetcode/models/ggml-base.bin`
+/// e.g. `~/.packetade/models/ggml-base.bin`
 pub fn model_path(size: &str) -> Result<PathBuf, String> {
     Ok(models_dir()?.join(format!("ggml-{size}.bin")))
 }

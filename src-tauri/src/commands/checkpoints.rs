@@ -1,6 +1,6 @@
 //! Per-conversation checkpoints — named snapshots of message history.
 //!
-//! Storage: `<home>/.packetcode/conversations/<session_id>/checkpoints/<ts>_<chk_id>.json`.
+//! Storage: `<home>/.packetade/conversations/<session_id>/checkpoints/<ts>_<chk_id>.json`.
 //! The frontend owns when to call `save_checkpoint` (typically on the done event) and
 //! treats the stored JSON as opaque.
 
@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::warn;
 
 use super::shared::home_dir;
+use crate::core::brand::DATA_DIR_NAME;
 
 fn validate_id(id: &str) -> Result<(), String> {
     if id.is_empty() {
@@ -28,7 +29,7 @@ fn checkpoints_dir(session_id: &str) -> Result<PathBuf, String> {
     validate_id(session_id)?;
     let home = home_dir().ok_or_else(|| "Could not resolve home directory".to_string())?;
     Ok(PathBuf::from(home)
-        .join(".packetcode")
+        .join(DATA_DIR_NAME)
         .join("conversations")
         .join(session_id)
         .join("checkpoints"))

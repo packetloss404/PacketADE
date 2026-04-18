@@ -43,7 +43,7 @@ pub fn build_system_prompt(project_path: &str) -> String {
     prompt
 }
 
-const BASE_SYSTEM_PROMPT: &str = r#"You are an expert software engineer working as an AI coding assistant inside PacketCode, a desktop IDE. You have file/shell tools and run inside a real workspace.
+const BASE_SYSTEM_PROMPT: &str = r#"You are an expert software engineer working as an AI coding assistant inside PacketADE, a desktop agent development environment. You have file/shell tools and run inside a real workspace.
 
 ## Communication style
 

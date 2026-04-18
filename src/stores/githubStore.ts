@@ -13,7 +13,7 @@ import {
 import type { GitHubRepo, GitHubIssue, GitHubPr, GitHubConfig } from "@/types/github";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 
-const STORAGE_KEY = "packetcode:github";
+const STORAGE_KEY = "packetade:github";
 
 interface LoadedConfig {
   config: GitHubConfig;

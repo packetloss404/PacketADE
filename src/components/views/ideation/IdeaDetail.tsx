@@ -1,8 +1,10 @@
 import { X, ArrowRight, ExternalLink, MessageSquare } from "lucide-react";
 import { useIdeationStore } from "@/stores/ideationStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useInsightsStore } from "@/stores/insightsStore";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useProfileStore } from "@/stores/profileStore";
 import { useAppStore } from "@/stores/appStore";
+import { getDefaultModel } from "@/lib/api-models";
 import type { Idea } from "@/types/ideation";
 import { getTypeConfig, SEVERITY_COLORS, EFFORT_COLORS } from "./ideationConfig";
 
@@ -14,15 +16,27 @@ export function IdeaDetail({ idea }: { idea: Idea }) {
 
   const { icon: TypeIcon, color: typeColor, label: typeLabel } = getTypeConfig(idea.type);
 
-  function handleAskInsights() {
+  async function handleAskScout() {
     const workspace = useWorkspaceStore.getState().getActiveWorkspace();
     if (!workspace) return;
-    useInsightsStore.getState().createSession();
-    void useInsightsStore.getState().sendMessage(
+    const scout = useProfileStore.getState().getProfile("scout");
+    const agent = "api-claude";
+    const id = await useAgentTaskStore.getState().createApiConversation(
+      agent,
       workspace.projectPath,
-      `Tell me more about this idea: ${idea.title}\n\n${idea.description}${idea.suggestion ? `\n\nSuggestion: ${idea.suggestion}` : ""}`
+      scout?.defaultModel || getDefaultModel(agent),
+      `Tell me more about this idea: ${idea.title}\n\n${idea.description}${idea.suggestion ? `\n\nSuggestion: ${idea.suggestion}` : ""}`,
+      scout?.systemPrompt ?? null,
+      false,
+      false,
+      null,
+      undefined,
+      false,
+      scout?.allowedTools ?? null,
+      scout?.memoryContextDefault ?? false,
     );
-    useAppStore.getState().setActiveView("insights");
+    useAgentTaskStore.getState().selectConversation(id);
+    useAppStore.getState().setActiveView("agents");
   }
 
   return (
@@ -76,10 +90,11 @@ export function IdeaDetail({ idea }: { idea: Idea }) {
             <ArrowRight size={12} />
             Convert to Issue
           </button>
-          <button onClick={handleAskInsights}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent-blue/10 text-accent-blue border border-accent-blue/20 rounded-lg hover:bg-accent-blue/20 transition-colors">
+          <button onClick={handleAskScout}
+            title="Open a read-only agent conversation about this idea"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20 rounded-lg hover:bg-accent-cyan/20 transition-colors">
             <MessageSquare size={12} />
-            Ask Insights
+            Ask Scout
           </button>
           <button onClick={() => workspaceId && dismiss(workspaceId, idea.id)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-bg-elevated text-text-muted rounded-lg hover:text-text-secondary transition-colors">

@@ -24,9 +24,9 @@ export function WelcomeScreen() {
 
   return (
     <div className="flex flex-col items-center justify-center h-full bg-bg-primary select-none">
-      <img src="/favicon.png" alt="PacketCode" className="w-14 h-14 mb-5" />
+      <img src="/favicon.png" alt="PacketADE" className="w-14 h-14 mb-5" />
       <h1 className="text-xl font-semibold text-text-primary mb-1">
-        PacketCode
+        PacketADE
       </h1>
       <p className="text-xs text-text-muted mb-8">
         Multi-agent development environment

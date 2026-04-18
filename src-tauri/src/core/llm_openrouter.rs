@@ -1,5 +1,6 @@
 //! OpenRouter API provider (OpenAI-compatible with extra headers).
 
+use crate::core::brand::{APP_NAME, BRAND_URL};
 use crate::core::llm_openai_compat::{stream_chat_compat, OpenAiCompatConfig};
 use crate::core::llm_provider::LlmProvider;
 use crate::core::llm_types::*;
@@ -21,9 +22,9 @@ impl LlmProvider for OpenRouterProvider {
         let mut headers = HeaderMap::new();
         headers.insert(
             "HTTP-Referer",
-            HeaderValue::from_static("https://packetcode.dev"),
+            HeaderValue::from_static(BRAND_URL),
         );
-        headers.insert("X-Title", HeaderValue::from_static("PacketCode"));
+        headers.insert("X-Title", HeaderValue::from_static(APP_NAME));
 
         let config = OpenAiCompatConfig {
             base_url: OPENROUTER_BASE_URL.to_string(),

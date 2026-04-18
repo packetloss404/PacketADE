@@ -1,7 +1,7 @@
 //! Persistence for API agent conversations.
 //!
 //! Stores each conversation as a JSON file under
-//! `<home>/.packetcode/conversations/<id>.json`. The frontend is responsible
+//! `<home>/.packetade/conversations/<id>.json`. The frontend is responsible
 //! for the JSON schema; this module treats `data` as an opaque, pre-serialized
 //! string and only does filesystem management + basic path-escape guards.
 
@@ -10,12 +10,13 @@ use std::path::PathBuf;
 use tracing::warn;
 
 use super::shared::home_dir;
+use crate::core::brand::DATA_DIR_NAME;
 
-/// Resolve the conversations directory (`<home>/.packetcode/conversations`).
+/// Resolve the conversations directory (`<home>/.packetade/conversations`).
 fn conversations_dir() -> Result<PathBuf, String> {
     let home = home_dir().ok_or_else(|| "Could not resolve home directory".to_string())?;
     Ok(PathBuf::from(home)
-        .join(".packetcode")
+        .join(DATA_DIR_NAME)
         .join("conversations"))
 }
 

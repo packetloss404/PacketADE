@@ -3,14 +3,14 @@
 //! Exposes a focused subset of GitHub REST API operations (list issues,
 //! get issue, list PRs) so agents can browse repos without shelling to `gh`.
 //!
-//! Token loading mirrors `commands/github.rs` — keyring first, then a legacy
-//! file fallback at `~/.packetcode/github-token`. We intentionally inline the
-//! lookup here (rather than re-using the Tauri `GitHubAuthState`) so tools
-//! stay independent of the AppHandle.
+//! Token loading mirrors `commands/github.rs` — new keyring service first, then
+//! legacy service, then legacy file fallback. Read-only here — migration happens
+//! in `commands/github.rs` on app startup.
 
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use tracing::warn;
 
+use crate::core::brand::{DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE, USER_AGENT as BRAND_USER_AGENT};
 use crate::core::llm_types::ToolDefinition;
 
 const MAX_OUTPUT_CHARS: usize = 8000;
@@ -18,28 +18,38 @@ const MAX_OUTPUT_CHARS: usize = 8000;
 /// Mirror of `commands/github.rs::load_persisted_token`, minus the migration
 /// path (read-only here — agent tools don't write the token back).
 fn load_github_token() -> Option<String> {
-    // Keyring first.
-    match keyring::Entry::new("packetcode", "github-token") {
-        Ok(entry) => match entry.get_password() {
+    // New keyring service.
+    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, "github-token") {
+        match entry.get_password() {
             Ok(token) => return Some(token),
             Err(keyring::Error::NoEntry) => {}
             Err(e) => warn!("Failed to read GitHub token from keyring: {}", e),
-        },
-        Err(e) => warn!("Failed to create keyring entry: {}", e),
+        }
     }
 
-    // Legacy file fallback.
-    let home = crate::core::shared::home_dir()?;
-    let path = std::path::PathBuf::from(home)
-        .join(".packetcode")
-        .join("github-token");
-    let raw = std::fs::read_to_string(&path).ok()?;
-    let trimmed = raw.trim().to_string();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
+    // Legacy keyring service.
+    if let Ok(entry) = keyring::Entry::new(LEGACY_KEYRING_SERVICE, "github-token") {
+        if let Ok(token) = entry.get_password() {
+            return Some(token);
+        }
     }
+
+    // Legacy file fallback — check both new and old data-dir names.
+    let home = crate::core::shared::home_dir()?;
+    let home_path = std::path::PathBuf::from(home);
+    let candidates = [
+        home_path.join(DATA_DIR_NAME).join("github-token"),
+        home_path.join(LEGACY_DATA_DIR_NAME).join("github-token"),
+    ];
+    for path in &candidates {
+        if let Ok(raw) = std::fs::read_to_string(path) {
+            let trimmed = raw.trim().to_string();
+            if !trimmed.is_empty() {
+                return Some(trimmed);
+            }
+        }
+    }
+    None
 }
 
 fn github_client(token: &str) -> Result<reqwest::Client, String> {
@@ -58,7 +68,7 @@ fn github_client(token: &str) -> Result<reqwest::Client, String> {
     );
     headers.insert(
         USER_AGENT,
-        "PacketCode/1.0"
+        BRAND_USER_AGENT
             .parse()
             .map_err(|e| format!("Invalid header: {}", e))?,
     );

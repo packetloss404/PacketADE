@@ -1,7 +1,9 @@
 //! User-defined slash commands.
 //!
-//! Scans `<home>/.packetcode/commands/*.md` and `<project>/.packetcode/commands/*.md`,
+//! Scans `<home>/.packetade/commands/*.md` and `<project>/.packetade/commands/*.md`,
 //! parsing each file as optional YAML frontmatter + markdown body. Project overrides global.
+//!
+//! Legacy `.packetcode/commands/` directories are also scanned for backwards compat.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -9,6 +11,7 @@ use std::path::{Path, PathBuf};
 use tracing::warn;
 
 use super::shared::home_dir;
+use crate::core::brand::{DATA_DIR_NAME, LEGACY_DATA_DIR_NAME};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlashCommandDef {
@@ -108,14 +111,21 @@ fn scan_dir(dir: &Path, source_tag: &str, out: &mut Vec<SlashCommandDef>) {
 pub fn list_slash_commands(project_path: String) -> Result<Vec<SlashCommandDef>, String> {
     let mut global_cmds: Vec<SlashCommandDef> = Vec::new();
     if let Some(home) = home_dir() {
-        let dir = PathBuf::from(home).join(".packetcode").join("commands");
+        // Scan legacy first so new-name files win on conflict.
+        let legacy_dir = PathBuf::from(&home).join(LEGACY_DATA_DIR_NAME).join("commands");
+        scan_dir(&legacy_dir, "global", &mut global_cmds);
+        let dir = PathBuf::from(home).join(DATA_DIR_NAME).join("commands");
         scan_dir(&dir, "global", &mut global_cmds);
     }
 
     let mut project_cmds: Vec<SlashCommandDef> = Vec::new();
     if !project_path.is_empty() {
+        let legacy_dir = PathBuf::from(&project_path)
+            .join(LEGACY_DATA_DIR_NAME)
+            .join("commands");
+        scan_dir(&legacy_dir, "project", &mut project_cmds);
         let dir = PathBuf::from(&project_path)
-            .join(".packetcode")
+            .join(DATA_DIR_NAME)
             .join("commands");
         scan_dir(&dir, "project", &mut project_cmds);
     }

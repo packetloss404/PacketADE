@@ -280,7 +280,7 @@ export function DeployView() {
               <p className="text-xs">Select a config and click Deploy to start</p>
               {configs.length === 0 && (
                 <p className="text-[11px] mt-1">
-                  Or add a <code className="text-accent-green">packetcode.deploy.json</code> to your project
+                  Or add a <code className="text-accent-green">packetade.deploy.json</code> to your project
                 </p>
               )}
             </div>

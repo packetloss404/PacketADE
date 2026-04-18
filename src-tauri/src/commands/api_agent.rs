@@ -93,6 +93,9 @@ struct SessionConfig {
     permission_mode: PermissionMode,
     auto_allow_tools: HashSet<String>,
     approve_writes: bool,
+    /// Optional allowlist of tool names. None = all tools; Some(list) = only those.
+    /// Used by the Scout profile for read-only investigation.
+    allowed_tools: Option<Vec<String>>,
 }
 
 impl ApiAgentState {
@@ -226,6 +229,7 @@ pub async fn start_api_agent_session(
     attachments: Option<Vec<ImageAttachment>>,
     plan_mode: Option<bool>,
     ssh_config: Option<SshConfig>,
+    allowed_tools: Option<Vec<String>>,
 ) -> Result<(), String> {
     // Decide execution target. For SSH we skip the local-path validation and
     // use the remote path as the workspace label in the prompt.
@@ -269,6 +273,7 @@ pub async fn start_api_agent_session(
                 permission_mode: PermissionMode::Auto,
                 auto_allow_tools: HashSet::new(),
                 approve_writes: false,
+                allowed_tools,
             },
         );
 
@@ -617,7 +622,7 @@ async fn run_agent_loop(
     session_id: &str,
     mut cancel_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
-    let (provider_name, model, execution, system_prompt, thinking_enabled) = {
+    let (provider_name, model, execution, system_prompt, thinking_enabled, allowed_tools) = {
         let configs = state.configs.lock().await;
         let config = configs
             .get(session_id)
@@ -628,12 +633,22 @@ async fn run_agent_loop(
             config.execution.clone(),
             config.system_prompt.clone(),
             config.thinking_enabled,
+            config.allowed_tools.clone(),
         )
     };
 
     let provider = get_provider(&provider_name)?;
     let api_key = api_keys::load_api_key(&provider_name)?;
-    let tools = tool_runtime::tool_definitions().await;
+    let tools = {
+        let all = tool_runtime::tool_definitions().await;
+        match allowed_tools.as_ref() {
+            Some(allow) => all
+                .into_iter()
+                .filter(|t| allow.iter().any(|n| n == &t.name))
+                .collect(),
+            None => all,
+        }
+    };
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
     let mut total_cache_read: u64 = 0;

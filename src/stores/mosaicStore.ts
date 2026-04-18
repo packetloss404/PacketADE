@@ -7,7 +7,7 @@ import {
   removeFromTree,
 } from "@/lib/mosaicPresets";
 
-const STORAGE_PREFIX = "packetcode:mosaic-layout";
+const STORAGE_PREFIX = "packetade:mosaic-layout";
 
 interface MosaicStore {
   tree: MosaicNode<string> | null;

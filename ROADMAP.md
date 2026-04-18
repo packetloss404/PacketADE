@@ -1,4 +1,4 @@
-# PacketCode Roadmap
+# PacketADE Roadmap
 
 Last updated: 2026-04-09
 
@@ -20,13 +20,13 @@ Gates currently green: `pnpm lint`, `pnpm build`, `pnpm test` (197 unit), `pnpm 
 | --- | ------------------------------------------ | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | P1  | Swarm orchestration roles                  | High     | Planned | Add explicit `coordinator` / `builder` / `reviewer` / `scout` task roles on top of the existing flight/task orchestration model. See `dev/swarm-orchestration-plan.md`.        |
 | P2  | File ownership and collision prevention    | High     | Planned | Add task-level owned paths and scheduler conflict checks so concurrent agents do not step on the same files. See `dev/swarm-orchestration-plan.md`.                            |
-| P3  | PacketCode MCP server                      | High     | Planned | Evolve PacketCode from MCP config management to a true MCP provider exposing flights, tasks, memory, and reviews to external clients. See `dev/packetcode-mcp-server-plan.md`. |
-| P4  | Workspace templates and lightweight editor | Medium   | Planned | Improve workspace packaging, scale, and file editing without turning PacketCode into a full editor fork. See `dev/workspace-editor-scale-plan.md`.                             |
+| P3  | PacketADE MCP server                      | High     | Planned | Evolve PacketADE from MCP config management to a true MCP provider exposing flights, tasks, memory, and reviews to external clients. See `dev/packetcode-mcp-server-plan.md`. |
+| P4  | Workspace templates and lightweight editor | Medium   | Planned | Improve workspace packaging, scale, and file editing without turning PacketADE into a full editor fork. See `dev/workspace-editor-scale-plan.md`.                             |
 
 ### Strategy Notes
 
-- **Voice** stays in backlog for now. Current decision: do not build partial voice features unless PacketCode is ready for a real desktop-wide workflow. See `dev/backlog.md`.
-- **Local-first** remains the product stance. PacketCode should compete as a local-first orchestration tool, not a cloud-first product suite. See `dev/positioning-notes.md`.
+- **Voice** stays in backlog for now. Current decision: do not build partial voice features unless PacketADE is ready for a real desktop-wide workflow. See `dev/backlog.md`.
+- **Local-first** remains the product stance. PacketADE should compete as a local-first orchestration tool, not a cloud-first product suite. See `dev/positioning-notes.md`.
 
 ### Phase 3 — Distribution
 

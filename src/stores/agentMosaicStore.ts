@@ -19,7 +19,7 @@ import { loadFromStorage, saveToStorage } from "@/lib/storage";
 
 export type AgentPaneId = "chat" | "diff" | "terminal" | "file";
 
-const STORAGE_KEY = "packetcode:agent-mosaic-v1";
+const STORAGE_KEY = "packetade:agent-mosaic-v1";
 
 interface AgentMosaicState {
   /** Per-conversation mosaic tree. `null` means "default — single chat leaf". */

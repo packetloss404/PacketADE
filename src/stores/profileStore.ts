@@ -57,15 +57,28 @@ const BUILTIN_PROFILES: AgentProfile[] = [
     defaultModel: "",
     isBuiltin: true,
   },
+  {
+    id: "scout",
+    name: "Scout",
+    description: "Read-only investigator with project memory. Safe to chat — can't edit or run commands.",
+    icon: "Brain",
+    color: "text-accent-cyan",
+    systemPrompt:
+      "You are a read-only investigator for this codebase. You CANNOT edit files or run shell commands — your tools are limited to reading, listing, and searching the project plus fetching web docs. Use the injected project-memory context (learned patterns, prior lessons, recent summaries) to answer questions about architecture, history, and intent. Recommend changes in prose; the user will apply them in a separate tool-capable agent.",
+    defaultModel: "",
+    isBuiltin: true,
+    allowedTools: ["read_file", "list_directory", "grep", "web_fetch"],
+    memoryContextDefault: true,
+  },
 ];
 
 function loadProfiles(): AgentProfile[] {
-  const userProfiles = loadFromStorage<AgentProfile[]>("packetcode:profiles", []);
+  const userProfiles = loadFromStorage<AgentProfile[]>("packetade:profiles", []);
   return [...BUILTIN_PROFILES, ...userProfiles.filter((p) => !p.isBuiltin)];
 }
 
 function saveUserProfiles(profiles: AgentProfile[]) {
-  saveToStorage("packetcode:profiles", profiles.filter((p) => !p.isBuiltin));
+  saveToStorage("packetade:profiles", profiles.filter((p) => !p.isBuiltin));
 }
 
 interface ProfileStore {
@@ -80,7 +93,7 @@ interface ProfileStore {
 
 export const useProfileStore = create<ProfileStore>((set, get) => ({
   profiles: loadProfiles(),
-  activeProfileId: localStorage.getItem("packetcode:active-profile") || null,
+  activeProfileId: localStorage.getItem("packetade:active-profile") || null,
 
   addProfile: (profile) => {
     const newProfile: AgentProfile = {
@@ -118,9 +131,9 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
 
   setActiveProfile: (id) => {
     if (id) {
-      localStorage.setItem("packetcode:active-profile", id);
+      localStorage.setItem("packetade:active-profile", id);
     } else {
-      localStorage.removeItem("packetcode:active-profile");
+      localStorage.removeItem("packetade:active-profile");
     }
     set({ activeProfileId: id });
   },

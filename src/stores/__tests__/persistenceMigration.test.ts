@@ -188,7 +188,7 @@ describe("flightStore backend persistence", () => {
 });
 
 describe("storage utility migration pattern", () => {
-  const TEST_KEY = "packetcode:test-migration";
+  const TEST_KEY = "packetade:test-migration";
 
   beforeEach(() => {
     localStorage.clear();

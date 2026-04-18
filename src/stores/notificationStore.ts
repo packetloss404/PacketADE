@@ -16,7 +16,7 @@ interface NotificationStore extends NotificationPreferences {
   setOnSessionError: (v: boolean) => void;
 }
 
-const STORAGE_KEY = "packetcode:notifications";
+const STORAGE_KEY = "packetade:notifications";
 
 function loadPreferences(): Partial<NotificationPreferences> {
   try {

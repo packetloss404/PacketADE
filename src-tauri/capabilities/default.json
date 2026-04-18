@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capability for PacketCode",
+  "description": "Default capability for PacketADE",
   "windows": ["main"],
   "permissions": [
     "core:default",
