@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { X, FileDiff, FilePlus2, AlertCircle } from "lucide-react";
-import * as Diff from "diff";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { X, FileDiff, AlertCircle } from "lucide-react";
 import { useDiffPaneStore } from "@/stores/diffPaneStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { readFileForDiff } from "@/lib/tauri";
+import { readFileForDiff, writeFileContents } from "@/lib/tauri";
+import { HunkSelectableDiff } from "@/components/agents/HunkSelectableDiff";
+import {
+  aggregateConversationDiffs,
+  type ConversationDiffAggregate,
+  type PerFileDiffStat,
+} from "@/lib/aggregateConversationDiffs";
 import type {
   AgentConversation,
   AgentToolCall,
@@ -82,8 +87,10 @@ type DiskState =
 function useFileDisk(
   projectPath: string | undefined,
   filePath: string | null,
-): DiskState {
+): { state: DiskState; refresh: () => Promise<void> } {
   const [state, setState] = useState<DiskState>({ kind: "loading" });
+  const [reloadTick, setReloadTick] = useState(0);
+
   useEffect(() => {
     if (!projectPath || !filePath) {
       setState({ kind: "new" });
@@ -107,21 +114,29 @@ function useFileDisk(
     return () => {
       cancelled = true;
     };
-  }, [projectPath, filePath]);
-  return state;
+  }, [projectPath, filePath, reloadTick]);
+
+  const refresh = useCallback(async () => {
+    setReloadTick((n) => n + 1);
+  }, []);
+
+  return { state, refresh };
 }
 
-function countDiffLines(parts: Diff.Change[]): { added: number; removed: number } {
-  let added = 0;
-  let removed = 0;
-  for (const part of parts) {
-    const lines = part.value.endsWith("\n")
-      ? part.value.split("\n").length - 1
-      : part.value.split("\n").length;
-    if (part.added) added += lines;
-    else if (part.removed) removed += lines;
-  }
-  return { added, removed };
+/**
+ * Combine a project root with a relative file path to produce the absolute
+ * path expected by `writeFileContents`. Preserves the project's existing
+ * separator style ('\\' on Windows project paths, '/' otherwise).
+ */
+function joinAbsolutePath(projectPath: string, relPath: string): string {
+  const usesBackslash = projectPath.includes("\\") && !projectPath.includes("/");
+  const sep = usesBackslash ? "\\" : "/";
+  const trimmedRoot = projectPath.replace(/[\\/]+$/, "");
+  const trimmedRel = relPath.replace(/^[\\/]+/, "");
+  const normalizedRel = usesBackslash
+    ? trimmedRel.replace(/\//g, "\\")
+    : trimmedRel.replace(/\\/g, "/");
+  return `${trimmedRoot}${sep}${normalizedRel}`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -129,29 +144,22 @@ function countDiffLines(parts: Diff.Change[]): { added: number; removed: number 
 /* -------------------------------------------------------------------------- */
 
 interface FileStatsProps {
-  projectPath: string;
-  entry: WriteFileEntry;
+  /** Pre-computed per-file stat from `aggregateConversationDiffs`. */
+  stat: PerFileDiffStat | undefined;
+  /** True while the parent is still resolving the aggregate. */
+  loading: boolean;
 }
 
-function FileStats({ projectPath, entry }: FileStatsProps) {
-  const disk = useFileDisk(projectPath, entry.path);
-  const { added, removed, isNew } = useMemo(() => {
-    if (disk.kind === "new") {
-      const lines = entry.content.split("\n").length;
-      return { added: lines, removed: 0, isNew: true };
-    }
-    if (disk.kind !== "existing") return { added: 0, removed: 0, isNew: false };
-    const parts = Diff.diffLines(disk.oldContent, entry.content);
-    const c = countDiffLines(parts);
-    return { ...c, isNew: false };
-  }, [disk, entry.content]);
-
-  if (disk.kind === "loading") {
+function FileStats({ stat, loading }: FileStatsProps) {
+  if (loading) {
     return <span className="text-text-muted text-[10px]">…</span>;
+  }
+  if (!stat) {
+    return <span className="text-text-muted text-[10px]">—</span>;
   }
   return (
     <span className="flex items-center gap-1 font-mono text-[10px]">
-      {isNew && (
+      {stat.isNew && (
         <span
           className="text-accent-green border border-accent-green/30 bg-accent-green/10 px-1 rounded"
           title="New file"
@@ -159,8 +167,8 @@ function FileStats({ projectPath, entry }: FileStatsProps) {
           new
         </span>
       )}
-      <span className="text-accent-green">+{added}</span>
-      <span className="text-accent-red">-{removed}</span>
+      <span className="text-accent-green">+{stat.adds}</span>
+      <span className="text-accent-red">-{stat.dels}</span>
     </span>
   );
 }
@@ -175,7 +183,18 @@ interface DiffBodyProps {
 }
 
 function DiffBody({ projectPath, entry }: DiffBodyProps) {
-  const disk = useFileDisk(projectPath, entry.path);
+  const { state: disk, refresh } = useFileDisk(projectPath, entry.path);
+
+  const handleApply = useCallback(
+    async (finalContent: string) => {
+      const absolutePath = joinAbsolutePath(projectPath, entry.path);
+      await writeFileContents(absolutePath, projectPath, finalContent);
+      // Re-read so the diff view reflects the new on-disk state and any
+      // unselected hunks become the only remaining changes to consider.
+      await refresh();
+    },
+    [projectPath, entry.path, refresh],
+  );
 
   if (disk.kind === "loading") {
     return (
@@ -194,81 +213,15 @@ function DiffBody({ projectPath, entry }: DiffBodyProps) {
     );
   }
 
-  if (disk.kind === "new") {
-    const lines = entry.content.split("\n");
-    return (
-      <div className="bg-bg-primary">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-secondary border-b border-bg-border">
-          <FilePlus2 size={12} className="text-accent-green" />
-          <span className="text-[11px] font-mono text-text-primary truncate flex-1">
-            {entry.path}
-          </span>
-          <span className="text-accent-green border border-accent-green/30 bg-accent-green/10 text-[10px] px-1.5 py-0.5 rounded font-mono">
-            New file
-          </span>
-        </div>
-        <pre className="text-[11px] font-mono whitespace-pre-wrap break-words">
-          {lines.map((line, idx) => (
-            <div
-              key={idx}
-              className="px-3 bg-accent-green/10 text-accent-green"
-            >
-              <span className="inline-block w-4 text-text-secondary select-none">
-                +
-              </span>
-              {line}
-            </div>
-          ))}
-        </pre>
-      </div>
-    );
-  }
-
-  const parts = Diff.diffLines(disk.oldContent, entry.content);
-  const counts = countDiffLines(parts);
+  const originalContent = disk.kind === "existing" ? disk.oldContent : null;
 
   return (
-    <div className="bg-bg-primary">
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-secondary border-b border-bg-border">
-        <FileDiff size={12} className="text-text-secondary" />
-        <span className="text-[11px] font-mono text-text-primary truncate flex-1">
-          {entry.path}
-        </span>
-        <span className="text-[10px] font-mono text-accent-green">
-          +{counts.added}
-        </span>
-        <span className="text-[10px] font-mono text-accent-red">
-          -{counts.removed}
-        </span>
-      </div>
-      <div>
-        {parts.map((part, idx) => {
-          const lines = part.value.split("\n");
-          if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-          const gutter = part.added ? "+" : part.removed ? "-" : " ";
-          const rowClass = part.added
-            ? "bg-accent-green/10 text-accent-green"
-            : part.removed
-              ? "bg-accent-red/10 text-accent-red"
-              : "text-text-primary";
-          return (
-            <pre
-              key={idx}
-              className={`text-[11px] font-mono whitespace-pre-wrap break-words ${rowClass}`}
-            >
-              {lines.map((line, li) => (
-                <div key={li} className="px-3">
-                  <span className="inline-block w-4 text-text-secondary select-none">
-                    {gutter}
-                  </span>
-                  {line}
-                </div>
-              ))}
-            </pre>
-          );
-        })}
-      </div>
-    </div>
+    <HunkSelectableDiff
+      originalContent={originalContent}
+      newContent={entry.content}
+      filePath={entry.path}
+      onApplySelection={handleApply}
+    />
   );
 }
 
@@ -294,6 +247,48 @@ export function DiffPane() {
     () => Array.from(writeFiles.values()).sort((a, b) => a.path.localeCompare(b.path)),
     [writeFiles],
   );
+
+  // Cache the full diff aggregate (per-file +/- counts). Recomputes whenever
+  // the conversation message count changes — that's a cheap proxy for "new
+  // tool calls have arrived".
+  const messageCount = conversation?.messages.length ?? 0;
+  const [aggregate, setAggregate] = useState<ConversationDiffAggregate | null>(
+    null,
+  );
+  const [aggregateLoading, setAggregateLoading] = useState(false);
+  useEffect(() => {
+    if (!conversation) {
+      setAggregate(null);
+      return;
+    }
+    let cancelled = false;
+    setAggregateLoading(true);
+    (async () => {
+      try {
+        const result = await aggregateConversationDiffs(conversation);
+        if (!cancelled) setAggregate(result);
+      } catch {
+        if (!cancelled) setAggregate(null);
+      } finally {
+        if (!cancelled) setAggregateLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally key on conversation identity + message count so streaming
+    // tool-call arrivals refresh the aggregate without re-running on every
+    // unrelated re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation?.id, messageCount]);
+
+  const statByPath = useMemo(() => {
+    const map = new Map<string, PerFileDiffStat>();
+    if (aggregate) {
+      for (const s of aggregate.perFile) map.set(s.path, s);
+    }
+    return map;
+  }, [aggregate]);
 
   // Auto-select the first file when nothing is selected (or the selection
   // points to a path no longer in the aggregate map).
@@ -378,8 +373,8 @@ export function DiffPane() {
                         </span>
                         {conversation?.projectPath && (
                           <FileStats
-                            projectPath={conversation.projectPath}
-                            entry={entry}
+                            stat={statByPath.get(entry.path)}
+                            loading={aggregateLoading && !aggregate}
                           />
                         )}
                       </div>

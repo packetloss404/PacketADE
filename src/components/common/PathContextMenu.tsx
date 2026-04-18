@@ -72,16 +72,15 @@ export function PathContextMenu({
   }, [onClose]);
 
   const handleOpen = async () => {
-    // v1: emit a console hint and fall back to opening the parent folder.
-    // The integrator can later wire this to an in-app editor (e.g. an
-    // editorStore action) without changing this component's API.
-    // eslint-disable-next-line no-console
-    console.info("[PathContextMenu] Open in editor:", path, line ? `:${line}` : "");
+    // v1: ask the OS to open the file with its default app. A future
+    // iteration can route this through an in-app editor / FileExplorer
+    // without changing this component's API.
     try {
-      await open(parentDir(path));
+      await open(path);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn("[PathContextMenu] open(parentDir) failed:", err);
+      console.warn("[PathContextMenu] open(file) failed:", err);
+      alert(`Cannot open: ${err}`);
     }
     onClose();
   };

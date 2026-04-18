@@ -98,4 +98,8 @@ export interface AgentConversation {
   };
   /** Per-conversation render density. Default = "normal". */
   transcriptVerbosity?: TranscriptVerbosity;
+  /** Whether this conversation is archived. Archived conversations are hidden from
+   * the sidebar by default but accessible via the "Archived" filter. Treat
+   * undefined as false. */
+  archived?: boolean;
 }

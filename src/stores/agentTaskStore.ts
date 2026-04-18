@@ -189,6 +189,8 @@ interface AgentTaskStore {
   updateAssistantMessage: (conversationId: string, messageId: string, content: string) => void;
   selectConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
+  archiveConversation: (id: string) => void;
+  unarchiveConversation: (id: string) => void;
   appendRawOutput: (conversationId: string, text: string) => void;
   cancelActiveConversation: (id: string) => Promise<void>;
   changeModel: (id: string, newModel: string) => Promise<void>;
@@ -951,6 +953,32 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }));
   },
 
+  archiveConversation: (id) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = { ...c, archived: true, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  unarchiveConversation: (id) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = { ...c, archived: false, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
   cancelActiveConversation: async (id) => {
     try {
       await invoke("cancel_api_agent_session", { sessionId: id });
@@ -1191,6 +1219,21 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   },
 }));
 
+/** Idle threshold (14 days) for auto-archiving completed conversations. */
+const AUTO_ARCHIVE_IDLE_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** One-time pass over hydrated conversations: any conversation with
+ * status === "done" that has been idle longer than AUTO_ARCHIVE_IDLE_MS and
+ * isn't already archived gets auto-archived. Mutates `conv` in place and
+ * returns whether it changed (so callers can re-persist). */
+function maybeAutoArchive(conv: AgentConversation): boolean {
+  if (conv.archived) return false;
+  if (conv.status !== "done") return false;
+  if (conv.updatedAt >= Date.now() - AUTO_ARCHIVE_IDLE_MS) return false;
+  conv.archived = true;
+  return true;
+}
+
 // Hydrate persisted API conversations on module load.
 // Reset runtime-only fields so we don't resume mid-stream after a cold start.
 loadConversations()
@@ -1200,6 +1243,14 @@ loadConversations()
       try {
         const conv = JSON.parse(raw) as AgentConversation;
         if (conv.mode !== "api") continue; // PTY sessions died with the app
+        // Auto-archive long-idle done conversations BEFORE we coerce status to
+        // "idle" below. Persist the change so the archive flag survives the
+        // next cold start.
+        if (maybeAutoArchive(conv)) {
+          saveConversation(conv.id, JSON.stringify(conv)).catch((e) => {
+            console.warn("Failed to persist auto-archive:", conv.id, e);
+          });
+        }
         conv.status = "idle";
         conv.messages = (conv.messages ?? []).map((m) => ({ ...m, isStreaming: false }));
         conv.queuedMessages = [];

@@ -8,13 +8,15 @@ import {
   Circle,
   CheckCircle2,
   XCircle,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { useGitHubStore } from "@/stores/githubStore";
 import { API_PROVIDERS } from "@/lib/api-models";
 
-type StatusFilter = "all" | "active" | "done";
+type StatusFilter = "all" | "active" | "done" | "archived";
 
 function statusIcon(status: AgentConversation["status"]) {
   switch (status) {
@@ -90,16 +92,22 @@ interface AgentSidebarProps {
 export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarProps) {
   const conversations = useAgentTaskStore((s) => s.conversations ?? []);
   const deleteConversation = useAgentTaskStore((s) => s.deleteConversation);
+  const archiveConversation = useAgentTaskStore((s) => s.archiveConversation);
+  const unarchiveConversation = useAgentTaskStore((s) => s.unarchiveConversation);
   const repos = useGitHubStore((s) => s.repos);
 
   const [filter, setFilter] = useState<StatusFilter>("all");
 
   const filtered = useMemo(() => {
-    if (filter === "all") return conversations;
-    if (filter === "active") {
-      return conversations.filter((c) => c.status === "active" || c.status === "idle");
+    if (filter === "archived") {
+      return conversations.filter((c) => c.archived);
     }
-    return conversations.filter((c) => c.status === "done" || c.status === "failed");
+    const visible = conversations.filter((c) => !c.archived);
+    if (filter === "all") return visible;
+    if (filter === "active") {
+      return visible.filter((c) => c.status === "active" || c.status === "idle");
+    }
+    return visible.filter((c) => c.status === "done" || c.status === "failed");
   }, [conversations, filter]);
 
   const convsByRepo = useMemo(() => {
@@ -118,13 +126,20 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   }, [filtered]);
 
   const counts = useMemo(() => {
+    let all = 0;
     let active = 0;
     let done = 0;
+    let archived = 0;
     for (const c of conversations) {
+      if (c.archived) {
+        archived++;
+        continue;
+      }
+      all++;
       if (c.status === "active" || c.status === "idle") active++;
       else done++;
     }
-    return { all: conversations.length, active, done };
+    return { all, active, done, archived };
   }, [conversations]);
 
   const hasConversations = convsByRepo.size > 0;
@@ -148,8 +163,9 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       {/* Status filter */}
       {conversations.length > 0 && (
         <div className="flex items-center gap-0.5 px-3 pb-1.5">
-          {(["all", "active", "done"] as StatusFilter[]).map((f) => {
-            const label = f === "all" ? "All" : f === "active" ? "Active" : "Done";
+          {(["all", "active", "done", "archived"] as StatusFilter[]).map((f) => {
+            const label =
+              f === "all" ? "All" : f === "active" ? "Active" : f === "done" ? "Done" : "Archived";
             const count = counts[f];
             const isActive = filter === f;
             return (
@@ -237,6 +253,17 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                           </p>
                         )}
                       </div>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (conv.archived) unarchiveConversation(conv.id);
+                        else archiveConversation(conv.id);
+                      }}
+                      className="absolute right-6 top-1.5 p-0.5 text-text-muted hover:text-accent-green opacity-0 group-hover:opacity-100 transition-opacity rounded"
+                      title={conv.archived ? "Unarchive" : "Archive"}
+                    >
+                      {conv.archived ? <ArchiveRestore size={10} /> : <Archive size={10} />}
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
