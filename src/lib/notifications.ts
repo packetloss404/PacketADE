@@ -89,6 +89,49 @@ export async function notifyFlightFailed(flightName: string) {
   });
 }
 
+export async function notifyAttemptCompleted(
+  flightTitle: string,
+  attemptLabel: string
+): Promise<void> {
+  if (document.visibilityState !== "hidden") return;
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  new Notification("Attempt ready", {
+    body: `${flightTitle}: ${attemptLabel} finished — review in Flight Deck`,
+    tag: `attempt-completed-${flightTitle}-${attemptLabel}`,
+  });
+}
+
+export async function notifyAttemptFailed(
+  flightTitle: string,
+  attemptLabel: string,
+  errorMsg?: string
+): Promise<void> {
+  if (document.visibilityState !== "hidden") return;
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  const body = errorMsg
+    ? `${flightTitle}: ${attemptLabel} failed — ${errorMsg}`
+    : `${flightTitle}: ${attemptLabel} failed`;
+  new Notification("Attempt failed", {
+    body,
+    tag: `attempt-failed-${flightTitle}-${attemptLabel}`,
+  });
+}
+
+export async function notifyConversationDone(convTitle: string): Promise<void> {
+  if (document.visibilityState !== "hidden") return;
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  new Notification("Agent finished", {
+    body: convTitle,
+    tag: `conversation-done-${convTitle}`,
+  });
+}
+
 export async function requestNotificationPermission(): Promise<boolean> {
   return ensurePermission();
 }

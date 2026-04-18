@@ -139,6 +139,10 @@ pub async fn tool_definitions() -> Vec<ToolDefinition> {
     let mut all = base;
     all.extend(crate::core::tool_tasks::task_tool_definitions());
     all.extend(crate::core::mcp_bridge::load_mcp_tool_definitions().await);
+    // Append custom-agent tool defs (~/.claude/agents/<name>.md).
+    all.extend(crate::core::tool_custom_agent::load_custom_agent_definitions());
+    // Append GitHub tools (gh_list_issues, gh_get_issue, gh_list_prs).
+    all.extend(crate::core::tool_github::github_tool_definitions());
     all
 }
 
@@ -217,6 +221,20 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
         }
         name if name.starts_with("mcp__") => {
             crate::core::mcp_bridge::execute_mcp_tool(name, &call.arguments).await
+        }
+        name if name.starts_with("gh_") => {
+            // Host-agnostic: GitHub API calls go from the PacketCode process.
+            let _ = target;
+            crate::core::tool_github::execute_github_tool(name, &call.arguments).await
+        }
+        name if name.starts_with("agent_") => {
+            // Boxed: custom agents recursively call execute_tool for nested tool dispatch.
+            Box::pin(crate::core::tool_custom_agent::execute_custom_agent(
+                name,
+                &call.arguments,
+                target,
+            ))
+            .await
         }
         _ => Err(format!("Unknown tool: {}", call.name)),
     };
