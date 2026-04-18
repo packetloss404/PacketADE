@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { Trash, Cpu, HelpCircle, Plus, FileCode, Layers, Shield, Scissors } from "lucide-react";
+import { Trash, Cpu, HelpCircle, Plus, FileCode, Layers, Shield, Scissors, BookOpen } from "lucide-react";
 import { InputPopover, type InputPopoverItem } from "./InputPopover";
-import type { SlashCommandDef } from "@/lib/tauri";
+import type { SlashCommandDef, SkillDef } from "@/lib/tauri";
 
 export type BuiltinSlashCommand =
   | "clear"
@@ -14,7 +14,8 @@ export type BuiltinSlashCommand =
 
 export type SlashSelection =
   | { kind: "builtin"; name: BuiltinSlashCommand }
-  | { kind: "custom"; def: SlashCommandDef };
+  | { kind: "custom"; def: SlashCommandDef }
+  | { kind: "skill"; def: SkillDef };
 
 interface SlashCommandPopoverProps {
   visible: boolean;
@@ -22,6 +23,7 @@ interface SlashCommandPopoverProps {
   highlightedIndex: number;
   onSelect: (sel: SlashSelection) => void;
   customCommands?: SlashCommandDef[];
+  userSkills?: SkillDef[];
 }
 
 interface BuiltinDef {
@@ -82,6 +84,7 @@ export function SlashCommandPopover({
   highlightedIndex,
   onSelect,
   customCommands = [],
+  userSkills = [],
 }: SlashCommandPopoverProps) {
   const items = useMemo<InputPopoverItem[]>(() => {
     const q = query.toLowerCase();
@@ -101,8 +104,16 @@ export function SlashCommandPopover({
         description: `${c.description} (${c.source})`,
         icon: <FileCode size={12} />,
       }));
-    return [...builtins, ...custom];
-  }, [query, customCommands]);
+    const skills = userSkills
+      .filter((s) => s.userInvocable && s.name.toLowerCase().startsWith(q))
+      .map((s) => ({
+        key: `skill:${s.name}`,
+        label: `/${s.name}${s.argumentHint ? ` ${s.argumentHint}` : ""}`,
+        description: `${s.description} (skill: ${s.source})`,
+        icon: <BookOpen size={12} />,
+      }));
+    return [...builtins, ...custom, ...skills];
+  }, [query, customCommands, userSkills]);
 
   return (
     <InputPopover
@@ -119,6 +130,10 @@ export function SlashCommandPopover({
           const name = item.key.slice("custom:".length);
           const def = customCommands.find((c) => c.name === name);
           if (def) onSelect({ kind: "custom", def });
+        } else if (item.key.startsWith("skill:")) {
+          const name = item.key.slice("skill:".length);
+          const def = userSkills.find((s) => s.name === name);
+          if (def) onSelect({ kind: "skill", def });
         }
       }}
       emptyLabel="No commands"

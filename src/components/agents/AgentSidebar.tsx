@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
   Zap,
   Trash2,
@@ -13,6 +13,8 @@ import {
   Layers,
   GitBranch,
   ChevronDown,
+  Search,
+  X,
 } from "lucide-react";
 import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
 import type { AgentConversation } from "@/types/agent-conversation";
@@ -125,8 +127,47 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const sidebarRef = useRef<HTMLDivElement | null>(null);
+
+  const trimmedQuery = searchQuery.trim();
+  const isSearching = trimmedQuery.length > 0;
+
+  // Auto-focus search input when opened
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchOpen]);
+
+  // "/" shortcut to open search when sidebar is focused
+  const handleSidebarKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "/" && !searchOpen) {
+      const target = e.target as HTMLElement;
+      const tag = target.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+  };
+
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery("");
+  };
 
   const filtered = useMemo(() => {
+    if (isSearching) {
+      const q = trimmedQuery.toLowerCase();
+      return conversations.filter((c) => {
+        if (c.archived) return false;
+        if (c.title?.toLowerCase().includes(q)) return true;
+        return c.messages?.some((m) => m.content?.toLowerCase().includes(q));
+      });
+    }
     if (filter === "archived") {
       return conversations.filter((c) => c.archived);
     }
@@ -136,9 +177,34 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       return visible.filter((c) => c.status === "active" || c.status === "idle");
     }
     return visible.filter((c) => c.status === "done" || c.status === "failed");
-  }, [conversations, filter]);
+  }, [conversations, filter, isSearching, trimmedQuery]);
+
+  // Build a snippet around the first match for a conversation
+  const matchSnippet = (conv: AgentConversation): string | null => {
+    if (!isSearching) return null;
+    const q = trimmedQuery.toLowerCase();
+    if (conv.title?.toLowerCase().includes(q)) return conv.title;
+    const msg = conv.messages?.find((m) => m.content?.toLowerCase().includes(q));
+    if (!msg) return null;
+    const content = msg.content;
+    const idx = content.toLowerCase().indexOf(q);
+    if (idx < 0) return null;
+    const half = Math.max(0, Math.floor((60 - q.length) / 2));
+    const start = Math.max(0, idx - half);
+    const end = Math.min(content.length, idx + q.length + half);
+    let snippet = content.slice(start, end).replace(/\s+/g, " ").trim();
+    if (start > 0) snippet = "..." + snippet;
+    if (end < content.length) snippet = snippet + "...";
+    return snippet;
+  };
 
   const convsGrouped = useMemo(() => {
+    if (isSearching) {
+      const sorted = [...filtered].sort((a, b) => b.updatedAt - a.updatedAt);
+      const map = new Map<string, AgentConversation[]>();
+      if (sorted.length > 0) map.set("__search__", sorted);
+      return map;
+    }
     const map = new Map<string, AgentConversation[]>();
     for (const conv of filtered) {
       let key: string;
@@ -172,7 +238,20 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       return ordered;
     }
     return map;
-  }, [filtered, groupBy]);
+  }, [filtered, groupBy, isSearching]);
+
+  // Search-result aggregate counts
+  const searchStats = useMemo(() => {
+    if (!isSearching) return { count: 0, projects: 0 };
+    const projects = new Set<string>();
+    for (const c of filtered) {
+      const key = c.sshTarget
+        ? `ssh:${c.sshTarget.id}:${c.projectPath}`
+        : `local:${c.projectPath}`;
+      projects.add(key);
+    }
+    return { count: filtered.length, projects: projects.size };
+  }, [filtered, isSearching]);
 
   const counts = useMemo(() => {
     let all = 0;
@@ -194,23 +273,39 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const hasConversations = convsGrouped.size > 0;
 
   return (
-    <div className="w-[240px] flex-shrink-0 flex flex-col bg-bg-secondary border-r border-bg-border overflow-hidden">
-      {/* New Agent button */}
-      <div className="px-3 pt-3 pb-2">
+    <div
+      ref={sidebarRef}
+      tabIndex={-1}
+      onKeyDown={handleSidebarKeyDown}
+      className="w-[240px] flex-shrink-0 flex flex-col bg-bg-secondary border-r border-bg-border overflow-hidden focus:outline-none"
+    >
+      {/* New Agent + Search buttons */}
+      <div className="px-3 pt-3 pb-2 flex items-center gap-1">
         <button
           onClick={onNewAgent}
-          className="flex items-center gap-2 w-full px-3 py-2 text-[11px] font-medium text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+          className="flex items-center gap-2 flex-1 px-3 py-2 text-[11px] font-medium text-accent-green hover:bg-accent-green/10 rounded transition-colors"
         >
           <Zap size={12} />
           New Agent
           <span className="ml-auto text-[9px] text-text-muted">Ctrl+N</span>
         </button>
+        <button
+          onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+          className={`p-2 rounded transition-colors ${
+            searchOpen
+              ? "text-accent-green bg-accent-green/10"
+              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
+          }`}
+          title="Search conversations (/)"
+        >
+          <Search size={11} />
+        </button>
       </div>
 
       <div className="border-b border-bg-border mx-3 mb-1" />
 
-      {/* Status filter */}
-      {conversations.length > 0 && (
+      {/* Status filter (hidden when search is open) */}
+      {conversations.length > 0 && !searchOpen && (
         <div className="flex items-center gap-0.5 px-3 pb-1.5">
           {(["all", "active", "done", "archived"] as StatusFilter[]).map((f) => {
             const label =
@@ -235,14 +330,57 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
         </div>
       )}
 
+      {/* Search input (replaces status filter row when active) */}
+      {searchOpen && (
+        <div className="px-3 pb-1.5">
+          <div className="relative">
+            <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  closeSearch();
+                }
+              }}
+              placeholder="Search messages, titles…"
+              className="w-full pl-6 pr-6 py-1 text-[10px] bg-bg-primary border border-bg-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-text-secondary rounded"
+                title="Clear"
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+          {isSearching && (
+            <div className="text-[9px] text-text-muted mt-1 px-0.5">
+              {searchStats.count} {searchStats.count === 1 ? "result" : "results"} across {searchStats.projects}{" "}
+              {searchStats.projects === 1 ? "project" : "projects"}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Group-by dropdown */}
       {conversations.length > 0 && (
         <div className="relative px-3 pb-1.5">
           <button
-            onClick={() => setGroupMenuOpen((v) => !v)}
+            onClick={() => !isSearching && setGroupMenuOpen((v) => !v)}
             onBlur={() => setTimeout(() => setGroupMenuOpen(false), 120)}
-            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-text-muted hover:text-text-secondary rounded transition-colors"
-            title="Group conversations by"
+            disabled={isSearching}
+            className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+              isSearching
+                ? "text-text-muted/40 cursor-not-allowed"
+                : "text-text-muted hover:text-text-secondary"
+            }`}
+            title={isSearching ? "Grouping disabled while searching" : "Group conversations by"}
           >
             <Layers size={10} />
             <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
@@ -287,7 +425,10 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
 
             let headerIcon: ReactNode;
             let headerLabel: string;
-            if (groupBy === "status") {
+            if (isSearching) {
+              headerIcon = <Search size={10} className="text-accent-green shrink-0" />;
+              headerLabel = `Search results (${convs.length})`;
+            } else if (groupBy === "status") {
               const statusKey = key as AgentConversation["status"];
               headerIcon = statusIcon(statusKey);
               headerLabel = STATUS_GROUP_LABELS[statusKey] ?? key;
@@ -328,6 +469,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                   ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? "..." : "")
                   : null;
                 const modelShort = conv.model?.split("-").slice(0, 2).join(" ") ?? "";
+                const snippet = matchSnippet(conv);
 
                 return (
                   <div key={conv.id} className="group relative">
@@ -351,13 +493,21 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                             {formatRelativeTime(conv.updatedAt)}
                           </span>
                         </div>
-                        {modelShort && (
-                          <span className="text-[9px] text-text-muted">{modelShort}</span>
-                        )}
-                        {preview && (
-                          <p className="text-[9px] text-text-muted truncate mt-0.5 opacity-70">
-                            {preview}
+                        {snippet ? (
+                          <p className="text-[9px] text-text-muted truncate mt-0.5">
+                            {snippet}
                           </p>
+                        ) : (
+                          <>
+                            {modelShort && (
+                              <span className="text-[9px] text-text-muted">{modelShort}</span>
+                            )}
+                            {preview && (
+                              <p className="text-[9px] text-text-muted truncate mt-0.5 opacity-70">
+                                {preview}
+                              </p>
+                            )}
+                          </>
                         )}
                       </div>
                     </button>

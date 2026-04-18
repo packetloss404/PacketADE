@@ -616,7 +616,7 @@ async fn run_agent_loop(
 
     let provider = get_provider(&provider_name)?;
     let api_key = api_keys::load_api_key(&provider_name)?;
-    let tools = tool_runtime::tool_definitions();
+    let tools = tool_runtime::tool_definitions().await;
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
     let mut total_cache_read: u64 = 0;
