@@ -418,6 +418,51 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       })();
       return;
     }
+
+    if (cmd === "plan") {
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      void setPlanMode(conversationId, !conversation?.planMode);
+      return;
+    }
+
+    if (cmd === "permissions") {
+      // Focus the permission-mode <select> so the user can arrow-key through.
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      setTimeout(() => {
+        const sel = document.querySelector<HTMLSelectElement>(
+          `[data-agent-pane-permissions-dropdown="${conversationId}"] select`,
+        );
+        sel?.focus();
+      }, 0);
+      return;
+    }
+
+    if (cmd === "compact") {
+      // Pragmatic v1 compact: keep system msg + last 4 messages + a synthetic
+      // note. Real summarization is a future LLM round-trip.
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      const noteMsg: AgentMessage = {
+        id: generateId("msg"),
+        role: "system",
+        content: "(history compacted — older messages dropped to free context)",
+        timestamp: Date.now(),
+      };
+      useAgentTaskStore.setState((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== conversationId) return c;
+          const tail = c.messages.slice(-4);
+          return {
+            ...c,
+            messages: [noteMsg, ...tail],
+            updatedAt: Date.now(),
+          };
+        }),
+      }));
+      return;
+    }
   }
 
   function handleSend() {
@@ -514,8 +559,15 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       }
       if (e.key === "Enter" || e.key === "Tab") {
         const q = mentionState.query.toLowerCase();
-        const builtins = (["clear", "model", "help", "new"] as BuiltinSlashCommand[])
-          .filter((c) => c.startsWith(q));
+        const builtins = ([
+          "plan",
+          "permissions",
+          "model",
+          "compact",
+          "clear",
+          "new",
+          "help",
+        ] as BuiltinSlashCommand[]).filter((c) => c.startsWith(q));
         const customMatches = customSlashCommands.filter((c) =>
           c.name.toLowerCase().startsWith(q),
         );
@@ -641,22 +693,24 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
               <Compass size={11} />
               Plan
             </button>
-            <select
-              value={conversation.permissionMode ?? "auto"}
-              onChange={(e) =>
-                void setPermissionMode(
-                  conversationId,
-                  e.target.value as "auto" | "ask_for_risky" | "allow_all" | "deny_all",
-                )
-              }
-              title="Permission mode for risky tools"
-              className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
-            >
-              <option value="auto">Auto</option>
-              <option value="ask_for_risky">Ask risky</option>
-              <option value="allow_all">Allow all</option>
-              <option value="deny_all">Deny risky</option>
-            </select>
+            <div data-agent-pane-permissions-dropdown={conversationId}>
+              <select
+                value={conversation.permissionMode ?? "auto"}
+                onChange={(e) =>
+                  void setPermissionMode(
+                    conversationId,
+                    e.target.value as "auto" | "ask_for_risky" | "allow_all" | "deny_all",
+                  )
+                }
+                title="Permission mode for risky tools"
+                className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
+              >
+                <option value="auto">Auto</option>
+                <option value="ask_for_risky">Ask risky</option>
+                <option value="allow_all">Allow all</option>
+                <option value="deny_all">Deny risky</option>
+              </select>
+            </div>
             <button
               type="button"
               onClick={() => void setApproveWrites(conversationId, !conversation.approveWrites)}

@@ -1,9 +1,16 @@
 import { useMemo } from "react";
-import { Trash, Cpu, HelpCircle, Plus, FileCode } from "lucide-react";
+import { Trash, Cpu, HelpCircle, Plus, FileCode, Layers, Shield, Scissors } from "lucide-react";
 import { InputPopover, type InputPopoverItem } from "./InputPopover";
 import type { SlashCommandDef } from "@/lib/tauri";
 
-export type BuiltinSlashCommand = "clear" | "model" | "help" | "new";
+export type BuiltinSlashCommand =
+  | "clear"
+  | "model"
+  | "help"
+  | "new"
+  | "plan"
+  | "permissions"
+  | "compact";
 
 export type SlashSelection =
   | { kind: "builtin"; name: BuiltinSlashCommand }
@@ -26,10 +33,16 @@ interface BuiltinDef {
 
 const BUILTINS: BuiltinDef[] = [
   {
-    cmd: "clear",
-    label: "/clear",
-    description: "Clear conversation messages",
-    icon: <Trash size={12} />,
+    cmd: "plan",
+    label: "/plan",
+    description: "Toggle plan mode (read-only exploration; no edits)",
+    icon: <Layers size={12} />,
+  },
+  {
+    cmd: "permissions",
+    label: "/permissions",
+    description: "Change permission mode (auto / ask / allow-all / deny-all)",
+    icon: <Shield size={12} />,
   },
   {
     cmd: "model",
@@ -38,16 +51,28 @@ const BUILTINS: BuiltinDef[] = [
     icon: <Cpu size={12} />,
   },
   {
-    cmd: "help",
-    label: "/help",
-    description: "Show a keybinding cheatsheet",
-    icon: <HelpCircle size={12} />,
+    cmd: "compact",
+    label: "/compact",
+    description: "Trim history to the last few messages to free context",
+    icon: <Scissors size={12} />,
+  },
+  {
+    cmd: "clear",
+    label: "/clear",
+    description: "Clear conversation messages",
+    icon: <Trash size={12} />,
   },
   {
     cmd: "new",
     label: "/new",
     description: "Start a new agent conversation with same settings",
     icon: <Plus size={12} />,
+  },
+  {
+    cmd: "help",
+    label: "/help",
+    description: "Show a keybinding cheatsheet",
+    icon: <HelpCircle size={12} />,
   },
 ];
 
