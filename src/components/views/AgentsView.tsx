@@ -2,11 +2,12 @@ import { useState, useRef, useCallback } from "react";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
+import { useSshTargetStore } from "@/stores/sshTargetStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
 import { getDefaultModel } from "@/lib/api-models";
-import { isSshUri } from "@/types/ssh";
+import { isSshUri, parseSshTargetId } from "@/types/ssh";
 
 export function AgentsView() {
   const agentInputText = useAgentTaskStore((s) => s.agentInputText);
@@ -45,18 +46,41 @@ export function AgentsView() {
     const text = agentInputText.trim();
     if (!text) return;
     if (!selectedRepo) return;
-    if (isSshUri(selectedRepo)) {
-      alert(
-        "SSH remote execution is not wired up yet — the connection is saved and will activate when the backend proxy ships. Pick a local folder for now.",
-      );
-      return;
-    }
+
     const model = selectedModel || getDefaultModel(selectedAgent);
     const profile = profiles.find((p) => p.id === selectedProfileId);
     const systemPrompt = profile?.systemPrompt ? profile.systemPrompt : null;
 
-    useProjectHistoryStore.getState().recordOpen(selectedRepo);
-    void createApiConversation(selectedAgent, selectedRepo, model, text, systemPrompt);
+    if (isSshUri(selectedRepo)) {
+      const targetId = parseSshTargetId(selectedRepo);
+      const target = targetId
+        ? useSshTargetStore.getState().getTarget(targetId)
+        : undefined;
+      if (!target) {
+        alert("SSH target no longer exists. Reconnect it from the project dropdown.");
+        return;
+      }
+      useSshTargetStore.getState().touchTarget(target.id);
+      void createApiConversation(
+        selectedAgent,
+        target.remotePath,
+        model,
+        text,
+        systemPrompt,
+        undefined,
+        undefined,
+        target,
+      );
+    } else {
+      useProjectHistoryStore.getState().recordOpen(selectedRepo);
+      void createApiConversation(
+        selectedAgent,
+        selectedRepo,
+        model,
+        text,
+        systemPrompt,
+      );
+    }
     setAgentInputText("");
   }, [
     agentInputText,

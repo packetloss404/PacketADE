@@ -3,7 +3,9 @@
 //! Provides a registry of tools that LLM agents can call, along with
 //! JSON Schema definitions that get sent to the provider API.
 
+use crate::core::execution::ExecutionTarget;
 use crate::core::llm_types::{ToolCall, ToolDefinition, ToolResult};
+use crate::core::tool_runtime_ssh;
 use std::path::Path;
 use tracing::{info, warn};
 
@@ -129,14 +131,49 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
     ]
 }
 
-/// Execute a tool call and return the result.
-pub async fn execute_tool(call: &ToolCall, project_path: &str) -> ToolResult {
+/// Execute a tool call against either the local project or a remote SSH host.
+pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResult {
     let result = match call.name.as_str() {
-        "read_file" => execute_read_file(&call.arguments, project_path).await,
-        "write_file" => execute_write_file(&call.arguments, project_path).await,
-        "list_directory" => execute_list_directory(&call.arguments, project_path).await,
-        "bash" => execute_bash(&call.arguments, project_path).await,
-        "grep" => execute_grep(&call.arguments, project_path).await,
+        "read_file" => match target {
+            ExecutionTarget::Local { project_path } => {
+                execute_read_file(&call.arguments, project_path).await
+            }
+            ExecutionTarget::Ssh { config } => {
+                tool_runtime_ssh::execute_read_file(&call.arguments, config).await
+            }
+        },
+        "write_file" => match target {
+            ExecutionTarget::Local { project_path } => {
+                execute_write_file(&call.arguments, project_path).await
+            }
+            ExecutionTarget::Ssh { config } => {
+                tool_runtime_ssh::execute_write_file(&call.arguments, config).await
+            }
+        },
+        "list_directory" => match target {
+            ExecutionTarget::Local { project_path } => {
+                execute_list_directory(&call.arguments, project_path).await
+            }
+            ExecutionTarget::Ssh { config } => {
+                tool_runtime_ssh::execute_list_directory(&call.arguments, config).await
+            }
+        },
+        "bash" => match target {
+            ExecutionTarget::Local { project_path } => {
+                execute_bash(&call.arguments, project_path).await
+            }
+            ExecutionTarget::Ssh { config } => {
+                tool_runtime_ssh::execute_bash(&call.arguments, config).await
+            }
+        },
+        "grep" => match target {
+            ExecutionTarget::Local { project_path } => {
+                execute_grep(&call.arguments, project_path).await
+            }
+            ExecutionTarget::Ssh { config } => {
+                tool_runtime_ssh::execute_grep(&call.arguments, config).await
+            }
+        },
         _ => Err(format!("Unknown tool: {}", call.name)),
     };
 

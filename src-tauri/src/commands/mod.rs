@@ -25,6 +25,7 @@ pub mod scaffold;
 pub mod shared;
 pub mod slash_commands;
 pub mod spec;
+pub mod ssh_keys;
 pub mod state;
 pub mod statusline;
 pub mod usage;

@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod agent_config;
 pub mod error_classifier;
+pub mod execution;
 pub mod flight;
 pub mod git;
 pub mod llm_anthropic;
@@ -17,6 +18,7 @@ pub mod pty;
 pub mod shared;
 pub mod storage;
 pub mod tool_runtime;
+pub mod tool_runtime_ssh;
 pub mod workspace;
 #[cfg(test)]
 mod contract_tests;

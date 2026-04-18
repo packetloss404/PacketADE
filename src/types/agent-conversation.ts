@@ -85,4 +85,12 @@ export interface AgentConversation {
   thinkingEnabled?: boolean;
   /** Accumulating thinking text during the current streaming turn. */
   thinkingStream?: string;
+  /** Set when this conversation's tool calls execute on a remote host via SSH. */
+  sshTarget?: {
+    id: string;
+    name: string;
+    host: string;
+    user: string;
+    remotePath: string;
+  };
 }

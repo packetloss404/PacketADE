@@ -79,6 +79,10 @@ pub fn run() {
             commands::pty::list_pty_sessions,
             commands::pty::read_pty_transcript,
             commands::pty::ssh_exec,
+            commands::pty::ssh_test_connection,
+            commands::ssh_keys::set_ssh_password,
+            commands::ssh_keys::delete_ssh_password,
+            commands::ssh_keys::get_ssh_password_exists,
             // Git
             commands::git::get_git_branch,
             commands::git::get_git_status,
