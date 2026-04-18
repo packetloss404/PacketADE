@@ -36,7 +36,7 @@ interface WorkspaceStore {
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
 
-const KEEP_ALIVE_KEY = "packetcode:workspace-keep-alive";
+const KEEP_ALIVE_KEY = "packetade:workspace-keep-alive";
 
 const PANE_COLORS = ["accent-green", "accent-blue", "accent-amber", "accent-purple", "accent-red", "accent-cyan"];
 

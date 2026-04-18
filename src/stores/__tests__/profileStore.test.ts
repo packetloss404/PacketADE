@@ -40,7 +40,7 @@ describe("profileStore", () => {
     expect(added).toBeDefined();
     expect(added.isBuiltin).toBe(false);
     expect(added.id).toMatch(/^custom-/);
-    const raw = JSON.parse(localStorage.getItem("packetcode:profiles")!);
+    const raw = JSON.parse(localStorage.getItem("packetade:profiles")!);
     expect(raw.some((p: { name: string }) => p.name === "Custom")).toBe(true);
   });
 
@@ -78,10 +78,10 @@ describe("profileStore", () => {
   it("setActiveProfile persists and clears from localStorage", () => {
     store().setActiveProfile("speed-runner");
     expect(store().activeProfileId).toBe("speed-runner");
-    expect(localStorage.getItem("packetcode:active-profile")).toBe("speed-runner");
+    expect(localStorage.getItem("packetade:active-profile")).toBe("speed-runner");
     store().setActiveProfile(null);
     expect(store().activeProfileId).toBeNull();
-    expect(localStorage.getItem("packetcode:active-profile")).toBeNull();
+    expect(localStorage.getItem("packetade:active-profile")).toBeNull();
   });
 
   it("getProfile returns a profile by id or undefined", () => {

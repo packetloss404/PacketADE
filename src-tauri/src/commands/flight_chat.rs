@@ -97,7 +97,7 @@ fn build_flight_chat_prompt(
     };
 
     format!(
-        r#"You are a flight planning assistant for PacketCode, a multi-agent IDE. A "flight" is a structured work plan for a coding project. Flights have a title, objective, priority, milestones, and tasks.
+        r#"You are a flight planning assistant for PacketADE, a multi-agent development environment. A "flight" is a structured work plan for a coding project. Flights have a title, objective, priority, milestones, and tasks.
 
 Your job is to help the user spec out their project through conversation. Take your time — ask clarifying questions, understand requirements, and help them think through edge cases before proposing a plan. Aim for 3-5 exchanges before finalizing.
 

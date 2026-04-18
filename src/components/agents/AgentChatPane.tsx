@@ -743,6 +743,40 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           </select>
         )}
 
+        {/* Memory-context toggle (API mode only).
+            Prepends learned patterns + prior lessons + recent session summaries
+            to the system prompt. Requires a system-prompt override to be set —
+            active by default for Scout (read-only investigator) profile. */}
+        {conversation.mode === "api" && (
+          <button
+            onClick={() => {
+              useAgentTaskStore.setState((s) => ({
+                conversations: s.conversations.map((c) =>
+                  c.id === conversationId
+                    ? {
+                        ...c,
+                        memoryContextEnabled: !(c.memoryContextEnabled ?? false),
+                        updatedAt: Date.now(),
+                      }
+                    : c,
+                ),
+              }));
+            }}
+            title={
+              conversation.memoryContextEnabled
+                ? "Memory context ON — learned patterns injected into system prompt"
+                : "Memory context OFF — click to include learned patterns in system prompt"
+            }
+            className={`border rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+              conversation.memoryContextEnabled
+                ? "bg-accent-blue/15 border-accent-blue/40 text-accent-blue"
+                : "bg-bg-secondary border-bg-border text-text-muted hover:text-text-secondary"
+            }`}
+          >
+            Memory
+          </button>
+        )}
+
         {/* Model switcher (API mode only) */}
         {providerInfo && conversation.mode === "api" && (
           <div data-agent-pane-model-dropdown={conversationId}>

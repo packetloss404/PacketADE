@@ -1,3 +1,4 @@
+use crate::core::brand::{DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_KEYRING_SERVICE, USER_AGENT as BRAND_USER_AGENT};
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use tauri::State;
 use tokio::sync::RwLock;
@@ -23,11 +24,17 @@ fn validate_github_name(name: &str, field: &str) -> Result<(), String> {
 
 fn token_file_path() -> Option<std::path::PathBuf> {
     super::shared::home_dir()
-        .map(|h| std::path::PathBuf::from(h).join(".packetcode").join("github-token"))
+        .map(|h| std::path::PathBuf::from(h).join(DATA_DIR_NAME).join("github-token"))
+}
+
+/// Also check the old `.packetcode/github-token` file for pre-rename installs.
+fn legacy_token_file_path() -> Option<std::path::PathBuf> {
+    super::shared::home_dir()
+        .map(|h| std::path::PathBuf::from(h).join(crate::core::brand::LEGACY_DATA_DIR_NAME).join("github-token"))
 }
 
 fn keyring_entry() -> Option<keyring::Entry> {
-    match keyring::Entry::new("packetcode", "github-token") {
+    match keyring::Entry::new(KEYRING_SERVICE, "github-token") {
         Ok(entry) => Some(entry),
         Err(e) => {
             warn!("Failed to create keyring entry: {}", e);
@@ -36,20 +43,38 @@ fn keyring_entry() -> Option<keyring::Entry> {
     }
 }
 
+fn legacy_keyring_entry() -> Option<keyring::Entry> {
+    keyring::Entry::new(LEGACY_KEYRING_SERVICE, "github-token").ok()
+}
+
 fn load_persisted_token() -> Option<String> {
-    // Try keyring first
+    // Try new keyring service first
     if let Some(entry) = keyring_entry() {
         match entry.get_password() {
             Ok(token) => return Some(token),
-            Err(keyring::Error::NoEntry) => {} // fall through to legacy migration
+            Err(keyring::Error::NoEntry) => {} // fall through to migrations
             Err(e) => {
                 warn!("Failed to read token from keyring: {}", e);
             }
         }
     }
 
-    // Legacy file-based migration fallback
-    let path = token_file_path()?;
+    // Legacy keyring service migration ("packetcode" → "packetade")
+    if let Some(legacy) = legacy_keyring_entry() {
+        if let Ok(token) = legacy.get_password() {
+            if let Some(new_entry) = keyring_entry() {
+                let _ = new_entry.set_password(&token);
+                let _ = legacy.delete_credential();
+                info!("Migrated GitHub token from legacy keyring service");
+            }
+            return Some(token);
+        }
+    }
+
+    // Legacy file-based migration fallback — check BOTH new and old data dirs
+    let path = token_file_path()
+        .filter(|p| p.exists())
+        .or_else(legacy_token_file_path)?;
     let raw = Zeroizing::new(std::fs::read_to_string(&path).ok()?);
     let trimmed = raw.trim().to_string();
     if trimmed.is_empty() {
@@ -130,7 +155,7 @@ fn github_client(token: &str) -> Result<reqwest::Client, String> {
     );
     headers.insert(
         USER_AGENT,
-        "PacketCode/1.0"
+        BRAND_USER_AGENT
             .parse()
             .map_err(|e| format!("Invalid header: {}", e))?,
     );
@@ -355,7 +380,7 @@ pub async fn github_get_pr_diff(
         .get(&url)
         .header(AUTHORIZATION, format!("Bearer {}", token))
         .header(ACCEPT, "application/vnd.github.diff")
-        .header(USER_AGENT, "PacketCode/1.0")
+        .header(USER_AGENT, BRAND_USER_AGENT)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;

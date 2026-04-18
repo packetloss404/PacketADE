@@ -30,6 +30,7 @@ fn init_tracing() {
 }
 
 fn dirs_log_dir() -> std::path::PathBuf {
+    use crate::core::brand::LOG_DIR_NAME;
     #[cfg(target_os = "linux")]
     {
         let base = std::env::var("XDG_DATA_HOME")
@@ -37,26 +38,31 @@ fn dirs_log_dir() -> std::path::PathBuf {
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
                 format!("{}/.local/share", home)
             });
-        std::path::PathBuf::from(base).join("PacketCode").join("logs")
+        std::path::PathBuf::from(base).join(LOG_DIR_NAME).join("logs")
     }
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         std::path::PathBuf::from(home)
-            .join("Library/Application Support/PacketCode/logs")
+            .join("Library/Application Support")
+            .join(LOG_DIR_NAME)
+            .join("logs")
     }
     #[cfg(target_os = "windows")]
     {
         let appdata = std::env::var("LOCALAPPDATA")
             .or_else(|_| std::env::var("APPDATA"))
             .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-        std::path::PathBuf::from(appdata).join("PacketCode").join("logs")
+        std::path::PathBuf::from(appdata).join(LOG_DIR_NAME).join("logs")
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing();
+    // Rename ~/.packetcode → ~/.packetade once per upgrade. Must run before
+    // any command that reads/writes the data dir.
+    core::migration::migrate_data_dir();
     commands::crashes::install_panic_hook();
 
     tauri::Builder::default()
@@ -141,9 +147,8 @@ pub fn run() {
             // Spec parsing
             commands::spec::parse_spec_to_flight,
             commands::spec::parse_spec_to_tickets,
-            // Insights chat
-            commands::insights::ask_insights,
-            commands::insights::ask_insights_stream,
+            // Agent-chat side panel streaming (was Insights; Insights folded into
+            // the Agents pane via the Scout profile).
             commands::insights::ask_agent_chat_stream,
             // Flight chat
             commands::flight_chat::ask_flight_chat_stream,

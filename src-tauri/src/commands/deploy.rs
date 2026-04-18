@@ -4,6 +4,7 @@ use std::path::Path;
 use tracing::info;
 
 use super::shared::hide_window;
+use crate::core::brand::DEPLOY_CONFIG_FILENAMES;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DeployConfig {
@@ -16,23 +17,25 @@ pub struct DeployConfig {
 #[derive(Clone, Serialize)]
 pub struct DeployConfigFile {
     pub configs: Vec<DeployConfig>,
-    pub source: String, // "packetcode.deploy.json", "package.json", "auto-detected"
+    pub source: String, // "<name>.deploy.json", "package.json", "auto-detected"
 }
 
 #[tauri::command]
 pub async fn read_deploy_config(project_path: String) -> Result<DeployConfigFile, String> {
     let base = Path::new(&project_path);
 
-    // 1. Check packetcode.deploy.json
-    let deploy_file = base.join("packetcode.deploy.json");
-    if deploy_file.exists() {
-        let content = fs::read_to_string(&deploy_file).map_err(|e| e.to_string())?;
-        let configs: Vec<DeployConfig> =
-            serde_json::from_str(&content).map_err(|e| e.to_string())?;
-        return Ok(DeployConfigFile {
-            configs,
-            source: "packetcode.deploy.json".to_string(),
-        });
+    // 1. Check deploy config files in preference order (packetade.deploy.json, then legacy packetcode.deploy.json).
+    for filename in DEPLOY_CONFIG_FILENAMES {
+        let deploy_file = base.join(filename);
+        if deploy_file.exists() {
+            let content = fs::read_to_string(&deploy_file).map_err(|e| e.to_string())?;
+            let configs: Vec<DeployConfig> =
+                serde_json::from_str(&content).map_err(|e| e.to_string())?;
+            return Ok(DeployConfigFile {
+                configs,
+                source: (*filename).to_string(),
+            });
+        }
     }
 
     // 2. Check package.json scripts
@@ -109,7 +112,9 @@ pub async fn create_deploy_config(
     project_path: String,
     configs: Vec<DeployConfig>,
 ) -> Result<(), String> {
-    let file_path = Path::new(&project_path).join("packetcode.deploy.json");
+    // Always write the new preferred filename; legacy `packetcode.deploy.json` is
+    // still accepted on read but we don't create new files under the old name.
+    let file_path = Path::new(&project_path).join(DEPLOY_CONFIG_FILENAMES[0]);
     let pretty = serde_json::to_string_pretty(&configs).map_err(|e| e.to_string())?;
     fs::write(&file_path, pretty).map_err(|e| e.to_string())?;
     Ok(())

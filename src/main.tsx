@@ -1,16 +1,21 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+// Must run BEFORE App is imported, because stores read localStorage at module
+// init time and we need the packetcode:* → packetade:* keys in place first.
+import { migrateLegacyStorage } from "@/lib/storage-migration";
+migrateLegacyStorage();
+
 import App from "./App";
 import "./index.css";
 
 // Global error handlers — catch unhandled errors and promise rejections
 window.addEventListener("unhandledrejection", (event) => {
-  console.error("[PacketCode] Unhandled promise rejection:", event.reason);
+  console.error("[PacketADE] Unhandled promise rejection:", event.reason);
 });
 
 window.addEventListener("error", (event) => {
   console.error(
-    "[PacketCode] Unhandled error:",
+    "[PacketADE] Unhandled error:",
     event.message,
     "at",
     event.filename,

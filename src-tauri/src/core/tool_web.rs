@@ -1,6 +1,6 @@
 //! Host-agnostic web fetch tool for API-based agents.
 //!
-//! Always runs from the PacketCode process — never tunneled through SSH.
+//! Always runs from the PacketADE process — never tunneled through SSH.
 //! Fetches a URL, strips HTML to plain text when applicable, and truncates
 //! oversized payloads.
 
@@ -10,7 +10,7 @@ use tracing::info;
 
 const DEFAULT_MAX_CHARS: usize = 50_000;
 const FETCH_TIMEOUT_SECS: u64 = 15;
-const USER_AGENT: &str = "PacketCode/1.0 (+desktop coding agent)";
+const USER_AGENT: &str = concat!("PacketADE/1.0 (+desktop coding agent)");
 
 /// Tool definition the LLM sees.
 pub fn web_fetch_definition() -> ToolDefinition {

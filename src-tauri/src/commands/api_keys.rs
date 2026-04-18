@@ -1,5 +1,6 @@
 //! API key management for LLM providers using the OS credential store.
 
+use crate::core::brand::{KEYRING_SERVICE, LEGACY_KEYRING_SERVICE};
 use tracing::{info, warn};
 
 const VALID_PROVIDERS: &[&str] = &["anthropic", "openai", "minimax", "openrouter", "ollama"];
@@ -16,13 +17,18 @@ fn validate_provider(provider: &str) -> Result<(), String> {
 }
 
 fn keyring_entry(provider: &str) -> Option<keyring::Entry> {
-    match keyring::Entry::new("packetcode", &format!("api-key-{}", provider)) {
+    match keyring::Entry::new(KEYRING_SERVICE, &format!("api-key-{}", provider)) {
         Ok(entry) => Some(entry),
         Err(e) => {
             warn!("Failed to create keyring entry for {}: {}", provider, e);
             None
         }
     }
+}
+
+/// Legacy keyring entry for one-shot migration from the old "packetcode" service.
+fn legacy_keyring_entry(provider: &str) -> Option<keyring::Entry> {
+    keyring::Entry::new(LEGACY_KEYRING_SERVICE, &format!("api-key-{}", provider)).ok()
 }
 
 /// Load an API key for a provider. Internal only — not exposed to frontend.
@@ -38,6 +44,15 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
     match entry.get_password() {
         Ok(key) => Ok(key),
         Err(keyring::Error::NoEntry) => {
+            // Fall back to the legacy "packetcode" keyring service and migrate on success.
+            if let Some(legacy) = legacy_keyring_entry(provider) {
+                if let Ok(key) = legacy.get_password() {
+                    let _ = entry.set_password(&key);
+                    let _ = legacy.delete_credential();
+                    info!(provider = %provider, "Migrated API key from legacy keyring service");
+                    return Ok(key);
+                }
+            }
             Err(format!("No API key configured for {}. Set one in Settings > API Keys.", provider))
         }
         Err(e) => Err(format!("Failed to read API key for {}: {}", provider, e)),
@@ -82,7 +97,15 @@ pub async fn get_api_key_exists(provider: String) -> Result<bool, String> {
 
     match entry.get_password() {
         Ok(_) => Ok(true),
-        Err(keyring::Error::NoEntry) => Ok(false),
+        Err(keyring::Error::NoEntry) => {
+            // Check legacy keyring service; don't migrate here (read-only path).
+            if let Some(legacy) = legacy_keyring_entry(&provider) {
+                if legacy.get_password().is_ok() {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
         Err(e) => {
             warn!("Error checking API key for {}: {}", provider, e);
             Ok(false)

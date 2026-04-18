@@ -113,7 +113,7 @@ impl McpClient {
             "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {},
             "clientInfo": {
-                "name": "PacketCode",
+                "name": crate::core::brand::APP_NAME,
                 "version": "0.2"
             }
         });

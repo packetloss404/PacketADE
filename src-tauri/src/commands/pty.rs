@@ -204,7 +204,9 @@ pub fn create_pty_session(
     if command == "claude" {
         cmd.env_remove("CLAUDECODE");
         cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
-        // Tell statusline.ps1 to suppress terminal output (PacketCode has its own native status bar)
+        // Tell statusline.ps1 to suppress terminal output (PacketADE has its own native status bar).
+        // PACKETCODE env var retained for backwards compatibility with any existing scripts.
+        cmd.env("PACKETADE", "1");
         cmd.env("PACKETCODE", "1");
     }
 

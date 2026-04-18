@@ -1,8 +1,8 @@
-# PacketCode
+# PacketADE
 
 **A local-first desktop IDE for orchestrating AI software work.**
 
-PacketCode is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, deployment tooling, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
+PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, deployment tooling, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
 ## What It Does
 
@@ -17,7 +17,7 @@ PacketCode is a Tauri v2 desktop app that brings AI coding agents, planning, iss
 
 ## Supported Agent CLIs
 
-PacketCode currently includes session support for:
+PacketADE currently includes session support for:
 
 - Claude Code
 - OpenAI Codex CLI
@@ -168,7 +168,7 @@ set PATH=C:\Users\ianwalmsley\.rustup\toolchains\stable-x86_64-pc-windows-msvc\b
 ## Project Layout
 
 ```text
-PacketCode/
+PacketADE/
   src/
     App.tsx                    # Root app shell and view routing
     components/
@@ -208,10 +208,10 @@ PacketCode/
 - Tauri commands live in `src-tauri/src/commands/` and are bound in `src/lib/tauri.ts`
 - App modules are registered through `src/modules/registry.ts`
 - Session management is PTY-based rather than JSONL-session based
-- Backend orchestration concepts (Flights, PTY sessions, agent configs) are mirrored by FlightDeck, PacketCode's sibling TUI project in a separate repo
+- Backend orchestration concepts (Flights, PTY sessions, agent configs) are mirrored by FlightDeck, PacketADE's sibling TUI project in a separate repo
 - GitHub PAT is stored in the OS keyring via the `keyring` crate
 - SSH passwords are prompted at connect time and held in memory only
 
 ## License
 
-PacketCode is licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+PacketADE is licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).

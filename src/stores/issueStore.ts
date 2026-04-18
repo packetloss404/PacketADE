@@ -91,12 +91,12 @@ const DEFAULT_ISSUE_STATE: IssueState = {
 };
 
 function loadState(): IssueState {
-  const parsed = loadFromStorage<IssueState>("packetcode:issues", DEFAULT_ISSUE_STATE);
+  const parsed = loadFromStorage<IssueState>("packetade:issues", DEFAULT_ISSUE_STATE);
   return { ...parsed, issues: (parsed.issues || []).map(migrateIssue) };
 }
 
 function saveState(state: IssueState) {
-  saveToStorage("packetcode:issues", state);
+  saveToStorage("packetade:issues", state);
 }
 
 const initial = loadState();

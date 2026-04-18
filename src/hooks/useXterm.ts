@@ -101,7 +101,14 @@ export function useXterm({ containerRef, sessionIdRef, onUserInput }: UseXtermOp
       }
     });
 
-    const resizeObserver = new ResizeObserver(() => {
+    const resizeObserver = new ResizeObserver((entries) => {
+      // When the workspace is switched away, its container is set to display:none
+      // which reports a 0x0 contentRect. Fitting to that would resize the PTY to
+      // degenerate dimensions, which scrambles full-TUI CLIs like OpenCode on return.
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width < 1 || height < 1) return;
+      }
       try {
         fitAddon.fit();
       } catch {
@@ -111,6 +118,8 @@ export function useXterm({ containerRef, sessionIdRef, onUserInput }: UseXtermOp
     resizeObserver.observe(containerRef.current);
 
     term.onResize(({ cols, rows }) => {
+      // Guard against any residual degenerate resize slipping through.
+      if (cols < 2 || rows < 2) return;
       const sid = sessionIdRef.current;
       if (sid) {
         resizePty(sid, cols, rows).catch(() => {});

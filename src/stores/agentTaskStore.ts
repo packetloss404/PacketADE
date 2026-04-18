@@ -184,6 +184,12 @@ interface AgentTaskStore {
     /** When true, skip the start_api_agent_session backend call (the caller
      * has already started it). Used by Flight Deck attempts. */
     skipBackendStart?: boolean,
+    /** Restrict the agent to this tool subset (e.g. Scout profile uses
+     * read_file/list_directory/grep/web_fetch). Undefined = all tools. */
+    allowedTools?: string[] | null,
+    /** Inject the memory layer's project context into the system prompt.
+     * Default false to preserve existing behavior. */
+    memoryContextEnabled?: boolean,
   ) => Promise<string>;
   sendMessage: (conversationId: string, content: string) => void;
   addAssistantMessage: (conversationId: string, content: string, toolCalls?: AgentToolCall[]) => void;
@@ -409,25 +415,19 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget, explicitId, skipBackendStart) => {
+  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget, explicitId, skipBackendStart, allowedTools, memoryContextEnabled) => {
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
 
-    // Memory injection: prepend the PacketCode memory layer's project context to
-    // the system prompt so the agent sees learned patterns, prior flight lessons,
-    // and recent session summaries at session start.
-    //
-    // v1 policy: only inject when a user profile prompt is already set. Without a
-    // base prompt we'd have to either fully replace the backend default
-    // (build_system_prompt — which already wires CLAUDE.md, tool docs, etc.) or
-    // duplicate it here. Neither is desirable, so we skip injection and let the
-    // backend default fire untouched. Future revision: have the backend accept a
-    // memory-prefix arg and merge it into the default prompt.
+    // Memory injection: when memoryContextEnabled, prepend the PacketADE memory
+    // layer's project context (learned patterns, prior lessons, recent summaries)
+    // to the system prompt. Requires a system-prompt override to anchor the
+    // injection — otherwise the backend default fires untouched.
     let effectiveSystemPrompt: string | null = systemPromptOverride ?? null;
-    if (effectiveSystemPrompt) {
+    if (memoryContextEnabled && effectiveSystemPrompt) {
       const memoryContext = useMemoryStore.getState().getContextForSession(projectPath);
       if (memoryContext.trim().length > 0) {
-        effectiveSystemPrompt = `## Project memory (auto-injected from PacketCode memory layer)\n\n${memoryContext}\n\n---\n\n${effectiveSystemPrompt}`;
+        effectiveSystemPrompt = `## Project memory (auto-injected from PacketADE memory layer)\n\n${memoryContext}\n\n---\n\n${effectiveSystemPrompt}`;
       }
     }
 
@@ -476,6 +476,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
             remotePath: sshTarget.remotePath,
           }
         : undefined,
+      allowedTools: allowedTools ?? undefined,
+      memoryContextEnabled: memoryContextEnabled ?? false,
     };
 
     set((s) => ({
@@ -801,6 +803,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           undefined, // attachments — not wired in UI yet
           planMode ?? false,
           sshConfig,
+          allowedTools ?? null,
         );
       }
     } catch {

@@ -255,6 +255,7 @@ pub async fn launch_flight_async(
             None,                     // attachments
             Some(false),              // plan_mode
             ssh_config_for_session,
+            None,                     // allowed_tools — flight attempts use full tool set
         )
         .await
         {

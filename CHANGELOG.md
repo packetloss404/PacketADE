@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to PacketCode are documented in this file.
+All notable changes to PacketADE are documented in this file.
 
 ## [0.4.0] - 2026-04-11
 

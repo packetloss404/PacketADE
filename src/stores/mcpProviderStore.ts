@@ -87,7 +87,7 @@ const PROVIDER_TOOLS: McpTool[] = [
 
 // --- Persistence ---
 
-const STORAGE_KEY = "packetcode:mcp-provider";
+const STORAGE_KEY = "packetade:mcp-provider";
 
 function loadConfig(): McpProviderConfig {
   try {
@@ -163,7 +163,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const flights = useFlightStore.getState().flights;
     for (const flight of flights) {
       resources.push({
-        uri: `packetcode://flights/${flight.id}`,
+        uri: `packetade://flights/${flight.id}`,
         name: flight.title,
         description: `Flight [${flight.status}] — ${flight.objective || "No objective"}`,
         mimeType: "application/json",
@@ -173,7 +173,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
       for (const milestone of flight.milestones) {
         for (const task of milestone.tasks) {
           resources.push({
-            uri: `packetcode://flights/${flight.id}/tasks/${task.id}`,
+            uri: `packetade://flights/${flight.id}/tasks/${task.id}`,
             name: task.title,
             description: `Task [${task.status}] in ${flight.title} / ${milestone.title}`,
             mimeType: "application/json",
@@ -186,7 +186,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const patterns = useMemoryStore.getState().patterns;
     if (patterns.length > 0) {
       resources.push({
-        uri: "packetcode://memory/patterns",
+        uri: "packetade://memory/patterns",
         name: "Memory Patterns",
         description: `${patterns.length} learned pattern(s)`,
         mimeType: "application/json",
@@ -197,7 +197,7 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
     const workspaces = useWorkspaceStore.getState().workspaces;
     for (const ws of workspaces) {
       resources.push({
-        uri: `packetcode://workspaces/${ws.id}`,
+        uri: `packetade://workspaces/${ws.id}`,
         name: ws.name,
         description: `Workspace — ${ws.panes.length} pane(s)`,
         mimeType: "application/json",

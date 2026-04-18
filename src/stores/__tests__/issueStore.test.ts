@@ -71,7 +71,7 @@ describe("issueStore", () => {
 
     it("persists to localStorage", () => {
       store().addIssue(makeIssue());
-      const raw = localStorage.getItem("packetcode:issues");
+      const raw = localStorage.getItem("packetade:issues");
       expect(raw).toBeTruthy();
       const parsed = JSON.parse(raw!);
       expect(parsed.issues).toHaveLength(1);
@@ -337,7 +337,7 @@ describe("issueStore", () => {
 
     it("persists the prefix to localStorage", () => {
       store().setTicketPrefix("NEW");
-      const raw = JSON.parse(localStorage.getItem("packetcode:issues")!);
+      const raw = JSON.parse(localStorage.getItem("packetade:issues")!);
       expect(raw.ticketPrefix).toBe("NEW");
     });
   });

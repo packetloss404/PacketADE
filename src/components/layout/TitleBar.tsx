@@ -44,9 +44,9 @@ export function TitleBar() {
       >
         {/* pointer-events-none so children don't swallow the drag */}
         <div className="flex items-center gap-2 pointer-events-none">
-          <img src="/favicon.png" alt="PacketCode" className="w-4 h-4" />
+          <img src="/favicon.png" alt="PacketADE" className="w-4 h-4" />
           <span className="text-text-primary text-xs font-semibold tracking-wide">
-            PacketCode
+            PacketADE
           </span>
         </div>
       </div>

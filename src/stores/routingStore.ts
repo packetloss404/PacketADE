@@ -4,7 +4,7 @@ import type { TaskType } from "@/types/flight";
 import type { RouteMapping } from "@/types/routing";
 import { ALL_TASK_TYPES } from "@/types/routing";
 
-const STORAGE_KEY = "packetcode:routing";
+const STORAGE_KEY = "packetade:routing";
 
 const DEFAULT_AGENT = "claude-code";
 

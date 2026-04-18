@@ -7,6 +7,6 @@ export const isProd = import.meta.env.PROD;
 /** Log only in development mode. */
 export function devLog(...args: unknown[]): void {
   if (isDev) {
-    console.log("[PacketCode:dev]", ...args);
+    console.log("[PacketADE:dev]", ...args);
   }
 }

@@ -1,4 +1,5 @@
 use crate::commands::shared::home_dir;
+use crate::core::brand::DATA_DIR_NAME;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -23,12 +24,12 @@ impl Default for DictationConfig {
     }
 }
 
-/// Return the path to ~/.packetcode/dictation.json.
+/// Return the path to ~/.packetade/dictation.json.
 fn config_path() -> Result<PathBuf, String> {
     let home = home_dir().ok_or("Could not resolve home directory")?;
-    let dir = PathBuf::from(&home).join(".packetcode");
+    let dir = PathBuf::from(&home).join(DATA_DIR_NAME);
     if !dir.exists() {
-        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create .packetcode dir: {e}"))?;
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {DATA_DIR_NAME} dir: {e}"))?;
     }
     Ok(dir.join("dictation.json"))
 }

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { loadFromStorage, saveToStorage, generateId } from "@/lib/storage";
 import type { SshTarget } from "@/types/ssh";
 
-const STORAGE_KEY = "packetcode:ssh-targets";
+const STORAGE_KEY = "packetade:ssh-targets";
 
 interface SshTargetStore {
   targets: SshTarget[];

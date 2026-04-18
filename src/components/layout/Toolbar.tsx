@@ -29,7 +29,6 @@ const TABS: { key: AppView; label: string }[] = [
   { key: "workspace", label: "Workspaces" },
   { key: "issues", label: "Issues" },
   { key: "missions", label: "Flight Deck" },
-  { key: "insights", label: "Insights" },
 ];
 
 export function Toolbar() {
@@ -54,7 +53,7 @@ export function Toolbar() {
   const setActiveView = useAppStore((s) => s.setActiveView);
   const moduleStates = useModuleStore((s) => s.states);
 
-  const projectName = projectPath.split(/[/\\]/).pop() || "PacketCode";
+  const projectName = projectPath.split(/[/\\]/).pop() || "PacketADE";
 
   // Close tools menu when clicking outside
   useEffect(() => {
@@ -261,7 +260,7 @@ export function Toolbar() {
         <button
           onClick={() => setShowPromptLibrary(true)}
           className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-accent-green transition-colors"
-          title="Prompt Library — browse, create, and send prompt templates to Terminal or Insights."
+          title="Prompt Library — browse, create, and send prompt templates to Terminal or Scout (agent chat)."
         >
           <BookOpen size={12} className="text-accent-green" />
           <span>Prompts</span>

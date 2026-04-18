@@ -12,7 +12,7 @@ export function SessionTabBar({ cliType = "claude" }: SessionTabBarProps) {
   const setActiveTab = useTabStore((s) => s.setActiveTab);
   const removeTab = useTabStore((s) => s.removeTab);
 
-  const eventName = cliType === "codex" ? "packetcode:new-codex-session" : "packetcode:new-session";
+  const eventName = cliType === "codex" ? "packetade:new-codex-session" : "packetade:new-session";
 
   return (
     <div className="flex items-center h-8 bg-bg-secondary border-b border-bg-border overflow-x-auto">

@@ -467,7 +467,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     });
   },
 
-  // === Issue linking (PacketCode-specific legacy) ===
+  // === Issue linking (PacketADE-specific legacy) ===
 
   addIssueToFlight: (flightId, issueId) => {
     set((s) => {

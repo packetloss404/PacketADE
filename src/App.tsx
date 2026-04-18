@@ -32,7 +32,6 @@ const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then
 const MissionsView = lazy(() => import("@/components/views/MissionsView").then((m) => ({ default: m.MissionsView })));
 
 const AgentsView = lazy(() => import("@/components/views/AgentsView").then((m) => ({ default: m.AgentsView })));
-const InsightsView = lazy(() => import("@/components/views/InsightsView").then((m) => ({ default: m.InsightsView })));
 const CostDashboardView = lazy(() => import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })));
 const DictationView = lazy(() => import("@/components/views/DictationView").then((m) => ({ default: m.DictationView })));
 
@@ -73,14 +72,14 @@ export default function App() {
 
   // Persist pane count to localStorage
   useEffect(() => {
-    localStorage.setItem("packetcode:pane-count", String(panes.length));
+    localStorage.setItem("packetade:pane-count", String(panes.length));
   }, [panes.length]);
 
   // Persist project path to localStorage and record in history
   const projectPath = useLayoutStore((s) => s.projectPath);
   useEffect(() => {
     if (!projectPath) return;
-    localStorage.setItem("packetcode:project-path", projectPath);
+    localStorage.setItem("packetade:project-path", projectPath);
     useProjectHistoryStore.getState().recordOpen(projectPath);
   }, [projectPath]);
 
@@ -168,7 +167,7 @@ export default function App() {
   const showWorkspaceSidebar = activeView === "workspace";
 
   return (
-    <ErrorBoundary fallbackMessage="PacketCode encountered an error">
+    <ErrorBoundary fallbackMessage="PacketADE encountered an error">
       <div className="flex flex-col h-screen bg-bg-primary text-text-primary font-sans">
         <TitleBar />
         <Toolbar />
@@ -242,8 +241,6 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <ReviewQueueView />;
     case "agents":
       return <AgentsView />;
-    case "insights":
-      return <InsightsView />;
     case "cost_dashboard":
       return <CostDashboardView />;
     case "dictation":
