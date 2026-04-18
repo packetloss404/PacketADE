@@ -24,7 +24,7 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { AgentQuickActions } from "./AgentQuickActions";
-import { FileMentionPopover } from "./FileMentionPopover";
+import { MentionSourcePicker } from "./MentionSourcePicker";
 import { SlashCommandPopover, type SlashSelection, type BuiltinSlashCommand } from "./SlashCommandPopover";
 import type { SlashCommandDef } from "@/lib/tauri";
 import { listSlashCommands } from "@/lib/tauri";
@@ -33,11 +33,13 @@ import { BashToolCallCard } from "./BashToolCallCard";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { PlanModeApprovalMenu, looksLikePlan } from "./PlanModeApprovalMenu";
 import { DiffPaneTrigger } from "./DiffPaneTrigger";
+import { MultiFileEditCard } from "./MultiFileEditCard";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { calculateTurnCost } from "@/lib/tauri";
+import { aggregateConversationDiffs } from "@/lib/aggregateConversationDiffs";
 import { generateId } from "@/lib/storage";
 import type {
   AgentConversation,
@@ -203,6 +205,44 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     };
   }, [projectPathForSlash]);
 
+  // Aggregate `+adds / -dels` totals for the DiffPaneTrigger chip. Recompute
+  // whenever the conversation gets new messages (cheap proxy for "new
+  // tool_calls have arrived").
+  const diffMessageCount = conversation?.messages.length ?? 0;
+  const [diffTotals, setDiffTotals] = useState<{
+    fileCount: number;
+    totalAdds: number;
+    totalDels: number;
+  }>({ fileCount: 0, totalAdds: 0, totalDels: 0 });
+  useEffect(() => {
+    if (!conversation || conversation.mode !== "api") {
+      setDiffTotals({ fileCount: 0, totalAdds: 0, totalDels: 0 });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await aggregateConversationDiffs(conversation);
+        if (cancelled) return;
+        setDiffTotals({
+          fileCount: result.fileCount,
+          totalAdds: result.totalAdds,
+          totalDels: result.totalDels,
+        });
+      } catch {
+        if (!cancelled) {
+          setDiffTotals({ fileCount: 0, totalAdds: 0, totalDels: 0 });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Key on conversation identity, mode, and message count so streaming
+    // tool-call arrivals refresh totals without firing on unrelated renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation?.id, conversation?.mode, diffMessageCount]);
+
   // NOTE: hooks must run in the same order every render — compute popover
   // item count before any early return.
   const popoverItemCount = useMemo(() => {
@@ -312,20 +352,20 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     updateMentionStateFromInput(ta.value, cursor);
   }
 
-  function selectFileMention(path: string) {
+  function selectFileMention(insertion: string) {
     if (mentionState.kind !== "file") return;
     const before = input.slice(0, mentionState.triggerIndex);
-    // Replace "@query" (trigger + current query) with "@path "
+    // Replace "@query" with the picker's already-formatted insertion (starts with "@")
     const afterStart = mentionState.triggerIndex + 1 + mentionState.query.length;
     const after = input.slice(afterStart);
-    const next = `${before}@${path} ${after}`;
+    const next = `${before}${insertion} ${after}`;
     setInput(next);
     setMentionState({ kind: "none" });
-    // Re-focus textarea and place cursor after inserted path
+    // Re-focus textarea and place cursor after the inserted text
     setTimeout(() => {
       const ta = textareaRef.current;
       if (ta) {
-        const pos = before.length + 1 + path.length + 1;
+        const pos = before.length + insertion.length + 1;
         ta.focus();
         ta.setSelectionRange(pos, pos);
       }
@@ -787,27 +827,16 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           </div>
         )}
 
-        {/* Diff pane trigger — counts unique write_file paths in this convo. */}
-        {conversation.mode === "api" && (() => {
-          const paths = new Set<string>();
-          for (const m of conversation.messages) {
-            for (const tc of m.toolCalls ?? []) {
-              if (tc.name !== "write_file" || !tc.input) continue;
-              try {
-                const args = JSON.parse(tc.input) as { path?: string };
-                if (args.path) paths.add(args.path);
-              } catch {}
-            }
-          }
-          return (
-            <DiffPaneTrigger
-              conversationId={conversationId}
-              fileCount={paths.size}
-              totalAdds={0}
-              totalDels={0}
-            />
-          );
-        })()}
+        {/* Diff pane trigger — uses live aggregate totals (`+adds / -dels`)
+            computed from the conversation's write_file tool calls. */}
+        {conversation.mode === "api" && (
+          <DiffPaneTrigger
+            conversationId={conversationId}
+            fileCount={diffTotals.fileCount}
+            totalAdds={diffTotals.totalAdds}
+            totalDels={diffTotals.totalDels}
+          />
+        )}
 
         {/* Rewind button */}
         <button
@@ -920,7 +949,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           className="absolute left-3 right-3 bottom-full"
           data-agent-pane-mention-popover
         >
-          <FileMentionPopover
+          <MentionSourcePicker
             visible={mentionState.kind === "file"}
             projectPath={conversation.projectPath}
             query={mentionState.kind === "file" ? mentionState.query : ""}
@@ -1062,28 +1091,46 @@ function MessageBubble({
           <ThinkingBlock text={message.thinking} streaming={message.isStreaming} />
         )}
 
-        {/* Tool calls */}
-        {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="flex flex-col gap-1">
-            {message.toolCalls.map((tc) =>
-              tc.name === "bash" ? (
-                <BashToolCallCard
-                  key={tc.id}
-                  toolCall={tc}
+        {/* Tool calls — group write_file edits when there are 3+ */}
+        {message.toolCalls && message.toolCalls.length > 0 && (() => {
+          const writeFileCalls = message.toolCalls.filter(
+            (tc) =>
+              tc.name === "write_file" &&
+              (tc.status === "done" || tc.status === "error"),
+          );
+          const otherCalls = message.toolCalls.filter(
+            (tc) => !writeFileCalls.includes(tc),
+          );
+          const groupWrites = writeFileCalls.length >= 3;
+          return (
+            <div className="flex flex-col gap-1">
+              {groupWrites && (
+                <MultiFileEditCard
+                  toolCalls={writeFileCalls}
                   conversationId={conversation.id}
-                  verbosity={verbosity}
-                />
-              ) : (
-                <ToolCallCard
-                  key={tc.id}
-                  toolCall={tc}
                   projectPath={conversation.projectPath}
-                  verbosity={verbosity}
                 />
-              ),
-            )}
-          </div>
-        )}
+              )}
+              {(groupWrites ? otherCalls : message.toolCalls).map((tc) =>
+                tc.name === "bash" ? (
+                  <BashToolCallCard
+                    key={tc.id}
+                    toolCall={tc}
+                    conversationId={conversation.id}
+                    verbosity={verbosity}
+                  />
+                ) : (
+                  <ToolCallCard
+                    key={tc.id}
+                    toolCall={tc}
+                    projectPath={conversation.projectPath}
+                    verbosity={verbosity}
+                  />
+                ),
+              )}
+            </div>
+          );
+        })()}
 
         {/* Content */}
         {message.content && (

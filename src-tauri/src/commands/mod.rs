@@ -24,6 +24,7 @@ pub mod pricing;
 pub mod pty;
 pub mod scaffold;
 pub mod shared;
+pub mod side_chat;
 pub mod slash_commands;
 pub mod spec;
 pub mod ssh_keys;

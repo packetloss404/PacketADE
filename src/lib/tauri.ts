@@ -1404,3 +1404,9 @@ export async function readFileForDiff(
   return invoke<string | null>("read_file_for_diff", { projectPath, relPath });
 }
 
+// Side chat — fire-and-forget. Listen for `side-chat:done` / `side-chat:error`
+// for the result; see src/lib/events.ts for the event names.
+export async function askSideChatStream(question: string, context: string): Promise<void> {
+  return invoke("ask_side_chat_stream", { question, context });
+}
+

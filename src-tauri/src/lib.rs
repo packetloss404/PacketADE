@@ -147,6 +147,8 @@ pub fn run() {
             commands::insights::ask_agent_chat_stream,
             // Flight chat
             commands::flight_chat::ask_flight_chat_stream,
+            // Side chat (ephemeral context-aware helper)
+            commands::side_chat::ask_side_chat_stream,
             // Ideation scanner
             commands::ideation::generate_ideas,
             // GitHub integration
