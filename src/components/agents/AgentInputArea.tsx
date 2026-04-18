@@ -1,9 +1,10 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import { Monitor, Mic, Zap, Sparkles } from "lucide-react";
+import { Monitor, Mic, Zap, Sparkles, FolderOpen } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
 import { useGitHubStore } from "@/stores/githubStore";
-import { useLayoutStore } from "@/stores/layoutStore";
 import { useProfileStore } from "@/stores/profileStore";
+import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { FileMentionPopover } from "./FileMentionPopover";
@@ -51,7 +52,8 @@ export function AgentInputArea({
   const selectedRepo = useAgentTaskStore((s) => s.selectedRepo);
   const setSelectedRepo = useAgentTaskStore((s) => s.setSelectedRepo);
   const repos = useGitHubStore((s) => s.repos);
-  const projectPath = useLayoutStore((s) => s.projectPath);
+  const projectHistory = useProjectHistoryStore((s) => s.projects);
+  const recordOpenProject = useProjectHistoryStore((s) => s.recordOpen);
 
   const profiles = useProfileStore((s) => s.profiles);
   const activeProfileId = useProfileStore((s) => s.activeProfileId);
@@ -72,19 +74,31 @@ export function AgentInputArea({
     }
   }, [transcript, setAgentInputText]);
 
-  // Collect unique project paths for the repo selector
-  const conversations = useAgentTaskStore((s) => s.conversations);
-  const repoPaths = Array.from(
-    new Set(
-      [projectPath, ...conversations.map((c) => c.projectPath)].filter(Boolean),
-    ),
+  const repoPaths = useMemo(
+    () =>
+      Array.from(
+        new Set(projectHistory.map((p) => p.path).filter(Boolean)),
+      ),
+    [projectHistory],
   );
 
-  const currentRepoPath = selectedRepo ?? projectPath;
-  const currentDisplayName = repoDisplayName(currentRepoPath, repos);
+  const currentDisplayName = selectedRepo
+    ? repoDisplayName(selectedRepo, repos)
+    : "Select a project";
 
-  // Project path for file-mention search. Fall back to layout projectPath.
-  const mentionProjectPath = selectedRepo || projectPath || "";
+  const mentionProjectPath = selectedRepo ?? "";
+
+  const handleBrowse = useCallback(async () => {
+    try {
+      const picked = await openDialog({ directory: true, multiple: false });
+      if (typeof picked === "string" && picked) {
+        setSelectedRepo(picked);
+        recordOpenProject(picked);
+      }
+    } catch (err) {
+      console.warn("Folder picker failed:", err);
+    }
+  }, [setSelectedRepo, recordOpenProject]);
 
   // ─── @ file-mention state ─────────────────────────────────────────────
   const [mentionState, setMentionState] = useState<MentionState>(
@@ -248,17 +262,15 @@ export function AgentInputArea({
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8">
       <div className="w-full max-w-[600px]">
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-6">
-          <Zap size={16} className="text-accent-amber" />
-          <h2 className="text-sm font-medium text-text-primary">New Agent</h2>
-        </div>
-
         {/* Repo selector */}
         <div className="mb-3">
           <Dropdown
             trigger={
-              <span className="flex items-center gap-1.5 text-text-primary">
+              <span
+                className={`flex items-center gap-1.5 ${
+                  selectedRepo ? "text-text-primary" : "text-text-muted"
+                }`}
+              >
                 <Monitor size={12} className="text-text-muted" />
                 {currentDisplayName}
               </span>
@@ -269,6 +281,12 @@ export function AgentInputArea({
                 {repoDisplayName(path, repos)}
               </DropdownItem>
             ))}
+            <DropdownItem onClick={handleBrowse}>
+              <span className="flex items-center gap-1.5 text-text-secondary">
+                <FolderOpen size={12} />
+                Browse…
+              </span>
+            </DropdownItem>
           </Dropdown>
         </div>
 

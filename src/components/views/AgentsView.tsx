@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
-import { useLayoutStore } from "@/stores/layoutStore";
 import { useProfileStore } from "@/stores/profileStore";
+import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
@@ -20,9 +20,8 @@ export function AgentsView() {
   const activeProfileId = useProfileStore((s) => s.activeProfileId);
   const setActiveProfile = useProfileStore((s) => s.setActiveProfile);
 
-  const projectPath = useLayoutStore((s) => s.projectPath);
-  const [selectedAgent, setSelectedAgent] = useState<AgentCli>("api-claude");
-  const [selectedModel, setSelectedModel] = useState<string>("claude-sonnet-4-6-20250414");
+  const [selectedAgent, setSelectedAgent] = useState<AgentCli>("api-minimax");
+  const [selectedModel, setSelectedModel] = useState<string>("MiniMax-M2.7-highspeed");
   const [selectedProfileId, setSelectedProfileId] = useState<string>(
     activeProfileId ?? profiles[0]?.id ?? "",
   );
@@ -44,17 +43,17 @@ export function AgentsView() {
   const handleLaunch = useCallback(() => {
     const text = agentInputText.trim();
     if (!text) return;
-    const path = selectedRepo ?? projectPath;
+    if (!selectedRepo) return;
     const model = selectedModel || getDefaultModel(selectedAgent);
     const profile = profiles.find((p) => p.id === selectedProfileId);
     const systemPrompt = profile?.systemPrompt ? profile.systemPrompt : null;
 
-    void createApiConversation(selectedAgent, path, model, text, systemPrompt);
+    useProjectHistoryStore.getState().recordOpen(selectedRepo);
+    void createApiConversation(selectedAgent, selectedRepo, model, text, systemPrompt);
     setAgentInputText("");
   }, [
     agentInputText,
     selectedRepo,
-    projectPath,
     selectedAgent,
     selectedModel,
     selectedProfileId,
