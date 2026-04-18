@@ -79,11 +79,19 @@ export function SideChatOverlay() {
             Ask a quick question about the current conversation context. Answers stay here and don't pollute the main thread.
           </p>
         )}
-        {isStreaming && (
+        {isStreaming && answer.length === 0 && (
           <p className="text-text-muted">Thinking...</p>
         )}
-        {answer && !isStreaming && (
-          <p className="whitespace-pre-wrap leading-relaxed">{answer}</p>
+        {answer && (
+          <p className="whitespace-pre-wrap leading-relaxed">
+            {answer}
+            {isStreaming && (
+              <span
+                className="inline-block w-1.5 h-3 bg-accent-purple/70 animate-pulse ml-0.5 align-baseline"
+                aria-hidden="true"
+              />
+            )}
+          </p>
         )}
       </div>
 

@@ -357,6 +357,7 @@ pub async fn cleanup_attempt_worktree_ssh(
 
 #[tauri::command]
 pub async fn mark_attempt_status(
+    state: tauri::State<'_, Arc<ApiAgentState>>,
     flight_id: String,
     attempt_id: String,
     status: SetAttemptStatus,
@@ -367,5 +368,49 @@ pub async fn mark_attempt_status(
         SetAttemptStatus::Failed => AttemptStatus::Failed,
         SetAttemptStatus::Cancelled => AttemptStatus::Cancelled,
     };
-    update_attempt_status(&flight_id, &attempt_id, new_status, None)
+
+    let is_terminal = matches!(
+        new_status,
+        AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Cancelled
+    );
+
+    // For terminal states, snapshot the attempt before mutating so we can
+    // close its session and clean up its worktree afterwards.
+    let attempt_snapshot = if is_terminal {
+        let s = storage::load_state();
+        s.flights
+            .iter()
+            .find(|f| f.id == flight_id)
+            .and_then(|f| f.attempts.iter().find(|a| a.id == attempt_id).cloned())
+    } else {
+        None
+    };
+
+    update_attempt_status(&flight_id, &attempt_id, new_status, None)?;
+
+    if let Some(attempt) = attempt_snapshot {
+        // Close the API agent session bound to this attempt (best-effort —
+        // it may already be closed if the agent finished naturally).
+        let _ = close_api_agent_session(state, attempt.session_id.clone()).await;
+
+        // Tear down the worktree. Local cleanup runs inline; SSH cleanup is
+        // deferred to the frontend because we don't have host/user/key here.
+        match &attempt.target {
+            AttemptTarget::Local { base_path, .. } => {
+                if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id).await {
+                    warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
+                }
+            }
+            AttemptTarget::Ssh { base_path, target_id, .. } => {
+                let _ = (base_path, target_id);
+                warn!(
+                    attempt = %attempt_id,
+                    "SSH worktree cleanup deferred for attempt {} — frontend should invoke cleanup_attempt_worktree_ssh",
+                    attempt_id
+                );
+            }
+        }
+    }
+
+    Ok(())
 }

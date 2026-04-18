@@ -22,6 +22,15 @@ impl SshConfig {
     /// including the `user@host` target; callers append the remote command.
     /// When `password_auth` is true, allow interactive auth so SSH will read
     /// the password from stdin.
+    ///
+    /// ControlMaster reuses a single SSH connection across multiple commands
+    /// within ControlPersist seconds. First call pays full handshake; subsequent
+    /// calls within 10 minutes are near-instant. This dramatically reduces
+    /// per-tool-call latency for read/write/list/bash/grep operations against
+    /// the same target. On Windows the OpenSSH client does NOT support
+    /// ControlMaster (it requires Unix domain sockets), so we fall back to
+    /// `ServerAliveInterval=30` only, which keeps long-running commands healthy
+    /// but does not multiplex.
     pub fn ssh_args(&self, password_auth: bool) -> Vec<String> {
         let mut args = vec![
             "-p".into(),
@@ -31,6 +40,22 @@ impl SshConfig {
             "-o".into(),
             "ConnectTimeout=10".into(),
         ];
+
+        if cfg!(target_os = "windows") {
+            // Windows OpenSSH lacks ControlMaster (no Unix domain sockets).
+            // ServerAliveInterval keeps long-running commands healthy.
+            args.push("-o".into());
+            args.push("ServerAliveInterval=30".into());
+        } else {
+            let suffix = self.control_socket_suffix();
+            args.push("-o".into());
+            args.push("ControlMaster=auto".into());
+            args.push("-o".into());
+            args.push(format!("ControlPath=~/.ssh/.pkt-cm-{}.sock", suffix));
+            args.push("-o".into());
+            args.push("ControlPersist=10m".into());
+        }
+
         if password_auth {
             args.push("-o".into());
             args.push("NumberOfPasswordPrompts=1".into());
@@ -48,6 +73,28 @@ impl SshConfig {
         }
         args.push(format!("{}@{}", self.user, self.host));
         args
+    }
+
+    /// Per-target unique suffix for the ControlMaster socket path. Prefers the
+    /// frontend `target_id` (stable across restarts); otherwise hashes
+    /// host+port+user so the same target still maps to the same socket.
+    fn control_socket_suffix(&self) -> String {
+        if let Some(id) = self.target_id.as_ref() {
+            let trimmed = id.trim();
+            if !trimmed.is_empty() {
+                return trimmed
+                    .chars()
+                    .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+                    .collect();
+            }
+        }
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        self.host.hash(&mut hasher);
+        self.port.hash(&mut hasher);
+        self.user.hash(&mut hasher);
+        format!("{:x}", hasher.finish())
     }
 }
 
@@ -85,5 +132,79 @@ pub fn resolve_remote_path(base: &str, rel: &str) -> String {
     } else {
         let base_trim = base.trim_end_matches('/');
         format!("{}/{}", base_trim, rel)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_cfg() -> SshConfig {
+        SshConfig {
+            host: "example.com".into(),
+            port: 22,
+            user: "alice".into(),
+            remote_path: "/home/alice/project".into(),
+            key_path: None,
+            target_id: Some("target-abc".into()),
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn ssh_args_unix_includes_controlmaster() {
+        let cfg = sample_cfg();
+        let args = cfg.ssh_args(false);
+        assert!(
+            args.iter().any(|a| a == "ControlMaster=auto"),
+            "expected ControlMaster=auto in args: {:?}",
+            args
+        );
+        assert!(
+            args.iter().any(|a| a.starts_with("ControlPath=~/.ssh/.pkt-cm-")),
+            "expected ControlPath with per-target socket in args: {:?}",
+            args
+        );
+        assert!(
+            args.iter().any(|a| a == "ControlPersist=10m"),
+            "expected ControlPersist=10m in args: {:?}",
+            args
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn ssh_args_windows_uses_serveralive_only() {
+        let cfg = sample_cfg();
+        let args = cfg.ssh_args(false);
+        assert!(
+            args.iter().any(|a| a == "ServerAliveInterval=30"),
+            "expected ServerAliveInterval=30 in args: {:?}",
+            args
+        );
+        assert!(
+            !args.iter().any(|a| a == "ControlMaster=auto"),
+            "Windows must not emit ControlMaster: {:?}",
+            args
+        );
+    }
+
+    #[test]
+    fn control_socket_suffix_falls_back_to_hash_when_no_target_id() {
+        let mut cfg = sample_cfg();
+        cfg.target_id = None;
+        let suffix = cfg.control_socket_suffix();
+        assert!(!suffix.is_empty());
+        // Same inputs should produce a stable suffix.
+        assert_eq!(suffix, cfg.control_socket_suffix());
+    }
+
+    #[test]
+    fn control_socket_suffix_sanitizes_target_id() {
+        let mut cfg = sample_cfg();
+        cfg.target_id = Some("weird/id with spaces".into());
+        let suffix = cfg.control_socket_suffix();
+        assert!(!suffix.contains('/'));
+        assert!(!suffix.contains(' '));
     }
 }
