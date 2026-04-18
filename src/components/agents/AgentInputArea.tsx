@@ -8,6 +8,10 @@ import {
   Folder,
   Server,
   Check,
+  Bot,
+  MessageCircle,
+  Hand,
+  Layers,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
@@ -28,6 +32,38 @@ import {
   type SshTarget,
 } from "@/types/ssh";
 
+/** Cursor-style launch modes. */
+export type AgentMode = "agent" | "ask" | "manual" | "plan";
+
+const MODE_META: Record<AgentMode, { label: string; description: string; icon: React.ComponentType<{ size?: number; className?: string }>; color: string }> = {
+  agent: {
+    label: "Agent",
+    description: "Full tools — read, write, run commands",
+    icon: Bot,
+    color: "text-accent-green",
+  },
+  ask: {
+    label: "Ask",
+    description: "Read-only — no edits or commands",
+    icon: MessageCircle,
+    color: "text-accent-blue",
+  },
+  manual: {
+    label: "Manual",
+    description: "Every risky tool requires your approval",
+    icon: Hand,
+    color: "text-accent-amber",
+  },
+  plan: {
+    label: "Plan",
+    description: "Produce a structured plan first, then execute",
+    icon: Layers,
+    color: "text-accent-purple",
+  },
+};
+
+const MODE_ORDER: AgentMode[] = ["agent", "ask", "manual", "plan"];
+
 interface AgentInputAreaProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   selectedAgent: AgentCli;
@@ -37,6 +73,8 @@ interface AgentInputAreaProps {
   onModelChange: (model: string) => void;
   selectedProfileId?: string;
   onProfileChange?: (profileId: string) => void;
+  agentMode?: AgentMode;
+  onAgentModeChange?: (mode: AgentMode) => void;
 }
 
 interface MentionState {
@@ -63,6 +101,8 @@ export function AgentInputArea({
   onModelChange,
   selectedProfileId,
   onProfileChange,
+  agentMode = "agent",
+  onAgentModeChange,
 }: AgentInputAreaProps) {
   const agentInputText = useAgentTaskStore((s) => s.agentInputText);
   const setAgentInputText = useAgentTaskStore((s) => s.setAgentInputText);
@@ -424,6 +464,45 @@ export function AgentInputArea({
           {/* Action row inside the input box */}
           <div className="flex items-center justify-between px-3 py-2 border-t border-bg-border/50">
             <div className="flex items-center gap-2">
+              {/* Mode selector — Cursor-style Agent / Ask / Manual / Plan */}
+              <Dropdown
+                trigger={
+                  <span className="text-text-secondary flex items-center gap-1">
+                    {(() => {
+                      const m = MODE_META[agentMode];
+                      const Icon = m.icon;
+                      return (
+                        <>
+                          <Icon size={10} className={m.color} />
+                          {m.label}
+                        </>
+                      );
+                    })()}
+                  </span>
+                }
+              >
+                {MODE_ORDER.map((m) => {
+                  const meta = MODE_META[m];
+                  const Icon = meta.icon;
+                  return (
+                    <DropdownItem
+                      key={m}
+                      onClick={() => onAgentModeChange?.(m)}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Icon size={10} className={meta.color} />
+                        <span className={agentMode === m ? "text-accent-green" : ""}>
+                          {meta.label}
+                        </span>
+                        <span className="text-text-muted text-[9px] ml-1">
+                          {meta.description}
+                        </span>
+                      </span>
+                    </DropdownItem>
+                  );
+                })}
+              </Dropdown>
+
               {/* Provider selector */}
               <Dropdown
                 trigger={
