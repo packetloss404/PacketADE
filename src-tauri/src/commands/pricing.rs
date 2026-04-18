@@ -139,7 +139,7 @@ pub fn pricing_for(model: &str) -> Option<ModelPricing> {
     }
 
     // --- MiniMax ---
-    if m.contains("minimax-m1") {
+    if m.contains("minimax-m1") || m.contains("minimax-m2") {
         return Some(ModelPricing::openai_style(0.40, 2.20));
     }
 
