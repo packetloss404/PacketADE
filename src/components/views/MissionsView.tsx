@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Radio, Plus, Sparkles } from "lucide-react";
+import { Radio, Sparkles, ListTree } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
 import { FlightList } from "@/components/flights/FlightList";
 import { FlightDetail } from "@/components/flights/FlightDetail";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
+import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
+
+type ModalKind = null | "async" | "multitask";
 
 export function MissionsView() {
   const flights = useFlightStore((s) => s.flights);
   const activeFlightId = useFlightStore((s) => s.activeFlightId);
   const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
-  const [showCreate, setShowCreate] = useState(false);
+  const [modal, setModal] = useState<ModalKind>(null);
 
   // Auto-select a flight if none is active.
   const selectedId = useMemo(() => {
@@ -30,6 +33,8 @@ export function MissionsView() {
     [flights, selectedId],
   );
 
+  const closeModal = () => setModal(null);
+
   if (flights.length === 0) {
     return (
       <>
@@ -37,32 +42,36 @@ export function MissionsView() {
           <Radio size={32} />
           <span className="text-sm font-medium text-text-primary">No flights yet</span>
           <span className="text-xs max-w-md text-center">
-            A Flight is a plan — milestones, tasks, and approvals — that can hand work to a Workspace.
-          </span>
-          <span className="text-xs max-w-md text-center">
-            Describe what you want to build and the AI planner will draft milestones and tasks for you.
+            A Flight launches one or more agents in parallel — each in its own
+            git worktree, on local or remote SSH targets.
           </span>
           <div className="flex items-center gap-2 mt-1">
             <button
-              onClick={() => setShowCreate(true)}
+              onClick={() => setModal("async")}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/10 transition-colors"
             >
-              <Plus size={12} />
-              New Flight
+              <Sparkles size={12} />
+              Launch agents
             </button>
             <button
-              onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-accent-purple hover:bg-accent-purple/10 rounded transition-colors"
+              onClick={() => setModal("multitask")}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
             >
-              <Sparkles size={12} />
-              Try the AI planner →
+              <ListTree size={12} />
+              Multi-task plan
             </button>
           </div>
         </div>
-        {showCreate && (
+        {modal === "async" && (
+          <LaunchAsyncFlightModal
+            onLaunched={(id) => setActiveFlight(id)}
+            onClose={closeModal}
+          />
+        )}
+        {modal === "multitask" && (
           <NewFlightModal
             onCreated={(id) => setActiveFlight(id)}
-            onClose={() => setShowCreate(false)}
+            onClose={closeModal}
           />
         )}
       </>
@@ -70,9 +79,24 @@ export function MissionsView() {
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <FlightList selectedId={selectedId} onSelect={setActiveFlight} />
-      <FlightDetail flight={selectedFlight} />
-    </div>
+    <>
+      <div className="flex flex-1 overflow-hidden">
+        <FlightList selectedId={selectedId} onSelect={setActiveFlight} />
+        <FlightDetail flight={selectedFlight} />
+      </div>
+      {modal === "async" && (
+        <LaunchAsyncFlightModal
+          onLaunched={(id) => setActiveFlight(id)}
+          onClose={closeModal}
+        />
+      )}
+      {modal === "multitask" && (
+        <NewFlightModal
+          onCreated={(id) => setActiveFlight(id)}
+          onClose={closeModal}
+        />
+      )}
+    </>
   );
 }
+

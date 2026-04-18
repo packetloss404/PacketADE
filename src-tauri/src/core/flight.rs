@@ -259,6 +259,58 @@ pub struct ApprovalDecision {
     pub reason: Option<String>,
 }
 
+// === Async Flight Attempts ===
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttemptStatus {
+    Queued,
+    Provisioning,
+    Running,
+    Reviewing,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum AttemptTarget {
+    Local {
+        base_path: String,
+        worktree_path: String,
+    },
+    Ssh {
+        target_id: String,
+        base_path: String,
+        worktree_path: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Attempt {
+    pub id: String,
+    pub flight_id: String,
+    pub target: AttemptTarget,
+    pub agent_config_id: String,
+    pub model: String,
+    pub provider: String,
+    pub branch: String,
+    pub base_branch: String,
+    pub session_id: String,
+    pub status: AttemptStatus,
+    #[serde(default)]
+    pub started_at: Option<u64>,
+    #[serde(default)]
+    pub completed_at: Option<u64>,
+    #[serde(default)]
+    pub cost: f64,
+    #[serde(default)]
+    pub tokens: u64,
+    #[serde(default)]
+    pub error_message: Option<String>,
+}
+
 // === Flight ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -279,6 +331,10 @@ pub struct Flight {
     pub completed_at: Option<u64>,
     pub total_cost: f64,
     pub total_tokens: u64,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub attempts: Vec<Attempt>,
 }
 
 impl Flight {
@@ -389,6 +445,8 @@ mod tests {
             completed_at: None,
             total_cost: 0.0,
             total_tokens: 0,
+            prompt: None,
+            attempts: Vec::new(),
         }
     }
 

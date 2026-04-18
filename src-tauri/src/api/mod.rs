@@ -343,6 +343,68 @@ pub struct MilestoneDto {
     pub validation_criteria: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum AttemptStatusDto {
+    Queued,
+    Provisioning,
+    Running,
+    Reviewing,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum AttemptTargetDto {
+    Local {
+        #[serde(rename = "basePath")]
+        base_path: String,
+        #[serde(rename = "worktreePath")]
+        worktree_path: String,
+    },
+    Ssh {
+        #[serde(rename = "targetId")]
+        target_id: String,
+        #[serde(rename = "basePath")]
+        base_path: String,
+        #[serde(rename = "worktreePath")]
+        worktree_path: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AttemptDto {
+    pub id: String,
+    pub flight_id: String,
+    pub target: AttemptTargetDto,
+    pub agent_config_id: String,
+    pub model: String,
+    pub provider: String,
+    pub branch: String,
+    pub base_branch: String,
+    pub session_id: String,
+    pub status: AttemptStatusDto,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub started_at: Option<u64>,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub completed_at: Option<u64>,
+    #[serde(default)]
+    pub cost: f64,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub tokens: u64,
+    #[serde(default)]
+    #[ts(optional)]
+    pub error_message: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct FlightDto {
@@ -371,6 +433,11 @@ pub struct FlightDto {
     pub total_cost: f64,
     #[ts(type = "number")]
     pub total_tokens: u64,
+    #[serde(default)]
+    #[ts(optional)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub attempts: Vec<AttemptDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1041,6 +1108,104 @@ impl From<MilestoneDto> for core_flight::Milestone {
     }
 }
 
+impl From<core_flight::AttemptStatus> for AttemptStatusDto {
+    fn from(s: core_flight::AttemptStatus) -> Self {
+        match s {
+            core_flight::AttemptStatus::Queued => Self::Queued,
+            core_flight::AttemptStatus::Provisioning => Self::Provisioning,
+            core_flight::AttemptStatus::Running => Self::Running,
+            core_flight::AttemptStatus::Reviewing => Self::Reviewing,
+            core_flight::AttemptStatus::Completed => Self::Completed,
+            core_flight::AttemptStatus::Failed => Self::Failed,
+            core_flight::AttemptStatus::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+impl From<AttemptStatusDto> for core_flight::AttemptStatus {
+    fn from(s: AttemptStatusDto) -> Self {
+        match s {
+            AttemptStatusDto::Queued => Self::Queued,
+            AttemptStatusDto::Provisioning => Self::Provisioning,
+            AttemptStatusDto::Running => Self::Running,
+            AttemptStatusDto::Reviewing => Self::Reviewing,
+            AttemptStatusDto::Completed => Self::Completed,
+            AttemptStatusDto::Failed => Self::Failed,
+            AttemptStatusDto::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+impl From<core_flight::AttemptTarget> for AttemptTargetDto {
+    fn from(t: core_flight::AttemptTarget) -> Self {
+        match t {
+            core_flight::AttemptTarget::Local { base_path, worktree_path } => {
+                Self::Local { base_path, worktree_path }
+            }
+            core_flight::AttemptTarget::Ssh { target_id, base_path, worktree_path } => {
+                Self::Ssh { target_id, base_path, worktree_path }
+            }
+        }
+    }
+}
+
+impl From<AttemptTargetDto> for core_flight::AttemptTarget {
+    fn from(t: AttemptTargetDto) -> Self {
+        match t {
+            AttemptTargetDto::Local { base_path, worktree_path } => {
+                Self::Local { base_path, worktree_path }
+            }
+            AttemptTargetDto::Ssh { target_id, base_path, worktree_path } => {
+                Self::Ssh { target_id, base_path, worktree_path }
+            }
+        }
+    }
+}
+
+impl From<core_flight::Attempt> for AttemptDto {
+    fn from(a: core_flight::Attempt) -> Self {
+        Self {
+            id: a.id,
+            flight_id: a.flight_id,
+            target: a.target.into(),
+            agent_config_id: a.agent_config_id,
+            model: a.model,
+            provider: a.provider,
+            branch: a.branch,
+            base_branch: a.base_branch,
+            session_id: a.session_id,
+            status: a.status.into(),
+            started_at: a.started_at,
+            completed_at: a.completed_at,
+            cost: a.cost,
+            tokens: a.tokens,
+            error_message: a.error_message,
+        }
+    }
+}
+
+impl From<AttemptDto> for core_flight::Attempt {
+    fn from(a: AttemptDto) -> Self {
+        Self {
+            id: a.id,
+            flight_id: a.flight_id,
+            target: a.target.into(),
+            agent_config_id: a.agent_config_id,
+            model: a.model,
+            provider: a.provider,
+            branch: a.branch,
+            base_branch: a.base_branch,
+            session_id: a.session_id,
+            status: a.status.into(),
+            started_at: a.started_at,
+            completed_at: a.completed_at,
+            cost: a.cost,
+            tokens: a.tokens,
+            error_message: a.error_message,
+        }
+    }
+}
+
 impl From<core_flight::Flight> for FlightDto {
     fn from(value: core_flight::Flight) -> Self {
         Self {
@@ -1060,6 +1225,8 @@ impl From<core_flight::Flight> for FlightDto {
             completed_at: value.completed_at,
             total_cost: value.total_cost,
             total_tokens: value.total_tokens,
+            prompt: value.prompt,
+            attempts: value.attempts.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -1082,6 +1249,8 @@ impl From<FlightDto> for core_flight::Flight {
             completed_at: value.completed_at,
             total_cost: value.total_cost,
             total_tokens: value.total_tokens,
+            prompt: value.prompt,
+            attempts: value.attempts.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -1216,6 +1385,9 @@ fn generated_typescript_schema() -> String {
     push_decl!(ReviewPacketDto);
     push_decl!(TaskDto);
     push_decl!(MilestoneDto);
+    push_decl!(AttemptStatusDto);
+    push_decl!(AttemptTargetDto);
+    push_decl!(AttemptDto);
     push_decl!(FlightDto);
     push_decl!(PersistedStateDto);
     push_decl!(TaskSpawnRequestDto);
@@ -1296,6 +1468,8 @@ mod tests {
                 completed_at: None,
                 total_cost: 0.0,
                 total_tokens: 0,
+                prompt: None,
+                attempts: vec![],
             }],
             agents: Vec::new(),
             settings: OrchestratorSettingsDto {

@@ -106,6 +106,10 @@ pub fn run() {
             commands::fs::list_project_files,
             commands::fs::read_file_for_diff,
             // Flight lifecycle orchestration
+            commands::flight_attempts::launch_flight_async,
+            commands::flight_attempts::cancel_flight_attempt,
+            commands::flight_attempts::cleanup_attempt_worktree_ssh,
+            commands::flight_attempts::mark_attempt_status,
             commands::orchestration::launch_flight,
             commands::orchestration::pause_flight,
             commands::orchestration::resume_flight,

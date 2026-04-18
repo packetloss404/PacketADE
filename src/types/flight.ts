@@ -151,6 +151,42 @@ export interface CoordinationEvent {
   metadata?: Record<string, string>;
 }
 
+// === Async Flight Attempts ===
+// An Attempt is one parallel agent session, bound to a git worktree on either
+// the local filesystem or a remote SSH host. A Flight in async-mode has
+// `attempts.length > 0`; legacy multi-task flights have `milestones[]` instead.
+
+export type AttemptStatus =
+  | "queued"
+  | "provisioning"
+  | "running"
+  | "reviewing"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type AttemptTarget =
+  | { kind: "local"; basePath: string; worktreePath: string }
+  | { kind: "ssh"; targetId: string; basePath: string; worktreePath: string };
+
+export interface Attempt {
+  id: string;
+  flightId: string;
+  target: AttemptTarget;
+  agentConfigId: string;
+  model: string;
+  provider: string;
+  branch: string;
+  baseBranch: string;
+  sessionId: string;
+  status: AttemptStatus;
+  startedAt?: number;
+  completedAt?: number;
+  cost: number;
+  tokens: number;
+  errorMessage?: string;
+}
+
 // === Flight ===
 
 export type ApprovalDecisionType = "approved" | "denied" | "force_overridden";
@@ -184,4 +220,8 @@ export interface Flight {
   coordinationLog?: CoordinationEvent[];
   totalCost: number;
   totalTokens: number;
+  /** The single user prompt for an async-mode Flight. */
+  prompt?: string;
+  /** Parallel agent attempts. Non-empty = async-mode Flight. */
+  attempts?: Attempt[];
 }

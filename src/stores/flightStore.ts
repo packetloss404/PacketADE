@@ -71,8 +71,29 @@ function computeStatusFromIssues(flight: Flight): FlightStatus | null {
   return null;
 }
 
+function computeStatusFromAttempts(flight: Flight): FlightStatus | null {
+  const attempts = flight.attempts;
+  if (!attempts || attempts.length === 0) return null;
+  const all = (s: string) => attempts.every((a) => a.status === s);
+  const some = (s: string) => attempts.some((a) => a.status === s);
+  if (all("cancelled")) return "paused";
+  if (all("failed")) return "failed";
+  if (all("completed")) return "done";
+  if (some("running") || some("provisioning") || some("queued")) return "active";
+  if (some("reviewing")) return "review";
+  // Mixed terminal states (e.g. some completed, some failed, some cancelled).
+  if (some("failed")) return "failed";
+  if (some("completed")) return "done";
+  return null;
+}
+
 function computeStatus(flight: Flight): FlightStatus {
-  return computeStatusFromTasks(flight) ?? computeStatusFromIssues(flight) ?? flight.status;
+  return (
+    computeStatusFromAttempts(flight) ??
+    computeStatusFromTasks(flight) ??
+    computeStatusFromIssues(flight) ??
+    flight.status
+  );
 }
 
 // === Store ===

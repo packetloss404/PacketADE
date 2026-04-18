@@ -74,6 +74,15 @@ async fn ssh_run(
     Ok(output)
 }
 
+/// Public wrapper around `ssh_run` for non-tool consumers (e.g., worktree
+/// provisioning). Uses a 30s timeout suitable for short git commands.
+pub async fn ssh_run_for_worktree(
+    config: &SshConfig,
+    remote_cmd: &str,
+) -> Result<std::process::Output, String> {
+    ssh_run(config, remote_cmd, 30).await
+}
+
 pub async fn execute_read_file(
     args: &serde_json::Value,
     config: &SshConfig,

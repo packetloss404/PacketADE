@@ -83,7 +83,9 @@
       "updated_at": 2000,
       "completed_at": null,
       "total_cost": 0.5,
-      "total_tokens": 1000
+      "total_tokens": 1000,
+      "prompt": null,
+      "attempts": []
     }
   ],
   "agents": [],

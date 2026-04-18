@@ -1,0 +1,371 @@
+//! Async parallel agent attempts on Flights ("one prompt → N agents").
+//!
+//! Each attempt provisions a git worktree (local or remote SSH), starts an
+//! API agent session bound to that worktree, and is persisted as an
+//! `Attempt` on the Flight. Cancellation removes the worktree and closes
+//! the session.
+
+use crate::commands::api_agent::{
+    close_api_agent_session, start_api_agent_session, ApiAgentState,
+};
+use crate::core::execution::SshConfig;
+use crate::core::flight::{Attempt, AttemptStatus, AttemptTarget};
+use crate::core::storage;
+use crate::core::worktree;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tracing::{info, warn};
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AttemptTargetSpec {
+    Local {
+        base_path: String,
+        base_branch: String,
+        agent_config_id: String,
+        provider: String,
+        model: String,
+    },
+    Ssh {
+        target_id: String,
+        host: String,
+        port: u16,
+        user: String,
+        #[serde(default)]
+        key_path: Option<String>,
+        base_path: String,
+        base_branch: String,
+        agent_config_id: String,
+        provider: String,
+        model: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SetAttemptStatus {
+    Reviewing,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+fn now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn append_attempt(flight_id: &str, attempt: &Attempt) -> Result<(), String> {
+    let mut state = storage::load_state();
+    let flight = state
+        .flights
+        .iter_mut()
+        .find(|f| f.id == flight_id)
+        .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+    flight.attempts.push(attempt.clone());
+    flight.updated_at = now_ms();
+    storage::save_state(&state)
+}
+
+fn update_attempt_status(
+    flight_id: &str,
+    attempt_id: &str,
+    status: AttemptStatus,
+    error: Option<String>,
+) -> Result<(), String> {
+    let mut state = storage::load_state();
+    let flight = state
+        .flights
+        .iter_mut()
+        .find(|f| f.id == flight_id)
+        .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+    let attempt = flight
+        .attempts
+        .iter_mut()
+        .find(|a| a.id == attempt_id)
+        .ok_or_else(|| format!("Attempt '{}' not found", attempt_id))?;
+    attempt.status = status;
+    if matches!(
+        status,
+        AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Cancelled
+    ) {
+        attempt.completed_at = Some(now_ms());
+    }
+    if let Some(msg) = error {
+        attempt.error_message = Some(msg);
+    }
+    flight.updated_at = now_ms();
+    storage::save_state(&state)
+}
+
+fn build_ssh_config_from_spec(spec: &AttemptTargetSpec) -> Option<SshConfig> {
+    if let AttemptTargetSpec::Ssh {
+        target_id,
+        host,
+        port,
+        user,
+        key_path,
+        base_path,
+        ..
+    } = spec
+    {
+        Some(SshConfig {
+            host: host.clone(),
+            port: *port,
+            user: user.clone(),
+            remote_path: base_path.clone(),
+            key_path: key_path.clone(),
+            target_id: Some(target_id.clone()),
+        })
+    } else {
+        None
+    }
+}
+
+#[tauri::command]
+pub async fn launch_flight_async(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, Arc<ApiAgentState>>,
+    flight_id: String,
+    prompt: String,
+    targets: Vec<AttemptTargetSpec>,
+) -> Result<Vec<Attempt>, String> {
+    if targets.is_empty() {
+        return Err("At least one target is required".to_string());
+    }
+
+    let mut launched: Vec<Attempt> = Vec::new();
+
+    for spec in targets {
+        let attempt_id = format!("att_{}", Uuid::new_v4().simple());
+        let session_id = attempt_id.clone();
+        let branch = worktree::branch_name(&attempt_id);
+
+        let (target, ssh_config_for_session, agent_config_id, provider, model, base_branch) =
+            match &spec {
+                AttemptTargetSpec::Local {
+                    base_path,
+                    base_branch,
+                    agent_config_id,
+                    provider,
+                    model,
+                } => {
+                    let path = worktree::create_local_worktree(base_path, &attempt_id, base_branch)
+                        .await
+                        .map_err(|e| format!("Local worktree provision failed: {}", e))?;
+                    (
+                        AttemptTarget::Local {
+                            base_path: base_path.clone(),
+                            worktree_path: path,
+                        },
+                        None,
+                        agent_config_id.clone(),
+                        provider.clone(),
+                        model.clone(),
+                        base_branch.clone(),
+                    )
+                }
+                AttemptTargetSpec::Ssh {
+                    base_path,
+                    base_branch,
+                    agent_config_id,
+                    provider,
+                    model,
+                    ..
+                } => {
+                    let cfg = build_ssh_config_from_spec(&spec)
+                        .ok_or("Failed to build SshConfig")?;
+                    let path = worktree::create_remote_worktree(
+                        &cfg,
+                        base_path,
+                        &attempt_id,
+                        base_branch,
+                    )
+                    .await
+                    .map_err(|e| format!("Remote worktree provision failed: {}", e))?;
+                    // SshConfig used by the API agent session must point at the
+                    // worktree, not the original base path, so all tool calls
+                    // operate inside the attempt's worktree.
+                    let session_cfg = SshConfig {
+                        remote_path: path.clone(),
+                        ..cfg.clone()
+                    };
+                    (
+                        AttemptTarget::Ssh {
+                            target_id: cfg.target_id.clone().unwrap_or_default(),
+                            base_path: base_path.clone(),
+                            worktree_path: path,
+                        },
+                        Some(session_cfg),
+                        agent_config_id.clone(),
+                        provider.clone(),
+                        model.clone(),
+                        base_branch.clone(),
+                    )
+                }
+            };
+
+        // For Local targets, pass the worktree path as the project_path so the
+        // API agent's tool runtime executes inside the worktree.
+        let project_path = match &target {
+            AttemptTarget::Local { worktree_path, .. } => worktree_path.clone(),
+            AttemptTarget::Ssh { worktree_path, .. } => worktree_path.clone(),
+        };
+
+        let attempt = Attempt {
+            id: attempt_id.clone(),
+            flight_id: flight_id.clone(),
+            target,
+            agent_config_id: agent_config_id.clone(),
+            model: model.clone(),
+            provider: provider.clone(),
+            branch,
+            base_branch,
+            session_id: session_id.clone(),
+            status: AttemptStatus::Provisioning,
+            started_at: Some(now_ms()),
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+            error_message: None,
+        };
+
+        if let Err(e) = append_attempt(&flight_id, &attempt) {
+            warn!(error = %e, "Failed to persist Attempt; aborting");
+            return Err(e);
+        }
+
+        // Hand off to the existing API agent session machinery. session_id is
+        // shared with the agentTaskStore conversation id on the frontend so
+        // the AttemptTile can subscribe to streaming events.
+        match start_api_agent_session(
+            app_handle.clone(),
+            state.clone(),
+            session_id.clone(),
+            provider.clone(),
+            model.clone(),
+            project_path,
+            prompt.clone(),
+            None,                     // system_prompt_override — use default
+            Some(false),              // thinking_enabled
+            None,                     // attachments
+            Some(false),              // plan_mode
+            ssh_config_for_session,
+        )
+        .await
+        {
+            Ok(()) => {
+                let _ = update_attempt_status(
+                    &flight_id,
+                    &attempt_id,
+                    AttemptStatus::Running,
+                    None,
+                );
+            }
+            Err(e) => {
+                let _ = update_attempt_status(
+                    &flight_id,
+                    &attempt_id,
+                    AttemptStatus::Failed,
+                    Some(format!("Session start failed: {}", e)),
+                );
+            }
+        }
+
+        info!(
+            flight = %flight_id,
+            attempt = %attempt_id,
+            agent = %agent_config_id,
+            "Launched async attempt"
+        );
+        launched.push(attempt);
+    }
+
+    Ok(launched)
+}
+
+#[tauri::command]
+pub async fn cancel_flight_attempt(
+    state: tauri::State<'_, Arc<ApiAgentState>>,
+    flight_id: String,
+    attempt_id: String,
+) -> Result<(), String> {
+    // 1. Pull a snapshot of the attempt so we can clean up the worktree
+    //    after closing the session.
+    let attempt = {
+        let s = storage::load_state();
+        s.flights
+            .iter()
+            .find(|f| f.id == flight_id)
+            .and_then(|f| f.attempts.iter().find(|a| a.id == attempt_id).cloned())
+            .ok_or_else(|| format!("Attempt '{}' not found", attempt_id))?
+    };
+
+    // 2. Close the API agent session (cancels the loop + drops history).
+    let _ = close_api_agent_session(state, attempt.session_id.clone()).await;
+
+    // 3. Mark cancelled before worktree removal so the UI flips quickly.
+    let _ = update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Cancelled, None);
+
+    // 4. Remove the worktree.
+    match &attempt.target {
+        AttemptTarget::Local { base_path, .. } => {
+            if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id).await {
+                warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
+            }
+        }
+        AttemptTarget::Ssh { base_path, target_id, .. } => {
+            // Reconstruct an SshConfig from saved attempt info. We don't have
+            // host/user/port here — for cleanup we leave the worktree in place
+            // if we can't authenticate, since attempting to reconnect from a
+            // partial config would error out. Frontend can re-issue cleanup
+            // later once it re-resolves the SshTarget.
+            let _ = (base_path, target_id);
+            warn!(attempt = %attempt_id, "SSH worktree cleanup deferred — requires frontend to call cleanup_attempt_worktree");
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cleanup_attempt_worktree_ssh(
+    flight_id: String,
+    attempt_id: String,
+    host: String,
+    port: u16,
+    user: String,
+    key_path: Option<String>,
+    base_path: String,
+    target_id: String,
+) -> Result<(), String> {
+    let cfg = SshConfig {
+        host,
+        port,
+        user,
+        remote_path: base_path.clone(),
+        key_path,
+        target_id: Some(target_id),
+    };
+    let _ = (flight_id, attempt_id.clone());
+    worktree::remove_remote_worktree(&cfg, &base_path, &attempt_id).await
+}
+
+#[tauri::command]
+pub async fn mark_attempt_status(
+    flight_id: String,
+    attempt_id: String,
+    status: SetAttemptStatus,
+) -> Result<(), String> {
+    let new_status = match status {
+        SetAttemptStatus::Reviewing => AttemptStatus::Reviewing,
+        SetAttemptStatus::Completed => AttemptStatus::Completed,
+        SetAttemptStatus::Failed => AttemptStatus::Failed,
+        SetAttemptStatus::Cancelled => AttemptStatus::Cancelled,
+    };
+    update_attempt_status(&flight_id, &attempt_id, new_status, None)
+}
