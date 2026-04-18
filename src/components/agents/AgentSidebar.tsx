@@ -20,6 +20,7 @@ import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { useGitHubStore } from "@/stores/githubStore";
 import { API_PROVIDERS } from "@/lib/api-models";
+import { aggregateConversationCost, formatCostPill } from "@/lib/conversationCost";
 
 type StatusFilter = "all" | "active" | "done" | "archived";
 type GroupBy = "project" | "status" | "env";
@@ -470,6 +471,8 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                   : null;
                 const modelShort = conv.model?.split("-").slice(0, 2).join(" ") ?? "";
                 const snippet = matchSnippet(conv);
+                const { totalTokens, estCost } = aggregateConversationCost(conv);
+                const costLabel = formatCostPill(estCost, totalTokens);
 
                 return (
                   <div key={conv.id} className="group relative">
@@ -499,8 +502,20 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                           </p>
                         ) : (
                           <>
-                            {modelShort && (
-                              <span className="text-[9px] text-text-muted">{modelShort}</span>
+                            {(modelShort || costLabel) && (
+                              <div className="flex items-center gap-1">
+                                {modelShort && (
+                                  <span className="text-[9px] text-text-muted">{modelShort}</span>
+                                )}
+                                {costLabel && (
+                                  <span
+                                    className="text-[8px] px-1 py-px bg-bg-elevated text-text-muted rounded font-mono"
+                                    title={`Estimated cost (${totalTokens.toLocaleString()} tokens)`}
+                                  >
+                                    {costLabel}
+                                  </span>
+                                )}
+                              </div>
                             )}
                             {preview && (
                               <p className="text-[9px] text-text-muted truncate mt-0.5 opacity-70">

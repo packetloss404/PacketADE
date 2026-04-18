@@ -225,6 +225,8 @@ pub fn run() {
             commands::slash_commands::list_slash_commands,
             // Skills (Claude-Code-style ~/.claude/skills/<name>/SKILL.md)
             commands::skills::list_skills,
+            // Custom agents (Claude-Code-style ~/.claude/agents/<name>.md)
+            commands::custom_agents::list_custom_agents,
             // Pricing / cost helpers
             commands::pricing::calculate_turn_cost,
         ])

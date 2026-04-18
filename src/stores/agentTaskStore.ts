@@ -33,6 +33,7 @@ import {
   apiAgentPendingEditEvent,
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
+import { useMemoryStore } from "@/stores/memoryStore";
 import type { GitHubRepo } from "@/types/github";
 import type {
   AgentConversation,
@@ -412,6 +413,24 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
 
+    // Memory injection: prepend the PacketCode memory layer's project context to
+    // the system prompt so the agent sees learned patterns, prior flight lessons,
+    // and recent session summaries at session start.
+    //
+    // v1 policy: only inject when a user profile prompt is already set. Without a
+    // base prompt we'd have to either fully replace the backend default
+    // (build_system_prompt — which already wires CLAUDE.md, tool docs, etc.) or
+    // duplicate it here. Neither is desirable, so we skip injection and let the
+    // backend default fire untouched. Future revision: have the backend accept a
+    // memory-prefix arg and merge it into the default prompt.
+    let effectiveSystemPrompt: string | null = systemPromptOverride ?? null;
+    if (effectiveSystemPrompt) {
+      const memoryContext = useMemoryStore.getState().getContextForSession(projectPath);
+      if (memoryContext.trim().length > 0) {
+        effectiveSystemPrompt = `## Project memory (auto-injected from PacketCode memory layer)\n\n${memoryContext}\n\n---\n\n${effectiveSystemPrompt}`;
+      }
+    }
+
     const now = Date.now();
     const displayBase = sshTarget
       ? sshTarget.name
@@ -439,7 +458,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       mode: "api",
       provider,
       model,
-      systemPromptOverride: systemPromptOverride ?? null,
+      systemPromptOverride: effectiveSystemPrompt,
       queuedMessages: [],
       planMode: planMode ?? false,
       permissionMode: "auto",
@@ -632,6 +651,13 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
               get().sendMessage(id, drained);
             }, 0);
           }
+          // Desktop notification — only if user isn't actively viewing this conversation.
+          if (updated && get().selectedConversationId !== id) {
+            const finishedTitle = updated.title;
+            void import("@/lib/notifications").then(({ notifyConversationDone }) => {
+              void notifyConversationDone(finishedTitle);
+            });
+          }
         }
       );
 
@@ -658,6 +684,12 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
             }),
           }));
           if (updated) scheduleSave(updated);
+          if (updated) {
+            const failedTitle = `Failed: ${updated.title}`;
+            void import("@/lib/notifications").then(({ notifyConversationDone }) => {
+              void notifyConversationDone(failedTitle);
+            });
+          }
         }
       );
 
@@ -764,7 +796,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           model,
           projectPath,
           initialMessage,
-          systemPromptOverride ?? null,
+          effectiveSystemPrompt,
           thinkingEnabled ?? false,
           undefined, // attachments — not wired in UI yet
           planMode ?? false,

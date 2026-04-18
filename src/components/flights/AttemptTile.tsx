@@ -16,6 +16,7 @@ import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { notifyAttemptCompleted, notifyAttemptFailed } from "@/lib/notifications";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
 import type { AgentMessage } from "@/types/agent-conversation";
 
@@ -60,14 +61,25 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
     lastAssistantMsg.content.includes(SENTINEL_DONE)
   );
 
+  const attemptLabel =
+    attempt.target.kind === "ssh" ? attempt.target.targetId : "local";
+
   useEffect(() => {
     if (
       sentinelDetected &&
       (attempt.status === "running" || attempt.status === "provisioning")
     ) {
       void setAttemptStatus(flight.id, attempt.id, "reviewing");
+      void notifyAttemptCompleted(flight.title, attemptLabel);
     }
-  }, [sentinelDetected, attempt.status, attempt.id, flight.id, setAttemptStatus]);
+  }, [sentinelDetected, attempt.status, attempt.id, flight.id, flight.title, attemptLabel, setAttemptStatus]);
+
+  // Notify on transition into "failed" (whether from backend or UI rejection).
+  useEffect(() => {
+    if (attempt.status === "failed") {
+      void notifyAttemptFailed(flight.title, attemptLabel, attempt.errorMessage);
+    }
+  }, [attempt.status, attempt.errorMessage, flight.title, attemptLabel]);
 
   // Roll up cost/tokens from streamed messages onto the persisted attempt.
   useEffect(() => {

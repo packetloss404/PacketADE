@@ -6,6 +6,7 @@
 
 use crate::commands::api_keys;
 use crate::core::execution::{ExecutionTarget, SshConfig};
+use crate::core::hooks::{self, HookEvent};
 use crate::core::llm_provider::get_provider;
 use crate::core::llm_system_prompt::build_system_prompt;
 use crate::core::llm_types::*;
@@ -175,6 +176,22 @@ struct DonePayload {
     output_tokens: u64,
     cache_read_input_tokens: u64,
     cache_creation_input_tokens: u64,
+}
+
+/// Fire all SessionEnd hooks (best-effort; failures logged).
+async fn fire_session_end_hooks(
+    hooks_list: &[crate::core::hooks::HookConfig],
+    session_id: &str,
+) {
+    for hook in hooks_list.iter().filter(|h| h.event == HookEvent::SessionEnd) {
+        let payload = serde_json::json!({
+            "session_id": session_id,
+            "event": "SessionEnd",
+        });
+        if let Err(e) = hooks::run_hook(hook, payload).await {
+            warn!(session_id = %session_id, error = %e, "SessionEnd hook failed");
+        }
+    }
 }
 
 /// Map a provider name to the usage-log source string.
@@ -624,6 +641,25 @@ async fn run_agent_loop(
 
     let source = provider_to_source(&provider_name);
 
+    // Load hooks once per loop (covers global + this session's project).
+    let project_path_for_hooks = match &execution {
+        ExecutionTarget::Local { project_path } => project_path.clone(),
+        _ => String::new(),
+    };
+    let all_hooks = hooks::load_hooks_with_project(&project_path_for_hooks);
+
+    // Fire SessionStart hooks (best-effort, no veto).
+    for hook in all_hooks.iter().filter(|h| h.event == HookEvent::SessionStart) {
+        let payload = serde_json::json!({
+            "session_id": session_id,
+            "provider": provider_name,
+            "model": model,
+        });
+        if let Err(e) = hooks::run_hook(hook, payload).await {
+            warn!(session_id = %session_id, error = %e, "SessionStart hook failed");
+        }
+    }
+
     for iteration in 0..MAX_TOOL_ITERATIONS {
         // Check cancellation
         if cancel_rx.try_recv().is_ok() {
@@ -656,6 +692,7 @@ async fn run_agent_loop(
                 cost_usd: cost,
             };
             let _ = crate::commands::usage::append_usage_entry(&entry);
+            fire_session_end_hooks(&all_hooks, session_id).await;
             return Ok(());
         }
 
@@ -744,6 +781,7 @@ async fn run_agent_loop(
                         cost_usd: cost,
                     };
                     let _ = crate::commands::usage::append_usage_entry(&entry);
+                    fire_session_end_hooks(&all_hooks, session_id).await;
                     return Ok(());
                 }
                 chunk = rx.recv() => {
@@ -877,6 +915,7 @@ async fn run_agent_loop(
                 cost_usd: cost,
             };
             let _ = crate::commands::usage::append_usage_entry(&entry);
+            fire_session_end_hooks(&all_hooks, session_id).await;
             return Ok(());
         }
 
@@ -902,6 +941,7 @@ async fn run_agent_loop(
                 let app_handle = app_handle.clone();
                 let session_id = session_id.to_string();
                 let state = Arc::clone(state);
+                let hooks_for_tool = all_hooks.clone();
                 async move {
                     // Plan mode gate
                     if plan_mode_active && !PLAN_MODE_ALLOWED.contains(&tc.name.as_str()) {
@@ -1109,6 +1149,61 @@ async fn run_agent_loop(
                         }
                     }
 
+                    // PreToolUse hooks — non-zero exit vetoes the tool call.
+                    let mut vetoed_by: Option<String> = None;
+                    for hook in hooks_for_tool
+                        .iter()
+                        .filter(|h| h.event == HookEvent::PreToolUse)
+                    {
+                        if !hooks::matches_tool_call(
+                            hook.matcher.as_deref(),
+                            &tc.name,
+                            &tc.arguments,
+                        ) {
+                            continue;
+                        }
+                        let payload = serde_json::json!({
+                            "session_id": session_id,
+                            "event": "PreToolUse",
+                            "tool_name": tc.name,
+                            "tool_input": tc.arguments,
+                        });
+                        match hooks::run_hook(hook, payload).await {
+                            Ok(res) if res.veto => {
+                                vetoed_by = Some(hook.command.clone());
+                                break;
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                warn!(
+                                    session_id = %session_id,
+                                    tool = %tc.name,
+                                    error = %e,
+                                    "PreToolUse hook failed (treating as allow)"
+                                );
+                            }
+                        }
+                    }
+
+                    if let Some(hook_cmd) = vetoed_by {
+                        let err = ToolResult {
+                            tool_call_id: tc.id.clone(),
+                            content: format!("Blocked by PreToolUse hook: {}", hook_cmd),
+                            is_error: true,
+                        };
+                        let _ = app_handle.emit(
+                            &tool_result_event(&session_id),
+                            ToolResultPayload {
+                                id: tc.id.clone(),
+                                name: tc.name.clone(),
+                                content: err.content.clone(),
+                                is_error: true,
+                                input: serde_json::to_string(&tc.arguments).unwrap_or_default(),
+                            },
+                        );
+                        return (tc.id.clone(), err);
+                    }
+
                     // Execute tool
                     let result = tool_runtime::execute_tool(&tc, &execution).await;
                     let _ = app_handle.emit(
@@ -1121,6 +1216,37 @@ async fn run_agent_loop(
                             input: serde_json::to_string(&tc.arguments).unwrap_or_default(),
                         },
                     );
+
+                    // PostToolUse hooks — best-effort; failures logged.
+                    for hook in hooks_for_tool
+                        .iter()
+                        .filter(|h| h.event == HookEvent::PostToolUse)
+                    {
+                        if !hooks::matches_tool_call(
+                            hook.matcher.as_deref(),
+                            &tc.name,
+                            &tc.arguments,
+                        ) {
+                            continue;
+                        }
+                        let payload = serde_json::json!({
+                            "session_id": session_id,
+                            "event": "PostToolUse",
+                            "tool_name": tc.name,
+                            "tool_input": tc.arguments,
+                            "tool_result": result.content,
+                            "is_error": result.is_error,
+                        });
+                        if let Err(e) = hooks::run_hook(hook, payload).await {
+                            warn!(
+                                session_id = %session_id,
+                                tool = %tc.name,
+                                error = %e,
+                                "PostToolUse hook failed"
+                            );
+                        }
+                    }
+
                     (tc.id.clone(), result)
                 }
             })
@@ -1191,5 +1317,6 @@ async fn run_agent_loop(
         cost_usd: cost,
     };
     let _ = crate::commands::usage::append_usage_entry(&entry);
+    fire_session_end_hooks(&all_hooks, session_id).await;
     Ok(())
 }

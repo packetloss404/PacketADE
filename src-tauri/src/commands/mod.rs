@@ -6,6 +6,7 @@ pub mod checkpoints;
 pub mod code_quality;
 pub mod conversations;
 pub mod crashes;
+pub mod custom_agents;
 pub mod deploy;
 pub mod dictation;
 pub mod error_classifier;

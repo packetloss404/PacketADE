@@ -17,6 +17,7 @@ import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { getModule } from "@/modules/registry";
 import { useStatusLinePoller, useCodexStatusLinePoller, useGeminiStatusLinePoller, useOpenCodeStatusLinePoller } from "@/hooks/useStatusLine";
 import { initializeApp, persistUiState } from "@/lib/bootstrap";
+import { requestNotificationPermission } from "@/lib/notifications";
 import type { AppView } from "@/stores/appStore";
 
 // Lazy-loaded views — split into separate chunks to reduce initial bundle size
@@ -60,6 +61,9 @@ export default function App() {
   // Bootstrap: load backend state and hydrate all stores on first mount
   useEffect(() => {
     initializeApp();
+    // Request OS notification permission early so async-agent completion
+    // notifications can fire later. No-ops gracefully if unsupported/denied.
+    void requestNotificationPermission().catch(() => {});
   }, []);
 
   // Apply theme class to document
