@@ -494,6 +494,8 @@ mod tests {
             completed_at: None,
             total_cost: 0.0,
             total_tokens: 0,
+            prompt: None,
+            attempts: Vec::new(),
         }
     }
 
@@ -602,6 +604,8 @@ mod tests {
             completed_at: None,
             total_cost: 0.0,
             total_tokens: 0,
+            prompt: None,
+            attempts: Vec::new(),
         }
     }
 
@@ -704,6 +708,8 @@ mod tests {
             completed_at: None,
             total_cost: 0.0,
             total_tokens: 0,
+            prompt: None,
+            attempts: Vec::new(),
         };
 
         // Launch, tick, spawn, complete task-1

@@ -10,6 +10,7 @@ pub mod deploy;
 pub mod dictation;
 pub mod error_classifier;
 pub mod flight_chat;
+pub mod flight_attempts;
 pub mod fs;
 pub mod git;
 pub mod github;

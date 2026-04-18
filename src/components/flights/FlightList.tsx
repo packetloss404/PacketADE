@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Plus, AlertTriangle, X } from "lucide-react"
 import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { FLIGHT_STATUS_CONFIG } from "@/lib/flight-colors";
-import { NewFlightModal } from "./NewFlightModal";
+import { LaunchAsyncFlightModal } from "./LaunchAsyncFlightModal";
 import type { Flight, FlightStatus } from "@/types/flight";
 
 type WorkspaceFilter = "active" | "all";
@@ -146,8 +146,8 @@ export function FlightList({ selectedId, onSelect }: FlightListProps) {
       </div>
 
       {showCreate && (
-        <NewFlightModal
-          onCreated={handleCreated}
+        <LaunchAsyncFlightModal
+          onLaunched={handleCreated}
           onClose={() => setShowCreate(false)}
         />
       )}

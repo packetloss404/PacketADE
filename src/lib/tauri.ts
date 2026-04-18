@@ -8,7 +8,7 @@ import type {
   WorkspaceDto,
 } from "@/generated/tauri-schema";
 import type { AgentConfig } from "@/types/agent";
-import type { Flight, Milestone, ReviewType, Task, TaskResult } from "@/types/flight";
+import type { Attempt, Flight, Milestone, ReviewType, Task, TaskResult } from "@/types/flight";
 import type { StatusLineData, CodexStatusLineData, GeminiStatusLineData, OpenCodeStatusLineData } from "@/types/statusline";
 import type { Workspace } from "@/types/workspace";
 import type { MemoryEvent, LearnedPattern } from "@/types/memory";
@@ -239,6 +239,104 @@ export async function deleteSshPassword(targetId: string): Promise<void> {
 
 export async function getSshPasswordExists(targetId: string): Promise<boolean> {
   return invoke<boolean>("get_ssh_password_exists", { targetId });
+}
+
+// Async parallel agent attempts (Flight Deck "one prompt → N agents")
+export type AttemptTargetSpec =
+  | {
+      kind: "local";
+      basePath: string;
+      baseBranch: string;
+      agentConfigId: string;
+      provider: string;
+      model: string;
+    }
+  | {
+      kind: "ssh";
+      targetId: string;
+      host: string;
+      port: number;
+      user: string;
+      keyPath?: string | null;
+      basePath: string;
+      baseBranch: string;
+      agentConfigId: string;
+      provider: string;
+      model: string;
+    };
+
+export async function launchFlightAsync(
+  flightId: string,
+  prompt: string,
+  targets: AttemptTargetSpec[],
+): Promise<Attempt[]> {
+  const dtoTargets = targets.map((t) => {
+    if (t.kind === "local") {
+      return {
+        kind: "local",
+        base_path: t.basePath,
+        base_branch: t.baseBranch,
+        agent_config_id: t.agentConfigId,
+        provider: t.provider,
+        model: t.model,
+      };
+    }
+    return {
+      kind: "ssh",
+      target_id: t.targetId,
+      host: t.host,
+      port: t.port,
+      user: t.user,
+      key_path: t.keyPath ?? null,
+      base_path: t.basePath,
+      base_branch: t.baseBranch,
+      agent_config_id: t.agentConfigId,
+      provider: t.provider,
+      model: t.model,
+    };
+  });
+  const dtoAttempts = await invoke<PersistedStateDto["flights"][number]["attempts"]>(
+    "launch_flight_async",
+    { flightId, prompt, targets: dtoTargets },
+  );
+  return dtoAttempts.map(fromDtoAttempt);
+}
+
+export async function cancelFlightAttempt(
+  flightId: string,
+  attemptId: string,
+): Promise<void> {
+  return invoke("cancel_flight_attempt", { flightId, attemptId });
+}
+
+export async function cleanupAttemptWorktreeSsh(args: {
+  flightId: string;
+  attemptId: string;
+  host: string;
+  port: number;
+  user: string;
+  keyPath?: string | null;
+  basePath: string;
+  targetId: string;
+}): Promise<void> {
+  return invoke("cleanup_attempt_worktree_ssh", {
+    flightId: args.flightId,
+    attemptId: args.attemptId,
+    host: args.host,
+    port: args.port,
+    user: args.user,
+    keyPath: args.keyPath ?? null,
+    basePath: args.basePath,
+    targetId: args.targetId,
+  });
+}
+
+export async function markAttemptStatus(
+  flightId: string,
+  attemptId: string,
+  status: "reviewing" | "completed" | "failed" | "cancelled",
+): Promise<void> {
+  return invoke("mark_attempt_status", { flightId, attemptId, status });
 }
 
 // Git safety check
@@ -536,6 +634,46 @@ function toDtoTask(task: Task): PersistedStateDto["flights"][number]["milestones
   };
 }
 
+function fromDtoAttempt(a: PersistedStateDto["flights"][number]["attempts"][number]): Attempt {
+  return {
+    id: a.id,
+    flightId: a.flightId,
+    target: a.target,
+    agentConfigId: a.agentConfigId,
+    model: a.model,
+    provider: a.provider,
+    branch: a.branch,
+    baseBranch: a.baseBranch,
+    sessionId: a.sessionId,
+    status: a.status,
+    startedAt: a.startedAt,
+    completedAt: a.completedAt,
+    cost: a.cost,
+    tokens: a.tokens,
+    errorMessage: a.errorMessage,
+  };
+}
+
+function toDtoAttempt(a: Attempt): PersistedStateDto["flights"][number]["attempts"][number] {
+  return {
+    id: a.id,
+    flightId: a.flightId,
+    target: a.target,
+    agentConfigId: a.agentConfigId,
+    model: a.model,
+    provider: a.provider,
+    branch: a.branch,
+    baseBranch: a.baseBranch,
+    sessionId: a.sessionId,
+    status: a.status,
+    startedAt: a.startedAt,
+    completedAt: a.completedAt,
+    cost: a.cost,
+    tokens: a.tokens,
+    errorMessage: a.errorMessage,
+  };
+}
+
 function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
   return {
     id: flight.id,
@@ -563,6 +701,8 @@ function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
     completedAt: flight.completedAt,
     totalCost: flight.totalCost,
     totalTokens: flight.totalTokens,
+    prompt: flight.prompt,
+    attempts: (flight.attempts ?? []).map(fromDtoAttempt),
   };
 }
 
@@ -592,6 +732,8 @@ function toDtoFlight(flight: Flight): PersistedStateDto["flights"][number] {
     completedAt: flight.completedAt,
     totalCost: flight.totalCost,
     totalTokens: flight.totalTokens,
+    prompt: flight.prompt,
+    attempts: (flight.attempts ?? []).map(toDtoAttempt),
   };
 }
 

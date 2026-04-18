@@ -177,6 +177,12 @@ interface AgentTaskStore {
     thinkingEnabled?: boolean,
     planMode?: boolean,
     sshTarget?: SshTarget | null,
+    /** When set, use this id instead of generating a new one. Used by Flight
+     * Deck attempts so the conversation id matches the backend session id. */
+    explicitId?: string,
+    /** When true, skip the start_api_agent_session backend call (the caller
+     * has already started it). Used by Flight Deck attempts. */
+    skipBackendStart?: boolean,
   ) => Promise<string>;
   sendMessage: (conversationId: string, content: string) => void;
   addAssistantMessage: (conversationId: string, content: string, toolCalls?: AgentToolCall[]) => void;
@@ -400,8 +406,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget) => {
-    const id = generateId("conv");
+  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget, explicitId, skipBackendStart) => {
+    const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
 
     const now = Date.now();
@@ -738,29 +744,31 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         pendingEditUnlisten();
       });
 
-      // Start the API agent session
-      const sshConfig = sshTarget
-        ? {
-            host: sshTarget.host,
-            port: sshTarget.port,
-            user: sshTarget.user,
-            remote_path: sshTarget.remotePath,
-            key_path: sshTarget.keyPath ?? null,
-            target_id: sshTarget.id,
-          }
-        : null;
-      await startApiAgentSession(
-        id,
-        provider,
-        model,
-        projectPath,
-        initialMessage,
-        systemPromptOverride ?? null,
-        thinkingEnabled ?? false,
-        undefined, // attachments — not wired in UI yet
-        planMode ?? false,
-        sshConfig,
-      );
+      // Start the API agent session unless the caller already did so.
+      if (!skipBackendStart) {
+        const sshConfig = sshTarget
+          ? {
+              host: sshTarget.host,
+              port: sshTarget.port,
+              user: sshTarget.user,
+              remote_path: sshTarget.remotePath,
+              key_path: sshTarget.keyPath ?? null,
+              target_id: sshTarget.id,
+            }
+          : null;
+        await startApiAgentSession(
+          id,
+          provider,
+          model,
+          projectPath,
+          initialMessage,
+          systemPromptOverride ?? null,
+          thinkingEnabled ?? false,
+          undefined, // attachments — not wired in UI yet
+          planMode ?? false,
+          sshConfig,
+        );
+      }
     } catch {
       set((s) => ({
         conversations: s.conversations.map((c) =>

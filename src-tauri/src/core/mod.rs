@@ -20,6 +20,7 @@ pub mod storage;
 pub mod tool_runtime;
 pub mod tool_runtime_ssh;
 pub mod workspace;
+pub mod worktree;
 #[cfg(test)]
 mod contract_tests;
 

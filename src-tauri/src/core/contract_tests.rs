@@ -75,6 +75,8 @@ mod tests {
                 completed_at: None,
                 total_cost: 0.5,
                 total_tokens: 1000,
+                prompt: None,
+                attempts: vec![],
             }],
             agents: vec![],
             settings: OrchestratorSettings::default(),
