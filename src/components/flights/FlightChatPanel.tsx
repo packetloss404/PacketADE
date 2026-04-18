@@ -70,7 +70,7 @@ function PlanBanner({
       <div className="flex items-center gap-2 mb-2">
         <ListTree size={12} className="text-accent-green flex-shrink-0" />
         <span className="text-[11px] font-medium text-accent-green flex-1">
-          Mission Plan: {plan.milestones.length} milestone{plan.milestones.length !== 1 ? "s" : ""}, {totalTasks} task{totalTasks !== 1 ? "s" : ""}
+          Flight Plan: {plan.milestones.length} milestone{plan.milestones.length !== 1 ? "s" : ""}, {totalTasks} task{totalTasks !== 1 ? "s" : ""}
         </span>
         <button
           onClick={onApply}
@@ -186,7 +186,7 @@ export function FlightChatPanel({
         <div className="flex items-center gap-1.5">
           <Sparkles size={14} className="text-accent-purple" />
           <span className="text-[11px] font-medium text-text-secondary">
-            Mission Planner
+            Flight Planner
           </span>
         </div>
       </div>
@@ -198,7 +198,7 @@ export function FlightChatPanel({
             <Bot size={24} className="text-accent-purple/40" />
             <p className="text-[11px] text-center leading-relaxed">
               Describe what you want to build.<br />
-              I'll help shape the mission plan.
+              I'll help shape the flight plan.
             </p>
           </div>
         )}
