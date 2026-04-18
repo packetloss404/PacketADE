@@ -34,6 +34,8 @@ import { CheckpointPanel } from "./CheckpointPanel";
 import { PlanModeApprovalMenu, looksLikePlan } from "./PlanModeApprovalMenu";
 import { DiffPaneTrigger } from "./DiffPaneTrigger";
 import { MultiFileEditCard } from "./MultiFileEditCard";
+import { SubagentToolCallCard } from "./SubagentToolCallCard";
+import { ContinueInMenu } from "./ContinueInMenu";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
@@ -838,6 +840,9 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           />
         )}
 
+        {/* Continue in… */}
+        <ContinueInMenu conversation={conversation} />
+
         {/* Rewind button */}
         <button
           onClick={() => setShowRewind((v) => !v)}
@@ -1114,6 +1119,13 @@ function MessageBubble({
               {(groupWrites ? otherCalls : message.toolCalls).map((tc) =>
                 tc.name === "bash" ? (
                   <BashToolCallCard
+                    key={tc.id}
+                    toolCall={tc}
+                    conversationId={conversation.id}
+                    verbosity={verbosity}
+                  />
+                ) : tc.name === "spawn_subagent" ? (
+                  <SubagentToolCallCard
                     key={tc.id}
                     toolCall={tc}
                     conversationId={conversation.id}

@@ -13,6 +13,7 @@ pub mod llm_openrouter;
 pub mod llm_provider;
 pub mod llm_system_prompt;
 pub mod llm_types;
+pub mod mcp_bridge;
 pub mod orchestrator;
 pub mod pty;
 pub mod shared;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Zap,
   Trash2,
@@ -10,6 +10,9 @@ import {
   XCircle,
   Archive,
   ArchiveRestore,
+  Layers,
+  GitBranch,
+  ChevronDown,
 } from "lucide-react";
 import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
 import type { AgentConversation } from "@/types/agent-conversation";
@@ -17,6 +20,29 @@ import { useGitHubStore } from "@/stores/githubStore";
 import { API_PROVIDERS } from "@/lib/api-models";
 
 type StatusFilter = "all" | "active" | "done" | "archived";
+type GroupBy = "project" | "status" | "env";
+
+const GROUP_BY_LABELS: Record<GroupBy, string> = {
+  project: "Project",
+  status: "Status",
+  env: "Environment",
+};
+
+const STATUS_GROUP_LABELS: Record<AgentConversation["status"], string> = {
+  active: "Active",
+  idle: "Idle",
+  done: "Done",
+  failed: "Failed",
+};
+
+const STATUS_GROUP_ORDER: AgentConversation["status"][] = ["active", "idle", "done", "failed"];
+const ENV_GROUP_ORDER = ["Local", "SSH", "Worktree"] as const;
+
+function envGroupKey(conv: AgentConversation): "Local" | "SSH" | "Worktree" {
+  if (isWorktreePath(conv.projectPath)) return "Worktree";
+  if (conv.sshTarget) return "SSH";
+  return "Local";
+}
 
 function statusIcon(status: AgentConversation["status"]) {
   switch (status) {
@@ -97,6 +123,8 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const repos = useGitHubStore((s) => s.repos);
 
   const [filter, setFilter] = useState<StatusFilter>("all");
+  const [groupBy, setGroupBy] = useState<GroupBy>("project");
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false);
 
   const filtered = useMemo(() => {
     if (filter === "archived") {
@@ -110,20 +138,41 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
     return visible.filter((c) => c.status === "done" || c.status === "failed");
   }, [conversations, filter]);
 
-  const convsByRepo = useMemo(() => {
+  const convsGrouped = useMemo(() => {
     const map = new Map<string, AgentConversation[]>();
     for (const conv of filtered) {
-      const key = conv.sshTarget
-        ? `ssh:${conv.sshTarget.id}:${conv.projectPath}`
-        : `local:${conv.projectPath}`;
+      let key: string;
+      if (groupBy === "status") {
+        key = conv.status;
+      } else if (groupBy === "env") {
+        key = envGroupKey(conv);
+      } else {
+        key = conv.sshTarget
+          ? `ssh:${conv.sshTarget.id}:${conv.projectPath}`
+          : `local:${conv.projectPath}`;
+      }
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(conv);
     }
     for (const [, list] of map) {
       list.sort((a, b) => b.updatedAt - a.updatedAt);
     }
+    if (groupBy === "status") {
+      const ordered = new Map<string, AgentConversation[]>();
+      for (const k of STATUS_GROUP_ORDER) {
+        if (map.has(k)) ordered.set(k, map.get(k)!);
+      }
+      return ordered;
+    }
+    if (groupBy === "env") {
+      const ordered = new Map<string, AgentConversation[]>();
+      for (const k of ENV_GROUP_ORDER) {
+        if (map.has(k)) ordered.set(k, map.get(k)!);
+      }
+      return ordered;
+    }
     return map;
-  }, [filtered]);
+  }, [filtered, groupBy]);
 
   const counts = useMemo(() => {
     let all = 0;
@@ -142,7 +191,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
     return { all, active, done, archived };
   }, [conversations]);
 
-  const hasConversations = convsByRepo.size > 0;
+  const hasConversations = convsGrouped.size > 0;
 
   return (
     <div className="w-[240px] flex-shrink-0 flex flex-col bg-bg-secondary border-r border-bg-border overflow-hidden">
@@ -186,7 +235,44 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
         </div>
       )}
 
-      {/* Conversations grouped by project */}
+      {/* Group-by dropdown */}
+      {conversations.length > 0 && (
+        <div className="relative px-3 pb-1.5">
+          <button
+            onClick={() => setGroupMenuOpen((v) => !v)}
+            onBlur={() => setTimeout(() => setGroupMenuOpen(false), 120)}
+            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-text-muted hover:text-text-secondary rounded transition-colors"
+            title="Group conversations by"
+          >
+            <Layers size={10} />
+            <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
+            <ChevronDown size={9} className="opacity-70" />
+          </button>
+          {groupMenuOpen && (
+            <div className="absolute z-10 left-3 top-full mt-0.5 bg-bg-primary border border-bg-border rounded shadow-lg py-0.5 min-w-[120px]">
+              {(["project", "status", "env"] as GroupBy[]).map((g) => (
+                <button
+                  key={g}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setGroupBy(g);
+                    setGroupMenuOpen(false);
+                  }}
+                  className={`flex items-center w-full px-2 py-1 text-[10px] text-left transition-colors ${
+                    groupBy === g
+                      ? "text-accent-green bg-accent-green/10"
+                      : "text-text-secondary hover:bg-bg-hover"
+                  }`}
+                >
+                  {GROUP_BY_LABELS[g]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Conversations grouped by project / status / env */}
       <div className="flex-1 overflow-y-auto px-1">
         {!hasConversations ? (
           <div className="flex flex-col items-center justify-center py-16 text-text-muted">
@@ -195,20 +281,41 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
             <p className="text-[9px] mt-1 opacity-70">Start one with New Agent</p>
           </div>
         ) : (
-          Array.from(convsByRepo.entries()).map(([key, convs]) => {
+          Array.from(convsGrouped.entries()).map(([key, convs]) => {
             const sshTarget = convs[0]?.sshTarget;
             const projectPath = convs[0]?.projectPath ?? "";
+
+            let headerIcon: ReactNode;
+            let headerLabel: string;
+            if (groupBy === "status") {
+              const statusKey = key as AgentConversation["status"];
+              headerIcon = statusIcon(statusKey);
+              headerLabel = STATUS_GROUP_LABELS[statusKey] ?? key;
+            } else if (groupBy === "env") {
+              if (key === "SSH") {
+                headerIcon = <Server size={10} className="text-accent-purple shrink-0" />;
+              } else if (key === "Worktree") {
+                headerIcon = <GitBranch size={10} className="text-accent-amber shrink-0" />;
+              } else {
+                headerIcon = <FolderOpen size={10} className="text-text-muted shrink-0" />;
+              }
+              headerLabel = key;
+            } else {
+              headerIcon = sshTarget ? (
+                <Server size={10} className="text-accent-green shrink-0" />
+              ) : (
+                <FolderOpen size={10} className="text-text-muted shrink-0" />
+              );
+              headerLabel = sshTarget ? sshTarget.name : repoDisplayName(projectPath, repos);
+            }
+
             return (
             <div key={key} className="mb-2">
-              {/* Project header */}
+              {/* Group header */}
               <div className="flex items-center gap-1.5 px-2 py-1.5">
-                {sshTarget ? (
-                  <Server size={10} className="text-accent-green shrink-0" />
-                ) : (
-                  <FolderOpen size={10} className="text-text-muted shrink-0" />
-                )}
+                {headerIcon}
                 <span className="text-[10px] font-medium text-text-muted truncate">
-                  {sshTarget ? sshTarget.name : repoDisplayName(projectPath, repos)}
+                  {headerLabel}
                 </span>
                 <span className="text-[9px] text-text-muted ml-auto shrink-0">{convs.length}</span>
               </div>
