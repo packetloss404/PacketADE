@@ -8,6 +8,7 @@ import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
 import { getDefaultModel } from "@/lib/api-models";
 import { isSshUri, parseSshTargetId } from "@/types/ssh";
+import type { AgentMode } from "@/components/agents/AgentInputArea";
 
 export function AgentsView() {
   const agentInputText = useAgentTaskStore((s) => s.agentInputText);
@@ -27,6 +28,7 @@ export function AgentsView() {
   const [selectedProfileId, setSelectedProfileId] = useState<string>(
     activeProfileId ?? profiles[0]?.id ?? "",
   );
+  const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const handleNewAgent = useCallback(() => {
@@ -51,36 +53,60 @@ export function AgentsView() {
     const profile = profiles.find((p) => p.id === selectedProfileId);
     const systemPrompt = profile?.systemPrompt ? profile.systemPrompt : null;
 
-    if (isSshUri(selectedRepo)) {
-      const targetId = parseSshTargetId(selectedRepo);
-      const target = targetId
-        ? useSshTargetStore.getState().getTarget(targetId)
-        : undefined;
-      if (!target) {
-        alert("SSH target no longer exists. Reconnect it from the project dropdown.");
-        return;
+    // Mode → planMode + post-create permissionMode.
+    const planMode = agentMode === "ask" || agentMode === "plan";
+    const postCreatePermissionMode: "auto" | "ask_for_risky" =
+      agentMode === "manual" ? "ask_for_risky" : "auto";
+    // Plan mode: prepend a brief instruction so the agent leads with a plan.
+    const initialMessage =
+      agentMode === "plan"
+        ? `Begin with a structured plan (## Plan / ## Files to change / ## Steps), then implement step by step.\n\n${text}`
+        : text;
+
+    const setPermissionMode = useAgentTaskStore.getState().setPermissionMode;
+
+    void (async () => {
+      let convId: string | undefined;
+      if (isSshUri(selectedRepo)) {
+        const targetId = parseSshTargetId(selectedRepo);
+        const target = targetId
+          ? useSshTargetStore.getState().getTarget(targetId)
+          : undefined;
+        if (!target) {
+          alert("SSH target no longer exists. Reconnect it from the project dropdown.");
+          return;
+        }
+        useSshTargetStore.getState().touchTarget(target.id);
+        convId = await createApiConversation(
+          selectedAgent,
+          target.remotePath,
+          model,
+          initialMessage,
+          systemPrompt,
+          undefined,
+          planMode,
+          target,
+        );
+      } else {
+        useProjectHistoryStore.getState().recordOpen(selectedRepo);
+        convId = await createApiConversation(
+          selectedAgent,
+          selectedRepo,
+          model,
+          initialMessage,
+          systemPrompt,
+          undefined,
+          planMode,
+        );
       }
-      useSshTargetStore.getState().touchTarget(target.id);
-      void createApiConversation(
-        selectedAgent,
-        target.remotePath,
-        model,
-        text,
-        systemPrompt,
-        undefined,
-        undefined,
-        target,
-      );
-    } else {
-      useProjectHistoryStore.getState().recordOpen(selectedRepo);
-      void createApiConversation(
-        selectedAgent,
-        selectedRepo,
-        model,
-        text,
-        systemPrompt,
-      );
-    }
+      if (convId && postCreatePermissionMode !== "auto") {
+        try {
+          await setPermissionMode(convId, postCreatePermissionMode);
+        } catch (e) {
+          console.warn("Failed to set permission mode:", e);
+        }
+      }
+    })();
     setAgentInputText("");
   }, [
     agentInputText,
@@ -91,6 +117,7 @@ export function AgentsView() {
     profiles,
     setAgentInputText,
     createApiConversation,
+    agentMode,
   ]);
 
   const handleCloseConversation = useCallback(
@@ -123,6 +150,8 @@ export function AgentsView() {
           onModelChange={setSelectedModel}
           selectedProfileId={selectedProfileId}
           onProfileChange={handleProfileChange}
+          agentMode={agentMode}
+          onAgentModeChange={setAgentMode}
         />
       )}
 
