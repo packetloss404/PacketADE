@@ -1,16 +1,61 @@
-import { useMemo } from "react";
-import { Zap, Trash2, FolderOpen, Server } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Zap,
+  Trash2,
+  FolderOpen,
+  Server,
+  Loader2,
+  Circle,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
 import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { useGitHubStore } from "@/stores/githubStore";
 import { API_PROVIDERS } from "@/lib/api-models";
 
-const CONV_STATUS_DOT: Record<AgentConversation["status"], string> = {
-  active: "bg-accent-green animate-pulse",
-  idle: "bg-accent-green",
-  done: "bg-text-muted",
-  failed: "bg-accent-red",
-};
+type StatusFilter = "all" | "active" | "done";
+
+function statusIcon(status: AgentConversation["status"]) {
+  switch (status) {
+    case "active":
+      return <Loader2 size={10} className="text-accent-green animate-spin shrink-0" />;
+    case "idle":
+      return <Circle size={10} className="text-accent-green fill-accent-green shrink-0" />;
+    case "done":
+      return <CheckCircle2 size={10} className="text-text-muted shrink-0" />;
+    case "failed":
+      return <XCircle size={10} className="text-accent-red shrink-0" />;
+  }
+}
+
+function isWorktreePath(path: string): boolean {
+  return path.replace(/\\/g, "/").includes("/.pkt-worktrees/");
+}
+
+function envBadge(conv: AgentConversation) {
+  if (isWorktreePath(conv.projectPath)) {
+    return (
+      <span
+        className="text-[8px] px-1 py-px bg-accent-amber/10 text-accent-amber rounded font-medium"
+        title="Worktree (Flight Deck attempt)"
+      >
+        WT
+      </span>
+    );
+  }
+  if (conv.sshTarget) {
+    return (
+      <span
+        className="text-[8px] px-1 py-px bg-accent-purple/10 text-accent-purple rounded font-medium"
+        title={`SSH: ${conv.sshTarget.user}@${conv.sshTarget.host}`}
+      >
+        SSH
+      </span>
+    );
+  }
+  return null;
+}
 
 function formatRelativeTime(timestamp: number): string {
   const ms = Date.now() - timestamp;
@@ -47,9 +92,19 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const deleteConversation = useAgentTaskStore((s) => s.deleteConversation);
   const repos = useGitHubStore((s) => s.repos);
 
+  const [filter, setFilter] = useState<StatusFilter>("all");
+
+  const filtered = useMemo(() => {
+    if (filter === "all") return conversations;
+    if (filter === "active") {
+      return conversations.filter((c) => c.status === "active" || c.status === "idle");
+    }
+    return conversations.filter((c) => c.status === "done" || c.status === "failed");
+  }, [conversations, filter]);
+
   const convsByRepo = useMemo(() => {
     const map = new Map<string, AgentConversation[]>();
-    for (const conv of conversations) {
+    for (const conv of filtered) {
       const key = conv.sshTarget
         ? `ssh:${conv.sshTarget.id}:${conv.projectPath}`
         : `local:${conv.projectPath}`;
@@ -60,6 +115,16 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       list.sort((a, b) => b.updatedAt - a.updatedAt);
     }
     return map;
+  }, [filtered]);
+
+  const counts = useMemo(() => {
+    let active = 0;
+    let done = 0;
+    for (const c of conversations) {
+      if (c.status === "active" || c.status === "idle") active++;
+      else done++;
+    }
+    return { all: conversations.length, active, done };
   }, [conversations]);
 
   const hasConversations = convsByRepo.size > 0;
@@ -79,6 +144,31 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       </div>
 
       <div className="border-b border-bg-border mx-3 mb-1" />
+
+      {/* Status filter */}
+      {conversations.length > 0 && (
+        <div className="flex items-center gap-0.5 px-3 pb-1.5">
+          {(["all", "active", "done"] as StatusFilter[]).map((f) => {
+            const label = f === "all" ? "All" : f === "active" ? "Active" : "Done";
+            const count = counts[f];
+            const isActive = filter === f;
+            return (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`flex-1 text-[10px] py-0.5 rounded transition-colors ${
+                  isActive
+                    ? "bg-accent-green/15 text-accent-green"
+                    : "text-text-muted hover:text-text-secondary"
+                }`}
+              >
+                {label}
+                <span className="ml-1 opacity-60">({count})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Conversations grouped by project */}
       <div className="flex-1 overflow-y-auto px-1">
@@ -127,12 +217,13 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                           : "hover:bg-bg-hover"
                       }`}
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${CONV_STATUS_DOT[conv.status]}`} />
+                      <span className="mt-0.5">{statusIcon(conv.status)}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1">
                           <span className={`text-[11px] truncate flex-1 ${isSelected ? "text-text-primary font-medium" : "text-text-secondary"}`}>
                             {agentLabel(conv.agent)}
                           </span>
+                          {envBadge(conv)}
                           <span className="text-[9px] text-text-muted shrink-0">
                             {formatRelativeTime(conv.updatedAt)}
                           </span>

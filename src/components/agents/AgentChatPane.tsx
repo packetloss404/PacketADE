@@ -644,6 +644,29 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
         <div className="flex-1" />
 
+        {/* Transcript verbosity (API mode only) */}
+        {conversation.mode === "api" && (
+          <select
+            value={conversation.transcriptVerbosity ?? "normal"}
+            onChange={(e) => {
+              const next = e.target.value as "summary" | "normal" | "verbose";
+              useAgentTaskStore.setState((s) => ({
+                conversations: s.conversations.map((c) =>
+                  c.id === conversationId
+                    ? { ...c, transcriptVerbosity: next, updatedAt: Date.now() }
+                    : c,
+                ),
+              }));
+            }}
+            title="Transcript density: Summary collapses tool calls and hides thinking; Verbose shows raw inputs."
+            className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
+          >
+            <option value="summary">Summary</option>
+            <option value="normal">Normal</option>
+            <option value="verbose">Verbose</option>
+          </select>
+        )}
+
         {/* Model switcher (API mode only) */}
         {providerInfo && conversation.mode === "api" && (
           <div data-agent-pane-model-dropdown={conversationId}>
@@ -966,11 +989,12 @@ function MessageBubble({
   }
 
   // assistant
+  const verbosity = conversation.transcriptVerbosity ?? "normal";
   return (
     <div className="flex justify-start">
       <div className="max-w-[90%] space-y-1.5">
-        {/* Thinking block (if any) */}
-        {message.thinking && message.thinking.length > 0 && (
+        {/* Thinking block — hidden in summary mode */}
+        {verbosity !== "summary" && message.thinking && message.thinking.length > 0 && (
           <ThinkingBlock text={message.thinking} streaming={message.isStreaming} />
         )}
 
@@ -982,6 +1006,7 @@ function MessageBubble({
                 key={tc.id}
                 toolCall={tc}
                 projectPath={conversation.projectPath}
+                verbosity={verbosity}
               />
             ))}
           </div>
@@ -1126,11 +1151,13 @@ function parseWriteFileInput(tc: AgentToolCall): WriteFileInput | null {
 function ToolCallCard({
   toolCall,
   projectPath,
+  verbosity = "normal",
 }: {
   toolCall: AgentToolCall;
   projectPath: string;
+  verbosity?: "summary" | "normal" | "verbose";
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(verbosity === "verbose");
 
   const writeFileInput =
     toolCall.name === "write_file" ? parseWriteFileInput(toolCall) : null;
@@ -1200,7 +1227,7 @@ function ToolCallCard({
         {toolCall.file && (
           <span className="text-text-muted truncate">({toolCall.file})</span>
         )}
-        {!expanded && summaryPreview && (
+        {!expanded && summaryPreview && verbosity !== "summary" && (
           <span className="ml-1 truncate text-text-muted/80 flex-1 min-w-0">
             {summaryPreview.replace(/\n/g, " ↵ ")}
           </span>
@@ -1209,6 +1236,11 @@ function ToolCallCard({
       {expanded && hasMore && (
         <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 max-h-96 overflow-y-auto mx-1 mb-1 text-text-primary">
           {fullContent}
+        </pre>
+      )}
+      {expanded && verbosity === "verbose" && toolCall.input && (
+        <pre className="text-[10px] font-mono whitespace-pre-wrap bg-bg-secondary border-t border-bg-border rounded-b p-2 max-h-48 overflow-y-auto text-text-muted">
+          input: {toolCall.input}
         </pre>
       )}
     </div>
