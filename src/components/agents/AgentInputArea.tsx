@@ -1,15 +1,32 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import { Monitor, Mic, Zap, Sparkles, FolderOpen } from "lucide-react";
+import {
+  Monitor,
+  Mic,
+  Zap,
+  Sparkles,
+  FolderOpen,
+  Folder,
+  Server,
+  Check,
+} from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
 import { useGitHubStore } from "@/stores/githubStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
+import { useSshTargetStore } from "@/stores/sshTargetStore";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { FileMentionPopover } from "./FileMentionPopover";
+import { SshConnectModal } from "./SshConnectModal";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import { API_PROVIDERS } from "@/lib/api-models";
+import {
+  isSshUri,
+  makeSshUri,
+  parseSshTargetId,
+  type SshTarget,
+} from "@/types/ssh";
 
 interface AgentInputAreaProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -54,6 +71,10 @@ export function AgentInputArea({
   const repos = useGitHubStore((s) => s.repos);
   const projectHistory = useProjectHistoryStore((s) => s.projects);
   const recordOpenProject = useProjectHistoryStore((s) => s.recordOpen);
+  const sshTargets = useSshTargetStore((s) => s.targets);
+  const touchSshTarget = useSshTargetStore((s) => s.touchTarget);
+
+  const [sshModalOpen, setSshModalOpen] = useState(false);
 
   const profiles = useProfileStore((s) => s.profiles);
   const activeProfileId = useProfileStore((s) => s.activeProfileId);
@@ -74,19 +95,38 @@ export function AgentInputArea({
     }
   }, [transcript, setAgentInputText]);
 
-  const repoPaths = useMemo(
-    () =>
-      Array.from(
-        new Set(projectHistory.map((p) => p.path).filter(Boolean)),
-      ),
-    [projectHistory],
-  );
+  type RecentItem =
+    | { kind: "local"; path: string; ts: number }
+    | { kind: "ssh"; target: SshTarget; ts: number };
 
-  const currentDisplayName = selectedRepo
-    ? repoDisplayName(selectedRepo, repos)
-    : "Select a project";
+  const recentItems: RecentItem[] = useMemo(() => {
+    const localSeen = new Set<string>();
+    const local: RecentItem[] = [];
+    for (const p of projectHistory) {
+      if (!p.path || localSeen.has(p.path)) continue;
+      localSeen.add(p.path);
+      local.push({ kind: "local", path: p.path, ts: p.lastOpened });
+    }
+    const ssh: RecentItem[] = sshTargets.map((t) => ({
+      kind: "ssh",
+      target: t,
+      ts: t.lastUsed ?? t.createdAt,
+    }));
+    return [...local, ...ssh].sort((a, b) => b.ts - a.ts);
+  }, [projectHistory, sshTargets]);
 
-  const mentionProjectPath = selectedRepo ?? "";
+  const currentDisplayName = useMemo(() => {
+    if (!selectedRepo) return "Select a project";
+    if (isSshUri(selectedRepo)) {
+      const id = parseSshTargetId(selectedRepo);
+      const target = id ? sshTargets.find((t) => t.id === id) : undefined;
+      return target ? target.name : "SSH target";
+    }
+    return repoDisplayName(selectedRepo, repos);
+  }, [selectedRepo, repos, sshTargets]);
+
+  const mentionProjectPath =
+    selectedRepo && !isSshUri(selectedRepo) ? selectedRepo : "";
 
   const handleBrowse = useCallback(async () => {
     try {
@@ -99,6 +139,29 @@ export function AgentInputArea({
       console.warn("Folder picker failed:", err);
     }
   }, [setSelectedRepo, recordOpenProject]);
+
+  const handleSelectLocal = useCallback(
+    (path: string) => {
+      setSelectedRepo(path);
+    },
+    [setSelectedRepo],
+  );
+
+  const handleSelectSsh = useCallback(
+    (targetId: string) => {
+      setSelectedRepo(makeSshUri(targetId));
+      touchSshTarget(targetId);
+    },
+    [setSelectedRepo, touchSshTarget],
+  );
+
+  const handleSshConnected = useCallback(
+    (target: SshTarget) => {
+      setSelectedRepo(makeSshUri(target.id));
+      setSshModalOpen(false);
+    },
+    [setSelectedRepo],
+  );
 
   // ─── @ file-mention state ─────────────────────────────────────────────
   const [mentionState, setMentionState] = useState<MentionState>(
@@ -271,20 +334,60 @@ export function AgentInputArea({
                   selectedRepo ? "text-text-primary" : "text-text-muted"
                 }`}
               >
-                <Monitor size={12} className="text-text-muted" />
+                {selectedRepo && isSshUri(selectedRepo) ? (
+                  <Server size={12} className="text-accent-green" />
+                ) : (
+                  <Monitor size={12} className="text-text-muted" />
+                )}
                 {currentDisplayName}
               </span>
             }
           >
-            {repoPaths.map((path) => (
-              <DropdownItem key={path} onClick={() => setSelectedRepo(path)}>
-                {repoDisplayName(path, repos)}
-              </DropdownItem>
-            ))}
+            {recentItems.length > 0 && (
+              <div className="px-3 pt-1 pb-0.5 text-[9px] uppercase tracking-wider text-text-muted">
+                Recents
+              </div>
+            )}
+            {recentItems.map((item) =>
+              item.kind === "local" ? (
+                <DropdownItem
+                  key={`local:${item.path}`}
+                  onClick={() => handleSelectLocal(item.path)}
+                >
+                  <RecentRow
+                    icon={<Folder size={12} className="text-text-muted" />}
+                    label={repoDisplayName(item.path, repos)}
+                    selected={selectedRepo === item.path}
+                  />
+                </DropdownItem>
+              ) : (
+                <DropdownItem
+                  key={`ssh:${item.target.id}`}
+                  onClick={() => handleSelectSsh(item.target.id)}
+                >
+                  <RecentRow
+                    icon={<Server size={12} className="text-accent-green" />}
+                    label={item.target.name}
+                    selected={selectedRepo === makeSshUri(item.target.id)}
+                  />
+                </DropdownItem>
+              ),
+            )}
+
+            {recentItems.length > 0 && (
+              <div className="my-1 border-t border-bg-border" />
+            )}
+
             <DropdownItem onClick={handleBrowse}>
               <span className="flex items-center gap-1.5 text-text-secondary">
                 <FolderOpen size={12} />
-                Browse…
+                Open Folder
+              </span>
+            </DropdownItem>
+            <DropdownItem onClick={() => setSshModalOpen(true)}>
+              <span className="flex items-center gap-1.5 text-text-secondary">
+                <Server size={12} />
+                Connect SSH
               </span>
             </DropdownItem>
           </Dropdown>
@@ -417,6 +520,33 @@ export function AgentInputArea({
           agent &middot; @ to mention a file
         </p>
       </div>
+
+      {sshModalOpen && (
+        <SshConnectModal
+          onClose={() => setSshModalOpen(false)}
+          onConnected={handleSshConnected}
+        />
+      )}
+    </div>
+  );
+}
+
+function RecentRow({
+  icon,
+  label,
+  selected,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  selected: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="flex items-center gap-1.5 min-w-0">
+        {icon}
+        <span className="truncate">{label}</span>
+      </span>
+      {selected && <Check size={12} className="text-accent-green shrink-0" />}
     </div>
   );
 }
