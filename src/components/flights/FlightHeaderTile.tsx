@@ -72,7 +72,7 @@ export function FlightHeaderTile({ flight }: FlightHeaderTileProps) {
   }
 
   function handleDelete() {
-    if (!window.confirm(`Delete mission "${flight.title}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete flight "${flight.title}"? This cannot be undone.`)) return;
     deleteFlight(flight.id);
     setMenuOpen(false);
   }
@@ -110,7 +110,7 @@ export function FlightHeaderTile({ flight }: FlightHeaderTileProps) {
                 }
               }}
               className="flex-1 text-sm font-semibold text-text-primary bg-transparent border-b border-accent-green focus:outline-none min-w-[160px]"
-              placeholder="Mission title"
+              placeholder="Flight title"
             />
           ) : (
             <button
@@ -118,7 +118,7 @@ export function FlightHeaderTile({ flight }: FlightHeaderTileProps) {
               className="text-sm font-semibold text-text-primary hover:text-accent-green transition-colors truncate text-left"
               title="Click to edit"
             >
-              {flight.title || "Untitled Mission"}
+              {flight.title || "Untitled Flight"}
             </button>
           )}
 

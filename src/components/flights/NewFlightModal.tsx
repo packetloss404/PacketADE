@@ -159,7 +159,7 @@ export function NewFlightModal({ onClose, onCreated }: NewFlightModalProps) {
   return (
     <Modal
       onClose={onClose}
-      title="New Mission"
+      title="New Flight"
       icon={<Target size={14} className="text-accent-green" />}
       width="w-[1060px] max-w-[92vw]"
       footer={footerContent}
@@ -203,7 +203,7 @@ export function NewFlightModal({ onClose, onCreated }: NewFlightModalProps) {
             <textarea
               value={objective}
               onChange={(e) => setObjective(e.target.value)}
-              placeholder="Describe the goal of this mission..."
+              placeholder="Describe the goal of this flight..."
               rows={4}
               className="w-full bg-bg-primary text-xs text-text-primary placeholder:text-text-muted px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50 resize-none"
             />

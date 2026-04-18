@@ -28,7 +28,7 @@ const TABS: { key: AppView; label: string }[] = [
   { key: "agents", label: "Agents" },
   { key: "workspace", label: "Workspaces" },
   { key: "issues", label: "Issues" },
-  { key: "missions", label: "Missions" },
+  { key: "missions", label: "Flight Deck" },
   { key: "insights", label: "Insights" },
 ];
 
@@ -214,7 +214,7 @@ export function Toolbar() {
               ? "bg-bg-elevated text-accent-amber"
               : "text-text-muted hover:text-accent-amber"
           }`}
-          title="Review Queue — pending tool / file-write approvals from running missions. Click to triage."
+          title="Review Queue — pending tool / file-write approvals from running flights. Click to triage."
         >
           <ShieldCheck size={11} />
           <span>Review</span>

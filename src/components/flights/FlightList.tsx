@@ -120,7 +120,7 @@ export function FlightList({ selectedId, onSelect }: FlightListProps) {
                 ? "bg-accent-purple/15 text-accent-purple"
                 : "text-text-muted hover:text-text-secondary"
             }`}
-            title={`Show only missions in workspace "${activeWorkspaceName ?? "active"}"`}
+            title={`Show only flights in workspace "${activeWorkspaceName ?? "active"}"`}
           >
             {activeWorkspaceName ?? "Workspace"}
           </button>
@@ -131,7 +131,7 @@ export function FlightList({ selectedId, onSelect }: FlightListProps) {
                 ? "bg-accent-purple/15 text-accent-purple"
                 : "text-text-muted hover:text-text-secondary"
             }`}
-            title="Show all missions across workspaces"
+            title="Show all flights across workspaces"
           >
             All
           </button>

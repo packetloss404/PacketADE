@@ -152,7 +152,7 @@ function LinkedIssuesPanel({ flight }: { flight: Flight }) {
       <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
         {linked.length === 0 ? (
           <p className="text-[10px] text-text-muted px-1 py-1">
-            No issues linked to this mission.{" "}
+            No issues linked to this flight.{" "}
             {unlinkedCount > 0 ? (
               <button
                 onClick={() => setActiveView("issues")}
@@ -209,7 +209,7 @@ function LinkedIssueRow({
       <button
         onClick={onUnlink}
         className="p-0.5 text-text-muted hover:text-accent-red transition-colors opacity-0 group-hover:opacity-100"
-        title="Unlink from mission"
+        title="Unlink from flight"
       >
         <X size={11} />
       </button>
@@ -433,7 +433,7 @@ export function FlightDetail({ flight }: FlightDetailProps) {
         <div className="text-center max-w-sm">
           <Target size={32} className="mx-auto text-text-muted mb-3" />
           <p className="text-xs text-text-secondary">
-            Select a mission from the left to see its mission control.
+            Select a flight from the left to see its flight deck.
           </p>
         </div>
       </div>
