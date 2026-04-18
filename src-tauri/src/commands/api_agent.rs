@@ -5,6 +5,7 @@
 //! produces a final text response.
 
 use crate::commands::api_keys;
+use crate::core::execution::{ExecutionTarget, SshConfig};
 use crate::core::llm_provider::get_provider;
 use crate::core::llm_system_prompt::build_system_prompt;
 use crate::core::llm_types::*;
@@ -82,7 +83,7 @@ pub struct ApiAgentState {
 struct SessionConfig {
     provider: String,
     model: String,
-    project_path: String,
+    execution: ExecutionTarget,
     system_prompt: String,
     // New feature fields — all default to backward-compatible values.
     thinking_enabled: bool,
@@ -207,15 +208,26 @@ pub async fn start_api_agent_session(
     thinking_enabled: Option<bool>,
     attachments: Option<Vec<ImageAttachment>>,
     plan_mode: Option<bool>,
+    ssh_config: Option<SshConfig>,
 ) -> Result<(), String> {
-    super::validate_project_path(&project_path)?;
+    // Decide execution target. For SSH we skip the local-path validation and
+    // use the remote path as the workspace label in the prompt.
+    let execution = if let Some(cfg) = ssh_config {
+        ExecutionTarget::Ssh { config: cfg }
+    } else {
+        super::validate_project_path(&project_path)?;
+        ExecutionTarget::Local {
+            project_path: project_path.clone(),
+        }
+    };
 
     // Load API key (validates provider exists)
     let _api_key = api_keys::load_api_key(&provider)?;
 
+    let prompt_workspace = execution.label();
     let system_prompt = match system_prompt_override {
         Some(p) if !p.is_empty() => p,
-        _ => build_system_prompt(&project_path),
+        _ => build_system_prompt(&prompt_workspace),
     };
 
     // Create initial message history
@@ -232,7 +244,7 @@ pub async fn start_api_agent_session(
             SessionConfig {
                 provider: provider.clone(),
                 model: model.clone(),
-                project_path: project_path.clone(),
+                execution,
                 system_prompt: system_prompt.clone(),
                 thinking_enabled: thinking_enabled.unwrap_or(false),
                 pending_attachments: attachments.unwrap_or_default(),
@@ -588,7 +600,7 @@ async fn run_agent_loop(
     session_id: &str,
     mut cancel_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
-    let (provider_name, model, project_path, system_prompt, thinking_enabled) = {
+    let (provider_name, model, execution, system_prompt, thinking_enabled) = {
         let configs = state.configs.lock().await;
         let config = configs
             .get(session_id)
@@ -596,7 +608,7 @@ async fn run_agent_loop(
         (
             config.provider.clone(),
             config.model.clone(),
-            config.project_path.clone(),
+            config.execution.clone(),
             config.system_prompt.clone(),
             config.thinking_enabled,
         )
@@ -886,7 +898,7 @@ async fn run_agent_loop(
             .iter()
             .cloned()
             .map(|tc| {
-                let project_path = project_path.clone();
+                let execution = execution.clone();
                 let app_handle = app_handle.clone();
                 let session_id = session_id.to_string();
                 let state = Arc::clone(state);
@@ -1098,7 +1110,7 @@ async fn run_agent_loop(
                     }
 
                     // Execute tool
-                    let result = tool_runtime::execute_tool(&tc, &project_path).await;
+                    let result = tool_runtime::execute_tool(&tc, &execution).await;
                     let _ = app_handle.emit(
                         &tool_result_event(&session_id),
                         ToolResultPayload {

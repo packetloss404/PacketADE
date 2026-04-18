@@ -213,6 +213,34 @@ export async function sshExec(commandArgs: string[], password?: string | null): 
   return invoke<string>("ssh_exec", { commandArgs, password: password ?? null });
 }
 
+export async function sshTestConnection(args: {
+  host: string;
+  port: number;
+  user: string;
+  keyPath?: string | null;
+  password?: string | null;
+}): Promise<void> {
+  return invoke("ssh_test_connection", {
+    host: args.host,
+    port: args.port,
+    user: args.user,
+    keyPath: args.keyPath ?? null,
+    password: args.password ?? null,
+  });
+}
+
+export async function setSshPassword(targetId: string, password: string): Promise<void> {
+  return invoke("set_ssh_password", { targetId, password });
+}
+
+export async function deleteSshPassword(targetId: string): Promise<void> {
+  return invoke("delete_ssh_password", { targetId });
+}
+
+export async function getSshPasswordExists(targetId: string): Promise<boolean> {
+  return invoke<boolean>("get_ssh_password_exists", { targetId });
+}
+
 // Git safety check
 export type GitSafetyReport = {
   isGitRepo: boolean;
@@ -1061,6 +1089,14 @@ export interface ImageAttachment {
   data_base64: string;
 }
 
+export interface SshConfigInput {
+  host: string;
+  port: number;
+  user: string;
+  remote_path: string;
+  key_path?: string | null;
+}
+
 export interface SlashCommandDef {
   name: string;
   description: string;
@@ -1079,6 +1115,7 @@ export async function startApiAgentSession(
   thinkingEnabled?: boolean,
   attachments?: ImageAttachment[],
   planMode?: boolean,
+  sshConfig?: SshConfigInput | null,
 ): Promise<void> {
   return invoke("start_api_agent_session", {
     sessionId,
@@ -1090,6 +1127,7 @@ export async function startApiAgentSession(
     thinkingEnabled: thinkingEnabled ?? null,
     attachments: attachments ?? null,
     planMode: planMode ?? null,
+    sshConfig: sshConfig ?? null,
   });
 }
 

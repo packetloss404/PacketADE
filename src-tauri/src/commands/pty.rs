@@ -466,3 +466,69 @@ pub async fn ssh_exec(
 
     Ok(format!("{}{}", stdout, stderr))
 }
+
+/// Test an SSH connection. Returns Ok(()) on success; Err with a human-readable
+/// reason on failure ("Authentication failed", "Could not reach host", etc).
+#[tauri::command]
+pub async fn ssh_test_connection(
+    host: String,
+    port: u16,
+    user: String,
+    key_path: Option<String>,
+    password: Option<String>,
+) -> Result<(), String> {
+    const SENTINEL: &str = "PACKETCODE_SSH_OK";
+
+    let mut args: Vec<String> = vec![
+        "-p".to_string(),
+        port.to_string(),
+        "-o".to_string(),
+        "ConnectTimeout=8".to_string(),
+        "-o".to_string(),
+        "StrictHostKeyChecking=accept-new".to_string(),
+        "-o".to_string(),
+        "NumberOfPasswordPrompts=1".to_string(),
+    ];
+
+    // If no password, force key-only auth so SSH doesn't hang waiting for a TTY.
+    if password.is_none() {
+        args.push("-o".to_string());
+        args.push("BatchMode=yes".to_string());
+    } else {
+        args.push("-o".to_string());
+        args.push("PreferredAuthentications=password,keyboard-interactive".to_string());
+    }
+
+    if let Some(kp) = key_path.as_ref().filter(|s| !s.trim().is_empty()) {
+        args.push("-i".to_string());
+        args.push(kp.clone());
+    }
+
+    args.push(format!("{}@{}", user, host));
+    args.push(format!("echo {}", SENTINEL));
+
+    let output = ssh_exec(args, password).await?;
+
+    if output.contains(SENTINEL) {
+        return Ok(());
+    }
+
+    // Map common failure patterns to friendly messages.
+    let lower = output.to_lowercase();
+    let msg = if lower.contains("permission denied") || lower.contains("authentication failed") {
+        "Authentication failed — check the password, username, or key path."
+    } else if lower.contains("could not resolve") || lower.contains("name or service not known") {
+        "Could not resolve host — check the hostname."
+    } else if lower.contains("connection refused") {
+        "Connection refused — check the host is reachable on that port."
+    } else if lower.contains("connection timed out") || lower.contains("operation timed out") {
+        "Connection timed out — host may be unreachable or behind a firewall."
+    } else if lower.contains("host key verification failed") {
+        "Host key verification failed — remove the stale entry from known_hosts and retry."
+    } else if output.trim().is_empty() {
+        "SSH did not respond."
+    } else {
+        return Err(output.trim().to_string());
+    };
+    Err(msg.to_string())
+}

@@ -23,6 +23,7 @@ import {
   listCheckpoints as tauriListCheckpoints,
   exportConversationMarkdown,
 } from "@/lib/tauri";
+import type { SshTarget } from "@/types/ssh";
 import {
   ptyOutputEvent,
   ptyExitEvent,
@@ -175,6 +176,7 @@ interface AgentTaskStore {
     systemPromptOverride?: string | null,
     thinkingEnabled?: boolean,
     planMode?: boolean,
+    sshTarget?: SshTarget | null,
   ) => Promise<string>;
   sendMessage: (conversationId: string, content: string) => void;
   addAssistantMessage: (conversationId: string, content: string, toolCalls?: AgentToolCall[]) => void;
@@ -398,13 +400,14 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode) => {
+  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget) => {
     const id = generateId("conv");
     const provider = apiAgentProvider(agent);
 
     const now = Date.now();
-    const segments = projectPath.replace(/\\/g, "/").split("/").filter(Boolean);
-    const folderName = segments[segments.length - 1] ?? projectPath;
+    const displayBase = sshTarget
+      ? sshTarget.name
+      : (projectPath.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? projectPath);
     const modelShort = model.split("-").slice(0, 2).join("-");
 
     const userMsg: AgentMessage = {
@@ -416,7 +419,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
     const conversation: AgentConversation = {
       id,
-      title: `${folderName} — ${modelShort}`,
+      title: `${displayBase} — ${modelShort}`,
       agent,
       projectPath,
       status: "active",
@@ -437,6 +440,15 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       pendingEdits: [],
       thinkingEnabled: thinkingEnabled ?? false,
       thinkingStream: "",
+      sshTarget: sshTarget
+        ? {
+            id: sshTarget.id,
+            name: sshTarget.name,
+            host: sshTarget.host,
+            user: sshTarget.user,
+            remotePath: sshTarget.remotePath,
+          }
+        : undefined,
     };
 
     set((s) => ({
@@ -727,6 +739,16 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       });
 
       // Start the API agent session
+      const sshConfig = sshTarget
+        ? {
+            host: sshTarget.host,
+            port: sshTarget.port,
+            user: sshTarget.user,
+            remote_path: sshTarget.remotePath,
+            key_path: sshTarget.keyPath ?? null,
+            target_id: sshTarget.id,
+          }
+        : null;
       await startApiAgentSession(
         id,
         provider,
@@ -737,6 +759,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         thinkingEnabled ?? false,
         undefined, // attachments — not wired in UI yet
         planMode ?? false,
+        sshConfig,
       );
     } catch {
       set((s) => ({

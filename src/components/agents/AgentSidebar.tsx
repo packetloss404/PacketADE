@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Zap, Trash2, FolderOpen } from "lucide-react";
+import { Zap, Trash2, FolderOpen, Server } from "lucide-react";
 import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { useGitHubStore } from "@/stores/githubStore";
@@ -50,7 +50,9 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const convsByRepo = useMemo(() => {
     const map = new Map<string, AgentConversation[]>();
     for (const conv of conversations) {
-      const key = conv.projectPath;
+      const key = conv.sshTarget
+        ? `ssh:${conv.sshTarget.id}:${conv.projectPath}`
+        : `local:${conv.projectPath}`;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(conv);
     }
@@ -87,13 +89,20 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
             <p className="text-[9px] mt-1 opacity-70">Start one with New Agent</p>
           </div>
         ) : (
-          Array.from(convsByRepo.entries()).map(([path, convs]) => (
-            <div key={path} className="mb-2">
+          Array.from(convsByRepo.entries()).map(([key, convs]) => {
+            const sshTarget = convs[0]?.sshTarget;
+            const projectPath = convs[0]?.projectPath ?? "";
+            return (
+            <div key={key} className="mb-2">
               {/* Project header */}
               <div className="flex items-center gap-1.5 px-2 py-1.5">
-                <FolderOpen size={10} className="text-text-muted shrink-0" />
+                {sshTarget ? (
+                  <Server size={10} className="text-accent-green shrink-0" />
+                ) : (
+                  <FolderOpen size={10} className="text-text-muted shrink-0" />
+                )}
                 <span className="text-[10px] font-medium text-text-muted truncate">
-                  {repoDisplayName(path, repos)}
+                  {sshTarget ? sshTarget.name : repoDisplayName(projectPath, repos)}
                 </span>
                 <span className="text-[9px] text-text-muted ml-auto shrink-0">{convs.length}</span>
               </div>
@@ -149,7 +158,8 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                 );
               })}
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

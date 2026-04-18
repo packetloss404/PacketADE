@@ -15,6 +15,7 @@ import {
   RotateCw,
   Download,
   MoreVertical,
+  Server,
 } from "lucide-react";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { PendingEditPrompt } from "./PendingEditPrompt";
@@ -556,6 +557,15 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         <span className="text-[10px] text-text-muted truncate">
           {folderName}
         </span>
+        {conversation.sshTarget && (
+          <span
+            className="flex items-center gap-1 text-[10px] text-accent-green bg-accent-green/10 border border-accent-green/30 rounded px-1.5 py-0.5"
+            title={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
+          >
+            <Server size={10} />
+            {conversation.sshTarget.host}
+          </span>
+        )}
 
         <div className="flex-1" />
 
