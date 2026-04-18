@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { X, FileDiff, AlertCircle } from "lucide-react";
-import { useDiffPaneStore } from "@/stores/diffPaneStore";
+import { FileDiff, AlertCircle } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { readFileForDiff, writeFileContents } from "@/lib/tauri";
 import { HunkSelectableDiff } from "@/components/agents/HunkSelectableDiff";
-import { autoFormatFile } from "@/lib/autoFormat";
 import {
   aggregateConversationDiffs,
   type ConversationDiffAggregate,
@@ -15,15 +13,20 @@ import type {
   AgentToolCall,
 } from "@/types/agent-conversation";
 
-/* -------------------------------------------------------------------------- */
-/*                              Tool-call parsing                             */
-/* -------------------------------------------------------------------------- */
+/**
+ * Embeddable variant of DiffPane.
+ *
+ * The original `DiffPane` is a fixed-position slide-out gated by
+ * `useDiffPaneStore.open`. When the user splits their AgentChatPane to add a
+ * diff tile, we want the same per-file diff browser to render INLINE inside a
+ * mosaic cell. This component is a structural twin of `DiffPane` minus the
+ * fixed-position chrome and the open-state store coupling — it owns its own
+ * file-selection state instead.
+ */
 
 interface WriteFileEntry {
   path: string;
-  /** Latest-wins content (last `write_file` for this path in the conversation). */
   content: string;
-  /** Total number of write_file invocations across the conversation. */
   writeCount: number;
 }
 
@@ -67,17 +70,13 @@ function aggregateWriteFiles(
       const existing = map.get(parsed.path);
       map.set(parsed.path, {
         path: parsed.path,
-        content: parsed.content, // latest wins (loop iterates in chronological order)
+        content: parsed.content,
         writeCount: (existing?.writeCount ?? 0) + 1,
       });
     }
   }
   return map;
 }
-
-/* -------------------------------------------------------------------------- */
-/*                                  Diff hook                                 */
-/* -------------------------------------------------------------------------- */
 
 type DiskState =
   | { kind: "loading" }
@@ -124,11 +123,6 @@ function useFileDisk(
   return { state, refresh };
 }
 
-/**
- * Combine a project root with a relative file path to produce the absolute
- * path expected by `writeFileContents`. Preserves the project's existing
- * separator style ('\\' on Windows project paths, '/' otherwise).
- */
 function joinAbsolutePath(projectPath: string, relPath: string): string {
   const usesBackslash = projectPath.includes("\\") && !projectPath.includes("/");
   const sep = usesBackslash ? "\\" : "/";
@@ -140,24 +134,14 @@ function joinAbsolutePath(projectPath: string, relPath: string): string {
   return `${trimmedRoot}${sep}${normalizedRel}`;
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                Per-row stats                               */
-/* -------------------------------------------------------------------------- */
-
 interface FileStatsProps {
-  /** Pre-computed per-file stat from `aggregateConversationDiffs`. */
   stat: PerFileDiffStat | undefined;
-  /** True while the parent is still resolving the aggregate. */
   loading: boolean;
 }
 
 function FileStats({ stat, loading }: FileStatsProps) {
-  if (loading) {
-    return <span className="text-text-muted text-[10px]">…</span>;
-  }
-  if (!stat) {
-    return <span className="text-text-muted text-[10px]">—</span>;
-  }
+  if (loading) return <span className="text-text-muted text-[10px]">…</span>;
+  if (!stat) return <span className="text-text-muted text-[10px]">—</span>;
   return (
     <span className="flex items-center gap-1 font-mono text-[10px]">
       {stat.isNew && (
@@ -174,10 +158,6 @@ function FileStats({ stat, loading }: FileStatsProps) {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                 Diff body                                  */
-/* -------------------------------------------------------------------------- */
-
 interface DiffBodyProps {
   projectPath: string;
   entry: WriteFileEntry;
@@ -185,16 +165,11 @@ interface DiffBodyProps {
 
 function DiffBody({ projectPath, entry }: DiffBodyProps) {
   const { state: disk, refresh } = useFileDisk(projectPath, entry.path);
-  const [formatError, setFormatError] = useState<string | null>(null);
 
   const handleApply = useCallback(
     async (finalContent: string) => {
       const absolutePath = joinAbsolutePath(projectPath, entry.path);
       await writeFileContents(absolutePath, projectPath, finalContent);
-      // Best-effort auto-format. Soft-fails when the formatter binary is
-      // missing or no formatter matches the file extension.
-      const fmt = await autoFormatFile(absolutePath, projectPath);
-      setFormatError(fmt.ok ? null : `${fmt.formatter}: ${fmt.error ?? "format failed"}`);
       await refresh();
     },
     [projectPath, entry.path, refresh],
@@ -207,7 +182,6 @@ function DiffBody({ projectPath, entry }: DiffBodyProps) {
       </div>
     );
   }
-
   if (disk.kind === "error") {
     return (
       <div className="px-3 py-4 text-[11px] text-accent-red flex items-center gap-2">
@@ -216,38 +190,24 @@ function DiffBody({ projectPath, entry }: DiffBodyProps) {
       </div>
     );
   }
-
   const originalContent = disk.kind === "existing" ? disk.oldContent : null;
-
   return (
-    <div className="flex flex-col">
-      {formatError && (
-        <div className="text-[10px] text-accent-amber bg-accent-amber/10 border border-accent-amber/30 rounded px-2 py-1 mx-2 mt-2">
-          Auto-format: {formatError}
-        </div>
-      )}
-      <HunkSelectableDiff
-        originalContent={originalContent}
-        newContent={entry.content}
-        filePath={entry.path}
-        onApplySelection={handleApply}
-      />
-    </div>
+    <HunkSelectableDiff
+      originalContent={originalContent}
+      newContent={entry.content}
+      filePath={entry.path}
+      onApplySelection={handleApply}
+    />
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                  Main pane                                 */
-/* -------------------------------------------------------------------------- */
+interface EmbeddedDiffPaneProps {
+  conversationId: string;
+}
 
-export function DiffPane() {
-  const { open, conversationId, selectedFilePath, close, selectFile } =
-    useDiffPaneStore();
-
+export function EmbeddedDiffPane({ conversationId }: EmbeddedDiffPaneProps) {
   const conversation = useAgentTaskStore((s) =>
-    conversationId
-      ? s.conversations.find((c) => c.id === conversationId)
-      : undefined,
+    s.conversations.find((c) => c.id === conversationId),
   );
 
   const writeFiles = useMemo(
@@ -255,13 +215,15 @@ export function DiffPane() {
     [conversation],
   );
   const entries = useMemo(
-    () => Array.from(writeFiles.values()).sort((a, b) => a.path.localeCompare(b.path)),
+    () =>
+      Array.from(writeFiles.values()).sort((a, b) =>
+        a.path.localeCompare(b.path),
+      ),
     [writeFiles],
   );
 
-  // Cache the full diff aggregate (per-file +/- counts). Recomputes whenever
-  // the conversation message count changes — that's a cheap proxy for "new
-  // tool calls have arrived".
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+
   const messageCount = conversation?.messages.length ?? 0;
   const [aggregate, setAggregate] = useState<ConversationDiffAggregate | null>(
     null,
@@ -287,62 +249,34 @@ export function DiffPane() {
     return () => {
       cancelled = true;
     };
-    // Intentionally key on conversation identity + message count so streaming
-    // tool-call arrivals refresh the aggregate without re-running on every
-    // unrelated re-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation?.id, messageCount]);
 
   const statByPath = useMemo(() => {
     const map = new Map<string, PerFileDiffStat>();
-    if (aggregate) {
-      for (const s of aggregate.perFile) map.set(s.path, s);
-    }
+    if (aggregate) for (const s of aggregate.perFile) map.set(s.path, s);
     return map;
   }, [aggregate]);
 
-  // Auto-select the first file when nothing is selected (or the selection
-  // points to a path no longer in the aggregate map).
+  // Auto-select the first file when nothing valid is selected.
   useEffect(() => {
-    if (!open) return;
     if (entries.length === 0) return;
-    if (!selectedFilePath || !writeFiles.has(selectedFilePath)) {
-      selectFile(entries[0].path);
+    if (!selectedPath || !writeFiles.has(selectedPath)) {
+      setSelectedPath(entries[0].path);
     }
-  }, [open, entries, selectedFilePath, writeFiles, selectFile]);
+  }, [entries, selectedPath, writeFiles]);
 
-  if (!open) return null;
-
-  const activeEntry =
-    selectedFilePath && writeFiles.get(selectedFilePath);
+  const activeEntry = selectedPath ? writeFiles.get(selectedPath) : undefined;
 
   return (
-    <div
-      className="fixed top-0 right-0 h-full w-[480px] bg-bg-primary border-l border-bg-border shadow-2xl z-40 flex flex-col"
-      role="complementary"
-      aria-label="File changes diff pane"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-bg-border bg-bg-secondary">
-        <div className="flex items-center gap-2">
-          <FileDiff size={14} className="text-text-secondary" />
-          <span className="text-xs font-medium text-text-primary">
-            Changes ({entries.length}{" "}
-            {entries.length === 1 ? "file" : "files"})
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={close}
-          className="p-1 rounded hover:bg-bg-hover text-text-secondary hover:text-text-primary transition-colors"
-          aria-label="Close diff pane"
-          title="Close"
-        >
-          <X size={14} />
-        </button>
+    <div className="h-full flex flex-col bg-bg-primary">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-bg-border bg-bg-secondary shrink-0">
+        <FileDiff size={12} className="text-text-secondary" />
+        <span className="text-[11px] font-medium text-text-primary">
+          Changes ({entries.length} {entries.length === 1 ? "file" : "files"})
+        </span>
       </div>
 
-      {/* Body */}
       {entries.length === 0 ? (
         <div className="flex-1 flex items-center justify-center px-6">
           <p className="text-[11px] text-text-muted text-center">
@@ -351,11 +285,10 @@ export function DiffPane() {
         </div>
       ) : (
         <div className="flex-1 flex min-h-0">
-          {/* Left: file list */}
           <div className="w-[180px] border-r border-bg-border overflow-y-auto bg-bg-secondary/50">
             <ul className="py-1">
               {entries.map((entry) => {
-                const isActive = entry.path === selectedFilePath;
+                const isActive = entry.path === selectedPath;
                 const baseName =
                   entry.path.split(/[\\/]/).pop() ?? entry.path;
                 const dir = entry.path.slice(
@@ -366,7 +299,7 @@ export function DiffPane() {
                   <li key={entry.path}>
                     <button
                       type="button"
-                      onClick={() => selectFile(entry.path)}
+                      onClick={() => setSelectedPath(entry.path)}
                       className={`w-full text-left px-2 py-1.5 flex flex-col gap-0.5 transition-colors ${
                         isActive
                           ? "bg-bg-hover border-l-2 border-accent-green"
@@ -377,7 +310,9 @@ export function DiffPane() {
                       <div className="flex items-center justify-between gap-1.5">
                         <span
                           className={`text-[11px] font-mono truncate ${
-                            isActive ? "text-text-primary" : "text-text-secondary"
+                            isActive
+                              ? "text-text-primary"
+                              : "text-text-secondary"
                           }`}
                         >
                           {baseName}
@@ -405,8 +340,6 @@ export function DiffPane() {
               })}
             </ul>
           </div>
-
-          {/* Right: diff body */}
           <div className="flex-1 overflow-y-auto">
             {activeEntry && conversation?.projectPath ? (
               <DiffBody
