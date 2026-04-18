@@ -40,7 +40,10 @@ fn validate_path(path: &str, project_path: &str) -> Result<String, String> {
 }
 
 /// Get all tool definitions for the API request.
-pub fn tool_definitions() -> Vec<ToolDefinition> {
+///
+/// Async because MCP discovery spawns child processes and performs JSON-RPC
+/// over stdio. Callers must `.await` it.
+pub async fn tool_definitions() -> Vec<ToolDefinition> {
     let base = vec![
         ToolDefinition {
             name: "read_file".to_string(),
@@ -132,9 +135,10 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
         crate::core::tool_subagent::spawn_subagent_definition(),
         crate::core::tool_pull_request::create_pull_request_definition(),
     ];
-    // Append MCP placeholder defs from user config (one per enabled server).
+    // Append MCP tool defs discovered from user-configured servers.
     let mut all = base;
-    all.extend(crate::core::mcp_bridge::load_mcp_tool_definitions());
+    all.extend(crate::core::tool_tasks::task_tool_definitions());
+    all.extend(crate::core::mcp_bridge::load_mcp_tool_definitions().await);
     all
 }
 
@@ -198,8 +202,21 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
         "create_pull_request" => {
             crate::core::tool_pull_request::execute_create_pull_request(&call.arguments, target).await
         }
+        "task_create" => {
+            // Host-agnostic: tasks live in the PacketCode process.
+            let _ = target;
+            crate::core::tool_tasks::execute_task_create(&call.arguments)
+        }
+        "task_update" => {
+            let _ = target;
+            crate::core::tool_tasks::execute_task_update(&call.arguments)
+        }
+        "task_list" => {
+            let _ = target;
+            crate::core::tool_tasks::execute_task_list(&call.arguments)
+        }
         name if name.starts_with("mcp__") => {
-            crate::core::mcp_bridge::execute_mcp_tool(name, &call.arguments)
+            crate::core::mcp_bridge::execute_mcp_tool(name, &call.arguments).await
         }
         _ => Err(format!("Unknown tool: {}", call.name)),
     };

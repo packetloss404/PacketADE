@@ -223,6 +223,8 @@ pub fn run() {
             commands::checkpoints::delete_checkpoint,
             // Slash commands (user-defined)
             commands::slash_commands::list_slash_commands,
+            // Skills (Claude-Code-style ~/.claude/skills/<name>/SKILL.md)
+            commands::skills::list_skills,
             // Pricing / cost helpers
             commands::pricing::calculate_turn_cost,
         ])

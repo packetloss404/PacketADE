@@ -44,9 +44,10 @@ pub fn spawn_subagent_definition() -> ToolDefinition {
 }
 
 /// Build the read-only tool subset the sub-agent is allowed to call.
-fn read_only_tool_definitions() -> Vec<ToolDefinition> {
+async fn read_only_tool_definitions() -> Vec<ToolDefinition> {
     let allowed = ["read_file", "list_directory", "grep", "web_fetch"];
     let mut tools: Vec<ToolDefinition> = tool_runtime::tool_definitions()
+        .await
         .into_iter()
         .filter(|t| allowed.contains(&t.name.as_str()))
         .collect();
@@ -112,7 +113,7 @@ pub async fn execute_spawn_subagent(
         .map_err(|e| format!("spawn_subagent requires an Anthropic API key: {}", e))?;
 
     let provider = get_provider("anthropic")?;
-    let tools = read_only_tool_definitions();
+    let tools = read_only_tool_definitions().await;
 
     let mut messages: Vec<ChatMessage> = vec![ChatMessage {
         role: ChatRole::User,

@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
-import { MessageSquarePlus, Send, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Copy, MessageSquarePlus, MessageSquareShare, Send, X } from "lucide-react";
 import { useSideChatStore } from "@/stores/sideChatStore";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
 
 /**
  * Floating bottom-right side chat panel. Visually distinct from the main
@@ -15,7 +16,10 @@ export function SideChatOverlay() {
   const ask = useSideChatStore((s) => s.ask);
   const close = useSideChatStore((s) => s.close);
 
+  const selectedConversationId = useAgentTaskStore((s) => s.selectedConversationId);
+
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Autofocus textarea when opened.
   useEffect(() => {
@@ -23,6 +27,13 @@ export function SideChatOverlay() {
       textareaRef.current?.focus();
     }
   }, [open]);
+
+  // Reset copy feedback when answer changes or overlay closes.
+  useEffect(() => {
+    if (!copied) return;
+    const handle = setTimeout(() => setCopied(false), 3000);
+    return () => clearTimeout(handle);
+  }, [copied]);
 
   // Close on Escape.
   useEffect(() => {
@@ -48,6 +59,32 @@ export function SideChatOverlay() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       ask();
+    }
+  };
+
+  const canPromote = answer.length > 0 && !isStreaming;
+  const hasConversation = Boolean(selectedConversationId);
+
+  const buildCitation = (): string => {
+    return `> Side-chat: ${question}\n> \n> ${answer.replace(/\n/g, "\n> ")}`;
+  };
+
+  const handleInsertIntoChat = () => {
+    const convId = useAgentTaskStore.getState().selectedConversationId;
+    if (!convId) return;
+    const citation = buildCitation();
+    useAgentTaskStore.getState().sendMessage(convId, citation);
+    // Clear side-chat state and close the overlay.
+    useSideChatStore.getState().close();
+    useSideChatStore.setState({ question: "", answer: "" });
+  };
+
+  const handleCopyAnswer = async () => {
+    try {
+      await navigator.clipboard.writeText(answer);
+      setCopied(true);
+    } catch {
+      // Clipboard write failed — leave the user to retry.
     }
   };
 
@@ -92,6 +129,29 @@ export function SideChatOverlay() {
               />
             )}
           </p>
+        )}
+        {canPromote && (
+          <div className="mt-2 pt-2 border-t border-bg-border flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleInsertIntoChat}
+              disabled={!hasConversation}
+              title={hasConversation ? "Insert this Q+A as context into the active main thread" : "Open a conversation in the Agents tab first"}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-purple/15 text-accent-purple hover:bg-accent-purple/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <MessageSquareShare size={12} />
+              <span>Insert into chat</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyAnswer}
+              title="Copy answer to clipboard"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-bg-primary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+            >
+              {copied ? <Check size={12} className="text-accent-green" /> : <Copy size={12} />}
+              <span>{copied ? "Copied" : "Copy answer"}</span>
+            </button>
+          </div>
         )}
       </div>
 

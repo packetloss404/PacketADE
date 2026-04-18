@@ -1344,6 +1344,19 @@ export async function listSlashCommands(projectPath: string): Promise<SlashComma
   return invoke<SlashCommandDef[]>("list_slash_commands", { projectPath });
 }
 
+export interface SkillDef {
+  name: string;
+  description: string;
+  argumentHint?: string;
+  userInvocable: boolean;
+  source: string;
+  body: string;
+}
+
+export async function listSkills(projectPath: string): Promise<SkillDef[]> {
+  return invoke<SkillDef[]>("list_skills", { projectPath });
+}
+
 export async function cancelApiAgentSession(sessionId: string): Promise<void> {
   return invoke("cancel_api_agent_session", { sessionId });
 }

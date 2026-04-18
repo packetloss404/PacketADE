@@ -26,8 +26,8 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { AgentQuickActions } from "./AgentQuickActions";
 import { MentionSourcePicker } from "./MentionSourcePicker";
 import { SlashCommandPopover, type SlashSelection, type BuiltinSlashCommand } from "./SlashCommandPopover";
-import type { SlashCommandDef } from "@/lib/tauri";
-import { listSlashCommands } from "@/lib/tauri";
+import type { SlashCommandDef, SkillDef } from "@/lib/tauri";
+import { listSlashCommands, listSkills } from "@/lib/tauri";
 import { ToolDiffView } from "./ToolDiffView";
 import { BashToolCallCard } from "./BashToolCallCard";
 import { CheckpointPanel } from "./CheckpointPanel";
@@ -35,10 +35,12 @@ import { PlanModeApprovalMenu, looksLikePlan } from "./PlanModeApprovalMenu";
 import { DiffPaneTrigger } from "./DiffPaneTrigger";
 import { MultiFileEditCard } from "./MultiFileEditCard";
 import { SubagentToolCallCard } from "./SubagentToolCallCard";
+import { TaskListCard } from "./TaskListCard";
 import { ContinueInMenu } from "./ContinueInMenu";
 import { AgentMosaicShell } from "./AgentMosaicShell";
 import { AgentPaneSplitMenu } from "./AgentPaneSplitMenu";
 import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
+import { AgentFilePane } from "./AgentFilePane";
 import { TerminalPane } from "@/components/session/TerminalPane";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
@@ -157,6 +159,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const [input, setInput] = useState("");
   const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
   const [customSlashCommands, setCustomSlashCommands] = useState<SlashCommandDef[]>([]);
+  const [userSkills, setUserSkills] = useState<SkillDef[]>([]);
   const [showRewind, setShowRewind] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -204,6 +207,11 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     listSlashCommands(projectPathForSlash)
       .then((cmds) => {
         if (!cancelled) setCustomSlashCommands(cmds);
+      })
+      .catch(() => {});
+    listSkills(projectPathForSlash)
+      .then((skills) => {
+        if (!cancelled) setUserSkills(skills);
       })
       .catch(() => {});
     return () => {
@@ -260,10 +268,13 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       const custom = customSlashCommands.filter((c) =>
         c.name.toLowerCase().startsWith(q),
       ).length;
-      return builtins + custom;
+      const skills = userSkills.filter(
+        (s) => s.userInvocable && s.name.toLowerCase().startsWith(q),
+      ).length;
+      return builtins + custom + skills;
     }
     return 0;
-  }, [mentionState, customSlashCommands]);
+  }, [mentionState, customSlashCommands, userSkills]);
 
   if (!conversation) {
     return (
@@ -389,6 +400,14 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
     if (sel.kind === "custom") {
       // Send the custom command's body as a new user message.
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      sendMessage(conversationId, sel.def.body);
+      return;
+    }
+
+    if (sel.kind === "skill") {
+      // Send the skill's SKILL.md body as a new user message.
       setInput(remaining);
       setMentionState({ kind: "none" });
       sendMessage(conversationId, sel.def.body);
@@ -624,9 +643,13 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         const customMatches = customSlashCommands.filter((c) =>
           c.name.toLowerCase().startsWith(q),
         );
+        const skillMatches = userSkills.filter(
+          (s) => s.userInvocable && s.name.toLowerCase().startsWith(q),
+        );
         const all: SlashSelection[] = [
           ...builtins.map((name) => ({ kind: "builtin" as const, name })),
           ...customMatches.map((def) => ({ kind: "custom" as const, def })),
+          ...skillMatches.map((def) => ({ kind: "skill" as const, def })),
         ];
         const picked = all[mentionState.highlightedIndex] ?? all[0];
         if (picked) {
@@ -971,6 +994,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           />
           <SlashCommandPopover
             customCommands={customSlashCommands}
+            userSkills={userSkills}
             visible={mentionState.kind === "slash"}
             query={mentionState.kind === "slash" ? mentionState.query : ""}
             highlightedIndex={
@@ -1047,9 +1071,11 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             />
           }
           file={
-            <div className="p-3 text-[11px] text-text-muted">
-              File explorer pane — coming soon.
-            </div>
+            <AgentFilePane
+              conversationId={conversationId}
+              projectPath={conversation.projectPath}
+              sshTarget={conversation.sshTarget ?? null}
+            />
           }
         />
       </div>
@@ -1157,6 +1183,12 @@ function MessageBubble({
                     key={tc.id}
                     toolCall={tc}
                     conversationId={conversation.id}
+                    verbosity={verbosity}
+                  />
+                ) : tc.name === "task_list" ? (
+                  <TaskListCard
+                    key={tc.id}
+                    toolCall={tc}
                     verbosity={verbosity}
                   />
                 ) : (
