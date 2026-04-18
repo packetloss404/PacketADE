@@ -6,6 +6,7 @@ import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
 import { getDefaultModel } from "@/lib/api-models";
+import { isSshUri } from "@/types/ssh";
 
 export function AgentsView() {
   const agentInputText = useAgentTaskStore((s) => s.agentInputText);
@@ -44,6 +45,12 @@ export function AgentsView() {
     const text = agentInputText.trim();
     if (!text) return;
     if (!selectedRepo) return;
+    if (isSshUri(selectedRepo)) {
+      alert(
+        "SSH remote execution is not wired up yet — the connection is saved and will activate when the backend proxy ships. Pick a local folder for now.",
+      );
+      return;
+    }
     const model = selectedModel || getDefaultModel(selectedAgent);
     const profile = profiles.find((p) => p.id === selectedProfileId);
     const systemPrompt = profile?.systemPrompt ? profile.systemPrompt : null;
