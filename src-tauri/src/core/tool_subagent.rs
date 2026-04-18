@@ -97,12 +97,49 @@ async fn collect_response(
     Ok((text, tool_calls))
 }
 
+/// Shared recursion-depth guard for sub-agent tools (spawn_subagent +
+/// custom agents). Prevents an agent's prompt from triggering an
+/// unbounded chain of sub-agent calls that would burn tokens and
+/// eventually fail. 3 levels is more than any sane workflow needs.
+pub(crate) static SUBAGENT_DEPTH: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(crate) const MAX_SUBAGENT_DEPTH: usize = 3;
+
+/// RAII guard that increments SUBAGENT_DEPTH on construction and
+/// decrements on drop. Returns Err when the cap would be exceeded.
+#[derive(Debug)]
+pub(crate) struct SubagentDepthGuard;
+
+impl SubagentDepthGuard {
+    pub(crate) fn acquire() -> Result<Self, String> {
+        use std::sync::atomic::Ordering;
+        let prev = SUBAGENT_DEPTH.fetch_add(1, Ordering::SeqCst);
+        if prev >= MAX_SUBAGENT_DEPTH {
+            SUBAGENT_DEPTH.fetch_sub(1, Ordering::SeqCst);
+            return Err(format!(
+                "Sub-agent recursion depth ({}) exceeded — refusing to spawn another nested sub-agent.",
+                MAX_SUBAGENT_DEPTH
+            ));
+        }
+        Ok(Self)
+    }
+}
+
+impl Drop for SubagentDepthGuard {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        SUBAGENT_DEPTH.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// Tool entry-point invoked from `tool_runtime::execute_tool`.
 #[allow(dead_code)]
 pub async fn execute_spawn_subagent(
     args: &serde_json::Value,
     parent_target: &ExecutionTarget,
 ) -> Result<String, String> {
+    let _depth_guard = SubagentDepthGuard::acquire()?;
+
     let task = args
         .get("task")
         .and_then(|t| t.as_str())
@@ -196,5 +233,33 @@ pub async fn execute_spawn_subagent(
         Err("Sub-agent finished without producing a summary".to_string())
     } else {
         Ok(final_text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Proves that SubagentDepthGuard refuses to spawn beyond
+    /// MAX_SUBAGENT_DEPTH and recovers the counter via Drop.
+    #[test]
+    fn depth_guard_caps_at_max_and_releases_on_drop() {
+        use std::sync::atomic::Ordering;
+        // Make sure we start clean even if other tests ran first.
+        SUBAGENT_DEPTH.store(0, Ordering::SeqCst);
+
+        let g1 = SubagentDepthGuard::acquire().expect("depth 1 should acquire");
+        let g2 = SubagentDepthGuard::acquire().expect("depth 2 should acquire");
+        let g3 = SubagentDepthGuard::acquire().expect("depth 3 should acquire");
+        let err = SubagentDepthGuard::acquire()
+            .expect_err("depth 4 should refuse");
+        assert!(err.contains("recursion depth"));
+        assert_eq!(SUBAGENT_DEPTH.load(Ordering::SeqCst), MAX_SUBAGENT_DEPTH);
+
+        drop(g3);
+        assert_eq!(SUBAGENT_DEPTH.load(Ordering::SeqCst), 2);
+        drop(g2);
+        drop(g1);
+        assert_eq!(SUBAGENT_DEPTH.load(Ordering::SeqCst), 0);
     }
 }

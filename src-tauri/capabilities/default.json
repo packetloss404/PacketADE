@@ -17,6 +17,17 @@
     "shell:allow-stdin-write",
     "shell:allow-kill",
     "shell:allow-open",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        { "name": "npx", "cmd": "npx", "args": true, "sidecar": false },
+        { "name": "prettier", "cmd": "prettier", "args": true, "sidecar": false },
+        { "name": "rustfmt", "cmd": "rustfmt", "args": true, "sidecar": false },
+        { "name": "gofmt", "cmd": "gofmt", "args": true, "sidecar": false },
+        { "name": "ruff", "cmd": "ruff", "args": true, "sidecar": false },
+        { "name": "black", "cmd": "black", "args": true, "sidecar": false }
+      ]
+    },
     "process:default",
     "dialog:default",
     "fs:default"
