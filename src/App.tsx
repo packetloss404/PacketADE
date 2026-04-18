@@ -4,6 +4,9 @@ import { Toolbar } from "@/components/layout/Toolbar";
 import { MosaicContainer } from "@/components/layout/MosaicContainer";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
+import { DiffPane } from "@/components/agents/DiffPane";
+import { SideChatOverlay } from "@/components/agents/SideChatOverlay";
+import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -48,6 +51,8 @@ export default function App() {
   const theme = useAppStore((s) => s.theme);
   // Poll status line data for all agents
   useStatusLinePoller();
+  // Cmd/Ctrl+; opens the side chat overlay
+  useSideChatHotkey();
   useCodexStatusLinePoller();
   useGeminiStatusLinePoller();
   useOpenCodeStatusLinePoller();
@@ -201,6 +206,8 @@ export default function App() {
           {showWorkspaceSidebar && <WorkspaceSidebar />}
         </div>
         {commandPaletteOpen && <CommandPalette />}
+        <DiffPane />
+        <SideChatOverlay />
       </div>
     </ErrorBoundary>
   );

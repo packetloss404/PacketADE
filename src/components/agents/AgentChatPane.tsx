@@ -13,6 +13,7 @@ import {
   Compass,
   FileCheck2,
   RotateCw,
+  RotateCcw,
   Download,
   MoreVertical,
   Server,
@@ -28,6 +29,11 @@ import { SlashCommandPopover, type SlashSelection, type BuiltinSlashCommand } fr
 import type { SlashCommandDef } from "@/lib/tauri";
 import { listSlashCommands } from "@/lib/tauri";
 import { ToolDiffView } from "./ToolDiffView";
+import { BashToolCallCard } from "./BashToolCallCard";
+import { CheckpointPanel } from "./CheckpointPanel";
+import { PlanModeApprovalMenu, looksLikePlan } from "./PlanModeApprovalMenu";
+import { DiffPaneTrigger } from "./DiffPaneTrigger";
+import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { API_PROVIDERS } from "@/lib/api-models";
@@ -143,6 +149,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const [input, setInput] = useState("");
   const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
   const [customSlashCommands, setCustomSlashCommands] = useState<SlashCommandDef[]>([]);
+  const [showRewind, setShowRewind] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -598,7 +605,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   /* ----------------- render ----------------- */
 
   return (
-    <div className="flex flex-col h-full bg-bg-primary">
+    <div className="flex h-full bg-bg-primary">
+      <div className="flex flex-col flex-1 min-w-0">
       {/* Header bar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
         {/* Left: agent dot + name + folder */}
@@ -779,6 +787,39 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           </div>
         )}
 
+        {/* Diff pane trigger — counts unique write_file paths in this convo. */}
+        {conversation.mode === "api" && (() => {
+          const paths = new Set<string>();
+          for (const m of conversation.messages) {
+            for (const tc of m.toolCalls ?? []) {
+              if (tc.name !== "write_file" || !tc.input) continue;
+              try {
+                const args = JSON.parse(tc.input) as { path?: string };
+                if (args.path) paths.add(args.path);
+              } catch {}
+            }
+          }
+          return (
+            <DiffPaneTrigger
+              conversationId={conversationId}
+              fileCount={paths.size}
+              totalAdds={0}
+              totalDels={0}
+            />
+          );
+        })()}
+
+        {/* Rewind button */}
+        <button
+          onClick={() => setShowRewind((v) => !v)}
+          className={`p-0.5 rounded transition-colors ${
+            showRewind ? "text-accent-blue" : "text-text-muted hover:text-text-primary"
+          }`}
+          title="Rewind / checkpoints"
+        >
+          <RotateCcw size={12} />
+        </button>
+
         {/* Right: close */}
         <button
           onClick={onClose}
@@ -790,49 +831,63 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       </div>
 
       {/* Messages area */}
-      <div
-        ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
-      >
-        {conversation.messages.length === 0 && (
-          <div className="flex items-center justify-center h-full">
-            <span className="text-[11px] text-text-muted">No messages yet</span>
-          </div>
-        )}
+      <ClickablePathsRoot projectPath={conversation.projectPath}>
+        <div
+          ref={messagesContainerRef}
+          className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
+        >
+          {conversation.messages.length === 0 && (
+            <div className="flex items-center justify-center h-full">
+              <span className="text-[11px] text-text-muted">No messages yet</span>
+            </div>
+          )}
 
-        {messages.map((msg) => (
-          <div key={msg.id}>
-            <MessageBubble
-              message={msg}
-              conversation={conversation}
-              isLastAssistant={msg.id === lastAssistantMessage?.id}
-              onRetry={
-                msg.id === lastAssistantMessage?.id && !msg.isStreaming
-                  ? () => void retryLastTurn(conversationId)
-                  : undefined
-              }
-            />
-            {showQuickActions && msg.id === lastAssistantMessage?.id && (
-              <AgentQuickActions
-                conversationId={conversationId}
+          {messages.map((msg) => (
+            <div key={msg.id}>
+              <MessageBubble
                 message={msg}
+                conversation={conversation}
+                isLastAssistant={msg.id === lastAssistantMessage?.id}
+                onRetry={
+                  msg.id === lastAssistantMessage?.id && !msg.isStreaming
+                    ? () => void retryLastTurn(conversationId)
+                    : undefined
+                }
+              />
+              {showQuickActions && msg.id === lastAssistantMessage?.id && (
+                <AgentQuickActions
+                  conversationId={conversationId}
+                  message={msg}
+                />
+              )}
+            </div>
+          ))}
+
+          {/* Plan-mode approval menu — visible when plan mode is on AND
+              the last assistant message is a plan-shaped doc. */}
+          {conversation.planMode &&
+            lastMessage?.role === "assistant" &&
+            !lastMessage.isStreaming &&
+            looksLikePlan(lastMessage.content) && (
+              <PlanModeApprovalMenu
+                conversationId={conversationId}
+                planText={lastMessage.content}
               />
             )}
-          </div>
-        ))}
 
-        {/* Thinking indicator */}
-        {showThinking && (
-          <div className="flex items-start gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary border border-bg-border rounded-lg text-[11px] text-text-muted">
-              <Loader2 size={10} className="animate-spin" />
-              Thinking...
+          {/* Thinking indicator */}
+          {showThinking && (
+            <div className="flex items-start gap-2">
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary border border-bg-border rounded-lg text-[11px] text-text-muted">
+                <Loader2 size={10} className="animate-spin" />
+                Thinking...
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <div ref={messagesEndRef} />
-      </div>
+          <div ref={messagesEndRef} />
+        </div>
+      </ClickablePathsRoot>
 
       {/* Pending user-approval prompts */}
       {(conversation.pendingEdits ?? conversation.pendingPermissions) && (
@@ -935,6 +990,15 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           )}
         </div>
       </div>
+      </div>
+      {showRewind && (
+        <div className="w-72 shrink-0 border-l border-bg-border">
+          <CheckpointPanel
+            conversationId={conversationId}
+            onClose={() => setShowRewind(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1001,14 +1065,23 @@ function MessageBubble({
         {/* Tool calls */}
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="flex flex-col gap-1">
-            {message.toolCalls.map((tc) => (
-              <ToolCallCard
-                key={tc.id}
-                toolCall={tc}
-                projectPath={conversation.projectPath}
-                verbosity={verbosity}
-              />
-            ))}
+            {message.toolCalls.map((tc) =>
+              tc.name === "bash" ? (
+                <BashToolCallCard
+                  key={tc.id}
+                  toolCall={tc}
+                  conversationId={conversation.id}
+                  verbosity={verbosity}
+                />
+              ) : (
+                <ToolCallCard
+                  key={tc.id}
+                  toolCall={tc}
+                  projectPath={conversation.projectPath}
+                  verbosity={verbosity}
+                />
+              ),
+            )}
           </div>
         )}
 
