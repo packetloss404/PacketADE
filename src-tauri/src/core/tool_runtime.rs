@@ -41,7 +41,7 @@ fn validate_path(path: &str, project_path: &str) -> Result<String, String> {
 
 /// Get all tool definitions for the API request.
 pub fn tool_definitions() -> Vec<ToolDefinition> {
-    vec![
+    let base = vec![
         ToolDefinition {
             name: "read_file".to_string(),
             description: "Read the contents of a file. Returns the file text. Use this to understand existing code before making changes.".to_string(),
@@ -131,7 +131,11 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
         crate::core::tool_web::web_fetch_definition(),
         crate::core::tool_subagent::spawn_subagent_definition(),
         crate::core::tool_pull_request::create_pull_request_definition(),
-    ]
+    ];
+    // Append MCP placeholder defs from user config (one per enabled server).
+    let mut all = base;
+    all.extend(crate::core::mcp_bridge::load_mcp_tool_definitions());
+    all
 }
 
 /// Execute a tool call against either the local project or a remote SSH host.
@@ -193,6 +197,9 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
         }
         "create_pull_request" => {
             crate::core::tool_pull_request::execute_create_pull_request(&call.arguments, target).await
+        }
+        name if name.starts_with("mcp__") => {
+            crate::core::mcp_bridge::execute_mcp_tool(name, &call.arguments)
         }
         _ => Err(format!("Unknown tool: {}", call.name)),
     };

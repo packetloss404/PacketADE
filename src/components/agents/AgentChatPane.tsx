@@ -36,6 +36,10 @@ import { DiffPaneTrigger } from "./DiffPaneTrigger";
 import { MultiFileEditCard } from "./MultiFileEditCard";
 import { SubagentToolCallCard } from "./SubagentToolCallCard";
 import { ContinueInMenu } from "./ContinueInMenu";
+import { AgentMosaicShell } from "./AgentMosaicShell";
+import { AgentPaneSplitMenu } from "./AgentPaneSplitMenu";
+import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
+import { TerminalPane } from "@/components/session/TerminalPane";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
@@ -646,9 +650,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   /* ----------------- render ----------------- */
 
-  return (
-    <div className="flex h-full bg-bg-primary">
-      <div className="flex flex-col flex-1 min-w-0">
+  const chatContent = (
+    <div className="flex flex-col h-full">
       {/* Header bar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
         {/* Left: agent dot + name + folder */}
@@ -840,6 +843,9 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           />
         )}
 
+        {/* Split menu (open diff/terminal/file panes inside this conversation) */}
+        <AgentPaneSplitMenu conversationId={conversationId} />
+
         {/* Continue in… */}
         <ContinueInMenu conversation={conversation} />
 
@@ -1024,6 +1030,28 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           )}
         </div>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="flex h-full bg-bg-primary">
+      <div className="flex-1 min-w-0">
+        <AgentMosaicShell
+          conversationId={conversationId}
+          chat={chatContent}
+          diff={<EmbeddedDiffPane conversationId={conversationId} />}
+          terminal={
+            <TerminalPane
+              paneId={`agent-${conversationId}-term`}
+              projectPath={conversation.projectPath}
+            />
+          }
+          file={
+            <div className="p-3 text-[11px] text-text-muted">
+              File explorer pane — coming soon.
+            </div>
+          }
+        />
       </div>
       {showRewind && (
         <div className="w-72 shrink-0 border-l border-bg-border">
