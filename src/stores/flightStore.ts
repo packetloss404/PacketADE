@@ -3,7 +3,6 @@ import { generateId as genId } from "@/lib/storage";
 import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
 import type { Flight, FlightStatus, Milestone, Task, TaskHandoff, CoordinationEvent } from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
-import { useMemoryStore } from "@/stores/memoryStore";
 import { useRoutingStore } from "@/stores/routingStore";
 
 type FlightState = {
@@ -85,7 +84,7 @@ interface FlightStore {
   // Flight CRUD
   addFlight: (
     flight: Pick<Flight, "title" | "objective" | "priority" | "projectPath"> &
-      Partial<Pick<Flight, "gitBranch" | "issueIds">>,
+      Partial<Pick<Flight, "gitBranch" | "issueIds" | "workspaceId">>,
   ) => Flight;
   updateFlight: (id: string, updates: Partial<Flight>) => void;
   deleteFlight: (id: string) => void;
@@ -156,6 +155,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       status: "draft",
       priority: input.priority,
       projectPath: input.projectPath,
+      workspaceId: input.workspaceId ?? null,
       gitBranch: input.gitBranch,
       milestones: [],
       linkedSessionIds: [],
@@ -175,7 +175,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   updateFlight: (id, updates) => {
-    const oldFlight = get().flights.find((f) => f.id === id);
     set((s) => {
       const flights = s.flights.map((f) =>
         f.id === id ? { ...f, ...updates, updatedAt: Date.now() } : f,
@@ -183,16 +182,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       saveState({ flights, activeFlightId: s.activeFlightId });
       return { flights };
     });
-
-    // Capture a memory snapshot when a flight transitions to a terminal status
-    if (
-      oldFlight &&
-      updates.status &&
-      (updates.status === "done" || updates.status === "failed") &&
-      oldFlight.status !== updates.status
-    ) {
-      useMemoryStore.getState().addFlightMemorySnapshot(id);
-    }
   },
 
   deleteFlight: (id) => {

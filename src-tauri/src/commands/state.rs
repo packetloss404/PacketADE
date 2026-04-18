@@ -15,7 +15,6 @@ pub fn save_persisted_state(state: PersistedStateDto) -> Result<(), String> {
     let existing = storage::load_state();
     let mut state: crate::core::storage::PersistedState = state.into();
     state.issues = existing.issues;
-    state.approval_log = existing.approval_log;
     state.retrospectives = existing.retrospectives;
     storage::save_state(&state)
 }

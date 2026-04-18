@@ -15,6 +15,7 @@ mod tests {
                 status: FlightStatus::Active,
                 priority: FlightPriority::High,
                 project_path: "/test".to_string(),
+                workspace_id: None,
                 git_branch: Some("main".to_string()),
                 milestones: vec![Milestone {
                     id: "ms-1".to_string(),
@@ -79,9 +80,11 @@ mod tests {
             settings: OrchestratorSettings::default(),
             ui: Default::default(),
             issues: vec![],
-            approval_log: vec![],
             workspaces: vec![],
             retrospectives: vec![],
+            memory_events: vec![],
+            memory_patterns: vec![],
+            servers: vec![],
         }
     }
 

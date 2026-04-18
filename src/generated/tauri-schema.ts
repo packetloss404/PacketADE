@@ -10,7 +10,9 @@ export type GridPositionDto = { row: number, col: number, };
 
 export type WorkspacePaneDto = { id: string, agentId: WorkspaceAgentSlotDto, sessionId: string | null, gridPosition: GridPositionDto, };
 
-export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, };
+export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, serverId?: string, remoteProjectPath?: string, };
+
+export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath: string | null, remotePath: string | null, lastConnectedAt: bigint | null, installedAgents: Array<string>, };
 
 export type PersistedUiStateDto = { selectedFlightId?: string, selectedView?: string, theme?: ThemeDto, };
 
@@ -54,11 +56,9 @@ export type TaskDto = { id: string, milestoneId: string, flightId: string, title
 
 export type MilestoneDto = { id: string, flightId: string, title: string, description: string, order: number, status: MilestoneStatusDto, tasks: Array<TaskDto>, validationCriteria: Array<string>, };
 
-export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, };
+export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, };
 
-export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath?: string, remotePath?: string, lastConnectedAt?: number, installedAgents: Array<string>, };
-
-export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: Array<any>, memoryPatterns: Array<any>, servers: Array<ServerConfigDto>, };
+export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: any[], memoryPatterns: any[], servers: Array<ServerConfigDto>, };
 
 export type TaskSpawnRequestDto = { flightId: string, milestoneId: string, taskId: string, agentConfigId: string, command: string, args: Array<string>, prompt: string, projectPath: string, };
 

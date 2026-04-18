@@ -24,6 +24,7 @@ function makeFlight(overrides: Partial<Flight> = {}): Flight {
     status: "active",
     priority: "medium",
     projectPath: "/test",
+    workspaceId: null,
     milestones: [],
     linkedSessionIds: [],
     issueIds: [],
