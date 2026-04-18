@@ -117,7 +117,7 @@ fn sanitize(name: &str) -> String {
 /// schema accepts a free-form `args` object so the model can attempt any call
 /// shape — execution is stubbed in `execute_mcp_tool` until a real MCP client
 /// lands.
-pub async fn load_mcp_tool_definitions() -> Vec<ToolDefinition> {
+pub fn load_mcp_tool_definitions() -> Vec<ToolDefinition> {
     let servers = discover_enabled_servers();
     servers
         .into_iter()
@@ -150,7 +150,7 @@ pub async fn load_mcp_tool_definitions() -> Vec<ToolDefinition> {
 /// Returns an `Err` so the agent surfaces a clear, actionable message in chat:
 /// the model's intent is preserved (we tell it *which* server it tried to
 /// reach), but it knows the call did not actually run.
-pub async fn execute_mcp_tool(name: &str, _args: &serde_json::Value) -> Result<String, String> {
+pub fn execute_mcp_tool(name: &str, _args: &serde_json::Value) -> Result<String, String> {
     // Extract the server slug from `mcp__<server>__<rest>`.
     let server = name
         .strip_prefix("mcp__")
