@@ -6,7 +6,7 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use super::agent_config::AgentConfig;
-use super::flight::{Flight, ApprovalDecision, Issue};
+use super::flight::{Flight, Issue};
 use super::orchestrator::OrchestratorSettings;
 use super::shared::home_dir;
 use super::workspace::Workspace;
@@ -77,8 +77,6 @@ pub struct PersistedState {
     #[serde(default)]
     pub issues: Vec<Issue>,
     #[serde(default)]
-    pub approval_log: Vec<ApprovalDecision>,
-    #[serde(default)]
     pub workspaces: Vec<Workspace>,
     #[serde(default)]
     pub retrospectives: Vec<FlightRetrospective>,
@@ -99,7 +97,6 @@ impl Default for PersistedState {
             settings: OrchestratorSettings::default(),
             ui: PersistedUiState::default(),
             issues: Vec::new(),
-            approval_log: Vec::new(),
             workspaces: Vec::new(),
             retrospectives: Vec::new(),
             memory_events: Vec::new(),
@@ -217,14 +214,6 @@ pub fn save_memory(events: Vec<serde_json::Value>, patterns: Vec<serde_json::Val
     let mut state = load_state();
     state.memory_events = events;
     state.memory_patterns = patterns;
-    state.version += 1;
-    save_state_inner(&state)
-}
-
-pub fn save_approval(decision: ApprovalDecision) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut state = load_state();
-    state.approval_log.push(decision);
     state.version += 1;
     save_state_inner(&state)
 }

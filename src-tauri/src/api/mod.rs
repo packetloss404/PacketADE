@@ -352,6 +352,9 @@ pub struct FlightDto {
     pub status: FlightStatusDto,
     pub priority: FlightPriorityDto,
     pub project_path: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub workspace_id: Option<String>,
     #[ts(optional)]
     pub git_branch: Option<String>,
     pub milestones: Vec<MilestoneDto>,
@@ -1047,6 +1050,7 @@ impl From<core_flight::Flight> for FlightDto {
             status: value.status.into(),
             priority: value.priority.into(),
             project_path: value.project_path,
+            workspace_id: value.workspace_id,
             git_branch: value.git_branch,
             milestones: value.milestones.into_iter().map(Into::into).collect(),
             linked_session_ids: value.linked_session_ids,
@@ -1069,6 +1073,7 @@ impl From<FlightDto> for core_flight::Flight {
             status: value.status.into(),
             priority: value.priority.into(),
             project_path: value.project_path,
+            workspace_id: value.workspace_id,
             git_branch: value.git_branch,
             milestones: value.milestones.into_iter().map(Into::into).collect(),
             linked_session_ids: value.linked_session_ids,
@@ -1106,7 +1111,6 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
             settings: value.settings.into(),
             ui: value.ui.into(),
             issues: Vec::new(),
-            approval_log: Vec::new(),
             workspaces: value.workspaces.into_iter().map(Into::into).collect(),
             retrospectives: Vec::new(),
             memory_events: value.memory_events,
@@ -1190,6 +1194,7 @@ fn generated_typescript_schema() -> String {
     push_decl!(GridPositionDto);
     push_decl!(WorkspacePaneDto);
     push_decl!(WorkspaceDto);
+    push_decl!(ServerConfigDto);
     push_decl!(PersistedUiStateDto);
     push_decl!(OrchestratorSettingsDto);
     push_decl!(AgentCapabilityDto);
@@ -1243,6 +1248,7 @@ mod tests {
                 status: FlightStatusDto::Active,
                 priority: FlightPriorityDto::High,
                 project_path: "/test".into(),
+                workspace_id: None,
                 git_branch: Some("main".into()),
                 milestones: vec![MilestoneDto {
                     id: "ms-1".into(),
@@ -1303,6 +1309,9 @@ mod tests {
                 theme: Some(ThemeDto::Dark),
             },
             workspaces: Vec::new(),
+            memory_events: Vec::new(),
+            memory_patterns: Vec::new(),
+            servers: Vec::new(),
         };
 
         let value = serde_json::to_value(dto).unwrap();

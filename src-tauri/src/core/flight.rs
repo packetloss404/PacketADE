@@ -269,6 +269,8 @@ pub struct Flight {
     pub status: FlightStatus,
     pub priority: FlightPriority,
     pub project_path: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub git_branch: Option<String>,
     pub milestones: Vec<Milestone>,
     pub linked_session_ids: Vec<String>,
@@ -378,6 +380,7 @@ mod tests {
             status: FlightStatus::Active,
             priority: FlightPriority::Medium,
             project_path: "/tmp/test".to_string(),
+            workspace_id: None,
             git_branch: None,
             milestones,
             linked_session_ids: Vec::new(),

@@ -8,6 +8,7 @@
       "status": "active",
       "priority": "high",
       "project_path": "/test",
+      "workspace_id": null,
       "git_branch": "main",
       "milestones": [
         {
@@ -97,7 +98,9 @@
     "theme": null
   },
   "issues": [],
-  "approval_log": [],
   "workspaces": [],
-  "retrospectives": []
+  "retrospectives": [],
+  "memory_events": [],
+  "memory_patterns": [],
+  "servers": []
 }

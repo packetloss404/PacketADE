@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import { GitBranch, FolderOpen, Diamond, Wrench, Github, Brain, User, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid, DollarSign, BookOpen, Mic } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -8,7 +8,6 @@ import { getModulesSorted } from "@/modules/registry";
 import { useProfileStore } from "@/stores/profileStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useMosaicStore } from "@/stores/mosaicStore";
 import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
@@ -28,8 +27,8 @@ const LAYOUT_PRESETS: { preset: MosaicLayoutPreset; label: string; minPanes: num
 const TABS: { key: AppView; label: string }[] = [
   { key: "agents", label: "Agents" },
   { key: "workspace", label: "Workspaces" },
-  { key: "missions", label: "Missions" },
   { key: "issues", label: "Issues" },
+  { key: "missions", label: "Missions" },
   { key: "insights", label: "Insights" },
 ];
 
@@ -54,19 +53,6 @@ export function Toolbar() {
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const moduleStates = useModuleStore((s) => s.states);
-
-  const flights = useFlightStore((s) => s.flights);
-  const attentionCount = useMemo(() => {
-    const { computeFlightStatus } = useFlightStore.getState();
-    return flights.filter((f) => {
-      const status = computeFlightStatus(f.id);
-      return status === "paused" || status === "failed";
-    }).length;
-  }, [flights]);
-
-  const approvalCount = flights.reduce((count, f) =>
-    count + f.milestones.reduce((mc, m) =>
-      mc + m.tasks.filter((t) => t.status === "approval_needed").length, 0), 0);
 
   const projectName = projectPath.split(/[/\\]/).pop() || "PacketCode";
 
@@ -115,11 +101,6 @@ export function Toolbar() {
             }`}
           >
             {tab.label}
-            {tab.key === "missions" && attentionCount > 0 && (
-              <span className="px-1.5 py-0 text-[9px] font-bold rounded-full bg-accent-amber/20 text-accent-amber">
-                {attentionCount}
-              </span>
-            )}
           </button>
         ))}
 
@@ -237,11 +218,6 @@ export function Toolbar() {
         >
           <ShieldCheck size={11} />
           <span>Review</span>
-          {approvalCount > 0 && (
-            <span className="ml-0.5 px-1.5 py-0 text-[9px] font-bold rounded-full bg-accent-amber/20 text-accent-amber">
-              {approvalCount}
-            </span>
-          )}
         </button>
 
         {/* Theme toggle */}

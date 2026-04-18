@@ -66,21 +66,11 @@ export interface LearnedPattern {
   extractedAt: number;
 }
 
-// --- Flight Memory Snapshots (freeze patterns at flight completion) ---
-
-export interface FlightMemorySnapshot {
-  flightId: string;
-  patternSnapshot: LearnedPattern[];
-  retrospective?: string;
-  createdAt: number;
-}
-
 // --- Top-level Memory State ---
 
 export interface MemoryState {
   events: MemoryEvent[];
   patterns: LearnedPattern[];
-  flightMemorySnapshots: FlightMemorySnapshot[];
   lastPatternRefreshAt: number | null;
   summariesSinceLastRefresh: number;
 }

@@ -516,6 +516,7 @@ function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
     status: flight.status,
     priority: flight.priority,
     projectPath: flight.projectPath,
+    workspaceId: flight.workspaceId ?? null,
     gitBranch: flight.gitBranch,
     milestones: flight.milestones.map((milestone): Milestone => ({
       id: milestone.id,
@@ -628,7 +629,37 @@ function fromDtoPersistedState(state: PersistedStateDto): PersistedState {
     workspaces: state.workspaces.map(fromDtoWorkspace),
     memoryEvents: (state.memoryEvents ?? []) as MemoryEvent[],
     memoryPatterns: (state.memoryPatterns ?? []) as LearnedPattern[],
-    servers: (state.servers ?? []) as ServerConfig[],
+    servers: (state.servers ?? []).map(fromDtoServer),
+  };
+}
+
+function fromDtoServer(s: PersistedStateDto["servers"][number]): ServerConfig {
+  return {
+    id: s.id,
+    name: s.name,
+    host: s.host,
+    port: s.port,
+    username: s.username,
+    authMethod: s.authMethod as ServerConfig["authMethod"],
+    keyPath: s.keyPath ?? undefined,
+    remotePath: s.remotePath ?? undefined,
+    lastConnectedAt: s.lastConnectedAt != null ? Number(s.lastConnectedAt) : undefined,
+    installedAgents: s.installedAgents,
+  };
+}
+
+function toDtoServer(s: ServerConfig): PersistedStateDto["servers"][number] {
+  return {
+    id: s.id,
+    name: s.name,
+    host: s.host,
+    port: s.port,
+    username: s.username,
+    authMethod: s.authMethod,
+    keyPath: s.keyPath ?? null,
+    remotePath: s.remotePath ?? null,
+    lastConnectedAt: s.lastConnectedAt != null ? BigInt(s.lastConnectedAt) : null,
+    installedAgents: s.installedAgents,
   };
 }
 
@@ -650,7 +681,7 @@ function toDtoPersistedState(state: PersistedState): PersistedStateDto {
     workspaces: state.workspaces.map(toDtoWorkspace),
     memoryEvents: state.memoryEvents,
     memoryPatterns: state.memoryPatterns,
-    servers: state.servers,
+    servers: state.servers.map(toDtoServer),
   };
 }
 

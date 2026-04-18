@@ -4,6 +4,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useFlightStore } from "@/stores/flightStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useFlightChat } from "@/hooks/useFlightChat";
 import { FlightChatPanel } from "@/components/flights/FlightChatPanel";
 import type { FlightPriority } from "@/types/flight";
@@ -22,6 +23,9 @@ export function NewFlightModal({ onClose, onCreated }: NewFlightModalProps) {
   const addTask = useFlightStore((s) => s.addTask);
   const launchFlight = useOrchestrationStore((s) => s.launchFlight);
   const projectPath = useLayoutStore((s) => s.projectPath);
+  const activeWorkspace = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId),
+  );
   const [title, setTitle] = useState("");
   const [objective, setObjective] = useState("");
   const [priority, setPriority] = useState<FlightPriority>("medium");
@@ -58,7 +62,8 @@ export function NewFlightModal({ onClose, onCreated }: NewFlightModalProps) {
       title: title.trim(),
       objective: objective.trim(),
       priority,
-      projectPath: projectPath || "",
+      projectPath: activeWorkspace?.projectPath || projectPath || "",
+      workspaceId: activeWorkspace?.id ?? null,
       issueIds: [],
     });
 

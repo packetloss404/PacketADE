@@ -172,6 +172,7 @@ export interface Flight {
   status: FlightStatus;
   priority: FlightPriority;
   projectPath: string;
+  workspaceId: string | null;
   gitBranch?: string;
   milestones: Milestone[];
   linkedSessionIds: string[];

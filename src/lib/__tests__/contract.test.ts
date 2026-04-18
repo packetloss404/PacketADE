@@ -15,6 +15,7 @@ describe("TS/Rust contract tests", () => {
       status: "active",
       priority: "high",
       projectPath: "/test",
+      workspaceId: null,
       gitBranch: "main",
       milestones: [],
       linkedSessionIds: [],

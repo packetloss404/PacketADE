@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Plus, AlertTriangle, X } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { FLIGHT_STATUS_CONFIG } from "@/lib/flight-colors";
 import { NewFlightModal } from "./NewFlightModal";
 import type { Flight, FlightStatus } from "@/types/flight";
+
+type WorkspaceFilter = "active" | "all";
 
 interface FlightListProps {
   selectedId: string | null;
@@ -21,7 +24,19 @@ interface Group {
 
 export function FlightList({ selectedId, onSelect }: FlightListProps) {
   const flights = useFlightStore((s) => s.flights);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const activeWorkspaceName = useWorkspaceStore(
+    (s) => s.workspaces.find((w) => w.id === s.activeWorkspaceId)?.name,
+  );
   const [showCreate, setShowCreate] = useState(false);
+  const [filter, setFilter] = useState<WorkspaceFilter>(
+    activeWorkspaceId ? "active" : "all",
+  );
+
+  const visibleFlights = useMemo(() => {
+    if (filter === "all" || !activeWorkspaceId) return flights;
+    return flights.filter((f) => f.workspaceId === activeWorkspaceId);
+  }, [flights, filter, activeWorkspaceId]);
 
   const groups = useMemo<Group[]>(() => {
     const { computeFlightStatus } = useFlightStore.getState();
@@ -37,7 +52,7 @@ export function FlightList({ selectedId, onSelect }: FlightListProps) {
       failed: [],
       cancelled: [],
     };
-    for (const f of flights) {
+    for (const f of visibleFlights) {
       const status = computeFlightStatus(f.id);
       buckets[status].push(f);
     }
@@ -51,7 +66,7 @@ export function FlightList({ selectedId, onSelect }: FlightListProps) {
         seen.add(f.id);
       }
     }
-    for (const f of flights) {
+    for (const f of visibleFlights) {
       if (seen.has(f.id)) continue;
       const hasApproval = f.milestones.some((m) =>
         m.tasks.some((t) => t.status === "approval_needed"),
@@ -72,7 +87,7 @@ export function FlightList({ selectedId, onSelect }: FlightListProps) {
       { key: "done", label: "Done", flights: buckets.done, defaultOpen: false },
       { key: "cancelled", label: "Cancelled", flights: buckets.cancelled, defaultOpen: false },
     ];
-  }, [flights]);
+  }, [visibleFlights]);
 
   function handleCreated(id: string) {
     onSelect(id);
@@ -94,6 +109,34 @@ export function FlightList({ selectedId, onSelect }: FlightListProps) {
           New
         </button>
       </div>
+
+      {/* Workspace filter */}
+      {activeWorkspaceId && (
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-bg-border">
+          <button
+            onClick={() => setFilter("active")}
+            className={`flex-1 text-[10px] py-1 rounded transition-colors ${
+              filter === "active"
+                ? "bg-accent-purple/15 text-accent-purple"
+                : "text-text-muted hover:text-text-secondary"
+            }`}
+            title={`Show only missions in workspace "${activeWorkspaceName ?? "active"}"`}
+          >
+            {activeWorkspaceName ?? "Workspace"}
+          </button>
+          <button
+            onClick={() => setFilter("all")}
+            className={`flex-1 text-[10px] py-1 rounded transition-colors ${
+              filter === "all"
+                ? "bg-accent-purple/15 text-accent-purple"
+                : "text-text-muted hover:text-text-secondary"
+            }`}
+            title="Show all missions across workspaces"
+          >
+            All
+          </button>
+        </div>
+      )}
 
       {/* Groups */}
       <div className="flex-1 overflow-y-auto">

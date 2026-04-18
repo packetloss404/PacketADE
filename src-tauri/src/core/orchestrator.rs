@@ -476,6 +476,7 @@ mod tests {
             status: FlightStatus::Active,
             priority: FlightPriority::High,
             project_path: "D:/projects/FlightDeck".to_string(),
+            workspace_id: None,
             git_branch: Some("feature/test".to_string()),
             milestones: vec![Milestone {
                 id: "ms-1".to_string(),
@@ -583,6 +584,7 @@ mod tests {
             status: FlightStatus::Draft,
             priority: FlightPriority::High,
             project_path: "D:/projects/FlightDeck".to_string(),
+            workspace_id: None,
             git_branch: Some("feature/test".to_string()),
             milestones: vec![Milestone {
                 id: "ms-1".to_string(),
@@ -672,6 +674,7 @@ mod tests {
             status: FlightStatus::Draft,
             priority: FlightPriority::High,
             project_path: "D:/projects/FlightDeck".to_string(),
+            workspace_id: None,
             git_branch: Some("feature/test".to_string()),
             milestones: vec![
                 Milestone {

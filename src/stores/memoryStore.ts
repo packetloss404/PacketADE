@@ -10,7 +10,6 @@ import type {
   MemoryEvent,
   MemoryEventType,
   LearnedPattern,
-  FlightMemorySnapshot,
   SessionCompletedPayload,
   TaskCompletedPayload,
   FlightCompletedPayload,
@@ -31,7 +30,6 @@ function normalizePath(path: string): string {
 interface MemoryStore {
   events: MemoryEvent[];
   patterns: LearnedPattern[];
-  flightMemorySnapshots: FlightMemorySnapshot[];
   lastPatternRefreshAt: number | null;
   summariesSinceLastRefresh: number;
   isLearning: boolean;
@@ -48,9 +46,6 @@ interface MemoryStore {
   // Auto-learning: summarize a session transcript and store the result
   learnFromSession: (sessionId: string, agentId: string, projectPath: string, durationMs: number) => Promise<void>;
 
-  // Flight memory snapshots
-  addFlightMemorySnapshot: (flightId: string, retrospective?: string) => void;
-
   // Manual pattern refresh
   refreshPatterns: (projectPath: string) => Promise<void>;
 
@@ -60,7 +55,7 @@ interface MemoryStore {
   clearMemory: () => void;
 
   // Context injection (live, not snapshot)
-  getContextForSession: (currentProjectPath: string, flightId?: string) => string;
+  getContextForSession: (currentProjectPath: string) => string;
 }
 
 function createEvent<T extends MemoryEventType>(
@@ -97,7 +92,6 @@ async function persistState(events: MemoryEvent[], patterns?: LearnedPattern[]) 
 export const useMemoryStore = create<MemoryStore>((set, get) => ({
   events: [],
   patterns: [],
-  flightMemorySnapshots: [],
   lastPatternRefreshAt: null,
   summariesSinceLastRefresh: 0,
   isLearning: false,
@@ -128,18 +122,6 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const events = capEvents([...get().events, event]);
     set({ events });
     void persistState(events, get().patterns);
-  },
-
-  addFlightMemorySnapshot: (flightId, retrospective) => {
-    const snapshot: FlightMemorySnapshot = {
-      flightId,
-      patternSnapshot: [...get().patterns],
-      retrospective,
-      createdAt: Date.now(),
-    };
-    const snapshots = [...get().flightMemorySnapshots, snapshot];
-    set({ flightMemorySnapshots: snapshots });
-    void persistState(get().events, get().patterns);
   },
 
   learnFromSession: async (sessionId, agentId, projectPath, durationMs) => {
@@ -274,29 +256,13 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     void persistState([], []);
   },
 
-  getContextForSession: (currentProjectPath: string, flightId?: string) => {
+  getContextForSession: (currentProjectPath: string) => {
     if (!currentProjectPath) return "";
 
     const normalizedCurrent = normalizePath(currentProjectPath);
-    const { events, patterns, flightMemorySnapshots } = get();
+    const { events, patterns } = get();
 
     const lines: string[] = [];
-
-    // 0. If flightId provided, boost patterns from that flight's snapshot
-    const flightSnapshot = flightId
-      ? flightMemorySnapshots.find((s) => s.flightId === flightId)
-      : undefined;
-
-    if (flightSnapshot && flightSnapshot.patternSnapshot.length > 0) {
-      lines.push("## Flight-Specific Patterns");
-      flightSnapshot.patternSnapshot
-        .slice(0, CONTEXT_MAX_PATTERNS)
-        .forEach((p) => lines.push(`- [${p.category}] ${p.pattern}`));
-      if (flightSnapshot.retrospective) {
-        lines.push(`\nRetrospective: ${flightSnapshot.retrospective}`);
-      }
-      lines.push("");
-    }
 
     // 1. Learned patterns (highest value — these are distilled knowledge)
     const relevantPatterns = patterns
