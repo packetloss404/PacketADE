@@ -1,10 +1,10 @@
-//! Side-chat command: a one-shot, non-streaming LLM helper used by the
-//! floating "Side chat" overlay. The user asks ephemeral questions about
-//! their main thread's context without polluting that conversation.
+//! Side-chat command: a streaming LLM helper used by the floating
+//! "Side chat" overlay. The user asks ephemeral questions about their
+//! main thread's context without polluting that conversation.
 //!
-//! v1: emits a single `side-chat:done` event with the full answer text,
-//! or `side-chat:error` on failure. Non-streaming keeps the wire protocol
-//! simple — the overlay just renders one answer.
+//! Wire protocol: emits `side-chat:chunk` events with `{ delta }` for each
+//! text delta from the provider stream, then a single `side-chat:done` with
+//! an empty payload when complete, or `side-chat:error` on failure.
 
 use crate::commands::api_keys;
 use crate::core::llm_provider::get_provider;
@@ -21,15 +21,19 @@ use tracing::{info, warn};
 const DEFAULT_PROVIDER: &str = "anthropic";
 const DEFAULT_MODEL: &str = "claude-haiku-4-5";
 
+const SIDE_CHAT_CHUNK_EVENT: &str = "side-chat:chunk";
 const SIDE_CHAT_DONE_EVENT: &str = "side-chat:done";
 const SIDE_CHAT_ERROR_EVENT: &str = "side-chat:error";
 
 const SYSTEM_PROMPT: &str = "You are a helper. Answer briefly using the user's main conversation context if relevant. No tool calls.";
 
 #[derive(Clone, Serialize)]
-struct SideChatDonePayload {
-    text: String,
+struct SideChatChunkPayload {
+    delta: String,
 }
+
+#[derive(Clone, Serialize)]
+struct SideChatDonePayload {}
 
 #[derive(Clone, Serialize)]
 struct SideChatErrorPayload {
@@ -114,9 +118,9 @@ pub async fn ask_side_chat_stream(
         }
     };
 
-    // Spawn the provider stream in a background task and aggregate the
-    // text deltas into one answer. We emit a single done event when the
-    // stream completes — overlay UX is one-shot, not chunked.
+    // Spawn the provider stream in a background task and emit a chunk
+    // event per text delta so the overlay can type the answer out live.
+    // A single done (or error) event terminates the stream.
     let handle = app_handle.clone();
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::channel::<StreamChunk>(64);
@@ -125,12 +129,23 @@ pub async fn ask_side_chat_stream(
             provider.stream_chat(&api_key, request, tx).await
         });
 
-        let mut buffer = String::new();
+        let mut total_len: usize = 0;
         let mut error: Option<String> = None;
 
         while let Some(chunk) = rx.recv().await {
             match chunk {
-                StreamChunk::TextDelta { text } => buffer.push_str(&text),
+                StreamChunk::TextDelta { text } => {
+                    if text.is_empty() {
+                        continue;
+                    }
+                    total_len += text.len();
+                    if let Err(e) = handle.emit(
+                        SIDE_CHAT_CHUNK_EVENT,
+                        SideChatChunkPayload { delta: text },
+                    ) {
+                        warn!("Failed to emit side-chat:chunk: {}", e);
+                    }
+                }
                 StreamChunk::Error { message } => {
                     error = Some(message);
                     break;
@@ -162,16 +177,12 @@ pub async fn ask_side_chat_stream(
             return;
         }
 
-        let answer = buffer.trim().to_string();
-        if answer.is_empty() {
+        if total_len == 0 {
             emit_error(&handle, "The model returned an empty response.");
             return;
         }
 
-        if let Err(e) = handle.emit(
-            SIDE_CHAT_DONE_EVENT,
-            SideChatDonePayload { text: answer },
-        ) {
+        if let Err(e) = handle.emit(SIDE_CHAT_DONE_EVENT, SideChatDonePayload {}) {
             warn!("Failed to emit side-chat:done: {}", e);
         }
     });

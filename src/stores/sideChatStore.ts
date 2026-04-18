@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { askSideChatStream } from "@/lib/tauri";
-import { sideChatDoneEvent, sideChatErrorEvent } from "@/lib/events";
+import {
+  sideChatChunkEvent,
+  sideChatDoneEvent,
+  sideChatErrorEvent,
+} from "@/lib/events";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 
 /**
@@ -10,7 +14,8 @@ import { useAgentTaskStore } from "@/stores/agentTaskStore";
  *
  * The store sends the user's question and a snapshot of the active main-thread
  * conversation context to the `ask_side_chat_stream` Tauri command, then
- * waits for a single `side-chat:done` event with the final answer.
+ * appends each `side-chat:chunk` delta to `answer` as it streams in. A final
+ * `side-chat:done` (or `side-chat:error`) terminates the stream.
  */
 interface SideChatStore {
   open: boolean;
@@ -30,10 +35,15 @@ const CONTEXT_MESSAGE_LIMIT = 10;
 const PER_MESSAGE_CHAR_CAP = 800;
 
 /** Active event subscriptions for the in-flight request. Cleared on completion or close(). */
+let unlistenChunk: UnlistenFn | null = null;
 let unlistenDone: UnlistenFn | null = null;
 let unlistenError: UnlistenFn | null = null;
 
 function clearListeners(): void {
+  if (unlistenChunk) {
+    unlistenChunk();
+    unlistenChunk = null;
+  }
   if (unlistenDone) {
     unlistenDone();
     unlistenDone = null;
@@ -88,8 +98,13 @@ export const useSideChatStore = create<SideChatStore>((set, get) => ({
     void (async () => {
       try {
         // Subscribe before invoking so we don't miss a fast response.
-        unlistenDone = await listen<{ text: string }>(sideChatDoneEvent, (event) => {
-          set({ answer: event.payload.text, isStreaming: false });
+        unlistenChunk = await listen<{ delta: string }>(sideChatChunkEvent, (event) => {
+          const delta = event.payload?.delta ?? "";
+          if (!delta) return;
+          set((state) => ({ answer: state.answer + delta }));
+        });
+        unlistenDone = await listen(sideChatDoneEvent, () => {
+          set({ isStreaming: false });
           clearListeners();
         });
         unlistenError = await listen<{ message: string }>(sideChatErrorEvent, (event) => {

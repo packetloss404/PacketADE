@@ -32,6 +32,7 @@ export function flightChatDoneEvent(requestId: string): string {
 
 // Side chat (ephemeral helper overlay) — single global event names since
 // only one side-chat request is in flight at a time.
+export const sideChatChunkEvent = "side-chat:chunk";
 export const sideChatDoneEvent = "side-chat:done";
 export const sideChatErrorEvent = "side-chat:error";
 

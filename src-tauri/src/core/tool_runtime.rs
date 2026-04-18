@@ -128,6 +128,9 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["pattern"]
             }),
         },
+        crate::core::tool_web::web_fetch_definition(),
+        crate::core::tool_subagent::spawn_subagent_definition(),
+        crate::core::tool_pull_request::create_pull_request_definition(),
     ]
 }
 
@@ -174,6 +177,23 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
                 tool_runtime_ssh::execute_grep(&call.arguments, config).await
             }
         },
+        "web_fetch" => {
+            // Host-agnostic: always runs from the PacketCode process.
+            let _ = target;
+            crate::core::tool_web::execute_web_fetch(&call.arguments).await
+        }
+        "spawn_subagent" => {
+            // Boxed because spawn_subagent recursively calls execute_tool, and
+            // async fn cannot be directly recursive without indirection.
+            Box::pin(crate::core::tool_subagent::execute_spawn_subagent(
+                &call.arguments,
+                target,
+            ))
+            .await
+        }
+        "create_pull_request" => {
+            crate::core::tool_pull_request::execute_create_pull_request(&call.arguments, target).await
+        }
         _ => Err(format!("Unknown tool: {}", call.name)),
     };
 

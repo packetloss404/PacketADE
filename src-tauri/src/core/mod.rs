@@ -17,8 +17,11 @@ pub mod orchestrator;
 pub mod pty;
 pub mod shared;
 pub mod storage;
+pub mod tool_pull_request;
 pub mod tool_runtime;
 pub mod tool_runtime_ssh;
+pub mod tool_subagent;
+pub mod tool_web;
 pub mod workspace;
 pub mod worktree;
 #[cfg(test)]
