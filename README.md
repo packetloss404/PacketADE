@@ -1,6 +1,6 @@
 # PacketADE
 
-**A local-first desktop IDE for orchestrating AI software work.**
+**A local-first desktop ADE (Agent Development Environment) for orchestrating AI software work.**
 
 PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, deployment tooling, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
