@@ -19,7 +19,10 @@
     "sidecar:install": "pnpm -C agent-sidecar install",
     "sidecar:build": "pnpm -C agent-sidecar build",
     "sidecar:dev": "pnpm -C agent-sidecar dev",
-    "sidecar:smoke": "node agent-sidecar/test/echo-smoke.mjs"
+    "sidecar:smoke": "node agent-sidecar/test/echo-smoke.mjs",
+    "sidecar:registry-smoke": "node agent-sidecar/test/registry-smoke.mjs",
+    "postinstall": "pnpm -C agent-sidecar install",
+    "build:all": "pnpm sidecar:build && pnpm build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",

@@ -11,7 +11,10 @@ import { EchoProvider } from "./providers/echo.js";
 import { AnthropicProvider } from "./providers/anthropic.js";
 import { OpenAICodexProvider } from "./providers/openai-codex.js";
 
-// Factory map — Phase 4 adds "claude-oauth", Phase 5 adds "openai-codex".
+// Factory map — both subscription providers are wired:
+//   - "claude-oauth"  → Anthropic Agent SDK (OAuth / `claude login`)
+//   - "openai-codex"  → Codex CLI exec mode (`codex login`)
+// Add new providers by importing the handler and extending this record.
 const PROVIDERS: Record<string, () => ProviderHandler> = {
   echo: () => new EchoProvider(),
   "claude-oauth": () => new AnthropicProvider(),

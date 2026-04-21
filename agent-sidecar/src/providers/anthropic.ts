@@ -218,7 +218,7 @@ export class AnthropicProvider implements ProviderHandler {
     // "intercept Write/Edit and surface before+after diff" hook today.
     // Fallback: rely on the SDK's own permissionMode + canUseTool flow so
     // write operations still require approval — just without the diff
-    // preview. Tracked separately; not blocking Phase 4.
+    // preview. Tracked as a follow-up; no user-facing regression today.
     logStderr(
       "pending_edit diff preview deferred to SDK permissionMode (write-intercept not implemented)",
     );
