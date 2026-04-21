@@ -15,6 +15,13 @@ export interface ApiProviderInfo {
 
 export const API_PROVIDERS: ApiProviderInfo[] = [
   {
+    id: "anthropic-oauth",
+    agentCli: "api-claude-oauth",
+    name: "Anthropic (Subscription)",
+    needsKey: false,
+    models: [],
+  },
+  {
     id: "anthropic",
     agentCli: "api-claude",
     name: "Claude (API)",
@@ -25,6 +32,13 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
       { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6-20250414" },
       { label: "Claude Haiku 4.5", value: "claude-haiku-4-5-20251001" },
     ],
+  },
+  {
+    id: "openai-codex",
+    agentCli: "api-openai-codex",
+    name: "OpenAI (ChatGPT Plus/Pro)",
+    needsKey: false,
+    models: [],
   },
   {
     id: "openai",

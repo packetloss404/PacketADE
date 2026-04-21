@@ -205,6 +205,8 @@ pub fn run() {
             commands::api_keys::set_api_key,
             commands::api_keys::get_api_key_exists,
             commands::api_keys::delete_api_key,
+            // Provider auth status probe
+            commands::provider_auth::get_provider_auth_status,
             // API agent sessions
             commands::api_agent::start_api_agent_session,
             commands::api_agent::send_api_agent_message,

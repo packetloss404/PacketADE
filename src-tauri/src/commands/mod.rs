@@ -22,6 +22,7 @@ pub mod mcp;
 pub mod memory;
 pub mod orchestration;
 pub mod pricing;
+pub mod provider_auth;
 pub mod pty;
 pub mod scaffold;
 pub mod shared;

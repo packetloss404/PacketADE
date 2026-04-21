@@ -12,19 +12,29 @@ import {
   MessageCircle,
   Hand,
   Layers,
+  Send,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { useAgentTaskStore, repoDisplayName } from "@/stores/agentTaskStore";
+import {
+  useAgentTaskStore,
+  repoDisplayName,
+  apiAgentProvider,
+} from "@/stores/agentTaskStore";
 import { useGitHubStore } from "@/stores/githubStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useSshTargetStore } from "@/stores/sshTargetStore";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
+import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import { FileMentionPopover } from "./FileMentionPopover";
 import { SshConnectModal } from "./SshConnectModal";
 import type { AgentCli } from "@/stores/agentTaskStore";
-import { API_PROVIDERS } from "@/lib/api-models";
+import { API_PROVIDERS, getProviderForAgent } from "@/lib/api-models";
+import {
+  getProviderAuthStatus,
+  type ProviderAuthStatus,
+} from "@/lib/tauri";
 import {
   isSshUri,
   makeSshUri,
@@ -63,6 +73,20 @@ const MODE_META: Record<AgentMode, { label: string; description: string; icon: R
 };
 
 const MODE_ORDER: AgentMode[] = ["agent", "ask", "manual", "plan"];
+
+/**
+ * Provider dropdown grouping. Only includes `api-*` agents (PTY CLI agents
+ * like `claude-code` / `codex` are handled elsewhere). `api-claude-oauth`
+ * and `api-openai-codex` are added by parallel Phase 1 work; list them up
+ * front so this dropdown is ready when they land.
+ */
+const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
+  { label: "Anthropic", agents: ["api-claude-oauth" as AgentCli, "api-claude"] },
+  { label: "OpenAI", agents: ["api-openai-codex" as AgentCli, "api-openai"] },
+  { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama"] },
+];
+
+type AuthEntry = ProviderAuthStatus | "loading";
 
 interface AgentInputAreaProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -342,12 +366,12 @@ export function AgentInputArea({
 
     if (e.ctrlKey && e.key === "Enter") {
       e.preventDefault();
-      onLaunch();
+      if (launchReady) onLaunch();
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      onLaunch();
+      if (launchReady) onLaunch();
     }
   }
 
@@ -361,6 +385,53 @@ export function AgentInputArea({
     ),
     [activeProfile?.color, activeProfile?.name],
   );
+
+  // ─── Provider auth status polling ────────────────────────────────────
+  const [authStatus, setAuthStatus] = useState<Record<string, AuthEntry>>({});
+
+  const groupAgents = useMemo<AgentCli[]>(
+    () => PROVIDER_GROUPS.flatMap((g) => g.agents),
+    [],
+  );
+
+  const refreshAuthStatuses = useCallback(() => {
+    // Mark everything as loading, then fetch each in parallel.
+    setAuthStatus((prev) => {
+      const next: Record<string, AuthEntry> = { ...prev };
+      for (const a of groupAgents) next[a] = "loading";
+      return next;
+    });
+    for (const agent of groupAgents) {
+      const provider = apiAgentProvider(agent);
+      getProviderAuthStatus(provider)
+        .then((res) => {
+          setAuthStatus((prev) => ({ ...prev, [agent]: res }));
+        })
+        .catch((err) => {
+          // On failure, show as service_down with the error hint — better
+          // than leaving the row stuck in a spinner.
+          console.warn(`getProviderAuthStatus(${provider}) failed`, err);
+          setAuthStatus((prev) => ({
+            ...prev,
+            [agent]: { status: "service_down", hint: "Status unavailable" },
+          }));
+        });
+    }
+  }, [groupAgents]);
+
+  // Initial load on mount.
+  useEffect(() => {
+    refreshAuthStatuses();
+  }, [refreshAuthStatuses]);
+
+  const selectedAuth = authStatus[selectedAgent];
+  const selectedAuthStatus: AuthStatus =
+    selectedAuth === "loading" || !selectedAuth
+      ? "loading"
+      : selectedAuth.status;
+  const launchReady = selectedAuthStatus === "ready";
+  const launchLabel =
+    selectedAuthStatus === "coming_soon" ? "Coming soon" : "Launch";
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8">
@@ -503,30 +574,83 @@ export function AgentInputArea({
                 })}
               </Dropdown>
 
-              {/* Provider selector */}
+              {/* Provider selector (grouped, with auth-status badges) */}
               <Dropdown
                 trigger={
-                  <span className="text-text-secondary flex items-center gap-1">
+                  <span
+                    className="text-text-secondary flex items-center gap-1"
+                    // Refresh auth statuses when the user opens the dropdown.
+                    // onMouseDown fires before Dropdown's click-toggle, so the
+                    // fetch is already in flight by the time the menu renders.
+                    onMouseDown={refreshAuthStatuses}
+                  >
                     <Zap size={10} className="text-accent-amber" />
-                    {API_PROVIDERS.find((p) => p.agentCli === selectedAgent)
-                      ?.name ?? "Select Provider"}
+                    {getProviderForAgent(selectedAgent)?.name ??
+                      "Select Provider"}
+                    <AuthBadge
+                      status={selectedAuthStatus}
+                      hint={
+                        selectedAuth && selectedAuth !== "loading"
+                          ? selectedAuth.hint
+                          : ""
+                      }
+                      className="ml-1"
+                    />
                   </span>
                 }
               >
-                {API_PROVIDERS.map((p) => (
-                  <DropdownItem
-                    key={p.agentCli}
-                    onClick={() => {
-                      onAgentChange(p.agentCli);
-                      onModelChange(p.models[0]?.value ?? "");
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Zap size={10} className="text-accent-amber" />
-                      {p.name}
-                    </span>
-                  </DropdownItem>
-                ))}
+                {PROVIDER_GROUPS.map((group, gi) => {
+                  // Build the list of renderable rows for this group — skip
+                  // agents that don't exist in API_PROVIDERS (e.g. while the
+                  // parallel OAuth/Codex entries haven't landed yet).
+                  const rows = group.agents
+                    .map((agent) => ({
+                      agent,
+                      info: getProviderForAgent(agent),
+                    }))
+                    .filter(
+                      (r): r is { agent: AgentCli; info: NonNullable<typeof r.info> } =>
+                        !!r.info,
+                    );
+                  if (rows.length === 0) return null;
+                  return (
+                    <div key={group.label}>
+                      {gi > 0 && (
+                        <div className="my-1 border-t border-bg-border" />
+                      )}
+                      <div className="text-[9px] uppercase tracking-wide text-text-muted px-2 py-1">
+                        {group.label}
+                      </div>
+                      {rows.map(({ agent, info }) => {
+                        const entry = authStatus[agent];
+                        const status: AuthStatus =
+                          entry === "loading" || !entry ? "loading" : entry.status;
+                        const hint =
+                          entry && entry !== "loading" ? entry.hint : "";
+                        const dim = status !== "ready";
+                        return (
+                          <DropdownItem
+                            key={agent}
+                            onClick={() => {
+                              onAgentChange(agent);
+                              onModelChange(info.models[0]?.value ?? "");
+                            }}
+                          >
+                            <span
+                              className={`flex items-center justify-between gap-2 ${dim ? "opacity-50" : ""}`}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <Zap size={10} className="text-accent-amber" />
+                                {info.name}
+                              </span>
+                              <AuthBadge status={status} hint={hint} />
+                            </span>
+                          </DropdownItem>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
               </Dropdown>
 
               {/* Model selector */}
@@ -577,20 +701,45 @@ export function AgentInputArea({
               </Dropdown>
             </div>
 
-            {/* Mic button */}
-            {isSupported && (
+            <div className="flex items-center gap-1">
+              {/* Mic button */}
+              {isSupported && (
+                <button
+                  onClick={isListening ? stopListening : startListening}
+                  className={`p-1.5 rounded-full transition-colors ${
+                    isListening
+                      ? "bg-accent-green/20 text-accent-green animate-pulse"
+                      : "text-text-muted hover:text-text-secondary"
+                  }`}
+                  title={isListening ? "Stop listening" : "Voice input"}
+                >
+                  <Mic size={14} />
+                </button>
+              )}
+
+              {/* Launch button — gated on provider auth status */}
               <button
-                onClick={isListening ? stopListening : startListening}
-                className={`p-1.5 rounded-full transition-colors ${
-                  isListening
-                    ? "bg-accent-green/20 text-accent-green animate-pulse"
-                    : "text-text-muted hover:text-text-secondary"
+                onClick={() => {
+                  if (launchReady) onLaunch();
+                }}
+                disabled={!launchReady}
+                title={
+                  launchReady
+                    ? "Launch (Enter)"
+                    : selectedAuth && selectedAuth !== "loading"
+                      ? selectedAuth.hint || launchLabel
+                      : launchLabel
+                }
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  launchReady
+                    ? "bg-accent-green/20 text-accent-green hover:bg-accent-green/30"
+                    : "bg-bg-hover text-text-muted cursor-not-allowed"
                 }`}
-                title={isListening ? "Stop listening" : "Voice input"}
               >
-                <Mic size={14} />
+                <Send size={10} />
+                {launchLabel}
               </button>
-            )}
+            </div>
           </div>
         </div>
 

@@ -1217,6 +1217,15 @@ export async function deleteApiKey(provider: string): Promise<void> {
   return invoke("delete_api_key", { provider });
 }
 
+export type ProviderAuthStatus = {
+  status: "ready" | "login_required" | "missing_key" | "service_down" | "coming_soon";
+  hint: string; // short CTA/explanation, e.g. "Run claude login" or "Ollama not running on localhost:11434"
+};
+
+export async function getProviderAuthStatus(provider: string): Promise<ProviderAuthStatus> {
+  return invoke("get_provider_auth_status", { provider });
+}
+
 export interface ImageAttachment {
   media_type: string;
   data_base64: string;
