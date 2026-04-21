@@ -467,13 +467,30 @@ export function AgentInputArea({
   const launchReady = selectedAuthStatus === "ready";
   const launchLabel =
     selectedAuthStatus === "coming_soon" ? "Coming soon" : "Launch";
-  const needsClaudeLogin =
-    selectedAgent === "api-claude-oauth" &&
-    selectedAuthStatus === "login_required";
+  // Which provider (if any) needs an interactive login to become ready.
+  // Returns "claude" / "codex" / null so the button + tooltip below can
+  // branch on a single value and dispatch the right event.
+  const needsLogin: "claude" | "codex" | null =
+    selectedAuthStatus === "login_required"
+      ? selectedAgent === "api-claude-oauth"
+        ? "claude"
+        : selectedAgent === "api-openai-codex"
+          ? "codex"
+          : null
+      : null;
 
-  const handleOpenClaudeLogin = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("packetade:open-claude-login"));
-  }, []);
+  const handleOpenLogin = useCallback(() => {
+    if (needsLogin === "claude") {
+      window.dispatchEvent(new CustomEvent("packetade:open-claude-login"));
+    } else if (needsLogin === "codex") {
+      window.dispatchEvent(new CustomEvent("packetade:open-codex-login"));
+    }
+  }, [needsLogin]);
+
+  const loginTooltip =
+    needsLogin === "codex"
+      ? "Log in to ChatGPT to continue"
+      : "Log in to Claude to continue";
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8">
@@ -640,13 +657,13 @@ export function AgentInputArea({
                       }
                       className="ml-1"
                     />
-                    {needsClaudeLogin && (
+                    {needsLogin && (
                       <button
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          handleOpenClaudeLogin();
+                          handleOpenLogin();
                         }}
                         onMouseDown={(e) => {
                           // Stop propagation here too so opening the
@@ -654,7 +671,7 @@ export function AgentInputArea({
                           e.stopPropagation();
                         }}
                         className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] text-accent-amber hover:bg-accent-amber/10 transition-colors"
-                        title="Log in to Claude to continue"
+                        title={loginTooltip}
                       >
                         <LogIn size={10} />
                         Log in
@@ -904,8 +921,8 @@ export function AgentInputArea({
                 title={
                   launchReady
                     ? "Launch (Enter)"
-                    : needsClaudeLogin
-                      ? "Log in to Claude to continue"
+                    : needsLogin
+                      ? loginTooltip
                       : selectedAuth && selectedAuth !== "loading"
                         ? selectedAuth.hint || launchLabel
                         : launchLabel

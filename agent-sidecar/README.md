@@ -12,12 +12,6 @@ in an isolated Node child process and stream structured events back to the
 supervisor. The supervisor handles lifecycle, crash restart, and routing
 events into Tauri event channels for the React UI.
 
-Phase 3 ships the protocol skeleton plus an **echo** provider for end-to-end
-validation. Real providers land later:
-
-- Phase 4: `claude-oauth` (via `@anthropic-ai/claude-agent-sdk`)
-- Phase 5: `openai-codex`
-
 ## Install & build
 
 ```bash
@@ -31,6 +25,33 @@ The supervisor launches the sidecar by running `node <path-to-dist/index.js>`.
 It finds the entry point via the `PACKETADE_SIDECAR_PATH` environment variable
 (set by the Rust side; falls back to a known bundled location in release
 builds). No direct invocation from the CLI is expected in normal use.
+
+## Providers
+
+The factory lives in `src/session-registry.ts`. Currently wired:
+
+- **`echo`** — smoke-test provider. Deterministic, no network, used by
+  `pnpm sidecar:smoke` to verify the protocol end-to-end.
+- **`claude-oauth`** — Anthropic subscription auth via
+  `@anthropic-ai/claude-agent-sdk` (`src/providers/anthropic.ts`). Added in
+  Phase 4. Supports the full tool loop, streaming output, MCP server
+  passthrough, and permission / edit approval requests. Auth comes from the
+  Claude Code OAuth credential store — no API key env var needed.
+- **`openai-codex`** — OpenAI ChatGPT subscription via the `codex` CLI
+  (`src/providers/openai-codex.ts`). Added in Phase 5. Known v1 limitations:
+  - No MCP server support (accepted gap; a one-time stderr warning fires if
+    `mcpServers` is non-empty on `start_session`).
+  - Tool-call detail is shallower than the SDK providers because Codex's
+    `--json` output is less structured; unknown event types are logged to
+    stderr and dropped.
+  - `allowedTools` is not enforced — Codex has no equivalent flag, so the
+    provider relies on sandbox policy (`workspace-write` default, `read-only`
+    for plan mode) plus approval gating.
+  - `sendMessage` spawns a fresh `codex exec resume <sessionId>` per turn
+    (Codex's exec mode is one-shot). Overlapping turns are rejected rather
+    than queued.
+  - Auth is handled by the Codex CLI itself — run `codex login` before using
+    this provider.
 
 ## Protocol summary
 

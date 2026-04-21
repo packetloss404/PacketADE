@@ -62,6 +62,68 @@ fn probe_claude_oauth() -> ProviderAuthStatus {
     }
 }
 
+/// Probe whether the user has logged into Codex CLI (`codex login` /
+/// `codex auth login`).
+///
+/// Codex stores OAuth credentials under `~/.codex/` — depending on CLI
+/// version, the token file may be `auth.json` or `credentials`, so we
+/// check both paths. Presence + non-empty is enough for v1.
+///
+/// TODO: parse the credentials file and surface expiry — expired tokens
+/// should probably report `login_required` with a "session expired" hint.
+fn probe_codex_oauth() -> ProviderAuthStatus {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            return ProviderAuthStatus {
+                status: "login_required".to_string(),
+                hint: "Run `codex login` in a terminal".to_string(),
+            };
+        }
+    };
+    let candidates = [
+        home.join(".codex").join("auth.json"),
+        home.join(".codex").join("credentials"),
+    ];
+    let mut any_found = false;
+    for path in &candidates {
+        match std::fs::metadata(path) {
+            Ok(meta) if meta.is_file() => {
+                any_found = true;
+                if meta.len() > 0 {
+                    return ProviderAuthStatus {
+                        status: "ready".to_string(),
+                        hint: String::new(),
+                    };
+                }
+            }
+            Ok(_) => {
+                // Exists but isn't a regular file — treat as unreadable.
+                any_found = true;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {
+                return ProviderAuthStatus {
+                    status: "login_required".to_string(),
+                    hint: "Codex credentials unreadable".to_string(),
+                };
+            }
+        }
+    }
+    if any_found {
+        // Found but empty / not a regular file.
+        ProviderAuthStatus {
+            status: "login_required".to_string(),
+            hint: "Codex credentials unreadable".to_string(),
+        }
+    } else {
+        ProviderAuthStatus {
+            status: "login_required".to_string(),
+            hint: "Run `codex login` in a terminal".to_string(),
+        }
+    }
+}
+
 #[derive(serde::Serialize)]
 pub struct ProviderAuthStatus {
     pub status: String,
@@ -112,10 +174,7 @@ pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthSt
             }
         }
         "claude-oauth" => Ok(probe_claude_oauth()),
-        "openai-codex" => Ok(ProviderAuthStatus {
-            status: "coming_soon".to_string(),
-            hint: "Available in Phase 5".to_string(),
-        }),
+        "openai-codex" => Ok(probe_codex_oauth()),
         other => Err(format!("Unknown provider '{}'", other)),
     }
 }
