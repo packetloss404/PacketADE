@@ -1439,3 +1439,20 @@ export async function askSideChatStream(question: string, context: string): Prom
   return invoke("ask_side_chat_stream", { question, context });
 }
 
+// === Sidecar lifecycle (v2 Tier 2 slice B) =================================
+//
+// The Node agent-sidecar is supervised by the Rust backend. This surface lets
+// the status-bar chip show its current state and react to transitions.
+
+export type SidecarStatus = {
+  state: "ready" | "restarting" | "down" | "not_started";
+  restart_count: number;
+  last_error: string | null;
+  pid: number | null;
+  version: string | null;
+};
+
+export async function getSidecarStatus(): Promise<SidecarStatus> {
+  return invoke<SidecarStatus>("get_sidecar_status");
+}
+

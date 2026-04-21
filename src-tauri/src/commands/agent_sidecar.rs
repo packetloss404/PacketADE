@@ -33,6 +33,12 @@ use super::shared::hide_window_async;
 /// the in-process Rust runtime. Keep in sync with slice C's dispatch logic.
 pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "echo"];
 
+/// Wire protocol version this supervisor was built against. Must match
+/// `PROTOCOL_VERSION` in `agent-sidecar/src/protocol.ts`. We log a warning if
+/// the sidecar advertises a different value on its `ready` event, but we do
+/// not refuse to proceed — this is a soft compatibility signal, not a gate.
+const EXPECTED_PROTOCOL_VERSION: u32 = 1;
+
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.
 pub fn is_sidecar_provider(provider: &str) -> bool {
@@ -42,6 +48,11 @@ pub fn is_sidecar_provider(provider: &str) -> bool {
 /// Maximum sidecar restarts allowed within `RESTART_WINDOW`.
 const MAX_RESTARTS_IN_WINDOW: usize = 3;
 const RESTART_WINDOW: Duration = Duration::from_secs(60);
+
+/// Tauri event name emitted whenever the sidecar's lifecycle state transitions
+/// (ready / restarting / down / not_started). The frontend status-bar chip
+/// subscribes to this to update without polling.
+const SIDECAR_STATUS_EVENT: &str = "sidecar-status:changed";
 
 // ---------------------------------------------------------------------------
 // Event name helpers — must match `api_agent.rs` exactly.
@@ -128,6 +139,79 @@ struct ErrorPayload {
 }
 
 // ---------------------------------------------------------------------------
+// Public lifecycle status surface — v2 Tier 2 slice B.
+//
+// The frontend's status-bar chip polls `get_sidecar_status` on mount and then
+// subscribes to `sidecar-status:changed` for reactive updates.
+// ---------------------------------------------------------------------------
+
+/// Snapshot of the sidecar's current lifecycle state. Serialized to JSON and
+/// returned from the `get_sidecar_status` command; the same payload is used
+/// for the `sidecar-status:changed` event so the frontend can treat both the
+/// initial poll and the push updates identically.
+///
+/// Field names are intentionally snake_case in the wire format to match the
+/// TypeScript `SidecarStatus` shape exported from `src/lib/tauri.ts`.
+#[derive(Clone, Serialize)]
+pub struct SidecarStatus {
+    /// One of "ready", "restarting", "down", "not_started".
+    pub state: String,
+    /// Lifetime restart count (does not reset when the rate-limit window
+    /// expires — this is the cumulative count the chip shows as `(N/3)`).
+    pub restart_count: u32,
+    /// Last crash/spawn-error message, if any.
+    pub last_error: Option<String>,
+    /// Current child PID if the sidecar is ready.
+    pub pid: Option<u32>,
+    /// Version string reported by the most recent `ready` event.
+    pub version: Option<String>,
+}
+
+/// Interior mutable state backing `SidecarManager::status`. Wrapped in one
+/// `Mutex` rather than split across many so that updates + emit happen
+/// atomically relative to each other.
+#[derive(Default)]
+struct SidecarStatusInner {
+    state: SidecarState,
+    restart_count: u32,
+    last_error: Option<String>,
+    pid: Option<u32>,
+    version: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum SidecarState {
+    #[default]
+    NotStarted,
+    Ready,
+    Restarting,
+    Down,
+}
+
+impl SidecarState {
+    fn as_str(self) -> &'static str {
+        match self {
+            SidecarState::NotStarted => "not_started",
+            SidecarState::Ready => "ready",
+            SidecarState::Restarting => "restarting",
+            SidecarState::Down => "down",
+        }
+    }
+}
+
+impl SidecarStatusInner {
+    fn snapshot(&self) -> SidecarStatus {
+        SidecarStatus {
+            state: self.state.as_str().to_string(),
+            restart_count: self.restart_count,
+            last_error: self.last_error.clone(),
+            pid: self.pid,
+            version: self.version.clone(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SidecarManager — owns the child process, stdin writer channel, and the set
 // of sidecar-owned sessions.
 // ---------------------------------------------------------------------------
@@ -142,6 +226,8 @@ pub struct SidecarManager {
     /// Sessions we've started and not yet closed. Used by slice C's
     /// `owns_session()` check and to fan-out sidecar-crash errors.
     owned_sessions: Arc<Mutex<HashSet<String>>>,
+    /// Lifecycle status surfaced to the frontend (see `SidecarStatus`).
+    status: Mutex<SidecarStatusInner>,
 }
 
 impl SidecarManager {
@@ -154,6 +240,7 @@ impl SidecarManager {
             sidecar_path,
             writer_tx: Mutex::new(None),
             owned_sessions: Arc::new(Mutex::new(HashSet::new())),
+            status: Mutex::new(SidecarStatusInner::default()),
         });
 
         // Spawn the child + reader/writer tasks in the background. If the
@@ -293,9 +380,29 @@ impl SidecarManager {
         result
     }
 
+    /// Return a snapshot of the current lifecycle status. Used by the
+    /// `get_sidecar_status` Tauri command (the frontend polls this on mount
+    /// before subscribing to `sidecar-status:changed`).
+    pub async fn current_status(&self) -> SidecarStatus {
+        let guard = self.status.lock().await;
+        guard.snapshot()
+    }
+
     // -----------------------------------------------------------------------
     // Internals
     // -----------------------------------------------------------------------
+
+    /// Apply a status mutation under the lock and emit
+    /// `sidecar-status:changed` with the new snapshot. All transitions go
+    /// through here so we never forget to emit.
+    async fn update_status(&self, mutate: impl FnOnce(&mut SidecarStatusInner)) {
+        let snapshot = {
+            let mut guard = self.status.lock().await;
+            mutate(&mut guard);
+            guard.snapshot()
+        };
+        let _ = self.app_handle.emit(SIDECAR_STATUS_EVENT, snapshot);
+    }
 
     /// Serialize `value` as a JSON line and push it onto the writer channel.
     async fn send_json(&self, value: Value) -> Result<(), String> {
@@ -323,9 +430,25 @@ impl SidecarManager {
                     // spawn_child returned because the child exited cleanly or
                     // died. Fall through to restart logic.
                     warn!("agent sidecar exited — considering restart");
+                    self.update_status(|s| {
+                        // If the child had been ready, an unexpected exit
+                        // without a recorded error still deserves *some*
+                        // breadcrumb for the status chip's tooltip.
+                        if s.last_error.is_none() && s.state == SidecarState::Ready {
+                            s.last_error = Some("Sidecar exited unexpectedly".to_string());
+                        }
+                        s.pid = None;
+                    })
+                    .await;
                 }
                 Err(e) => {
                     error!(error = %e, "failed to spawn agent sidecar");
+                    let msg = e.clone();
+                    self.update_status(|s| {
+                        s.last_error = Some(msg);
+                        s.pid = None;
+                    })
+                    .await;
                 }
             }
 
@@ -340,11 +463,33 @@ impl SidecarManager {
                 self.fan_out_crash_error().await;
                 // Clear the writer channel so future forward_* calls fail fast
                 // with a clear error.
-                let mut guard = self.writer_tx.lock().await;
-                *guard = None;
+                {
+                    let mut guard = self.writer_tx.lock().await;
+                    *guard = None;
+                }
+                self.update_status(|s| {
+                    s.state = SidecarState::Down;
+                    s.pid = None;
+                    if s.last_error.is_none() {
+                        s.last_error = Some(format!(
+                            "Sidecar exceeded {} restarts in {:?}",
+                            MAX_RESTARTS_IN_WINDOW, RESTART_WINDOW
+                        ));
+                    }
+                })
+                .await;
                 return;
             }
             restart_times.push(now);
+
+            // About to retry — flip to "restarting" and bump the lifetime
+            // counter. The chip will show `restarting (N/3)`.
+            self.update_status(|s| {
+                s.state = SidecarState::Restarting;
+                s.restart_count = s.restart_count.saturating_add(1);
+                s.pid = None;
+            })
+            .await;
 
             // Small backoff before retry.
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -623,8 +768,56 @@ impl SidecarManager {
         match event_type {
             "ready" => {
                 let pid = value.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
-                info!(pid, "agent sidecar reported ready");
-                // No frontend propagation — this is a plumbing signal.
+                let version = value.get("version").and_then(|v| v.as_str());
+                let protocol_version = value
+                    .get("protocolVersion")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+
+                match (version, protocol_version) {
+                    (Some(ver), Some(proto)) => {
+                        info!(
+                            pid,
+                            version = ver,
+                            protocol_version = proto,
+                            "sidecar ready: pid={}, version={}, protocolVersion={}",
+                            pid,
+                            ver,
+                            proto
+                        );
+                        if proto != EXPECTED_PROTOCOL_VERSION {
+                            warn!(
+                                expected = EXPECTED_PROTOCOL_VERSION,
+                                got = proto,
+                                "sidecar protocol version mismatch: expected {}, got {} — some features may misbehave",
+                                EXPECTED_PROTOCOL_VERSION,
+                                proto
+                            );
+                        }
+                    }
+                    _ => {
+                        warn!(
+                            pid,
+                            "sidecar ready event is missing version/protocol — running against a pre-handshake build"
+                        );
+                    }
+                }
+                // Lift the `ready` signal into the lifecycle status so the
+                // frontend chip flips from "restarting" / "not_started" to
+                // "ready" and can surface pid + version on hover.
+                let captured_version = version.map(|v| v.to_string());
+                let captured_pid = if pid == 0 { None } else { Some(pid as u32) };
+                self.update_status(|s| {
+                    s.state = SidecarState::Ready;
+                    s.pid = captured_pid;
+                    if captured_version.is_some() {
+                        s.version = captured_version;
+                    }
+                    // Successful handshake clears the stale error. Hover text
+                    // should only show the *current* trouble, not ancient.
+                    s.last_error = None;
+                })
+                .await;
             }
             "chunk" => {
                 // Match `api_agent.rs` exactly: the frontend listens with
@@ -791,10 +984,21 @@ impl SidecarManager {
                     .to_string();
                 let _ = self.app_handle.emit(
                     &error_event(&session_id),
-                    ErrorPayload { message },
+                    ErrorPayload {
+                        message: message.clone(),
+                    },
                 );
-                let mut sessions = self.owned_sessions.lock().await;
-                sessions.remove(&session_id);
+                {
+                    let mut sessions = self.owned_sessions.lock().await;
+                    sessions.remove(&session_id);
+                }
+                // Record the most-recent per-session error so the chip's
+                // tooltip has something meaningful if the supervisor later
+                // transitions to `down`. Does not change `state`.
+                self.update_status(|s| {
+                    s.last_error = Some(message);
+                })
+                .await;
             }
             other => {
                 warn!(
@@ -905,4 +1109,22 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         format!("{}…", &s[..max])
     }
+}
+
+// ---------------------------------------------------------------------------
+// Tauri commands (v2 Tier 2 slice B)
+// ---------------------------------------------------------------------------
+
+/// Return the sidecar's current lifecycle status. The frontend status-bar
+/// chip polls this on mount, then listens for `sidecar-status:changed` to get
+/// live updates without further polling.
+///
+/// Never fails — the manager is always registered by `.setup()` before any
+/// invoke handler can be called. Returns the default ("not_started") status
+/// if the manager has not yet observed any lifecycle event.
+#[tauri::command]
+pub async fn get_sidecar_status(
+    state: tauri::State<'_, Arc<SidecarManager>>,
+) -> Result<SidecarStatus, String> {
+    Ok(state.current_status().await)
 }
