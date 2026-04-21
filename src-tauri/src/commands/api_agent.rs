@@ -542,11 +542,11 @@ pub async fn change_model(
     session_id: String,
     new_model: String,
 ) -> Result<(), String> {
-    // Sidecar-owned sessions don't expose a model-change hook today; reject
-    // rather than silently no-op. Add a sidecar `change_model` protocol
-    // frame if this becomes user-reachable.
+    // Phase 3 slice C: forward to sidecar if it owns this session. The
+    // Anthropic provider hot-swaps via SDK `setModel`; Codex stashes the
+    // value for the next spawn.
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode".into());
+        return sidecar.forward_set_model(session_id, new_model).await;
     }
 
     let mut configs = state.configs.lock().await;
@@ -565,9 +565,14 @@ pub async fn set_plan_mode(
     session_id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
+    // Phase 3 slice C: forward to sidecar if it owns this session. Translate
+    // the legacy boolean into the SDK's permission-mode vocabulary:
+    // `true` → "plan", `false` → "default".
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode".into());
+        let mode = if enabled { "plan" } else { "default" };
+        return sidecar
+            .forward_set_permission_mode(session_id, mode.to_string())
+            .await;
     }
 
     let mut configs = state.configs.lock().await;
@@ -586,9 +591,12 @@ pub async fn set_permission_mode(
     session_id: String,
     mode: String,
 ) -> Result<(), String> {
-    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
+    // Phase 3 slice C: forward to sidecar if it owns this session. The
+    // sidecar's Anthropic provider maps mode strings onto the SDK's
+    // `setPermissionMode`; we pass the caller's string through verbatim so
+    // the sidecar sees the same vocabulary the frontend picked.
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode".into());
+        return sidecar.forward_set_permission_mode(session_id, mode).await;
     }
 
     let parsed = PermissionMode::parse(&mode)
@@ -642,9 +650,18 @@ pub async fn set_approve_writes(
     session_id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
+    // Phase 3 slice C: forward to sidecar if it owns this session. Translate
+    // the legacy boolean into the SDK's permission-mode vocabulary:
+    // `true` → "acceptEdits" (auto-apply writes), `false` → "default".
+    // NOTE: this mapping is lossy — toggling approve_writes on top of an
+    // already-customized permission mode will clobber that mode. It matches
+    // the pre-sidecar in-process semantics, which also treated the two
+    // knobs as orthogonal stores with the last-write winning.
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode".into());
+        let mode = if enabled { "acceptEdits" } else { "default" };
+        return sidecar
+            .forward_set_permission_mode(session_id, mode.to_string())
+            .await;
     }
 
     let mut configs = state.configs.lock().await;
@@ -701,9 +718,16 @@ pub async fn retry_last_turn(
     session_id: String,
     new_model: Option<String>,
 ) -> Result<(), String> {
-    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
+    // Phase 3 slice C: forward to sidecar if it owns this session. If the
+    // caller asked for a model swap, push that first so the retry uses the
+    // new model; then emit the retry frame itself.
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode".into());
+        if let Some(model) = new_model {
+            sidecar
+                .forward_set_model(session_id.clone(), model)
+                .await?;
+        }
+        return sidecar.forward_retry(session_id).await;
     }
 
     // Truncate history to before the last assistant message (and any trailing tool messages).

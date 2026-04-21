@@ -1,4 +1,11 @@
-import type { Emit, SendMessageRequest, StartSessionRequest } from "../protocol.js";
+import type {
+  Emit,
+  RetryRequest,
+  SendMessageRequest,
+  SetModelRequest,
+  SetPermissionModeRequest,
+  StartSessionRequest,
+} from "../protocol.js";
 import type { ProviderHandler } from "./base.js";
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -42,6 +49,52 @@ export class EchoProvider implements ProviderHandler {
 
   async cancel(_emit: Emit): Promise<void> {
     // Echo provider has no long-lived work to cancel; no-op.
+  }
+
+  // Protocol v2 (Tier 3 slice B) — the three new request types are implemented
+  // here purely as smoke-test shims. Each emits a single `chunk` echoing the
+  // received field, then `done` with zero tokens. The `protocol-v2-smoke` test
+  // uses these to verify the dispatcher routes the new types end-to-end.
+  async setPermissionMode(req: SetPermissionModeRequest, emit: Emit): Promise<void> {
+    emit({
+      type: "chunk",
+      sessionId: req.sessionId,
+      text: `[echo] set_permission_mode: ${req.mode}\n`,
+    });
+    emit({
+      type: "done",
+      sessionId: req.sessionId,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+  }
+
+  async setModel(req: SetModelRequest, emit: Emit): Promise<void> {
+    emit({
+      type: "chunk",
+      sessionId: req.sessionId,
+      text: `[echo] set_model: ${req.model}\n`,
+    });
+    emit({
+      type: "done",
+      sessionId: req.sessionId,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+  }
+
+  async retry(req: RetryRequest, emit: Emit): Promise<void> {
+    emit({
+      type: "chunk",
+      sessionId: req.sessionId,
+      text: `[echo] retry\n`,
+    });
+    emit({
+      type: "done",
+      sessionId: req.sessionId,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
   }
 
   async close(): Promise<void> {

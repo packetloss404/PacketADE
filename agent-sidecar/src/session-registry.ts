@@ -3,7 +3,10 @@ import type {
   EditResponseRequest,
   Emit,
   PermissionResponseRequest,
+  RetryRequest,
   SendMessageRequest,
+  SetModelRequest,
+  SetPermissionModeRequest,
   StartSessionRequest,
 } from "./protocol.js";
 import type { ProviderHandler } from "./providers/base.js";
@@ -21,8 +24,18 @@ const PROVIDERS: Record<string, () => ProviderHandler> = {
   "openai-codex": () => new OpenAICodexProvider(),
 };
 
+/**
+ * Registry entry: the live handler plus the provider name it was created for.
+ * The name is kept so `dispatch()` can produce human-readable error messages
+ * like `openai-codex does not support retry` without a reverse lookup.
+ */
+interface SessionEntry {
+  handler: ProviderHandler;
+  provider: string;
+}
+
 export class SessionRegistry {
-  private sessions = new Map<string, ProviderHandler>();
+  private sessions = new Map<string, SessionEntry>();
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     const factory = PROVIDERS[req.provider];
@@ -43,7 +56,7 @@ export class SessionRegistry {
       return;
     }
     const handler = factory();
-    this.sessions.set(req.sessionId, handler);
+    this.sessions.set(req.sessionId, { handler, provider: req.provider });
     try {
       await handler.start(req, emit);
     } catch (err) {
@@ -57,11 +70,18 @@ export class SessionRegistry {
 
   async dispatch(
     sessionId: string,
-    req: SendMessageRequest | PermissionResponseRequest | EditResponseRequest | CancelRequest,
+    req:
+      | SendMessageRequest
+      | PermissionResponseRequest
+      | EditResponseRequest
+      | CancelRequest
+      | SetPermissionModeRequest
+      | SetModelRequest
+      | RetryRequest,
     emit: Emit,
   ): Promise<void> {
-    const handler = this.sessions.get(sessionId);
-    if (!handler) {
+    const entry = this.sessions.get(sessionId);
+    if (!entry) {
       emit({
         type: "error",
         sessionId,
@@ -69,6 +89,7 @@ export class SessionRegistry {
       });
       return;
     }
+    const { handler, provider } = entry;
     try {
       switch (req.type) {
         case "send_message":
@@ -83,6 +104,39 @@ export class SessionRegistry {
         case "cancel":
           if (handler.cancel) await handler.cancel(emit);
           break;
+        case "set_permission_mode":
+          if (handler.setPermissionMode) {
+            await handler.setPermissionMode(req, emit);
+          } else {
+            emit({
+              type: "error",
+              sessionId,
+              message: `${provider} does not support set_permission_mode`,
+            });
+          }
+          break;
+        case "set_model":
+          if (handler.setModel) {
+            await handler.setModel(req, emit);
+          } else {
+            emit({
+              type: "error",
+              sessionId,
+              message: `${provider} does not support set_model`,
+            });
+          }
+          break;
+        case "retry":
+          if (handler.retry) {
+            await handler.retry(req, emit);
+          } else {
+            emit({
+              type: "error",
+              sessionId,
+              message: `${provider} does not support retry`,
+            });
+          }
+          break;
       }
     } catch (err) {
       emit({
@@ -94,9 +148,10 @@ export class SessionRegistry {
   }
 
   async close(sessionId: string): Promise<void> {
-    const handler = this.sessions.get(sessionId);
-    if (!handler) return;
+    const entry = this.sessions.get(sessionId);
+    if (!entry) return;
     this.sessions.delete(sessionId);
+    const { handler } = entry;
     if (handler.close) {
       try {
         await handler.close();

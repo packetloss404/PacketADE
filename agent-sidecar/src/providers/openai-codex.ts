@@ -55,10 +55,73 @@ import type {
   EditResponseRequest,
   Emit,
   PermissionResponseRequest,
+  RetryRequest,
   SendMessageRequest,
+  SetModelRequest,
+  SetPermissionModeRequest,
   StartSessionRequest,
 } from "../protocol.js";
 import type { ProviderHandler } from "./base.js";
+
+/**
+ * Sandbox + approval flag tuple derived from an SDK-style PermissionMode.
+ * Returned by `modeToCodexFlags` and used verbatim inside the exec / resume
+ * arg builders — keeping the translation in one place keeps the two builders
+ * from drifting.
+ */
+interface CodexSandboxFlags {
+  args: string[];
+  /**
+   * When true the `-a on-request` approval flag was passed, so approvals flow
+   * through our `permission_request` pipeline. Informational — not inspected
+   * today, but kept for future visibility into what the child was launched
+   * with (e.g. for status-line hover tooltips).
+   */
+  hasApprovals: boolean;
+}
+
+/**
+ * Translate an SDK-style `PermissionMode` (set via the protocol v2
+ * `set_permission_mode` request) onto Codex's sandbox + approval flags.
+ *
+ * Mapping (codex-cli 0.121.0):
+ *   - plan                → `--sandbox read-only -a on-request`
+ *   - bypassPermissions   → `--dangerously-bypass-approvals-and-sandbox`
+ *   - acceptEdits         → `--sandbox workspace-write -a never`
+ *                           (writes allowed, no per-call prompt)
+ *   - dontAsk / auto      → same as bypassPermissions (closest Codex equivalent;
+ *                           those SDK modes don't prompt the user)
+ *   - default / <unset>   → `--sandbox workspace-write -a on-request`
+ */
+function modeToCodexFlags(mode: string | null | undefined): CodexSandboxFlags {
+  switch (mode) {
+    case "plan":
+      return {
+        args: ["--sandbox", "read-only", "-a", "on-request"],
+        hasApprovals: true,
+      };
+    case "bypassPermissions":
+    case "dontAsk":
+    case "auto":
+      return {
+        args: ["--dangerously-bypass-approvals-and-sandbox"],
+        hasApprovals: false,
+      };
+    case "acceptEdits":
+      return {
+        args: ["--sandbox", "workspace-write", "-a", "never"],
+        hasApprovals: false,
+      };
+    case "default":
+    case null:
+    case undefined:
+    default:
+      return {
+        args: ["--sandbox", "workspace-write", "-a", "on-request"],
+        hasApprovals: true,
+      };
+  }
+}
 
 const logStderr = (msg: string): void => {
   process.stderr.write(`[sidecar:openai-codex] ${msg}\n`);
@@ -127,39 +190,49 @@ function extractTextBlock(content: unknown): string {
   return "";
 }
 
-/** Translate plan mode / allowedTools into Codex CLI flags. */
-function buildExecArgs(req: StartSessionRequest): string[] {
+/**
+ * Build the argv for a fresh `codex exec` invocation. The provider owns the
+ * effective model + sandbox flags (overridable mid-session via protocol v2's
+ * `set_model` / `set_permission_mode`), and passes them in explicitly rather
+ * than re-reading the original `StartSessionRequest` so an override takes
+ * effect on the *next* spawn.
+ */
+function buildExecArgs(
+  req: StartSessionRequest,
+  model: string,
+  sandbox: CodexSandboxFlags,
+): string[] {
   const args: string[] = ["exec", "--json", "--skip-git-repo-check"];
-  if (req.model && req.model.length > 0) {
-    args.push("--model", req.model);
+  if (model.length > 0) {
+    args.push("--model", model);
   }
   if (req.projectPath && req.projectPath.length > 0) {
     args.push("--cd", req.projectPath);
   }
-  if (req.planMode) {
-    // Best-effort plan-mode proxy: read-only sandbox + on-request approvals
-    // so Codex asks before doing anything that touches disk.
-    args.push("--sandbox", "read-only", "-a", "on-request");
-  } else {
-    // Default to workspace-write + on-request so approvals flow through our
-    // permission_request pipeline.
-    args.push("--sandbox", "workspace-write", "-a", "on-request");
-  }
+  args.push(...sandbox.args);
   return args;
 }
 
 function buildResumeArgs(
   sessionId: string,
-  req: StartSessionRequest,
+  _req: StartSessionRequest,
+  model: string,
+  sandbox: CodexSandboxFlags,
 ): string[] {
   const args: string[] = ["exec", "resume", sessionId, "--json", "--skip-git-repo-check"];
-  if (req.model && req.model.length > 0) {
-    args.push("--model", req.model);
+  if (model.length > 0) {
+    args.push("--model", model);
   }
-  if (req.planMode) {
-    args.push("--sandbox", "read-only");
-  } else {
-    args.push("--sandbox", "workspace-write");
+  // `codex exec resume` accepts the sandbox flags but not `-a` in 0.121.0 —
+  // approval policy is inherited from the resumed session. Strip any `-a N`
+  // pair from the sandbox tuple so we don't confuse the CLI.
+  for (let i = 0; i < sandbox.args.length; i++) {
+    const flag = sandbox.args[i];
+    if (flag === "-a" || flag === "--ask-for-approval") {
+      i += 1; // skip the value too
+      continue;
+    }
+    args.push(flag);
   }
   return args;
 }
@@ -184,11 +257,33 @@ export class OpenAICodexProvider implements ProviderHandler {
   /** Last-seen token counts from the most recent token_count event. */
   private lastInputTokens = 0;
   private lastOutputTokens = 0;
+  /**
+   * Effective model for the *next* spawn. Seeded from `req.model` on start,
+   * overridable mid-session via the protocol v2 `set_model` request. Codex
+   * exec is one-shot per turn, so overrides queue until the next spawn.
+   */
+  private effectiveModel = "";
+  /**
+   * Effective SDK-style permission mode for the *next* spawn. `null` means
+   * "derive from req.planMode" (the pre-v2 behavior). Set via `set_permission_mode`.
+   */
+  private effectivePermissionMode: string | null = null;
+  /**
+   * Last user message dispatched this session. `retry()` re-spawns
+   * `codex exec resume` with it so the model takes another pass. Null when
+   * no turn has been sent yet — retry() errors in that case.
+   */
+  private lastUserMessage: string | null = null;
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.sessionId = req.sessionId;
     this.lastReq = req;
     this.doneEmitted = false;
+    // Seed effective overrides from the initial request. `set_model` /
+    // `set_permission_mode` can override these for subsequent spawns.
+    this.effectiveModel = req.model ?? "";
+    this.effectivePermissionMode = null;
+    this.lastUserMessage = req.initialMessage ?? null;
 
     if (req.mcpServers && Object.keys(req.mcpServers).length > 0) {
       logStderr(
@@ -210,7 +305,10 @@ export class OpenAICodexProvider implements ProviderHandler {
       );
     }
 
-    const args = req.resume ? buildResumeArgs(req.resume, req) : buildExecArgs(req);
+    const sandbox = this.currentSandbox(req);
+    const args = req.resume
+      ? buildResumeArgs(req.resume, req, this.effectiveModel, sandbox)
+      : buildExecArgs(req, this.effectiveModel, sandbox);
 
     // Prompt delivery: positional arg for the initial turn. If a systemPrompt
     // was provided, fold it in as a fenced preamble. Resume takes an optional
@@ -228,6 +326,18 @@ export class OpenAICodexProvider implements ProviderHandler {
     }
 
     this.spawnCodex(args, emit);
+  }
+
+  /**
+   * Resolve the effective sandbox flags for the next spawn. If an explicit
+   * permission-mode override is active, that wins. Otherwise fall back to the
+   * legacy `req.planMode` path: `plan` when set, else `default`.
+   */
+  private currentSandbox(req: StartSessionRequest): CodexSandboxFlags {
+    if (this.effectivePermissionMode !== null) {
+      return modeToCodexFlags(this.effectivePermissionMode);
+    }
+    return modeToCodexFlags(req.planMode ? "plan" : "default");
   }
 
   private spawnCodex(args: string[], emit: Emit): void {
@@ -589,6 +699,7 @@ export class OpenAICodexProvider implements ProviderHandler {
 
     this.doneEmitted = false;
     this.pendingApprovals.clear();
+    this.lastUserMessage = req.content;
 
     const nextReq: StartSessionRequest = {
       ...this.lastReq,
@@ -597,15 +708,16 @@ export class OpenAICodexProvider implements ProviderHandler {
       systemPrompt: "",
     };
 
+    const sandbox = this.currentSandbox(nextReq);
     let args: string[];
     if (this.codexSessionId) {
-      args = buildResumeArgs(this.codexSessionId, nextReq);
+      args = buildResumeArgs(this.codexSessionId, nextReq, this.effectiveModel, sandbox);
       if (req.content.length > 0) args.push(req.content);
     } else {
       logStderr(
         "no codex session_id captured from prior turn; sending as a fresh exec (context lost)",
       );
-      args = buildExecArgs(nextReq);
+      args = buildExecArgs(nextReq, this.effectiveModel, sandbox);
       if (req.content.length > 0) args.push(req.content);
     }
 
@@ -692,6 +804,75 @@ export class OpenAICodexProvider implements ProviderHandler {
       }
     }, 2000);
     // `done` is emitted by the child 'exit' handler once the process unwinds.
+  }
+
+  /**
+   * Protocol v2: Codex's exec is one-shot per turn, so a permission-mode
+   * change can't apply mid-run. Update the stored mode; the *next* spawn
+   * (via `sendMessage` or `retry`) will use the new sandbox flags. Silent on
+   * success — no event emitted.
+   */
+  async setPermissionMode(req: SetPermissionModeRequest, _emit: Emit): Promise<void> {
+    this.effectivePermissionMode = req.mode;
+    logStderr(
+      `permission mode override queued for next spawn: mode=${req.mode} (codex exec is one-shot)`,
+    );
+  }
+
+  /**
+   * Protocol v2: update the stored model; the next spawn will pass
+   * `--model <value>`. Silent on success.
+   */
+  async setModel(req: SetModelRequest, _emit: Emit): Promise<void> {
+    this.effectiveModel = req.model;
+    logStderr(
+      `model override queued for next spawn: model=${req.model} (codex exec is one-shot)`,
+    );
+  }
+
+  /**
+   * Protocol v2: retry the last user message by spawning a fresh
+   * `codex exec resume` with it. If no previous user message has been
+   * captured, emit an error.
+   */
+  async retry(req: RetryRequest, emit: Emit): Promise<void> {
+    if (!this.lastReq) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: "No active session",
+      });
+      return;
+    }
+    if (!this.lastUserMessage || this.lastUserMessage.length === 0) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: "No message to retry",
+      });
+      return;
+    }
+    if (this.child && this.child.exitCode === null) {
+      logStderr("retry received while prior codex turn is still running; ignoring");
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: "previous codex turn is still running; wait for 'done' before retrying",
+      });
+      return;
+    }
+
+    // Drive retry through the same pipeline sendMessage uses so model /
+    // sandbox overrides, approval-queue resets, and done-emitter bookkeeping
+    // all stay in one place.
+    await this.sendMessage(
+      {
+        type: "send_message",
+        sessionId: req.sessionId,
+        content: this.lastUserMessage,
+      },
+      emit,
+    );
   }
 
   async close(): Promise<void> {

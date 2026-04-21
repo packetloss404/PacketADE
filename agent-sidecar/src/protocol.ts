@@ -6,7 +6,11 @@
 // Bumped when the wire protocol changes in a way the supervisor must notice.
 // Keep in lockstep with `EXPECTED_PROTOCOL_VERSION` in
 // `src-tauri/src/commands/agent_sidecar.rs`.
-export const PROTOCOL_VERSION = 1;
+//
+// v2 (Tier 3 slice B): added `set_permission_mode`, `set_model`, and `retry`
+// request types. Old sidecar builds reply with "Unknown request type" to
+// these, so the version bump signals the capability requirement.
+export const PROTOCOL_VERSION = 2;
 
 export type StartSessionRequest = {
   type: "start_session";
@@ -53,13 +57,38 @@ export type CloseSessionRequest = {
   sessionId: string;
 };
 
+// Protocol v2 additions — previously stubbed on the Rust side. Slice B wires
+// them through the sidecar end-to-end; slice C adds the Rust forwarders.
+//
+// `mode` values mirror the Anthropic SDK's `PermissionMode`. The Codex
+// provider maps them onto its sandbox/approval flags (see openai-codex.ts).
+export type SetPermissionModeRequest = {
+  type: "set_permission_mode";
+  sessionId: string;
+  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto";
+};
+
+export type SetModelRequest = {
+  type: "set_model";
+  sessionId: string;
+  model: string;
+};
+
+export type RetryRequest = {
+  type: "retry";
+  sessionId: string;
+};
+
 export type SidecarRequest =
   | StartSessionRequest
   | SendMessageRequest
   | PermissionResponseRequest
   | EditResponseRequest
   | CancelRequest
-  | CloseSessionRequest;
+  | CloseSessionRequest
+  | SetPermissionModeRequest
+  | SetModelRequest
+  | RetryRequest;
 
 export type SidecarEvent =
   | { type: "chunk"; sessionId: string; text: string }

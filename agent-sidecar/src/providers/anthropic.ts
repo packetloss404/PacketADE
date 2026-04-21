@@ -10,21 +10,28 @@
 // wire env overrides here — the supervisor is expected to launch this sidecar
 // with an environment that yields OAuth auth.
 
+import { promises as fsPromises } from "node:fs";
 import type {
   EditResponseRequest,
   Emit,
   PermissionResponseRequest,
+  RetryRequest,
   SendMessageRequest,
+  SetModelRequest,
+  SetPermissionModeRequest,
   StartSessionRequest,
 } from "../protocol.js";
 import type { ProviderHandler } from "./base.js";
 import {
   query,
   type CanUseTool,
+  type HookCallback,
+  type HookJSONOutput,
   type McpServerConfig,
   type Options,
   type PermissionMode,
   type PermissionResult,
+  type PreToolUseHookInput,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
@@ -146,15 +153,66 @@ function stringifyToolResultContent(content: unknown): { output: string; isError
 }
 
 type PermissionResolver = (result: PermissionResult) => void;
+type EditResolver = (result: HookJSONOutput) => void;
+
+/**
+ * Tools whose PreToolUse we intercept to surface a before/after diff preview
+ * via the `pending_edit` protocol event. Any other tool falls through to the
+ * SDK's regular `canUseTool` permission flow.
+ */
+const WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
+
+/**
+ * Read the current contents of `path` for the "before" side of a diff. If the
+ * file doesn't exist yet (first-time Write), return an empty string. Any other
+ * I/O error is also squashed to "" so the hook never blocks the model on a
+ * transient read failure — the user still sees the `after` content and can
+ * reject the edit.
+ */
+async function readBefore(path: string): Promise<string> {
+  try {
+    return await fsPromises.readFile(path, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Apply an `Edit` tool's `old_string` → `new_string` replacement to `before`
+ * exactly the way the SDK's Edit tool would, so the diff we preview matches
+ * what the tool will actually produce if approved.
+ */
+function applyEditReplacement(
+  before: string,
+  oldString: string,
+  newString: string,
+  replaceAll: boolean,
+): string {
+  if (oldString.length === 0) return before;
+  if (replaceAll) {
+    // String#split/join is the simplest no-regex "replace all literal" and
+    // preserves all of `newString` verbatim (no $& backreferences).
+    return before.split(oldString).join(newString);
+  }
+  const idx = before.indexOf(oldString);
+  if (idx < 0) return before;
+  return before.slice(0, idx) + newString + before.slice(idx + oldString.length);
+}
 
 export class AnthropicProvider implements ProviderHandler {
   private prompt: PushableAsyncIterable<SDKUserMessage> | null = null;
   private q: Query | null = null;
   private abort: AbortController | null = null;
   private pendingPermissions = new Map<string, PermissionResolver>();
+  private pendingEdits = new Map<string, EditResolver>();
   private runPromise: Promise<void> | null = null;
   private emitCurrent: Emit | null = null;
   private activeThinkingBlock = false;
+  /**
+   * Last user message sent this session. `retry()` re-pushes this through the
+   * same streaming prompt pipeline so the model takes another pass at it.
+   */
+  private lastUserMessage: string | null = null;
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.emitCurrent = emit;
@@ -196,6 +254,82 @@ export class AnthropicProvider implements ProviderHandler {
       });
     };
 
+    // PreToolUse hook: intercept Write / Edit / NotebookEdit, read current
+    // file contents, compose before+after, and park the hook on a resolver
+    // keyed by `tool_use_id`. The supervisor sends `edit_response` which
+    // resolves the hook and lets the SDK proceed or abort the tool call.
+    //
+    // Non-write tools fall straight through with `{ continue: true }`; they
+    // still go through `canUseTool` above for the regular permission prompt.
+    const preToolUse: HookCallback = async (rawInput, toolUseID, { signal }) => {
+      const input = rawInput as PreToolUseHookInput;
+      if (!WRITE_TOOLS.has(input.tool_name)) {
+        return { continue: true };
+      }
+      const ti = (input.tool_input ?? {}) as Record<string, unknown>;
+      // File path lives under `file_path` for Write/Edit, `notebook_path` for
+      // NotebookEdit. If neither is present, bail — we can't build a diff, so
+      // we defer to the normal canUseTool permission flow.
+      const path =
+        typeof ti.file_path === "string"
+          ? ti.file_path
+          : typeof ti.notebook_path === "string"
+            ? (ti.notebook_path as string)
+            : null;
+      if (!path) return { continue: true };
+
+      let before = "";
+      let after = "";
+      if (input.tool_name === "Write") {
+        before = await readBefore(path);
+        after = typeof ti.content === "string" ? (ti.content as string) : "";
+      } else if (input.tool_name === "Edit") {
+        before = await readBefore(path);
+        const oldString = typeof ti.old_string === "string" ? (ti.old_string as string) : "";
+        const newString = typeof ti.new_string === "string" ? (ti.new_string as string) : "";
+        const replaceAll = ti.replace_all === true;
+        after = applyEditReplacement(before, oldString, newString, replaceAll);
+      } else {
+        // NotebookEdit: we don't parse the .ipynb JSON here; preview the raw
+        // new_source as "after" so the user still sees what will be written.
+        // Full notebook-cell diffing is a future refinement.
+        before = await readBefore(path);
+        after = typeof ti.new_source === "string" ? (ti.new_source as string) : "";
+      }
+
+      const key = toolUseID ?? input.tool_use_id;
+      const currentEmit = this.emitCurrent;
+      if (currentEmit) {
+        currentEmit({
+          type: "pending_edit",
+          sessionId: req.sessionId,
+          path,
+          before,
+          after,
+        });
+      }
+
+      return await new Promise<HookJSONOutput>((resolve) => {
+        const wrapped: EditResolver = (result) => {
+          this.pendingEdits.delete(key);
+          resolve(result);
+        };
+        this.pendingEdits.set(key, wrapped);
+        // If the SDK aborts (cancel/close), deny the pending edit so the
+        // hook resolves and the SDK can shut down cleanly.
+        signal.addEventListener(
+          "abort",
+          () => {
+            const entry = this.pendingEdits.get(key);
+            if (!entry) return;
+            this.pendingEdits.delete(key);
+            resolve({ continue: false, stopReason: "cancelled" });
+          },
+          { once: true },
+        );
+      });
+    };
+
     const options: Options = {
       abortController: this.abort,
       cwd: req.projectPath || undefined,
@@ -206,6 +340,9 @@ export class AnthropicProvider implements ProviderHandler {
       permissionMode: choosePermissionMode(req),
       resume: req.resume,
       canUseTool,
+      hooks: {
+        PreToolUse: [{ hooks: [preToolUse] }],
+      },
       includePartialMessages: false,
       stderr: (data) => {
         // SDK internal debug/stderr; keep it on our stderr so it never
@@ -214,21 +351,13 @@ export class AnthropicProvider implements ProviderHandler {
       },
     };
 
-    // Write-intercept → pending_edit: the SDK does not expose a clean
-    // "intercept Write/Edit and surface before+after diff" hook today.
-    // Fallback: rely on the SDK's own permissionMode + canUseTool flow so
-    // write operations still require approval — just without the diff
-    // preview. Tracked as a follow-up; no user-facing regression today.
-    logStderr(
-      "pending_edit diff preview deferred to SDK permissionMode (write-intercept not implemented)",
-    );
-
     // Push the initial user message onto the pump, then start the query.
     prompt.push({
       type: "user",
       message: { role: "user", content: req.initialMessage },
       parent_tool_use_id: null,
     });
+    this.lastUserMessage = req.initialMessage;
 
     try {
       this.q = query({ prompt, options });
@@ -396,6 +525,7 @@ export class AnthropicProvider implements ProviderHandler {
       message: { role: "user", content: req.content },
       parent_tool_use_id: null,
     });
+    this.lastUserMessage = req.content;
   }
 
   async respondPermission(req: PermissionResponseRequest, _emit: Emit): Promise<void> {
@@ -412,9 +542,27 @@ export class AnthropicProvider implements ProviderHandler {
   }
 
   async respondEdit(req: EditResponseRequest, _emit: Emit): Promise<void> {
-    // No write-intercept today; pending_edit events are never emitted, so
-    // this path is a no-op. Logged for observability.
-    logStderr(`respondEdit received (approved=${req.approved}) but no pending edit; ignoring`);
+    // Look up the parked PreToolUse hook resolver by tool_use_id. If we find
+    // one, approve/deny by resolving the hook's promise — the SDK then
+    // either runs the tool or short-circuits it with our stopReason.
+    //
+    // The wire protocol doesn't (yet) carry `toolUseId` on edit_response, so
+    // we operate on the single currently-open pending edit. In practice only
+    // one edit is ever in flight per session; if that ever changes, widen
+    // the wire type to include a toolUseId and key by it here.
+    const entries = Array.from(this.pendingEdits.entries());
+    if (entries.length === 0) {
+      logStderr(`respondEdit received (approved=${req.approved}) but no pending edit; ignoring`);
+      return;
+    }
+    for (const [id, resolver] of entries) {
+      this.pendingEdits.delete(id);
+      if (req.approved) {
+        resolver({ continue: true });
+      } else {
+        resolver({ continue: false, stopReason: "User rejected edit" });
+      }
+    }
   }
 
   async cancel(_emit: Emit): Promise<void> {
@@ -437,7 +585,96 @@ export class AnthropicProvider implements ProviderHandler {
       this.pendingPermissions.delete(id);
       resolver({ behavior: "deny", message: "cancelled", interrupt: true });
     }
+    // Same for pending PreToolUse edit hooks: resolve them as blocked so
+    // the SDK's query iterator unwinds instead of hanging on our promise.
+    for (const [id, resolver] of this.pendingEdits.entries()) {
+      this.pendingEdits.delete(id);
+      resolver({ continue: false, stopReason: "cancelled" });
+    }
     // done/error is emitted by the pump when the iterator unwinds.
+  }
+
+  /**
+   * Protocol v2: change the Claude SDK's permission mode mid-session. The
+   * SDK's `setPermissionMode` is only supported in streaming input mode,
+   * which is how we always drive the Query, so no mode-check is required.
+   */
+  async setPermissionMode(req: SetPermissionModeRequest, emit: Emit): Promise<void> {
+    if (!this.q) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: "No active session",
+      });
+      return;
+    }
+    try {
+      await this.q.setPermissionMode(req.mode as PermissionMode);
+    } catch (err) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: `setPermissionMode failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      });
+    }
+  }
+
+  /**
+   * Protocol v2: change the model the SDK uses for subsequent responses.
+   * Forwarded to `Query.setModel` (streaming input only).
+   */
+  async setModel(req: SetModelRequest, emit: Emit): Promise<void> {
+    if (!this.q) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: "No active session",
+      });
+      return;
+    }
+    try {
+      await this.q.setModel(req.model);
+    } catch (err) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: `setModel failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  /**
+   * Protocol v2: ask the model to take another pass at the last user turn.
+   * The Claude Agent SDK's `Query` does not (as of 0.2.x) expose a dedicated
+   * retry/continue method; the cleanest equivalent is to re-push the most
+   * recent user message through the same streaming prompt pipeline. If no
+   * user message has been sent yet, emit an error — there's nothing to redo.
+   */
+  async retry(req: RetryRequest, emit: Emit): Promise<void> {
+    if (!this.prompt) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: "No active session",
+      });
+      return;
+    }
+    if (!this.lastUserMessage || this.lastUserMessage.length === 0) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: "No message to retry",
+      });
+      return;
+    }
+    this.emitCurrent = emit;
+    this.prompt.push({
+      type: "user",
+      message: { role: "user", content: this.lastUserMessage },
+      parent_tool_use_id: null,
+    });
   }
 
   async close(): Promise<void> {
@@ -458,6 +695,10 @@ export class AnthropicProvider implements ProviderHandler {
     for (const [id, resolver] of this.pendingPermissions.entries()) {
       this.pendingPermissions.delete(id);
       resolver({ behavior: "deny", message: "closed", interrupt: true });
+    }
+    for (const [id, resolver] of this.pendingEdits.entries()) {
+      this.pendingEdits.delete(id);
+      resolver({ continue: false, stopReason: "closed" });
     }
     if (this.runPromise) {
       await this.runPromise.catch(() => undefined);
