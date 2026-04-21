@@ -66,7 +66,9 @@ export type AgentCli =
   | "codex"
   | "gemini"
   | "opencode"
+  | "api-claude-oauth"
   | "api-claude"
+  | "api-openai-codex"
   | "api-openai"
   | "api-minimax"
   | "api-openrouter"
@@ -80,7 +82,9 @@ export function isApiAgent(agent: AgentCli): boolean {
 /** Get the provider name from an API agent type. */
 export function apiAgentProvider(agent: AgentCli): string {
   const map: Partial<Record<AgentCli, string>> = {
+    "api-claude-oauth": "claude-oauth",
     "api-claude": "anthropic",
+    "api-openai-codex": "openai-codex",
     "api-openai": "openai",
     "api-minimax": "minimax",
     "api-openrouter": "openrouter",

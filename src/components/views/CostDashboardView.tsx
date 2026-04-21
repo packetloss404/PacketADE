@@ -6,7 +6,9 @@ import type { AnalyticsData } from "@/stores/analyticsStore";
 const SOURCE_LABELS: Record<string, string> = {
   "claude-cli": "Claude CLI",
   "codex": "Codex CLI",
+  "claude-oauth": "Anthropic (Subscription)",
   "api-claude": "Claude API",
+  "openai-codex": "OpenAI (ChatGPT)",
   "api-openai": "OpenAI API",
   "api-minimax": "MiniMax API",
   "api-openrouter": "OpenRouter",
@@ -16,8 +18,10 @@ function sourceLabel(s: string): string { return SOURCE_LABELS[s] ?? s; }
 
 const SOURCE_PILL_CLASSES: Record<string, string> = {
   "claude-cli": "text-accent-amber border-accent-amber/30",
+  "claude-oauth": "text-accent-amber border-accent-amber/30",
   "api-claude": "text-accent-amber border-accent-amber/30",
   "codex": "text-accent-blue border-accent-blue/30",
+  "openai-codex": "text-accent-green border-accent-green/30",
   "api-openai": "text-accent-green border-accent-green/30",
   "api-openrouter": "text-accent-purple border-accent-purple/30",
 };
