@@ -6,6 +6,7 @@
 
 use crate::commands::agent_sidecar::{is_sidecar_provider, SidecarManager};
 use crate::commands::api_keys;
+use crate::commands::provider_stats;
 use crate::core::execution::{ExecutionTarget, SshConfig};
 use crate::core::hooks::{self, HookEvent};
 use crate::core::llm_provider::get_provider;
@@ -305,6 +306,12 @@ pub async fn start_api_agent_session(
     ssh_config: Option<SshConfig>,
     allowed_tools: Option<Vec<String>>,
 ) -> Result<(), String> {
+    // v2 Tier 4 slice B: bump the local-only per-provider launch counter
+    // before any routing decision so both sidecar and in-process launches are
+    // counted. Best-effort — disk-write failures are logged to stderr and
+    // never block the session start.
+    provider_stats::record_launch(&provider);
+
     // Phase 3 slice C: if this provider runs in the sidecar, forward the start
     // request and return early. In-process providers fall through to the
     // existing LlmProvider runtime untouched.
