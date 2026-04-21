@@ -163,6 +163,37 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
+  // Global listeners for agent-login requests dispatched from the Agents pane.
+  // Parallel slice B dispatches `packetade:open-claude-login` / `packetade:open-codex-login`
+  // from AgentInputArea when the user clicks "Log in" on an auth-required agent row.
+  // We just need to spawn a PTY session running the CLI's login subcommand.
+  useEffect(() => {
+    const openLogin = (cli: "claude" | "codex") => {
+      const layoutStore = useLayoutStore.getState();
+      const appStore = useAppStore.getState();
+      const projectPath = layoutStore.projectPath || undefined;
+      layoutStore.addPane({
+        cliCommand: cli,
+        cliArgs: ["login"],
+        projectPath,
+      });
+      // Switch to the CLI's session view so the new pane (rendered by
+      // MosaicContainer under layoutStore) is visible immediately.
+      const targetView: AppView = cli === "codex" ? "codex" : "claude";
+      if (appStore.activeView !== targetView) {
+        appStore.setActiveView(targetView);
+      }
+    };
+    const handleClaudeLogin = () => openLogin("claude");
+    const handleCodexLogin = () => openLogin("codex");
+    window.addEventListener("packetade:open-claude-login", handleClaudeLogin);
+    window.addEventListener("packetade:open-codex-login", handleCodexLogin);
+    return () => {
+      window.removeEventListener("packetade:open-claude-login", handleClaudeLogin);
+      window.removeEventListener("packetade:open-codex-login", handleCodexLogin);
+    };
+  }, []);
+
   const isSessionsView = activeView === "claude" || activeView === "codex" || activeView === "gemini" || activeView === "opencode";
   const showWorkspaceSidebar = activeView === "workspace";
 

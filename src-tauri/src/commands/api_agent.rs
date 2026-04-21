@@ -215,6 +215,78 @@ struct ErrorPayload {
     message: String,
 }
 
+/// Build the merged MCP server config to hand to the sidecar when starting a
+/// subscription-auth session.
+///
+/// Sources:
+/// - Global: `~/.claude/settings.json` under `mcpServers` (reader lives in
+///   `commands::mcp`).
+/// - Project: `<project_path>/.mcp.json` under `mcpServers`.
+///
+/// Merge rule: project entries override global entries on matching server
+/// name. Entries with `disabled: true` are dropped.
+///
+/// Output shape (a JSON object keyed by server name):
+/// ```json
+/// {
+///   "my-server": {
+///     "type": "stdio",
+///     "command": "/usr/local/bin/my-mcp",
+///     "args": ["--flag"],
+///     "env": { "TOKEN": "..." }
+///   }
+/// }
+/// ```
+/// This matches Claude Code's CLI config format and the shape most Agent SDKs
+/// expect for stdio MCP transports. `env` is omitted when empty.
+///
+/// Failures reading either scope are logged to stderr; we fall back to
+/// whichever scope succeeded (or an empty object if both fail). We never
+/// fail the session over MCP config problems.
+async fn build_mcp_config_for_sidecar(project_path: &str) -> serde_json::Value {
+    use crate::commands::mcp;
+    use serde_json::{json, Map, Value};
+
+    // `read_mcp_servers` concatenates global entries first, then project
+    // entries, so inserting into a map in the returned order naturally lets
+    // project scope overwrite global on the same server name.
+    let entries = match mcp::read_mcp_servers(project_path.to_string()).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "build_mcp_config_for_sidecar: failed to read MCP servers for project '{}': {} — sending empty config",
+                project_path, e
+            );
+            return Value::Object(Map::new());
+        }
+    };
+
+    let mut merged: Map<String, Value> = Map::new();
+    for entry in entries {
+        if entry.disabled {
+            continue;
+        }
+        let mut obj = Map::new();
+        obj.insert("type".to_string(), Value::String("stdio".to_string()));
+        obj.insert("command".to_string(), Value::String(entry.config.command));
+        obj.insert(
+            "args".to_string(),
+            Value::Array(entry.config.args.into_iter().map(Value::String).collect()),
+        );
+        if !entry.config.env.is_empty() {
+            obj.insert(
+                "env".to_string(),
+                json!(entry.config.env),
+            );
+        }
+        // Later (project-scope) insertions overwrite earlier (global-scope)
+        // ones with the same key — Rust's `Map::insert` replaces the value.
+        merged.insert(entry.name, Value::Object(obj));
+    }
+
+    Value::Object(merged)
+}
+
 /// Start a new API agent session.
 #[tauri::command]
 pub async fn start_api_agent_session(
@@ -239,7 +311,11 @@ pub async fn start_api_agent_session(
     if is_sidecar_provider(&provider) {
         let sys_prompt = system_prompt_override.clone().unwrap_or_default();
         let tools = allowed_tools.clone().unwrap_or_default();
-        let mcp_servers = serde_json::Value::Null;
+        // Merge global (~/.claude/settings.json) and project (.mcp.json) MCP
+        // server configs, drop disabled entries, and transform into the shape
+        // the Claude Agent SDK expects. See `build_mcp_config_for_sidecar`
+        // below for the exact output shape and per-entry fields.
+        let mcp_servers = build_mcp_config_for_sidecar(&project_path).await;
         let result = sidecar
             .forward_start(
                 session_id.clone(),
