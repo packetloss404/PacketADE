@@ -85,3 +85,43 @@ source of truth for the wire format.
 **Stdout is reserved for protocol frames.** All human-readable logging goes
 to stderr, where the supervisor can capture it without corrupting the JSON
 stream.
+
+## Production bundling
+
+When packaging PacketADE for release (`pnpm tauri build`), the sidecar is
+shipped alongside the app rather than relying on a system `node` or a
+system-installed sidecar source tree:
+
+- **Node runtime** — a pinned build of Node 20.17.0 is downloaded by
+  `scripts/fetch-node.js` and staged as a Tauri `externalBin` under
+  `src-tauri/binaries/`. The Tauri bundler picks it up from there.
+- **Sidecar payload** — the `agent-sidecar/` source, the compiled
+  `dist/` output, and a pruned `node_modules/` containing only production
+  dependencies are bundled as Tauri resources. The supervisor locates
+  the entry script under the app's resource dir at runtime.
+- **Pruning** — `scripts/prune-sidecar.js` (invoked via `pnpm sidecar:prune`)
+  runs `pnpm -C agent-sidecar install --prod --ignore-scripts` to drop
+  devDependencies (`typescript`, `@types/node`) from `node_modules`. This
+  step runs as part of the `prebundle` chain that Tauri's
+  `beforeBuildCommand` executes before the Vite build.
+
+### After a production build
+
+The prune step is **destructive** to the sidecar's dev tooling. After
+running `pnpm tauri build` (or `pnpm sidecar:prune` directly), restore
+devDependencies before doing further sidecar development:
+
+```bash
+pnpm sidecar:install
+```
+
+### Overriding paths in release
+
+Two environment variables override the bundled locations at runtime —
+useful for running a packaged build against a working-copy sidecar or a
+custom Node binary:
+
+- `PACKETADE_SIDECAR_PATH` — absolute path to the compiled sidecar entry
+  script (normally `agent-sidecar/dist/index.js`).
+- `PACKETADE_NODE_PATH` — absolute path to the `node` binary the
+  supervisor should spawn (normally the bundled `externalBin`).
