@@ -82,9 +82,9 @@ const MODE_ORDER: AgentMode[] = ["agent", "ask", "manual", "plan"];
 
 /**
  * Provider dropdown grouping. Only includes `api-*` agents (PTY CLI agents
- * like `claude-code` / `codex` are handled elsewhere). `api-claude-oauth`
- * and `api-openai-codex` are added by parallel Phase 1 work; list them up
- * front so this dropdown is ready when they land.
+ * like `claude-code` / `codex` are handled elsewhere). The subscription
+ * providers (`api-claude-oauth`, `api-openai-codex`) are fully wired via
+ * the sidecar and share this dropdown with the key-based API providers.
  */
 const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
   { label: "Anthropic", agents: ["api-claude-oauth" as AgentCli, "api-claude"] },

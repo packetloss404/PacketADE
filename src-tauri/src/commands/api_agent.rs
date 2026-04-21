@@ -542,10 +542,11 @@ pub async fn change_model(
     session_id: String,
     new_model: String,
 ) -> Result<(), String> {
-    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
-    // Phase 4/5 will add real forwarding if needed.
+    // Sidecar-owned sessions don't expose a model-change hook today; reject
+    // rather than silently no-op. Add a sidecar `change_model` protocol
+    // frame if this becomes user-reachable.
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode for Phase 3".into());
+        return Err("Command not supported in sidecar mode".into());
     }
 
     let mut configs = state.configs.lock().await;
@@ -566,7 +567,7 @@ pub async fn set_plan_mode(
 ) -> Result<(), String> {
     // Phase 3 slice C: sidecar-owned sessions reject this command for now.
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode for Phase 3".into());
+        return Err("Command not supported in sidecar mode".into());
     }
 
     let mut configs = state.configs.lock().await;
@@ -587,7 +588,7 @@ pub async fn set_permission_mode(
 ) -> Result<(), String> {
     // Phase 3 slice C: sidecar-owned sessions reject this command for now.
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode for Phase 3".into());
+        return Err("Command not supported in sidecar mode".into());
     }
 
     let parsed = PermissionMode::parse(&mode)
@@ -643,7 +644,7 @@ pub async fn set_approve_writes(
 ) -> Result<(), String> {
     // Phase 3 slice C: sidecar-owned sessions reject this command for now.
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode for Phase 3".into());
+        return Err("Command not supported in sidecar mode".into());
     }
 
     let mut configs = state.configs.lock().await;
@@ -702,7 +703,7 @@ pub async fn retry_last_turn(
 ) -> Result<(), String> {
     // Phase 3 slice C: sidecar-owned sessions reject this command for now.
     if sidecar.owns_session(&session_id) {
-        return Err("Command not supported in sidecar mode for Phase 3".into());
+        return Err("Command not supported in sidecar mode".into());
     }
 
     // Truncate history to before the last assistant message (and any trailing tool messages).

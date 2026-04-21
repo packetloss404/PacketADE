@@ -126,6 +126,25 @@ cd PacketCode
 pnpm install
 ```
 
+### Agent Sidecar
+
+PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription) and OpenAI (ChatGPT Plus/Pro) providers.
+
+- `pnpm install` at the repo root also installs the sidecar's dependencies automatically via a `postinstall` hook (idempotent; adds a few seconds to the first install).
+- Before using the Anthropic (Subscription) or OpenAI (ChatGPT Plus/Pro) providers for the first time, compile the sidecar once:
+
+  ```bash
+  pnpm sidecar:build
+  ```
+
+- For a full-fidelity local build that compiles both the sidecar and the Vite app in order, use:
+
+  ```bash
+  pnpm build:all
+  ```
+
+- To point the app at a custom sidecar entry point (e.g. when running from a different working copy), set `PACKETADE_SIDECAR_PATH` to the absolute path of the compiled entry file before launching PacketADE.
+
 ### Run The Desktop App
 
 ```bash

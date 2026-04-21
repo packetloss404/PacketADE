@@ -1,14 +1,38 @@
-import { useState, useRef, useCallback } from "react";
-import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
+import { useState, useRef, useCallback, useEffect } from "react";
+import {
+  useAgentTaskStore,
+  apiAgentProvider,
+  type AgentCli,
+} from "@/stores/agentTaskStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useSshTargetStore } from "@/stores/sshTargetStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
-import { getDefaultModel } from "@/lib/api-models";
+import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
+import { getProviderAuthStatus } from "@/lib/tauri";
 import { isSshUri, parseSshTargetId } from "@/types/ssh";
 import type { AgentMode } from "@/components/agents/AgentInputArea";
+
+/**
+ * Preference order for the initial auto-picked agent on a fresh Agents pane.
+ * Subscription providers first, then API-key providers; Anthropic over OpenAI.
+ * The first one whose live auth status is "ready" wins.
+ */
+const AGENT_AUTO_PICK_ORDER: AgentCli[] = [
+  "api-claude-oauth",
+  "api-claude",
+  "api-openai-codex",
+  "api-openai",
+  "api-openrouter",
+  "api-ollama",
+  "api-minimax",
+];
+
+/** Hardcoded fallback defaults — also used as the "no user intent" sentinel. */
+const DEFAULT_AGENT: AgentCli = "api-minimax";
+const DEFAULT_MODEL = "MiniMax-M2.7-highspeed";
 
 export function AgentsView() {
   const agentInputText = useAgentTaskStore((s) => s.agentInputText);
@@ -23,13 +47,60 @@ export function AgentsView() {
   const activeProfileId = useProfileStore((s) => s.activeProfileId);
   const setActiveProfile = useProfileStore((s) => s.setActiveProfile);
 
-  const [selectedAgent, setSelectedAgent] = useState<AgentCli>("api-minimax");
-  const [selectedModel, setSelectedModel] = useState<string>("MiniMax-M2.7-highspeed");
+  const [selectedAgent, setSelectedAgent] = useState<AgentCli>(DEFAULT_AGENT);
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
   const [selectedProfileId, setSelectedProfileId] = useState<string>(
     activeProfileId ?? profiles[0]?.id ?? "",
   );
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const autoPickRanRef = useRef(false);
+
+  // One-shot: on mount, if the Agents pane has no active conversation and the
+  // user hasn't already manually picked a provider (state still equals the
+  // hardcoded default), probe auth status for each provider in preference
+  // order and switch to the highest-priority "ready" one. Probes run in
+  // parallel; we pick the earliest-preference ready provider.
+  useEffect(() => {
+    if (autoPickRanRef.current) return;
+    if (selectedConversationId) return;
+    // Treat a non-default initial selection as explicit user intent.
+    if (selectedAgent !== DEFAULT_AGENT) return;
+    autoPickRanRef.current = true;
+
+    let cancelled = false;
+    void (async () => {
+      const results = await Promise.all(
+        AGENT_AUTO_PICK_ORDER.map(async (agent) => {
+          try {
+            const status = await getProviderAuthStatus(apiAgentProvider(agent));
+            return { agent, status };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (cancelled) return;
+      for (const res of results) {
+        if (res && res.status.status === "ready") {
+          const provider = API_PROVIDERS.find((p) => p.agentCli === res.agent);
+          const firstModel = provider?.models[0]?.value;
+          setSelectedAgent(res.agent);
+          if (firstModel) setSelectedModel(firstModel);
+          return;
+        }
+      }
+      // No provider returned "ready" — leave the hardcoded fallback in place.
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Mount-only: we intentionally don't react to later changes of
+    // selectedAgent / selectedConversationId here. The ref guard enforces
+    // one-shot semantics even if the effect re-runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleNewAgent = useCallback(() => {
     selectConversation(null);
