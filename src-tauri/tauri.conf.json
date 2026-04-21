@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm run build",
+    "beforeBuildCommand": "pnpm run prebundle && pnpm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -35,6 +35,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": ["binaries/node"],
+    "resources": {
+      "../agent-sidecar/dist": "agent-sidecar/dist",
+      "../agent-sidecar/package.json": "agent-sidecar/package.json",
+      "../agent-sidecar/node_modules": "agent-sidecar/node_modules"
+    }
   }
 }

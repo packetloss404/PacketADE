@@ -19,9 +19,11 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::ShellExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{ChildStdin, Command};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 
@@ -146,7 +148,7 @@ impl SidecarManager {
     /// Construct the manager, spawn the child, and start the IO tasks.
     /// Safe to call during `.setup()`; the child is spawned asynchronously.
     pub async fn new(app_handle: AppHandle) -> Arc<Self> {
-        let sidecar_path = resolve_sidecar_path();
+        let sidecar_path = resolve_sidecar_path(&app_handle);
         let manager = Arc::new(Self {
             app_handle,
             sidecar_path,
@@ -351,15 +353,41 @@ impl SidecarManager {
 
     /// Spawn the Node child and drive IO until it exits. Returns Ok when the
     /// child is gone (so the supervisor can decide whether to restart).
+    ///
+    /// Dispatches to one of two spawn strategies:
+    /// - Tokio `tokio::process::Command` when a system `node` / explicit
+    ///   `PACKETADE_NODE_PATH` should be used (dev default, or anywhere the
+    ///   env override is set).
+    /// - Tauri shell plugin's sidecar API (`app.shell().sidecar("node")`) in
+    ///   release, so the bundled Node binary is used.
     async fn spawn_child(self: &Arc<Self>) -> Result<(), String> {
         if !self.sidecar_path.exists() {
             return Err(format!(
-                "sidecar entrypoint not found at {}",
+                "sidecar entry not found at {} — reinstall the app or set PACKETADE_SIDECAR_PATH",
                 self.sidecar_path.display()
             ));
         }
 
-        let mut cmd = Command::new("node");
+        if let Some(node_path) = resolved_node_override() {
+            // Explicit override — always use tokio::process with that exe.
+            self.spawn_via_tokio(Some(node_path)).await
+        } else if cfg!(debug_assertions) {
+            // Dev: system `node` on PATH.
+            self.spawn_via_tokio(None).await
+        } else {
+            // Release: Tauri-bundled Node via the shell plugin sidecar API.
+            self.spawn_via_shell_sidecar().await
+        }
+    }
+
+    /// Spawn the sidecar via `tokio::process::Command`. Used in dev and when
+    /// `PACKETADE_NODE_PATH` is set.
+    async fn spawn_via_tokio(
+        self: &Arc<Self>,
+        node_override: Option<PathBuf>,
+    ) -> Result<(), String> {
+        let node_exe: PathBuf = node_override.unwrap_or_else(|| PathBuf::from("node"));
+        let mut cmd = Command::new(&node_exe);
         cmd.arg(&self.sidecar_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -368,14 +396,21 @@ impl SidecarManager {
             .stderr(Stdio::inherit());
         hide_window_async(&mut cmd);
 
-        let mut child: Child = cmd
-            .spawn()
-            .map_err(|e| format!("spawn node sidecar: {}", e))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            format!(
+                "spawn node sidecar (node={}, entry={}): {}",
+                node_exe.display(),
+                self.sidecar_path.display(),
+                e
+            )
+        })?;
 
         let child_pid = child.id();
         info!(
             pid = ?child_pid,
+            node = %node_exe.display(),
             path = %self.sidecar_path.display(),
+            strategy = "tokio",
             "agent sidecar spawned"
         );
 
@@ -424,6 +459,120 @@ impl SidecarManager {
 
         // Reader task will end on its own once stdout hits EOF.
         let _ = reader_handle.await;
+        let _ = writer_handle.await;
+
+        Ok(())
+    }
+
+    /// Spawn the sidecar via the Tauri shell plugin's sidecar API, which
+    /// resolves `node` to the app-bundled binary declared in
+    /// `tauri.conf.json > bundle.externalBin` (see slice B). Used in release.
+    async fn spawn_via_shell_sidecar(self: &Arc<Self>) -> Result<(), String> {
+        let command = self
+            .app_handle
+            .shell()
+            .sidecar("node")
+            .map_err(|e| format!("resolve bundled node sidecar: {}", e))?
+            .arg(&self.sidecar_path);
+
+        let (mut rx, mut child) = command
+            .spawn()
+            .map_err(|e| format!("spawn bundled node sidecar: {}", e))?;
+
+        let child_pid = child.pid();
+        info!(
+            pid = child_pid,
+            path = %self.sidecar_path.display(),
+            strategy = "shell-sidecar",
+            "agent sidecar spawned"
+        );
+
+        // Writer task: pull lines from an mpsc channel, append '\n', write
+        // them via `CommandChild::write`. The shell plugin's CommandChild does
+        // not expose a raw `ChildStdin`; it wraps a synchronous PipeWriter.
+        // We move the child into the writer task so it can be mutated there;
+        // to let the reader still observe terminate-on-exit, we use the
+        // Terminated event from the event channel rather than `child.wait()`.
+        let (writer_tx, mut writer_rx) = mpsc::unbounded_channel::<String>();
+        {
+            let mut guard = self.writer_tx.lock().await;
+            *guard = Some(writer_tx);
+        }
+
+        let writer_handle = tokio::spawn(async move {
+            while let Some(line) = writer_rx.recv().await {
+                let mut buf = line.into_bytes();
+                buf.push(b'\n');
+                if let Err(e) = child.write(&buf) {
+                    warn!(error = %e, "agent sidecar stdin write failed");
+                    break;
+                }
+            }
+            // Channel closed — try to kill the child so the reader task can
+            // observe termination and return.
+            let _ = child.kill();
+        });
+
+        // Reader task: pump events from the shell plugin channel into the
+        // same `handle_event` / stderr logging pipeline as the tokio path.
+        let reader_mgr = Arc::clone(self);
+        let reader_handle = tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stdout(bytes) => {
+                        // The shell plugin delivers already line-split bytes
+                        // (one event per newline) when raw_out is false.
+                        let line = String::from_utf8_lossy(&bytes);
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        match serde_json::from_str::<Value>(trimmed) {
+                            Ok(value) => reader_mgr.handle_event(value).await,
+                            Err(e) => {
+                                warn!(
+                                    error = %e,
+                                    line = %truncate(trimmed, 500),
+                                    "agent sidecar emitted malformed JSON"
+                                );
+                            }
+                        }
+                    }
+                    CommandEvent::Stderr(bytes) => {
+                        // Mirror the tokio path's `Stdio::inherit()` behavior
+                        // by surfacing stderr to our tracing sink. The shell
+                        // plugin forces stderr to be piped, so we must drain.
+                        let line = String::from_utf8_lossy(&bytes);
+                        let trimmed = line.trim_end();
+                        if !trimmed.is_empty() {
+                            warn!(target: "agent_sidecar::stderr", "{}", trimmed);
+                        }
+                    }
+                    CommandEvent::Error(e) => {
+                        warn!(error = %e, "agent sidecar shell command error");
+                    }
+                    CommandEvent::Terminated(payload) => {
+                        warn!(
+                            code = ?payload.code,
+                            signal = ?payload.signal,
+                            pid = child_pid,
+                            "agent sidecar exited"
+                        );
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        // The reader task returns when the sidecar terminates; once that
+        // happens we drop the writer channel so the writer task joins and
+        // the supervisor can decide whether to restart.
+        let _ = reader_handle.await;
+        {
+            let mut guard = self.writer_tx.lock().await;
+            *guard = None;
+        }
         let _ = writer_handle.await;
 
         Ok(())
@@ -695,25 +844,58 @@ async fn writer_loop(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<Stri
 
 /// Resolve the path to the sidecar entrypoint.
 ///
-/// - If `PACKETADE_SIDECAR_PATH` is set, use it verbatim (useful for tests
-///   and for pointing at a locally-built sidecar during development).
-/// - Otherwise fall back to `<project-root>/agent-sidecar/dist/index.js`.
-///   `CARGO_MANIFEST_DIR` in dev is `src-tauri/`, so the default resolves to
-///   `../agent-sidecar/dist/index.js`. In release builds the env var is
-///   baked in at compile time and still points at the source tree; for
-///   packaged builds the user is expected to set `PACKETADE_SIDECAR_PATH`
-///   (or the packaging script will bundle the sidecar and set it before
-///   launch).
-fn resolve_sidecar_path() -> PathBuf {
+/// Three-branch resolution:
+/// 1. If `PACKETADE_SIDECAR_PATH` is set, use it verbatim (tests, locally-
+///    built sidecars, and escape hatch for broken packaging).
+/// 2. Otherwise in dev (`cfg!(debug_assertions)`) fall back to
+///    `<project-root>/agent-sidecar/dist/index.js`. `CARGO_MANIFEST_DIR` in
+///    dev is `src-tauri/`, so this resolves to the source tree.
+/// 3. Otherwise in release resolve via Tauri's resource dir (slice B bundles
+///    `agent-sidecar/{dist,package.json,node_modules}` under that path).
+///
+/// If none of the three exist we still return a best-guess path; the caller
+/// (`spawn_child`) checks `.exists()` and surfaces a user-readable error
+/// that lists the resolved path.
+fn resolve_sidecar_path(app_handle: &AppHandle) -> PathBuf {
+    // 1. Explicit env override — highest priority.
     if let Ok(override_path) = std::env::var("PACKETADE_SIDECAR_PATH") {
         return PathBuf::from(override_path);
     }
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    PathBuf::from(manifest_dir)
+
+    // 2. Dev fallback — CARGO_MANIFEST_DIR-relative path to the source tree.
+    let dev_path: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("agent-sidecar")
         .join("dist")
-        .join("index.js")
+        .join("index.js");
+
+    if cfg!(debug_assertions) {
+        return dev_path;
+    }
+
+    // 3. Release — bundled resource dir. If resource_dir() fails (unlikely
+    //    on desktop), fall back to dev_path so the error message in
+    //    `spawn_child` points at something sensible.
+    match app_handle.path().resource_dir() {
+        Ok(dir) => dir.join("agent-sidecar").join("dist").join("index.js"),
+        Err(e) => {
+            error!(
+                error = %e,
+                "failed to resolve resource_dir; falling back to manifest-relative path"
+            );
+            dev_path
+        }
+    }
+}
+
+/// Resolve an explicit Node binary override via `PACKETADE_NODE_PATH`. When
+/// `None` is returned, callers use their default strategy: system `node` in
+/// dev, Tauri shell plugin sidecar in release.
+fn resolved_node_override() -> Option<PathBuf> {
+    std::env::var("PACKETADE_NODE_PATH")
+        .ok()
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
 }
 
 /// Trim a string for log output.
