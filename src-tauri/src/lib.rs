@@ -207,6 +207,8 @@ pub fn run() {
             commands::api_keys::delete_api_key,
             // Provider auth status probe
             commands::provider_auth::get_provider_auth_status,
+            // Ollama local model discovery
+            commands::ollama::list_ollama_models,
             // API agent sessions
             commands::api_agent::start_api_agent_session,
             commands::api_agent::send_api_agent_message,
