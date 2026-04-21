@@ -16,6 +16,7 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  LogIn,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -466,6 +467,13 @@ export function AgentInputArea({
   const launchReady = selectedAuthStatus === "ready";
   const launchLabel =
     selectedAuthStatus === "coming_soon" ? "Coming soon" : "Launch";
+  const needsClaudeLogin =
+    selectedAgent === "api-claude-oauth" &&
+    selectedAuthStatus === "login_required";
+
+  const handleOpenClaudeLogin = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("packetade:open-claude-login"));
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8">
@@ -632,6 +640,26 @@ export function AgentInputArea({
                       }
                       className="ml-1"
                     />
+                    {needsClaudeLogin && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleOpenClaudeLogin();
+                        }}
+                        onMouseDown={(e) => {
+                          // Stop propagation here too so opening the
+                          // dropdown's click-toggle doesn't also fire.
+                          e.stopPropagation();
+                        }}
+                        className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] text-accent-amber hover:bg-accent-amber/10 transition-colors"
+                        title="Log in to Claude to continue"
+                      >
+                        <LogIn size={10} />
+                        Log in
+                      </button>
+                    )}
                   </span>
                 }
               >
@@ -876,9 +904,11 @@ export function AgentInputArea({
                 title={
                   launchReady
                     ? "Launch (Enter)"
-                    : selectedAuth && selectedAuth !== "loading"
-                      ? selectedAuth.hint || launchLabel
-                      : launchLabel
+                    : needsClaudeLogin
+                      ? "Log in to Claude to continue"
+                      : selectedAuth && selectedAuth !== "loading"
+                        ? selectedAuth.hint || launchLabel
+                        : launchLabel
                 }
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
                   launchReady

@@ -8,10 +8,12 @@ import type {
 } from "./protocol.js";
 import type { ProviderHandler } from "./providers/base.js";
 import { EchoProvider } from "./providers/echo.js";
+import { AnthropicProvider } from "./providers/anthropic.js";
 
 // Factory map — Phase 4 adds "claude-oauth", Phase 5 adds "openai-codex".
 const PROVIDERS: Record<string, () => ProviderHandler> = {
   echo: () => new EchoProvider(),
+  "claude-oauth": () => new AnthropicProvider(),
 };
 
 export class SessionRegistry {

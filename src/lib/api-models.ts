@@ -19,7 +19,11 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     agentCli: "api-claude-oauth",
     name: "Anthropic (Subscription)",
     needsKey: false,
-    models: [],
+    models: [
+      { label: "Claude Opus 4.7", value: "claude-opus-4-7" },
+      { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6" },
+      { label: "Claude Haiku 4.5", value: "claude-haiku-4-5" },
+    ],
   },
   {
     id: "anthropic",
