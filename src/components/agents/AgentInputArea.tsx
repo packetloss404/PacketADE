@@ -19,6 +19,7 @@ import {
   LogIn,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   useAgentTaskStore,
   repoDisplayName,
@@ -429,6 +430,46 @@ export function AgentInputArea({
   useEffect(() => {
     refreshAuthStatuses();
   }, [refreshAuthStatuses]);
+
+  // Live updates: the Rust side watches the claude/codex credential dirs
+  // and emits `provider-auth:changed` whenever they mutate. Apply the
+  // payload directly so we avoid a round-trip RPC on every login.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    listen<{ provider: string; status: ProviderAuthStatus }>(
+      "provider-auth:changed",
+      (event) => {
+        const { provider, status } = event.payload;
+        // Map the provider id back onto the agent(s) it governs. Today
+        // there's exactly one agent per OAuth provider, but the lookup is
+        // written defensively in case that changes.
+        const affected = groupAgents.filter(
+          (agent) => apiAgentProvider(agent) === provider,
+        );
+        if (affected.length === 0) return;
+        setAuthStatus((prev) => {
+          const next = { ...prev };
+          for (const agent of affected) next[agent] = status;
+          return next;
+        });
+      },
+    )
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch((err) => {
+        console.warn("listen(provider-auth:changed) failed", err);
+      });
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [groupAgents]);
 
   // ─── Ollama installed-models fetch ───────────────────────────────────
   type OllamaModelsState = OllamaModel[] | "loading" | { error: string };

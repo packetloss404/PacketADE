@@ -3,6 +3,11 @@
 // these envelopes. Do not change field names / types without updating the
 // Rust side in lockstep.
 
+// Bumped when the wire protocol changes in a way the supervisor must notice.
+// Keep in lockstep with `EXPECTED_PROTOCOL_VERSION` in
+// `src-tauri/src/commands/agent_sidecar.rs`.
+export const PROTOCOL_VERSION = 1;
+
 export type StartSessionRequest = {
   type: "start_session";
   sessionId: string;
@@ -66,6 +71,6 @@ export type SidecarEvent =
   | { type: "pending_edit"; sessionId: string; path: string; before: string; after: string }
   | { type: "done"; sessionId: string; inputTokens: number; outputTokens: number }
   | { type: "error"; sessionId: string; message: string }
-  | { type: "ready"; pid: number };
+  | { type: "ready"; pid: number; version: string; protocolVersion: number };
 
 export type Emit = (event: SidecarEvent) => void;

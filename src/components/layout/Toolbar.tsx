@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { GitBranch, FolderOpen, Diamond, Wrench, Github, Brain, User, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid, DollarSign, BookOpen, Mic } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
+import { SidecarStatusChip } from "./SidecarStatusChip";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
@@ -205,6 +206,9 @@ export function Toolbar() {
 
       {/* Right section */}
       <div className="flex items-center gap-2">
+        {/* Sidecar status chip (v2 Tier 2 slice B) */}
+        <SidecarStatusChip />
+
         {/* Review Queue */}
         <button
           onClick={() => setActiveView("review_queue")}

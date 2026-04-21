@@ -87,6 +87,14 @@ pub fn run() {
                 let manager = SidecarManager::new(app_handle.clone()).await;
                 app_handle.manage(manager);
             });
+
+            // Start the auth-credentials fs watcher so the AuthBadge in the
+            // Agents pane updates the moment a `claude login` / `codex
+            // login` completes, without the user having to re-open the
+            // dropdown.
+            if let Err(e) = commands::auth_watcher::init(&app.handle()) {
+                tracing::warn!("auth_watcher init failed: {}", e);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -252,6 +260,8 @@ pub fn run() {
             commands::custom_agents::list_custom_agents,
             // Pricing / cost helpers
             commands::pricing::calculate_turn_cost,
+            // Sidecar lifecycle status (for the status-bar chip)
+            commands::agent_sidecar::get_sidecar_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

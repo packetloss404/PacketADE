@@ -1,6 +1,14 @@
 import { createInterface } from "node:readline";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { SidecarEvent, SidecarRequest } from "./protocol.js";
+import { PROTOCOL_VERSION } from "./protocol.js";
 import { SessionRegistry } from "./session-registry.js";
+
+// Resolve our own package.json relative to this module so the version we
+// advertise in the `ready` handshake matches the installed sidecar build.
+const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
+const VERSION = JSON.parse(readFileSync(pkgPath, "utf8")).version as string;
 
 // Stdout is reserved for protocol frames. Any human-readable logging MUST go
 // to stderr so the supervisor's JSON line parser stays clean.
@@ -76,7 +84,12 @@ function main(): void {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
-  emit({ type: "ready", pid: process.pid });
+  emit({
+    type: "ready",
+    pid: process.pid,
+    version: VERSION,
+    protocolVersion: PROTOCOL_VERSION,
+  });
 }
 
 main();

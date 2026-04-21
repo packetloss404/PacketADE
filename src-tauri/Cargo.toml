@@ -43,6 +43,7 @@ cpal = "0.17"
 whisper-rs = "0.16"
 rustfft = "6"
 rusqlite = { version = "0.33", features = ["bundled"] }
+notify = "6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard-win = "5.0"
