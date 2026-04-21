@@ -4,6 +4,7 @@
 //! execute tool calls, feed results back, repeat until the model
 //! produces a final text response.
 
+use crate::commands::agent_sidecar::{is_sidecar_provider, SidecarManager};
 use crate::commands::api_keys;
 use crate::core::execution::{ExecutionTarget, SshConfig};
 use crate::core::hooks::{self, HookEvent};
@@ -219,6 +220,7 @@ struct ErrorPayload {
 pub async fn start_api_agent_session(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
     provider: String,
     model: String,
@@ -231,6 +233,39 @@ pub async fn start_api_agent_session(
     ssh_config: Option<SshConfig>,
     allowed_tools: Option<Vec<String>>,
 ) -> Result<(), String> {
+    // Phase 3 slice C: if this provider runs in the sidecar, forward the start
+    // request and return early. In-process providers fall through to the
+    // existing LlmProvider runtime untouched.
+    if is_sidecar_provider(&provider) {
+        let sys_prompt = system_prompt_override.clone().unwrap_or_default();
+        let tools = allowed_tools.clone().unwrap_or_default();
+        let mcp_servers = serde_json::Value::Null;
+        let result = sidecar
+            .forward_start(
+                session_id.clone(),
+                provider.clone(),
+                model.clone(),
+                sys_prompt,
+                tools,
+                mcp_servers,
+                project_path.clone(),
+                initial_message.clone(),
+                None, // resume — not exposed yet
+                thinking_enabled,
+                plan_mode,
+            )
+            .await;
+        if let Err(e) = result {
+            warn!(session_id = %session_id, error = %e, "Sidecar forward_start failed");
+            let _ = app_handle.emit(
+                &error_event(&session_id),
+                ErrorPayload { message: e.clone() },
+            );
+            return Err(e);
+        }
+        return Ok(());
+    }
+
     // Decide execution target. For SSH we skip the local-path validation and
     // use the remote path as the workspace label in the prompt.
     let execution = if let Some(cfg) = ssh_config {
@@ -331,10 +366,22 @@ pub async fn start_api_agent_session(
 pub async fn send_api_agent_message(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
     message: String,
     attachments: Option<Vec<ImageAttachment>>,
 ) -> Result<(), String> {
+    // Phase 3 slice C: forward to sidecar if it owns this session.
+    if sidecar.owns_session(&session_id) {
+        let attachments_json = match &attachments {
+            Some(a) => serde_json::to_value(a).unwrap_or(serde_json::Value::Null),
+            None => serde_json::Value::Null,
+        };
+        return sidecar
+            .forward_send(session_id, message, attachments_json)
+            .await;
+    }
+
     // Append user message to history
     {
         let mut histories = state.histories.lock().await;
@@ -395,8 +442,14 @@ pub async fn send_api_agent_message(
 #[tauri::command]
 pub async fn cancel_api_agent_session(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
 ) -> Result<(), String> {
+    // Phase 3 slice C: forward to sidecar if it owns this session.
+    if sidecar.owns_session(&session_id) {
+        return sidecar.forward_cancel(session_id).await;
+    }
+
     let mut senders = state.cancel_senders.lock().await;
     if let Some(tx) = senders.remove(&session_id) {
         let _ = tx.send(());
@@ -409,9 +462,16 @@ pub async fn cancel_api_agent_session(
 #[tauri::command]
 pub async fn change_model(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
     new_model: String,
 ) -> Result<(), String> {
+    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
+    // Phase 4/5 will add real forwarding if needed.
+    if sidecar.owns_session(&session_id) {
+        return Err("Command not supported in sidecar mode for Phase 3".into());
+    }
+
     let mut configs = state.configs.lock().await;
     let config = configs
         .get_mut(&session_id)
@@ -424,9 +484,15 @@ pub async fn change_model(
 #[tauri::command]
 pub async fn set_plan_mode(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
     enabled: bool,
 ) -> Result<(), String> {
+    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
+    if sidecar.owns_session(&session_id) {
+        return Err("Command not supported in sidecar mode for Phase 3".into());
+    }
+
     let mut configs = state.configs.lock().await;
     let config = configs
         .get_mut(&session_id)
@@ -439,9 +505,15 @@ pub async fn set_plan_mode(
 #[tauri::command]
 pub async fn set_permission_mode(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
     mode: String,
 ) -> Result<(), String> {
+    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
+    if sidecar.owns_session(&session_id) {
+        return Err("Command not supported in sidecar mode for Phase 3".into());
+    }
+
     let parsed = PermissionMode::parse(&mode)
         .ok_or_else(|| format!("Unknown permission mode: {}", mode))?;
     let mut configs = state.configs.lock().await;
@@ -456,10 +528,16 @@ pub async fn set_permission_mode(
 #[tauri::command]
 pub async fn respond_permission(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
     tool_id: String,
     decision: String,
 ) -> Result<(), String> {
+    // Phase 3 slice C: forward to sidecar if it owns this session.
+    if sidecar.owns_session(&session_id) {
+        return sidecar.forward_permission(session_id, tool_id, decision).await;
+    }
+
     let _ = session_id;
     let decision = match decision.as_str() {
         "allow_once" => PermissionDecision::AllowOnce,
@@ -483,9 +561,15 @@ pub async fn respond_permission(
 #[tauri::command]
 pub async fn set_approve_writes(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
     enabled: bool,
 ) -> Result<(), String> {
+    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
+    if sidecar.owns_session(&session_id) {
+        return Err("Command not supported in sidecar mode for Phase 3".into());
+    }
+
     let mut configs = state.configs.lock().await;
     let config = configs
         .get_mut(&session_id)
@@ -498,10 +582,21 @@ pub async fn set_approve_writes(
 #[tauri::command]
 pub async fn respond_edit(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
     tool_id: String,
     decision: String,
 ) -> Result<(), String> {
+    // Phase 3 slice C: forward to sidecar if it owns this session.
+    if sidecar.owns_session(&session_id) {
+        let approved = match decision.as_str() {
+            "apply" => true,
+            "reject" => false,
+            _ => return Err(format!("Unknown edit decision: {}", decision)),
+        };
+        return sidecar.forward_edit(session_id, approved).await;
+    }
+
     let _ = session_id;
     let decision = match decision.as_str() {
         "apply" => EditDecision::Apply,
@@ -525,9 +620,15 @@ pub async fn respond_edit(
 pub async fn retry_last_turn(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
     new_model: Option<String>,
 ) -> Result<(), String> {
+    // Phase 3 slice C: sidecar-owned sessions reject this command for now.
+    if sidecar.owns_session(&session_id) {
+        return Err("Command not supported in sidecar mode for Phase 3".into());
+    }
+
     // Truncate history to before the last assistant message (and any trailing tool messages).
     {
         let mut histories = state.histories.lock().await;
@@ -593,8 +694,14 @@ pub async fn retry_last_turn(
 #[tauri::command]
 pub async fn close_api_agent_session(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
 ) -> Result<(), String> {
+    // Phase 3 slice C: forward to sidecar if it owns this session.
+    if sidecar.owns_session(&session_id) {
+        return sidecar.forward_close(session_id).await;
+    }
+
     // Cancel if running
     {
         let mut senders = state.cancel_senders.lock().await;

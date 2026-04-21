@@ -15,7 +15,11 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "generate:tauri-schema": "cargo test export_api_bindings --manifest-path src-tauri/Cargo.toml -- --ignored --nocapture",
-    "check:tauri-schema": "node scripts/check-tauri-schema.mjs"
+    "check:tauri-schema": "node scripts/check-tauri-schema.mjs",
+    "sidecar:install": "pnpm -C agent-sidecar install",
+    "sidecar:build": "pnpm -C agent-sidecar build",
+    "sidecar:dev": "pnpm -C agent-sidecar dev",
+    "sidecar:smoke": "node agent-sidecar/test/echo-smoke.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",

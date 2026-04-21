@@ -34,3 +34,7 @@ playwright/.cache/
 # Claude Code local settings
 .claude/
 CLAUDE.md
+
+# Agent sidecar build output
+agent-sidecar/node_modules
+agent-sidecar/dist
