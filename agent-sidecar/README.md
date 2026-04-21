@@ -142,3 +142,7 @@ custom Node binary:
   script (normally `agent-sidecar/dist/index.js`).
 - `PACKETADE_NODE_PATH` — absolute path to the `node` binary the
   supervisor should spawn (normally the bundled `externalBin`).
+
+### Auto-updates
+
+Auto-updates are documented in `docs/updater-setup.md` (not yet enabled).

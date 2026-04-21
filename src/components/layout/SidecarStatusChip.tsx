@@ -53,23 +53,38 @@ export function SidecarStatusChip() {
   let label = "sidecar";
   let tooltip: string | undefined;
 
+  // Cross-restart counters (v2 Tier 4 slice A). Folded into every tooltip
+  // so a glance at the chip shows long-term sidecar health, not just the
+  // current run. `last_version` is used as a fallback when the live
+  // `status.version` hasn't been populated yet (e.g. during `restarting`).
+  const lifetime = status.lifetime;
+  const lifetimeLine = [
+    `${lifetime.total_starts} starts`,
+    `${lifetime.total_crashes} crashes`,
+    lifetime.last_version ?? status.version ?? null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   if (status.state === "ready") {
     dotClass = "text-accent-green";
     label = "sidecar ready";
-    tooltip = [
-      status.version ? `version ${status.version}` : null,
-      status.pid != null ? `pid ${status.pid}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ") || "sidecar ready";
+    const head =
+      [
+        status.version ? `version ${status.version}` : null,
+        status.pid != null ? `pid ${status.pid}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || "sidecar ready";
+    tooltip = `${head}\n${lifetimeLine}`;
   } else if (status.state === "restarting") {
     dotClass = "text-accent-amber";
     label = `sidecar restarting (${status.restart_count}/3)`;
-    tooltip = status.last_error ?? label;
+    tooltip = `${status.last_error ?? label}\n${lifetimeLine}`;
   } else if (status.state === "down") {
     dotClass = "text-accent-red";
     label = "sidecar down";
-    tooltip = status.last_error ?? "Sidecar is down";
+    tooltip = `${status.last_error ?? "Sidecar is down"}\n${lifetimeLine}`;
   }
 
   return (

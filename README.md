@@ -147,6 +147,16 @@ PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription) 
 
 `pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 20.17.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Expect an installer size of roughly 110–160 MB (Node runtime plus sidecar dependencies). The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
 
+#### Sidecar v2 status
+
+The v2 sidecar work is complete across four tiers:
+
+- **Tier 1 — Bundling:** pinned Node 20.17.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
+- **Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
+- **Tier 3 — Protocol & UX:** `pending_edit` diff preview for Anthropic Subscription turns, command forwarding (`set_permission_mode`, `set_model`, `retry`) through a versioned protocol. Codex MCP remains intentionally deferred — the upstream Codex SDK does not yet expose MCP hooks.
+- **Tier 4 — Observability & updates:** sidecar lifetime stats (uptime, restart count, last-exit reason), per-provider launch counters surfaced to the UI, and a documented Tauri auto-updater setup.
+- See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`docs/updater-setup.md`](./docs/updater-setup.md) for signing / release channel configuration.
+
 ### Run The Desktop App
 
 ```bash

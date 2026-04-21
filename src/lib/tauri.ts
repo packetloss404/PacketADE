@@ -1444,15 +1444,45 @@ export async function askSideChatStream(question: string, context: string): Prom
 // The Node agent-sidecar is supervised by the Rust backend. This surface lets
 // the status-bar chip show its current state and react to transitions.
 
+// Cross-restart counters persisted in `~/.packetade/sidecar-stats.json`
+// (v2 Tier 4 slice A). Populated on every `getSidecarStatus` poll and every
+// `sidecar-status:changed` event. All fields snake_case to match the Rust
+// wire format verbatim.
+export type SidecarLifetimeStats = {
+  total_starts: number;
+  total_crashes: number;
+  last_crash_time: string | null;
+  last_version: string | null;
+  last_error: string | null;
+  total_uptime_secs: number;
+};
+
 export type SidecarStatus = {
   state: "ready" | "restarting" | "down" | "not_started";
   restart_count: number;
   last_error: string | null;
   pid: number | null;
   version: string | null;
+  lifetime: SidecarLifetimeStats;
 };
 
 export async function getSidecarStatus(): Promise<SidecarStatus> {
   return invoke<SidecarStatus>("get_sidecar_status");
+}
+
+// === Provider launch stats (v2 Tier 4 slice B) =============================
+//
+// Local-only per-provider launch counter. Increments once per
+// `start_api_agent_session` call. Nothing is reported externally; this binding
+// just exposes the counter so the existing cost/analytics view could consume
+// it later if desired.
+
+export type ProviderLaunchStats = {
+  counts: Record<string, number>;
+  last_launch: Record<string, string>;
+};
+
+export async function getProviderLaunchStats(): Promise<ProviderLaunchStats> {
+  return invoke<ProviderLaunchStats>("get_provider_launch_stats");
 }
 
