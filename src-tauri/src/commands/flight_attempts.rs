@@ -5,6 +5,7 @@
 //! `Attempt` on the Flight. Cancellation removes the worktree and closes
 //! the session.
 
+use crate::commands::agent_sidecar::SidecarManager;
 use crate::commands::api_agent::{
     close_api_agent_session, start_api_agent_session, ApiAgentState,
 };
@@ -130,6 +131,7 @@ fn build_ssh_config_from_spec(spec: &AttemptTargetSpec) -> Option<SshConfig> {
 pub async fn launch_flight_async(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     flight_id: String,
     prompt: String,
     targets: Vec<AttemptTargetSpec>,
@@ -245,6 +247,7 @@ pub async fn launch_flight_async(
         match start_api_agent_session(
             app_handle.clone(),
             state.clone(),
+            sidecar.clone(),
             session_id.clone(),
             provider.clone(),
             model.clone(),
@@ -292,6 +295,7 @@ pub async fn launch_flight_async(
 #[tauri::command]
 pub async fn cancel_flight_attempt(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     flight_id: String,
     attempt_id: String,
 ) -> Result<(), String> {
@@ -307,7 +311,7 @@ pub async fn cancel_flight_attempt(
     };
 
     // 2. Close the API agent session (cancels the loop + drops history).
-    let _ = close_api_agent_session(state, attempt.session_id.clone()).await;
+    let _ = close_api_agent_session(state, sidecar, attempt.session_id.clone()).await;
 
     // 3. Mark cancelled before worktree removal so the UI flips quickly.
     let _ = update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Cancelled, None);
@@ -359,6 +363,7 @@ pub async fn cleanup_attempt_worktree_ssh(
 #[tauri::command]
 pub async fn mark_attempt_status(
     state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
     flight_id: String,
     attempt_id: String,
     status: SetAttemptStatus,
@@ -392,7 +397,7 @@ pub async fn mark_attempt_status(
     if let Some(attempt) = attempt_snapshot {
         // Close the API agent session bound to this attempt (best-effort —
         // it may already be closed if the agent finished naturally).
-        let _ = close_api_agent_session(state, attempt.session_id.clone()).await;
+        let _ = close_api_agent_session(state, sidecar, attempt.session_id.clone()).await;
 
         // Tear down the worktree. Local cleanup runs inline; SSH cleanup is
         // deferred to the frontend because we don't have host/user/key here.

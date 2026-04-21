@@ -3,6 +3,7 @@ pub mod core;
 mod claude;
 mod commands;
 
+use commands::agent_sidecar::SidecarManager;
 use commands::api_agent::ApiAgentState;
 use commands::github::create_github_auth_state;
 use commands::pty::create_shared_pty_manager;
@@ -75,6 +76,19 @@ pub fn run() {
         .manage(create_shared_orchestrator())
         .manage(create_dictation_state())
         .manage(std::sync::Arc::new(ApiAgentState::new()))
+        .setup(|app| {
+            // Spawn the Node agent sidecar and stash the supervisor in
+            // managed state so slice C's routing layer can reach it via
+            // `State<Arc<SidecarManager>>`. The manager spawns the child
+            // asynchronously, so `.setup()` returns immediately.
+            use tauri::Manager;
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let manager = SidecarManager::new(app_handle.clone()).await;
+                app_handle.manage(manager);
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // PTY-based sessions (primary)
             commands::pty::create_pty_session,

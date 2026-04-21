@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_sidecar;
 pub mod analytics;
 pub mod api_agent;
 pub mod api_keys;
