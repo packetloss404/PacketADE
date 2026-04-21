@@ -42,6 +42,9 @@ async function handleRequest(raw: string): Promise<void> {
     case "permission_response":
     case "edit_response":
     case "cancel":
+    case "set_permission_mode":
+    case "set_model":
+    case "retry":
       await registry.dispatch(req.sessionId, req, emit);
       break;
     case "close_session":

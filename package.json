@@ -23,6 +23,7 @@
     "sidecar:prune": "node scripts/prune-sidecar.js",
     "sidecar:smoke": "node agent-sidecar/test/echo-smoke.mjs",
     "sidecar:registry-smoke": "node agent-sidecar/test/registry-smoke.mjs",
+    "sidecar:protocol-smoke": "node agent-sidecar/test/protocol-v2-smoke.mjs",
     "prebundle": "pnpm run fetch-node && pnpm run sidecar:install && pnpm run sidecar:build && pnpm run sidecar:prune",
     "postinstall": "pnpm -C agent-sidecar install",
     "build:all": "pnpm sidecar:build && pnpm build"

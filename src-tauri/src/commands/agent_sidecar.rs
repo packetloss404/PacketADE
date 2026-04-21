@@ -37,7 +37,10 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "echo"]
 /// `PROTOCOL_VERSION` in `agent-sidecar/src/protocol.ts`. We log a warning if
 /// the sidecar advertises a different value on its `ready` event, but we do
 /// not refuse to proceed — this is a soft compatibility signal, not a gate.
-const EXPECTED_PROTOCOL_VERSION: u32 = 1;
+///
+/// v2 (Tier 3 slice B): added `set_permission_mode`, `set_model`, and `retry`
+/// request types on the wire.
+const EXPECTED_PROTOCOL_VERSION: u32 = 2;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.
@@ -351,6 +354,47 @@ impl SidecarManager {
             "type": "edit_response",
             "sessionId": session_id,
             "approved": approved,
+        });
+        self.send_json(req).await
+    }
+
+    /// Forward a permission-mode change to the sidecar. Slice C's routing layer
+    /// translates the legacy `set_plan_mode` / `set_approve_writes` booleans
+    /// into one of the protocol's mode strings (`"default"`, `"plan"`,
+    /// `"acceptEdits"`, `"bypassPermissions"`) before calling this.
+    pub async fn forward_set_permission_mode(
+        &self,
+        session_id: String,
+        mode: String,
+    ) -> Result<(), String> {
+        let req = json!({
+            "type": "set_permission_mode",
+            "sessionId": session_id,
+            "mode": mode,
+        });
+        self.send_json(req).await
+    }
+
+    /// Forward a model swap to the sidecar. Providers that can't hot-swap
+    /// (e.g. Codex one-shot exec) stash the value for the next spawn.
+    pub async fn forward_set_model(
+        &self,
+        session_id: String,
+        model: String,
+    ) -> Result<(), String> {
+        let req = json!({
+            "type": "set_model",
+            "sessionId": session_id,
+            "model": model,
+        });
+        self.send_json(req).await
+    }
+
+    /// Forward a retry / regenerate-last-turn request to the sidecar.
+    pub async fn forward_retry(&self, session_id: String) -> Result<(), String> {
+        let req = json!({
+            "type": "retry",
+            "sessionId": session_id,
         });
         self.send_json(req).await
     }

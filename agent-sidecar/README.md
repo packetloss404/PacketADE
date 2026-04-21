@@ -39,8 +39,13 @@ The factory lives in `src/session-registry.ts`. Currently wired:
   Claude Code OAuth credential store — no API key env var needed.
 - **`openai-codex`** — OpenAI ChatGPT subscription via the `codex` CLI
   (`src/providers/openai-codex.ts`). Added in Phase 5. Known v1 limitations:
-  - No MCP server support (accepted gap; a one-time stderr warning fires if
-    `mcpServers` is non-empty on `start_session`).
+  - No MCP server support. Deliberately not wired — Codex has its own MCP
+    config format (`~/.codex/config.toml` under `[mcp_servers.*]`), and users
+    configure it via `codex mcp add`. Plumbing the sidecar's `mcpServers`
+    field through would mean translating between two incompatible config
+    shapes and fighting the CLI's own precedence rules. Deferred past Tier 3;
+    revisit if user demand indicates benefit. A one-time stderr warning
+    fires if `mcpServers` is non-empty on `start_session`.
   - Tool-call detail is shallower than the SDK providers because Codex's
     `--json` output is less structured; unknown event types are logged to
     stderr and dropped.
@@ -55,6 +60,15 @@ The factory lives in `src/session-registry.ts`. Currently wired:
 
 ## Protocol summary
 
+**Protocol version: 2** (bumped by Tier 3 slice B). The version is advertised
+in the `ready` event's `protocolVersion` field at startup, and the Rust
+supervisor's `EXPECTED_PROTOCOL_VERSION` constant must match. v2 added three
+new request types — `set_permission_mode`, `set_model`, and `retry` — for
+Claude-Code parity (command forwarding from the UI's `/model`, `/plan`, and
+retry affordances). Providers advertise support by implementing the matching
+handler methods on `ProviderHandler`; the registry emits a clean
+"not supported" error when a provider skips one.
+
 **stdin (requests, one per line):**
 
 | type                 | purpose                                          |
@@ -65,6 +79,9 @@ The factory lives in `src/session-registry.ts`. Currently wired:
 | `edit_response`      | Approve/deny a pending file edit                 |
 | `cancel`             | Interrupt in-flight generation                   |
 | `close_session`      | Tear down a session                              |
+| `set_permission_mode`| v2: switch permission/approval mode mid-session  |
+| `set_model`          | v2: swap the model without restarting the session |
+| `retry`              | v2: re-run the last turn (UI "Retry" affordance) |
 
 **stdout (events, one per line):**
 
