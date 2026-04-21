@@ -27,7 +27,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -136,14 +136,35 @@ function main() {
     );
   }
 
-  // 2a. Run pnpm install --prod --ignore-scripts in the sidecar workspace.
-  //     This removes top-level symlinks for devDependencies but leaves
-  //     their unpacked tarballs in node_modules/.pnpm/.
-  log(`pruning devDependencies in ${SIDECAR_DIR}`);
+  // 2a. Wipe node_modules entirely. The Tauri bundler walks resource
+  //     directories and chokes on pnpm's symlinked `.pnpm/` store when
+  //     any transitive entry points at a removed path (e.g. after devDep
+  //     removal leaves a dangling `undici-types` link). A clean slate
+  //     guarantees a walkable tree.
+  log(`wiping ${SIDECAR_NODE_MODULES} for a clean prod install`);
+  if (existsSync(SIDECAR_NODE_MODULES)) {
+    try {
+      rmSync(SIDECAR_NODE_MODULES, { recursive: true, force: true });
+    } catch (err) {
+      fail(`failed to remove ${SIDECAR_NODE_MODULES}`, err);
+    }
+  }
+
+  // 2b. Re-install with a hoisted (flat) node_modules layout. This
+  //     produces a symlink-free, Tauri-bundler-friendly tree containing
+  //     only production dependencies.
+  log(`installing prod deps with hoisted linker in ${SIDECAR_DIR}`);
   const pnpmCmd = resolvePnpmCommand();
   const installResult = spawnSync(
     pnpmCmd,
-    ["-C", SIDECAR_DIR, "install", "--prod", "--ignore-scripts"],
+    [
+      "-C",
+      SIDECAR_DIR,
+      "install",
+      "--prod",
+      "--ignore-scripts",
+      "--config.node-linker=hoisted",
+    ],
     {
       stdio: "inherit",
       // `shell: true` on Windows lets `.cmd` shim resolution happen via
@@ -161,28 +182,17 @@ function main() {
     );
   }
 
-  // 2b. Run `pnpm prune --prod` to actually evict the unreferenced
-  //     devDependency content from `node_modules/.pnpm/`. Without this,
-  //     `typescript` and `@types/node` remain on disk inside the virtual
-  //     store even though they're no longer symlinked at the top level —
-  //     and the Tauri bundler would still ship them.
-  log(`evicting unreferenced packages from virtual store`);
-  const pruneResult = spawnSync(
-    pnpmCmd,
-    ["-C", SIDECAR_DIR, "prune", "--prod"],
-    {
-      stdio: "inherit",
-      shell: process.platform === "win32",
-    },
-  );
-  if (pruneResult.error) {
-    fail(`failed to spawn pnpm prune`, pruneResult.error);
-  }
-  if (pruneResult.status !== 0) {
-    fail(
-      `pnpm prune --prod exited with status ${pruneResult.status} ` +
-        `(signal ${pruneResult.signal ?? "none"})`,
-    );
+  // 2c. Remove the `.pnpm/` metadata directory. With a hoisted layout it
+  //     only contains pnpm's lock.yaml; leaving it adds nothing except
+  //     resource-walk noise for the Tauri bundler.
+  const pnpmMeta = path.join(SIDECAR_NODE_MODULES, ".pnpm");
+  if (existsSync(pnpmMeta)) {
+    log(`removing ${pnpmMeta} (hoisted install leftover)`);
+    try {
+      rmSync(pnpmMeta, { recursive: true, force: true });
+    } catch (err) {
+      fail(`failed to remove ${pnpmMeta}`, err);
+    }
   }
 
   // 3. Report size of the pruned tree.
