@@ -40,6 +40,10 @@ export function AgentsView() {
     (id: string) => {
       setSelectedProfileId(id);
       setActiveProfile(id);
+      const profile = useProfileStore.getState().profiles.find((p) => p.id === id);
+      if (profile && profile.defaultModel) {
+        setSelectedModel(profile.defaultModel);
+      }
     },
     [setActiveProfile],
   );

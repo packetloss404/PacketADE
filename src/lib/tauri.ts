@@ -1226,6 +1226,20 @@ export async function getProviderAuthStatus(provider: string): Promise<ProviderA
   return invoke("get_provider_auth_status", { provider });
 }
 
+// Ollama local model discovery — queries the Ollama daemon's /api/tags
+// endpoint to list models the user has pulled locally. Returns an empty
+// array when the daemon is reachable but has no models. Throws on
+// connection failure (e.g. Ollama not running).
+export type OllamaModel = {
+  name: string;
+  size: number | null;
+  modified_at: string | null;
+};
+
+export async function listOllamaModels(): Promise<OllamaModel[]> {
+  return invoke("list_ollama_models");
+}
+
 export interface ImageAttachment {
   media_type: string;
   data_base64: string;
