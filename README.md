@@ -157,6 +157,10 @@ The v2 sidecar work is complete across four tiers:
 - **Tier 4 — Observability & updates:** sidecar lifetime stats (uptime, restart count, last-exit reason), per-provider launch counters surfaced to the UI, and a documented Tauri auto-updater setup.
 - See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`docs/updater-setup.md`](./docs/updater-setup.md) for signing / release channel configuration.
 
+### Multi-platform builds
+
+PacketADE is developed on Windows but is designed to ship on macOS and Linux as well. For per-platform prerequisites, supported target triples, and cross-compilation notes, see [`docs/multi-platform-build.md`](./docs/multi-platform-build.md). A manual-trigger GitHub Actions skeleton that builds on all three OSes via `tauri-apps/tauri-action` lives at [`.github/workflows/build.yml`](./.github/workflows/build.yml) — it is disabled by default so it does not burn CI minutes.
+
 ### Run The Desktop App
 
 ```bash

@@ -1,0 +1,71 @@
+# Multi-platform build skeleton.
+#
+# This is a manual-trigger-only ("workflow_dispatch") skeleton that uses
+# tauri-apps/tauri-action to build PacketADE on macOS, Linux, and Windows.
+# It intentionally does not run on push / pull_request so we don't burn CI
+# minutes until someone explicitly turns it on.
+#
+# Not included:
+#   - Release publishing (no `releaseId` / `tagName` config)
+#   - Code signing (no Apple / Windows cert secrets wired up)
+#   - Auto-updater signing keys (see docs/updater-setup.md)
+#
+# Companion doc: docs/multi-platform-build.md
+#
+# Note: .github/workflows/ci.yml already runs per-platform Tauri builds as part
+# of CI. This file is the minimal template to copy from when you need to
+# stand up a release pipeline with tauri-action, rather than a replacement.
+
+name: build
+
+on: [workflow_dispatch]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+          - platform: ubuntu-latest
+          - platform: windows-latest
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.17.0
+          cache: pnpm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            curl wget file
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
