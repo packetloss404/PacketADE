@@ -4,26 +4,36 @@
  *
  * Downloads a pinned Node.js runtime and stages it as a Tauri `externalBin`
  * sidecar under `src-tauri/binaries/`. Used as part of the build pipeline so
- * the packaged app ships with its own `node.exe` for the agent sidecar runtime.
+ * the packaged app ships with its own `node` binary for the agent sidecar
+ * runtime.
  *
- * Idempotent: if the target binary already exists and its sha256 matches the
- * stored sibling `.sha256` file for the pinned version, the download is
- * skipped.
+ * Supports multiple Rust targets (Tauri `externalBin` triple-suffix convention):
+ *   - x86_64-pc-windows-msvc        (win-x64,    zip)
+ *   - x86_64-apple-darwin           (darwin-x64, tar.gz)
+ *   - aarch64-apple-darwin          (darwin-arm64, tar.gz)
+ *   - x86_64-unknown-linux-gnu      (linux-x64,  tar.gz)
+ *   - aarch64-unknown-linux-gnu     (linux-arm64, tar.gz)
  *
- * Currently fetches the win32-x64 build only. TODO: extend with entries for
- *   - node-x86_64-apple-darwin        (darwin-x64)
- *   - node-aarch64-apple-darwin       (darwin-arm64)
- *   - node-x86_64-unknown-linux-gnu   (linux-x64)
- * following the same pattern (targz instead of zip on non-Windows).
+ * Target selection (in priority order):
+ *   1. CLI `--target=<triple>` or `--all-targets`
+ *   2. Env `TAURI_TARGET=<triple>`
+ *   3. Host detection from `process.platform` + `process.arch`
  *
- * Node 18+ (uses ESM + node: prefixed stdlib imports). Requires `adm-zip`.
+ * Idempotent: if the target binary already exists and its sibling `.sha256`
+ * marker records the same nodeVersion + target + on-disk sha256, the download
+ * is skipped.
+ *
+ * Node 18+ (uses ESM + node: prefixed stdlib imports). Requires `adm-zip`
+ * (for zip) and `tar` (for tar.gz).
  */
 
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -35,30 +45,63 @@ import { fileURLToPath } from "node:url";
 import https from "node:https";
 
 import AdmZip from "adm-zip";
+import * as tar from "tar";
 
 // ---------------------------------------------------------------------------
 // Pinned constants
 // ---------------------------------------------------------------------------
 
 const NODE_VERSION = "20.17.0";
-const NODE_URL = `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-win-x64.zip`;
 const SHASUMS_URL = `https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt`;
-const ZIP_BASENAME = `node-v${NODE_VERSION}-win-x64.zip`;
-const ZIP_INNER_NODE_PATH = `node-v${NODE_VERSION}-win-x64/node.exe`;
-
-// Double-check constant — source of truth is the live SHASUMS256.txt fetch
-// below. If Node ever re-publishes a version (historically rare), the live
-// fetch wins; this just guards against a MITM that rewrites both URLs.
-const EXPECTED_SHA256 =
-  "e323fff0aba197090faabd29c4c23f334557ff24454324f0c83faa7e399dbb74";
+const DIST_BASE = `https://nodejs.org/dist/v${NODE_VERSION}`;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const TARGET_DIR = path.resolve(__dirname, "../src-tauri/binaries");
-const TARGET_FILENAME = "node-x86_64-pc-windows-msvc.exe";
-const TARGET_PATH = path.join(TARGET_DIR, TARGET_FILENAME);
-const TARGET_SHA_PATH = `${TARGET_PATH}.sha256`;
+
+/**
+ * Map of supported Rust triples → fetch/extract descriptors.
+ *
+ * Fields:
+ *   distBasename      — Node.js dist archive filename (for URL + SHASUMS lookup)
+ *   archive           — "zip" | "tar.gz"
+ *   innerBinaryPath   — path within the archive to the node binary
+ *   outputFilename    — filename to write under src-tauri/binaries/
+ *                       (Tauri externalBin convention: <base>-<triple>[.exe])
+ */
+const TARGETS = {
+  "x86_64-pc-windows-msvc": {
+    distBasename: `node-v${NODE_VERSION}-win-x64.zip`,
+    archive: "zip",
+    innerBinaryPath: `node-v${NODE_VERSION}-win-x64/node.exe`,
+    outputFilename: "node-x86_64-pc-windows-msvc.exe",
+  },
+  "x86_64-apple-darwin": {
+    distBasename: `node-v${NODE_VERSION}-darwin-x64.tar.gz`,
+    archive: "tar.gz",
+    innerBinaryPath: `node-v${NODE_VERSION}-darwin-x64/bin/node`,
+    outputFilename: "node-x86_64-apple-darwin",
+  },
+  "aarch64-apple-darwin": {
+    distBasename: `node-v${NODE_VERSION}-darwin-arm64.tar.gz`,
+    archive: "tar.gz",
+    innerBinaryPath: `node-v${NODE_VERSION}-darwin-arm64/bin/node`,
+    outputFilename: "node-aarch64-apple-darwin",
+  },
+  "x86_64-unknown-linux-gnu": {
+    distBasename: `node-v${NODE_VERSION}-linux-x64.tar.gz`,
+    archive: "tar.gz",
+    innerBinaryPath: `node-v${NODE_VERSION}-linux-x64/bin/node`,
+    outputFilename: "node-x86_64-unknown-linux-gnu",
+  },
+  "aarch64-unknown-linux-gnu": {
+    distBasename: `node-v${NODE_VERSION}-linux-arm64.tar.gz`,
+    archive: "tar.gz",
+    innerBinaryPath: `node-v${NODE_VERSION}-linux-arm64/bin/node`,
+    outputFilename: "node-aarch64-unknown-linux-gnu",
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,7 +109,7 @@ const TARGET_SHA_PATH = `${TARGET_PATH}.sha256`;
 
 /**
  * Follow redirects and fetch a URL. Resolves with a Buffer for small payloads
- * (SHASUMS256.txt) or streams to a write stream for large payloads (zip).
+ * (SHASUMS256.txt) or streams to a write stream for large payloads.
  */
 function httpsGet(url, onResponse) {
   return new Promise((resolve, reject) => {
@@ -99,8 +142,8 @@ function httpsGet(url, onResponse) {
       }
     });
     req.on("error", reject);
-    req.setTimeout(60_000, () => {
-      req.destroy(new Error(`Request to ${url} timed out after 60s`));
+    req.setTimeout(120_000, () => {
+      req.destroy(new Error(`Request to ${url} timed out after 120s`));
     });
   });
 }
@@ -169,14 +212,334 @@ function log(message) {
 }
 
 // ---------------------------------------------------------------------------
+// Target selection
+// ---------------------------------------------------------------------------
+
+function detectHostTarget() {
+  const plat = process.platform;
+  const arch = process.arch;
+  if (plat === "win32" && arch === "x64") return "x86_64-pc-windows-msvc";
+  if (plat === "darwin" && arch === "arm64") return "aarch64-apple-darwin";
+  if (plat === "darwin" && arch === "x64") return "x86_64-apple-darwin";
+  if (plat === "linux" && arch === "x64") return "x86_64-unknown-linux-gnu";
+  if (plat === "linux" && arch === "arm64") return "aarch64-unknown-linux-gnu";
+  return null;
+}
+
+function printHelp() {
+  const supported = Object.keys(TARGETS)
+    .map((t) => `    ${t}`)
+    .join("\n");
+  process.stdout.write(
+    `Usage: node scripts/fetch-node.js [options]\n\n` +
+      `Downloads a pinned Node.js runtime (v${NODE_VERSION}) for a Rust target\n` +
+      `and places it under src-tauri/binaries/ using Tauri's externalBin\n` +
+      `triple-suffix convention.\n\n` +
+      `Options:\n` +
+      `  --target=<triple>   Fetch the binary for a specific Rust target.\n` +
+      `  --all-targets       Fetch binaries for every supported target (CI).\n` +
+      `  --help              Show this help and exit.\n\n` +
+      `Target selection (priority):\n` +
+      `  1. --target / --all-targets CLI flag\n` +
+      `  2. TAURI_TARGET environment variable\n` +
+      `  3. Host-detected target (process.platform + process.arch)\n\n` +
+      `Supported targets:\n${supported}\n`,
+  );
+}
+
+function parseArgs(argv) {
+  const out = { help: false, all: false, target: null };
+  for (const arg of argv.slice(2)) {
+    if (arg === "--help" || arg === "-h") {
+      out.help = true;
+    } else if (arg === "--all-targets") {
+      out.all = true;
+    } else if (arg.startsWith("--target=")) {
+      out.target = arg.slice("--target=".length);
+    } else if (arg === "--target") {
+      fail(`--target requires an argument; use --target=<triple>`);
+    } else {
+      fail(`unknown argument: ${arg}. Pass --help for usage.`);
+    }
+  }
+  return out;
+}
+
+function resolveTargets(args) {
+  if (args.all) {
+    return Object.keys(TARGETS);
+  }
+  const candidate =
+    args.target ??
+    process.env.TAURI_TARGET ??
+    detectHostTarget();
+  if (!candidate) {
+    const supported = Object.keys(TARGETS).join(", ");
+    fail(
+      `could not auto-detect a supported target for ` +
+        `platform=${process.platform} arch=${process.arch}. ` +
+        `Pass --target=<triple> or set TAURI_TARGET. Supported: ${supported}`,
+    );
+  }
+  if (!TARGETS[candidate]) {
+    const supported = Object.keys(TARGETS).join(", ");
+    fail(
+      `unknown target '${candidate}'. Supported targets: ${supported}`,
+    );
+  }
+  return [candidate];
+}
+
+// ---------------------------------------------------------------------------
+// Extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract exactly one file from a zip archive, returning its contents as a
+ * Buffer. Throws if the entry is missing or empty.
+ */
+function extractFromZip(archivePath, innerPath) {
+  const zip = new AdmZip(archivePath);
+  const entry = zip.getEntry(innerPath);
+  if (!entry) {
+    throw new Error(
+      `zip does not contain expected entry ${innerPath}`,
+    );
+  }
+  const buf = entry.getData();
+  if (!buf || buf.length === 0) {
+    throw new Error(`extracted entry ${innerPath} is empty`);
+  }
+  return buf;
+}
+
+/**
+ * Extract exactly one file from a tar.gz archive into `destDir`. Returns the
+ * absolute path to the extracted file.
+ *
+ * We use `tar.x` with a filter so only the one entry we want is written to
+ * disk — far cheaper than expanding a ~50 MB Node distribution.
+ */
+async function extractFromTarGz(archivePath, innerPath, destDir) {
+  let matched = false;
+  await tar.x({
+    file: archivePath,
+    cwd: destDir,
+    // tar strips no components; the archive's top-level dir is preserved so
+    // the extracted path is `<destDir>/<innerPath>`.
+    filter: (p) => {
+      // tar normalizes paths to forward slashes
+      const norm = p.replace(/\\/g, "/").replace(/^\.\//, "");
+      if (norm === innerPath) {
+        matched = true;
+        return true;
+      }
+      return false;
+    },
+  });
+  if (!matched) {
+    throw new Error(
+      `tar archive does not contain expected entry ${innerPath}`,
+    );
+  }
+  const extracted = path.join(destDir, innerPath);
+  if (!existsSync(extracted)) {
+    throw new Error(
+      `tar extraction reported match but ${extracted} is missing`,
+    );
+  }
+  return extracted;
+}
+
+// ---------------------------------------------------------------------------
+// Per-target processor
+// ---------------------------------------------------------------------------
+
+async function processTarget(triple, shasumsText) {
+  const entry = TARGETS[triple];
+  const archiveUrl = `${DIST_BASE}/${entry.distBasename}`;
+  const outputPath = path.join(TARGET_DIR, entry.outputFilename);
+  const markerPath = `${outputPath}.sha256`;
+
+  // Look up the expected archive sha256 from the live SHASUMS.
+  let expectedArchiveSha;
+  try {
+    expectedArchiveSha = findShasum(shasumsText, entry.distBasename);
+  } catch (err) {
+    fail(
+      `[${triple}] could not locate sha256 for ${entry.distBasename}`,
+      err,
+    );
+  }
+
+  // Idempotency check.
+  if (existsSync(outputPath) && existsSync(markerPath)) {
+    try {
+      const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+      if (
+        marker &&
+        marker.nodeVersion === NODE_VERSION &&
+        marker.target === triple &&
+        typeof marker.sha256 === "string"
+      ) {
+        const actual = sha256File(outputPath);
+        if (actual === marker.sha256) {
+          log(
+            `[${triple}] already present (v${NODE_VERSION}), skipping fetch`,
+          );
+          reportOutcome(triple, outputPath, false);
+          return;
+        }
+        log(
+          `[${triple}] existing binary sha256 mismatch (stored=${marker.sha256.slice(0, 12)}..., actual=${actual.slice(0, 12)}...) — re-fetching`,
+        );
+      } else if (marker && marker.target && marker.target !== triple) {
+        log(
+          `[${triple}] marker is for a different target (${marker.target}) — re-fetching`,
+        );
+      } else {
+        log(
+          `[${triple}] marker is for a different version/layout — re-fetching`,
+        );
+      }
+    } catch (err) {
+      log(
+        `[${triple}] could not parse .sha256 marker (${err.message}) — re-fetching`,
+      );
+    }
+  }
+
+  // Download + extract in a scratch dir.
+  const workDir = path.join(
+    tmpdir(),
+    `packetade-fetch-node-${triple}-${process.pid}-${Date.now()}`,
+  );
+  mkdirSync(workDir, { recursive: true });
+  const archivePath = path.join(workDir, entry.distBasename);
+
+  const cleanup = () => {
+    try {
+      rmSync(workDir, { recursive: true, force: true });
+    } catch {
+      // swallow — cleanup is best effort
+    }
+  };
+
+  try {
+    log(`[${triple}] downloading ${archiveUrl}`);
+    await downloadToFile(archiveUrl, archivePath);
+
+    const archiveSha = sha256File(archivePath);
+    if (archiveSha !== expectedArchiveSha) {
+      try {
+        rmSync(archivePath, { force: true });
+      } catch {
+        // ignore
+      }
+      throw new Error(
+        `downloaded archive sha256 ${archiveSha} does not match ` +
+          `SHASUMS256.txt (${expectedArchiveSha})`,
+      );
+    }
+    log(`[${triple}] archive sha256 verified`);
+
+    log(`[${triple}] extracting ${entry.innerBinaryPath}`);
+    let binaryBuf;
+    if (entry.archive === "zip") {
+      binaryBuf = extractFromZip(archivePath, entry.innerBinaryPath);
+    } else if (entry.archive === "tar.gz") {
+      const extractedPath = await extractFromTarGz(
+        archivePath,
+        entry.innerBinaryPath,
+        workDir,
+      );
+      binaryBuf = readFileSync(extractedPath);
+      if (!binaryBuf || binaryBuf.length === 0) {
+        throw new Error(`extracted binary buffer is empty`);
+      }
+    } else {
+      throw new Error(`unsupported archive type: ${entry.archive}`);
+    }
+
+    // Ensure the binaries dir exists (caller should have already done it, but
+    // be defensive when processing multiple targets sequentially).
+    mkdirSync(TARGET_DIR, { recursive: true });
+
+    // Atomic-ish write: write to a .tmp sibling then rename over.
+    const tmpTarget = `${outputPath}.tmp`;
+    try {
+      rmSync(tmpTarget, { force: true });
+    } catch {
+      // ignore
+    }
+    writeFileSync(tmpTarget, binaryBuf);
+    const writtenSha = sha256File(tmpTarget);
+
+    try {
+      rmSync(outputPath, { force: true });
+    } catch {
+      // ignore
+    }
+    renameSync(tmpTarget, outputPath);
+
+    // Unix executable bit. Windows does not need / respect chmod.
+    if (!triple.includes("-windows-")) {
+      chmodSync(outputPath, 0o755);
+    }
+
+    const marker = {
+      nodeVersion: NODE_VERSION,
+      target: triple,
+      archiveUrl,
+      archiveBasename: entry.distBasename,
+      archiveSha256: expectedArchiveSha,
+      sha256: writtenSha,
+      fetchedAt: new Date().toISOString(),
+    };
+    writeFileSync(markerPath, `${JSON.stringify(marker, null, 2)}\n`);
+
+    cleanup();
+    reportOutcome(triple, outputPath, true);
+  } catch (err) {
+    try {
+      rmSync(`${outputPath}.tmp`, { force: true });
+    } catch {
+      // ignore
+    }
+    cleanup();
+    fail(`[${triple}] download/extract failed`, err);
+  }
+}
+
+function reportOutcome(triple, outputPath, downloaded) {
+  if (!existsSync(outputPath)) {
+    fail(`[${triple}] post-condition: target ${outputPath} missing`);
+  }
+  const size = statSync(outputPath).size;
+  const sha = sha256File(outputPath);
+  log(
+    `[${triple}] ${downloaded ? "downloaded" : "skipped"}  ` +
+      `path=${outputPath}  size=${size}  sha256=${sha}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main() {
-  // 1. Ensure target dir exists.
+  const args = parseArgs(process.argv);
+  if (args.help) {
+    printHelp();
+    process.exit(0);
+  }
+
+  const triples = resolveTargets(args);
+  log(`resolved targets: ${triples.join(", ")}`);
+
   mkdirSync(TARGET_DIR, { recursive: true });
 
-  // 2. Fetch the live SHASUMS256.txt and determine the expected zip hash.
+  // Fetch SHASUMS256.txt once and reuse across all targets.
   log(`fetching ${SHASUMS_URL}`);
   let shasumsBuf;
   try {
@@ -185,152 +548,12 @@ async function main() {
     fail(`failed to fetch SHASUMS256.txt`, err);
   }
   const shasumsText = shasumsBuf.toString("utf8");
-  let liveZipSha;
-  try {
-    liveZipSha = findShasum(shasumsText, ZIP_BASENAME);
-  } catch (err) {
-    fail(`bad SHASUMS256.txt content`, err);
+
+  for (const triple of triples) {
+    // Sequential — keeps network load friendly and logs readable.
+    // eslint-disable-next-line no-await-in-loop
+    await processTarget(triple, shasumsText);
   }
-
-  if (liveZipSha !== EXPECTED_SHA256) {
-    fail(
-      `live sha256 for ${ZIP_BASENAME} (${liveZipSha}) does not match pinned EXPECTED_SHA256 (${EXPECTED_SHA256}). ` +
-        `Refusing to proceed — update the pin in scripts/fetch-node.js after verifying out-of-band.`,
-    );
-  }
-  log(`verified pinned sha256 for ${ZIP_BASENAME}`);
-
-  // 3. Idempotency check. If TARGET exists AND its sibling .sha256 records
-  //    the current version, verify on-disk bytes still match and skip.
-  if (existsSync(TARGET_PATH) && existsSync(TARGET_SHA_PATH)) {
-    try {
-      const marker = JSON.parse(readFileSync(TARGET_SHA_PATH, "utf8"));
-      if (
-        marker &&
-        marker.nodeVersion === NODE_VERSION &&
-        typeof marker.sha256 === "string"
-      ) {
-        const actual = sha256File(TARGET_PATH);
-        if (actual === marker.sha256) {
-          log(
-            `node.exe already present (v${NODE_VERSION}), skipping fetch`,
-          );
-          reportOutcome({ downloaded: false });
-          return;
-        }
-        log(
-          `existing node.exe sha256 mismatch (stored=${marker.sha256.slice(0, 12)}..., actual=${actual.slice(0, 12)}...) — re-fetching`,
-        );
-      } else {
-        log(`stored .sha256 marker is for a different version — re-fetching`);
-      }
-    } catch (err) {
-      log(`could not parse .sha256 marker (${err.message}) — re-fetching`);
-    }
-  }
-
-  // 4. Download zip to a temp dir, verify checksum, extract node.exe.
-  const workDir = path.join(
-    tmpdir(),
-    `packetade-fetch-node-${process.pid}-${Date.now()}`,
-  );
-  mkdirSync(workDir, { recursive: true });
-  const zipPath = path.join(workDir, ZIP_BASENAME);
-
-  const cleanup = () => {
-    try {
-      rmSync(workDir, { recursive: true, force: true });
-    } catch {
-      // swallow — cleanup best effort
-    }
-  };
-
-  try {
-    log(`downloading ${NODE_URL}`);
-    await downloadToFile(NODE_URL, zipPath);
-
-    const zipSha = sha256File(zipPath);
-    if (zipSha !== EXPECTED_SHA256) {
-      // Nuke the (now distrusted) zip before bailing.
-      try {
-        rmSync(zipPath, { force: true });
-      } catch {
-        // ignore
-      }
-      throw new Error(
-        `downloaded zip sha256 ${zipSha} does not match expected ${EXPECTED_SHA256}`,
-      );
-    }
-    log(`zip sha256 verified`);
-
-    log(`extracting ${ZIP_INNER_NODE_PATH}`);
-    const zip = new AdmZip(zipPath);
-    const entry = zip.getEntry(ZIP_INNER_NODE_PATH);
-    if (!entry) {
-      throw new Error(
-        `zip does not contain expected entry ${ZIP_INNER_NODE_PATH}`,
-      );
-    }
-    const nodeExeBuf = entry.getData();
-    if (!nodeExeBuf || nodeExeBuf.length === 0) {
-      throw new Error(`extracted node.exe buffer is empty`);
-    }
-
-    // Atomic-ish write: write to a .tmp sibling then rename over.
-    const tmpTarget = `${TARGET_PATH}.tmp`;
-    try {
-      rmSync(tmpTarget, { force: true });
-    } catch {
-      // ignore
-    }
-    writeFileSync(tmpTarget, nodeExeBuf);
-
-    // Verify what we wrote.
-    const writtenSha = sha256File(tmpTarget);
-
-    // Remove any prior target before rename (Windows rename-over semantics).
-    try {
-      rmSync(TARGET_PATH, { force: true });
-    } catch {
-      // ignore
-    }
-    // fs.renameSync via writeFileSync path — use built-in rename via fs.
-    const { renameSync } = await import("node:fs");
-    renameSync(tmpTarget, TARGET_PATH);
-
-    // Record a sidecar marker so future runs can short-circuit.
-    const marker = {
-      nodeVersion: NODE_VERSION,
-      zipUrl: NODE_URL,
-      zipSha256: EXPECTED_SHA256,
-      sha256: writtenSha,
-      fetchedAt: new Date().toISOString(),
-    };
-    writeFileSync(TARGET_SHA_PATH, `${JSON.stringify(marker, null, 2)}\n`);
-
-    cleanup();
-    reportOutcome({ downloaded: true });
-  } catch (err) {
-    // Remove any partial file on failure — no silent half-states.
-    try {
-      rmSync(`${TARGET_PATH}.tmp`, { force: true });
-    } catch {
-      // ignore
-    }
-    cleanup();
-    fail(`download/extract failed`, err);
-  }
-}
-
-function reportOutcome({ downloaded }) {
-  if (!existsSync(TARGET_PATH)) {
-    fail(`post-condition: target ${TARGET_PATH} missing`);
-  }
-  const size = statSync(TARGET_PATH).size;
-  const sha = sha256File(TARGET_PATH);
-  log(
-    `${downloaded ? "downloaded" : "skipped"}  path=${TARGET_PATH}  size=${size}  sha256=${sha}`,
-  );
 }
 
 main().catch((err) => fail(`unhandled`, err));

@@ -111,7 +111,12 @@ system-installed sidecar source tree:
 
 - **Node runtime** — a pinned build of Node 20.17.0 is downloaded by
   `scripts/fetch-node.js` and staged as a Tauri `externalBin` under
-  `src-tauri/binaries/`. The Tauri bundler picks it up from there.
+  `src-tauri/binaries/`. The Tauri bundler picks it up from there. The
+  fetcher is the seam that covers all five supported target triples
+  (`x86_64-pc-windows-msvc`, `x86_64-apple-darwin`, `aarch64-apple-darwin`,
+  `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`); see
+  [`docs/multi-platform-build.md`](../docs/multi-platform-build.md) for the
+  full per-platform prerequisites and `TAURI_TARGET` usage.
 - **Sidecar payload** — the `agent-sidecar/` source, the compiled
   `dist/` output, and a pruned `node_modules/` containing only production
   dependencies are bundled as Tauri resources. The supervisor locates
