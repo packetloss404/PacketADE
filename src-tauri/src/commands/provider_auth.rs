@@ -50,13 +50,34 @@ fn format_relative_expiry(expires_at_unix_secs: i64) -> String {
 
 /// Turn a parsed expiry (Unix seconds) into a probe status.
 ///
-/// - expired → `login_required` with `run_again_hint`
-/// - within 72h → `ready` with "Expires in …" hint
-/// - further out → `ready` with empty hint
-fn expiry_to_status(expires_at_unix_secs: i64, run_again_hint: &str) -> ProviderAuthStatus {
+/// - expired + refresh token available → `ready` with
+///   "Session will auto-refresh on next use" (the Claude Agent SDK and
+///   Codex CLI both refresh transparently when they receive an expired
+///   access token alongside a valid refresh token — telling the user to
+///   log in again when they don't need to would be a regression).
+/// - expired + no refresh token → `login_required` with `run_again_hint`.
+/// - within 72h → `ready` with "Expires in …" hint.
+/// - further out → `ready` with empty hint.
+///
+/// We can't detect whether the refresh token itself has expired from the
+/// credential file (it's opaque for Codex, and Claude doesn't surface
+/// `refreshTokenExpiresAt`). If the refresh attempt fails on next use,
+/// the SDK/CLI will surface its own error and the fs watcher will pick
+/// up the credential-file change when the user re-logs in.
+fn expiry_to_status(
+    expires_at_unix_secs: i64,
+    has_refresh_token: bool,
+    run_again_hint: &str,
+) -> ProviderAuthStatus {
     let now = now_unix_secs();
     let delta = expires_at_unix_secs - now;
     if delta <= 0 {
+        if has_refresh_token {
+            return ProviderAuthStatus {
+                status: "ready".to_string(),
+                hint: "Session will auto-refresh on next use".to_string(),
+            };
+        }
         return ProviderAuthStatus {
             status: "login_required".to_string(),
             hint: run_again_hint.to_string(),
@@ -90,6 +111,21 @@ fn parse_claude_expiry_secs(bytes: &[u8]) -> Option<i64> {
         .and_then(|o| o.get("expiresAt"))
         .and_then(|e| e.as_i64())?;
     Some(millis / 1000)
+}
+
+/// True if the Claude credentials file contains a non-empty
+/// `claudeAiOauth.refreshToken`. The Claude Agent SDK will use this to
+/// refresh an expired access token transparently.
+fn parse_claude_has_refresh_token(bytes: &[u8]) -> bool {
+    let v: serde_json::Value = match serde_json::from_slice(bytes) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    v.get("claudeAiOauth")
+        .and_then(|o| o.get("refreshToken"))
+        .and_then(|s| s.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false)
 }
 
 /// Decode a base64url-encoded segment (no padding, `-`/`_` alphabet) into raw
@@ -147,6 +183,21 @@ fn parse_codex_expiry_secs(bytes: &[u8]) -> Option<i64> {
     payload.get("exp").and_then(|e| e.as_i64())
 }
 
+/// True if the Codex auth file contains a non-empty
+/// `tokens.refresh_token`. The Codex CLI will use this to refresh an
+/// expired access token on its next run.
+fn parse_codex_has_refresh_token(bytes: &[u8]) -> bool {
+    let v: serde_json::Value = match serde_json::from_slice(bytes) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    v.get("tokens")
+        .and_then(|t| t.get("refresh_token"))
+        .and_then(|s| s.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false)
+}
+
 /// Probe whether the user has logged into Claude Code (`claude login`).
 ///
 /// Claude Code stores OAuth credentials in `~/.claude/credentials` on some
@@ -185,6 +236,7 @@ pub(crate) fn probe_claude_oauth() -> ProviderAuthStatus {
                         if let Some(exp_secs) = parse_claude_expiry_secs(&bytes) {
                             return expiry_to_status(
                                 exp_secs,
+                                parse_claude_has_refresh_token(&bytes),
                                 "Token expired — run `claude login` again",
                             );
                         }
@@ -263,6 +315,7 @@ pub(crate) fn probe_codex_oauth() -> ProviderAuthStatus {
                         if let Some(exp_secs) = parse_codex_expiry_secs(&bytes) {
                             return expiry_to_status(
                                 exp_secs,
+                                parse_codex_has_refresh_token(&bytes),
                                 "Token expired — run `codex login` again",
                             );
                         }
@@ -433,17 +486,25 @@ mod tests {
     }
 
     #[test]
-    fn expiry_to_status_past_is_login_required() {
+    fn expiry_to_status_past_without_refresh_token_is_login_required() {
         let past = now_unix_secs() - 10;
-        let s = expiry_to_status(past, "run again");
+        let s = expiry_to_status(past, false, "run again");
         assert_eq!(s.status, "login_required");
         assert_eq!(s.hint, "run again");
     }
 
     #[test]
+    fn expiry_to_status_past_with_refresh_token_is_ready_with_refresh_hint() {
+        let past = now_unix_secs() - 10;
+        let s = expiry_to_status(past, true, "run again");
+        assert_eq!(s.status, "ready");
+        assert_eq!(s.hint, "Session will auto-refresh on next use");
+    }
+
+    #[test]
     fn expiry_to_status_soon_is_ready_with_hint() {
         let soon = now_unix_secs() + 2 * 3600; // within 72h
-        let s = expiry_to_status(soon, "run again");
+        let s = expiry_to_status(soon, false, "run again");
         assert_eq!(s.status, "ready");
         assert!(!s.hint.is_empty());
     }
@@ -451,9 +512,55 @@ mod tests {
     #[test]
     fn expiry_to_status_far_out_is_ready_no_hint() {
         let far = now_unix_secs() + 30 * 86_400;
-        let s = expiry_to_status(far, "run again");
+        let s = expiry_to_status(far, false, "run again");
         assert_eq!(s.status, "ready");
         assert_eq!(s.hint, "");
+    }
+
+    #[test]
+    fn parse_claude_has_refresh_token_true_when_present() {
+        let json = r#"{"claudeAiOauth":{"expiresAt":1,"refreshToken":"abc"}}"#;
+        assert!(parse_claude_has_refresh_token(json.as_bytes()));
+    }
+
+    #[test]
+    fn parse_claude_has_refresh_token_false_when_missing() {
+        let json = r#"{"claudeAiOauth":{"expiresAt":1}}"#;
+        assert!(!parse_claude_has_refresh_token(json.as_bytes()));
+    }
+
+    #[test]
+    fn parse_claude_has_refresh_token_false_when_empty_string() {
+        let json = r#"{"claudeAiOauth":{"refreshToken":""}}"#;
+        assert!(!parse_claude_has_refresh_token(json.as_bytes()));
+    }
+
+    #[test]
+    fn parse_claude_has_refresh_token_false_when_invalid_json() {
+        assert!(!parse_claude_has_refresh_token(b"not json"));
+    }
+
+    #[test]
+    fn parse_codex_has_refresh_token_true_when_present() {
+        let json = r#"{"tokens":{"access_token":"x.y.z","refresh_token":"opaque"}}"#;
+        assert!(parse_codex_has_refresh_token(json.as_bytes()));
+    }
+
+    #[test]
+    fn parse_codex_has_refresh_token_false_when_missing() {
+        let json = r#"{"tokens":{"access_token":"x.y.z"}}"#;
+        assert!(!parse_codex_has_refresh_token(json.as_bytes()));
+    }
+
+    #[test]
+    fn parse_codex_has_refresh_token_false_when_empty_string() {
+        let json = r#"{"tokens":{"refresh_token":""}}"#;
+        assert!(!parse_codex_has_refresh_token(json.as_bytes()));
+    }
+
+    #[test]
+    fn parse_codex_has_refresh_token_false_when_invalid_json() {
+        assert!(!parse_codex_has_refresh_token(b"garbage"));
     }
 
     #[test]
