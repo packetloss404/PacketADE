@@ -29,6 +29,8 @@ interface ClickablePathsRootProps {
   children: ReactNode;
   /** Optional className passthrough for the wrapper div */
   className?: string;
+  /** Optional left-click handler for Markdown paths. */
+  onOpenMarkdown?: (path: string, line?: number) => void;
 }
 
 /**
@@ -105,6 +107,7 @@ function extractPathAt(
 export function ClickablePathsRoot({
   children,
   className,
+  onOpenMarkdown,
 }: ClickablePathsRootProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -153,10 +156,29 @@ export function ClickablePathsRoot({
     });
   }, []);
 
+  const onClick = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
+    if (!onOpenMarkdown) return;
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      return;
+    }
+
+    const caret = caretFromPoint(e.clientX, e.clientY);
+    if (!caret || caret.node.nodeType !== Node.TEXT_NODE) return;
+
+    const text = caret.node.textContent ?? "";
+    const found = extractPathAt(text, caret.offset);
+    if (!found || !/\.mdx?$/i.test(found.path)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    onOpenMarkdown(found.path, found.line);
+  }, [onOpenMarkdown]);
+
   return (
     <div
       ref={rootRef}
       className={className}
+      onClick={onClick}
       onContextMenu={onContextMenu}
       style={{ display: "contents" }}
     >

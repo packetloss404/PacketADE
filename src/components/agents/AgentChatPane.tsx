@@ -17,6 +17,7 @@ import {
   Download,
   MoreVertical,
   Server,
+  PanelRightOpen,
 } from "lucide-react";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { PendingEditPrompt } from "./PendingEditPrompt";
@@ -41,6 +42,7 @@ import { AgentMosaicShell } from "./AgentMosaicShell";
 import { AgentPaneSplitMenu } from "./AgentPaneSplitMenu";
 import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
 import { AgentFilePane } from "./AgentFilePane";
+import { AgentPreviewPane } from "./AgentPreviewPane";
 import { TerminalPane } from "@/components/session/TerminalPane";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
@@ -49,6 +51,7 @@ import { API_PROVIDERS } from "@/lib/api-models";
 import { calculateTurnCost } from "@/lib/tauri";
 import { aggregateConversationDiffs } from "@/lib/aggregateConversationDiffs";
 import { generateId } from "@/lib/storage";
+import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import type {
   AgentConversation,
   AgentMessage,
@@ -155,6 +158,10 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const respondEdit = useAgentTaskStore((s) => s.respondEdit);
   const retryLastTurn = useAgentTaskStore((s) => s.retryLastTurn);
   const exportConversation = useAgentTaskStore((s) => s.exportConversation);
+  const previewOpen = usePreviewPaneStore((s) => s.open);
+  const togglePreview = usePreviewPaneStore((s) => s.toggle);
+  const openMarkdownPreview = usePreviewPaneStore((s) => s.openMarkdown);
+  const openPlanPreview = usePreviewPaneStore((s) => s.openPlan);
 
   const [input, setInput] = useState("");
   const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
@@ -164,6 +171,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const lastPreviewedPlanRef = useRef<string | null>(null);
 
   const {
     isListening,
@@ -198,6 +206,25 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   useEffect(() => {
     resizeTextarea();
   }, [input, resizeTextarea]);
+
+  const latestPlanMessage = useMemo(() => {
+    if (!conversation?.planMode) return null;
+    return [...conversation.messages]
+      .reverse()
+      .find(
+        (msg) =>
+          msg.role === "assistant" &&
+          !msg.isStreaming &&
+          looksLikePlan(msg.content),
+      ) ?? null;
+  }, [conversation?.messages, conversation?.planMode]);
+
+  useEffect(() => {
+    if (!latestPlanMessage) return;
+    if (lastPreviewedPlanRef.current === latestPlanMessage.id) return;
+    lastPreviewedPlanRef.current = latestPlanMessage.id;
+    openPlanPreview(latestPlanMessage.content, "Agent plan");
+  }, [latestPlanMessage, openPlanPreview]);
 
   // Load user-defined slash commands from project + global dirs.
   const projectPathForSlash = conversation?.projectPath ?? "";
@@ -547,6 +574,11 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   function handleStop() {
     void cancelActiveConversation(conversationId);
+  }
+
+  function handleOpenMarkdown(path: string) {
+    if (!/\.mdx?$/i.test(path)) return;
+    openMarkdownPreview(path);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -900,6 +932,20 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           />
         )}
 
+        <button
+          type="button"
+          onClick={togglePreview}
+          className={`p-0.5 rounded transition-colors ${
+            previewOpen
+              ? "text-accent-blue bg-accent-blue/10"
+              : "text-text-muted hover:text-text-primary"
+          }`}
+          title={previewOpen ? "Collapse preview pane" : "Open preview pane"}
+          aria-label={previewOpen ? "Collapse preview pane" : "Open preview pane"}
+        >
+          <PanelRightOpen size={12} />
+        </button>
+
         {/* Split menu (open diff/terminal/file panes inside this conversation) */}
         <AgentPaneSplitMenu conversationId={conversationId} />
 
@@ -928,7 +974,10 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       </div>
 
       {/* Messages area */}
-      <ClickablePathsRoot projectPath={conversation.projectPath}>
+      <ClickablePathsRoot
+        projectPath={conversation.projectPath}
+        onOpenMarkdown={handleOpenMarkdown}
+      >
         <div
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
@@ -1109,10 +1158,12 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
               conversationId={conversationId}
               projectPath={conversation.projectPath}
               sshTarget={conversation.sshTarget ?? null}
+              onSelectFile={handleOpenMarkdown}
             />
           }
         />
       </div>
+      {previewOpen && <AgentPreviewPane projectPath={conversation.projectPath} />}
       {showRewind && (
         <div className="w-72 shrink-0 border-l border-bg-border">
           <CheckpointPanel

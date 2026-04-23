@@ -112,6 +112,9 @@ pub fn pricing_for(model: &str) -> Option<ModelPricing> {
     // --- OpenAI (direct + OpenRouter mirror) ---
     let oai = m.strip_prefix("openai/").unwrap_or(&m).to_string();
 
+    if oai.starts_with("gpt-5.5") || oai.starts_with("chatgpt-5.5") {
+        return Some(ModelPricing::openai(5.0, 15.0));
+    }
     if oai.starts_with("gpt-5.3-codex") {
         return Some(ModelPricing::openai(5.0, 15.0));
     }
@@ -222,6 +225,17 @@ mod tests {
         let a = pricing_for("anthropic/claude-sonnet-4-6").expect("sonnet");
         assert_eq!(a.input_per_mtok, 3.0);
         assert_eq!(a.output_per_mtok, 15.0);
+    }
+
+    #[test]
+    fn gpt_5_5_pricing_matches_openai_aliases() {
+        let direct = pricing_for("gpt-5.5").expect("gpt-5.5");
+        assert_eq!(direct.input_per_mtok, 5.0);
+        assert_eq!(direct.output_per_mtok, 15.0);
+
+        let routed = pricing_for("openai/gpt-5.5").expect("openrouter gpt-5.5");
+        assert_eq!(routed.input_per_mtok, 5.0);
+        assert_eq!(routed.output_per_mtok, 15.0);
     }
 
     #[test]

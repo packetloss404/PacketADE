@@ -43,7 +43,8 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     name: "OpenAI (ChatGPT Plus/Pro)",
     needsKey: false,
     models: [
-      { label: "GPT-5 Codex (default)", value: "gpt-5-codex" },
+      { label: "GPT-5.5 (default)", value: "gpt-5.5" },
+      { label: "GPT-5 Codex", value: "gpt-5-codex" },
       { label: "GPT-5", value: "gpt-5" },
       { label: "o4-mini", value: "o4-mini" },
     ],
@@ -54,6 +55,7 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     name: "OpenAI (API)",
     needsKey: true,
     models: [
+      { label: "GPT-5.5 (default)", value: "gpt-5.5" },
       { label: "ChatGPT 5.4", value: "chatgpt-5.4" },
       { label: "GPT-4o", value: "gpt-4o" },
       { label: "o3", value: "o3" },
@@ -80,6 +82,7 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
       { label: "Claude Opus 4.7", value: "anthropic/claude-opus-4-7" },
       { label: "Claude Opus 4.6", value: "anthropic/claude-opus-4-6" },
       { label: "Claude Sonnet 4.6", value: "anthropic/claude-sonnet-4-6" },
+      { label: "GPT-5.5", value: "openai/gpt-5.5" },
       { label: "ChatGPT 5.4", value: "openai/chatgpt-5.4" },
       { label: "Gemini 2.5 Pro", value: "google/gemini-2.5-pro" },
       { label: "Llama 4 Maverick", value: "meta-llama/llama-4-maverick" },
