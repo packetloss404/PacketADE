@@ -12,6 +12,7 @@ export const CLAUDE_MODELS: ModelOption[] = [
 ];
 
 export const CODEX_MODELS: ModelOption[] = [
+  { label: "GPT-5.5", value: "gpt-5.5" },
   { label: "GPT-5.4", value: "gpt-5.4" },
   { label: "GPT-5.3 Codex", value: "gpt-5.3-codex" },
 ];

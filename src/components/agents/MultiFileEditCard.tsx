@@ -10,6 +10,7 @@ import {
   Folder,
 } from "lucide-react";
 import { useDiffPaneStore } from "../../stores/diffPaneStore";
+import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface MultiFileEditCardProps {
@@ -182,6 +183,10 @@ export function MultiFileEditCard({
   };
 
   const handleOpenFile = (path: string) => {
+    if (/\.mdx?$/i.test(path)) {
+      usePreviewPaneStore.getState().openMarkdown(path);
+      return;
+    }
     useDiffPaneStore.getState().openForConversation(conversationId, path);
   };
 
