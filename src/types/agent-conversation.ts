@@ -46,6 +46,8 @@ export interface PendingEdit {
   id: string;
   path: string;
   content: string;
+  /** Prior file content (undefined for new files). Drives red/green diff render. */
+  before?: string;
 }
 
 export type AgentMode = "pty" | "api";
@@ -109,4 +111,9 @@ export interface AgentConversation {
    * Default true for conversations opened with read-only profiles (e.g. Scout),
    * false otherwise. Toggleable from the chat header. */
   memoryContextEnabled?: boolean;
+  /** Soft binding to a Workspace (see workspaceStore). Set when the conversation
+   * was created from inside a Workspace context (WorkspacePane or flight attempt).
+   * Cleared if the parent Workspace is archived/deleted. Drives the optional
+   * "workspace" sidebar group mode. */
+  workspaceId?: string;
 }

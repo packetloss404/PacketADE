@@ -114,6 +114,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const activeWorkspaceId = s.activeWorkspaceId === id ? null : s.activeWorkspaceId;
       return { workspaces, activeWorkspaceId };
     }));
+    // Detach (don't cascade-delete) any conversations soft-bound to this
+    // workspace so they survive as one-off agents in the sidebar.
+    void import("@/stores/agentTaskStore").then(({ useAgentTaskStore }) => {
+      useAgentTaskStore.getState().detachConversationsFromWorkspace(id);
+    });
   },
 
   deleteWorkspace: (id) => {
@@ -122,6 +127,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const activeWorkspaceId = s.activeWorkspaceId === id ? null : s.activeWorkspaceId;
       return { workspaces, activeWorkspaceId };
     }));
+    void import("@/stores/agentTaskStore").then(({ useAgentTaskStore }) => {
+      useAgentTaskStore.getState().detachConversationsFromWorkspace(id);
+    });
   },
 
   setActiveWorkspace: (id) => {

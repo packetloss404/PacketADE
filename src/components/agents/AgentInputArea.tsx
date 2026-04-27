@@ -35,7 +35,12 @@ import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import { FileMentionPopover } from "./FileMentionPopover";
 import { SshConnectModal } from "./SshConnectModal";
 import type { AgentCli } from "@/stores/agentTaskStore";
-import { API_PROVIDERS, getProviderForAgent } from "@/lib/api-models";
+import {
+  API_PROVIDERS,
+  getProviderForAgent,
+  getModelSpeed,
+  MODEL_SPEED_LABEL,
+} from "@/lib/api-models";
 import {
   getProviderAuthStatus,
   listOllamaModels,
@@ -810,13 +815,27 @@ export function AgentInputArea({
                   triggerLabel = currentModel?.label ?? "Select model";
                 }
 
+                const speed = getModelSpeed(selectedModel);
+                const speedClass =
+                  speed === "fast"
+                    ? "text-accent-green bg-accent-green/10"
+                    : speed === "thorough"
+                      ? "text-accent-purple bg-accent-purple/10"
+                      : "text-accent-blue bg-accent-blue/10";
+
                 return (
                   <Dropdown
                     searchable
                     searchPlaceholder="Search models…"
                     trigger={
-                      <span className="text-text-muted text-[10px]">
-                        {triggerLabel}
+                      <span className="flex items-center gap-1.5 text-text-muted text-[10px]">
+                        <span>{triggerLabel}</span>
+                        <span
+                          className={`px-1 py-px rounded text-[9px] font-medium ${speedClass}`}
+                          title={`${MODEL_SPEED_LABEL[speed]} mode (heuristic)`}
+                        >
+                          {MODEL_SPEED_LABEL[speed]}
+                        </span>
                       </span>
                     }
                   >

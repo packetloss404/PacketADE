@@ -35,6 +35,8 @@ import { CheckpointPanel } from "./CheckpointPanel";
 import { PlanModeApprovalMenu, looksLikePlan } from "./PlanModeApprovalMenu";
 import { DiffPaneTrigger } from "./DiffPaneTrigger";
 import { MultiFileEditCard } from "./MultiFileEditCard";
+import { ExplorationRollupCard } from "./ExplorationRollupCard";
+import { AgentStatusBar } from "./AgentStatusBar";
 import { SubagentToolCallCard } from "./SubagentToolCallCard";
 import { TaskListCard } from "./TaskListCard";
 import { ContinueInMenu } from "./ContinueInMenu";
@@ -509,6 +511,14 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             model,
             "",
             conv.systemPromptOverride ?? null,
+            undefined,
+            undefined,
+            null,
+            undefined,
+            false,
+            conv.allowedTools ?? null,
+            conv.memoryContextEnabled ?? false,
+            conv.workspaceId,
           );
           selectConversation(newId);
         } catch (e) {
@@ -1059,6 +1069,9 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         </div>
       )}
 
+      {/* Status bar — workspace + branch */}
+      <AgentStatusBar conversation={conversation} />
+
       {/* Input area */}
       <div className="shrink-0 border-t border-bg-border px-3 py-2 bg-bg-primary relative">
         {/* Popovers anchored above the textarea */}
@@ -1235,14 +1248,27 @@ function MessageBubble({
           <ThinkingBlock text={message.thinking} streaming={message.isStreaming} />
         )}
 
+        {/* Exploration rollup — collapses read_file/grep/glob/list_files into one line */}
+        {message.toolCalls && message.toolCalls.length > 0 && !message.isStreaming && (
+          <ExplorationRollupCard toolCalls={message.toolCalls} />
+        )}
+
         {/* Tool calls — group write_file edits when there are 3+ */}
         {message.toolCalls && message.toolCalls.length > 0 && (() => {
-          const writeFileCalls = message.toolCalls.filter(
+          // Hide explored-only tool calls (already summarized above) when not streaming
+          const isExplored = (name: string) =>
+            ["read_file", "Read", "grep", "Grep", "glob", "Glob", "search",
+             "list_directory", "list_files", "LS", "ls"].includes(name);
+          const visibleToolCalls = message.isStreaming
+            ? message.toolCalls
+            : message.toolCalls.filter((tc) => !isExplored(tc.name));
+          if (visibleToolCalls.length === 0) return null;
+          const writeFileCalls = visibleToolCalls.filter(
             (tc) =>
               tc.name === "write_file" &&
               (tc.status === "done" || tc.status === "error"),
           );
-          const otherCalls = message.toolCalls.filter(
+          const otherCalls = visibleToolCalls.filter(
             (tc) => !writeFileCalls.includes(tc),
           );
           const groupWrites = writeFileCalls.length >= 3;
@@ -1255,7 +1281,7 @@ function MessageBubble({
                   projectPath={conversation.projectPath}
                 />
               )}
-              {(groupWrites ? otherCalls : message.toolCalls).map((tc) =>
+              {(groupWrites ? otherCalls : visibleToolCalls).map((tc) =>
                 tc.name === "bash" ? (
                   <BashToolCallCard
                     key={tc.id}

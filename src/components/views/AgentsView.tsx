@@ -107,6 +107,26 @@ export function AgentsView() {
     setTimeout(() => textareaRef.current?.focus(), 50);
   }, [selectConversation]);
 
+  // Ctrl+N (Cmd+N on macOS) opens a fresh agent. Suppressed when the user is
+  // typing in an input/textarea so they can still type the literal "n".
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isShortcut = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n";
+      if (!isShortcut) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isEditable =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        (target?.isContentEditable ?? false);
+      if (isEditable) return;
+      e.preventDefault();
+      handleNewAgent();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleNewAgent]);
+
   const handleProfileChange = useCallback(
     (id: string) => {
       setSelectedProfileId(id);

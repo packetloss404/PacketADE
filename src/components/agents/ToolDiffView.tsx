@@ -6,6 +6,9 @@ interface ToolDiffViewProps {
   projectPath: string;
   filePath: string;
   newContent: string;
+  /** Pre-resolved prior file content. When provided, skip the disk read.
+   * Pass null/empty string for new files; pass undefined to fall back to disk. */
+  oldContent?: string | null;
 }
 
 type LoadState =
@@ -18,10 +21,23 @@ export function ToolDiffView({
   projectPath,
   filePath,
   newContent,
+  oldContent,
 }: ToolDiffViewProps) {
-  const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [state, setState] = useState<LoadState>(() => {
+    if (oldContent === null) return { kind: "new" };
+    if (typeof oldContent === "string") return { kind: "existing", oldContent };
+    return { kind: "loading" };
+  });
 
   useEffect(() => {
+    if (oldContent === null) {
+      setState({ kind: "new" });
+      return;
+    }
+    if (typeof oldContent === "string") {
+      setState({ kind: "existing", oldContent });
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -42,7 +58,7 @@ export function ToolDiffView({
     return () => {
       cancelled = true;
     };
-  }, [projectPath, filePath]);
+  }, [projectPath, filePath, oldContent]);
 
   const diffParts = useMemo(() => {
     if (state.kind !== "existing") return null;

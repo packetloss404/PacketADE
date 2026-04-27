@@ -112,3 +112,37 @@ export function getDefaultModel(agent: AgentCli): string {
   const provider = getProviderForAgent(agent);
   return provider?.models[0]?.value ?? "";
 }
+
+export type ModelSpeed = "fast" | "balanced" | "thorough";
+
+/** Heuristic mapping of a model id to a Cursor-style speed label. */
+export function getModelSpeed(modelId: string | undefined | null): ModelSpeed {
+  if (!modelId) return "balanced";
+  const id = modelId.toLowerCase();
+  // Anthropic
+  if (id.includes("haiku")) return "fast";
+  if (id.includes("opus")) return "thorough";
+  if (id.includes("sonnet")) return "balanced";
+  // OpenAI
+  if (id.includes("o3")) return "thorough";
+  if (id.includes("o4-mini") || id.includes("4o-mini")) return "fast";
+  if (id.includes("gpt-5.5") || id.includes("chatgpt-5.4") || id.includes("gpt-5-codex")) {
+    return "balanced";
+  }
+  if (id.includes("gpt-4o") || id.includes("gpt-5")) return "balanced";
+  // MiniMax
+  if (id.includes("highspeed")) return "fast";
+  if (id.includes("minimax")) return "balanced";
+  // OpenRouter
+  if (id.includes("auto")) return "balanced";
+  // Gemini / Llama / Ollama — generally local or general-purpose
+  if (id.includes("flash") || id.includes("mini")) return "fast";
+  if (id.includes("70b") || id.includes("405b") || id.includes("32b")) return "thorough";
+  return "balanced";
+}
+
+export const MODEL_SPEED_LABEL: Record<ModelSpeed, string> = {
+  fast: "Fast",
+  balanced: "Balanced",
+  thorough: "Thorough",
+};
