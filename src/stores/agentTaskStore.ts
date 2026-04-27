@@ -194,6 +194,9 @@ interface AgentTaskStore {
     /** Inject the memory layer's project context into the system prompt.
      * Default false to preserve existing behavior. */
     memoryContextEnabled?: boolean,
+    /** Soft binding to a Workspace. Set this when the caller is inside a
+     * Workspace pane / flight attempt; leave undefined for one-off agents. */
+    workspaceId?: string | null,
   ) => Promise<string>;
   sendMessage: (conversationId: string, content: string) => void;
   addAssistantMessage: (conversationId: string, content: string, toolCalls?: AgentToolCall[]) => void;
@@ -202,6 +205,14 @@ interface AgentTaskStore {
   deleteConversation: (id: string) => void;
   archiveConversation: (id: string) => void;
   unarchiveConversation: (id: string) => void;
+  /** User-customizable display labels per projectPath (drives sidebar group headers).
+   * Falls back to derived basename when unset. */
+  projectLabels: Record<string, string>;
+  setProjectLabel: (projectPath: string, label: string) => void;
+  /** Clear workspaceId from all conversations bound to the given workspace.
+   * Called by workspaceStore when a Workspace is archived or deleted so the
+   * conversations survive (just unbound) rather than cascade-disappearing. */
+  detachConversationsFromWorkspace: (workspaceId: string) => void;
   appendRawOutput: (conversationId: string, text: string) => void;
   cancelActiveConversation: (id: string) => Promise<void>;
   changeModel: (id: string, newModel: string) => Promise<void>;
@@ -419,7 +430,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget, explicitId, skipBackendStart, allowedTools, memoryContextEnabled) => {
+  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget, explicitId, skipBackendStart, allowedTools, memoryContextEnabled, workspaceId) => {
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
 
@@ -482,6 +493,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         : undefined,
       allowedTools: allowedTools ?? undefined,
       memoryContextEnabled: memoryContextEnabled ?? false,
+      workspaceId: workspaceId ?? undefined,
     };
 
     set((s) => ({
@@ -1016,6 +1028,48 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       }),
     }));
     if (updated) scheduleSave(updated);
+  },
+
+  projectLabels: ((): Record<string, string> => {
+    if (typeof localStorage === "undefined") return {};
+    try {
+      const raw = localStorage.getItem("packetcode:project-labels");
+      return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  })(),
+
+  setProjectLabel: (projectPath, label) => {
+    set((s) => {
+      const next = { ...s.projectLabels };
+      const trimmed = label.trim();
+      if (trimmed) next[projectPath] = trimmed;
+      else delete next[projectPath];
+      try {
+        localStorage.setItem("packetcode:project-labels", JSON.stringify(next));
+      } catch {
+        // Best effort.
+      }
+      return { projectLabels: next };
+    });
+  },
+
+  detachConversationsFromWorkspace: (workspaceId) => {
+    const touched: AgentConversation[] = [];
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.workspaceId !== workspaceId) return c;
+        const next: AgentConversation = {
+          ...c,
+          workspaceId: undefined,
+          updatedAt: Date.now(),
+        };
+        touched.push(next);
+        return next;
+      }),
+    }));
+    for (const conv of touched) scheduleSave(conv);
   },
 
   cancelActiveConversation: async (id) => {

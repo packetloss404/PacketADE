@@ -128,6 +128,10 @@ struct PendingEditPayload {
     id: String,
     path: String,
     content: String,
+    /// Prior file content (None for new files) so the frontend can render
+    /// a real before/after diff instead of just the new content.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    before: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1076,14 +1080,21 @@ impl SidecarManager {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+                // Sidecar protocol carries `after` as the new content; older
+                // bundled sidecars may still emit `content`. Accept either.
                 let content = value
-                    .get("content")
+                    .get("after")
+                    .or_else(|| value.get("content"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+                let before = value
+                    .get("before")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let _ = self.app_handle.emit(
                     &pending_edit_event(&session_id),
-                    PendingEditPayload { id, path, content },
+                    PendingEditPayload { id, path, content, before },
                 );
             }
             "done" => {

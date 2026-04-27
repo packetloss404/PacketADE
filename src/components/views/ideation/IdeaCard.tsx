@@ -35,6 +35,7 @@ export function IdeaCard({ idea, isSelected, onSelect }: IdeaCardProps) {
       false,
       scout?.allowedTools ?? null,
       scout?.memoryContextDefault ?? false,
+      workspace.id,
     );
     useAgentTaskStore.getState().selectConversation(id);
     useAppStore.getState().setActiveView("agents");

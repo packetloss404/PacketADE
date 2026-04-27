@@ -159,6 +159,10 @@ struct PendingEditPayload {
     id: String,
     path: String,
     content: String,
+    /// Prior file content (None for new files) so the frontend can render
+    /// a real before/after diff instead of just the new content.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    before: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1316,6 +1320,14 @@ async fn run_agent_loop(
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
+                        // Read prior content for before/after diff. None for
+                        // new files (or unreadable paths) — the frontend
+                        // treats that as a green-only diff.
+                        let before = if path.is_empty() {
+                            None
+                        } else {
+                            tokio::fs::read_to_string(&path).await.ok()
+                        };
 
                         let (tx, rx) = oneshot::channel::<EditDecision>();
                         {
@@ -1328,6 +1340,7 @@ async fn run_agent_loop(
                                 id: tc.id.clone(),
                                 path,
                                 content,
+                                before,
                             },
                         );
                         match tokio::time::timeout(Duration::from_secs(600), rx).await {

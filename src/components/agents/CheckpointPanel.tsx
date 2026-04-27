@@ -117,6 +117,14 @@ export function CheckpointPanel({
         conversation.model,
         "",
         conversation.systemPromptOverride ?? null,
+        undefined,
+        undefined,
+        null,
+        undefined,
+        false,
+        conversation.allowedTools ?? null,
+        conversation.memoryContextEnabled ?? false,
+        conversation.workspaceId,
       );
       // Seed the new conversation with the checkpoint's messages.
       useAgentTaskStore.setState((s) => ({
