@@ -18,23 +18,18 @@ import {
   Plus,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useAppStore } from "@/stores/appStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { aggregateConversationCost, formatCostPill } from "@/lib/conversationCost";
 
 type StatusFilter = "all" | "active" | "done" | "archived";
-type GroupBy = "project" | "status" | "env" | "workspace";
+type GroupBy = "project" | "status" | "env";
 
 const GROUP_BY_LABELS: Record<GroupBy, string> = {
   project: "Project",
   status: "Status",
   env: "Environment",
-  workspace: "Workspace",
 };
-
-const NO_WORKSPACE_KEY = "__no_workspace__";
 
 const STATUS_GROUP_LABELS: Record<AgentConversation["status"], string> = {
   active: "Active",
@@ -130,9 +125,6 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const unarchiveConversation = useAgentTaskStore((s) => s.unarchiveConversation);
   const projectLabels = useAgentTaskStore((s) => s.projectLabels);
   const setProjectLabel = useAgentTaskStore((s) => s.setProjectLabel);
-  const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
-  const setActiveView = useAppStore((s) => s.setActiveView);
 
   /** State for inline-renaming a project group header (groupBy=project only). */
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -231,8 +223,6 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
         key = conv.status;
       } else if (groupBy === "env") {
         key = envGroupKey(conv);
-      } else if (groupBy === "workspace") {
-        key = conv.workspaceId ?? NO_WORKSPACE_KEY;
       } else {
         key = conv.sshTarget
           ? `ssh:${conv.sshTarget.id}:${conv.projectPath}`
@@ -258,27 +248,8 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       }
       return ordered;
     }
-    if (groupBy === "workspace") {
-      // Order: real workspaces first (by workspace.updatedAt desc), then "(no workspace)" last.
-      const ordered = new Map<string, AgentConversation[]>();
-      const wsIds = workspaces
-        .filter((w) => map.has(w.id))
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-        .map((w) => w.id);
-      for (const id of wsIds) ordered.set(id, map.get(id)!);
-      // Any workspace IDs in the map that no longer exist (stale references) — bucket them as no-workspace.
-      const orphans: AgentConversation[] = [];
-      for (const [k, list] of map) {
-        if (k === NO_WORKSPACE_KEY) continue;
-        if (!wsIds.includes(k)) orphans.push(...list);
-      }
-      const noWs = map.get(NO_WORKSPACE_KEY) ?? [];
-      const combined = [...noWs, ...orphans].sort((a, b) => b.updatedAt - a.updatedAt);
-      if (combined.length > 0) ordered.set(NO_WORKSPACE_KEY, combined);
-      return ordered;
-    }
     return map;
-  }, [filtered, groupBy, isSearching, workspaces]);
+  }, [filtered, groupBy, isSearching]);
 
   // Search-result aggregate counts
   const searchStats = useMemo(() => {
@@ -428,9 +399,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
           </button>
           {groupMenuOpen && (
             <div className="absolute z-10 left-3 top-full mt-0.5 bg-bg-primary border border-bg-border rounded shadow-lg py-0.5 min-w-[120px]">
-              {(
-                ["project", "status", "env", ...(workspaces.length > 0 ? ["workspace" as const] : [])] as GroupBy[]
-              ).map((g) => (
+              {(["project", "status", "env"] as GroupBy[]).map((g) => (
                 <button
                   key={g}
                   onMouseDown={(e) => {
@@ -484,15 +453,6 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                 headerIcon = <FolderOpen size={10} className="text-text-muted shrink-0" />;
               }
               headerLabel = key;
-            } else if (groupBy === "workspace") {
-              if (key === NO_WORKSPACE_KEY) {
-                headerIcon = <FolderOpen size={10} className="text-text-muted shrink-0" />;
-                headerLabel = "(no workspace)";
-              } else {
-                const ws = workspaces.find((w) => w.id === key);
-                headerIcon = <Layers size={10} className="text-accent-blue shrink-0" />;
-                headerLabel = ws?.name ?? "(unknown workspace)";
-              }
             } else {
               headerIcon = sshTarget ? (
                 <Server size={10} className="text-accent-green shrink-0" />
@@ -559,26 +519,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                     {headerLabel}
                   </span>
                 )}
-                {groupBy === "workspace" && key !== NO_WORKSPACE_KEY && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveWorkspace(key);
-                      setActiveView("workspace");
-                    }}
-                    className="ml-auto p-0.5 text-text-muted hover:text-accent-blue rounded transition-colors"
-                    title="Open this workspace"
-                    aria-label="Open workspace"
-                  >
-                    <FolderOpen size={10} />
-                  </button>
-                )}
-                <span
-                  className={`text-[9px] text-text-muted shrink-0 ${
-                    groupBy === "workspace" && key !== NO_WORKSPACE_KEY ? "" : "ml-auto"
-                  }`}
-                >
+                <span className="text-[9px] text-text-muted shrink-0 ml-auto">
                   {convs.length}
                 </span>
               </div>

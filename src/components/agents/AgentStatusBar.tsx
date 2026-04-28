@@ -6,7 +6,6 @@ import type { AgentConversation } from "@/types/agent-conversation";
 
 interface AgentStatusBarProps {
   conversation: AgentConversation;
-  onOpenWorkspace?: () => void;
 }
 
 const POLL_INTERVAL_MS = 30_000;
@@ -16,7 +15,7 @@ function basenameOf(path: string): string {
   return segs[segs.length - 1] ?? path;
 }
 
-export function AgentStatusBar({ conversation, onOpenWorkspace }: AgentStatusBarProps) {
+export function AgentStatusBar({ conversation }: AgentStatusBarProps) {
   const projectLabels = useAgentTaskStore((s) => s.projectLabels);
   const [report, setReport] = useState<GitSafetyReport | null>(null);
   const [loading, setLoading] = useState(false);
@@ -56,16 +55,9 @@ export function AgentStatusBar({ conversation, onOpenWorkspace }: AgentStatusBar
 
   return (
     <div className="flex items-center gap-2 px-3 py-1 border-t border-bg-border bg-bg-primary text-[10px] text-text-muted">
-      {/* Left: project / workspace pill */}
-      <button
-        type="button"
-        onClick={onOpenWorkspace}
-        disabled={!onOpenWorkspace}
-        className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded transition-colors ${
-          onOpenWorkspace
-            ? "hover:bg-bg-hover hover:text-text-secondary cursor-pointer"
-            : "cursor-default"
-        }`}
+      {/* Left: project pill */}
+      <div
+        className="flex items-center gap-1.5 px-1.5 py-0.5 rounded cursor-default"
         title={projectPath}
       >
         {isSsh ? (
@@ -74,7 +66,7 @@ export function AgentStatusBar({ conversation, onOpenWorkspace }: AgentStatusBar
           <FolderOpen size={10} className="text-text-muted" />
         )}
         <span className="truncate max-w-[180px]">{displayLabel}</span>
-      </button>
+      </div>
 
       <div className="ml-auto flex items-center gap-2">
         {isSsh && conversation.sshTarget && (

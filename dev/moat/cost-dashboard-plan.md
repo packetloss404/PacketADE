@@ -10,38 +10,41 @@
 | Per-flight cost rollup | ⚠️ Partial | Deploy integration tracks per-flight |
 | Cost/analytics unification | ✅ Done | analyticsStore is sole source of truth |
 
-Last updated: 2026-04-15
+Last updated: 2026-04-28
 
 ## What the Cost Dashboard Does Today
 
 The cost dashboard is implemented across:
 
-- `src/stores/costStore.ts`
+- `src/stores/analyticsStore.ts`
+- `src-tauri/src/commands/analytics.rs`
+- `src-tauri/src/commands/pricing.rs`
 - `src/components/views/CostDashboardView.tsx`
 
 The current flow:
 
-1. `recordCost(sessionId, cost, model)` is called with a session ID, cost in USD, and model name
-2. Entries are persisted in localStorage under `packetcode:cost-entries`
-3. `getSummary()` computes total cost, session count, cost by day, and cost by model
-4. The `CostDashboardView` renders the summary
+1. API agents append `UsageEntry` rows to `~/.packetade/usage.jsonl`.
+2. `read_usage_analytics` also ingests Claude's `~/.claude/cost-tally.json` and Codex `~/.codex/sessions/**/*.jsonl`.
+3. `pricing.rs` estimates model costs where raw session logs provide token counts but not cost.
+4. `analyticsStore.ts` loads the aggregated `AnalyticsData`.
+5. `CostDashboardView` renders totals, daily costs, token counts, and per-model usage.
 
 ## What Works
 
-- The cost tracking model is straightforward and performant
-- LocalStorage persistence keeps data across restarts
-- Summary computation covers the most useful dimensions: total, per-session, per-day, per-model
-- The 1000-entry cap prevents unbounded storage growth
+- Backend aggregation keeps frontend state simple.
+- Data survives restarts through provider logs and PacketADE's `usage.jsonl`.
+- Summary computation covers the most useful dimensions: total, sessions, tokens, per-day, and per-model.
+- Local/self-hosted models are priced at `$0`; known cloud models use the pricing table in `pricing.rs`.
 
 ## Known Gaps
 
-### 1. Cost data is self-reported, not measured
+### 1. Cost data is mixed-source
 
-`recordCost` is called by whoever launches a session. The cost value is passed in, not computed from actual API usage. There is no verification that the cost matches the actual API spend.
+Claude cost-tally entries may carry cost directly, PacketADE API-agent rows carry calculated cost, and Codex CLI sessions are estimated from token counts. This is useful operationally but should not be treated as provider-billing truth.
 
-### 2. No actual token counts
+### 2. Unknown models price to zero
 
-`costStore.ts` records cost but not token counts. `analyticsStore.ts` has `inputTokens` and `outputTokens` from `read_usage_analytics`, but `costStore.ts` does not use them.
+`pricing.rs` returns zero for unknown models. That is safe, but new model IDs need table updates to avoid undercounting.
 
 ### 3. No per-flight cost tracking
 
@@ -55,14 +58,10 @@ There is no way to set a budget or get warned when spend approaches a threshold.
 
 If multiple users share a machine, costs are not attributed to different users.
 
-### 6. Analytics and cost are two separate stores
-
-`costStore.ts` and `analyticsStore.ts` both track related data (cost, tokens, sessions) but they are separate and may produce conflicting summaries.
-
 ## What a Full Plan Would Cover
 
 1. **Source of truth for cost data** — should costs come from actual API responses, estimates, or both? Can costs be verified against actual provider billing?
-2. **Token count tracking** — connect `analyticsStore.ts` token data to `costStore.ts` so both cost and tokens are tracked together
+2. **Pricing table maintenance** — keep `pricing.rs` aligned with supported model IDs and provider rate changes
 3. **Per-flight cost rollup** — attribute session costs to flights; show total flight cost
 4. **Cost alerts** — allow setting a spend threshold; surface a warning when approaching it
 5. **Dashboard UX improvements** — trend charts, per-model breakdowns, date range filtering
@@ -70,18 +69,16 @@ If multiple users share a machine, costs are not attributed to different users.
 
 ## Relationship to Analytics
 
-`analyticsStore.ts` calls `read_usage_analytics` which comes from the backend. `costStore.ts` is purely frontend-driven from session launch events. These two should be reconciled — ideally one store is the source of truth for both cost and token data.
+`analyticsStore.ts` calls `read_usage_analytics` and is the frontend source of truth for cost and token summaries. Historical `costStore.ts` references are obsolete.
 
 ## Recommendation
 
-This doc is currently a gap audit. A full plan is needed before significant cost dashboard work begins.
-
-The most impactful single improvement would be: **unify the cost and analytics data sources** so that token counts and cost estimates come from the same backend data rather than two independent paths.
+This doc is now a gap audit for the implemented dashboard. The most impactful next improvement would be: **add budget thresholds and visible cost alerts** using the existing backend analytics output.
 
 ## Next Step
 
-Audit how `recordCost` is called today — what values are passed, from where, and whether they are actual or estimated — before designing any of the above improvements.
+Design budget thresholds and decide whether alerts are global, per-provider, or per-flight.
 
 ## Implementation Spec
 
-See `dev/moat/cost-analytics-unification-implementation.md` for the full implementation plan covering deprecation of self-reported cost tracking, backend-as-source-of-truth, per-flight cost attribution, and cost alerts.
+See `dev/archive/moat/cost-analytics-unification-implementation.md` for the historical implementation plan covering deprecation of self-reported cost tracking, backend-as-source-of-truth, per-flight cost attribution, and cost alerts.

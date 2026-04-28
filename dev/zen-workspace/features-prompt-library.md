@@ -8,7 +8,7 @@
 | Built-in presets | ✅ Done | 5 presets auto-seeded |
 | Search | ✅ Done | Search input in PromptLibrary |
 | Send-to-terminal | ✅ Done | Writes to active PTY |
-| Send-to-chat | ✅ Done | Sends to Insights |
+| Send-to-chat | ✅ Done | Sends to Scout agent chat |
 | Command palette integration | ❌ Not started | — |
 
 > Research date: 2026-04-09
@@ -29,9 +29,9 @@ Observed behavior:
 
 This makes prompting feel like an operational tool, not just stored data.
 
-## What PacketCode Has Today
+## What PacketADE Has Today
 
-PacketCode already has partial overlap:
+PacketADE already has partial overlap:
 
 - `src/stores/promptStore.ts` stores prompt templates
 - `src/components/views/ToolsView.tsx` exposes template management
@@ -43,10 +43,10 @@ So this is not a greenfield gap.
 
 The gap is workflow shape, not storage.
 
-PacketCode currently appears to treat prompts mostly as:
+PacketADE now treats prompts as both:
 
 - reusable template records
-- selected during setup flows
+- quick-launch prompts from the workspace toolbar
 
 Zen treats prompts as:
 
@@ -54,16 +54,16 @@ Zen treats prompts as:
 
 ## Recommended Direction
 
-PacketCode should evolve templates into a lightweight prompt library without overcomplicating the system.
+PacketADE should keep templates as a lightweight prompt library without overcomplicating the system.
 
-## Good PacketCode-first version
+## Good PacketADE-first version
 
 - reuse `promptStore.ts`
 - add built-in prompt entries without replacing custom templates
 - allow send to:
   - active workspace terminal
   - selected workspace pane
-  - active insights/chat input where relevant
+  - Scout / agent chat where relevant
 - open from command palette and workspace UI
 
 ## Why This Matters For Workspaces

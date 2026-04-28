@@ -34,7 +34,6 @@ export function IdeaDetail({ idea }: { idea: Idea }) {
       false,
       scout?.allowedTools ?? null,
       scout?.memoryContextDefault ?? false,
-      workspace.id,
     );
     useAgentTaskStore.getState().selectConversation(id);
     useAppStore.getState().setActiveView("agents");

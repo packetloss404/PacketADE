@@ -6,11 +6,12 @@ newline-delimited JSON on stdin/stdout.
 
 ## Why a sidecar?
 
-The Claude Agent SDK and OpenAI Codex SDK are both TypeScript libraries.
-Rather than reimplementing them in Rust or shelling out to CLIs, we run them
-in an isolated Node child process and stream structured events back to the
-supervisor. The supervisor handles lifecycle, crash restart, and routing
-events into Tauri event channels for the React UI.
+The Anthropic subscription provider uses the Claude Agent SDK, while the
+OpenAI subscription provider wraps `codex exec` behind the same sidecar
+protocol. Keeping both in an isolated Node child process lets the Rust
+supervisor handle lifecycle, crash restart, and routing events into Tauri
+event channels for the React UI without making the frontend care which
+transport produced a turn.
 
 ## Install & build
 
@@ -38,7 +39,7 @@ The factory lives in `src/session-registry.ts`. Currently wired:
   passthrough, and permission / edit approval requests. Auth comes from the
   Claude Code OAuth credential store — no API key env var needed.
 - **`openai-codex`** — OpenAI ChatGPT subscription via the `codex` CLI
-  (`src/providers/openai-codex.ts`). Added in Phase 5. Known v1 limitations:
+  (`src/providers/openai-codex.ts`). Current limitations:
   - No MCP server support. Deliberately not wired — Codex has its own MCP
     config format (`~/.codex/config.toml` under `[mcp_servers.*]`), and users
     configure it via `codex mcp add`. Plumbing the sidecar's `mcpServers`
@@ -112,7 +113,7 @@ system-installed sidecar source tree:
 - **Node runtime** — a pinned build of Node 20.17.0 is downloaded by
   `scripts/fetch-node.js` and staged as a Tauri `externalBin` under
   `src-tauri/binaries/`. The Tauri bundler picks it up from there. The
-  fetcher is the seam that covers all five supported target triples
+  fetcher covers all five supported target triples
   (`x86_64-pc-windows-msvc`, `x86_64-apple-darwin`, `aarch64-apple-darwin`,
   `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`); see
   [`docs/multi-platform-build.md`](../docs/multi-platform-build.md) for the

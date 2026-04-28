@@ -30,17 +30,17 @@ Observed features:
 
 Project activation updates the active workspace directory and file tree.
 
-## What PacketCode Has Today
+## What PacketADE Has Today
 
-PacketCode already has several relevant pieces:
+PacketADE already has several relevant pieces:
 
 - `src/stores/projectHistoryStore.ts` for recent and scanned projects
 - `src/components/workspace/WorkspaceSidebar.tsx` for projects and workspaces UI
 - `src/types/workspace.ts` with `projectPath` on every workspace
 
-This means PacketCode is already closer to project-centric workspaces than Zen in one important way: the workspace type itself already owns a project path.
+This means PacketADE is already closer to project-centric workspaces than Zen in one important way: the workspace type itself already owns a project path.
 
-## Current PacketCode Constraint
+## Current PacketADE Constraint
 
 Even though `Workspace.projectPath` exists, project context still behaves globally in several places:
 
@@ -53,17 +53,17 @@ Even though `Workspace.projectPath` exists, project context still behaves global
 
 The desired direction is:
 
-- each PacketCode workspace should map to one project
+- each PacketADE workspace should map to one project
 - each workspace should own its own terminals
 - switching workspaces should switch project context automatically
 
-That direction is better than Zen's current model because it matches PacketCode's existing workspace domain instead of introducing a second parallel project system.
+That direction is better than Zen's current model because it matches PacketADE's existing workspace domain instead of introducing a second parallel project system.
 
 ## Practical Implication
 
-PacketCode should not stop at adding a nicer project list.
+PacketADE should not stop at adding a nicer project list.
 
-PacketCode should make workspaces the primary project container.
+PacketADE should make workspaces the primary project container.
 
 Projects then become:
 

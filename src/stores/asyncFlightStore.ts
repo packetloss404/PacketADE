@@ -63,12 +63,6 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // can render the live stream. The backend has already started the session;
     // we pass `skipBackendStart=true`.
     const createApi = useAgentTaskStore.getState().createApiConversation;
-    // Stamp soft Workspace binding onto attempt conversations: the parent
-    // Flight already carries `workspaceId`, so forward it through.
-    const parentFlight = useFlightStore
-      .getState()
-      .flights.find((f) => f.id === flightId);
-    const workspaceId = parentFlight?.workspaceId ?? null;
     for (const a of attempts) {
       let sshTarget = null;
       if (a.target.kind === "ssh") {
@@ -94,7 +88,6 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
           true,           // skipBackendStart — backend already started
           undefined,      // allowedTools
           undefined,      // memoryContextEnabled
-          workspaceId ?? undefined,
         );
       } catch (err) {
         console.warn("Failed to attach attempt listeners:", a.id, err);
