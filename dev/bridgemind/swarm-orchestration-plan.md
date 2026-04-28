@@ -1,6 +1,6 @@
 # Swarm Orchestration Plan
 
-Last updated: 2026-04-09
+Last updated: 2026-04-28
 
 ## Implementation Status — 2026-04-15
 
@@ -16,13 +16,13 @@ Last updated: 2026-04-09
 
 ## Goal
 
-Turn PacketCode's existing flight orchestration into a clear multi-agent swarm system with explicit roles, collision prevention, and visible coordination.
+Turn PacketADE's existing flight orchestration into a clear multi-agent swarm system with explicit roles, collision prevention, and visible coordination.
 
-This plan is intentionally built on the current PacketCode model rather than introducing a separate parallel system.
+This plan is intentionally built on the current PacketADE model rather than introducing a separate parallel system.
 
-## Why This Fits PacketCode
+## Why This Fits PacketADE
 
-PacketCode already has the key primitives:
+PacketADE already has the key primitives:
 
 - flights
 - milestones
@@ -100,7 +100,7 @@ Prevent multi-agent merge collisions by design.
 
 ## Product behavior
 
-- when two runnable tasks target overlapping file sets, PacketCode warns or defers one task
+- when two runnable tasks target overlapping file sets, PacketADE warns or defers one task
 - ownership is visible in task detail and running-task UI
 - the orchestrator prefers tasks that do not conflict with active ownership
 
@@ -137,7 +137,7 @@ Make swarm behavior understandable without digging through individual sessions.
 
 ## Notes
 
-PacketCode already has `TaskHandoff` and `ReviewPacket` structures. This phase should reuse those rather than inventing a new message system first.
+PacketADE already has `TaskHandoff` and `ReviewPacket` structures. This phase should reuse those rather than inventing a new message system first.
 
 ## Phase 4: Escalation and Supervision
 
@@ -175,8 +175,9 @@ These should be added incrementally. The smallest useful change is `role` plus `
 
 Natural integration points:
 
-- `MissionWorkspaceView.tsx`
-- `FlightDeckView.tsx`
+- `MissionsView.tsx`
+- `FlightDetail.tsx`
+- `MilestonesPanel.tsx`
 - `ReviewQueueView.tsx`
 - `WorkspaceView.tsx`
 - task editing surfaces in flight detail UI
@@ -199,5 +200,5 @@ Natural integration points:
 ## Non-Goals
 
 - building a separate standalone swarm product
-- introducing complex distributed coordination beyond a single local PacketCode instance
+- introducing complex distributed coordination beyond a single local PacketADE instance
 - replacing the existing flight model with a new domain model

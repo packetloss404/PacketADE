@@ -518,7 +518,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             false,
             conv.allowedTools ?? null,
             conv.memoryContextEnabled ?? false,
-            conv.workspaceId,
           );
           selectConversation(newId);
         } catch (e) {
@@ -1069,7 +1068,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         </div>
       )}
 
-      {/* Status bar — workspace + branch */}
+      {/* Status bar — project + branch */}
       <AgentStatusBar conversation={conversation} />
 
       {/* Input area */}

@@ -31,11 +31,11 @@ PacketADE runs two kinds of agents side-by-side.
 | Row | Internal id | Auth |
 |---|---|---|
 | Anthropic (Subscription) | `api-claude-oauth` | Claude Code OAuth (`claude login`) — uses your Pro/Max subscription |
-| Anthropic (API) | `api-claude` | `ANTHROPIC_API_KEY` in OS keyring |
+| Claude (API) | `api-claude` | Anthropic API key in OS keyring |
 | OpenAI (ChatGPT Plus/Pro) | `api-openai-codex` | Codex CLI OAuth (`codex login`) — uses your ChatGPT subscription |
 | OpenAI (API) | `api-openai` | `OPENAI_API_KEY` in OS keyring |
-| OpenRouter | `api-openrouter` | API key in OS keyring |
 | MiniMax | `api-minimax` | API key in OS keyring |
+| OpenRouter | `api-openrouter` | API key in OS keyring |
 | Ollama | `api-ollama` | none — local daemon at `localhost:11434` |
 
 Auth status is probed live and shown as a badge next to each row (`ready` / `login_required` / `missing_key` / `service_down`). An fs watcher flips the badge automatically after a `claude login` / `codex login` completes, and expired-but-refreshable tokens stay `ready` (the SDK / CLI refreshes them transparently). API-key providers run in-process in Rust; subscription providers run in a Node sidecar that hosts the Anthropic Claude Agent SDK and wraps `codex exec`. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
@@ -96,11 +96,12 @@ Auth status is probed live and shown as a badge next to each row (`ready` / `log
 
 ### Project Operations
 
-- MCP server management (global and project scope) in the Tools page
+- MCP client config management plus the local MCP-provider settings surface in Tools
 - Deploy configuration and terminal-backed deploy runs
 - Local crash report browsing and cleanup
 - Agent profile management and AI routing configuration
 - Prompt template library
+- Local Whisper dictation and searchable transcription history
 
 ## Tech Stack
 
@@ -226,13 +227,14 @@ PacketADE/
       session/                 # Terminal panes, session modals, status bars, inspect UI
       issues/                  # Kanban issue board and issue detail UI
       flights/                 # Flight Deck tiles (FlightList, FlightDetail, FlightHeaderTile, etc.)
-      views/                   # First-class application views (FlightDeckView, WorkspaceView, …)
+      views/                   # First-class application views (MissionsView, WorkspaceView, AgentsView, …)
+      editor/                  # Lightweight editor/diff support
       workspace/               # Workspace creation, sidebar, and pane container UI
       servers/                 # SSH server form modal
       common/                  # Shared presentation components
       ui/                      # Shared UI primitives
     stores/                    # Zustand stores for app, layout, flights, issues, workspaces, etc.
-    modules/                   # Module registration and module metadata
+    modules/                   # Module registration: ideation, scaffold, dictation
     lib/                       # Tauri bindings, shared utilities, model lists, event helpers
     generated/                 # Generated TypeScript types (Rust ↔ TS DTO contract)
     hooks/                     # UI and agent interaction hooks
@@ -245,8 +247,10 @@ PacketADE/
       api/                     # DTO layer that decouples internal Rust types from the TS contract
       core/                    # Orchestration engine, storage, workspace, PTY core
       claude/                  # Claude CLI integration helpers
+      session/                 # Session DTOs and shared session helpers
 
-  scripts/                     # Build and schema-check scripts
+  agent-sidecar/               # Node sidecar for subscription providers
+  scripts/                     # Build, sidecar, schema-check, and bundling scripts
   e2e/                         # Playwright tests
   docs/                        # Documentation site assets
   public/                      # Static frontend assets
@@ -256,7 +260,7 @@ PacketADE/
 
 - Core views are declared in `src/stores/appStore.ts`
 - Tauri commands live in `src-tauri/src/commands/` and are bound in `src/lib/tauri.ts`
-- App modules are registered through `src/modules/registry.ts`
+- App modules are registered through `src/modules/registry.ts`; current modules are Ideation Scanner, Scaffold, and Dictation
 - Session management is PTY-based rather than JSONL-session based
 - Backend orchestration concepts (Flights, PTY sessions, agent configs) are mirrored by FlightDeck, PacketADE's sibling TUI project in a separate repo
 - GitHub PAT is stored in the OS keyring via the `keyring` crate

@@ -2,15 +2,12 @@ import { useState } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import {
   Send,
-  LayoutGrid,
   FolderOpen,
   Terminal,
   Code2,
   Code,
 } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
-import { useLayoutStore } from "@/stores/layoutStore";
-import { useAppStore } from "@/stores/appStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 
 interface ContinueInMenuProps {
@@ -22,21 +19,17 @@ interface ContinueInMenuProps {
  * jumping a conversation's context into another surface.
  *
  * Items:
- *  1. Open in workspace            — switch active project + view to Workspace
- *  2. Open project folder in OS    — `open(path)` via tauri-plugin-shell
- *  3. Continue in CLI (claude)     — copy `cd <path> && claude` to clipboard
+ *  1. Open project folder in OS    — `open(path)` via tauri-plugin-shell
+ *  2. Continue in CLI (claude)     — copy `cd <path> && claude` to clipboard
  *                                    (cross-platform terminal spawning is fragile;
  *                                    a paste-into-terminal flow is the v1 trade-off)
- *  4. Open in VS Code              — `vscode://file/<absolutePath>`
- *  5. Open in Cursor               — `cursor://file/<absolutePath>`
+ *  3. Open in VS Code              — `vscode://file/<absolutePath>`
+ *  4. Open in Cursor               — `cursor://file/<absolutePath>`
  *
  * SSH-targeted conversations disable the local-path items since the path lives
  * on a remote host.
  */
 export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
-  const setProjectPath = useLayoutStore((s) => s.setProjectPath);
-  const setActiveView = useAppStore((s) => s.setActiveView);
-
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const projectPath = conversation.projectPath;
@@ -47,12 +40,6 @@ export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
   function flashFeedback(msg: string) {
     setFeedback(msg);
     window.setTimeout(() => setFeedback(null), 1800);
-  }
-
-  async function handleOpenInWorkspace() {
-    if (!hasPath) return;
-    setProjectPath(projectPath);
-    setActiveView("workspace");
   }
 
   async function handleOpenFolder() {
@@ -157,14 +144,6 @@ export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
         }
       >
         <div className="min-w-[240px] py-0.5">
-          <MenuItem
-            icon={<LayoutGrid size={12} />}
-            label="Open in workspace"
-            subtitle="Switch the active project and jump to Workspace"
-            disabled={!hasPath}
-            disabledReason="No project path on this conversation"
-            onClick={handleOpenInWorkspace}
-          />
           <MenuItem
             icon={<FolderOpen size={12} />}
             label="Open project folder in OS"

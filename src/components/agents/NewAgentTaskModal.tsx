@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Bot, Check } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
 
@@ -24,10 +23,7 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
 
   const agents = useAgentStore((s) => s.agents);
   const launchTask = useAgentTaskStore((s) => s.launchTask);
-  const workspace = useWorkspaceStore((s) =>
-    s.workspaces.find((w) => w.id === s.activeWorkspaceId),
-  );
-  const projectPath = workspace?.projectPath ?? useLayoutStore.getState().projectPath;
+  const projectPath = useLayoutStore((s) => s.projectPath);
 
   async function handleLaunch() {
     if (!description.trim()) return;

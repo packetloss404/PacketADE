@@ -1,6 +1,6 @@
 # Dev Planning Docs
 
-Last updated: 2026-04-15
+Last updated: 2026-04-28
 
 This directory holds **active** planning docs with outstanding work items. Completed docs have been moved to `dev/archive/`.
 
@@ -11,7 +11,7 @@ This directory holds **active** planning docs with outstanding work items. Compl
   
 ### Swarm Orchestration
 - `bridgemind/swarm-orchestration-plan.md` — Phase 4 escalation (auto-reassignment) partial
-- `bridgemind/packetcode-mcp-server-plan.md` — Phase 1 frontend done; transport layer deferred
+- `bridgemind/packetcode-mcp-server-plan.md` — legacy filename; PacketADE MCP provider Phase 1 frontend done, transport layer deferred
 
 ### MCP Provider
 - `mcp-provider-transport.md` — Phases 2-3 deferred (local MCP server transport)
@@ -21,12 +21,9 @@ This directory holds **active** planning docs with outstanding work items. Compl
 - `zen-workspace/features-prompt-library.md` — command palette integration not started
 - `zen-workspace/features-project-workspaces.md` — fully done but kept for reference
 
-### TUI
-- `tui-shared-engine-plan.md` — Phase 2 pane layouts, Phase 3 structured logging/event stream not started
-
 ## Archive
 
-`dev/archive/` contains completed planning docs preserved for historical reference:
+`dev/archive/` contains completed planning docs preserved for historical reference. Many archived files intentionally keep the former PacketCode name because they describe research and decisions made before the rename:
 
 - `archive/backlog.md`, `archive/cross-competitor-map.md`, `archive/positioning-notes.md`, `archive/priority-resolution.md`
 - `archive/moat/` — memory layer, insights, deploy, scaffold, analytics, cost unification specs

@@ -1,29 +1,29 @@
 # MCP Provider Transport — Implementation Plan
 
-## Implementation Status — 2026-04-15
+## Implementation Status — 2026-04-28
 
 | Item | Status | Notes |
 |------|--------|-------|
 | Phase 1: Frontend types + store + settings UI | ✅ Done | `mcpProviderStore.ts`, `McpProviderCard.tsx`, 8 tool definitions |
-| Phase 2: Local MCP server (Rust) | ❌ Deferred | Not needed until external tools need to query PacketCode |
+| Phase 2: Local MCP server (Rust) | ❌ Deferred | Not needed until external tools need to query PacketADE |
 | Phase 2: Read-only resources | ❌ Deferred | — |
 | Phase 2: Safe workflow tools | ❌ Deferred | — |
 | Phase 3: Ownership-aware tools | ❌ Deferred | Depends on Phase 2 |
 
 ## Context
 
-PacketCode currently manages MCP client configs (connecting TO other MCP servers) but does not expose itself AS an MCP server. Phase 1 (frontend types, store, settings UI) was implemented in the Track M work. Phases 2-3 add the actual Rust transport layer so external tools can query PacketCode's state.
+PacketADE currently manages MCP client configs (connecting TO other MCP servers) and has a frontend MCP-provider settings surface, but it does not expose itself AS an MCP server yet. Phase 1 (frontend types, store, settings UI) was implemented in the Track M work. Phases 2-3 add the actual Rust transport layer so external tools can query PacketADE's state.
 
-**Deferred because:** No current demand — PacketCode is the primary IDE, not a backing service for other tools. The MCP ecosystem is still evolving. Foundation is laid; the Rust server can be built against existing interfaces when needed.
+**Deferred because:** No current demand — PacketADE is the primary ADE, not a backing service for other tools. The MCP ecosystem is still evolving. Foundation is laid; the Rust server can be built against existing interfaces when needed.
 
-**Trigger to implement:** When external agents (Claude Code CLI, Cursor, etc.) need to read PacketCode flights, tasks, or memory from outside the app.
+**Trigger to implement:** When external agents (Claude Code CLI, Codex CLI, Cursor, etc.) need to read PacketADE flights, tasks, or memory from outside the app.
 
 ## Phase 2: Local MCP Server + Resources + Safe Tools
 
 ### Transport
 
 HTTP/SSE on localhost (configurable port, default 3100). Chosen over stdio because:
-- External agents connect to a running PacketCode instance
+- External agents connect to a running PacketADE instance
 - Multiple clients can connect simultaneously
 - Port already configurable in `McpProviderCard.tsx`
 
@@ -41,13 +41,13 @@ Server reads from `PersistedState` (same source as TUI) to access flights, memor
 
 | URI | Description |
 |-----|-------------|
-| `packetcode://project` | Active project metadata (path, git branch) |
-| `packetcode://flights` | List of flights with status |
-| `packetcode://flights/{id}` | Full flight detail with milestones/tasks |
-| `packetcode://flights/{id}/tasks` | Tasks for a flight |
-| `packetcode://memory/patterns` | Learned patterns from memory layer |
-| `packetcode://workspaces` | Active workspaces |
-| `packetcode://reviews` | Pending review packets |
+| `packetade://project` | Active project metadata (path, git branch) |
+| `packetade://flights` | List of flights with status |
+| `packetade://flights/{id}` | Full flight detail with milestones/tasks |
+| `packetade://flights/{id}/tasks` | Tasks for a flight |
+| `packetade://memory/patterns` | Learned patterns from memory layer |
+| `packetade://workspaces` | Active workspaces |
+| `packetade://reviews` | Pending review packets |
 
 ### Safe workflow tools
 

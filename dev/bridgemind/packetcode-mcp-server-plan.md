@@ -1,13 +1,13 @@
-# PacketCode MCP Server Plan
+# PacketADE MCP Server Plan
 
-Last updated: 2026-04-09
+Last updated: 2026-04-28
 
 ## Implementation Status — 2026-04-15
 
 | Item | Status | Notes |
 |------|--------|-------|
 | MCP config management | ✅ Done | mcp.rs reads/writes/deletes server configs |
-| PacketCode as MCP provider | ⚠️ Phase 1 done | Frontend types/store/settings UI |
+| PacketADE as MCP provider | ⚠️ Phase 1 done | Frontend types/store/settings UI |
 | MCP resources (flights, tasks, memory) | ⚠️ Frontend definitions done | No transport yet (deferred to mcp-provider-transport.md) |
 | MCP tools (get_active_flight, etc.) | ⚠️ Frontend definitions done | No transport yet |
 | Phase 1: Local read-only server | ⚠️ Frontend only | Transport deferred |
@@ -16,11 +16,11 @@ Last updated: 2026-04-09
 
 ## Goal
 
-Evolve PacketCode from an MCP configuration manager into a real MCP provider that exposes PacketCode context and workflows to external AI clients.
+Evolve PacketADE from an MCP configuration manager into a real MCP provider that exposes PacketADE context and workflows to external AI clients.
 
 ## Current State
 
-PacketCode currently supports MCP in one narrow sense:
+PacketADE currently supports MCP in one narrow sense:
 
 - reading MCP server config from `~/.claude/settings.json`
 - reading project MCP config from `.mcp.json`
@@ -30,21 +30,21 @@ Relevant code:
 
 - `src-tauri/src/commands/mcp.rs`
 
-That is useful, but it does not make PacketCode itself part of the MCP network.
+That is useful, but it does not make PacketADE itself part of the MCP network.
 
 ## Product Outcome
 
 The target outcome is:
 
-- Claude Code, Codex, Cursor, or other MCP clients can ask PacketCode for project state
-- PacketCode becomes the source of truth for flights, issues, memory, and reviews
-- external agents can participate in PacketCode workflows instead of PacketCode only launching local sessions
+- Claude Code, Codex, Cursor, or other MCP clients can ask PacketADE for project state
+- PacketADE becomes the source of truth for flights, issues, memory, and reviews
+- external agents can participate in PacketADE workflows instead of PacketADE only launching local sessions
 
 ## Why This Matters
 
 This is the cleanest response to BridgeMind's `BridgeMCP` claim.
 
-PacketCode already has rich local state that external agents would benefit from:
+PacketADE already has rich local state that external agents would benefit from:
 
 - flights
 - milestones and tasks
@@ -59,7 +59,7 @@ The missing layer is protocol exposure.
 
 ## Resources
 
-Expose read-oriented PacketCode state first:
+Expose read-oriented PacketADE state first:
 
 - active project metadata
 - flights
@@ -79,7 +79,7 @@ Expose minimal workflow tools second:
 - append task handoff
 - request review
 - mark task blocked
-- read PacketCode memory context
+- read PacketADE memory context
 - list workspaces
 
 ## Optional later tools
@@ -93,17 +93,17 @@ Expose minimal workflow tools second:
 
 ## Phase 1: Local read-only server
 
-Deliver a local MCP server with read-only access to PacketCode state.
+Deliver a local MCP server with read-only access to PacketADE state.
 
 Objectives:
 
 - prove the shape of the API
 - keep risk low
-- make PacketCode state useful to external agents quickly
+- make PacketADE state useful to external agents quickly
 
 ## Phase 2: Safe workflow tools
 
-Add low-risk write operations that align with existing PacketCode UI flows.
+Add low-risk write operations that align with existing PacketADE UI flows.
 
 Examples:
 
@@ -123,7 +123,7 @@ Examples:
 
 ## Security Model
 
-PacketCode should not copy a cloud-first default here.
+PacketADE should not copy a cloud-first default here.
 
 Recommended defaults:
 
@@ -131,7 +131,7 @@ Recommended defaults:
 - project-scoped access
 - explicit enablement in settings
 - explicit per-tool permissions where writes are possible
-- clear audit trail in PacketCode activity/history UI
+- clear audit trail in PacketADE activity/history UI
 
 ## Architecture Notes
 
@@ -139,29 +139,29 @@ Likely implementation shape:
 
 - new backend module under `src-tauri/src/commands/` or adjacent MCP runtime module
 - tool handlers map to existing stores and persisted backend state
-- PacketCode stays the local source of truth
+- PacketADE stays the local source of truth
 - frontend settings UI controls enablement, visibility, and allowed scopes
 
 ## Good First Slice
 
 The smallest useful first release is:
 
-1. `packetcode.get_active_project`
-2. `packetcode.list_flights`
-3. `packetcode.get_flight`
-4. `packetcode.list_tasks`
-5. `packetcode.get_memory_context`
+1. `packetade.get_active_project`
+2. `packetade.list_flights`
+3. `packetade.get_flight`
+4. `packetade.list_tasks`
+5. `packetade.get_memory_context`
 
-That already makes PacketCode materially useful as an MCP provider.
+That already makes PacketADE materially useful as an MCP provider.
 
 ## Open Questions
 
-- should PacketCode expose one MCP server per project or one process with project-scoped resources?
+- should PacketADE expose one MCP server per project or one process with project-scoped resources?
 - should review packets be modeled as tools, resources, or both?
 - how much state should be writable before file ownership and task claiming exist?
 
 ## Success Criteria
 
-- an external MCP client can consume PacketCode planning context without scraping local files
-- PacketCode state becomes reusable across agent tools
-- PacketCode gains a credible answer to the "shared context layer" category without abandoning local-first principles
+- an external MCP client can consume PacketADE planning context without scraping local files
+- PacketADE state becomes reusable across agent tools
+- PacketADE gains a credible answer to the "shared context layer" category without abandoning local-first principles
