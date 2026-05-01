@@ -1,10 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { LayoutGrid, Check, User, FileText, ShieldOff, Loader2, FolderOpen, ChevronDown, Zap } from "lucide-react";
+import { LayoutGrid, Check, FileText, ShieldOff, Loader2, FolderOpen, ChevronDown, Zap } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useProfileStore } from "@/stores/profileStore";
 // Memory context is now injected live at session launch, not baked into workspace prompt
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
@@ -52,9 +51,6 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(() => initialSelected ?? new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
-    useProfileStore.getState().activeProfileId,
-  );
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});
   const [effortOverrides, setEffortOverrides] = useState<Record<string, EffortLevel | null>>({ "claude-code": "medium" });
   const [bypassPermissions, setBypassPermissions] = useState(false);
@@ -67,7 +63,6 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
   const agents = useAgentStore((s) => s.agents);
   const detecting = useAgentStore((s) => s.detecting);
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
-  const profiles = useProfileStore((s) => s.profiles);
 
   // Unique project paths from existing workspaces + current global path
   const recentProjectPaths = useMemo(() => {
@@ -119,10 +114,6 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
     });
   }
 
-  function handleProfileChange(profileId: string | null) {
-    setSelectedProfileId(profileId);
-  }
-
   function setModelForAgent(agentId: string, model: string | null) {
     setModelOverrides((prev) => ({ ...prev, [agentId]: model }));
   }
@@ -134,25 +125,10 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
       .filter((s) => selected.has(s.id))
       .map((s) => s.id);
 
-    // Build session config
-    const selectedProfile = selectedProfileId
-      ? profiles.find((p) => p.id === selectedProfileId)
-      : null;
-
-    let finalPrompt = "";
-    if (selectedProfile?.systemPrompt) {
-      finalPrompt += selectedProfile.systemPrompt + "\n\n";
-    }
-    if (prompt.trim()) {
-      finalPrompt += prompt.trim();
-    }
-
-    if (selectedProfileId) {
-      useProfileStore.getState().setActiveProfile(selectedProfileId);
-    }
+    const finalPrompt = prompt.trim();
 
     createWorkspace(name.trim(), orderedAgents, selectedProjectPath, {
-      prompt: finalPrompt.trim() || undefined,
+      prompt: finalPrompt || undefined,
       modelOverrides,
       effortOverrides,
       bypassPermissions,
@@ -339,42 +315,6 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
             })}
           </div>
         </div>
-
-        {/* Agent Profile */}
-        {selectedAiAgents.length > 0 && (
-          <div>
-            <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
-              Agent Profile
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                onClick={() => handleProfileChange(null)}
-                className={`flex items-center gap-1 px-2.5 py-1 text-[11px] rounded border transition-colors ${
-                  !selectedProfileId
-                    ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
-                    : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
-                }`}
-              >
-                None
-              </button>
-              {profiles.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => handleProfileChange(p.id)}
-                  className={`flex items-center gap-1 px-2.5 py-1 text-[11px] rounded border transition-colors ${
-                    selectedProfileId === p.id
-                      ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
-                      : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
-                  }`}
-                  title={p.description}
-                >
-                  <User size={10} className={p.color} />
-                  {p.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Bypass permissions toggle */}
         {selectedAiAgents.length > 0 && (

@@ -3,9 +3,9 @@ import { loadFromStorage, saveToStorage, generateId } from "@/lib/storage";
 import { writePty } from "@/lib/tauri";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useProfileStore } from "@/stores/profileStore";
 import { useAppStore } from "@/stores/appStore";
 import { getDefaultModel } from "@/lib/api-models";
+import { SCOUT_SYSTEM_PROMPT, SCOUT_ALLOWED_TOOLS, SCOUT_MEMORY_CONTEXT_DEFAULT } from "@/lib/scout-config";
 import type { PromptTemplate } from "@/types/prompt";
 
 const STORAGE_KEY = "packetade:prompt-templates";
@@ -82,21 +82,20 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
     if (!template) return;
     const projectPath = useLayoutStore.getState().projectPath;
     if (!projectPath) return;
-    const scout = useProfileStore.getState().getProfile("scout");
     const agent = "api-claude";
     const id = await useAgentTaskStore.getState().createApiConversation(
       agent,
       projectPath,
-      scout?.defaultModel || getDefaultModel(agent),
+      getDefaultModel(agent),
       template.content,
-      scout?.systemPrompt ?? null,
+      SCOUT_SYSTEM_PROMPT,
       false,
       false,
       null,
       undefined,
       false,
-      scout?.allowedTools ?? null,
-      scout?.memoryContextDefault ?? false,
+      SCOUT_ALLOWED_TOOLS,
+      SCOUT_MEMORY_CONTEXT_DEFAULT,
     );
     useAgentTaskStore.getState().selectConversation(id);
     useAppStore.getState().setActiveView("agents");

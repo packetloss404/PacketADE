@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { GitBranch, FolderOpen, Diamond, Wrench, Github, Brain, User, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid, DollarSign, BookOpen, Mic } from "lucide-react";
+import { GitBranch, FolderOpen, Diamond, Wrench, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid, DollarSign, BookOpen, Mic } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useAppStore, isModuleView, moduleViewId, type AppView } from "@/stores/appStore";
+import { useAppStore, isModuleView, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModulesSorted } from "@/modules/registry";
-import { useProfileStore } from "@/stores/profileStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -25,13 +24,6 @@ const LAYOUT_PRESETS: { preset: MosaicLayoutPreset; label: string; minPanes: num
   { preset: "3x2", label: "3×2", minPanes: 6 },
 ];
 
-const TABS: { key: AppView; label: string }[] = [
-  { key: "agents", label: "Agents" },
-  { key: "workspace", label: "Workspaces" },
-  { key: "issues", label: "Issues" },
-  { key: "missions", label: "Flight Deck" },
-];
-
 export function Toolbar() {
   const projectPath = useLayoutStore((s) => s.projectPath);
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
@@ -39,37 +31,28 @@ export function Toolbar() {
   const [showCodeQuality, setShowCodeQuality] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
-
-  const activeProfileId = useProfileStore((s) => s.activeProfileId);
-  const profiles = useProfileStore((s) => s.profiles);
-  const setActiveProfile = useProfileStore((s) => s.setActiveProfile);
-  const activeProfile = profiles.find((p) => p.id === activeProfileId);
 
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const moduleStates = useModuleStore((s) => s.states);
 
   const projectName = projectPath.split(/[/\\]/).pop() || "PacketADE";
+  const enabledModules = getModulesSorted().filter((mod) => moduleStates[mod.id]?.enabled ?? false);
 
   // Close tools menu when clicking outside
   useEffect(() => {
-    if (!showToolsMenu && !showProfileMenu) return;
+    if (!showToolsMenu) return;
     function handleClick(e: MouseEvent) {
-      if (showToolsMenu && toolsMenuRef.current && !toolsMenuRef.current.contains(e.target as Node)) {
+      if (toolsMenuRef.current && !toolsMenuRef.current.contains(e.target as Node)) {
         setShowToolsMenu(false);
-      }
-      if (showProfileMenu && profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
-        setShowProfileMenu(false);
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [showToolsMenu, showProfileMenu]);
+  }, [showToolsMenu]);
 
   async function handleOpenFolder() {
     const selected = await open({
@@ -82,124 +65,9 @@ export function Toolbar() {
     }
   }
 
-  function handleTabClick(key: AppView) {
-    setActiveView(key);
-  }
-
   return (
-    <div className="flex items-center h-9 px-3 bg-bg-tertiary border-b border-bg-border gap-2">
-      {/* Left section — view tabs + actions */}
-      <div className="flex items-center gap-1 flex-1">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => handleTabClick(tab.key)}
-            className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-              activeView === tab.key
-                ? "text-accent-green bg-bg-elevated"
-                : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-
-        {/* Tools dropdown */}
-        <div className="relative" ref={toolsMenuRef}>
-          <button
-            onClick={() => setShowToolsMenu(!showToolsMenu)}
-            className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-              activeView === "tools" || activeView === "github" || activeView === "memory" || isModuleView(activeView)
-                ? "text-accent-green bg-bg-elevated"
-                : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-            }`}
-          >
-            <Wrench size={11} />
-            Tools
-          </button>
-
-          {showToolsMenu && (
-            <div className="absolute top-full left-0 mt-1 w-48 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
-              {getModulesSorted()
-                .filter((mod) => moduleStates[mod.id]?.enabled ?? false)
-                .map((mod) => {
-                  const Icon = mod.icon;
-                  return (
-                    <DropdownItem
-                      key={mod.id}
-                      icon={<Icon size={12} className={mod.iconColor} />}
-                      label={mod.name}
-                      onClick={() => { setActiveView(moduleViewId(mod.id)); setShowToolsMenu(false); }}
-                    />
-                  );
-                })}
-              <DropdownItem icon={<Github size={12} className="text-text-primary" />} label="GitHub"
-                onClick={() => { setActiveView("github"); setShowToolsMenu(false); }} />
-              <DropdownItem icon={<Brain size={12} className="text-accent-purple" />} label="Memory"
-                onClick={() => { setActiveView("memory"); setShowToolsMenu(false); }} />
-              <div className="h-px bg-bg-border my-0.5" />
-              <DropdownItem icon={<Wrench size={12} className="text-text-muted" />} label="Settings"
-                onClick={() => { setActiveView("tools"); setShowToolsMenu(false); }} />
-            </div>
-          )}
-        </div>
-
-        <div className="w-px h-4 bg-bg-border ml-1" />
-
-      </div>
-
-      {/* Profile quick-switch */}
-      <div className="relative" ref={profileMenuRef}>
-        <button
-          onClick={() => setShowProfileMenu(!showProfileMenu)}
-          className={`flex items-center gap-1.5 px-2 py-1 text-[11px] rounded transition-colors ${
-            activeProfile
-              ? `${activeProfile.color} bg-bg-elevated`
-              : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
-          }`}
-          title="Agent Profile — controls model and system prompt defaults for new sessions. Click to switch."
-        >
-          <User size={11} />
-          <span className="text-text-muted">Profile:</span>
-          <span>{activeProfile?.name || "No Profile"}</span>
-        </button>
-
-        {showProfileMenu && (
-          <div className="absolute top-full right-0 mt-1 w-52 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
-            <button
-              onClick={() => {
-                setActiveProfile(null);
-                setShowProfileMenu(false);
-              }}
-              className={`flex items-center gap-2 w-full px-3 py-1.5 text-[11px] hover:bg-bg-hover transition-colors text-left ${
-                !activeProfileId ? "text-accent-green" : "text-text-secondary"
-              }`}
-            >
-              No Profile
-            </button>
-            {profiles.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => {
-                  setActiveProfile(p.id);
-                  setShowProfileMenu(false);
-                }}
-                className={`flex items-center gap-2 w-full px-3 py-1.5 text-[11px] hover:bg-bg-hover transition-colors text-left ${
-                  activeProfileId === p.id ? "text-accent-green" : "text-text-secondary"
-                }`}
-              >
-                <span className={p.color}>
-                  <User size={10} />
-                </span>
-                <span className="flex-1">{p.name}</span>
-                {activeProfileId === p.id && (
-                  <span className="text-[9px] text-accent-green">active</span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+    <div className="flex items-center h-9 px-3 bg-bg-secondary border-b border-bg-border gap-2">
+      <div className="flex-1" />
 
       {/* Pane layout presets (visible when a workspace is active) */}
       <PaneLayoutControls />
@@ -279,6 +147,40 @@ export function Toolbar() {
           <Diamond size={12} className="text-accent-amber" />
           <span>Quality</span>
         </button>
+
+        {/* Optional Tools (modules) dropdown — primary nav lives in LeftRail */}
+        {enabledModules.length > 0 && (
+          <div className="relative" ref={toolsMenuRef}>
+            <button
+              onClick={() => setShowToolsMenu(!showToolsMenu)}
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+                isModuleView(activeView)
+                  ? "bg-bg-elevated text-accent-green"
+                  : "bg-bg-elevated text-text-secondary hover:text-accent-green"
+              }`}
+              title="Modules — open one of the optional tool modules."
+            >
+              <Wrench size={12} className="text-accent-green" />
+              <span>Modules</span>
+            </button>
+
+            {showToolsMenu && (
+              <div className="absolute top-full right-0 mt-1 w-48 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
+                {enabledModules.map((mod) => {
+                  const Icon = mod.icon;
+                  return (
+                    <DropdownItem
+                      key={mod.id}
+                      icon={<Icon size={12} className={mod.iconColor} />}
+                      label={mod.name}
+                      onClick={() => { setActiveView(moduleViewId(mod.id)); setShowToolsMenu(false); }}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Dictation (VT) button */}
         <button

@@ -1,8 +1,7 @@
-import { Trash2, CheckSquare, Target } from "lucide-react";
-import { useIssueStore, type Issue } from "@/stores/issueStore";
+import { Plane } from "lucide-react";
+import { type Issue } from "@/stores/issueStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { getLabelColor } from "@/lib/colors";
-import { relativeTime } from "@/lib/time";
 
 interface IssueCardProps {
   issue: Issue;
@@ -11,64 +10,66 @@ interface IssueCardProps {
   isDragging?: boolean;
 }
 
+const PRIORITY_DISPLAY: Record<Issue["priority"], { label: string; color: string }> = {
+  critical: { label: "P0", color: "text-accent-red" },
+  high: { label: "P1", color: "text-accent-amber" },
+  medium: { label: "P2", color: "text-text-faint" },
+  low: { label: "P3", color: "text-text-faint" },
+};
+
+function shortFlightId(flightId: string): string {
+  const stripped = flightId.replace(/^flight[-_]/i, "").slice(0, 4).toUpperCase();
+  return `F-${stripped}`;
+}
+
+function ticketNumber(ticketId: string): string {
+  const m = ticketId.match(/(\d+)$/);
+  return m ? `#${m[1]}` : `#${ticketId}`;
+}
+
+function ticketInitials(ticketId: string): string {
+  const prefix = ticketId.split("-")[0] ?? ticketId;
+  return prefix.slice(0, 2).toUpperCase();
+}
+
 export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCardProps) {
-  const deleteIssue = useIssueStore((s) => s.deleteIssue);
   const flights = useFlightStore((s) => s.flights);
   const flight = flights.find((f) => f.issueIds.includes(issue.id)) ?? null;
 
-  const timeAgo = relativeTime(issue.updatedAt);
-  const checkedCount = issue.acceptanceCriteria.filter((c) => c.checked).length;
-  const totalCriteria = issue.acceptanceCriteria.length;
-  const depCount = issue.blockedBy.length + issue.blocks.length;
+  const pri = PRIORITY_DISPLAY[issue.priority];
+  const initials = ticketInitials(issue.ticketId);
 
   return (
     <div
       draggable
       onDragStart={onDragStart}
       onClick={onClick}
-      className={`group bg-bg-primary border border-bg-border rounded-md p-2.5 cursor-pointer hover:border-text-muted/30 transition-all ${
-        isDragging ? "opacity-50 scale-[0.97] shadow-lg ring-1 ring-accent-green/30" : ""
+      className={`flex flex-col gap-1.5 cursor-pointer rounded-md border border-bg-border bg-bg-secondary p-2.5 transition-all hover:border-line-strong ${
+        isDragging ? "opacity-50 scale-[0.97] ring-1 ring-accent-line" : ""
       }`}
     >
-      {/* Header row: ticket ID + priority */}
-      <div className="flex items-center justify-between gap-1 mb-1">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-text-muted font-mono">
-            {issue.ticketId}:
-          </span>
-          <PriorityBadge priority={issue.priority} />
-        </div>
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              deleteIssue(issue.id);
-            }}
-            className="p-0.5 text-text-muted hover:text-accent-red transition-colors"
-            title="Delete"
-          >
-            <Trash2 size={10} />
-          </button>
-        </div>
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono text-[10px] text-text-faint">
+          {ticketNumber(issue.ticketId)}
+        </span>
+        <div className="flex-1" />
+        <span className={`font-mono text-[10px] font-semibold ${pri.color}`}>
+          {pri.label}
+        </span>
       </div>
 
-      {/* Title */}
-      <p className={`text-xs text-text-primary leading-snug mb-1 ${issue.status === "done" ? "line-through opacity-60" : ""}`}>
+      <p
+        className={`text-[12px] leading-[1.4] text-text-primary ${
+          issue.status === "done" ? "line-through opacity-60" : ""
+        }`}
+      >
         {issue.title}
       </p>
 
-      {/* Description preview */}
-      {issue.description && (
-        <p className="text-[10px] text-text-muted leading-relaxed truncate mb-1.5">
-          {issue.description}
-        </p>
-      )}
-
-      {/* Labels (colored badges) */}
       {(issue.labels.length > 0 || issue.epic) && (
-        <div className="flex flex-wrap gap-1 mt-1.5">
+        <div className="flex flex-wrap gap-1">
           {issue.epic && (
-            <span className="text-[9px] px-1.5 py-0.5 bg-accent-purple/15 text-accent-purple rounded font-medium">
+            <span className="rounded bg-accent-purple/15 px-1.5 py-px text-[10px] font-medium text-accent-purple">
               {issue.epic}
             </span>
           )}
@@ -77,7 +78,7 @@ export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCard
             return (
               <span
                 key={label}
-                className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${color.bg} ${color.text}`}
+                className={`rounded px-1.5 py-px text-[10px] font-medium ${color.bg} ${color.text}`}
               >
                 {label}
               </span>
@@ -86,48 +87,24 @@ export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCard
         </div>
       )}
 
-      {/* Footer: criteria progress + deps + session link + time ago */}
-      <div className="flex items-center justify-between mt-1.5 gap-2">
-        <div className="flex items-center gap-2">
-          {flight && (
-            <span className="flex items-center gap-0.5 text-[9px] text-accent-green truncate max-w-[80px]" title={flight.title}>
-              <Target size={8} />
-              {flight.title}
-            </span>
-          )}
-          {totalCriteria > 0 && (
-            <span className="flex items-center gap-0.5 text-[9px] text-text-muted">
-              <CheckSquare size={8} />
-              {checkedCount}/{totalCriteria}
-            </span>
-          )}
-          {depCount > 0 && (
-            <span className="text-[9px] text-text-muted">
-              {depCount} dep{depCount !== 1 ? "s" : ""}
-            </span>
-          )}
+      <div className="mt-0.5 flex items-center gap-1.5">
+        {flight && (
+          <span
+            className="inline-flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-1.5 py-px text-[10px] text-accent-green"
+            title={flight.title}
+          >
+            <Plane size={9} />
+            {shortFlightId(flight.id)}
+          </span>
+        )}
+        <div className="flex-1" />
+        <div
+          className="grid h-4 w-4 place-items-center rounded-full border border-bg-border bg-bg-elevated text-[8.5px] font-semibold text-text-secondary"
+          title={issue.ticketId}
+        >
+          {initials}
         </div>
-        <span className="text-[9px] text-text-muted">{timeAgo}</span>
       </div>
     </div>
   );
 }
-
-function PriorityBadge({ priority }: { priority: Issue["priority"] }) {
-  const config: Record<string, { letter: string; class: string }> = {
-    critical: { letter: "C", class: "bg-accent-red/20 text-accent-red" },
-    high: { letter: "H", class: "bg-accent-amber/20 text-accent-amber" },
-    medium: { letter: "M", class: "bg-accent-blue/20 text-accent-blue" },
-    low: { letter: "L", class: "bg-bg-elevated text-text-muted" },
-  };
-
-  const { letter, class: cls } = config[priority];
-
-  return (
-    <span className={`text-[9px] w-4 h-4 flex items-center justify-center rounded font-bold ${cls}`}>
-      {letter}
-    </span>
-  );
-}
-
-

@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { Wrench, FolderOpen, Ticket, User, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower, Mic, Key, Server } from "lucide-react";
+import { Wrench, FolderOpen, Ticket, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower, Mic, Key, Server } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useIssueStore } from "@/stores/issueStore";
@@ -7,7 +7,6 @@ import { usePromptStore } from "@/stores/promptStore";
 import { ProjectInfoCard } from "./tools/ProjectInfoCard";
 import { IssueSettingsCard } from "./tools/IssueSettingsCard";
 import { TagListCard } from "./tools/TagListCard";
-import { AgentProfilesCard } from "./tools/AgentProfilesCard";
 import { ProviderRoutingCard } from "./tools/ProviderRoutingCard";
 import { ModulesCard } from "./tools/ModulesCard";
 import { NotificationSettingsCard } from "./tools/NotificationSettingsCard";
@@ -22,12 +21,11 @@ import type { PromptTemplate } from "@/types/prompt";
 
 const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
 
-type SettingsSection = "project" | "issues" | "profiles" | "routing" | "api-keys" | "servers" | "mcp" | "mcp-provider" | "modules" | "templates" | "history" | "cost" | "dictation";
+type SettingsSection = "project" | "issues" | "routing" | "api-keys" | "servers" | "mcp" | "mcp-provider" | "modules" | "templates" | "history" | "cost" | "dictation";
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
   { key: "project", label: "Project", icon: FolderOpen },
   { key: "issues", label: "Issues", icon: Ticket },
-  { key: "profiles", label: "Profiles", icon: User },
   { key: "routing", label: "AI Routing", icon: Route },
   { key: "api-keys", label: "API Keys", icon: Key },
   { key: "servers", label: "Servers", icon: Server },
@@ -104,12 +102,6 @@ export function ToolsView() {
               tagClassName="bg-bg-elevated text-text-muted"
               placeholder="New label..."
             />
-          </div>
-        )}
-
-        {activeSection === "profiles" && (
-          <div className="max-w-2xl">
-            <AgentProfilesCard />
           </div>
         )}
 

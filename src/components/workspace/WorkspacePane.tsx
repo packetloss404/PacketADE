@@ -4,6 +4,7 @@ import { MosaicWindowContext } from "react-mosaic-component";
 import { TerminalPane, type TerminalHeaderRenderState } from "@/components/session/TerminalPane";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
 import { buildSshArgs } from "@/lib/ssh";
 import { writePty } from "@/lib/tauri";
@@ -28,18 +29,26 @@ const BYPASS_FLAGS: Record<string, string> = {
   gemini: "--yolo",
 };
 
-const CLI_PILL_COLOR: Record<string, string> = {
-  claude: "#f0b400",
-  gemini: "#8ab4f8",
-  opencode: "#3fb950",
-  codex: "#58a6ff",
-};
-
 const CLI_PILL_LABEL: Record<string, string> = {
   claude: "Claude",
   gemini: "Gemini",
   opencode: "OpenCode",
   codex: "Codex",
+};
+
+/** Tailwind classes for the agent identity dot (background + glow shadow). */
+const AGENT_DOT_CLASS: Record<string, string> = {
+  claude: "bg-accent-green shadow-[0_0_8px_var(--color-accent-green,#6fb89a)]",
+  codex: "bg-accent-amber shadow-[0_0_8px_var(--color-accent-amber,#d4b25c)]",
+  gemini: "bg-accent-blue shadow-[0_0_8px_var(--color-accent-blue,#6b9ed9)]",
+  opencode: "bg-accent-purple shadow-[0_0_8px_var(--color-accent-purple,#a89ad9)]",
+};
+
+const AGENT_TEXT_CLASS: Record<string, string> = {
+  claude: "text-accent-green",
+  codex: "text-accent-amber",
+  gemini: "text-accent-blue",
+  opencode: "text-accent-purple",
 };
 
 const ACCENT_OPTIONS = [
@@ -91,7 +100,9 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const workspace = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId));
   const zoomedPaneId = useWorkspaceStore((s) => s.zoomedPaneId);
   const setZoomedPane = useWorkspaceStore((s) => s.setZoomedPane);
+  const activePaneId = useLayoutStore((s) => s.activePaneId);
   const isZoomed = zoomedPaneId === pane.id;
+  const isFocused = activePaneId === pane.id;
   const agentConfig = agents.find((a) => a.id === pane.agentId);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -208,30 +219,33 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const renderHeader = useCallback(
     (state: TerminalHeaderRenderState) => {
       const pillLabel = CLI_PILL_LABEL[state.cliCommand] ?? state.cliCommand;
-      const pillColor = CLI_PILL_COLOR[state.cliCommand] ?? "#58a6ff";
-      const statusColor = state.showApproval
-        ? "bg-accent-amber animate-pulse"
+      const dotClass = AGENT_DOT_CLASS[state.cliCommand] ?? "bg-text-muted";
+      const agentTextClass = AGENT_TEXT_CLASS[state.cliCommand] ?? accentTextClass;
+      const statusLabel = state.showApproval
+        ? "approval"
         : state.alive
-          ? "bg-accent-green animate-pulse"
+          ? "running"
           : state.error
-            ? "bg-accent-red"
-            : "bg-text-muted";
+            ? "error"
+            : "idle";
+      const statusPillClass = state.showApproval
+        ? "bg-accent-soft text-accent-amber border border-accent-line"
+        : state.alive
+          ? "bg-accent-soft text-accent-green border border-accent-line"
+          : state.error
+            ? "bg-bg-elevated text-accent-red border border-bg-border"
+            : "bg-bg-elevated text-text-muted border border-bg-border";
 
       const headerContent = (
         <div
-          className={`flex items-center gap-2 px-2 py-1 bg-bg-secondary border-b border-bg-border cursor-grab active:cursor-grabbing select-none ${accentBgTint}`}
+          className={`flex items-center gap-2 px-2 py-1 bg-bg-secondary border-b border-line-soft cursor-grab active:cursor-grabbing select-none ${accentBgTint}`}
           onDoubleClick={() => setZoomedPane(isZoomed ? null : pane.id)}
         >
           <GripHorizontal size={11} className="text-text-muted shrink-0" />
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor}`} />
-          <Icon size={11} className={`${accentTextClass} shrink-0`} />
-          <span className={`text-[10px] font-medium truncate ${accentTextClass}`}>{agentName}</span>
-          <span
-            className="text-[9px] px-1.5 py-0.5 rounded-full text-white font-medium shrink-0"
-            style={{ backgroundColor: pillColor }}
-          >
-            {pillLabel}
-          </span>
+          <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass} ${state.alive ? "animate-pulse" : ""}`} />
+          <Icon size={11} className={`${agentTextClass} shrink-0`} />
+          <span className={`text-[11px] font-semibold truncate ${agentTextClass}`}>{agentName}</span>
+          <span className="font-mono text-[10px] text-text-muted shrink-0">{pillLabel.toLowerCase()}</span>
           {agentConfig && !agentConfig.installed && (
             <span className="text-[9px] text-accent-amber">not installed</span>
           )}
@@ -292,6 +306,12 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
             </div>
           )}
           <div className="flex-1" />
+          <span
+            className={`font-mono text-[9px] px-1.5 py-0.5 rounded-full shrink-0 ${statusPillClass}`}
+            title={state.error ?? statusLabel}
+          >
+            {statusLabel}
+          </span>
           {/* Color picker button */}
           <div className="relative shrink-0">
             <button
@@ -472,8 +492,12 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     [Icon, accentTextClass, accentBgTint, accent, agentConfig, agentName, mosaicWindowActions, isZoomed, setZoomedPane, pane.id, pane.agentId, hasModelOptions, model, modelLabel, availableModels, showModelPicker, showColorPicker, workspaceId, pinnedCommands, showPinPopover, newPinCmd, runCommand, pane.sessionId],
   );
 
+  const wrapperBorderClass = isFocused
+    ? "border border-accent-line"
+    : `border border-bg-border ${accentBorderClass}`;
+
   return (
-    <div className={`h-full flex flex-col ${accentBorderClass}`}>
+    <div className={`h-full flex flex-col rounded-md overflow-hidden ${wrapperBorderClass}`}>
       <TerminalPane
         paneId={pane.id}
         cliCommand={effectiveCommand}

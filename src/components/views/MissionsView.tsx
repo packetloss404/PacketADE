@@ -1,20 +1,188 @@
 import { useEffect, useMemo, useState } from "react";
-import { Radio, Sparkles, ListTree } from "lucide-react";
+import {
+  Plane,
+  Search,
+  Plus,
+  Users,
+  Pause,
+  Play,
+  Check,
+  CheckCircle2,
+  Sparkles,
+  ListTree,
+} from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
-import { FlightList } from "@/components/flights/FlightList";
-import { FlightDetail } from "@/components/flights/FlightDetail";
+import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
+import { relativeTime } from "@/lib/time";
+import {
+  FLIGHT_STATUS_CONFIG,
+  FLIGHT_PRIORITY_COLORS,
+} from "@/lib/flight-colors";
+import type {
+  Flight,
+  FlightPriority,
+  FlightStatus,
+  CoordinationEvent,
+  CoordinationEventType,
+} from "@/types/flight";
 
 type ModalKind = null | "async" | "multitask";
+type GroupKey = "attention" | "active" | "recent";
+
+type DesignDot = "green" | "blue" | "amber" | "red" | "muted" | "accent" | "purple";
+
+const STATUS_DOT: Record<FlightStatus, DesignDot> = {
+  draft: "muted",
+  planning: "muted",
+  ready: "muted",
+  active: "green",
+  paused: "amber",
+  review: "blue",
+  done: "muted",
+  failed: "red",
+  cancelled: "muted",
+};
+
+const STATUS_LABEL: Record<FlightStatus, string> = {
+  draft: "draft",
+  planning: "planning",
+  ready: "ready",
+  active: "running",
+  paused: "paused",
+  review: "review",
+  done: "done",
+  failed: "failed",
+  cancelled: "cancelled",
+};
+
+const PRIORITY_LABEL: Record<FlightPriority, string> = {
+  critical: "P0",
+  high: "P1",
+  medium: "P2",
+  low: "P3",
+};
+
+const DOT_BG: Record<DesignDot, string> = {
+  green: "bg-accent-green",
+  blue: "bg-accent-blue",
+  amber: "bg-accent-amber",
+  red: "bg-accent-red",
+  muted: "bg-text-muted",
+  accent: "bg-accent-green",
+  purple: "bg-accent-purple",
+};
+
+const DOT_TEXT: Record<DesignDot, string> = {
+  green: "text-accent-green",
+  blue: "text-accent-blue",
+  amber: "text-accent-amber",
+  red: "text-accent-red",
+  muted: "text-text-muted",
+  accent: "text-accent-green",
+  purple: "text-accent-purple",
+};
+
+const PRIORITY_PILL_BG: Record<FlightPriority, string> = {
+  critical: "bg-accent-red/10 border-accent-red/30",
+  high: "bg-accent-amber/10 border-accent-amber/30",
+  medium: "bg-bg-tertiary border-bg-border",
+  low: "bg-bg-tertiary border-bg-border",
+};
+
+const EVENT_DOT: Record<CoordinationEventType, DesignDot> = {
+  task_started: "amber",
+  task_completed: "green",
+  task_failed: "red",
+  handoff: "blue",
+  review_requested: "accent",
+  review_resolved: "green",
+  collision_warning: "amber",
+  escalation: "red",
+};
+
+function shortId(id: string): string {
+  const tail = id.replace(/^[a-z]+-/i, "").slice(-4).toUpperCase();
+  return `F-${tail}`;
+}
+
+function flightAgentCount(flight: Flight): number {
+  const ids = new Set<string>();
+  for (const m of flight.milestones) {
+    for (const t of m.tasks) {
+      if (t.agentConfigId) ids.add(t.agentConfigId);
+    }
+  }
+  if (ids.size > 0) return ids.size;
+  return flight.linkedSessionIds.length;
+}
+
+function flightTasks(flight: Flight): {
+  done: number;
+  total: number;
+  approvals: number;
+  hasInProgress: boolean;
+} {
+  let done = 0;
+  let total = 0;
+  let approvals = 0;
+  let hasInProgress = false;
+  for (const m of flight.milestones) {
+    for (const t of m.tasks) {
+      total += 1;
+      if (t.status === "done") done += 1;
+      if (t.status === "approval_needed") approvals += 1;
+      if (t.status === "running" || t.status === "queued") hasInProgress = true;
+    }
+  }
+  return { done, total, approvals, hasInProgress };
+}
+
+function classifyGroup(flight: Flight, status: FlightStatus): GroupKey {
+  const hasApproval = flight.milestones.some((m) =>
+    m.tasks.some((t) => t.status === "approval_needed"),
+  );
+  if (status === "failed" || status === "paused" || hasApproval) return "attention";
+  if (status === "active" || status === "review") return "active";
+  return "recent";
+}
+
+function formatCost(cost: number): string {
+  if (!cost && cost !== 0) return "$0.00";
+  if (cost >= 100) return `$${cost.toFixed(0)}`;
+  return `$${cost.toFixed(2)}`;
+}
+
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
+  return `${tokens}`;
+}
+
+function eventTimeShort(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
 
 export function MissionsView() {
   const flights = useFlightStore((s) => s.flights);
   const activeFlightId = useFlightStore((s) => s.activeFlightId);
   const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
-  const [modal, setModal] = useState<ModalKind>(null);
+  const computeFlightStatus = useFlightStore((s) => s.computeFlightStatus);
+  const pauseFlight = useOrchestrationStore((s) => s.pauseFlight);
+  const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
 
-  // Auto-select a flight if none is active.
+  const [modal, setModal] = useState<ModalKind>(null);
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+
   const selectedId = useMemo(() => {
     if (activeFlightId && flights.some((f) => f.id === activeFlightId)) {
       return activeFlightId;
@@ -33,14 +201,34 @@ export function MissionsView() {
     [flights, selectedId],
   );
 
+  const grouped = useMemo(() => {
+    const filter = query.trim().toLowerCase();
+    const buckets: Record<GroupKey, Flight[]> = {
+      attention: [],
+      active: [],
+      recent: [],
+    };
+    for (const f of flights) {
+      if (filter) {
+        const hay = `${f.title} ${f.objective ?? ""} ${f.id}`.toLowerCase();
+        if (!hay.includes(filter)) continue;
+      }
+      const status = computeFlightStatus(f.id);
+      buckets[classifyGroup(f, status)].push(f);
+    }
+    return buckets;
+  }, [flights, query, computeFlightStatus]);
+
   const closeModal = () => setModal(null);
 
   if (flights.length === 0) {
     return (
       <>
         <div className="flex flex-col items-center justify-center flex-1 gap-3 text-text-muted bg-bg-primary px-6">
-          <Radio size={32} />
-          <span className="text-sm font-medium text-text-primary">No flights yet</span>
+          <Plane size={32} />
+          <span className="text-sm font-medium text-text-primary">
+            No missions yet
+          </span>
           <span className="text-xs max-w-md text-center">
             A Flight launches one or more agents in parallel — each in its own
             git worktree, on local or remote SSH targets.
@@ -48,7 +236,7 @@ export function MissionsView() {
           <div className="flex items-center gap-2 mt-1">
             <button
               onClick={() => setModal("async")}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/10 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-accent-green border border-accent-line bg-accent-soft rounded hover:bg-accent-green/15 transition-colors"
             >
               <Sparkles size={12} />
               Launch agents
@@ -80,9 +268,29 @@ export function MissionsView() {
 
   return (
     <>
-      <div className="flex flex-1 overflow-hidden">
-        <FlightList selectedId={selectedId} onSelect={setActiveFlight} />
-        <FlightDetail flight={selectedFlight} />
+      <div className="flex flex-1 min-h-0 bg-bg-primary">
+        <FlightSidebar
+          flights={flights}
+          grouped={grouped}
+          selectedId={selectedId}
+          onSelect={setActiveFlight}
+          query={query}
+          onQueryChange={setQuery}
+          searchOpen={searchOpen}
+          onToggleSearch={() => setSearchOpen((v) => !v)}
+          onCreate={() => setModal("async")}
+          computeStatus={computeFlightStatus}
+        />
+        {selectedFlight ? (
+          <FlightDetailPane
+            flight={selectedFlight}
+            status={computeFlightStatus(selectedFlight.id)}
+            onPause={() => void pauseFlight(selectedFlight.id)}
+            onResume={() => void resumeFlight(selectedFlight.id)}
+          />
+        ) : (
+          <EmptyDetail />
+        )}
       </div>
       {modal === "async" && (
         <LaunchAsyncFlightModal
@@ -100,3 +308,490 @@ export function MissionsView() {
   );
 }
 
+function EmptyDetail() {
+  return (
+    <div className="flex flex-1 items-center justify-center bg-bg-primary">
+      <div className="flex flex-col items-center gap-2 text-text-muted">
+        <Plane size={28} />
+        <span className="text-xs">
+          No mission selected — pick one from the left
+        </span>
+      </div>
+    </div>
+  );
+}
+
+interface SidebarProps {
+  flights: Flight[];
+  grouped: Record<GroupKey, Flight[]>;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  query: string;
+  onQueryChange: (q: string) => void;
+  searchOpen: boolean;
+  onToggleSearch: () => void;
+  onCreate: () => void;
+  computeStatus: (id: string) => FlightStatus;
+}
+
+function FlightSidebar({
+  flights,
+  grouped,
+  selectedId,
+  onSelect,
+  query,
+  onQueryChange,
+  searchOpen,
+  onToggleSearch,
+  onCreate,
+  computeStatus,
+}: SidebarProps) {
+  const groups: { key: GroupKey; label: string }[] = [
+    { key: "attention", label: "Attention" },
+    { key: "active", label: "Active" },
+    { key: "recent", label: "Recent" },
+  ];
+
+  return (
+    <div className="w-[320px] flex-shrink-0 flex flex-col bg-bg-secondary border-r border-bg-border min-h-0">
+      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-line-soft">
+        <span className="text-[11px] font-semibold text-text-primary">
+          Flights
+        </span>
+        <span className="text-[10px] px-1.5 py-px rounded bg-bg-tertiary text-text-muted font-mono">
+          {flights.length}
+        </span>
+        <span className="flex-1" />
+        <button
+          onClick={onToggleSearch}
+          className={`p-1 rounded hover:bg-bg-hover transition-colors ${
+            searchOpen ? "text-text-primary bg-bg-hover" : "text-text-muted"
+          }`}
+          title="Search flights"
+        >
+          <Search size={12} />
+        </button>
+        <button
+          onClick={onCreate}
+          className="p-1 text-text-muted hover:text-accent-green hover:bg-bg-hover rounded transition-colors"
+          title="New flight"
+        >
+          <Plus size={12} />
+        </button>
+      </div>
+
+      {searchOpen && (
+        <div className="px-2.5 py-1.5 border-b border-line-soft">
+          <input
+            autoFocus
+            type="text"
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            placeholder="Filter by title, objective, id…"
+            className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-faint outline-none focus:border-accent-line"
+          />
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto">
+        {groups.map((g) => {
+          const items = grouped[g.key];
+          if (items.length === 0) return null;
+          return (
+            <div key={g.key}>
+              <div className="sticky top-0 z-10 flex items-center justify-between px-2.5 py-1.5 bg-bg-tertiary border-y border-line-soft text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+                <span>{g.label}</span>
+                <span className="font-mono">{items.length}</span>
+              </div>
+              {items.map((f) => (
+                <FlightRow
+                  key={f.id}
+                  flight={f}
+                  status={computeStatus(f.id)}
+                  selected={f.id === selectedId}
+                  onSelect={() => onSelect(f.id)}
+                />
+              ))}
+            </div>
+          );
+        })}
+        {grouped.attention.length === 0 &&
+          grouped.active.length === 0 &&
+          grouped.recent.length === 0 && (
+            <div className="px-3 py-4 text-[10px] text-text-muted">
+              No flights match.
+            </div>
+          )}
+      </div>
+    </div>
+  );
+}
+
+function FlightRow({
+  flight,
+  status,
+  selected,
+  onSelect,
+}: {
+  flight: Flight;
+  status: FlightStatus;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const dot = STATUS_DOT[status];
+  const pulse = status === "active";
+  const agents = flightAgentCount(flight);
+  const cost = formatCost(flight.totalCost);
+  const priorityClass = FLIGHT_PRIORITY_COLORS[flight.priority];
+  const statusLabel = STATUS_LABEL[status];
+
+  return (
+    <button
+      onClick={onSelect}
+      className={`flex flex-col gap-1 w-full px-2.5 py-2 text-left border-b border-line-soft transition-colors border-l-2 ${
+        selected
+          ? "bg-bg-elevated border-l-accent-green"
+          : "border-l-transparent hover:bg-bg-tertiary"
+      }`}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="relative flex items-center justify-center w-2 h-2 shrink-0">
+          {pulse && (
+            <span
+              className={`absolute inset-0 rounded-full ${DOT_BG[dot]} opacity-60 animate-ping`}
+            />
+          )}
+          <span className={`relative w-1.5 h-1.5 rounded-full ${DOT_BG[dot]}`} />
+        </span>
+        <span className="font-mono text-[10px] text-text-muted">
+          {shortId(flight.id)}
+        </span>
+        <span className="flex-1" />
+        <span
+          className={`font-mono text-[10px] font-semibold ${priorityClass}`}
+        >
+          {PRIORITY_LABEL[flight.priority]}
+        </span>
+      </div>
+      <span
+        className={`text-[12px] leading-snug line-clamp-2 ${
+          selected
+            ? "text-text-primary font-medium"
+            : "text-text-secondary"
+        }`}
+      >
+        {flight.title || "Untitled"}
+      </span>
+      <div className="flex items-center gap-2 text-[10px] text-text-muted">
+        <span className="inline-flex items-center gap-1">
+          <Users size={9} />
+          <span>{agents}</span>
+        </span>
+        <span className="font-mono">{cost}</span>
+        <span className="flex-1" />
+        <span className={`capitalize ${DOT_TEXT[dot]}`}>{statusLabel}</span>
+      </div>
+    </button>
+  );
+}
+
+interface DetailProps {
+  flight: Flight;
+  status: FlightStatus;
+  onPause: () => void;
+  onResume: () => void;
+}
+
+function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
+  const cfg = FLIGHT_STATUS_CONFIG[status];
+  const dot = STATUS_DOT[status];
+  const tasks = flightTasks(flight);
+  const sessions = flight.linkedSessionIds.length;
+  const canPause = status === "active";
+  const canResume = status === "paused" || status === "review";
+  const showApprove = status === "review" || tasks.approvals > 0;
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-bg-primary">
+      <div className="flex flex-col gap-3 p-3.5 min-h-full">
+        <div className="flex items-start gap-3">
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono text-[11px] text-text-muted">
+                {shortId(flight.id)}
+              </span>
+              <span
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${cfg.bg} ${cfg.text}`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                {STATUS_LABEL[status]}
+              </span>
+              <span
+                className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded border ${PRIORITY_PILL_BG[flight.priority]} ${FLIGHT_PRIORITY_COLORS[flight.priority]}`}
+              >
+                {PRIORITY_LABEL[flight.priority]}
+              </span>
+            </div>
+            <h2 className="text-[18px] font-semibold tracking-tight text-text-primary leading-tight">
+              {flight.title || "Untitled mission"}
+            </h2>
+            {flight.objective && (
+              <p className="text-[11.5px] text-text-secondary max-w-[600px] leading-relaxed">
+                {flight.objective}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {canPause && (
+              <button
+                onClick={onPause}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-text-secondary border border-bg-border rounded hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
+                <Pause size={11} />
+                Pause
+              </button>
+            )}
+            {canResume && (
+              <button
+                onClick={onResume}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-text-secondary border border-bg-border rounded hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
+                <Play size={11} />
+                Resume
+              </button>
+            )}
+            {showApprove && (
+              <button
+                onClick={onResume}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-accent-green bg-accent-soft border border-accent-line rounded hover:bg-accent-green/20 transition-colors"
+              >
+                <CheckCircle2 size={11} />
+                Approve &amp; merge
+              </button>
+            )}
+          </div>
+        </div>
+
+        <StatGrid
+          flight={flight}
+          tasks={tasks}
+          sessions={sessions}
+          dot={dot}
+        />
+
+        <div className="grid grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr] flex-1 min-h-[260px]">
+          <MilestonesCard flight={flight} tasks={tasks} />
+          <TimelineCard flight={flight} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface StatGridProps {
+  flight: Flight;
+  tasks: { done: number; total: number; approvals: number; hasInProgress: boolean };
+  sessions: number;
+  dot: DesignDot;
+}
+
+function StatGrid({ flight, tasks, sessions }: StatGridProps) {
+  const tasksValueClass = tasks.hasInProgress
+    ? "text-accent-green"
+    : "text-text-primary";
+  const approvalsValueClass =
+    tasks.approvals > 0 ? "text-accent-amber" : "text-text-primary";
+
+  const cells: { label: string; value: string; valueClass?: string }[] = [
+    { label: "Cost", value: formatCost(flight.totalCost) },
+    { label: "Tokens", value: formatTokens(flight.totalTokens) },
+    {
+      label: "Tasks",
+      value: tasks.total ? `${tasks.done}/${tasks.total}` : "0/0",
+      valueClass: tasksValueClass,
+    },
+    {
+      label: "Approvals",
+      value: `${tasks.approvals}`,
+      valueClass: approvalsValueClass,
+    },
+    { label: "Sessions", value: `${sessions}` },
+    { label: "Updated", value: relativeTime(flight.updatedAt) },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+      {cells.map((c) => (
+        <div
+          key={c.label}
+          className="flex flex-col gap-0.5 px-2.5 py-2 bg-bg-secondary border border-bg-border rounded"
+        >
+          <span className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
+            {c.label}
+          </span>
+          <span
+            className={`text-[14px] font-semibold font-mono leading-tight ${
+              c.valueClass ?? "text-text-primary"
+            }`}
+          >
+            {c.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MilestonesCard({
+  flight,
+  tasks,
+}: {
+  flight: Flight;
+  tasks: { done: number; total: number };
+}) {
+  const rows = useMemo(() => {
+    const out: {
+      id: string;
+      title: string;
+      done: boolean;
+      running: boolean;
+      agent: string;
+    }[] = [];
+    for (const m of flight.milestones) {
+      for (const t of m.tasks) {
+        out.push({
+          id: t.id,
+          title: t.title,
+          done: t.status === "done",
+          running:
+            t.status === "running" ||
+            t.status === "queued" ||
+            t.status === "approval_needed",
+          agent: t.agentConfigId || "—",
+        });
+      }
+    }
+    return out;
+  }, [flight.milestones]);
+
+  return (
+    <div className="flex flex-col bg-bg-secondary border border-bg-border rounded overflow-hidden min-h-0">
+      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-line-soft">
+        <span className="text-[11px] font-semibold text-text-primary">
+          Milestones
+        </span>
+        <span className="flex-1" />
+        <span className="font-mono text-[10px] text-text-muted">
+          {tasks.total > 0 ? `${tasks.done} / ${tasks.total} done` : "—"}
+        </span>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {rows.length === 0 ? (
+          <div className="px-3 py-4 text-[11px] text-text-muted">
+            No milestones defined yet.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5 p-2.5">
+            {rows.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center gap-2 text-[11.5px]"
+              >
+                <span
+                  className={`relative flex items-center justify-center w-3.5 h-3.5 rounded shrink-0 ${
+                    m.done
+                      ? "bg-accent-green border border-accent-green"
+                      : m.running
+                        ? "border border-accent-line"
+                        : "border border-line-strong"
+                  }`}
+                >
+                  {m.done ? (
+                    <Check size={9} className="text-bg-primary" strokeWidth={3} />
+                  ) : m.running ? (
+                    <span className="relative flex w-1.5 h-1.5">
+                      <span className="absolute inset-0 rounded-full bg-accent-amber opacity-60 animate-ping" />
+                      <span className="relative w-1.5 h-1.5 rounded-full bg-accent-amber" />
+                    </span>
+                  ) : null}
+                </span>
+                <span
+                  className={`flex-1 truncate ${
+                    m.done
+                      ? "text-text-muted line-through"
+                      : "text-text-secondary"
+                  }`}
+                >
+                  {m.title}
+                </span>
+                <span className="text-[10px] text-text-muted shrink-0 truncate max-w-[140px]">
+                  {m.agent}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TimelineCard({ flight }: { flight: Flight }) {
+  const events = useMemo<CoordinationEvent[]>(() => {
+    const log = flight.coordinationLog ?? [];
+    return [...log].sort((a, b) => b.timestamp - a.timestamp).slice(0, 30);
+  }, [flight.coordinationLog]);
+
+  const live = flight.status === "active";
+
+  return (
+    <div className="flex flex-col bg-bg-secondary border border-bg-border rounded overflow-hidden min-h-0">
+      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-line-soft">
+        <span className="text-[11px] font-semibold text-text-primary">
+          Live timeline
+        </span>
+        <span className="flex-1" />
+        {live ? (
+          <span className="relative flex items-center justify-center w-2 h-2">
+            <span className="absolute inset-0 rounded-full bg-accent-green opacity-60 animate-ping" />
+            <span className="relative w-1.5 h-1.5 rounded-full bg-accent-green" />
+          </span>
+        ) : (
+          <span className="w-1.5 h-1.5 rounded-full bg-text-muted" />
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {events.length === 0 ? (
+          <div className="px-3 py-4 text-[11px] text-text-muted">
+            No timeline events yet.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 p-2.5 text-[11px]">
+            {events.map((e) => (
+              <TimelineRow key={e.id} event={e} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TimelineRow({ event }: { event: CoordinationEvent }) {
+  const dot = EVENT_DOT[event.type] ?? "muted";
+  const actor = event.agentId || (event.type === "escalation" ? "you" : "system");
+  return (
+    <div className="flex items-start gap-2">
+      <span className="font-mono text-[10px] text-text-muted w-[32px] shrink-0 pt-px">
+        {eventTimeShort(event.timestamp)}
+      </span>
+      <span
+        className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${DOT_BG[dot]}`}
+      />
+      <span className="flex-1 leading-snug">
+        <span className="text-text-primary font-medium">{actor}</span>{" "}
+        <span className="text-text-secondary">{event.summary}</span>
+      </span>
+    </div>
+  );
+}

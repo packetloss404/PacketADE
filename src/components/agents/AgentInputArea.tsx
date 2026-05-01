@@ -3,7 +3,6 @@ import {
   Monitor,
   Mic,
   Zap,
-  Sparkles,
   FolderOpen,
   Folder,
   Server,
@@ -26,7 +25,6 @@ import {
   apiAgentProvider,
 } from "@/stores/agentTaskStore";
 import { useGitHubStore } from "@/stores/githubStore";
-import { useProfileStore } from "@/stores/profileStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useSshTargetStore } from "@/stores/sshTargetStore";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
@@ -107,8 +105,6 @@ interface AgentInputAreaProps {
   onLaunch: () => void;
   selectedModel: string;
   onModelChange: (model: string) => void;
-  selectedProfileId?: string;
-  onProfileChange?: (profileId: string) => void;
   agentMode?: AgentMode;
   onAgentModeChange?: (mode: AgentMode) => void;
 }
@@ -135,8 +131,6 @@ export function AgentInputArea({
   onLaunch,
   selectedModel,
   onModelChange,
-  selectedProfileId,
-  onProfileChange,
   agentMode = "agent",
   onAgentModeChange,
 }: AgentInputAreaProps) {
@@ -151,12 +145,6 @@ export function AgentInputArea({
   const touchSshTarget = useSshTargetStore((s) => s.touchTarget);
 
   const [sshModalOpen, setSshModalOpen] = useState(false);
-
-  const profiles = useProfileStore((s) => s.profiles);
-  const activeProfileId = useProfileStore((s) => s.activeProfileId);
-  const effectiveProfileId =
-    selectedProfileId ?? activeProfileId ?? profiles[0]?.id ?? "";
-  const activeProfile = profiles.find((p) => p.id === effectiveProfileId);
 
   const { isListening, transcript, startListening, stopListening, isSupported } =
     useVoiceInput();
@@ -386,17 +374,6 @@ export function AgentInputArea({
       if (launchReady) onLaunch();
     }
   }
-
-  // Render profile dropdown label with icon.
-  const profileTrigger = useMemo(
-    () => (
-      <span className="text-text-secondary flex items-center gap-1">
-        <Sparkles size={12} className={activeProfile?.color ?? "text-accent-green"} />
-        {activeProfile?.name ?? "Profile"}
-      </span>
-    ),
-    [activeProfile?.color, activeProfile?.name],
-  );
 
   // ─── Provider auth status polling ────────────────────────────────────
   const [authStatus, setAuthStatus] = useState<Record<string, AuthEntry>>({});
@@ -936,24 +913,6 @@ export function AgentInputArea({
                   </Dropdown>
                 );
               })()}
-
-              {/* Profile selector */}
-              <Dropdown trigger={profileTrigger}>
-                {profiles.map((p) => (
-                  <DropdownItem
-                    key={p.id}
-                    onClick={() => onProfileChange?.(p.id)}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Sparkles
-                        size={10}
-                        className={p.color ?? "text-accent-green"}
-                      />
-                      {p.name}
-                    </span>
-                  </DropdownItem>
-                ))}
-              </Dropdown>
             </div>
 
             <div className="flex items-center gap-1">

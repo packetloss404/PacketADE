@@ -4,12 +4,12 @@ import {
   apiAgentProvider,
   type AgentCli,
 } from "@/stores/agentTaskStore";
-import { useProfileStore } from "@/stores/profileStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useSshTargetStore } from "@/stores/sshTargetStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
+import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
 import { getProviderAuthStatus } from "@/lib/tauri";
 import { isSshUri, parseSshTargetId } from "@/types/ssh";
@@ -43,15 +43,8 @@ export function AgentsView() {
   const createApiConversation = useAgentTaskStore((s) => s.createApiConversation);
   const deleteConversation = useAgentTaskStore((s) => s.deleteConversation);
 
-  const profiles = useProfileStore((s) => s.profiles);
-  const activeProfileId = useProfileStore((s) => s.activeProfileId);
-  const setActiveProfile = useProfileStore((s) => s.setActiveProfile);
-
   const [selectedAgent, setSelectedAgent] = useState<AgentCli>(DEFAULT_AGENT);
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
-  const [selectedProfileId, setSelectedProfileId] = useState<string>(
-    activeProfileId ?? profiles[0]?.id ?? "",
-  );
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const autoPickRanRef = useRef(false);
@@ -127,26 +120,13 @@ export function AgentsView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleNewAgent]);
 
-  const handleProfileChange = useCallback(
-    (id: string) => {
-      setSelectedProfileId(id);
-      setActiveProfile(id);
-      const profile = useProfileStore.getState().profiles.find((p) => p.id === id);
-      if (profile && profile.defaultModel) {
-        setSelectedModel(profile.defaultModel);
-      }
-    },
-    [setActiveProfile],
-  );
-
   const handleLaunch = useCallback(() => {
     const text = agentInputText.trim();
     if (!text) return;
     if (!selectedRepo) return;
 
     const model = selectedModel || getDefaultModel(selectedAgent);
-    const profile = profiles.find((p) => p.id === selectedProfileId);
-    const systemPrompt = profile?.systemPrompt ? profile.systemPrompt : null;
+    const systemPrompt: string | null = null;
 
     // Mode → planMode + post-create permissionMode.
     const planMode = agentMode === "ask" || agentMode === "plan";
@@ -208,8 +188,6 @@ export function AgentsView() {
     selectedRepo,
     selectedAgent,
     selectedModel,
-    selectedProfileId,
-    profiles,
     setAgentInputText,
     createApiConversation,
     agentMode,
@@ -231,10 +209,13 @@ export function AgentsView() {
       />
 
       {selectedConversationId ? (
-        <AgentChatPane
-          conversationId={selectedConversationId}
-          onClose={() => handleCloseConversation(selectedConversationId)}
-        />
+        <>
+          <AgentChatPane
+            conversationId={selectedConversationId}
+            onClose={() => handleCloseConversation(selectedConversationId)}
+          />
+          <AgentInspectorPane conversationId={selectedConversationId} />
+        </>
       ) : (
         <AgentInputArea
           textareaRef={textareaRef}
@@ -243,14 +224,10 @@ export function AgentsView() {
           onLaunch={handleLaunch}
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
-          selectedProfileId={selectedProfileId}
-          onProfileChange={handleProfileChange}
           agentMode={agentMode}
           onAgentModeChange={setAgentMode}
         />
       )}
-
-      <aside className="w-0 border-l border-bg-border overflow-hidden" aria-hidden="true" />
     </div>
   );
 }
