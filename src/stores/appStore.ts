@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useMemoryStore } from "@/stores/memoryStore";
-import { useProfileStore } from "@/stores/profileStore";
 
 export type CoreView = "welcome" | "claude" | "codex" | "gemini" | "opencode" | "issues" | "missions" | "history" | "tools" | "github" | "memory" | "deploy" | "review_queue" | "workspace" | "agents" | "cost_dashboard" | "dictation";
 export type AppView = CoreView | `mod:${string}`;
@@ -52,34 +51,16 @@ export const useAppStore = create<AppStore>((set) => ({
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setTheme: (theme) => set({ theme }),
   quickStartSession: async (cli = "claude") => {
-    const profileStore = useProfileStore.getState();
     const memoryStore = useMemoryStore.getState();
     const layoutStore = useLayoutStore.getState();
 
-    const profile = profileStore.activeProfileId
-      ? profileStore.profiles.find((p: { id: string }) => p.id === profileStore.activeProfileId)
-      : null;
-
-    const args: string[] = [];
-    if (profile?.defaultModel) {
-      args.push("--model", profile.defaultModel);
-    }
-
-    let prompt = "";
-    if (profile?.systemPrompt) {
-      prompt += profile.systemPrompt + "\n\n";
-    }
-
     const memoryContext = memoryStore.getContextForSession(layoutStore.projectPath);
-    if (memoryContext.trim()) {
-      prompt += memoryContext + "\n\n";
-    }
+    const prompt = memoryContext.trim();
 
     set({ activeView: cli });
     layoutStore.addPane({
       cliCommand: cli,
-      cliArgs: args.length > 0 ? args : undefined,
-      initialPrompt: prompt.trim() || undefined,
+      initialPrompt: prompt || undefined,
     });
   },
 }));

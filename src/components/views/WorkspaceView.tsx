@@ -2,14 +2,18 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useEditorStore } from "@/stores/editorStore";
+import { useMosaicStore } from "@/stores/mosaicStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
+import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
 import { EditorPane } from "@/components/editor/EditorPane";
 import { isOnboardingComplete } from "@/lib/onboarding";
 import { useState, useRef, useEffect } from "react";
-import { LayoutGrid, FolderOpen, ChevronDown, Layers, GitBranch, FileText, Plus } from "lucide-react";
+import { LayoutGrid, FolderOpen, ChevronDown, Layers, GitBranch, FileText, Plus, Zap, Brain } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
-import type { WorkspaceAgentSlot } from "@/types/workspace";
+import type { WorkspaceAgentSlot, Workspace } from "@/types/workspace";
+import type { MosaicLayoutPreset } from "@/types/mosaic";
 
 const agentLabel: Record<WorkspaceAgentSlot, string> = {
   "terminal": "Terminal",
@@ -193,6 +197,11 @@ export function WorkspaceView() {
           </div>
         )}
 
+        {/* SubTabs: workspace tabs + bypass/memory pills + layout presets */}
+        {initialized && activeNonArchived.length > 0 && (
+          <WorkspaceSubTabs />
+        )}
+
         {/* Main content area: workspace panes + optional git panel */}
         <div className="flex flex-1 overflow-hidden">
           {/* Workspace panes */}
@@ -265,5 +274,130 @@ export function WorkspaceView() {
         )}
       </div>
     </div>
+  );
+}
+
+const SUBTAB_PRESETS: { preset: MosaicLayoutPreset; label: string; minPanes: number }[] = [
+  { preset: "1x1", label: "1×1", minPanes: 1 },
+  { preset: "1x2", label: "1×2", minPanes: 2 },
+  { preset: "2x2", label: "2×2", minPanes: 4 },
+  { preset: "2x3", label: "2×3", minPanes: 5 },
+];
+
+function workspaceStatusDot(ws: Workspace): { className: string; pulse: boolean } {
+  const live = ws.panes.some((p) => p.sessionId);
+  if (live) {
+    return { className: "bg-accent-green", pulse: true };
+  }
+  if (ws.panes.length > 0) {
+    return { className: "bg-accent-amber", pulse: false };
+  }
+  return { className: "bg-text-faint", pulse: false };
+}
+
+function WorkspaceSubTabs() {
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
+  const setBypassPermissions = useWorkspaceStore((s) => s.setBypassPermissions);
+  const applyPreset = useMosaicStore((s) => s.applyPreset);
+  const memoryPatterns = useMemoryStore((s) => s.patterns);
+  const memoryLearning = useMemoryStore((s) => s.isLearning);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const activeNonArchived = workspaces.filter((w) => w.status === "active");
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+  const bypassOn = activeWorkspace?.bypassPermissions ?? false;
+  const memoryActive = memoryLearning || memoryPatterns.length > 0;
+  const paneIds = activeWorkspace?.panes.map((p) => p.id) ?? [];
+  const paneCount = paneIds.length;
+
+  return (
+    <>
+      <div className="flex items-stretch h-[33px] bg-bg-primary border-b border-line-soft px-2 shrink-0">
+        <div className="flex items-stretch gap-0 overflow-x-auto">
+          {activeNonArchived.map((ws) => {
+            const isActive = ws.id === activeWorkspaceId;
+            const dot = workspaceStatusDot(ws);
+            return (
+              <button
+                key={ws.id}
+                onClick={() => setActiveWorkspace(ws.id)}
+                className={`relative flex items-center gap-1.5 px-3 text-[11px] whitespace-nowrap transition-colors ${
+                  isActive
+                    ? "text-text-primary"
+                    : "text-text-muted hover:text-text-secondary"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${dot.className} ${dot.pulse ? "animate-pulse" : ""}`}
+                />
+                <span>{ws.name}</span>
+                {isActive && (
+                  <span className="absolute left-2 right-2 bottom-0 h-[2px] bg-accent-green rounded-t" />
+                )}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center px-2 text-text-muted hover:text-text-primary transition-colors"
+            title="New workspace"
+          >
+            <Plus size={12} />
+          </button>
+        </div>
+        <div className="flex-1" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => activeWorkspace && setBypassPermissions(activeWorkspace.id, !bypassOn)}
+            disabled={!activeWorkspace}
+            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border transition-colors ${
+              bypassOn
+                ? "border-accent-line bg-accent-soft text-accent-amber"
+                : "border-bg-border bg-bg-secondary text-text-muted hover:text-text-secondary"
+            } disabled:opacity-50`}
+            title="Bypass permission prompts for this workspace"
+          >
+            <Zap size={10} />
+            <span>Bypass perms: {bypassOn ? "on" : "off"}</span>
+          </button>
+          <span
+            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border ${
+              memoryActive
+                ? "border-accent-line bg-accent-soft text-accent-green"
+                : "border-bg-border bg-bg-secondary text-text-muted"
+            }`}
+            title={memoryLearning ? "Memory layer is summarizing recent sessions" : "Top patterns will be injected on next session"}
+          >
+            <Brain size={10} />
+            <span>{memoryLearning ? "Memory learning" : "Memory injecting"}</span>
+          </span>
+          <div className="flex items-center gap-0.5 bg-bg-secondary border border-bg-border rounded p-0.5">
+            {SUBTAB_PRESETS.map(({ preset, label, minPanes }) => {
+              const disabled = paneCount < minPanes;
+              return (
+                <button
+                  key={preset}
+                  onClick={() => !disabled && applyPreset(preset, paneIds)}
+                  disabled={disabled}
+                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+                    disabled
+                      ? "text-text-faint cursor-not-allowed"
+                      : "text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+                  }`}
+                  title={`Arrange panes into ${label}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {showCreate && (
+        <WorkspaceCreationModal onClose={() => setShowCreate(false)} />
+      )}
+    </>
   );
 }

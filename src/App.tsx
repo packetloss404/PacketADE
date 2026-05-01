@@ -1,6 +1,8 @@
 import { useEffect, useCallback, lazy, Suspense } from "react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Toolbar } from "@/components/layout/Toolbar";
+import { LeftRail } from "@/components/layout/LeftRail";
+import { StatusStrip } from "@/components/layout/StatusStrip";
 import { MosaicContainer } from "@/components/layout/MosaicContainer";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
@@ -203,6 +205,8 @@ export default function App() {
         <TitleBar />
         <Toolbar />
         <div className="flex flex-1 overflow-hidden">
+          {/* Primary view nav */}
+          <LeftRail />
           {/* Main content area */}
           <div className="flex flex-col flex-1 overflow-hidden">
             <ErrorBoundary fallbackMessage="View error">
@@ -239,6 +243,7 @@ export default function App() {
           {/* Workspace sidebar — persistent across core views */}
           {showWorkspaceSidebar && <WorkspaceSidebar />}
         </div>
+        <StatusStrip />
         {commandPaletteOpen && <CommandPalette />}
         <DiffPane />
         <SideChatOverlay />

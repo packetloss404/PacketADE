@@ -5,7 +5,6 @@ import {
   CheckCircle,
   XCircle,
   Send,
-  MessageSquare,
   Square,
   Mic,
   ChevronDown,
@@ -18,6 +17,7 @@ import {
   MoreVertical,
   Server,
   PanelRightOpen,
+  Sparkles,
 } from "lucide-react";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { PendingEditPrompt } from "./PendingEditPrompt";
@@ -30,6 +30,7 @@ import { SlashCommandPopover, type SlashSelection, type BuiltinSlashCommand } fr
 import type { SlashCommandDef, SkillDef } from "@/lib/tauri";
 import { listSlashCommands, listSkills } from "@/lib/tauri";
 import { ToolDiffView } from "./ToolDiffView";
+import { MemoryInjectionCard } from "./MemoryInjectionCard";
 import { BashToolCallCard } from "./BashToolCallCard";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { PlanModeApprovalMenu, looksLikePlan } from "./PlanModeApprovalMenu";
@@ -340,8 +341,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     (!lastMessage || lastMessage.role === "user") &&
     messages.length > 0;
 
-  // Message count for the header badge
-  const messageCount = messages.length;
+  // Tooltip shown on the header status line.
   const userMsgCount = messages.filter((m) => m.role === "user").length;
   const assistantMsgCount = messages.filter((m) => m.role === "assistant").length;
 
@@ -714,52 +714,63 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   /* ----------------- render ----------------- */
 
+  // Design-style status line: "N turns · M tool calls · P pending approvals".
+  const turnCount = messages.filter((m) => m.role === "user").length;
+  const toolCallCount = messages.reduce(
+    (sum, m) => sum + (m.toolCalls?.length ?? 0),
+    0,
+  );
+  const pendingApprovalCount =
+    (conversation.pendingEdits?.length ?? 0) +
+    (conversation.pendingPermissions?.length ?? 0);
+  const statusLineParts: string[] = [];
+  if (turnCount > 0) statusLineParts.push(`${turnCount} turn${turnCount === 1 ? "" : "s"}`);
+  if (toolCallCount > 0)
+    statusLineParts.push(`${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`);
+  if (pendingApprovalCount > 0)
+    statusLineParts.push(
+      `${pendingApprovalCount} pending approval${pendingApprovalCount === 1 ? "" : "s"}`,
+    );
+
   const chatContent = (
     <div className="flex flex-col h-full">
-      {/* Header bar */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
-        {/* Left: agent dot + name + folder */}
-        <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
-        <span className="text-[11px] font-medium text-text-primary truncate">
-          {agentLabel}
-        </span>
-        <span className="text-[10px] text-text-muted truncate">
-          {folderName}
-        </span>
-        {conversation.sshTarget && (
+      {/* Header bar — design-faithful: sparkle avatar + title + status line */}
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-bg-secondary border-b border-line-soft shrink-0">
+        {/* Sparkle avatar */}
+        <div className="w-[26px] h-[26px] shrink-0 rounded-md bg-accent-soft border border-accent-line grid place-items-center">
+          <Sparkles size={13} className="text-accent-green" />
+        </div>
+        <div className="flex flex-col min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[13px] font-semibold text-text-primary truncate">
+              {conversation.title || agentLabel}
+            </span>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
+            <span className={`text-[10px] font-medium ${status.className}`}>
+              {status.label}
+            </span>
+            {conversation.sshTarget && (
+              <span
+                className="flex items-center gap-1 text-[10px] text-accent-green bg-accent-soft border border-accent-line rounded px-1.5 py-0.5"
+                title={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
+              >
+                <Server size={10} />
+                {conversation.sshTarget.host}
+              </span>
+            )}
+          </div>
           <span
-            className="flex items-center gap-1 text-[10px] text-accent-green bg-accent-green/10 border border-accent-green/30 rounded px-1.5 py-0.5"
-            title={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
+            className="text-[10.5px] text-text-secondary truncate"
+            title={`${userMsgCount} sent, ${assistantMsgCount} received`}
           >
-            <Server size={10} />
-            {conversation.sshTarget.host}
-          </span>
-        )}
-
-        <div className="flex-1" />
-
-        {/* Center: status */}
-        <div className="flex items-center gap-1.5">
-          {conversation.status === "active" && (
-            <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" />
-          )}
-          <span className={`text-[10px] font-medium ${status.className}`}>
-            {status.label}
+            {statusLineParts.length > 0
+              ? statusLineParts.join(" · ")
+              : `${folderName} · ready`}
           </span>
         </div>
 
-        {/* Message count badge */}
-        {messageCount > 0 && (
-          <div
-            className="flex items-center gap-1 text-[9px] text-text-muted"
-            title={`${userMsgCount} sent, ${assistantMsgCount} received`}
-          >
-            <MessageSquare size={9} />
-            {messageCount}
-          </div>
-        )}
-
-        <div className="flex-1" />
+        {/* Right-side action group */}
+        <div className="flex items-center gap-1 shrink-0">
 
         {/* Transcript verbosity (API mode only) */}
         {conversation.mode === "api" && (
@@ -980,6 +991,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         >
           <X size={12} />
         </button>
+        </div>
       </div>
 
       {/* Messages area */}
@@ -989,8 +1001,13 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       >
         <div
           ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
+          className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5"
         >
+          {/* Memory injection callout — surfaces when memoryContextEnabled */}
+          {conversation.mode === "api" && conversation.memoryContextEnabled && (
+            <MemoryInjectionCard />
+          )}
+
           {conversation.messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
               <span className="text-[11px] text-text-muted">No messages yet</span>
@@ -1473,24 +1490,37 @@ function ToolCallCard({
       <CheckCircle size={10} className="text-accent-green" />
     );
 
+  // Status dot mirrors the design (green=done, amber+pulse=running, muted=else).
+  const dotClass =
+    toolCall.status === "running"
+      ? "bg-accent-amber animate-pulse"
+      : toolCall.status === "error"
+        ? "bg-accent-red"
+        : "bg-accent-green";
+
   // write_file with parseable input gets a diff view (replaces summary body).
   if (writeFileInput) {
     return (
-      <div className="border border-bg-border rounded text-[10px] text-text-muted bg-bg-hover">
-        <div className="flex items-center gap-1.5 px-2 py-1">
+      <div className="border border-bg-border rounded-md overflow-hidden bg-bg-secondary">
+        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-bg-tertiary border-b border-line-soft">
           {statusIcon}
-          <span className="font-mono text-text-secondary">{toolCall.name}</span>
+          <span className="text-[12px] font-medium text-text-primary">Edit</span>
           {toolCall.file && (
-            <span className="text-text-muted">({toolCall.file})</span>
+            <span className="font-mono text-[10.5px] text-text-secondary truncate">
+              {toolCall.file}
+            </span>
           )}
+          <span className="flex-1" />
+          <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+          <span className="text-[10.5px] capitalize text-text-secondary">
+            {toolCall.status}
+          </span>
         </div>
-        <div className="p-1">
-          <ToolDiffView
-            projectPath={projectPath}
-            filePath={writeFileInput.path!}
-            newContent={writeFileInput.content!}
-          />
-        </div>
+        <ToolDiffView
+          projectPath={projectPath}
+          filePath={writeFileInput.path!}
+          newContent={writeFileInput.content!}
+        />
       </div>
     );
   }
@@ -1507,41 +1537,46 @@ function ToolCallCard({
     summary.length > 160;
 
   return (
-    <div className="bg-bg-hover rounded text-[10px] text-text-muted">
+    <div className="border border-bg-border rounded-md overflow-hidden bg-bg-secondary">
       <button
         type="button"
         onClick={() => hasMore && setExpanded((v) => !v)}
-        className={`w-full flex items-center gap-1.5 px-2 py-1 text-left ${
-          hasMore ? "hover:bg-bg-border/50 cursor-pointer" : "cursor-default"
-        } transition-colors rounded`}
+        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left bg-bg-tertiary ${
+          hasMore ? "hover:bg-bg-elevated cursor-pointer" : "cursor-default"
+        } ${expanded && hasMore ? "border-b border-line-soft" : ""} transition-colors`}
       >
-        {hasMore ? (
-          expanded ? (
-            <ChevronDown size={10} />
-          ) : (
-            <ChevronRight size={10} />
-          )
-        ) : (
-          <span className="w-[10px]" />
-        )}
         {statusIcon}
-        <span className="font-mono">{toolCall.name}</span>
+        <span className="text-[12px] font-medium text-text-primary">{toolCall.name}</span>
         {toolCall.file && (
-          <span className="text-text-muted truncate">({toolCall.file})</span>
+          <span className="font-mono text-[10.5px] text-text-secondary truncate">
+            {toolCall.file}
+          </span>
         )}
         {!expanded && summaryPreview && verbosity !== "summary" && (
-          <span className="ml-1 truncate text-text-muted/80 flex-1 min-w-0">
+          <span className="ml-1 truncate text-text-muted text-[10.5px] flex-1 min-w-0">
             {summaryPreview.replace(/\n/g, " ↵ ")}
           </span>
         )}
+        <span className="flex-1" />
+        <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+        <span className="text-[10.5px] capitalize text-text-secondary">
+          {toolCall.status}
+        </span>
+        {hasMore && (
+          expanded ? (
+            <ChevronDown size={10} className="text-text-muted" />
+          ) : (
+            <ChevronRight size={10} className="text-text-muted" />
+          )
+        )}
       </button>
       {expanded && hasMore && (
-        <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 max-h-96 overflow-y-auto mx-1 mb-1 text-text-primary">
+        <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary p-2 max-h-96 overflow-y-auto text-text-primary">
           {fullContent}
         </pre>
       )}
       {expanded && verbosity === "verbose" && toolCall.input && (
-        <pre className="text-[10px] font-mono whitespace-pre-wrap bg-bg-secondary border-t border-bg-border rounded-b p-2 max-h-48 overflow-y-auto text-text-muted">
+        <pre className="text-[10px] font-mono whitespace-pre-wrap bg-bg-secondary border-t border-line-soft p-2 max-h-48 overflow-y-auto text-text-muted">
           input: {toolCall.input}
         </pre>
       )}

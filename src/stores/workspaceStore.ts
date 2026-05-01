@@ -24,6 +24,7 @@ interface WorkspaceStore {
   deleteWorkspace: (id: string) => void;
   setActiveWorkspace: (id: string | null) => void;
   getActiveWorkspace: () => Workspace | undefined;
+  setBypassPermissions: (workspaceId: string, bypass: boolean) => void;
   setPaneSession: (workspaceId: string, paneId: string, sessionId: string | null) => void;
   updatePane: (workspaceId: string, paneId: string, updates: Partial<WorkspacePane>) => void;
   addPinnedCommand: (workspaceId: string, paneId: string, command: string) => void;
@@ -137,6 +138,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   getActiveWorkspace: () => {
     const s = get();
     return s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+  },
+
+  setBypassPermissions: (workspaceId, bypass) => {
+    set(commitWorkspaces((s) => {
+      const workspaces = s.workspaces.map((w) =>
+        w.id === workspaceId
+          ? { ...w, bypassPermissions: bypass, updatedAt: Date.now() }
+          : w
+      );
+      return { workspaces };
+    }));
   },
 
   setPaneSession: (workspaceId, paneId, sessionId) => {

@@ -1,9 +1,9 @@
 import { ChevronRight, MessageSquare } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useProfileStore } from "@/stores/profileStore";
 import { useAppStore } from "@/stores/appStore";
 import { getDefaultModel } from "@/lib/api-models";
+import { SCOUT_SYSTEM_PROMPT, SCOUT_ALLOWED_TOOLS, SCOUT_MEMORY_CONTEXT_DEFAULT } from "@/lib/scout-config";
 import type { Idea } from "@/types/ideation";
 import { getTypeConfig, SEVERITY_COLORS, EFFORT_COLORS } from "./ideationConfig";
 
@@ -20,21 +20,20 @@ export function IdeaCard({ idea, isSelected, onSelect }: IdeaCardProps) {
     e.stopPropagation();
     const workspace = useWorkspaceStore.getState().getActiveWorkspace();
     if (!workspace) return;
-    const scout = useProfileStore.getState().getProfile("scout");
     const agent = "api-claude";
     const id = await useAgentTaskStore.getState().createApiConversation(
       agent,
       workspace.projectPath,
-      scout?.defaultModel || getDefaultModel(agent),
+      getDefaultModel(agent),
       `Tell me more about this idea: ${idea.title}\n\n${idea.description}`,
-      scout?.systemPrompt ?? null,
+      SCOUT_SYSTEM_PROMPT,
       false,
       false,
       null,
       undefined,
       false,
-      scout?.allowedTools ?? null,
-      scout?.memoryContextDefault ?? false,
+      SCOUT_ALLOWED_TOOLS,
+      SCOUT_MEMORY_CONTEXT_DEFAULT,
     );
     useAgentTaskStore.getState().selectConversation(id);
     useAppStore.getState().setActiveView("agents");

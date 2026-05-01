@@ -34,6 +34,7 @@ playwright/.cache/
 # Claude Code local settings
 .claude/
 CLAUDE.md
+AGENTS.md
 
 # Agent sidecar build output
 agent-sidecar/node_modules
@@ -42,3 +43,6 @@ agent-sidecar/dist
 # Fetched Tauri externalBin runtimes (see scripts/fetch-node.js)
 src-tauri/binaries/
 src-tauri/binaries/node-*
+
+# Local design handoff bundle (Claude Design exports)
+.design-handoff/

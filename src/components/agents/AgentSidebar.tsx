@@ -60,6 +60,32 @@ function statusIcon(status: AgentConversation["status"]) {
   }
 }
 
+/** Color-coded agent name per the design (Claude=green, Codex=amber, etc.) */
+function agentColorClass(agent: string): string {
+  if (agent === "claude-code" || agent.startsWith("api-claude"))
+    return "text-accent-green";
+  if (agent === "codex" || agent.startsWith("api-openai"))
+    return "text-accent-amber";
+  if (agent === "gemini") return "text-accent-blue";
+  if (agent === "opencode" || agent === "api-ollama") return "text-accent-purple";
+  if (agent === "api-minimax" || agent === "api-openrouter") return "text-accent-blue";
+  return "text-text-secondary";
+}
+
+/** Compact model label — drops the date / build suffix when present. */
+function shortModel(model: string | undefined): string {
+  if (!model) return "";
+  // Strip trailing date stamp like "-20250414" and provider prefix.
+  let m = model.replace(/-\d{8,}$/, "");
+  m = m.replace(/^claude-/i, "").replace(/^gpt-/i, "");
+  return m;
+}
+
+/** Aggregate "turn" count = number of user messages in the conversation. */
+function turnCount(conv: AgentConversation): number {
+  return conv.messages.filter((m) => m.role === "user").length;
+}
+
 function isWorktreePath(path: string): boolean {
   return path.replace(/\\/g, "/").includes("/.pkt-worktrees/");
 }
@@ -86,6 +112,11 @@ function envBadge(conv: AgentConversation) {
     );
   }
   return null;
+}
+
+function basenameOfPath(path: string): string {
+  const segs = path.replace(/\\/g, "/").split("/").filter(Boolean);
+  return segs[segs.length - 1] ?? path;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -290,19 +321,18 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       onKeyDown={handleSidebarKeyDown}
       className="w-[240px] flex-shrink-0 flex flex-col bg-bg-secondary border-r border-bg-border overflow-hidden focus:outline-none"
     >
-      {/* New Agent + Search buttons */}
-      <div className="px-3 pt-3 pb-2 flex items-center gap-1">
-        <button
-          onClick={onNewAgent}
-          className="flex items-center gap-2 flex-1 px-3 py-2 text-[11px] font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 border border-accent-green/30 rounded transition-colors"
-        >
-          <Plus size={12} />
-          New Agent
-          <span className="ml-auto text-[9px] text-accent-green/70">Ctrl+N</span>
-        </button>
+      {/* Sessions list header — matches design (label + count pill + search/plus icons) */}
+      <div className="px-2.5 py-2 flex items-center gap-1.5 border-b border-line-soft">
+        <span className="text-[11px] font-semibold text-text-primary">Sessions</span>
+        {conversations.length > 0 && (
+          <span className="text-[9.5px] px-1.5 py-px rounded bg-bg-elevated text-text-muted">
+            {conversations.filter((c) => !c.archived).length}
+          </span>
+        )}
+        <span className="flex-1" />
         <button
           onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-          className={`p-2 rounded transition-colors ${
+          className={`p-1 rounded transition-colors ${
             searchOpen
               ? "text-accent-green bg-accent-green/10"
               : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
@@ -311,9 +341,14 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
         >
           <Search size={11} />
         </button>
+        <button
+          onClick={onNewAgent}
+          title="New session (Ctrl+N)"
+          className="p-1 rounded text-text-muted hover:text-accent-green hover:bg-bg-hover transition-colors"
+        >
+          <Plus size={11} />
+        </button>
       </div>
-
-      <div className="border-b border-bg-border mx-3 mb-1" />
 
       {/* Status filter (hidden when search is open) */}
       {conversations.length > 0 && !searchOpen && (
@@ -483,10 +518,10 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
             };
 
             return (
-            <div key={key} className="mb-2">
-              {/* Group header */}
+            <div key={key}>
+              {/* Group header — uppercase tracking, design-matched */}
               <div
-                className="flex items-center gap-1.5 px-2 py-1.5"
+                className="px-2.5 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-y border-line-soft"
                 title={canRename ? `${fullPathTitle} — right-click to rename` : fullPathTitle}
                 onContextMenu={(e) => {
                   if (!canRename) return;
@@ -512,14 +547,14 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                         setRenameValue("");
                       }
                     }}
-                    className="text-[10px] font-medium bg-bg-primary border border-accent-green/40 rounded px-1 py-px text-text-primary lowercase focus:outline-none flex-1 min-w-0"
+                    className="text-[9.5px] font-semibold bg-bg-primary border border-accent-green/40 rounded px-1 py-px text-text-primary uppercase tracking-wider focus:outline-none flex-1 min-w-0"
                   />
                 ) : (
-                  <span className="text-[10px] font-medium text-text-muted truncate lowercase tracking-wide">
+                  <span className="text-[9.5px] font-semibold text-text-muted truncate uppercase tracking-wider">
                     {headerLabel}
                   </span>
                 )}
-                <span className="text-[9px] text-text-muted shrink-0 ml-auto">
+                <span className="text-[9.5px] text-text-muted shrink-0 ml-auto">
                   {convs.length}
                 </span>
               </div>
@@ -527,64 +562,74 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
               {/* Agent conversations under this project */}
               {convs.map((conv) => {
                 const isSelected = conv.id === selectedId;
-                const lastMessage = conv.messages?.[conv.messages.length - 1];
-                const preview = lastMessage
-                  ? lastMessage.content.slice(0, 50) + (lastMessage.content.length > 50 ? "..." : "")
-                  : null;
-                const modelShort = conv.model?.split("-").slice(0, 2).join(" ") ?? "";
                 const snippet = matchSnippet(conv);
                 const { totalTokens, estCost } = aggregateConversationCost(conv);
                 const costLabel = formatCostPill(estCost, totalTokens);
+                const turns = turnCount(conv);
+                const branchLabel = conv.sshTarget?.name ?? "";
+                const titleText = conv.title || "(untitled)";
 
                 return (
-                  <div key={conv.id} className="group relative">
+                  <div
+                    key={conv.id}
+                    className={`group relative border-l-2 ${
+                      isSelected
+                        ? "border-accent-green bg-bg-elevated"
+                        : "border-transparent"
+                    } border-b border-line-soft`}
+                  >
                     <button
                       onClick={() => onSelect(conv.id)}
                       title={conv.title}
-                      className={`flex items-start gap-2 w-full px-2 py-1.5 text-left rounded transition-colors ${
-                        isSelected
-                          ? "bg-accent-green/10 border-l-2 border-accent-green"
-                          : "hover:bg-bg-hover"
-                      }`}
+                      className="flex flex-col w-full px-2.5 py-2 text-left gap-1 hover:bg-bg-hover/50 transition-colors"
                     >
-                      <span className="mt-0.5">{statusIcon(conv.status)}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1">
-                          <span className={`text-[11px] truncate flex-1 ${isSelected ? "text-text-primary font-medium" : "text-text-secondary"}`}>
-                            {agentLabel(conv.agent)}
+                      <div className="flex items-center gap-1.5">
+                        <span>{statusIcon(conv.status)}</span>
+                        <span
+                          className={`text-[11px] font-semibold ${agentColorClass(conv.agent)}`}
+                        >
+                          {agentLabel(conv.agent)}
+                        </span>
+                        {conv.model && (
+                          <span className="font-mono text-[9.5px] text-text-muted truncate">
+                            {shortModel(conv.model)}
                           </span>
-                          {envBadge(conv)}
-                          <span className="text-[9px] text-text-muted shrink-0">
-                            {formatRelativeTime(conv.updatedAt)}
+                        )}
+                        {envBadge(conv)}
+                        <span className="flex-1" />
+                        <span className="text-[9.5px] text-text-muted shrink-0">
+                          {formatRelativeTime(conv.updatedAt)}
+                        </span>
+                      </div>
+                      <div
+                        className={`text-[12px] leading-tight truncate ${
+                          isSelected
+                            ? "text-text-primary font-medium"
+                            : "text-text-secondary"
+                        }`}
+                      >
+                        {snippet ?? titleText}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[9.5px] text-text-muted">
+                        <GitBranch size={9} />
+                        <span
+                          className="font-mono text-text-secondary truncate max-w-[90px]"
+                          title={branchLabel || conv.projectPath}
+                        >
+                          {branchLabel || basenameOfPath(conv.projectPath)}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          {turns} turn{turns === 1 ? "" : "s"}
+                        </span>
+                        <span className="flex-1" />
+                        {costLabel && (
+                          <span
+                            className="font-mono"
+                            title={`${totalTokens.toLocaleString()} tokens`}
+                          >
+                            {costLabel}
                           </span>
-                        </div>
-                        {snippet ? (
-                          <p className="text-[9px] text-text-muted truncate mt-0.5">
-                            {snippet}
-                          </p>
-                        ) : (
-                          <>
-                            {(modelShort || costLabel) && (
-                              <div className="flex items-center gap-1">
-                                {modelShort && (
-                                  <span className="text-[9px] text-text-muted">{modelShort}</span>
-                                )}
-                                {costLabel && (
-                                  <span
-                                    className="text-[8px] px-1 py-px bg-bg-elevated text-text-muted rounded font-mono"
-                                    title={`Estimated cost (${totalTokens.toLocaleString()} tokens)`}
-                                  >
-                                    {costLabel}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            {preview && (
-                              <p className="text-[9px] text-text-muted truncate mt-0.5 opacity-70">
-                                {preview}
-                              </p>
-                            )}
-                          </>
                         )}
                       </div>
                     </button>
@@ -615,37 +660,22 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
         )}
       </div>
 
-      {/* Profile / plan footer */}
-      <SidebarFooter />
+      {/* "New session" footer — primary CTA */}
+      <SidebarFooter onNewAgent={onNewAgent} />
     </div>
   );
 }
 
-function SidebarFooter() {
-  const conversations = useAgentTaskStore((s) => s.conversations ?? []);
-  const initials = "IW";
-  const name = "Ian Walmsley";
-  const plan = "Pro+ Plan";
-  const activeCount = conversations.filter(
-    (c) => !c.archived && (c.status === "active" || c.status === "idle"),
-  ).length;
+function SidebarFooter({ onNewAgent }: { onNewAgent: () => void }) {
   return (
-    <div className="border-t border-bg-border px-3 py-2 flex items-center gap-2">
-      <div className="w-6 h-6 rounded-full bg-accent-green/20 text-accent-green flex items-center justify-center text-[10px] font-semibold shrink-0">
-        {initials}
-      </div>
-      <div className="flex flex-col min-w-0 flex-1">
-        <span className="text-[11px] text-text-secondary truncate leading-tight">{name}</span>
-        <span className="text-[9px] text-text-muted truncate leading-tight">{plan}</span>
-      </div>
-      {activeCount > 0 && (
-        <span
-          className="text-[9px] px-1.5 py-px bg-accent-green/15 text-accent-green rounded-full font-medium"
-          title={`${activeCount} active agent${activeCount === 1 ? "" : "s"}`}
-        >
-          {activeCount}
-        </span>
-      )}
+    <div className="border-t border-line-strong bg-bg-tertiary px-2.5 py-2 flex items-center gap-1.5">
+      <button
+        onClick={onNewAgent}
+        className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 border border-accent-line rounded transition-colors"
+      >
+        <Plus size={11} />
+        New session
+      </button>
     </div>
   );
 }
