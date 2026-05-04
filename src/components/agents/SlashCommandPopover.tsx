@@ -1,6 +1,21 @@
 import { useMemo } from "react";
-import { Trash, Cpu, HelpCircle, Plus, FileCode, Layers, Shield, Scissors, BookOpen } from "lucide-react";
+import {
+  Trash,
+  Cpu,
+  HelpCircle,
+  Plus,
+  FileCode,
+  Layers,
+  Shield,
+  Scissors,
+  BookOpen,
+  DollarSign,
+  History,
+  BookText,
+  ShieldCheck,
+} from "lucide-react";
 import { InputPopover, type InputPopoverItem } from "./InputPopover";
+import { TEMPLATE_SOURCE_TAG } from "./slashCommandConstants";
 import type { SlashCommandDef, SkillDef } from "@/lib/tauri";
 
 export type BuiltinSlashCommand =
@@ -10,7 +25,10 @@ export type BuiltinSlashCommand =
   | "new"
   | "plan"
   | "permissions"
-  | "compact";
+  | "compact"
+  | "usage"
+  | "history"
+  | "review";
 
 export type SlashSelection =
   | { kind: "builtin"; name: BuiltinSlashCommand }
@@ -59,6 +77,24 @@ const BUILTINS: BuiltinDef[] = [
     icon: <Scissors size={12} />,
   },
   {
+    cmd: "review",
+    label: "/review",
+    description: "Spawn a Reviewer subagent on the current staged diff",
+    icon: <ShieldCheck size={12} />,
+  },
+  {
+    cmd: "usage",
+    label: "/usage",
+    description: "Open the cost dashboard",
+    icon: <DollarSign size={12} />,
+  },
+  {
+    cmd: "history",
+    label: "/history",
+    description: "Open conversation history",
+    icon: <History size={12} />,
+  },
+  {
     cmd: "clear",
     label: "/clear",
     description: "Clear conversation messages",
@@ -102,7 +138,12 @@ export function SlashCommandPopover({
         key: `custom:${c.name}`,
         label: `/${c.name}`,
         description: `${c.description} (${c.source})`,
-        icon: <FileCode size={12} />,
+        icon:
+          c.source === TEMPLATE_SOURCE_TAG ? (
+            <BookText size={12} />
+          ) : (
+            <FileCode size={12} />
+          ),
       }));
     const skills = userSkills
       .filter((s) => s.userInvocable && s.name.toLowerCase().startsWith(q))

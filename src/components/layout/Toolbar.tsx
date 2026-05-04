@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { GitBranch, FolderOpen, Diamond, Wrench, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid, DollarSign, BookOpen, Mic } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
+import { RunningAgentsChip } from "./RunningAgentsChip";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
@@ -76,6 +77,10 @@ export function Toolbar() {
       <div className="flex items-center gap-2">
         {/* Sidecar status chip (v2 Tier 2 slice B) */}
         <SidecarStatusChip />
+
+        {/* Running agents tray — only renders when at least one agent is
+            mid-stream. Click to inspect / jump / stop. */}
+        <RunningAgentsChip />
 
         {/* Review Queue */}
         <button

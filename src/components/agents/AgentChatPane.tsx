@@ -21,19 +21,28 @@ import {
 } from "lucide-react";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { PendingEditPrompt } from "./PendingEditPrompt";
+import { PendingApprovalsRollup } from "./PendingApprovalsRollup";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { AgentQuickActions } from "./AgentQuickActions";
 import { MentionSourcePicker } from "./MentionSourcePicker";
-import { SlashCommandPopover, type SlashSelection, type BuiltinSlashCommand } from "./SlashCommandPopover";
+import {
+  SlashCommandPopover,
+  type SlashSelection,
+} from "./SlashCommandPopover";
+import {
+  BUILTIN_SLASH_NAMES,
+  TEMPLATE_SOURCE_TAG,
+} from "./slashCommandConstants";
 import type { SlashCommandDef, SkillDef } from "@/lib/tauri";
 import { listSlashCommands, listSkills } from "@/lib/tauri";
 import { ToolDiffView } from "./ToolDiffView";
 import { MemoryInjectionCard } from "./MemoryInjectionCard";
 import { BashToolCallCard } from "./BashToolCallCard";
 import { CheckpointPanel } from "./CheckpointPanel";
-import { PlanModeApprovalMenu, looksLikePlan } from "./PlanModeApprovalMenu";
+import { PlanModeApprovalMenu } from "./PlanModeApprovalMenu";
+import { looksLikePlan } from "./planDetection";
 import { DiffPaneTrigger } from "./DiffPaneTrigger";
 import { MultiFileEditCard } from "./MultiFileEditCard";
 import { ExplorationRollupCard } from "./ExplorationRollupCard";
@@ -42,6 +51,16 @@ import { SubagentToolCallCard } from "./SubagentToolCallCard";
 import { TaskListCard } from "./TaskListCard";
 import { ContinueInMenu } from "./ContinueInMenu";
 import { AgentMosaicShell } from "./AgentMosaicShell";
+import { AgentHeaderBadges } from "./AgentHeaderBadges";
+import { SessionHealthBar } from "./SessionHealthBar";
+import { PlanPanel } from "./PlanPanel";
+import { SpecPanel } from "./SpecPanel";
+import { AgentModeChip } from "./AgentModeChip";
+import {
+  deriveMode,
+  flagsForMode,
+  nextMode,
+} from "./agentModeChipUtils";
 import { AgentPaneSplitMenu } from "./AgentPaneSplitMenu";
 import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
 import { AgentFilePane } from "./AgentFilePane";
@@ -50,11 +69,16 @@ import { TerminalPane } from "@/components/session/TerminalPane";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
-import { API_PROVIDERS } from "@/lib/api-models";
+import { API_PROVIDERS, getModelSpeed } from "@/lib/api-models";
 import { calculateTurnCost } from "@/lib/tauri";
 import { aggregateConversationDiffs } from "@/lib/aggregateConversationDiffs";
 import { generateId } from "@/lib/storage";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import { usePromptStore } from "@/stores/promptStore";
+import { useAppStore } from "@/stores/appStore";
+import { useMemoryStore } from "@/stores/memoryStore";
+import { useProfileStore } from "@/stores/profileStore";
+import { buildReviewPrompt } from "@/lib/conversationReview";
 import type {
   AgentConversation,
   AgentMessage,
@@ -87,9 +111,12 @@ const HELP_CHEATSHEET =
   "\n" +
   "- Enter — send\n" +
   "- Shift+Enter — newline\n" +
-  "- @ — mention a file\n" +
-  "- / — run a slash command\n" +
+  "- Tab — send as queued (delivered after the current turn finishes)\n" +
   "- Ctrl+Enter — also sends\n" +
+  "- Shift+Tab — cycle mode (default → plan → manual → yolo)\n" +
+  "- Alt+. / Alt+, — nudge model toward thorough / fast\n" +
+  "- @ — mention a file\n" +
+  "- / — run a slash command (try /usage, /history, /template)\n" +
   "- Stop button — cancels mid-stream";
 
 interface AgentChatPaneProps {
@@ -159,12 +186,19 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const setApproveWrites = useAgentTaskStore((s) => s.setApproveWrites);
   const respondPermission = useAgentTaskStore((s) => s.respondPermission);
   const respondEdit = useAgentTaskStore((s) => s.respondEdit);
+  const cancelPendingTools = useAgentTaskStore((s) => s.cancelPendingTools);
   const retryLastTurn = useAgentTaskStore((s) => s.retryLastTurn);
   const exportConversation = useAgentTaskStore((s) => s.exportConversation);
   const previewOpen = usePreviewPaneStore((s) => s.open);
   const togglePreview = usePreviewPaneStore((s) => s.toggle);
   const openMarkdownPreview = usePreviewPaneStore((s) => s.openMarkdown);
   const openPlanPreview = usePreviewPaneStore((s) => s.openPlan);
+  const promptTemplates = usePromptStore((s) => s.templates);
+  const setActiveView = useAppStore((s) => s.setActiveView);
+  const memoryGetContext = useMemoryStore((s) => s.getContextForSession);
+  const reviewerProfile = useProfileStore((s) =>
+    s.profiles.find((p) => p.id === "builtin-reviewer"),
+  );
 
   const [input, setInput] = useState("");
   const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
@@ -287,15 +321,40 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation?.id, conversation?.mode, diffMessageCount]);
 
+  // Synthesize a SlashCommandDef per saved prompt template so they appear in
+  // the popover alongside file-loaded custom commands. Slugified name becomes
+  // the slash-command identifier, e.g. "Code Review" -> "/code-review".
+  const templateSlashCommands = useMemo<SlashCommandDef[]>(
+    () =>
+      promptTemplates.map((t) => ({
+        name: t.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, ""),
+        description: t.name,
+        body: t.content,
+        source: TEMPLATE_SOURCE_TAG,
+      })),
+    [promptTemplates],
+  );
+
+  // Project/global slash commands plus the synthesized template commands. The
+  // popover treats them uniformly; the icon differs by `source` tag so users
+  // can tell templates apart at a glance.
+  const allCustomSlashCommands = useMemo<SlashCommandDef[]>(
+    () => [...customSlashCommands, ...templateSlashCommands],
+    [customSlashCommands, templateSlashCommands],
+  );
+
   // NOTE: hooks must run in the same order every render — compute popover
   // item count before any early return.
   const popoverItemCount = useMemo(() => {
     if (mentionState.kind === "slash") {
       const q = mentionState.query.toLowerCase();
-      const builtins = ["clear", "model", "help", "new"].filter((c) =>
+      const builtins = BUILTIN_SLASH_NAMES.filter((c) =>
         c.startsWith(q),
       ).length;
-      const custom = customSlashCommands.filter((c) =>
+      const custom = allCustomSlashCommands.filter((c) =>
         c.name.toLowerCase().startsWith(q),
       ).length;
       const skills = userSkills.filter(
@@ -304,7 +363,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       return builtins + custom + skills;
     }
     return 0;
-  }, [mentionState, customSlashCommands, userSkills]);
+  }, [mentionState, allCustomSlashCommands, userSkills]);
 
   if (!conversation) {
     return (
@@ -571,6 +630,77 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       }));
       return;
     }
+
+    if (cmd === "usage") {
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      setActiveView("cost_dashboard");
+      return;
+    }
+
+    if (cmd === "history") {
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      setActiveView("history");
+      return;
+    }
+
+    if (cmd === "review") {
+      // Spawn a Reviewer subagent fed the current conversation's staged
+      // diffs. The reviewer gets a fresh conversation (so its findings stay
+      // separate from the work-in-progress thread) using the read-only
+      // Reviewer profile + the current conversation's model.
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      const conv = conversation;
+      if (!conv || conv.mode !== "api" || !conv.model) return;
+      const model = conv.model;
+      const profile = reviewerProfile;
+      void (async () => {
+        try {
+          const prompt = await buildReviewPrompt(conv);
+          if (!prompt) {
+            const noDiffMsg: AgentMessage = {
+              id: generateId("msg"),
+              role: "system",
+              content:
+                "(/review skipped — no pending write_file edits found in this conversation)",
+              timestamp: Date.now(),
+            };
+            useAgentTaskStore.setState((s) => ({
+              conversations: s.conversations.map((c) =>
+                c.id === conversationId
+                  ? {
+                      ...c,
+                      messages: [...c.messages, noDiffMsg],
+                      updatedAt: Date.now(),
+                    }
+                  : c,
+              ),
+            }));
+            return;
+          }
+          const newId = await createApiConversation(
+            conv.agent,
+            conv.projectPath,
+            model,
+            prompt,
+            profile?.systemPrompt ?? null,
+            undefined,
+            true, // planMode — reviewer is read-only
+            null,
+            undefined,
+            false,
+            profile?.allowedTools ?? null,
+            false,
+          );
+          selectConversation(newId);
+        } catch (e) {
+          console.warn("/review failed:", e);
+        }
+      })();
+      return;
+    }
   }
 
   function handleSend() {
@@ -583,6 +713,56 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   function handleStop() {
     void cancelActiveConversation(conversationId);
+  }
+
+  // Claude Code-style mode cycle. Applies flagsForMode(next) to the
+  // conversation: planMode + permissionMode + approveWrites move together so
+  // the chip always reflects the actual posture.
+  function cycleMode() {
+    if (!conversation || conversation.mode !== "api") return;
+    const current = deriveMode(conversation);
+    const next = nextMode(current);
+    const flags = flagsForMode(next);
+    if (flags.planMode !== conversation.planMode) {
+      void setPlanMode(conversationId, flags.planMode);
+    }
+    if (flags.permissionMode !== conversation.permissionMode) {
+      void setPermissionMode(conversationId, flags.permissionMode);
+    }
+    if (flags.approveWrites !== (conversation.approveWrites ?? false)) {
+      void setApproveWrites(conversationId, flags.approveWrites);
+    }
+  }
+
+  // Cursor-style "reasoning nudge" — Alt+. raises model thoroughness, Alt+,
+  // drops it. Walks the active provider's model list and switches to the next
+  // model whose `getModelSpeed` heuristic matches the desired direction. No-op
+  // if the conversation isn't API-mode, has no provider, or there's no model
+  // at the target speed level.
+  function nudgeReasoning(direction: "up" | "down") {
+    if (!conversation || conversation.mode !== "api") return;
+    const provider = providerInfo;
+    if (!provider) return;
+    const current = conversation.model;
+    if (!current) return;
+    const currentSpeed = getModelSpeed(current);
+    const SPEED_ORDER: Array<"fast" | "balanced" | "thorough"> = [
+      "fast",
+      "balanced",
+      "thorough",
+    ];
+    const currentIdx = SPEED_ORDER.indexOf(currentSpeed);
+    const targetIdx =
+      direction === "up"
+        ? Math.min(SPEED_ORDER.length - 1, currentIdx + 1)
+        : Math.max(0, currentIdx - 1);
+    if (targetIdx === currentIdx) return;
+    const targetSpeed = SPEED_ORDER[targetIdx];
+    const candidate = provider.models.find(
+      (m) => getModelSpeed(m.value) === targetSpeed && m.value !== current,
+    );
+    if (!candidate) return;
+    void changeModel(conversationId, candidate.value);
   }
 
   function handleOpenMarkdown(path: string) {
@@ -672,16 +852,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       }
       if (e.key === "Enter" || e.key === "Tab") {
         const q = mentionState.query.toLowerCase();
-        const builtins = ([
-          "plan",
-          "permissions",
-          "model",
-          "compact",
-          "clear",
-          "new",
-          "help",
-        ] as BuiltinSlashCommand[]).filter((c) => c.startsWith(q));
-        const customMatches = customSlashCommands.filter((c) =>
+        const builtins = BUILTIN_SLASH_NAMES.filter((c) => c.startsWith(q));
+        const customMatches = allCustomSlashCommands.filter((c) =>
           c.name.toLowerCase().startsWith(q),
         );
         const skillMatches = userSkills.filter(
@@ -701,12 +873,39 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       }
     }
 
+    // Claude-Code-style mode cycle. Shift+Tab walks default → plan → manual
+    // → yolo → default and applies the flag triplet. Inside a textarea this
+    // would otherwise just shift focus out, which isn't useful here.
+    if (e.shiftKey && e.key === "Tab" && mentionState.kind === "none") {
+      e.preventDefault();
+      cycleMode();
+      return;
+    }
+
+    // Codex-style mid-turn reasoning nudge. Alt+. raises model thoroughness,
+    // Alt+, drops it. Works whether or not the agent is mid-stream — the next
+    // turn (or the in-flight one, depending on backend) uses the new model.
+    if (e.altKey && (e.key === "." || e.key === ",")) {
+      e.preventDefault();
+      nudgeReasoning(e.key === "." ? "up" : "down");
+      return;
+    }
+
     if (e.ctrlKey && e.key === "Enter") {
       e.preventDefault();
       handleSend();
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+      return;
+    }
+    // Tab outside any popover sends-as-queued. Useful for "I have follow-up
+    // notes I want to give the agent for the next turn while it's still
+    // working on this one." sendMessage already routes to queueing when the
+    // agent is mid-stream; pre-stream it just behaves like Enter.
+    if (e.key === "Tab" && !e.shiftKey && input.trim().length > 0) {
       e.preventDefault();
       handleSend();
     }
@@ -758,6 +957,10 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
                 {conversation.sshTarget.host}
               </span>
             )}
+            <AgentHeaderBadges
+              conversationId={conversationId}
+              agent={conversation.agent}
+            />
           </div>
           <span
             className="text-[10.5px] text-text-secondary truncate"
@@ -816,7 +1019,17 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             }}
             title={
               conversation.memoryContextEnabled
-                ? "Memory context ON — learned patterns injected into system prompt"
+                ? (() => {
+                    const ctx = memoryGetContext(conversation.projectPath);
+                    if (!ctx.trim()) {
+                      return "Memory context ON — no patterns learned yet for this project";
+                    }
+                    // Cap the tooltip so a giant memory dump doesn't fill the
+                    // viewport. The full context is what the model sees.
+                    const preview =
+                      ctx.length > 600 ? `${ctx.slice(0, 600)}…` : ctx;
+                    return `Memory context ON — injecting:\n\n${preview}`;
+                  })()
                 : "Memory context OFF — click to include learned patterns in system prompt"
             }
             className={`border rounded px-1.5 py-0.5 text-[10px] transition-colors ${
@@ -865,6 +1078,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         {/* Plan mode + permission + approve-writes (API mode only) */}
         {conversation.mode === "api" && (
           <div className="flex items-center gap-1.5">
+            <AgentModeChip conversation={conversation} onCycle={cycleMode} />
             <button
               type="button"
               onClick={() => void setPlanMode(conversationId, !conversation.planMode)}
@@ -994,6 +1208,17 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         </div>
       </div>
 
+      {/* Session health strip — model · ctx % · tokens · cost · branch */}
+      <SessionHealthBar conversation={conversation} />
+
+      {/* F10: Plan-first three-stage FSM. Spec → Plan → Code. SpecPanel
+          renders only when specStage === "spec"; PlanPanel reads the rest. */}
+      <SpecPanel conversation={conversation} />
+
+      {/* Pinned plan / todo panel — surfaces the agent's latest TodoWrite or
+          task_list checklist so users can steer mid-task. */}
+      <PlanPanel conversation={conversation} />
+
       {/* Messages area */}
       <ClickablePathsRoot
         projectPath={conversation.projectPath}
@@ -1064,12 +1289,41 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       {/* Pending user-approval prompts */}
       {(conversation.pendingEdits ?? conversation.pendingPermissions) && (
         <div className="shrink-0 px-3 py-2 flex flex-col gap-2 border-t border-bg-border bg-bg-primary">
+          <PendingApprovalsRollup
+            pendingEdits={conversation.pendingEdits ?? []}
+            pendingPermissions={conversation.pendingPermissions ?? []}
+            onApplyAllEdits={() => {
+              for (const item of conversation.pendingEdits ?? []) {
+                void respondEdit(conversationId, item.id, "apply");
+              }
+            }}
+            onRejectAllEdits={() => {
+              for (const item of conversation.pendingEdits ?? []) {
+                void respondEdit(conversationId, item.id, "reject");
+              }
+            }}
+            onAllowAllPermissions={() => {
+              for (const item of conversation.pendingPermissions ?? []) {
+                void respondPermission(conversationId, item.id, "allow_once");
+              }
+            }}
+            onDenyAllPermissions={() => {
+              for (const item of conversation.pendingPermissions ?? []) {
+                void respondPermission(conversationId, item.id, "deny");
+              }
+            }}
+            onCancelAllPending={() => {
+              void cancelPendingTools(conversationId);
+            }}
+          />
           {(conversation.pendingEdits ?? []).map((item) => (
             <PendingEditPrompt
               key={item.id}
               item={item}
               projectPath={conversation.projectPath}
-              onApply={(toolId) => void respondEdit(conversationId, toolId, "apply")}
+              onApply={(toolId, mergedContent) =>
+                void respondEdit(conversationId, toolId, "apply", mergedContent)
+              }
               onReject={(toolId) => void respondEdit(conversationId, toolId, "reject")}
             />
           ))}
@@ -1105,7 +1359,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             onSelect={selectFileMention}
           />
           <SlashCommandPopover
-            customCommands={customSlashCommands}
+            customCommands={allCustomSlashCommands}
             userSkills={userSkills}
             visible={mentionState.kind === "slash"}
             query={mentionState.kind === "slash" ? mentionState.query : ""}

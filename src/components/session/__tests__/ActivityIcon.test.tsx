@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { ActivityIcon, getActivityLabel } from "@/components/session/ActivityStrip";
+import { ActivityIcon } from "@/components/session/ActivityStrip";
+import { getActivityLabel } from "@/components/session/activityLabel";
 
 describe("ActivityIcon", () => {
   it("renders Brain icon for thinking state", () => {

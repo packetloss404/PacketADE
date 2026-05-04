@@ -37,7 +37,13 @@ function parseBashInput(raw: string | undefined): BashInput {
   }
 }
 
-function ExitCodePill({ status }: { status: AgentToolCall["status"] }) {
+function ExitCodePill({
+  status,
+  exitCode,
+}: {
+  status: AgentToolCall["status"];
+  exitCode?: number;
+}) {
   if (status === "running") {
     return (
       <span className="inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full bg-bg-primary text-text-muted text-[10px] font-mono">
@@ -46,18 +52,21 @@ function ExitCodePill({ status }: { status: AgentToolCall["status"] }) {
       </span>
     );
   }
-  if (status === "error") {
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full bg-accent-red/10 text-accent-red text-[10px] font-mono">
-        <XCircle size={10} />
-        exit 1
-      </span>
-    );
-  }
+  // F5: prefer the real exit code from `tool_output_extended` over the
+  // status-derived best guess. Status only tells us "errored or didn't" —
+  // a real `exit 137` is meaningfully different from `exit 1`.
+  const code = exitCode ?? (status === "error" ? 1 : 0);
+  const ok = code === 0;
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full bg-accent-green/10 text-accent-green text-[10px] font-mono">
-      <CheckCircle2 size={10} />
-      exit 0
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full text-[10px] font-mono ${
+        ok
+          ? "bg-accent-green/10 text-accent-green"
+          : "bg-accent-red/10 text-accent-red"
+      }`}
+    >
+      {ok ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
+      exit {code}
     </span>
   );
 }
@@ -125,7 +134,7 @@ export function BashToolCallCard({
         >
           {command || "(no command)"}
         </span>
-        <ExitCodePill status={toolCall.status} />
+        <ExitCodePill status={toolCall.status} exitCode={toolCall.exitCode} />
         <button
           type="button"
           onClick={handleCopy}

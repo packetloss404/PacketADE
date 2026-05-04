@@ -137,6 +137,10 @@ export const useIdeationStore = create<IdeationStore>((set, get) => ({
   },
 
   clearSession: (workspaceId) => {
+    // Destructure-and-discard idiom — `_` swallows the dropped entry, the
+    // rest spread keeps the other workspaces. The eslint-disable below is
+    // intentional: the variable's purpose IS being unused.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { [workspaceId]: _, ...rest } = get().sessions;
     set({ sessions: rest, selectedIdeaId: null });
     saveSessions(rest);

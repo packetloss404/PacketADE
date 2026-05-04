@@ -10,6 +10,59 @@ import {
 import { Dropdown } from "@/components/ui/Dropdown";
 import type { AgentConversation } from "@/types/agent-conversation";
 
+interface MenuItemProps {
+  icon: React.ReactNode;
+  label: string;
+  subtitle: string;
+  disabled?: boolean;
+  disabledReason?: string;
+  onClick: () => void | Promise<void>;
+}
+
+/**
+ * Inline menu item — reimplemented (instead of reusing DropdownItem) so we
+ * can show disabled state, an icon, and a subtitle row. Closes the dropdown
+ * by dispatching a click on the document, which the parent Dropdown listens
+ * for via its outside-click handler.
+ *
+ * Hoisted to module scope so React Fast Refresh doesn't re-create the type
+ * on every render of the parent — that was triggering
+ * `react-hooks/static-components`.
+ */
+function MenuItem({
+  icon,
+  label,
+  subtitle,
+  disabled,
+  disabledReason,
+  onClick,
+}: MenuItemProps) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      title={disabled ? disabledReason : subtitle}
+      onClick={() => {
+        if (disabled) return;
+        void onClick();
+        // Close dropdown by simulating an outside click.
+        document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      }}
+      className={`w-full text-left px-3 py-1.5 flex items-start gap-2 transition-colors ${
+        disabled
+          ? "opacity-40 cursor-not-allowed"
+          : "hover:bg-bg-hover cursor-pointer"
+      }`}
+    >
+      <span className="mt-0.5 text-text-secondary shrink-0">{icon}</span>
+      <span className="flex flex-col min-w-0">
+        <span className="text-[11px] text-text-primary truncate">{label}</span>
+        <span className="text-[10px] text-text-muted truncate">{subtitle}</span>
+      </span>
+    </button>
+  );
+}
+
 interface ContinueInMenuProps {
   conversation: AgentConversation;
 }
@@ -78,55 +131,6 @@ export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
     } catch (err) {
       console.warn(`[ContinueInMenu] open ${scheme} failed:`, err);
     }
-  }
-
-  // Inline menu item — reimplemented (instead of reusing DropdownItem) so we
-  // can show disabled state, an icon, and a subtitle row. Closes the dropdown
-  // by dispatching a click on the document, which the parent Dropdown listens
-  // for via its outside-click handler.
-  function MenuItem({
-    icon,
-    label,
-    subtitle,
-    disabled,
-    disabledReason,
-    onClick,
-  }: {
-    icon: React.ReactNode;
-    label: string;
-    subtitle: string;
-    disabled?: boolean;
-    disabledReason?: string;
-    onClick: () => void | Promise<void>;
-  }) {
-    return (
-      <button
-        type="button"
-        disabled={disabled}
-        title={disabled ? disabledReason : subtitle}
-        onClick={() => {
-          if (disabled) return;
-          void onClick();
-          // Close dropdown by simulating an outside click.
-          document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-        }}
-        className={`w-full text-left px-3 py-1.5 flex items-start gap-2 transition-colors ${
-          disabled
-            ? "opacity-40 cursor-not-allowed"
-            : "hover:bg-bg-hover cursor-pointer"
-        }`}
-      >
-        <span className="mt-0.5 text-text-secondary shrink-0">{icon}</span>
-        <span className="flex flex-col min-w-0">
-          <span className="text-[11px] text-text-primary truncate">
-            {label}
-          </span>
-          <span className="text-[10px] text-text-muted truncate">
-            {subtitle}
-          </span>
-        </span>
-      </button>
-    );
   }
 
   return (

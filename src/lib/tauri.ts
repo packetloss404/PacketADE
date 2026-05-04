@@ -175,6 +175,31 @@ export async function gitCreateBranch(
   return invoke<string>("git_create_branch", { projectPath, branchName, checkout });
 }
 
+/**
+ * T3.F: provision a git worktree for an Agents-pane conversation. Returns
+ * the absolute path the conversation should use as its `projectPath` so
+ * every tool call lands inside the worktree on a dedicated branch
+ * (`pkt/<convId>`). Idempotent.
+ */
+export async function createConversationWorktree(
+  projectPath: string,
+  convId: string,
+  baseBranch: string,
+): Promise<string> {
+  return invoke<string>("create_conversation_worktree", {
+    projectPath,
+    convId,
+    baseBranch,
+  });
+}
+
+export async function removeConversationWorktree(
+  projectPath: string,
+  convId: string,
+): Promise<void> {
+  return invoke("remove_conversation_worktree", { projectPath, convId });
+}
+
 export async function readStatusLineStates(): Promise<StatusLineData[]> {
   return invoke<StatusLineData[]>("read_statusline_states");
 }
@@ -1273,6 +1298,14 @@ export async function startApiAgentSession(
   planMode?: boolean,
   sshConfig?: SshConfigInput | null,
   allowedTools?: string[] | null,
+  /** v3: opaque resume token from a prior `done` event. Lets sidecar
+   * providers continue the model-side conversation across app restarts. */
+  resumeToken?: string | null,
+  /** F9: per-conversation MCP server filter. null = all enabled servers
+   * (back-compat). [] = explicitly none. Otherwise only listed names are
+   * forwarded to the sidecar. Applied on session start; no mid-session
+   * swap (sidecar protocol has no `set_mcp_servers`). */
+  enabledMcpServerIds?: string[] | null,
 ): Promise<void> {
   return invoke("start_api_agent_session", {
     sessionId,
@@ -1286,6 +1319,8 @@ export async function startApiAgentSession(
     planMode: planMode ?? null,
     sshConfig: sshConfig ?? null,
     allowedTools: allowedTools ?? null,
+    resumeToken: resumeToken ?? null,
+    enabledMcpServerIds: enabledMcpServerIds ?? null,
   });
 }
 
@@ -1328,8 +1363,17 @@ export async function respondEdit(
   sessionId: string,
   toolId: string,
   decision: "apply" | "reject",
+  /** v3: when set, the sidecar provider writes this content directly
+   * (per-hunk acceptance) instead of letting the model's full `after`
+   * land. In-process providers ignore this for now. */
+  mergedContent?: string,
 ): Promise<void> {
-  return invoke("respond_edit", { sessionId, toolId, decision });
+  return invoke("respond_edit", {
+    sessionId,
+    toolId,
+    decision,
+    mergedContent: mergedContent ?? null,
+  });
 }
 
 export async function retryLastTurn(sessionId: string, newModel?: string): Promise<void> {
@@ -1375,6 +1419,16 @@ export async function listSkills(projectPath: string): Promise<SkillDef[]> {
 
 export async function cancelApiAgentSession(sessionId: string): Promise<void> {
   return invoke("cancel_api_agent_session", { sessionId });
+}
+
+/**
+ * F8: drain parked permission/edit prompts as denied without killing the
+ * agent loop. The model continues with synthetic "User cancelled this tool"
+ * tool_results. Use `cancelApiAgentSession` instead when the user wants the
+ * whole conversation to stop.
+ */
+export async function cancelPendingTools(sessionId: string): Promise<void> {
+  return invoke("cancel_pending_tools", { sessionId });
 }
 
 export async function closeApiAgentSession(sessionId: string): Promise<void> {

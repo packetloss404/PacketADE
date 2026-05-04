@@ -12,9 +12,12 @@
 
 import { promises as fsPromises } from "node:fs";
 import type {
+  CancelPendingToolsRequest,
   EditResponseRequest,
   Emit,
+  ImageAttachment,
   PermissionResponseRequest,
+  PlanItem,
   RetryRequest,
   SendMessageRequest,
   SetModelRequest,
@@ -155,12 +158,117 @@ function stringifyToolResultContent(content: unknown): { output: string; isError
 type PermissionResolver = (result: PermissionResult) => void;
 type EditResolver = (result: HookJSONOutput) => void;
 
+/** Per-edit metadata captured at the PreToolUse hook so a later edit_response
+ * carrying `mergedContent` can write the override directly. */
+interface PendingEditMeta {
+  resolver: EditResolver;
+  path: string;
+}
+
 /**
  * Tools whose PreToolUse we intercept to surface a before/after diff preview
  * via the `pending_edit` protocol event. Any other tool falls through to the
  * SDK's regular `canUseTool` permission flow.
  */
 const WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
+
+/**
+ * Build the SDK's user-message `content` field. When attachments are present
+ * we send a content array with image blocks first, then a text block — that's
+ * the shape the Anthropic Messages API expects. With no attachments we keep
+ * the simpler string form.
+ */
+function buildUserContent(
+  text: string,
+  attachments: ImageAttachment[] | undefined,
+):
+  | string
+  | Array<
+      | { type: "text"; text: string }
+      | {
+          type: "image";
+          source: { type: "base64"; media_type: string; data: string };
+        }
+    > {
+  if (!attachments || attachments.length === 0) return text;
+  const blocks: Array<
+    | { type: "text"; text: string }
+    | {
+        type: "image";
+        source: { type: "base64"; media_type: string; data: string };
+      }
+  > = attachments.map((a) => ({
+    type: "image" as const,
+    source: {
+      type: "base64" as const,
+      media_type: a.media_type,
+      data: a.data_base64,
+    },
+  }));
+  blocks.push({ type: "text", text });
+  return blocks;
+}
+
+/**
+ * Pull a numeric `<exit_code>` out of the Bash tool's stringified result.
+ * Returns null when the tag is missing or unparseable. Tolerates either an
+ * `exit_code` or `exitCode` tag name and ignores surrounding whitespace.
+ */
+function extractBashExitCode(output: string): number | null {
+  const m = output.match(/<\s*exit[_-]?code\s*>\s*(-?\d+)\s*<\s*\/\s*exit[_-]?code\s*>/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Pull `<output>...</output>` and `<stderr>...</stderr>` blocks out of the
+ * Bash tool's stringified result. Returns the raw content with no trim so
+ * the frontend can render exactly what the shell produced.
+ */
+function extractBashStreams(output: string): {
+  stdout?: string;
+  stderr?: string;
+} {
+  const stdoutMatch = output.match(/<\s*output\s*>([\s\S]*?)<\s*\/\s*output\s*>/i);
+  const stderrMatch = output.match(/<\s*stderr\s*>([\s\S]*?)<\s*\/\s*stderr\s*>/i);
+  return {
+    stdout: stdoutMatch ? stdoutMatch[1] : undefined,
+    stderr: stderrMatch ? stderrMatch[1] : undefined,
+  };
+}
+
+/** Parse the TodoWrite tool's input into a typed PlanItem[]. */
+function parseTodoWriteInput(input: unknown): PlanItem[] | null {
+  if (!input || typeof input !== "object") return null;
+  const rec = input as { todos?: unknown };
+  if (!Array.isArray(rec.todos)) return null;
+  const items: PlanItem[] = [];
+  for (const t of rec.todos) {
+    if (!t || typeof t !== "object") continue;
+    const r = t as { content?: unknown; status?: unknown; activeForm?: unknown; id?: unknown };
+    const content =
+      typeof r.content === "string"
+        ? r.content
+        : typeof r.activeForm === "string"
+          ? r.activeForm
+          : null;
+    if (!content) continue;
+    const status: PlanItem["status"] =
+      r.status === "completed"
+        ? "completed"
+        : r.status === "in_progress"
+          ? "in_progress"
+          : "pending";
+    items.push({
+      id: typeof r.id === "string" ? r.id : undefined,
+      content,
+      status,
+      activeForm: typeof r.activeForm === "string" ? r.activeForm : undefined,
+    });
+  }
+  return items.length > 0 ? items : null;
+}
 
 /**
  * Read the current contents of `path` for the "before" side of a diff. If the
@@ -204,7 +312,14 @@ export class AnthropicProvider implements ProviderHandler {
   private q: Query | null = null;
   private abort: AbortController | null = null;
   private pendingPermissions = new Map<string, PermissionResolver>();
-  private pendingEdits = new Map<string, EditResolver>();
+  private pendingEdits = new Map<string, PendingEditMeta>();
+  /** F5: tool_use_id → tool name + (for write tools) path. Captured at
+   * `tool_use` time so the matching `tool_result` can emit a structured
+   * `tool_output_extended` event with exitCode / modifiedPaths. */
+  private toolUseMeta = new Map<
+    string,
+    { name: string; modifiedPaths?: string[] }
+  >();
   private runPromise: Promise<void> | null = null;
   private emitCurrent: Emit | null = null;
   private activeThinkingBlock = false;
@@ -278,8 +393,8 @@ export class AnthropicProvider implements ProviderHandler {
             : null;
       if (!path) return { continue: true };
 
-      let before = "";
-      let after = "";
+      let before: string;
+      let after: string;
       if (input.tool_name === "Write") {
         before = await readBefore(path);
         after = typeof ti.content === "string" ? (ti.content as string) : "";
@@ -314,7 +429,7 @@ export class AnthropicProvider implements ProviderHandler {
           this.pendingEdits.delete(key);
           resolve(result);
         };
-        this.pendingEdits.set(key, wrapped);
+        this.pendingEdits.set(key, { resolver: wrapped, path });
         // If the SDK aborts (cancel/close), deny the pending edit so the
         // hook resolves and the SDK can shut down cleanly.
         signal.addEventListener(
@@ -352,9 +467,14 @@ export class AnthropicProvider implements ProviderHandler {
     };
 
     // Push the initial user message onto the pump, then start the query.
+    // v3: when attachments are present, build a content array with image
+    // blocks alongside the text so the model can read screenshots / images.
     prompt.push({
       type: "user",
-      message: { role: "user", content: req.initialMessage },
+      message: {
+        role: "user",
+        content: buildUserContent(req.initialMessage, req.attachments) as never,
+      },
       parent_tool_use_id: null,
     });
     this.lastUserMessage = req.initialMessage;
@@ -453,6 +573,30 @@ export class AnthropicProvider implements ProviderHandler {
               name: b.name,
               input: b.input ?? {},
             });
+            // F5: stash tool name + (for write tools) the modified file path
+            // so the matching `tool_result` can emit a `tool_output_extended`
+            // event with structured metadata.
+            const inputObj = (b.input ?? {}) as Record<string, unknown>;
+            const filePath =
+              typeof inputObj.file_path === "string"
+                ? inputObj.file_path
+                : typeof inputObj.notebook_path === "string"
+                  ? (inputObj.notebook_path as string)
+                  : undefined;
+            this.toolUseMeta.set(b.id, {
+              name: b.name,
+              modifiedPaths:
+                WRITE_TOOLS.has(b.name) && filePath ? [filePath] : undefined,
+            });
+            // v3: TodoWrite tool calls double as a structured plan event so
+            // the frontend can pin them in a dedicated panel rather than
+            // hunt through the transcript.
+            if (b.name === "TodoWrite") {
+              const items = parseTodoWriteInput(b.input);
+              if (items) {
+                emit({ type: "plan_block", sessionId, items });
+              }
+            }
           }
           // Other block types (server_tool_use, redacted_thinking, etc.)
           // are intentionally ignored for now.
@@ -461,6 +605,25 @@ export class AnthropicProvider implements ProviderHandler {
         if (this.activeThinkingBlock) {
           emit({ type: "thinking_stop", sessionId });
           this.activeThinkingBlock = false;
+        }
+        // F6: emit a turn_summary with this assistant message's usage so the
+        // frontend's SessionHealthBar can show live tokens between turns
+        // instead of waiting for the final `done` event.
+        const usage = (msg.message as { usage?: {
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_read_input_tokens?: number | null;
+          cache_creation_input_tokens?: number | null;
+        }}).usage;
+        if (usage) {
+          emit({
+            type: "turn_summary",
+            sessionId,
+            inputTokens: usage.input_tokens ?? 0,
+            outputTokens: usage.output_tokens ?? 0,
+            cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
+            cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
+          });
         }
         return;
       }
@@ -486,6 +649,37 @@ export class AnthropicProvider implements ProviderHandler {
               output,
               isError: Boolean(b.is_error),
             });
+            // F5: structured metadata follow-up — exit code for Bash,
+            // modifiedPaths for Write/Edit/NotebookEdit. Skipped silently
+            // if there's nothing extra to add (no point flooding the wire).
+            const meta = this.toolUseMeta.get(b.tool_use_id);
+            this.toolUseMeta.delete(b.tool_use_id);
+            if (meta) {
+              const extras: {
+                exitCode?: number;
+                modifiedPaths?: string[];
+                stdout?: string;
+                stderr?: string;
+              } = {};
+              if (meta.name === "Bash") {
+                const code = extractBashExitCode(output);
+                if (code !== null) extras.exitCode = code;
+                const streams = extractBashStreams(output);
+                if (streams.stdout !== undefined) extras.stdout = streams.stdout;
+                if (streams.stderr !== undefined) extras.stderr = streams.stderr;
+              }
+              if (meta.modifiedPaths && meta.modifiedPaths.length > 0) {
+                extras.modifiedPaths = meta.modifiedPaths;
+              }
+              if (Object.keys(extras).length > 0) {
+                emit({
+                  type: "tool_output_extended",
+                  sessionId,
+                  toolUseId: b.tool_use_id,
+                  ...extras,
+                });
+              }
+            }
           }
         }
         return;
@@ -522,7 +716,10 @@ export class AnthropicProvider implements ProviderHandler {
     }
     this.prompt.push({
       type: "user",
-      message: { role: "user", content: req.content },
+      message: {
+        role: "user",
+        content: buildUserContent(req.content, req.attachments) as never,
+      },
       parent_tool_use_id: null,
     });
     this.lastUserMessage = req.content;
@@ -542,26 +739,76 @@ export class AnthropicProvider implements ProviderHandler {
   }
 
   async respondEdit(req: EditResponseRequest, _emit: Emit): Promise<void> {
-    // Look up the parked PreToolUse hook resolver by tool_use_id. If we find
-    // one, approve/deny by resolving the hook's promise — the SDK then
-    // either runs the tool or short-circuits it with our stopReason.
+    // Look up the parked PreToolUse hook resolver. The wire protocol doesn't
+    // yet carry `toolUseId` on edit_response, so we operate on the single
+    // currently-open pending edit. In practice only one edit is ever in
+    // flight per session.
     //
-    // The wire protocol doesn't (yet) carry `toolUseId` on edit_response, so
-    // we operate on the single currently-open pending edit. In practice only
-    // one edit is ever in flight per session; if that ever changes, widen
-    // the wire type to include a toolUseId and key by it here.
+    // v3: when `mergedContent` is supplied (per-hunk acceptance), we write
+    // the override directly to disk first, then DENY the SDK's tool — the
+    // file is already at the desired state, so letting the SDK's Write run
+    // would clobber our merged result with the original `after`.
     const entries = Array.from(this.pendingEdits.entries());
     if (entries.length === 0) {
-      logStderr(`respondEdit received (approved=${req.approved}) but no pending edit; ignoring`);
+      logStderr(
+        `respondEdit received (approved=${req.approved}) but no pending edit; ignoring`,
+      );
       return;
     }
-    for (const [id, resolver] of entries) {
+    for (const [id, meta] of entries) {
       this.pendingEdits.delete(id);
-      if (req.approved) {
-        resolver({ continue: true });
-      } else {
-        resolver({ continue: false, stopReason: "User rejected edit" });
+      if (!req.approved) {
+        meta.resolver({ continue: false, stopReason: "User rejected edit" });
+        continue;
       }
+      if (typeof req.mergedContent === "string" && meta.path) {
+        try {
+          await fsPromises.writeFile(meta.path, req.mergedContent, "utf8");
+          // File is now at the user-merged state; tell the SDK to skip its
+          // own write so it doesn't overwrite us with the model's `after`.
+          meta.resolver({
+            continue: false,
+            stopReason: "Edit applied with user-merged hunks",
+          });
+          continue;
+        } catch (err) {
+          logStderr(
+            `mergedContent write failed for ${meta.path}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          // Fall through to a regular approve so the model's full edit lands.
+        }
+      }
+      meta.resolver({ continue: true });
+    }
+  }
+
+  /**
+   * F8: drain every parked permission_request and pending_edit hook as
+   * "denied" without aborting the abort controller or interrupting the
+   * SDK query. The model receives a synthetic tool_result for each tool
+   * ("User cancelled this tool") and keeps generating. Use `cancel()`
+   * (not this) when the user wants the whole session to stop.
+   */
+  async cancelPendingTools(
+    _req: CancelPendingToolsRequest,
+    _emit: Emit,
+  ): Promise<void> {
+    // Permissions: deny WITHOUT interrupt — the SDK fabricates a
+    // tool_result and feeds it back to the model. interrupt:true would
+    // abort the streaming input pipeline.
+    for (const [id, resolver] of this.pendingPermissions.entries()) {
+      this.pendingPermissions.delete(id);
+      resolver({ behavior: "deny", message: "User cancelled this tool" });
+    }
+    // PreToolUse edit hooks: continue:true short-circuits the actual write
+    // but keeps the iterator alive. The synthetic stopReason becomes the
+    // tool's "result" content fed back to the model.
+    for (const [id, meta] of this.pendingEdits.entries()) {
+      this.pendingEdits.delete(id);
+      meta.resolver({
+        continue: false,
+        stopReason: "User cancelled this tool",
+      });
     }
   }
 
@@ -587,9 +834,9 @@ export class AnthropicProvider implements ProviderHandler {
     }
     // Same for pending PreToolUse edit hooks: resolve them as blocked so
     // the SDK's query iterator unwinds instead of hanging on our promise.
-    for (const [id, resolver] of this.pendingEdits.entries()) {
+    for (const [id, meta] of this.pendingEdits.entries()) {
       this.pendingEdits.delete(id);
-      resolver({ continue: false, stopReason: "cancelled" });
+      meta.resolver({ continue: false, stopReason: "cancelled" });
     }
     // done/error is emitted by the pump when the iterator unwinds.
   }
@@ -696,9 +943,9 @@ export class AnthropicProvider implements ProviderHandler {
       this.pendingPermissions.delete(id);
       resolver({ behavior: "deny", message: "closed", interrupt: true });
     }
-    for (const [id, resolver] of this.pendingEdits.entries()) {
+    for (const [id, meta] of this.pendingEdits.entries()) {
       this.pendingEdits.delete(id);
-      resolver({ continue: false, stopReason: "closed" });
+      meta.resolver({ continue: false, stopReason: "closed" });
     }
     if (this.runPromise) {
       await this.runPromise.catch(() => undefined);

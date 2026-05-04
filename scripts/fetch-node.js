@@ -551,7 +551,6 @@ async function main() {
 
   for (const triple of triples) {
     // Sequential — keeps network load friendly and logs readable.
-    // eslint-disable-next-line no-await-in-loop
     await processTarget(triple, shasumsText);
   }
 }

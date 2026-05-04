@@ -94,6 +94,8 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
   clearConnectionState: (serverId) => {
     set((s) => {
+      // Destructure-and-discard: `_` swallows the dropped server's state.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [serverId]: _, ...rest } = s.connectionStates;
       return { connectionStates: rest };
     });

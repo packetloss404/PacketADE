@@ -11,11 +11,14 @@ import {
   MessageCircle,
   Hand,
   Layers,
+  User,
+  GitBranch,
   Send,
   Loader2,
   AlertCircle,
   RefreshCw,
   LogIn,
+  X,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -27,6 +30,7 @@ import {
 import { useGitHubStore } from "@/stores/githubStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useSshTargetStore } from "@/stores/sshTargetStore";
+import { useProfileStore } from "@/stores/profileStore";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
@@ -42,6 +46,7 @@ import {
 import {
   getProviderAuthStatus,
   listOllamaModels,
+  type ImageAttachment,
   type OllamaModel,
   type ProviderAuthStatus,
 } from "@/lib/tauri";
@@ -102,12 +107,51 @@ interface AgentInputAreaProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   selectedAgent: AgentCli;
   onAgentChange: (agent: AgentCli) => void;
-  onLaunch: () => void;
+  /** Called when the user submits. Staged image attachments (drag-drop /
+   * paste) are passed through; an empty array if none. */
+  onLaunch: (attachments: ImageAttachment[]) => void;
   selectedModel: string;
   onModelChange: (model: string) => void;
   agentMode?: AgentMode;
   onAgentModeChange?: (mode: AgentMode) => void;
+  selectedProfileId?: string;
+  onProfileChange?: (id: string) => void;
+  /** T3.F: when true, handleLaunch creates a git worktree at
+   * `<projectPath>/.pkt-worktrees/<convId>` and points the conversation at
+   * it. Local projects only (SSH still uses the remote path verbatim). */
+  worktreeEnabled?: boolean;
+  onWorktreeChange?: (enabled: boolean) => void;
 }
+
+/**
+ * Read a File / Blob into a base64 string suitable for ImageAttachment.
+ * Strips the `data:<mime>;base64,` prefix that FileReader.readAsDataURL
+ * always prepends so the wire payload is just the encoded bytes.
+ */
+function fileToImageAttachment(file: File): Promise<ImageAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("FileReader returned non-string result"));
+        return;
+      }
+      // Format: data:<mime>;base64,<data>
+      const commaIdx = result.indexOf(",");
+      const data_base64 = commaIdx >= 0 ? result.slice(commaIdx + 1) : result;
+      resolve({
+        media_type: file.type || "image/png",
+        data_base64,
+      });
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Hard cap to keep payloads sane — Anthropic accepts ~5MB per image. */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 interface MentionState {
   active: boolean;
@@ -133,7 +177,17 @@ export function AgentInputArea({
   onModelChange,
   agentMode = "agent",
   onAgentModeChange,
+  selectedProfileId,
+  onProfileChange,
+  worktreeEnabled = false,
+  onWorktreeChange,
 }: AgentInputAreaProps) {
+  const profiles = useProfileStore((s) => s.profiles);
+  const defaultProfileId = useProfileStore((s) => s.defaultProfileId);
+  const setDefaultProfile = useProfileStore((s) => s.setDefaultProfile);
+  const activeProfileId = selectedProfileId ?? defaultProfileId;
+  const activeProfile =
+    profiles.find((p) => p.id === activeProfileId) ?? profiles[0];
   const agentInputText = useAgentTaskStore((s) => s.agentInputText);
   const setAgentInputText = useAgentTaskStore((s) => s.setAgentInputText);
   const selectedRepo = useAgentTaskStore((s) => s.selectedRepo);
@@ -145,6 +199,111 @@ export function AgentInputArea({
   const touchSshTarget = useSshTargetStore((s) => s.touchTarget);
 
   const [sshModalOpen, setSshModalOpen] = useState(false);
+
+  // Staged image attachments (from drag-drop or clipboard paste) that will be
+  // sent with the next launch. Cleared after onLaunch fires successfully.
+  // Keeps both the wire-shape attachment and a transient preview URL so the
+  // chip can render a thumbnail without re-decoding the base64.
+  type StagedAttachment = {
+    id: string;
+    name: string;
+    sizeBytes: number;
+    attachment: ImageAttachment;
+    previewUrl: string;
+  };
+  const [staged, setStaged] = useState<StagedAttachment[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+
+  const addFiles = useCallback(async (files: File[]) => {
+    const next: StagedAttachment[] = [];
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) continue;
+      if (file.size > MAX_IMAGE_BYTES) {
+        console.warn(`Skipping ${file.name}: ${file.size} bytes > 5MB cap`);
+        continue;
+      }
+      try {
+        const attachment = await fileToImageAttachment(file);
+        next.push({
+          id: `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: file.name || "pasted-image",
+          sizeBytes: file.size,
+          attachment,
+          previewUrl: URL.createObjectURL(file),
+        });
+      } catch (err) {
+        console.warn("Failed to read attachment:", err);
+      }
+    }
+    if (next.length > 0) {
+      setStaged((prev) => [...prev, ...next]);
+    }
+  }, []);
+
+  const removeStaged = useCallback((id: string) => {
+    setStaged((prev) => {
+      const dropped = prev.find((s) => s.id === id);
+      if (dropped) URL.revokeObjectURL(dropped.previewUrl);
+      return prev.filter((s) => s.id !== id);
+    });
+  }, []);
+
+  // Cleanup object URLs on unmount.
+  useEffect(() => {
+    return () => {
+      for (const s of staged) URL.revokeObjectURL(s.previewUrl);
+    };
+    // We deliberately don't react to `staged` here — the per-removal cleanup
+    // happens inside `removeStaged` and on launch. This is the unmount sweep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file") {
+          const f = item.getAsFile();
+          if (f && f.type.startsWith("image/")) files.push(f);
+        }
+      }
+      if (files.length > 0) {
+        e.preventDefault();
+        void addFiles(files);
+      }
+    },
+    [addFiles],
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setDragActive(false);
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length > 0) void addFiles(files);
+    },
+    [addFiles],
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!dragActive) setDragActive(true);
+  }, [dragActive]);
+
+  const handleDragLeave = useCallback(() => {
+    setDragActive(false);
+  }, []);
+
+  const submitWithAttachments = useCallback(() => {
+    const toSend = staged.map((s) => s.attachment);
+    onLaunch(toSend);
+    // Clear staged + free preview URLs after launching.
+    for (const s of staged) URL.revokeObjectURL(s.previewUrl);
+    setStaged([]);
+  }, [onLaunch, staged]);
 
   const { isListening, transcript, startListening, stopListening, isSupported } =
     useVoiceInput();
@@ -366,12 +525,12 @@ export function AgentInputArea({
 
     if (e.ctrlKey && e.key === "Enter") {
       e.preventDefault();
-      if (launchReady) onLaunch();
+      if (launchReady) submitWithAttachments();
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (launchReady) onLaunch();
+      if (launchReady) submitWithAttachments();
     }
   }
 
@@ -587,7 +746,16 @@ export function AgentInputArea({
         </div>
 
         {/* Input box */}
-        <div className="relative border border-bg-border rounded-lg bg-bg-primary">
+        <div
+          className={`relative border rounded-lg bg-bg-primary transition-colors ${
+            dragActive
+              ? "border-accent-green ring-2 ring-accent-green/30"
+              : "border-bg-border"
+          }`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
           {/* @ file-mention popover (positioned above the textarea) */}
           <div className="relative">
             <FileMentionPopover
@@ -600,16 +768,45 @@ export function AgentInputArea({
             />
           </div>
 
+          {/* Staged attachment chips (drag-drop or pasted images). */}
+          {staged.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-3 pt-2">
+              {staged.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded border border-bg-border bg-bg-secondary text-[10px] text-text-secondary"
+                  title={`${s.name} · ${(s.sizeBytes / 1024).toFixed(1)} KB`}
+                >
+                  <img
+                    src={s.previewUrl}
+                    alt=""
+                    className="w-5 h-5 rounded object-cover"
+                  />
+                  <span className="truncate max-w-[140px]">{s.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeStaged(s.id)}
+                    className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-accent-red"
+                    title="Remove"
+                  >
+                    <X size={9} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <textarea
             ref={textareaRef}
             value={agentInputText}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             onBlur={() => {
               // Delay so onMouseDown selection in the popover can still fire.
               setTimeout(() => closeMention(), 120);
             }}
-            placeholder="What would you like to work on?"
+            placeholder="What would you like to work on?  (drag-drop or paste images)"
             rows={4}
             className="w-full bg-transparent px-4 py-3 text-xs text-text-primary placeholder:text-text-muted focus:outline-none resize-none"
           />
@@ -655,6 +852,80 @@ export function AgentInputArea({
                   );
                 })}
               </Dropdown>
+
+              {/* Profile selector — picks system prompt + tool whitelist for
+                  the new conversation. The selected profile is also persisted
+                  as the launch default for the next session. */}
+              <Dropdown
+                searchable
+                searchPlaceholder="Search profiles…"
+                trigger={
+                  <span
+                    className="text-text-secondary flex items-center gap-1"
+                    title={
+                      activeProfile
+                        ? `Profile: ${activeProfile.name} — ${activeProfile.description}`
+                        : "Pick an agent profile"
+                    }
+                  >
+                    <User size={10} className="text-accent-blue" />
+                    {activeProfile?.name ?? "Default"}
+                  </span>
+                }
+              >
+                {profiles.map((p) => (
+                  <DropdownItem
+                    key={p.id}
+                    onClick={() => {
+                      onProfileChange?.(p.id);
+                      setDefaultProfile(p.id);
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <User
+                        size={10}
+                        className={
+                          p.isBuiltin ? "text-accent-blue" : "text-accent-purple"
+                        }
+                      />
+                      <span
+                        className={
+                          activeProfileId === p.id ? "text-accent-green" : ""
+                        }
+                      >
+                        {p.name}
+                      </span>
+                      <span className="text-text-muted text-[9px] ml-1 truncate max-w-[200px]">
+                        {p.description}
+                      </span>
+                    </span>
+                  </DropdownItem>
+                ))}
+              </Dropdown>
+
+              {/* Worktree toggle — when on, the conversation runs inside a
+                  fresh git worktree at .pkt-worktrees/<convId>. Local-only;
+                  SSH targets ignore the flag (they have their own remote
+                  worktree workflow via Flights). */}
+              {selectedRepo && !isSshUri(selectedRepo) && (
+                <button
+                  type="button"
+                  onClick={() => onWorktreeChange?.(!worktreeEnabled)}
+                  title={
+                    worktreeEnabled
+                      ? "Worktree ON — conversation runs on a fresh branch in .pkt-worktrees/"
+                      : "Worktree OFF — conversation edits the project tree directly"
+                  }
+                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
+                    worktreeEnabled
+                      ? "border-accent-purple/40 text-accent-purple bg-accent-purple/10"
+                      : "border-bg-border text-text-muted hover:text-text-primary"
+                  }`}
+                >
+                  <GitBranch size={10} />
+                  Worktree
+                </button>
+              )}
 
               {/* Provider selector (grouped, with auth-status badges) */}
               <Dropdown
@@ -934,7 +1205,7 @@ export function AgentInputArea({
               {/* Launch button — gated on provider auth status */}
               <button
                 onClick={() => {
-                  if (launchReady) onLaunch();
+                  if (launchReady) submitWithAttachments();
                 }}
                 disabled={!launchReady}
                 title={
@@ -961,7 +1232,7 @@ export function AgentInputArea({
 
         <p className="text-[9px] text-text-muted mt-2 text-center">
           Enter to send &middot; Shift+Enter for newline &middot; Ctrl+N for new
-          agent &middot; @ to mention a file
+          agent &middot; @ to mention a file &middot; drag/paste images
         </p>
       </div>
 

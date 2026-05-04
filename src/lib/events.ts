@@ -72,3 +72,16 @@ export function apiAgentPermissionRequestEvent(sessionId: string): string {
 export function apiAgentPendingEditEvent(sessionId: string): string {
   return `api-agent:pending-edit:${sessionId}`;
 }
+
+// v3 additions
+export function apiAgentPlanBlockEvent(sessionId: string): string {
+  return `api-agent:plan-block:${sessionId}`;
+}
+
+export function apiAgentToolOutputExtendedEvent(sessionId: string): string {
+  return `api-agent:tool-output-extended:${sessionId}`;
+}
+
+export function apiAgentTurnSummaryEvent(sessionId: string): string {
+  return `api-agent:turn-summary:${sessionId}`;
+}

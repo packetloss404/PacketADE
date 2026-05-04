@@ -119,6 +119,8 @@ pub fn run() {
             commands::git::git_pull,
             commands::git::git_create_branch,
             commands::git::git_safety_check,
+            commands::git::create_conversation_worktree,
+            commands::git::remove_conversation_worktree,
             // Code quality
             commands::code_quality::analyze_code_quality,
             // Crash reports
@@ -245,6 +247,7 @@ pub fn run() {
             commands::api_agent::set_approve_writes,
             commands::api_agent::respond_edit,
             commands::api_agent::retry_last_turn,
+            commands::api_agent::cancel_pending_tools,
             // Agent conversation persistence
             commands::conversations::save_conversation,
             commands::conversations::load_conversations,
