@@ -3,6 +3,18 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, Copy, X } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 
+/**
+ * Detect macOS at module scope. The Tauri WebView reports a userAgent that
+ * contains "Macintosh" on macOS; on Windows/Linux it does not. Used to hide
+ * our custom Windows-style window controls (the OS draws traffic lights
+ * via `titleBarStyle: "Overlay"` in tauri.conf.json instead) and to reserve
+ * 78px of left padding for the traffic-light cluster so logo/title don't
+ * collide with it.
+ */
+const IS_MACOS =
+  typeof navigator !== "undefined" &&
+  /Macintosh|Mac OS X/.test(navigator.userAgent);
+
 export function TitleBar() {
   const isMaximized = useAppStore((s) => s.isMaximized);
   const setIsMaximized = useAppStore((s) => s.setIsMaximized);
@@ -37,9 +49,13 @@ export function TitleBar() {
 
   return (
     <div className="flex items-center h-8 bg-bg-tertiary select-none">
-      {/* Drag region — data-tauri-drag-region handles dragging natively */}
+      {/* Drag region — data-tauri-drag-region handles dragging natively.
+          On macOS, leave 78px of left padding for the traffic-light cluster
+          that the OS draws on top of us via the Overlay titleBarStyle. */}
       <div
-        className="flex-1 h-full flex items-center px-3"
+        className={`flex-1 h-full flex items-center px-3 ${
+          IS_MACOS ? "pl-[78px]" : ""
+        }`}
         data-tauri-drag-region
       >
         {/* pointer-events-none so children don't swallow the drag */}
@@ -51,34 +67,37 @@ export function TitleBar() {
         </div>
       </div>
 
-      {/* Window controls */}
-      <div className="flex h-full">
-        <button
-          onClick={handleMinimize}
-          className="flex items-center justify-center w-12 h-full hover:bg-bg-hover transition-colors"
-          title="Minimize"
-        >
-          <Minus size={14} className="text-text-secondary" />
-        </button>
-        <button
-          onClick={handleMaximize}
-          className="flex items-center justify-center w-12 h-full hover:bg-bg-hover transition-colors"
-          title={isMaximized ? "Restore" : "Maximize"}
-        >
-          {isMaximized ? (
-            <Copy size={11} className="text-text-secondary" />
-          ) : (
-            <Square size={11} className="text-text-secondary" />
-          )}
-        </button>
-        <button
-          onClick={handleClose}
-          className="flex items-center justify-center w-12 h-full hover:bg-accent-red/80 transition-colors group"
-          title="Close"
-        >
-          <X size={14} className="text-text-secondary group-hover:text-white" />
-        </button>
-      </div>
+      {/* Window controls — hidden on macOS where the OS-drawn traffic lights
+          on the left already cover minimize / maximize / close. */}
+      {!IS_MACOS && (
+        <div className="flex h-full">
+          <button
+            onClick={handleMinimize}
+            className="flex items-center justify-center w-12 h-full hover:bg-bg-hover transition-colors"
+            title="Minimize"
+          >
+            <Minus size={14} className="text-text-secondary" />
+          </button>
+          <button
+            onClick={handleMaximize}
+            className="flex items-center justify-center w-12 h-full hover:bg-bg-hover transition-colors"
+            title={isMaximized ? "Restore" : "Maximize"}
+          >
+            {isMaximized ? (
+              <Copy size={11} className="text-text-secondary" />
+            ) : (
+              <Square size={11} className="text-text-secondary" />
+            )}
+          </button>
+          <button
+            onClick={handleClose}
+            className="flex items-center justify-center w-12 h-full hover:bg-accent-red/80 transition-colors group"
+            title="Close"
+          >
+            <X size={14} className="text-text-secondary group-hover:text-white" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

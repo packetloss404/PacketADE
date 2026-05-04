@@ -1,6 +1,6 @@
 # PacketADE Roadmap
 
-Last updated: 2026-04-28
+Last updated: 2026-05-03
 
 This file replaces the prior `dev/REMAINING-WORK.md`, `dev/PROJECT-STATUS.md`, `dev/SPRINT-04-MISSION-WORKSPACE.md`, and `dev/ARCHITECTURE.md` planning docs. For architectural conventions, see `CLAUDE.md`.
 
@@ -8,7 +8,7 @@ Detailed strategic planning now lives under `dev/`. `ROADMAP.md` remains the top
 
 ## Status
 
-Sprints 0–4 are shipped. Mission/Flight Deck work, workspace panes, API-agent conversations, sidecar v2, crash reporting, dictation, cost analytics, and Playwright E2E infrastructure are in place. Phase 3 distribution prep remains the major release track.
+Sprints 0–4 are shipped. Mission/Flight Deck work, workspace panes, API-agent conversations, sidecar v2, crash reporting, dictation, cost analytics, and Playwright E2E infrastructure are in place. The **Agents-pane "match Claude Code & Codex"** initiative shipped in May 2026 — Tier 1 (visible polish), Tier 2 (durable profiles, Plan panel, hunk-level diffs, reviewer subagent, agent tray, AGENTS.md, memory editor), Tier 3 (sidecar protocol v3 → v4: plan_block / tool_output_extended / turn_summary events, mergedContent / cancel_pending_tools requests, resume tokens, auto-failover, worktree-per-conversation), and ten F-series follow-ups including auto-resume across restarts, in-process per-hunk parity, MCP toggle in chat header, and Plan-first Spec stage. Phase 3 distribution prep remains the major release track.
 
 Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm e2e`, `cargo check --manifest-path src-tauri/Cargo.toml`, and `cargo test --manifest-path src-tauri/Cargo.toml`.
 
@@ -18,10 +18,13 @@ Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`, `pnp
 
 | ID  | Task                                       | Priority | Status  | Notes                                                                                                                                                                          |
 | --- | ------------------------------------------ | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0  | Agents pane — match Claude Code & Codex    | High     | Shipped | Tier 1 + Tier 2 + Tier 3 + F1–F10 follow-ups landed in commit `80c79f8` (May 2026). Sidecar protocol v4. See `C:\Users\ianwalmsley\.claude\plans\i-want-the-agents-refactored-elephant.md` for the original plan. |
 | P1  | Swarm orchestration escalation             | High     | Partial | Roles, owned paths, collision detection, coordination feed, and handoff logs are implemented; automatic reassignment remains deferred. See `dev/bridgemind/swarm-orchestration-plan.md`. |
 | P2  | PacketADE MCP server transport             | High     | Deferred | Frontend provider config/resource/tool definitions exist; Rust transport and external-client serving are deferred. See `dev/mcp-provider-transport.md`. |
 | P3  | Git review packet integration              | Medium   | Partial | Workspace GitDashboard exists; review packet and flight approval ties are not fully wired. See `dev/zen-workspace/features-git-workspace.md`. |
 | P4  | Cost alerts                                | Medium   | Not started | Cost dashboard reads backend usage analytics; budget/alert workflows remain nice-to-have. See `dev/moat/cost-dashboard-plan.md`. |
+| P5  | Per-message cost breakdown in chat         | Low      | Not started | `turn_summary` already lands live tokens per turn; surface the per-message $ next to the existing token pill. |
+| P6  | Codex sidecar plan_block + tool_output_extended | Low | Not started | Anthropic provider emits both. Codex provider could parse `update_plan` tool calls + Bash exit codes for parity. |
 
 ### Strategy Notes
 
@@ -40,7 +43,7 @@ Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`, `pnp
 
 | ID  | Task                       | Priority | Status      | Notes                                                                                        |
 | --- | -------------------------- | -------- | ----------- | -------------------------------------------------------------------------------------------- |
-| B2  | Multi-model A/B comparison | Low      | Not started | "Dual fire" — same prompt to two agents, side-by-side diff with cost/token/duration metrics. |
+| B2  | Multi-model A/B comparison | Low      | Not started | "Dual fire" — same prompt to two agents, side-by-side diff with cost/token/duration metrics. The agent tray + worktree-per-conversation foundation makes this small. |
 
 ### Architectural Debt
 
@@ -49,9 +52,11 @@ Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`, `pnp
 
 ### Known Gaps Not Yet Scheduled
 
-- Session persistence / reconnection across app restarts
 - Inline file preview from terminal output
 - Crash report upload (local viewer ships in D3; no remote sink yet)
+- Per-tool-id ownership tracking for `cancel_pending_tools` in the in-process Rust path (today drains the whole `state.pending_*` maps; fine while only one session-with-pending-tools at a time, but not multi-session-safe)
+- Mid-session MCP hot-swap — the sidecar protocol has no `set_mcp_servers`, so `enabledMcpServerIds` flips apply on the next session start
+- A small "Resume" button for hydrated conversations that have a `resumeToken` but no live listeners — today resume is lazy (fires when the user sends), but a one-click Resume that doesn't require typing would be a nice polish
 
 ## Critical Path to 1.0 Release
 

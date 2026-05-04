@@ -95,6 +95,22 @@ pub fn run() {
             if let Err(e) = commands::auth_watcher::init(&app.handle()) {
                 tracing::warn!("auth_watcher init failed: {}", e);
             }
+
+            // Per-platform window chrome. The config sets
+            // `decorations: true` + `titleBarStyle: "Overlay"` so macOS
+            // shows traffic lights overlaid on our custom TitleBar
+            // (titleBarStyle is macOS-only). On Windows + Linux, that same
+            // `decorations: true` would re-introduce the native title bar
+            // alongside our custom one — so we strip decorations at
+            // runtime here. The custom TitleBar is the only chrome on
+            // those platforms.
+            #[cfg(not(target_os = "macos"))]
+            {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.set_decorations(false);
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

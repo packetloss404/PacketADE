@@ -6,6 +6,7 @@ PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issu
 
 ## What It Does
 
+- Chat with seven coding-agent providers from a **single Agents pane** that normalizes Claude Code subscription, Codex subscription, four API-key providers, and local Ollama into one event contract
 - Run multiple agent sessions side-by-side in PTY-backed panes inside a **Workspace** (your terminal-CLI command center)
 - Plan and supervise larger units of work from the **Flight Deck** — a single-screen master-detail mission control
 - Track issues on a kanban board and send them directly to workspace sessions
@@ -41,6 +42,35 @@ PacketADE runs two kinds of agents side-by-side.
 Auth status is probed live and shown as a badge next to each row (`ready` / `login_required` / `missing_key` / `service_down`). An fs watcher flips the badge automatically after a `claude login` / `codex login` completes, and expired-but-refreshable tokens stay `ready` (the SDK / CLI refreshes them transparently). API-key providers run in-process in Rust; subscription providers run in a Node sidecar that hosts the Anthropic Claude Agent SDK and wraps `codex exec`. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
 
 ## Main Features
+
+### Agents Pane — Unified Chat for Every Provider
+
+The Agents pane is the front door. One composer, two backends (in-process Rust + Node sidecar), one event contract — pick any of the seven providers from a grouped dropdown and the chat UI is identical.
+
+- **Live SessionHealthBar** in the chat header: model · context % gauge · cumulative tokens · session $ · git branch
+- **Drag-drop and clipboard-paste images** into the launcher (5 MB cap, removable thumbnail chips); image blocks land in the SDK content array on send
+- **Mid-turn steering**: `Tab` queues a follow-up that delivers after the current turn; `Alt+.` / `Alt+,` nudge the model toward thorough / fast within the same provider; `Shift+Tab` cycles a single mode chip (`default | plan | manual | yolo`)
+- **Slash commands**: `/plan /permissions /model /compact /review /usage /history /clear /new /help` plus saved prompt templates as native `/<slug>` commands and project skills
+- **Header context badges**: provider auth (live `provider-auth:changed`), linked Mission with click-to-jump, MCP `N/M` server toggle dropdown, memory-context tooltip previewing the actual injected patterns
+- **Persistent Plan / Todo panel** docked above the chat scroll, parsing Anthropic SDK `TodoWrite` (structured `plan_block` events) plus the markdown `task_list` tool with a fallback parser
+- **Per-hunk diff acceptance** in `PendingEditPrompt`: pick which hunks to accept, the merged content lands via `edit_response.mergedContent` (sidecar Anthropic + every in-process provider)
+- **Batch approvals**: when 2+ writes or permissions stack up, "Apply all / Reject all / Cancel pending" rollups appear; "Cancel pending" drains parked prompts as denied without killing the agent loop
+- **Reviewer subagent**: `/review` spawns a fresh read-only conversation seeded with a unified diff of pending writes; returns 🛑 Blockers / ⚠️ Concerns / 💡 Nits with file:line citations
+- **Plan-first mode**: launching with the Plan posture seeds a Spec → Plan → Code FSM — the model proposes 3-7 success-criterion bullets and stops, the SpecPanel renders them as editable rows, "Lock & request plan" asks for a structured TodoWrite, "Approve & execute" lifts plan-mode and runs
+- **Durable agent profiles** (Default, Scout, Reviewer built-ins, plus user-created): bundle system prompt + allowed tools + memory + permission posture; pick from the launcher dropdown or edit in `Settings → Agent Profiles`
+- **AGENTS.md / CLAUDE.md auto-injection** from project root into the system prompt at session start
+- **Auto-failover on rate-limit**: 429 / quota / overload errors trigger a same-provider fallback (Opus → Sonnet → Haiku, o3 → gpt-5 → o4-mini, MiniMax → highspeed) before surfacing the failure
+- **Worktree-per-conversation** (opt-in toggle, local projects): provisions `.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch so the conversation's tool calls don't touch the main checkout
+- **Backgroundable agent tray** in the toolbar showing a live count of streaming agents with click-to-jump and stop
+- **Auto-resume across restarts**: hydrated conversations capture the provider's resume token and lazily re-establish the session on next send
+- **Onboarding overlay** on first visit explaining the four affordances; one-time, persisted in localStorage
+
+### Sidecar Protocol
+
+The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **4**, with these v3+ additions:
+
+- Events: `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken`), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns)
+- Requests: `start_session` (with image attachments + resume), `send_message`, `permission_response`, `edit_response` (with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`
 
 ### Workspaces — Terminal CLI Command Center
 
@@ -162,20 +192,22 @@ PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription) 
 
 `pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 20.17.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from a Windows build: NSIS installer ~74 MB, MSI installer ~114 MB (both are produced because `bundle.targets` is `"all"`), standalone `packetade.exe` ~30 MB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
 
-#### Sidecar v2 status
+#### Sidecar status
 
-The v2 sidecar work is complete across four tiers:
+The sidecar work is complete across the original four v2 tiers and the v3 / v4 protocol additions that power the unified Agents pane:
 
-- **Tier 1 — Bundling:** pinned Node 20.17.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
-- **Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
-- **Tier 3 — Protocol & UX:** `pending_edit` diff preview for Anthropic Subscription turns, command forwarding (`set_permission_mode`, `set_model`, `retry`) through a versioned protocol. Codex MCP remains intentionally deferred — the upstream Codex SDK does not yet expose MCP hooks.
-- **Tier 4 — Observability & updates:** sidecar lifetime stats (uptime, restart count, last-exit reason), per-provider launch counters surfaced to the UI, and a documented Tauri auto-updater setup.
+- **v2 Tier 1 — Bundling:** pinned Node 20.17.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
+- **v2 Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
+- **v2 Tier 3 — Protocol & UX:** `pending_edit` diff preview for Anthropic Subscription turns, command forwarding (`set_permission_mode`, `set_model`, `retry`) through a versioned protocol. Codex MCP remains intentionally deferred — the upstream Codex SDK does not yet expose MCP hooks.
+- **v2 Tier 4 — Observability & updates:** sidecar lifetime stats (uptime, restart count, last-exit reason), per-provider launch counters surfaced to the UI, and a documented Tauri auto-updater setup.
 - **Refresh-token aware expiry:** `provider_auth` now treats expired access tokens as `ready` when a refresh token is present, avoiding spurious "please log in" prompts for subscription users whose SDK / CLI would have refreshed on next use anyway.
+- **v3 — Protocol additions for the Agents pane:** typed image attachments on `start_session` / `send_message`; `mergedContent` on `edit_response` (per-hunk acceptance); `batchId`/`batchSize` on `permission_request`; `resumeToken` on `done`; new `plan_block` event mirroring `TodoWrite`; `tool_output_extended` event with Bash exit code + stdout/stderr + Write/Edit modified paths; `turn_summary` event for live mid-stream token totals.
+- **v4 — `cancel_pending_tools`:** drains parked permission/edit prompts as denied without aborting the SDK query, so the model receives synthetic "User cancelled this tool" results and the loop continues.
 - See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`docs/updater-setup.md`](./docs/updater-setup.md) for signing / release channel configuration.
 
 ### Multi-platform builds
 
-PacketADE is developed on Windows but is designed to ship on macOS and Linux as well. For per-platform prerequisites, supported target triples, and cross-compilation notes, see [`docs/multi-platform-build.md`](./docs/multi-platform-build.md). A manual-trigger GitHub Actions skeleton that builds on all three OSes via `tauri-apps/tauri-action` lives at [`.github/workflows/build.yml`](./.github/workflows/build.yml) — it is disabled by default so it does not burn CI minutes.
+PacketADE is developed on Windows but is designed to ship on macOS and Linux as well. For per-platform prerequisites, supported target triples, and cross-compilation notes, see [`docs/multi-platform-build.md`](./docs/multi-platform-build.md). Builds and releases are produced locally — there is no GitHub Actions CI in this repo.
 
 ### Run The Desktop App
 
