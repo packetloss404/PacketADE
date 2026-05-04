@@ -2,6 +2,77 @@
 
 All notable changes to PacketADE are documented in this file.
 
+## [Unreleased] - 2026-05-04
+
+### Added — Agents pane "match the best of Claude Code & Codex" initiative
+
+Driven by a 6-agent deep-dive on Claude Code, Codex, Cursor, Windsurf,
+Aider, Cline, Continue.dev, Zed, Copilot Workspace, JetBrains Junie, and
+Warp; followed by a 4-agent deep-dive on the OpenAI "Codex for (almost)
+everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
+
+#### Tier 1 — visible polish
+- Drag-drop and clipboard-paste images in the launcher (5 MB cap, removable thumbnail chips); image blocks land in the SDK content array on send
+- `SessionHealthBar` in chat header: model · context % gauge · cumulative tokens · session $ · git branch
+- Mid-turn steering: `Tab` queues a follow-up; `Alt+.` / `Alt+,` nudge the model toward thorough / fast within the same provider
+- `Shift+Tab` cycles a single mode chip (`default | plan | manual | yolo`)
+- New slash commands `/usage`, `/history`, `/review`, `/goal`, `/template`; saved prompt templates surface as native `/<slug>` commands
+- Header context badges: provider auth, linked Mission with click-to-jump, MCP `N/M` server toggle dropdown, memory-context tooltip previewing the actual injected patterns
+- One-time onboarding overlay on first Agents-view visit
+
+#### Tier 2 — killer features
+- Persistent dockable `PlanPanel` parsing Anthropic SDK `TodoWrite` and the markdown `task_list` tool
+- `PendingApprovalsRollup` with "Apply / Reject / Cancel all" when 2+ pending writes or permissions stack up
+- `/review` spawns a Reviewer subagent fed a unified diff of the parent conversation's pending writes — returns 🛑 Blockers / ⚠️ Concerns / 💡 Nits
+- Durable agent profiles (Default / Scout / Reviewer built-ins, plus user-created); `AgentProfilesCard` editor in `Settings → Agent Profiles`
+- AGENTS.md / CLAUDE.md auto-injection from the project root
+- Memories panel inline editor (edit text + category, Ctrl+Enter saves)
+- `RunningAgentsChip` in toolbar with live count of streaming agents, click-to-jump and stop
+
+#### Tier 3 — sidecar protocol v3 → v4 + frontend
+- Sidecar `PROTOCOL_VERSION` bumped 2 → 4
+- New events: `plan_block` (structured TodoWrite mirror), `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns)
+- New requests: `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools` (drains parked permission/edit prompts as denied without killing the loop)
+- `StartSessionRequest` gains `attachments` and `resume`; `EditResponseRequest` gains `mergedContent` (per-hunk acceptance honored sidecar AND every in-process provider)
+- `permission_request` gains `batchId`/`batchSize` for grouped rollups
+- `done` payload gains `resumeToken`; persisted on the conversation
+- Auto-failover heuristic on rate-limit (Opus → Sonnet → Haiku, o3 → gpt-5 → o4-mini, MiniMax → highspeed) with a one-retry-per-turn guard
+- Worktree-per-conversation toggle in launcher (`.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch)
+
+#### Codex Spring 2026 absorption (A1–A5 + B1–B9)
+- Codex `todo_list` items map to the existing `plan_block` event so PlanPanel works for Codex too
+- `reasoning_tokens` + `cached_input_tokens` from `usage` flow through `turn_summary` and roll into `aggregateConversationCost` (was: under-reporting GPT-5.5 spend)
+- Codex MultiAgentV2 sub-agent attribution: `turn_summary.address` (`/root/agent_a` etc.) routes child tokens into a per-address bucket on the conversation; CostDashboard rolls every bucket into the total
+- AGENTS.md cascading resolver in Rust core (`core::agents_md`) walking `~/.claude/AGENTS{.override,}.md` → git-root → cwd, picking one of `AGENTS.override.md` / `AGENTS.md` / `CLAUDE.md` per directory, concat with `<!-- source: <path> -->` headers, capped at 32 KiB. Honors `CLAUDE_HOME` env override for CI parity with Codex's `CODEX_HOME`
+- `ProjectRulesCard` in `Settings → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save; surfaces a Unify affordance when the two files diverge; offers a starter template when neither exists
+- Hover-`+` Codex-App-style diff comments: per-line `+` button in `ToolDiffView` opens an inline composer; queued comments fold into the next user turn as a `File comments:` preamble
+- Smart-approval prefix-rule proposal: `PermissionPrompt` gains a fourth row "Always allow rule `<pattern>`"; one click writes the derived pattern into `conversation.allowedTools`
+- Composer-mode segmented control (Local / Worktree / Cloud) replaces the binary worktree toggle; persisted via localStorage
+- Right-rail tabbed mode (`AgentTabbedRail`) with Plan / Diff / Inspector tabs in a single 340 px column; toggleable from chat header
+- Persistent goals bridged to Missions: new `goalStore` + `/goal` slash command + goal-bound footer in PlanPanel (Pause / Resume / Complete) + 🎯 N badge per Mission row
+- `LiveSpendChip` in toolbar combining today's persisted total (analyticsStore) + live in-memory session $ across every open API conversation
+- Old-model pinning per profile via `pinnedModel` field; resolves as `profile.pinnedModel ?? selectedModel ?? getDefaultModel(agent)` at launch
+- Plan-with-Claude → Execute-with-Codex one-click handoff: PlanPanel "Hand off to Codex →" button when parent is Claude AND Codex auth is `ready`; spawns a fresh Codex conversation seeded with `buildHandoffPrompt(parent)` (distilled spec + plan + discussion summary, capped at 12 KiB); `parentConversationId` field wires a "← back to plan" link in the child's chat header
+
+#### Follow-ups (F1–F10)
+- Auto-resume hydrated conversations: extracted listener block into `installApiAgentListeners` helper; `sendMessage` routes the first post-restart send through `resumeApiConversation` with the stored `resumeToken`
+- In-process providers honor `mergedContent` for per-hunk diff acceptance (parity with sidecar Anthropic)
+- Anthropic sidecar emits `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modifiedPaths) and `turn_summary` (running per-message tokens for live SessionHealthBar updates)
+
+### Fixed
+- **macOS title bar shows native traffic-light controls** — config switched to `decorations: true` + `titleBarStyle: "Overlay"` + `hiddenTitle: true`; `lib.rs` setup hook strips decorations at runtime on Windows + Linux so the custom chrome stays the only chrome there. `TitleBar.tsx` detects macOS via userAgent, hides the Win-style min/max/close cluster, reserves 78 px of left padding for the traffic-light area
+- **Standalone `target/<profile>/packetade.exe` reported "Sidecar down"** — two stacked bugs:
+  - Capability gate: `app.shell().sidecar("node")` is rejected by Tauri's permission layer unless an explicit `shell:allow-execute` entry lists `node` with `sidecar: true` (added in `74e6ba9`)
+  - Per-triple Node binary missing: Tauri's shell plugin on Windows resolves `sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, not generic `node.exe`; `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time (added in `8f49083`)
+
+### Removed
+- `.github/workflows/{build,ci,release}.yml` — builds and releases run locally; no GitHub Actions CI in this repo
+
+### Sidecar protocol
+- `PROTOCOL_VERSION = 4`. v4 added `cancel_pending_tools` request. v3 added typed `attachments` on `start_session` / `send_message`, `mergedContent` on `edit_response`, `batchId`/`batchSize` on `permission_request`, `resumeToken` on `done`, plus `plan_block` / `tool_output_extended` / `turn_summary` events. Old sidecars reply "Unknown request type" to v3+ requests; supervisor warns on version mismatch (does not refuse)
+
+---
+
 ## [0.4.0] - 2026-04-11
 
 ### Added
