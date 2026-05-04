@@ -25,7 +25,8 @@
         { "name": "rustfmt", "cmd": "rustfmt", "args": true, "sidecar": false },
         { "name": "gofmt", "cmd": "gofmt", "args": true, "sidecar": false },
         { "name": "ruff", "cmd": "ruff", "args": true, "sidecar": false },
-        { "name": "black", "cmd": "black", "args": true, "sidecar": false }
+        { "name": "black", "cmd": "black", "args": true, "sidecar": false },
+        { "name": "node", "cmd": "node", "args": true, "sidecar": true }
       ]
     },
     "process:default",
