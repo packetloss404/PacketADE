@@ -43,6 +43,10 @@ interface DraftState {
   memoryContextEnabled: boolean;
   permissionMode: PermissionMode;
   planMode: boolean;
+  /** B9: when non-empty, every launch with this profile uses this exact
+   * model id, ignoring the launcher's dropdown. Empty string = no pin
+   * (= null in the underlying type). */
+  pinnedModel: string;
 }
 
 function emptyDraft(mode: DraftMode): DraftState {
@@ -55,6 +59,7 @@ function emptyDraft(mode: DraftMode): DraftState {
     memoryContextEnabled: false,
     permissionMode: "auto",
     planMode: false,
+    pinnedModel: "",
   };
 }
 
@@ -68,6 +73,7 @@ function profileToDraft(p: AgentProfile): DraftState {
     memoryContextEnabled: p.memoryContextEnabled,
     permissionMode: p.permissionMode,
     planMode: p.planMode,
+    pinnedModel: p.pinnedModel ?? "",
   };
 }
 
@@ -112,6 +118,7 @@ export function AgentProfilesCard() {
     if (!draft) return;
     const trimmedName = draft.name.trim();
     if (!trimmedName) return;
+    const trimmedPin = draft.pinnedModel.trim();
     const payload = {
       name: trimmedName,
       description: draft.description.trim(),
@@ -120,6 +127,7 @@ export function AgentProfilesCard() {
       memoryContextEnabled: draft.memoryContextEnabled,
       permissionMode: draft.permissionMode,
       planMode: draft.planMode,
+      pinnedModel: trimmedPin.length > 0 ? trimmedPin : null,
     };
     if (draft.mode.kind === "create") {
       addProfile(payload);
@@ -211,6 +219,17 @@ export function AgentProfilesCard() {
                       ? `${p.allowedTools.length} tools`
                       : "all tools"}
                   </span>
+                  {p.pinnedModel && (
+                    <>
+                      <span>·</span>
+                      <span
+                        className="text-accent-amber font-mono"
+                        title={`Pinned to model "${p.pinnedModel}" — launcher selection ignored`}
+                      >
+                        📌 {p.pinnedModel}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -338,6 +357,29 @@ export function AgentProfilesCard() {
               placeholder="read_file, list_directory, grep"
               className="bg-bg-secondary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent-blue/60 font-mono"
             />
+          </label>
+
+          {/* B9 — Pinned model. When set, every launch with this profile
+              uses this exact id, ignoring the launcher's dropdown. Useful
+              for sticking with a known-good older model after a vendor
+              regression (e.g. pin `claude-sonnet-4-6` if 4-7 is flaky). */}
+          <label className="flex flex-col gap-1 mb-2">
+            <span className="text-[10px] text-text-muted">
+              Pinned model (empty = use launcher selection)
+            </span>
+            <input
+              type="text"
+              value={draft.pinnedModel}
+              onChange={(e) =>
+                setDraft({ ...draft, pinnedModel: e.target.value })
+              }
+              placeholder="claude-sonnet-4-6, gpt-4o, o4-mini, …"
+              className="bg-bg-secondary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent-blue/60 font-mono"
+            />
+            <span className="text-[9.5px] text-text-faint">
+              Future provider auto-upgrades won't silently switch this profile
+              away from a model you trust.
+            </span>
           </label>
 
           <div className="flex items-center gap-3 flex-wrap">

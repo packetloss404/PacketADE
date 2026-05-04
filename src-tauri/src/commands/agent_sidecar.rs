@@ -208,6 +208,10 @@ struct TurnSummaryPayload {
     output_tokens: u64,
     cache_read_input_tokens: u64,
     cache_creation_input_tokens: u64,
+    /// Reasoning tokens — Codex 0.125+ exposes this; Anthropic doesn't yet.
+    /// Billed at the OUTPUT rate everywhere it appears.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_tokens: Option<u64>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1324,6 +1328,9 @@ impl SidecarManager {
                     .get("cacheCreationInputTokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
+                let reasoning_tokens = value
+                    .get("reasoningTokens")
+                    .and_then(|v| v.as_u64());
                 let _ = self.app_handle.emit(
                     &turn_summary_event(&session_id),
                     TurnSummaryPayload {
@@ -1331,6 +1338,7 @@ impl SidecarManager {
                         output_tokens,
                         cache_read_input_tokens,
                         cache_creation_input_tokens,
+                        reasoning_tokens,
                     },
                 );
             }

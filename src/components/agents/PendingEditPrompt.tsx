@@ -19,6 +19,9 @@ interface PendingEditPromptProps {
    * land (per-hunk acceptance). In-process providers ignore the override. */
   onApply: (toolId: string, mergedContent?: string) => void;
   onReject: (toolId: string) => void;
+  /** B1: when set, ToolDiffView renders hover-`+` to attach Codex-style
+   * line comments queued on the conversation. Omit for read-only previews. */
+  conversationId?: string;
 }
 
 /** A contiguous added/removed/unchanged region within a unified diff. */
@@ -138,7 +141,7 @@ function countQuickDiff(before: string | undefined, after: string): {
   return { added, removed, isNew: false };
 }
 
-export function PendingEditPrompt({ item, projectPath, onApply, onReject }: PendingEditPromptProps) {
+export function PendingEditPrompt({ item, projectPath, onApply, onReject, conversationId }: PendingEditPromptProps) {
   const [expanded, setExpanded] = useState(false);
   const [hunkPickerOpen, setHunkPickerOpen] = useState(false);
 
@@ -229,6 +232,7 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject }: Pend
             filePath={item.path}
             newContent={item.content}
             oldContent={item.before ?? undefined}
+            conversationId={conversationId}
           />
         </div>
       )}

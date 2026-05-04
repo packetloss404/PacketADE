@@ -35,6 +35,10 @@ export interface AgentMessage {
   cacheReadTokens?: number;
   /** Cached input tokens written on this turn. */
   cacheWriteTokens?: number;
+  /** Reasoning tokens (Codex 0.125+ via `usage.reasoning_tokens`,
+   * OpenAI o-series). Billed at the OUTPUT rate by every provider that
+   * exposes them — counted alongside outputTokens in cost math. */
+  reasoningTokens?: number;
   /** Extended thinking text produced by this turn (Anthropic). */
   thinking?: string;
 }
@@ -64,6 +68,20 @@ export interface AgentPlanItem {
   content: string;
   status: "pending" | "in_progress" | "completed";
   activeForm?: string;
+}
+
+/** B1: Codex-App-style hover-`+` diff comment. Anchors a free-text note
+ * to a specific line of a pending edit. Queued on the conversation;
+ * folded into the next user turn as a "File comments:" preamble and
+ * cleared on send. `side` distinguishes anchors on the old (removed)
+ * vs new (added/context) version of the file. */
+export interface DiffComment {
+  id: string;
+  path: string;
+  line: number;
+  side: "old" | "new";
+  text: string;
+  createdAt: number;
 }
 
 /** How much detail to show in the transcript renderer. */
@@ -153,4 +171,8 @@ export interface AgentConversation {
   /** F10: true once the user has approved the model's plan. Setting this
    * lifts plan mode and dispatches the "execute" turn. */
   planApproved?: boolean;
+  /** B1: hover-`+` diff comments queued by the user on pending edits.
+   * Folded into the next user turn as a "File comments:" preamble and
+   * cleared on send (or via the chip-strip "Clear" action). */
+  pendingDiffComments?: DiffComment[];
 }

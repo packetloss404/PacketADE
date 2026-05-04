@@ -52,6 +52,7 @@ import type {
   AgentMessage,
   AgentPlanItem,
   AgentToolCall,
+  DiffComment,
   PermissionMode,
   PendingPermission,
   PendingEdit,
@@ -251,6 +252,21 @@ interface AgentTaskStore {
    * killing the session. Optimistically clears the local pendingPermissions
    * and pendingEdits arrays — there is no echo event from the backend. */
   cancelPendingTools: (id: string) => Promise<void>;
+  /** B3: append a derived allowlist pattern to the conversation's
+   * `allowedTools` (deduped). Read by the next turn's startApiAgentSession
+   * via the resume path — no immediate backend call needed. The smart-
+   * approval row in PermissionPrompt calls this AFTER respondPermission
+   * resolves the in-flight prompt so subsequent same-pattern tool calls
+   * skip the prompt entirely. */
+  appendAllowedToolPattern: (id: string, pattern: string) => void;
+  /** B1: queue a hover-`+` diff comment. Folded into the NEXT user
+   * sendMessage as a "File comments:" preamble, then cleared. */
+  addDiffComment: (
+    id: string,
+    comment: Omit<DiffComment, "id" | "createdAt">,
+  ) => void;
+  removeDiffComment: (id: string, commentId: string) => void;
+  clearDiffComments: (id: string) => void;
   /** F9: set the per-conversation MCP server filter. null = all enabled
    * (back-compat). [] = explicitly none. Applies on next session start —
    * the sidecar protocol has no mid-session MCP swap. */
@@ -607,12 +623,15 @@ async function installApiAgentListeners(
 
   // F6: live token totals between turns. Update the streaming assistant
   // message's tokens so SessionHealthBar / cost pills reflect mid-stream
-  // usage instead of waiting for the final `done` payload.
+  // usage instead of waiting for the final `done` payload. A2: also
+  // forward `reasoning_tokens` (Codex 0.125+) so CostDashboard accounts
+  // for GPT-5.5's reasoning slice.
   const turnSummaryUnlisten = await listen<{
     input_tokens: number;
     output_tokens: number;
     cache_read_input_tokens: number;
     cache_creation_input_tokens: number;
+    reasoning_tokens?: number | null;
   }>(apiAgentTurnSummaryEvent(id), (event) => {
     let updated: AgentConversation | undefined;
     set((s) => ({
@@ -626,6 +645,8 @@ async function installApiAgentListeners(
                 outputTokens: event.payload.output_tokens,
                 cacheReadTokens: event.payload.cache_read_input_tokens,
                 cacheWriteTokens: event.payload.cache_creation_input_tokens,
+                reasoningTokens:
+                  event.payload.reasoning_tokens ?? m.reasoningTokens,
               }
             : m,
         );
@@ -1057,6 +1078,23 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     // Fresh user turn — re-arm auto-failover for this conversation.
     failoverGuard.delete(conversationId);
 
+    // B1: fold queued hover-`+` diff comments into the prompt, then clear.
+    // Format mirrors the Codex-App "File comments:" preamble — file:line
+    // anchors give the model precise context without us having to re-send
+    // the full diff (it's already in the conversation history).
+    const queuedComments = conv.pendingDiffComments ?? [];
+    let effectiveContent = content;
+    if (queuedComments.length > 0) {
+      const block = queuedComments
+        .map((c) => `- ${c.path}:${c.line} — ${c.text}`)
+        .join("\n");
+      effectiveContent = `File comments:\n${block}\n\n${content}`;
+      // Clear immediately so the chip strip empties on click; if the send
+      // ultimately fails, the comments are gone (acceptable — they're now
+      // in the conversation history as part of the user message).
+      get().clearDiffComments(conversationId);
+    }
+
     // F1: hydrated API conversations have no live listeners — route the
     // first send-after-restart through the resume path so the Rust side
     // re-creates the session before the message arrives.
@@ -1064,9 +1102,15 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       conv.mode === "api" &&
       !apiConversationCleanup.has(conversationId)
     ) {
-      void get().resumeApiConversation(conversationId, content, attachments);
+      void get().resumeApiConversation(
+        conversationId,
+        effectiveContent,
+        attachments,
+      );
       return;
     }
+    // Continue with the comment-augmented content from here on.
+    content = effectiveContent;
 
     // If the agent is still running (API mode), queue the message and show a queued bubble.
     const isRunning =
@@ -1476,6 +1520,87 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       id,
       "Plan approved. Execute step-by-step, marking TodoWrite items as you complete them.",
     );
+  },
+
+  addDiffComment: (id, comment) => {
+    if (!comment.text.trim()) return;
+    const entry: DiffComment = {
+      id: generateId("dc"),
+      createdAt: Date.now(),
+      ...comment,
+    };
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = {
+          ...c,
+          pendingDiffComments: [...(c.pendingDiffComments ?? []), entry],
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  removeDiffComment: (id, commentId) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = {
+          ...c,
+          pendingDiffComments: (c.pendingDiffComments ?? []).filter(
+            (d) => d.id !== commentId,
+          ),
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  clearDiffComments: (id) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        if (!c.pendingDiffComments || c.pendingDiffComments.length === 0)
+          return c;
+        const next: AgentConversation = {
+          ...c,
+          pendingDiffComments: [],
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  appendAllowedToolPattern: (id, pattern) => {
+    if (!pattern) return;
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const current = c.allowedTools ?? [];
+        if (current.includes(pattern)) return c; // dedupe — no-op
+        const next: AgentConversation = {
+          ...c,
+          allowedTools: [...current, pattern],
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
   },
 
   cancelPendingTools: async (id) => {
