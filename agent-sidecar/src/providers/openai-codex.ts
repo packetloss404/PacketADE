@@ -254,9 +254,14 @@ export class OpenAICodexProvider implements ProviderHandler {
    * we can route the response to the right in-flight ask.
    */
   private pendingApprovals = new Map<string, string>();
-  /** Last-seen token counts from the most recent token_count event. */
+  /** Last-seen token counts from the most recent token_count event.
+   * `reasoning` and `cachedInput` were added in Codex CLI 0.125 (Apr 2026)
+   * — capturing them lets PacketADE's CostDashboard report GPT-5.5 spend
+   * accurately (otherwise we under-report by the reasoning slice). */
   private lastInputTokens = 0;
   private lastOutputTokens = 0;
+  private lastReasoningTokens = 0;
+  private lastCachedInputTokens = 0;
   /**
    * Effective model for the *next* spawn. Seeded from `req.model` on start,
    * overridable mid-session via the protocol v2 `set_model` request. Codex
@@ -407,6 +412,8 @@ export class OpenAICodexProvider implements ProviderHandler {
           sessionId,
           message: `codex exited with code ${code}${signal ? ` (signal ${signal})` : ""}`,
         });
+        // (reasoning + cached tokens are surfaced live via turn_summary;
+        // we keep `done` payload backwards-compatible with v3 consumers.)
       }
     });
 
@@ -606,6 +613,9 @@ export class OpenAICodexProvider implements ProviderHandler {
     }
 
     // Token usage — Codex emits a "token_count" event with a usage dict.
+    // 0.125 added `reasoning_tokens`; `cached_input_tokens` has been there
+    // for a while but is more relevant now that permission profiles affect
+    // cache hit rates. Capture both so done/turn_summary can forward them.
     if (typeStr === "token_count" || typeStr === "usage") {
       const usage =
         (payload.usage as Record<string, unknown> | undefined) ??
@@ -619,8 +629,78 @@ export class OpenAICodexProvider implements ProviderHandler {
         (usage?.output_tokens as number | undefined) ??
         (usage?.completion_tokens as number | undefined) ??
         0;
+      const reasoning =
+        (usage?.reasoning_tokens as number | undefined) ??
+        (usage?.reasoning as number | undefined) ??
+        0;
+      const cachedInput =
+        (usage?.cached_input_tokens as number | undefined) ??
+        (usage?.cache_read_input_tokens as number | undefined) ??
+        0;
       if (typeof input === "number") this.lastInputTokens = input;
       if (typeof output === "number") this.lastOutputTokens = output;
+      if (typeof reasoning === "number") this.lastReasoningTokens = reasoning;
+      if (typeof cachedInput === "number") this.lastCachedInputTokens = cachedInput;
+      // Live mid-stream HUD: emit a turn_summary every time tokens update so
+      // SessionHealthBar / CostDashboard reflect Codex spend in real time
+      // (matching what the Anthropic provider does).
+      emit({
+        type: "turn_summary",
+        sessionId,
+        inputTokens: this.lastInputTokens,
+        outputTokens: this.lastOutputTokens,
+        cacheReadInputTokens: this.lastCachedInputTokens,
+        reasoningTokens: this.lastReasoningTokens,
+      });
+      return;
+    }
+
+    // A1 — Codex `todo_list` item: the structural twin of Anthropic's
+    // TodoWrite. Reuse the existing `plan_block` event so PlanPanel works
+    // for Codex without any frontend change. Item shape:
+    //   { type: "item.started" | "item.updated" | "item.completed",
+    //     item: { type: "todo_list", items: [{ text, completed }] } }
+    if (
+      typeStr === "item.started" ||
+      typeStr === "item.updated" ||
+      typeStr === "item.completed"
+    ) {
+      const item = (payload.item ?? envelope.item) as
+        | Record<string, unknown>
+        | undefined;
+      if (item && pickString(item, "type") === "todo_list") {
+        const rawItems = item.items;
+        if (Array.isArray(rawItems)) {
+          const items = rawItems
+            .filter(
+              (r): r is Record<string, unknown> =>
+                r != null && typeof r === "object",
+            )
+            .map((r) => {
+              const text =
+                pickString(r, "text", "title", "content") ?? "";
+              const completed = Boolean(
+                r.completed ?? r.done ?? r.status === "completed",
+              );
+              return {
+                content: text,
+                status: (completed
+                  ? "completed"
+                  : pickString(r, "status") === "in_progress"
+                    ? "in_progress"
+                    : "pending") as
+                  | "completed"
+                  | "in_progress"
+                  | "pending",
+              };
+            })
+            .filter((p) => p.content.length > 0);
+          if (items.length > 0) {
+            emit({ type: "plan_block", sessionId, items });
+          }
+        }
+      }
+      // todo_list aside, item.* events are otherwise noise — fall through.
       return;
     }
 

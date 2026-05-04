@@ -36,8 +36,20 @@ function lookupRates(model: string | undefined): { input: number; output: number
 }
 
 /**
- * Sum input + output tokens across all messages in a conversation and
- * estimate the total USD cost from the model's lookup-table rates.
+ * Cached input is billed at a discount on every provider that surfaces it —
+ * Anthropic ~10% of input, OpenAI ~50%. 0.25 is the conservative midpoint
+ * that keeps PacketADE's inline pill from over-stating cost on cache-heavy
+ * Codex turns. The Tauri-side `calculate_turn_cost` command does the
+ * provider-specific math when accuracy matters.
+ */
+const CACHED_INPUT_RATE_RATIO = 0.25;
+
+/**
+ * Sum input + output (+ reasoning) tokens across all messages in a
+ * conversation and estimate the total USD cost from the model's lookup-table
+ * rates. Reasoning tokens are billed at the OUTPUT rate by every provider
+ * that exposes them (OpenAI o-series, Codex). Cached input is billed at
+ * `CACHED_INPUT_RATE_RATIO` × input rate.
  *
  * Returns `{ totalTokens, estCost }`. `estCost` is `null` when the model
  * is unknown (so callers can hide the pill).
@@ -46,15 +58,26 @@ export function aggregateConversationCost(
   conv: AgentConversation,
 ): { totalTokens: number; estCost: number | null } {
   let totalIn = 0;
+  let totalCachedIn = 0;
   let totalOut = 0;
+  let totalReasoning = 0;
   for (const m of conv.messages ?? []) {
     if (m.inputTokens) totalIn += m.inputTokens;
+    if (m.cacheReadTokens) totalCachedIn += m.cacheReadTokens;
     if (m.outputTokens) totalOut += m.outputTokens;
+    if (m.reasoningTokens) totalReasoning += m.reasoningTokens;
   }
-  const totalTokens = totalIn + totalOut;
+  // Don't double-count cached: input rate applies only to NEW input tokens
+  // (input − cached), then cached pays its discounted rate on top.
+  const newInputTokens = Math.max(0, totalIn - totalCachedIn);
+  const totalTokens = totalIn + totalOut + totalReasoning;
   const rates = lookupRates(conv.model);
   if (!rates) return { totalTokens, estCost: null };
-  const estCost = (totalIn * rates.input) / 1_000_000 + (totalOut * rates.output) / 1_000_000;
+  const estCost =
+    (newInputTokens * rates.input) / 1_000_000 +
+    (totalCachedIn * rates.input * CACHED_INPUT_RATE_RATIO) / 1_000_000 +
+    (totalOut * rates.output) / 1_000_000 +
+    (totalReasoning * rates.output) / 1_000_000;
   return { totalTokens, estCost };
 }
 

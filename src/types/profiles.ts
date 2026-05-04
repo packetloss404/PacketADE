@@ -23,6 +23,12 @@ export interface AgentProfile {
   permissionMode: PermissionMode;
   /** Plan-mode-on-start: if true, conversation begins in plan/read-only mode. */
   planMode: boolean;
+  /** B9: when set, every launch using this profile uses this exact model id
+   * regardless of what the launcher's model dropdown last selected. Useful
+   * for pinning to known-good older models (e.g. `claude-sonnet-4-6`,
+   * `gpt-4o`) when a newer default has regressed. Null/undefined = no pin
+   * (launcher selection wins). */
+  pinnedModel?: string | null;
   /** True for built-in profiles (cannot be deleted; can be cloned-and-edited). */
   isBuiltin: boolean;
   createdAt: number;

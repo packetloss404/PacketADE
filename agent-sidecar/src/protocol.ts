@@ -184,6 +184,9 @@ export type SidecarEvent =
       outputTokens: number;
       cacheReadInputTokens?: number;
       cacheCreationInputTokens?: number;
+      /** Reasoning tokens (Codex 0.125+ exposes `usage.reasoning_tokens`,
+       * OpenAI o-series). Billed at the OUTPUT rate. */
+      reasoningTokens?: number;
     };
 
 export type Emit = (event: SidecarEvent) => void;

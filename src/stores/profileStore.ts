@@ -104,7 +104,7 @@ interface ProfileStore {
       | "memoryContextEnabled"
       | "permissionMode"
       | "planMode"
-    >,
+    > & { pinnedModel?: string | null },
   ) => string;
   updateProfile: (
     id: string,
@@ -118,6 +118,7 @@ interface ProfileStore {
         | "memoryContextEnabled"
         | "permissionMode"
         | "planMode"
+        | "pinnedModel"
       >
     >,
   ) => void;
@@ -167,6 +168,7 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
       memoryContextEnabled: input.memoryContextEnabled,
       permissionMode: input.permissionMode,
       planMode: input.planMode,
+      pinnedModel: input.pinnedModel ?? null,
       isBuiltin: false,
       createdAt: now,
       updatedAt: now,
@@ -210,6 +212,7 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
       memoryContextEnabled: src.memoryContextEnabled,
       permissionMode: src.permissionMode,
       planMode: src.planMode,
+      pinnedModel: src.pinnedModel ?? null,
     });
   },
 }));

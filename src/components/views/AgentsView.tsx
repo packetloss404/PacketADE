@@ -139,8 +139,6 @@ export function AgentsView() {
       if (!text) return;
       if (!selectedRepo) return;
 
-      const model = selectedModel || getDefaultModel(selectedAgent);
-
       // Profile contributes the system prompt + tool whitelist + memory flag.
       // Mode (the four launcher buttons) wins for plan/permission posture so
       // users can override a profile's defaults per-launch.
@@ -149,6 +147,14 @@ export function AgentsView() {
         profile && profile.systemPrompt.length > 0 ? profile.systemPrompt : null;
       const allowedTools: string[] | null = profile?.allowedTools ?? null;
       const memoryContextEnabled = profile?.memoryContextEnabled ?? false;
+
+      // B9: profile.pinnedModel overrides the launcher selection so the
+      // launcher's auto-pick or default doesn't silently switch a known-
+      // good model out from under a Reviewer / Scout / pinned profile.
+      const model =
+        profile?.pinnedModel ||
+        selectedModel ||
+        getDefaultModel(selectedAgent);
 
       // Mode → planMode + post-create permissionMode (mode overrides profile).
       const planMode = agentMode === "ask" || agentMode === "plan";
