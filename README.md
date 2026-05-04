@@ -62,6 +62,15 @@ The Agents pane is the front door. One composer, two backends (in-process Rust +
 - **Auto-failover on rate-limit**: 429 / quota / overload errors trigger a same-provider fallback (Opus → Sonnet → Haiku, o3 → gpt-5 → o4-mini, MiniMax → highspeed) before surfacing the failure
 - **Worktree-per-conversation** (opt-in toggle, local projects): provisions `.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch so the conversation's tool calls don't touch the main checkout
 - **Backgroundable agent tray** in the toolbar showing a live count of streaming agents with click-to-jump and stop
+- **Live spend HUD chip** in the toolbar combining today's persisted total + in-memory session $ across every open API conversation; click jumps to the Cost Dashboard
+- **Hover-`+` Codex-App-style diff comments**: per-line `+` button in the diff view opens an inline composer; queued comments fold into the next user turn as a `File comments:` preamble
+- **Composer-mode segmented control** (Local / Worktree / Cloud) at "send" time picks where the conversation runs; local + worktree wired today, cloud reserved for future delegation
+- **Right-rail tabbed mode** with Plan / Diff / Inspector tabs in a single 340 px column — lighter alternative to the full mosaic split for smaller screens; persisted toggle
+- **Smart-approval prefix proposals**: permission prompts compute a sensible allowlist rule (e.g. `Bash(git push:*)`) and let you accept it with one click — closes the "approval fatigue" footgun
+- **Cross-tool unified Project Rules editor** in `Settings → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save so a single rule set works for both Claude Code and Codex
+- **Persistent goals bridged to Missions** via `/goal` — promote a conversation's checklist into a goal that survives the conversation closing; Pause / Resume / Complete from the PlanPanel; goal count surfaces in MissionsView
+- **Plan-with-Claude → Execute-with-Codex** one-click handoff: PlanPanel "Hand off to Codex →" button spawns a fresh Codex conversation seeded with the distilled spec + plan; "← back to plan" link in the child's chat header
+- **Old-model pinning** per profile via the `pinnedModel` field — locks a known-good model so future provider auto-upgrades don't silently switch away
 - **Auto-resume across restarts**: hydrated conversations capture the provider's resume token and lazily re-establish the session on next send
 - **Onboarding overlay** on first visit explaining the four affordances; one-time, persisted in localStorage
 
@@ -203,6 +212,8 @@ The sidecar work is complete across the original four v2 tiers and the v3 / v4 p
 - **Refresh-token aware expiry:** `provider_auth` now treats expired access tokens as `ready` when a refresh token is present, avoiding spurious "please log in" prompts for subscription users whose SDK / CLI would have refreshed on next use anyway.
 - **v3 — Protocol additions for the Agents pane:** typed image attachments on `start_session` / `send_message`; `mergedContent` on `edit_response` (per-hunk acceptance); `batchId`/`batchSize` on `permission_request`; `resumeToken` on `done`; new `plan_block` event mirroring `TodoWrite`; `tool_output_extended` event with Bash exit code + stdout/stderr + Write/Edit modified paths; `turn_summary` event for live mid-stream token totals.
 - **v4 — `cancel_pending_tools`:** drains parked permission/edit prompts as denied without aborting the SDK query, so the model receives synthetic "User cancelled this tool" results and the loop continues.
+- **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so CostDashboard reports GPT-5.5 spend correctly; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
+- **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.
 - See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`docs/updater-setup.md`](./docs/updater-setup.md) for signing / release channel configuration.
 
 ### Multi-platform builds
