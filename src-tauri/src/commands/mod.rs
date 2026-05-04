@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod agent_sidecar;
+pub mod agents_md;
 pub mod analytics;
 pub mod auth_watcher;
 pub mod api_agent;

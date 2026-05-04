@@ -212,6 +212,11 @@ struct TurnSummaryPayload {
     /// Billed at the OUTPUT rate everywhere it appears.
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning_tokens: Option<u64>,
+    /// A3: Codex MultiAgentV2 sub-agent path (`/root/agent_a` etc.). When
+    /// present, the frontend attributes these tokens to a per-address
+    /// bucket on the conversation instead of the root totals.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    address: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1331,6 +1336,11 @@ impl SidecarManager {
                 let reasoning_tokens = value
                     .get("reasoningTokens")
                     .and_then(|v| v.as_u64());
+                let address = value
+                    .get("address")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
                 let _ = self.app_handle.emit(
                     &turn_summary_event(&session_id),
                     TurnSummaryPayload {
@@ -1339,6 +1349,7 @@ impl SidecarManager {
                         cache_read_input_tokens,
                         cache_creation_input_tokens,
                         reasoning_tokens,
+                        address,
                     },
                 );
             }

@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod agent_config;
+pub mod agents_md;
 pub mod brand;
 pub mod migration;
 pub mod error_classifier;

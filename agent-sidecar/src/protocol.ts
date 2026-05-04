@@ -187,6 +187,12 @@ export type SidecarEvent =
       /** Reasoning tokens (Codex 0.125+ exposes `usage.reasoning_tokens`,
        * OpenAI o-series). Billed at the OUTPUT rate. */
       reasoningTokens?: number;
+      /** A3: Codex MultiAgentV2 sub-agent path address (e.g. `/root/agent_a`).
+       * When present, the host attributes these tokens to a per-address
+       * bucket on the conversation instead of accumulating to the root —
+       * otherwise multi-agent flights would inflate the root's totals by
+       * the children's spend. Empty/absent = root thread. */
+      address?: string;
     };
 
 export type Emit = (event: SidecarEvent) => void;

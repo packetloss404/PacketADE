@@ -13,6 +13,7 @@ import {
   History,
   BookText,
   ShieldCheck,
+  Target,
 } from "lucide-react";
 import { InputPopover, type InputPopoverItem } from "./InputPopover";
 import { TEMPLATE_SOURCE_TAG } from "./slashCommandConstants";
@@ -28,7 +29,8 @@ export type BuiltinSlashCommand =
   | "compact"
   | "usage"
   | "history"
-  | "review";
+  | "review"
+  | "goal";
 
 export type SlashSelection =
   | { kind: "builtin"; name: BuiltinSlashCommand }
@@ -81,6 +83,12 @@ const BUILTINS: BuiltinDef[] = [
     label: "/review",
     description: "Spawn a Reviewer subagent on the current staged diff",
     icon: <ShieldCheck size={12} />,
+  },
+  {
+    cmd: "goal",
+    label: "/goal",
+    description: "Persist this conversation's plan as a resumable goal",
+    icon: <Target size={12} />,
   },
   {
     cmd: "usage",

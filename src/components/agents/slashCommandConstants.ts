@@ -11,6 +11,7 @@ export const BUILTIN_SLASH_NAMES: BuiltinSlashCommand[] = [
   "model",
   "compact",
   "review",
+  "goal",
   "usage",
   "history",
   "clear",

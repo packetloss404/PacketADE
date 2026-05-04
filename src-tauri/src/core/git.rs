@@ -58,6 +58,14 @@ fn git_command_result(args: &[&str], cwd: &str) -> Result<String, String> {
     }
 }
 
+/// A4: discover the git repo root containing `cwd`. Used by the
+/// AGENTS.md cascading resolver to walk root → cwd. Returns `Err` when
+/// `cwd` is not inside a git working tree (the caller falls back to
+/// treating `cwd` as the only directory).
+pub fn get_toplevel(cwd: &str) -> Result<String, String> {
+    git_command_result(&["rev-parse", "--show-toplevel"], cwd)
+}
+
 pub fn get_branch(project_path: &str) -> Result<String, String> {
     git_command_result(&["rev-parse", "--abbrev-ref", "HEAD"], project_path)
         .map_err(|_| "Not a git repository or git not found".to_string())

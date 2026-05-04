@@ -21,7 +21,11 @@ import {
 } from "@/lib/tauri";
 import { generateId } from "@/lib/storage";
 import { isSshUri, parseSshTargetId } from "@/types/ssh";
-import type { AgentMode } from "@/components/agents/AgentInputArea";
+import type {
+  AgentMode,
+  ComposerMode,
+} from "@/components/agents/AgentInputArea";
+import { storageKey } from "@/lib/brand";
 
 /**
  * Preference order for the initial auto-picked agent on a fresh Agents pane.
@@ -58,7 +62,28 @@ export function AgentsView() {
   const getProfile = useProfileStore((s) => s.getProfile);
   const [selectedProfileId, setSelectedProfileId] =
     useState<string>(defaultProfileId);
-  const [worktreeEnabled, setWorktreeEnabled] = useState<boolean>(false);
+  // B2: Codex-App-style Local / Worktree / Cloud picker. Persists in
+  // localStorage so users don't re-pick on every launch. Lazy initializer
+  // keeps SSR safe (the `typeof localStorage` guard) and falls back to
+  // "local" on missing/invalid persisted value.
+  const [composerMode, setComposerMode] = useState<ComposerMode>(() => {
+    if (typeof localStorage === "undefined") return "local";
+    try {
+      const raw = localStorage.getItem(storageKey("composer-mode"));
+      if (raw === "local" || raw === "worktree" || raw === "cloud") return raw;
+    } catch {
+      // ignore
+    }
+    return "local";
+  });
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(storageKey("composer-mode"), composerMode);
+    } catch {
+      // ignore
+    }
+  }, [composerMode]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const autoPickRanRef = useRef(false);
 
@@ -209,7 +234,7 @@ export function AgentsView() {
           // the worktree so its tool calls don't touch the main checkout.
           let effectiveProjectPath = selectedRepo;
           let explicitConvId: string | undefined;
-          if (worktreeEnabled) {
+          if (composerMode === "worktree") {
             const provisionalConvId = generateId("conv");
             try {
               const branch = await getGitBranch(selectedRepo).catch(() => "");
@@ -280,7 +305,7 @@ export function AgentsView() {
       agentMode,
       selectedProfileId,
       getProfile,
-      worktreeEnabled,
+      composerMode,
     ],
   );
 
@@ -319,8 +344,8 @@ export function AgentsView() {
           onAgentModeChange={setAgentMode}
           selectedProfileId={selectedProfileId}
           onProfileChange={setSelectedProfileId}
-          worktreeEnabled={worktreeEnabled}
-          onWorktreeChange={setWorktreeEnabled}
+          composerMode={composerMode}
+          onComposerModeChange={setComposerMode}
         />
       )}
 
