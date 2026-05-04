@@ -137,6 +137,7 @@ pub fn run() {
             commands::git::git_safety_check,
             commands::git::create_conversation_worktree,
             commands::git::remove_conversation_worktree,
+            commands::agents_md::resolve_agents_md,
             // Code quality
             commands::code_quality::analyze_code_quality,
             // Crash reports

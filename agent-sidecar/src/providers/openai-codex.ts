@@ -257,11 +257,19 @@ export class OpenAICodexProvider implements ProviderHandler {
   /** Last-seen token counts from the most recent token_count event.
    * `reasoning` and `cachedInput` were added in Codex CLI 0.125 (Apr 2026)
    * — capturing them lets PacketADE's CostDashboard report GPT-5.5 spend
-   * accurately (otherwise we under-report by the reasoning slice). */
+   * accurately (otherwise we under-report by the reasoning slice).
+   * A3 keyed-by-address: empty string = root thread, `/root/agent_a` =
+   * MultiAgentV2 sub-agent. Without per-address tracking we'd inflate the
+   * root's totals by every sub-agent's spend. */
+  private tokensByAddress = new Map<
+    string,
+    { input: number; output: number; reasoning: number; cachedInput: number }
+  >();
+  /** Mirror of the root entry, kept for the legacy `done` payload contract
+   * which only carries inputTokens/outputTokens (sub-agent rollup happens
+   * frontend-side via per-address turn_summary events). */
   private lastInputTokens = 0;
   private lastOutputTokens = 0;
-  private lastReasoningTokens = 0;
-  private lastCachedInputTokens = 0;
   /**
    * Effective model for the *next* spawn. Seeded from `req.model` on start,
    * overridable mid-session via the protocol v2 `set_model` request. Codex
@@ -637,20 +645,56 @@ export class OpenAICodexProvider implements ProviderHandler {
         (usage?.cached_input_tokens as number | undefined) ??
         (usage?.cache_read_input_tokens as number | undefined) ??
         0;
-      if (typeof input === "number") this.lastInputTokens = input;
-      if (typeof output === "number") this.lastOutputTokens = output;
-      if (typeof reasoning === "number") this.lastReasoningTokens = reasoning;
-      if (typeof cachedInput === "number") this.lastCachedInputTokens = cachedInput;
+
+      // A3: extract the sub-agent address. Codex CLI's exact field name
+      // isn't guaranteed across versions, so check several known shapes.
+      // Empty string = root thread (legacy behavior preserved).
+      const address =
+        pickString(envelope, "thread_address", "agent_path", "address") ??
+        pickString(payload, "thread_address", "agent_path", "address") ??
+        "";
+
+      const bucket = this.tokensByAddress.get(address) ?? {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cachedInput: 0,
+      };
+      // Codex emits cumulative running totals — replace, not accumulate.
+      bucket.input = typeof input === "number" ? input : bucket.input;
+      bucket.output = typeof output === "number" ? output : bucket.output;
+      bucket.reasoning =
+        typeof reasoning === "number" ? reasoning : bucket.reasoning;
+      bucket.cachedInput =
+        typeof cachedInput === "number" ? cachedInput : bucket.cachedInput;
+      this.tokensByAddress.set(address, bucket);
+
+      // Mirror root totals into the legacy scalars so the `done` payload
+      // (which doesn't carry sub-agent breakdown) stays accurate for the
+      // root thread. Sub-agent totals never touch the legacy scalars.
+      if (address === "") {
+        this.lastInputTokens = bucket.input;
+        this.lastOutputTokens = bucket.output;
+      } else {
+        // Trace once per never-seen address so the prompt's "verify Codex
+        // field name" risk shows up loudly in the sidecar log.
+        process.stderr.write(
+          `[sidecar:codex] sub-agent token attribution: ${address}\n`,
+        );
+      }
+
       // Live mid-stream HUD: emit a turn_summary every time tokens update so
       // SessionHealthBar / CostDashboard reflect Codex spend in real time
-      // (matching what the Anthropic provider does).
+      // (matching what the Anthropic provider does). Per-address, so the
+      // frontend can attribute correctly.
       emit({
         type: "turn_summary",
         sessionId,
-        inputTokens: this.lastInputTokens,
-        outputTokens: this.lastOutputTokens,
-        cacheReadInputTokens: this.lastCachedInputTokens,
-        reasoningTokens: this.lastReasoningTokens,
+        inputTokens: bucket.input,
+        outputTokens: bucket.output,
+        cacheReadInputTokens: bucket.cachedInput,
+        reasoningTokens: bucket.reasoning,
+        address: address.length > 0 ? address : undefined,
       });
       return;
     }

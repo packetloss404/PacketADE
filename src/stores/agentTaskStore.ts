@@ -259,6 +259,10 @@ interface AgentTaskStore {
    * resolves the in-flight prompt so subsequent same-pattern tool calls
    * skip the prompt entirely. */
   appendAllowedToolPattern: (id: string, pattern: string) => void;
+  /** B8: tag a child conversation with its parent's id so the chat
+   * header can show a "← back to plan" link. Idempotent — calling
+   * twice with the same parent is a no-op. */
+  setParentConversation: (childId: string, parentId: string) => void;
   /** B1: queue a hover-`+` diff comment. Folded into the NEXT user
    * sendMessage as a "File comments:" preamble, then cleared. */
   addDiffComment: (
@@ -625,18 +629,38 @@ async function installApiAgentListeners(
   // message's tokens so SessionHealthBar / cost pills reflect mid-stream
   // usage instead of waiting for the final `done` payload. A2: also
   // forward `reasoning_tokens` (Codex 0.125+) so CostDashboard accounts
-  // for GPT-5.5's reasoning slice.
+  // for GPT-5.5's reasoning slice. A3: when `address` is set (Codex
+  // MultiAgentV2 sub-agent), accumulate into a per-address bucket on
+  // the conversation INSTEAD of mutating the streaming message — the
+  // root thread's tokens belong to the user-visible turn; sub-agent
+  // tokens are an additive cost we surface only via aggregateConversationCost.
   const turnSummaryUnlisten = await listen<{
     input_tokens: number;
     output_tokens: number;
     cache_read_input_tokens: number;
     cache_creation_input_tokens: number;
     reasoning_tokens?: number | null;
+    address?: string | null;
   }>(apiAgentTurnSummaryEvent(id), (event) => {
+    const address = event.payload.address ?? "";
     let updated: AgentConversation | undefined;
     set((s) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
+        if (address.length > 0) {
+          // Sub-agent: replace the bucket (Codex emits cumulative totals).
+          const buckets = { ...(c.subAgentTokens ?? {}) };
+          buckets[address] = {
+            inputTokens: event.payload.input_tokens,
+            outputTokens: event.payload.output_tokens,
+            reasoningTokens: event.payload.reasoning_tokens ?? 0,
+            cacheReadTokens: event.payload.cache_read_input_tokens,
+          };
+          const next = { ...c, subAgentTokens: buckets, updatedAt: Date.now() };
+          updated = next;
+          return next;
+        }
+        // Root thread: mutate the streaming message as before.
         const messages = c.messages.map((m) =>
           m.isStreaming && m.role === "assistant"
             ? {
@@ -944,7 +968,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       const agentsMd = await loadAgentsMd(projectPath);
       if (agentsMd) {
         const base = effectiveSystemPrompt ?? "";
-        effectiveSystemPrompt = `## Project guidance (from AGENTS.md / CLAUDE.md)\n\n${agentsMd}\n\n---\n\n${base}`;
+        effectiveSystemPrompt = `## Project guidance (from AGENTS.md cascade)\n\n${agentsMd}\n\n---\n\n${base}`;
       }
     } catch {
       // Best-effort; absent file is the common case.
@@ -1520,6 +1544,24 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       id,
       "Plan approved. Execute step-by-step, marking TodoWrite items as you complete them.",
     );
+  },
+
+  setParentConversation: (childId, parentId) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== childId) return c;
+        if (c.parentConversationId === parentId) return c;
+        const next: AgentConversation = {
+          ...c,
+          parentConversationId: parentId,
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
   },
 
   addDiffComment: (id, comment) => {

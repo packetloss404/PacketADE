@@ -17,6 +17,7 @@ import {
   MoreVertical,
   Server,
   PanelRightOpen,
+  Columns2,
   Sparkles,
 } from "lucide-react";
 import { PermissionPrompt } from "./PermissionPrompt";
@@ -51,6 +52,8 @@ import { SubagentToolCallCard } from "./SubagentToolCallCard";
 import { TaskListCard } from "./TaskListCard";
 import { ContinueInMenu } from "./ContinueInMenu";
 import { AgentMosaicShell } from "./AgentMosaicShell";
+import { AgentTabbedRail } from "./AgentTabbedRail";
+import { storageKey } from "@/lib/brand";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
 import { SessionHealthBar } from "./SessionHealthBar";
 import { PlanPanel } from "./PlanPanel";
@@ -78,6 +81,8 @@ import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useProfileStore } from "@/stores/profileStore";
+import { useGoalStore } from "@/stores/goalStore";
+import { useFlightStore } from "@/stores/flightStore";
 import { buildReviewPrompt } from "@/lib/conversationReview";
 import type {
   AgentConversation,
@@ -122,6 +127,30 @@ const HELP_CHEATSHEET =
 interface AgentChatPaneProps {
   conversationId: string;
   onClose: () => void;
+}
+
+/**
+ * B8 — small "← back to plan" link shown in the chat header when this
+ * conversation was spawned by a Codex handoff. Resolves the parent name
+ * lazily from the store; renders nothing if the parent has been deleted
+ * (cleanup is automatic — no dangling link).
+ */
+function BackToParentLink({ parentId }: { parentId: string }) {
+  const parent = useAgentTaskStore((s) =>
+    s.conversations.find((c) => c.id === parentId),
+  );
+  const selectConversation = useAgentTaskStore((s) => s.selectConversation);
+  if (!parent) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => selectConversation(parentId)}
+      title={`Spawned via "Hand off to Codex" from "${parent.title}"`}
+      className="flex items-center gap-1 text-[10px] text-text-muted hover:text-accent-blue bg-bg-secondary border border-bg-border rounded px-1.5 py-0.5 transition-colors"
+    >
+      ← back to plan
+    </button>
+  );
 }
 
 type MentionState =
@@ -196,6 +225,27 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const exportConversation = useAgentTaskStore((s) => s.exportConversation);
   const previewOpen = usePreviewPaneStore((s) => s.open);
   const togglePreview = usePreviewPaneStore((s) => s.toggle);
+  // B4 — compact tabbed rail toggle (Plan / Diff / Inspector in one
+  // 340px column). Persisted in localStorage; off by default.
+  const [useCompactRail, setUseCompactRail] = useState<boolean>(() => {
+    if (typeof localStorage === "undefined") return false;
+    try {
+      return localStorage.getItem(storageKey("agent-tabbed-rail-mode")) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(
+        storageKey("agent-tabbed-rail-mode"),
+        useCompactRail ? "1" : "0",
+      );
+    } catch {
+      // ignore
+    }
+  }, [useCompactRail]);
   const openMarkdownPreview = usePreviewPaneStore((s) => s.openMarkdown);
   const openPlanPreview = usePreviewPaneStore((s) => s.openPlan);
   const promptTemplates = usePromptStore((s) => s.templates);
@@ -650,6 +700,65 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       return;
     }
 
+    if (cmd === "goal") {
+      // B5 — promote this conversation's checklist into a persistent
+      // goal that survives the conversation closing. If a goal already
+      // exists for this conversation, no-op (one goal per conversation
+      // for v1).
+      setInput(remaining);
+      setMentionState({ kind: "none" });
+      const conv = conversation;
+      if (!conv) return;
+      const existing = useGoalStore
+        .getState()
+        .getGoalForConversation(conversationId);
+      if (existing) {
+        const noteMsg: AgentMessage = {
+          id: generateId("msg"),
+          role: "system",
+          content: `(/goal — already bound to goal "${existing.title}")`,
+          timestamp: Date.now(),
+        };
+        useAgentTaskStore.setState((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === conversationId
+              ? { ...c, messages: [...c.messages, noteMsg], updatedAt: Date.now() }
+              : c,
+          ),
+        }));
+        return;
+      }
+      const title =
+        (conv.plan && conv.plan[0]?.content) ||
+        (conv.spec?.criteria[0]) ||
+        conv.title ||
+        "Untitled goal";
+      const linkedFlight = useFlightStore
+        .getState()
+        .flights.find((f) => f.linkedSessionIds.includes(conversationId));
+      useGoalStore.getState().addGoal({
+        title,
+        conversationId,
+        missionId: linkedFlight?.id,
+        checklist: conv.plan ?? [],
+        status: "active",
+      });
+      const okMsg: AgentMessage = {
+        id: generateId("msg"),
+        role: "system",
+        content: `(/goal — created persistent goal "${title}"${linkedFlight ? ` bound to mission "${linkedFlight.title}"` : ""})`,
+        timestamp: Date.now(),
+      };
+      useAgentTaskStore.setState((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === conversationId
+            ? { ...c, messages: [...c.messages, okMsg], updatedAt: Date.now() }
+            : c,
+        ),
+      }));
+      return;
+    }
+
     if (cmd === "review") {
       // Spawn a Reviewer subagent fed the current conversation's staged
       // diffs. The reviewer gets a fresh conversation (so its findings stay
@@ -966,6 +1075,13 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
               conversationId={conversationId}
               agent={conversation.agent}
             />
+            {/* B8: when this conversation was spawned by a "Hand off to
+                Codex" action, show a back-link to the parent. Click
+                jumps; silently absent when the parent has been
+                deleted. */}
+            {conversation.parentConversationId && (
+              <BackToParentLink parentId={conversation.parentConversationId} />
+            )}
           </div>
           <span
             className="text-[10.5px] text-text-secondary truncate"
@@ -1183,6 +1299,26 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           aria-label={previewOpen ? "Collapse preview pane" : "Open preview pane"}
         >
           <PanelRightOpen size={12} />
+        </button>
+
+        {/* B4 — toggle the compact tabbed right rail (Plan / Diff /
+            Inspector in a single column) on/off. Persisted. */}
+        <button
+          type="button"
+          onClick={() => setUseCompactRail((v) => !v)}
+          className={`p-0.5 rounded transition-colors ${
+            useCompactRail
+              ? "text-accent-blue bg-accent-blue/10"
+              : "text-text-muted hover:text-text-primary"
+          }`}
+          title={
+            useCompactRail
+              ? "Hide compact tabbed rail"
+              : "Show compact tabbed rail (Plan / Diff / Inspector)"
+          }
+          aria-label="Toggle compact tabbed rail"
+        >
+          <Columns2 size={12} />
         </button>
 
         {/* Split menu (open diff/terminal/file panes inside this conversation) */}
@@ -1504,6 +1640,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         />
       </div>
       {previewOpen && <AgentPreviewPane projectPath={conversation.projectPath} />}
+      {useCompactRail && <AgentTabbedRail conversationId={conversationId} />}
       {showRewind && (
         <div className="w-72 shrink-0 border-l border-bg-border">
           <CheckpointPanel

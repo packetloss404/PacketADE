@@ -200,6 +200,17 @@ export async function removeConversationWorktree(
   return invoke("remove_conversation_worktree", { projectPath, convId });
 }
 
+/**
+ * A4: resolve the AGENTS.md / CLAUDE.md cascade for `cwd`. Walks
+ * `~/.claude/AGENTS{.override,}.md` → git-root → cwd, picks one of
+ * `AGENTS.override.md` / `AGENTS.md` / `CLAUDE.md` per directory,
+ * concatenates root → leaf with source-attribution headers, caps at
+ * 32 KiB. Returns null when nothing was found anywhere.
+ */
+export async function resolveAgentsMd(cwd: string): Promise<string | null> {
+  return invoke<string | null>("resolve_agents_md", { cwd });
+}
+
 export async function readStatusLineStates(): Promise<StatusLineData[]> {
   return invoke<StatusLineData[]>("read_statusline_states");
 }

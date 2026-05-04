@@ -175,4 +175,24 @@ export interface AgentConversation {
    * Folded into the next user turn as a "File comments:" preamble and
    * cleared on send (or via the chip-strip "Clear" action). */
   pendingDiffComments?: DiffComment[];
+  /** B8: when this conversation was spawned by a "Hand off to Codex"
+   * action from another conversation, the parent's id. Drives the
+   * "← back to plan" link in the chat header. Undefined for normal
+   * standalone conversations. */
+  parentConversationId?: string;
+  /** A3: Codex MultiAgentV2 sub-agent token totals, keyed by path
+   * (`/root/agent_a` etc.). Updated on every turn_summary event whose
+   * address is non-empty; empty/absent address still mutates the root
+   * via the streaming message's tokens. CostDashboard sums these into
+   * the conversation total so multi-agent flights don't under- or
+   * over-count. */
+  subAgentTokens?: Record<
+    string,
+    {
+      inputTokens: number;
+      outputTokens: number;
+      reasoningTokens: number;
+      cacheReadTokens: number;
+    }
+  >;
 }

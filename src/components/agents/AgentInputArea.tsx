@@ -13,6 +13,7 @@ import {
   Layers,
   User,
   GitBranch,
+  Cloud,
   Send,
   Loader2,
   AlertCircle,
@@ -59,6 +60,13 @@ import {
 
 /** Cursor-style launch modes. */
 export type AgentMode = "agent" | "ask" | "manual" | "plan";
+
+/** B2: Codex-App-style 3-way "where does the agent run" picker. `local`
+ * is the default — no worktree, edits land in the project tree. `worktree`
+ * provisions `.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch
+ * (T3.F). `cloud` is reserved for future cloud delegation; greyed-out
+ * for now. The choice persists in localStorage so users don't re-pick. */
+export type ComposerMode = "local" | "worktree" | "cloud";
 
 const MODE_META: Record<AgentMode, { label: string; description: string; icon: React.ComponentType<{ size?: number; className?: string }>; color: string }> = {
   agent: {
@@ -116,11 +124,12 @@ interface AgentInputAreaProps {
   onAgentModeChange?: (mode: AgentMode) => void;
   selectedProfileId?: string;
   onProfileChange?: (id: string) => void;
-  /** T3.F: when true, handleLaunch creates a git worktree at
-   * `<projectPath>/.pkt-worktrees/<convId>` and points the conversation at
-   * it. Local projects only (SSH still uses the remote path verbatim). */
-  worktreeEnabled?: boolean;
-  onWorktreeChange?: (enabled: boolean) => void;
+  /** B2: Codex-App-style Local / Worktree / Cloud picker. Replaces the
+   * pre-B2 binary `worktreeEnabled` toggle. Cloud is greyed-out until
+   * cloud delegation is wired. Local projects only (SSH hides the
+   * picker entirely — SSH targets always run remote). */
+  composerMode?: ComposerMode;
+  onComposerModeChange?: (mode: ComposerMode) => void;
 }
 
 /**
@@ -179,8 +188,8 @@ export function AgentInputArea({
   onAgentModeChange,
   selectedProfileId,
   onProfileChange,
-  worktreeEnabled = false,
-  onWorktreeChange,
+  composerMode = "local",
+  onComposerModeChange,
 }: AgentInputAreaProps) {
   const profiles = useProfileStore((s) => s.profiles);
   const defaultProfileId = useProfileStore((s) => s.defaultProfileId);
@@ -903,28 +912,67 @@ export function AgentInputArea({
                 ))}
               </Dropdown>
 
-              {/* Worktree toggle — when on, the conversation runs inside a
-                  fresh git worktree at .pkt-worktrees/<convId>. Local-only;
-                  SSH targets ignore the flag (they have their own remote
-                  worktree workflow via Flights). */}
+              {/* B2: Codex-App-style Local / Worktree / Cloud picker.
+                  Hidden for SSH targets (always run remote, picker
+                  doesn't apply). Cloud is greyed-out — no cloud
+                  delegation surface yet, but the slot teaches the
+                  mental model and reserves the affordance. */}
               {selectedRepo && !isSshUri(selectedRepo) && (
-                <button
-                  type="button"
-                  onClick={() => onWorktreeChange?.(!worktreeEnabled)}
-                  title={
-                    worktreeEnabled
-                      ? "Worktree ON — conversation runs on a fresh branch in .pkt-worktrees/"
-                      : "Worktree OFF — conversation edits the project tree directly"
-                  }
-                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
-                    worktreeEnabled
-                      ? "border-accent-purple/40 text-accent-purple bg-accent-purple/10"
-                      : "border-bg-border text-text-muted hover:text-text-primary"
-                  }`}
+                <div
+                  className="inline-flex rounded border border-bg-border overflow-hidden"
+                  title="Where this conversation runs"
                 >
-                  <GitBranch size={10} />
-                  Worktree
-                </button>
+                  {(
+                    [
+                      {
+                        mode: "local" as const,
+                        icon: Folder,
+                        label: "Local",
+                        title: "Local — edits land in the project tree",
+                      },
+                      {
+                        mode: "worktree" as const,
+                        icon: GitBranch,
+                        label: "Worktree",
+                        title:
+                          "Worktree — conversation runs on a fresh branch in .pkt-worktrees/",
+                      },
+                      {
+                        mode: "cloud" as const,
+                        icon: Cloud,
+                        label: "Cloud",
+                        title:
+                          "Coming soon — cloud delegation not yet wired",
+                        disabled: true,
+                      },
+                    ] as const
+                  ).map((opt) => {
+                    const Icon = opt.icon;
+                    const isActive = composerMode === opt.mode;
+                    const isDisabled = "disabled" in opt && opt.disabled;
+                    return (
+                      <button
+                        key={opt.mode}
+                        type="button"
+                        disabled={isDisabled}
+                        onClick={() =>
+                          !isDisabled && onComposerModeChange?.(opt.mode)
+                        }
+                        title={opt.title}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] transition-colors ${
+                          isDisabled
+                            ? "text-text-faint opacity-50 cursor-not-allowed"
+                            : isActive
+                              ? "bg-accent-purple/10 text-accent-purple"
+                              : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
+                        }`}
+                      >
+                        <Icon size={10} />
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
 
               {/* Provider selector (grouped, with auth-status badges) */}

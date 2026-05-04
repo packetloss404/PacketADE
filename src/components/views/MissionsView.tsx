@@ -10,8 +10,10 @@ import {
   CheckCircle2,
   Sparkles,
   ListTree,
+  Target,
 } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
+import { useGoalStore } from "@/stores/goalStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
@@ -444,6 +446,11 @@ function FlightRow({
   const cost = formatCost(flight.totalCost);
   const priorityClass = FLIGHT_PRIORITY_COLORS[flight.priority];
   const statusLabel = STATUS_LABEL[status];
+  // B5 — show how many persistent goals are bound to this mission so
+  // users see at a glance whether long-running work is parked here.
+  const goalCount = useGoalStore(
+    (s) => s.getGoalsForMission(flight.id).length,
+  );
 
   return (
     <button
@@ -487,6 +494,15 @@ function FlightRow({
           <Users size={9} />
           <span>{agents}</span>
         </span>
+        {goalCount > 0 && (
+          <span
+            className="inline-flex items-center gap-1 text-accent-blue"
+            title={`${goalCount} persistent goal${goalCount === 1 ? "" : "s"} bound to this mission`}
+          >
+            <Target size={9} />
+            <span>{goalCount}</span>
+          </span>
+        )}
         <span className="font-mono">{cost}</span>
         <span className="flex-1" />
         <span className={`capitalize ${DOT_TEXT[dot]}`}>{statusLabel}</span>

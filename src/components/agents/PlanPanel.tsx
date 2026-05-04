@@ -1,13 +1,25 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckSquare,
   ChevronDown,
   ChevronUp,
   Loader2,
+  Pause,
   Play,
+  Send,
   Square,
+  Target,
+  X,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useGoalStore } from "@/stores/goalStore";
+import { API_PROVIDERS } from "@/lib/api-models";
+import { buildHandoffPrompt } from "@/lib/conversationHandoff";
+import {
+  getProviderAuthStatus,
+  type ProviderAuthStatus,
+} from "@/lib/tauri";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AgentConversation,
   AgentToolCall,
@@ -156,11 +168,112 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
   const items = useMemo(() => latestPlan(conversation), [conversation]);
   const [collapsed, setCollapsed] = useState(false);
   const approvePlan = useAgentTaskStore((s) => s.approvePlan);
+  const createApiConversation = useAgentTaskStore(
+    (s) => s.createApiConversation,
+  );
+  const selectConversation = useAgentTaskStore((s) => s.selectConversation);
+  const setParentConversation = useAgentTaskStore(
+    (s) => s.setParentConversation,
+  );
+
+  // B8 — Codex auth probe for the "Hand off to Codex" button. Only
+  // meaningful when the parent conversation is a Claude one (Codex
+  // can't hand off to itself). Live-refreshes on `provider-auth:changed`
+  // so a `codex login` finishing in another window enables the button.
+  const isClaudeParent =
+    conversation.agent === "api-claude" ||
+    conversation.agent === "api-claude-oauth";
+  const [codexReady, setCodexReady] = useState(false);
+  const [handingOff, setHandingOff] = useState(false);
+  useEffect(() => {
+    if (!isClaudeParent) return;
+    let cancelled = false;
+    let unlisten: UnlistenFn | undefined;
+    const refresh = () => {
+      getProviderAuthStatus("openai-codex")
+        .then((s) => {
+          if (!cancelled) setCodexReady(s.status === "ready");
+        })
+        .catch(() => {
+          if (!cancelled) setCodexReady(false);
+        });
+    };
+    refresh();
+    listen<{ provider: string; status: ProviderAuthStatus }>(
+      "provider-auth:changed",
+      (event) => {
+        if (event.payload.provider !== "openai-codex") return;
+        setCodexReady(event.payload.status.status === "ready");
+      },
+    )
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [isClaudeParent]);
+
+  // B5: bound goal (when this conversation has been promoted via /goal).
+  // Snapshot the conversation's plan into the goal whenever it changes
+  // so the persisted goal stays current for cross-conversation
+  // continuation.
+  const boundGoal = useGoalStore((s) =>
+    s.getGoalForConversation(conversation.id),
+  );
+  const syncChecklistFromConversation = useGoalStore(
+    (s) => s.syncChecklistFromConversation,
+  );
+  const pauseGoal = useGoalStore((s) => s.pauseGoal);
+  const resumeGoal = useGoalStore((s) => s.resumeGoal);
+  const completeGoal = useGoalStore((s) => s.completeGoal);
+  useEffect(() => {
+    if (!boundGoal || !conversation.plan) return;
+    syncChecklistFromConversation(boundGoal.id, conversation.plan);
+  }, [boundGoal, conversation.plan, syncChecklistFromConversation]);
 
   if (!items) return null;
 
   const awaitingPlanApproval =
     conversation.specStage === "plan" && !conversation.planApproved;
+  const handoffEligible =
+    isClaudeParent && (items.length > 0 || (conversation.spec?.criteria.length ?? 0) > 0);
+
+  async function handleHandoff(): Promise<void> {
+    if (!conversation.model) return;
+    setHandingOff(true);
+    try {
+      const prompt = buildHandoffPrompt(conversation);
+      const codexProvider = API_PROVIDERS.find(
+        (p) => p.agentCli === "api-openai-codex",
+      );
+      const codexModel = codexProvider?.models[0]?.value ?? "gpt-5-codex";
+      const newId = await createApiConversation(
+        "api-openai-codex",
+        conversation.projectPath,
+        codexModel,
+        prompt,
+        "You are executing an approved plan from a planning agent. " +
+          "Follow the plan step by step; do not re-plan unless blocked.",
+        false, // thinkingEnabled
+        false, // planMode (executing, not planning)
+        null, // sshTarget
+        undefined,
+        false,
+        null, // allowedTools — full toolset
+        false, // memoryContextEnabled
+      );
+      setParentConversation(newId, conversation.id);
+      selectConversation(newId);
+    } catch (e) {
+      console.warn("Codex handoff failed:", e);
+    } finally {
+      setHandingOff(false);
+    }
+  }
 
   let pending = 0;
   let inProgress = 0;
@@ -216,6 +329,21 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
           <span className="text-[10px] text-text-muted flex-1">
             Plan is a proposal — approve to lift plan-mode and execute.
           </span>
+          {handoffEligible && (
+            <button
+              type="button"
+              onClick={() => void handleHandoff()}
+              disabled={!codexReady || handingOff}
+              title={
+                !codexReady
+                  ? "Codex login required (run `codex login` or sign in via the provider dropdown)"
+                  : "Hand the approved plan off to a fresh Codex conversation for execution"
+              }
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 disabled:opacity-40"
+            >
+              <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to Codex"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => approvePlan(conversation.id)}
@@ -223,6 +351,52 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
           >
             <Play size={11} /> Approve & execute
           </button>
+        </div>
+      )}
+      {/* B5 — goal binding row. Renders when this conversation has been
+          promoted via /goal. Pause = surface as paused in MissionsView
+          but keep the conversation running. Complete = mark done.
+          Cancel/delete left to a separate confirm flow in MissionsView. */}
+      {boundGoal && (
+        <div className="flex items-center gap-2 px-3.5 py-1.5 border-t border-accent-blue/30 bg-accent-blue/5">
+          <Target size={11} className="text-accent-blue" />
+          <span className="text-[10px] text-text-secondary flex-1 truncate">
+            Bound goal:{" "}
+            <span className="text-accent-blue font-medium">
+              {boundGoal.title}
+            </span>{" "}
+            · status{" "}
+            <span className="font-mono">{boundGoal.status}</span>
+          </span>
+          {boundGoal.status === "active" && (
+            <button
+              type="button"
+              onClick={() => pauseGoal(boundGoal.id)}
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-muted hover:text-accent-amber"
+              title="Mark goal paused (conversation keeps running; MissionsView shows it as paused)"
+            >
+              <Pause size={10} /> Pause
+            </button>
+          )}
+          {boundGoal.status === "paused" && (
+            <button
+              type="button"
+              onClick={() => resumeGoal(boundGoal.id)}
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
+            >
+              <Play size={10} /> Resume
+            </button>
+          )}
+          {(boundGoal.status === "active" ||
+            boundGoal.status === "paused") && (
+            <button
+              type="button"
+              onClick={() => completeGoal(boundGoal.id)}
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
+            >
+              <X size={10} /> Complete
+            </button>
+          )}
         </div>
       )}
     </div>

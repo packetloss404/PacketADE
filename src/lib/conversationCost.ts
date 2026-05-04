@@ -67,6 +67,16 @@ export function aggregateConversationCost(
     if (m.outputTokens) totalOut += m.outputTokens;
     if (m.reasoningTokens) totalReasoning += m.reasoningTokens;
   }
+  // A3: roll Codex MultiAgentV2 sub-agent buckets into the totals so
+  // multi-agent flights account for their children's spend. Without this
+  // the conversation looks artificially cheap (root totals only) while
+  // the user actually paid for N sub-agent threads.
+  for (const bucket of Object.values(conv.subAgentTokens ?? {})) {
+    totalIn += bucket.inputTokens;
+    totalCachedIn += bucket.cacheReadTokens;
+    totalOut += bucket.outputTokens;
+    totalReasoning += bucket.reasoningTokens;
+  }
   // Don't double-count cached: input rate applies only to NEW input tokens
   // (input − cached), then cached pays its discounted rate on top.
   const newInputTokens = Math.max(0, totalIn - totalCachedIn);

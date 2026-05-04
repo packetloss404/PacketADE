@@ -18,14 +18,16 @@ import { DictationCard } from "./tools/DictationCard";
 import { ApiKeysCard } from "./tools/ApiKeysCard";
 import { ServersSettingsCard } from "./tools/ServersSettingsCard";
 import { AgentProfilesCard } from "./tools/AgentProfilesCard";
+import { ProjectRulesCard } from "./tools/ProjectRulesCard";
 import type { PromptTemplate } from "@/types/prompt";
 
 const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
 
-type SettingsSection = "project" | "issues" | "routing" | "api-keys" | "servers" | "mcp" | "mcp-provider" | "profiles" | "modules" | "templates" | "history" | "cost" | "dictation";
+type SettingsSection = "project" | "project-rules" | "issues" | "routing" | "api-keys" | "servers" | "mcp" | "mcp-provider" | "profiles" | "modules" | "templates" | "history" | "cost" | "dictation";
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
   { key: "project", label: "Project", icon: FolderOpen },
+  { key: "project-rules", label: "Project Rules", icon: FileText },
   { key: "issues", label: "Issues", icon: Ticket },
   { key: "routing", label: "AI Routing", icon: Route },
   { key: "api-keys", label: "API Keys", icon: Key },
@@ -140,6 +142,12 @@ export function ToolsView() {
         {activeSection === "profiles" && (
           <div className="max-w-3xl">
             <AgentProfilesCard />
+          </div>
+        )}
+
+        {activeSection === "project-rules" && (
+          <div className="max-w-3xl">
+            <ProjectRulesCard />
           </div>
         )}
 
