@@ -2,7 +2,7 @@
 
 All notable changes to PacketADE are documented in this file.
 
-## [Unreleased] - 2026-05-04
+## [0.5.0] - 2026-05-04
 
 ### Added — Agents pane "match the best of Claude Code & Codex" initiative
 
