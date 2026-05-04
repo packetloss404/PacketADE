@@ -10,16 +10,6 @@ interface PlanModeApprovalMenuProps {
   onProceed?: () => void;
 }
 
-/**
- * Heuristic detector — returns true when the assistant's message looks like
- * a structured plan (Claude-Code-style `## Plan` / `## Files to change` /
- * `## Steps` headers). Case-insensitive, matches at start of any line.
- */
-export function looksLikePlan(text: string): boolean {
-  if (!text) return false;
-  return /(^|\n)\s*##\s+(plan|files to change|steps)\b/i.test(text);
-}
-
 type ChoiceKey = "execute" | "accept-edits" | "review-each" | "keep-planning";
 
 interface Choice {

@@ -65,7 +65,10 @@ pub enum PermissionDecision {
 
 #[derive(Debug, Clone)]
 pub enum EditDecision {
-    Apply,
+    /// Apply the edit. `merged_content`, when set, is the user-merged file
+    /// body (per-hunk acceptance) — the agent loop swaps it in for the
+    /// model's original `content` before invoking the write_file tool.
+    Apply { merged_content: Option<String> },
     Reject,
 }
 
@@ -248,7 +251,14 @@ struct ErrorPayload {
 /// Failures reading either scope are logged to stderr; we fall back to
 /// whichever scope succeeded (or an empty object if both fail). We never
 /// fail the session over MCP config problems.
-async fn build_mcp_config_for_sidecar(project_path: &str) -> serde_json::Value {
+/// `filter` (F9): per-conversation MCP server allowlist. `None` = all
+/// enabled servers (back-compat for older conversations). `Some(&[])` =
+/// explicitly none. Otherwise only servers whose `name` appears in the
+/// slice are forwarded.
+async fn build_mcp_config_for_sidecar(
+    project_path: &str,
+    filter: Option<&[String]>,
+) -> serde_json::Value {
     use crate::commands::mcp;
     use serde_json::{json, Map, Value};
 
@@ -270,6 +280,11 @@ async fn build_mcp_config_for_sidecar(project_path: &str) -> serde_json::Value {
     for entry in entries {
         if entry.disabled {
             continue;
+        }
+        if let Some(allowed) = filter {
+            if !allowed.iter().any(|name| name == &entry.name) {
+                continue;
+            }
         }
         let mut obj = Map::new();
         obj.insert("type".to_string(), Value::String("stdio".to_string()));
@@ -293,6 +308,12 @@ async fn build_mcp_config_for_sidecar(project_path: &str) -> serde_json::Value {
 }
 
 /// Start a new API agent session.
+///
+/// `resume_token`: opaque token captured from a prior `done` event (v3,
+/// T3.B). When supplied and the provider is a sidecar provider, the sidecar
+/// reuses the model-side conversation so the session continues across app
+/// restarts. Ignored by in-process providers (their context is rebuilt from
+/// the `messages` history the frontend keeps in `agentTaskStore`).
 #[tauri::command]
 pub async fn start_api_agent_session(
     app_handle: tauri::AppHandle,
@@ -309,6 +330,8 @@ pub async fn start_api_agent_session(
     plan_mode: Option<bool>,
     ssh_config: Option<SshConfig>,
     allowed_tools: Option<Vec<String>>,
+    resume_token: Option<String>,
+    enabled_mcp_server_ids: Option<Vec<String>>,
 ) -> Result<(), String> {
     // v2 Tier 4 slice B: bump the local-only per-provider launch counter
     // before any routing decision so both sidecar and in-process launches are
@@ -326,7 +349,17 @@ pub async fn start_api_agent_session(
         // server configs, drop disabled entries, and transform into the shape
         // the Claude Agent SDK expects. See `build_mcp_config_for_sidecar`
         // below for the exact output shape and per-entry fields.
-        let mcp_servers = build_mcp_config_for_sidecar(&project_path).await;
+        let mcp_servers = build_mcp_config_for_sidecar(
+            &project_path,
+            enabled_mcp_server_ids.as_deref(),
+        )
+        .await;
+        // v3: pass attachments through to the sidecar — Anthropic provider
+        // builds an image-block content array when present.
+        let attachments_json = match &attachments {
+            Some(a) => serde_json::to_value(a).unwrap_or(serde_json::Value::Null),
+            None => serde_json::Value::Null,
+        };
         let result = sidecar
             .forward_start(
                 session_id.clone(),
@@ -337,9 +370,10 @@ pub async fn start_api_agent_session(
                 mcp_servers,
                 project_path.clone(),
                 initial_message.clone(),
-                None, // resume — not exposed yet
+                resume_token.clone(),
                 thinking_enabled,
                 plan_mode,
+                attachments_json,
             )
             .await;
         if let Err(e) = result {
@@ -683,7 +717,10 @@ pub async fn set_approve_writes(
     Ok(())
 }
 
-/// Respond to a pending write-file edit approval.
+/// Respond to a pending write-file edit approval. v3: an optional
+/// `merged_content` lets the frontend land a partial-apply result (per-hunk
+/// acceptance). When present, the sidecar provider writes that content
+/// directly and tells the SDK's tool to skip its own write.
 #[tauri::command]
 pub async fn respond_edit(
     state: tauri::State<'_, Arc<ApiAgentState>>,
@@ -691,6 +728,7 @@ pub async fn respond_edit(
     session_id: String,
     tool_id: String,
     decision: String,
+    merged_content: Option<String>,
 ) -> Result<(), String> {
     // Phase 3 slice C: forward to sidecar if it owns this session.
     if sidecar.owns_session(&session_id) {
@@ -699,12 +737,16 @@ pub async fn respond_edit(
             "reject" => false,
             _ => return Err(format!("Unknown edit decision: {}", decision)),
         };
-        return sidecar.forward_edit(session_id, approved).await;
+        return sidecar
+            .forward_edit(session_id, approved, merged_content)
+            .await;
     }
 
     let _ = session_id;
     let decision = match decision.as_str() {
-        "apply" => EditDecision::Apply,
+        "apply" => EditDecision::Apply {
+            merged_content,
+        },
         "reject" => EditDecision::Reject,
         _ => return Err(format!("Unknown edit decision: {}", decision)),
     };
@@ -717,6 +759,44 @@ pub async fn respond_edit(
     } else {
         warn!(tool_id = %tool_id, "No pending edit for tool_id — likely already timed out or cancelled");
     }
+    Ok(())
+}
+
+/// F8: drain every parked permission_request and pending_edit prompt as
+/// denied without killing the agent loop. The tool gates each return a
+/// "User cancelled this tool" result and the loop continues normally.
+///
+/// Limitation: the in-process pending state is a flat map keyed by tool_id
+/// with no session ownership tracking. We drain ALL pending prompts on
+/// cancel — in practice users only have one session waiting on prompts at
+/// a time. Adding per-session ownership is a follow-up if multi-session
+/// concurrent-prompt usage becomes common.
+#[tauri::command]
+pub async fn cancel_pending_tools(
+    state: tauri::State<'_, Arc<ApiAgentState>>,
+    sidecar: tauri::State<'_, Arc<SidecarManager>>,
+    session_id: String,
+) -> Result<(), String> {
+    if sidecar.owns_session(&session_id) {
+        return sidecar.forward_cancel_pending_tools(session_id).await;
+    }
+
+    let perm_senders: Vec<_> = {
+        let mut pending = state.pending_permissions.lock().await;
+        pending.drain().collect()
+    };
+    for (_, tx) in perm_senders {
+        let _ = tx.send(PermissionDecision::Deny);
+    }
+
+    let edit_senders: Vec<_> = {
+        let mut pending = state.pending_edits.lock().await;
+        pending.drain().collect()
+    };
+    for (_, tx) in edit_senders {
+        let _ = tx.send(EditDecision::Reject);
+    }
+
     Ok(())
 }
 
@@ -1170,7 +1250,7 @@ async fn run_agent_loop(
         let futures: Vec<_> = tool_calls
             .iter()
             .cloned()
-            .map(|tc| {
+            .map(|mut tc| {
                 let execution = execution.clone();
                 let app_handle = app_handle.clone();
                 let session_id = session_id.to_string();
@@ -1344,8 +1424,22 @@ async fn run_agent_loop(
                             },
                         );
                         match tokio::time::timeout(Duration::from_secs(600), rx).await {
-                            Ok(Ok(EditDecision::Apply)) => {
-                                // proceed
+                            Ok(Ok(EditDecision::Apply { merged_content })) => {
+                                // F2: per-hunk acceptance — swap in the
+                                // user-merged file body before the tool runs
+                                // so the actual write writes only the hunks
+                                // the user picked, not the model's full
+                                // `after`.
+                                if let Some(merged) = merged_content {
+                                    if let Some(args) =
+                                        tc.arguments.as_object_mut()
+                                    {
+                                        args.insert(
+                                            "content".to_string(),
+                                            serde_json::Value::String(merged),
+                                        );
+                                    }
+                                }
                             }
                             Ok(Ok(EditDecision::Reject)) | Ok(Err(_)) => {
                                 let err = ToolResult {

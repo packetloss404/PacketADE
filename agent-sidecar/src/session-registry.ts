@@ -1,4 +1,5 @@
 import type {
+  CancelPendingToolsRequest,
   CancelRequest,
   EditResponseRequest,
   Emit,
@@ -77,7 +78,8 @@ export class SessionRegistry {
       | CancelRequest
       | SetPermissionModeRequest
       | SetModelRequest
-      | RetryRequest,
+      | RetryRequest
+      | CancelPendingToolsRequest,
     emit: Emit,
   ): Promise<void> {
     const entry = this.sessions.get(sessionId);
@@ -134,6 +136,17 @@ export class SessionRegistry {
               type: "error",
               sessionId,
               message: `${provider} does not support retry`,
+            });
+          }
+          break;
+        case "cancel_pending_tools":
+          if (handler.cancelPendingTools) {
+            await handler.cancelPendingTools(req, emit);
+          } else {
+            emit({
+              type: "error",
+              sessionId,
+              message: `${provider} does not support cancel_pending_tools`,
             });
           }
           break;

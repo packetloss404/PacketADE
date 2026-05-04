@@ -8,6 +8,8 @@ import {
   Clock,
   Star,
   Edit3,
+  Check,
+  X,
   Zap,
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -85,6 +87,7 @@ export function MemoryView() {
   );
   const deleteEvent = useMemoryStore((s) => s.deleteEvent);
   const deletePattern = useMemoryStore((s) => s.deletePattern);
+  const updatePattern = useMemoryStore((s) => s.updatePattern);
   const refreshPatterns = useMemoryStore((s) => s.refreshPatterns);
   const clearMemory = useMemoryStore((s) => s.clearMemory);
   const getContextForSession = useMemoryStore((s) => s.getContextForSession);
@@ -269,6 +272,7 @@ export function MemoryView() {
           injectedPreview={injectedPreview}
           tokenEstimate={tokenEstimate}
           onDeletePattern={deletePattern}
+          onUpdatePattern={updatePattern}
         />
       )}
 
@@ -334,6 +338,10 @@ interface PatternsTabProps {
   injectedPreview: string;
   tokenEstimate: number;
   onDeletePattern: (id: string) => void;
+  onUpdatePattern: (
+    id: string,
+    updates: { pattern?: string; category?: PatternCategory },
+  ) => void;
 }
 
 function PatternsTab({
@@ -344,6 +352,7 @@ function PatternsTab({
   injectedPreview,
   tokenEstimate,
   onDeletePattern,
+  onUpdatePattern,
 }: PatternsTabProps) {
   return (
     <div className="flex-1 grid grid-cols-[1fr_280px] min-h-0 overflow-hidden">
@@ -381,6 +390,7 @@ function PatternsTab({
                         pattern={p}
                         meta={meta}
                         onDelete={() => onDeletePattern(p.id)}
+                        onUpdate={(updates) => onUpdatePattern(p.id, updates)}
                       />
                     ))}
                   </div>
@@ -448,10 +458,94 @@ interface PatternRowProps {
   pattern: LearnedPattern;
   meta: (typeof CATEGORY_META)[PatternCategory];
   onDelete: () => void;
+  onUpdate: (updates: { pattern?: string; category?: PatternCategory }) => void;
 }
 
-function PatternRow({ pattern, meta, onDelete }: PatternRowProps) {
+function PatternRow({ pattern, meta, onDelete, onUpdate }: PatternRowProps) {
   const pct = Math.round(pattern.confidence * 100);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(pattern.pattern);
+  const [draftCategory, setDraftCategory] = useState<PatternCategory>(
+    pattern.category,
+  );
+
+  const startEdit = () => {
+    setDraft(pattern.pattern);
+    setDraftCategory(pattern.category);
+    setEditing(true);
+  };
+
+  const save = () => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    onUpdate({
+      pattern: trimmed,
+      category:
+        draftCategory !== pattern.category ? draftCategory : undefined,
+    });
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-stretch gap-2.5 p-2.5 bg-bg-secondary border border-accent-blue/40 rounded-md">
+        <div className={`w-1 self-stretch rounded-full ${meta.bar}`} />
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) save();
+              if (e.key === "Escape") cancel();
+            }}
+            rows={2}
+            autoFocus
+            className="w-full resize-y bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11.5px] text-text-primary leading-snug focus:outline-none focus:border-accent-blue/60"
+          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={draftCategory}
+              onChange={(e) =>
+                setDraftCategory(e.target.value as PatternCategory)
+              }
+              className="bg-bg-primary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
+              title="Category"
+            >
+              {CATEGORY_ORDER.map((c) => (
+                <option key={c} value={c}>
+                  {CATEGORY_META[c].label}
+                </option>
+              ))}
+            </select>
+            <span className="text-[9.5px] text-text-faint">
+              Ctrl+Enter to save · Esc to cancel
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <button
+            onClick={save}
+            className="p-1 text-accent-green hover:bg-accent-green/10 rounded"
+            title="Save (Ctrl+Enter)"
+          >
+            <Check size={11} />
+          </button>
+          <button
+            onClick={cancel}
+            className="p-1 text-text-faint hover:text-text-primary rounded"
+            title="Cancel (Esc)"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="group flex items-stretch gap-2.5 p-2.5 bg-bg-secondary border border-bg-border rounded-md hover:border-line-strong transition-colors">
       <div className={`w-1 self-stretch rounded-full ${meta.bar}`} />
@@ -485,9 +579,9 @@ function PatternRow({ pattern, meta, onDelete }: PatternRowProps) {
           <Star size={10} />
         </button>
         <button
-          className="p-1 text-text-faint hover:text-text-primary rounded"
-          title="Edit"
-          disabled
+          onClick={startEdit}
+          className="p-1 text-text-faint hover:text-accent-blue rounded"
+          title="Edit pattern"
         >
           <Edit3 size={10} />
         </button>

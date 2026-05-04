@@ -52,6 +52,12 @@ interface MemoryStore {
   // Cleanup
   deleteEvent: (id: string) => void;
   deletePattern: (id: string) => void;
+  /** F3: edit a learned pattern's text or category. Resets confidence to
+   * 1.0 since a hand-edit is implicitly authoritative. */
+  updatePattern: (
+    id: string,
+    updates: { pattern?: string; category?: LearnedPattern["category"] },
+  ) => void;
   clearMemory: () => void;
 
   // Context injection (live, not snapshot)
@@ -242,6 +248,23 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
 
   deletePattern: (id) => {
     const patterns = get().patterns.filter((p) => p.id !== id);
+    set({ patterns });
+    void persistState(get().events, patterns);
+  },
+
+  updatePattern: (id, updates) => {
+    const patterns = get().patterns.map((p) =>
+      p.id === id
+        ? {
+            ...p,
+            pattern: updates.pattern ?? p.pattern,
+            category: updates.category ?? p.category,
+            // Hand-edit = authoritative; bump confidence so the edited
+            // pattern outranks future auto-extractions for the same idea.
+            confidence: 1.0,
+          }
+        : p,
+    );
     set({ patterns });
     void persistState(get().events, patterns);
   },

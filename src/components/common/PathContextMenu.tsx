@@ -78,7 +78,6 @@ export function PathContextMenu({
     try {
       await open(path);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn("[PathContextMenu] open(file) failed:", err);
       alert(`Cannot open: ${err}`);
     }
@@ -89,7 +88,6 @@ export function PathContextMenu({
     try {
       await navigator.clipboard.writeText(path);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn("[PathContextMenu] clipboard.writeText failed:", err);
     }
     onClose();
@@ -104,7 +102,6 @@ export function PathContextMenu({
     try {
       await open(parentDir(path));
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn("[PathContextMenu] open(parentDir) failed:", err);
     }
     onClose();

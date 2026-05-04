@@ -8,6 +8,7 @@ import {
   startApiAgentSession,
   sendApiAgentMessage,
   cancelApiAgentSession,
+  cancelPendingTools as tauriCancelPendingTools,
   closeApiAgentSession,
   saveConversation,
   loadConversations,
@@ -22,22 +23,34 @@ import {
   saveCheckpoint as tauriSaveCheckpoint,
   listCheckpoints as tauriListCheckpoints,
   exportConversationMarkdown,
+  type ImageAttachment,
 } from "@/lib/tauri";
 import type { SshTarget } from "@/types/ssh";
 import {
   ptyOutputEvent,
   ptyExitEvent,
+  apiAgentChunkEvent,
+  apiAgentToolStartEvent,
+  apiAgentToolResultEvent,
+  apiAgentDoneEvent,
+  apiAgentErrorEvent,
   apiAgentThinkingEvent,
   apiAgentThinkingStopEvent,
   apiAgentPermissionRequestEvent,
   apiAgentPendingEditEvent,
+  apiAgentPlanBlockEvent,
+  apiAgentToolOutputExtendedEvent,
+  apiAgentTurnSummaryEvent,
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import { useMemoryStore } from "@/stores/memoryStore";
+import { loadAgentsMd } from "@/lib/agentsMd";
+import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
 import type { GitHubRepo } from "@/types/github";
 import type {
   AgentConversation,
   AgentMessage,
+  AgentPlanItem,
   AgentToolCall,
   PermissionMode,
   PendingPermission,
@@ -133,6 +146,10 @@ export type AgentInputMode = "build" | "plan";
 /** Cleanup functions for API conversation event listeners. */
 const apiConversationCleanup = new Map<string, () => void>();
 
+/** Per-conversation guard so auto-failover never loops. Cleared whenever
+ * the user sends a fresh user turn; replenished on a successful turn. */
+const failoverGuard = new Set<string>();
+
 /** Derive a display name for a projectPath (e.g. "owner/repo" or last two segments). */
 export function repoDisplayName(projectPath: string, githubRepos: GitHubRepo[]): string {
   const segments = projectPath.replace(/\\/g, "/").split("/").filter(Boolean);
@@ -194,8 +211,19 @@ interface AgentTaskStore {
     /** Inject the memory layer's project context into the system prompt.
      * Default false to preserve existing behavior. */
     memoryContextEnabled?: boolean,
+    /** Image attachments inlined with the initial user message. Currently only
+     * applied to the in-process LlmProvider path; sidecar Anthropic + Codex
+     * ignore them until the protocol bump that wires them through. */
+    attachments?: ImageAttachment[] | null,
+    /** F9: per-conversation MCP server filter passed to the sidecar at
+     * session start. null = all enabled servers. */
+    enabledMcpServerIds?: string[] | null,
   ) => Promise<string>;
-  sendMessage: (conversationId: string, content: string) => void;
+  sendMessage: (
+    conversationId: string,
+    content: string,
+    attachments?: ImageAttachment[] | null,
+  ) => void;
   addAssistantMessage: (conversationId: string, content: string, toolCalls?: AgentToolCall[]) => void;
   updateAssistantMessage: (conversationId: string, messageId: string, content: string) => void;
   selectConversation: (id: string | null) => void;
@@ -213,12 +241,455 @@ interface AgentTaskStore {
   setPermissionMode: (id: string, mode: PermissionMode) => Promise<void>;
   setApproveWrites: (id: string, enabled: boolean) => Promise<void>;
   respondPermission: (id: string, toolId: string, decision: "allow_once" | "allow_always" | "deny") => Promise<void>;
-  respondEdit: (id: string, toolId: string, decision: "apply" | "reject") => Promise<void>;
+  respondEdit: (
+    id: string,
+    toolId: string,
+    decision: "apply" | "reject",
+    mergedContent?: string,
+  ) => Promise<void>;
+  /** F8: drain every parked permission/edit prompt as denied without
+   * killing the session. Optimistically clears the local pendingPermissions
+   * and pendingEdits arrays — there is no echo event from the backend. */
+  cancelPendingTools: (id: string) => Promise<void>;
+  /** F9: set the per-conversation MCP server filter. null = all enabled
+   * (back-compat). [] = explicitly none. Applies on next session start —
+   * the sidecar protocol has no mid-session MCP swap. */
+  setEnabledMcpServerIds: (id: string, ids: string[] | null) => void;
+  /** F10: replace the conversation's spec criteria (draft state). */
+  setSpec: (id: string, criteria: string[]) => void;
+  /** F10: lock the spec and ask the agent for a Plan. Posts a synthetic
+   * user turn telling the model to produce a TodoWrite covering each
+   * criterion. */
+  approveSpec: (id: string) => void;
+  /** F10: approve the model's plan and start execution. Lifts plan mode
+   * and posts a "Plan approved — execute" user turn. */
+  approvePlan: (id: string) => void;
   retryLastTurn: (id: string, newModel?: string) => Promise<void>;
   saveCheckpoint: (id: string) => Promise<string | null>;
   listCheckpoints: (id: string) => Promise<Array<{ id: string; createdAt: string; messageCount: number; messages: AgentMessage[] }>>;
   restoreCheckpoint: (id: string, rawJson: string) => void;
   exportConversation: (id: string) => Promise<string>;
+  /** F1: re-establish a hydrated conversation that lost its live session
+   * across an app restart. Re-attaches `api-agent:*` listeners and calls
+   * `start_api_agent_session` with the conversation's `resumeToken` (when
+   * present) plus `content` as the initial message. No-op when the
+   * conversation already has live listeners or isn't an API conversation. */
+  resumeApiConversation: (
+    conversationId: string,
+    content: string,
+    attachments?: ImageAttachment[] | null,
+  ) => Promise<void>;
+}
+
+/**
+ * Type alias for zustand's `set` so the listener installer can read the
+ * same arg as the store actions. Avoids exporting the store internals
+ * just to give the helper a type.
+ */
+type StoreSet = typeof useAgentTaskStore.setState;
+
+/**
+ * Install the full set of `api-agent:*` event listeners for a session and
+ * register a cleanup fn in `apiConversationCleanup`. Idempotent — if a
+ * cleanup is already registered, this is a no-op (returns immediately).
+ *
+ * Pulled out of the inline createApiConversation block (F1) so the resume
+ * path can reuse the exact same wiring instead of forking it.
+ */
+async function installApiAgentListeners(
+  id: string,
+  get: () => AgentTaskStore,
+  set: StoreSet,
+): Promise<void> {
+  if (apiConversationCleanup.has(id)) return;
+
+  const chunkUnlisten = await listen<string>(apiAgentChunkEvent(id), (event) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const messages = c.messages.map((m) => {
+          if (m.isStreaming && m.role === "assistant") {
+            return { ...m, content: m.content + event.payload };
+          }
+          return m;
+        });
+        const next = { ...c, messages, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  });
+
+  const toolStartUnlisten = await listen<{ id: string; name: string }>(
+    apiAgentToolStartEvent(id),
+    (event) => {
+      let updated: AgentConversation | undefined;
+      set((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const messages = c.messages.map((m) => {
+            if (m.isStreaming && m.role === "assistant") {
+              const toolCalls: AgentToolCall[] = [
+                ...(m.toolCalls ?? []),
+                {
+                  id: event.payload.id,
+                  name: event.payload.name,
+                  status: "running" as const,
+                },
+              ];
+              return { ...m, toolCalls };
+            }
+            return m;
+          });
+          const next = { ...c, messages, updatedAt: Date.now() };
+          updated = next;
+          return next;
+        }),
+      }));
+      if (updated) scheduleSave(updated);
+    },
+  );
+
+  const toolResultUnlisten = await listen<{
+    id: string;
+    name: string;
+    content: string;
+    is_error: boolean;
+    input: string;
+  }>(apiAgentToolResultEvent(id), (event) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const messages = c.messages.map((m) => {
+          if (m.isStreaming && m.role === "assistant" && m.toolCalls) {
+            const toolCalls = m.toolCalls.map((tc) =>
+              tc.id === event.payload.id
+                ? {
+                    ...tc,
+                    status: (event.payload.is_error
+                      ? "error"
+                      : "done") as AgentToolCall["status"],
+                    summary: event.payload.content.slice(0, 200),
+                    fullContent: event.payload.content,
+                    input: event.payload.input,
+                  }
+                : tc,
+            );
+            return { ...m, toolCalls };
+          }
+          return m;
+        });
+        const next = { ...c, messages, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  });
+
+  const doneUnlisten = await listen<{
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+    resume_token?: string | null;
+  }>(apiAgentDoneEvent(id), (event) => {
+    let updated: AgentConversation | undefined;
+    let nextQueued: string | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const messages = c.messages.map((m) =>
+          m.isStreaming
+            ? {
+                ...m,
+                isStreaming: false,
+                inputTokens: event.payload.input_tokens,
+                outputTokens: event.payload.output_tokens,
+                cacheReadTokens: event.payload.cache_read_input_tokens,
+                cacheWriteTokens: event.payload.cache_creation_input_tokens,
+              }
+            : m,
+        );
+        const queued = c.queuedMessages ?? [];
+        let remainingQueued = queued;
+        if (queued.length > 0) {
+          nextQueued = queued[0];
+          remainingQueued = queued.slice(1);
+        }
+        const newResume = event.payload.resume_token ?? c.resumeToken;
+        const next: AgentConversation = {
+          ...c,
+          messages,
+          status: "idle",
+          updatedAt: Date.now(),
+          queuedMessages: remainingQueued,
+          resumeToken: newResume ?? undefined,
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+    if (nextQueued !== undefined) {
+      const drained = nextQueued;
+      setTimeout(() => {
+        get().sendMessage(id, drained);
+      }, 0);
+    }
+    if (updated && get().selectedConversationId !== id) {
+      const finishedTitle = updated.title;
+      void import("@/lib/notifications").then(({ notifyConversationDone }) => {
+        void notifyConversationDone(finishedTitle);
+      });
+    }
+  });
+
+  const errorUnlisten = await listen<{ message: string }>(
+    apiAgentErrorEvent(id),
+    (event) => {
+      const conv = get().conversations.find((c) => c.id === id);
+      if (
+        conv &&
+        conv.mode === "api" &&
+        conv.model &&
+        !failoverGuard.has(id) &&
+        looksLikeRateLimit(event.payload.message)
+      ) {
+        const fallback = pickFailoverModel(conv.model);
+        if (fallback && fallback !== conv.model) {
+          failoverGuard.add(id);
+          const noticeMsg: AgentMessage = {
+            id: generateId("msg"),
+            role: "system",
+            content: `(auto-failover: ${conv.model} hit "${event.payload.message.slice(0, 80)}" — retrying on ${fallback})`,
+            timestamp: Date.now(),
+          };
+          set((s) => ({
+            conversations: s.conversations.map((c) =>
+              c.id === id
+                ? {
+                    ...c,
+                    messages: [...c.messages, noticeMsg],
+                    updatedAt: Date.now(),
+                  }
+                : c,
+            ),
+          }));
+          void get().retryLastTurn(id, fallback);
+          return;
+        }
+      }
+
+      let updated: AgentConversation | undefined;
+      set((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const messages = c.messages.map((m) =>
+            m.isStreaming
+              ? {
+                  ...m,
+                  isStreaming: false,
+                  content: m.content + `\n\nError: ${event.payload.message}`,
+                }
+              : m,
+          );
+          const next = {
+            ...c,
+            messages,
+            status: "failed" as const,
+            updatedAt: Date.now(),
+          };
+          updated = next;
+          return next;
+        }),
+      }));
+      if (updated) scheduleSave(updated);
+      if (updated) {
+        const failedTitle = `Failed: ${updated.title}`;
+        void import("@/lib/notifications").then(({ notifyConversationDone }) => {
+          void notifyConversationDone(failedTitle);
+        });
+      }
+    },
+  );
+
+  const thinkingUnlisten = await listen<{ text: string }>(
+    apiAgentThinkingEvent(id),
+    (event) => {
+      let updated: AgentConversation | undefined;
+      set((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const nextStream = (c.thinkingStream ?? "") + event.payload.text;
+          const messages = c.messages.map((m) =>
+            m.isStreaming && m.role === "assistant"
+              ? { ...m, thinking: (m.thinking ?? "") + event.payload.text }
+              : m,
+          );
+          const next = {
+            ...c,
+            messages,
+            thinkingStream: nextStream,
+            updatedAt: Date.now(),
+          };
+          updated = next;
+          return next;
+        }),
+      }));
+      if (updated) scheduleSave(updated);
+    },
+  );
+
+  const thinkingStopUnlisten = await listen<unknown>(
+    apiAgentThinkingStopEvent(id),
+    () => {
+      set((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === id ? { ...c, thinkingStream: "" } : c,
+        ),
+      }));
+    },
+  );
+
+  const permissionReqUnlisten = await listen<PendingPermission>(
+    apiAgentPermissionRequestEvent(id),
+    (event) => {
+      let updated: AgentConversation | undefined;
+      set((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const pending = [...(c.pendingPermissions ?? []), event.payload];
+          const next = { ...c, pendingPermissions: pending, updatedAt: Date.now() };
+          updated = next;
+          return next;
+        }),
+      }));
+      if (updated) scheduleSave(updated);
+    },
+  );
+
+  const pendingEditUnlisten = await listen<PendingEdit>(
+    apiAgentPendingEditEvent(id),
+    (event) => {
+      let updated: AgentConversation | undefined;
+      set((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const pending = [...(c.pendingEdits ?? []), event.payload];
+          const next = { ...c, pendingEdits: pending, updatedAt: Date.now() };
+          updated = next;
+          return next;
+        }),
+      }));
+      if (updated) scheduleSave(updated);
+    },
+  );
+
+  const planBlockUnlisten = await listen<{ items: AgentPlanItem[] }>(
+    apiAgentPlanBlockEvent(id),
+    (event) => {
+      let updated: AgentConversation | undefined;
+      set((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const next = { ...c, plan: event.payload.items, updatedAt: Date.now() };
+          updated = next;
+          return next;
+        }),
+      }));
+      if (updated) scheduleSave(updated);
+    },
+  );
+
+  // F6: live token totals between turns. Update the streaming assistant
+  // message's tokens so SessionHealthBar / cost pills reflect mid-stream
+  // usage instead of waiting for the final `done` payload.
+  const turnSummaryUnlisten = await listen<{
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+  }>(apiAgentTurnSummaryEvent(id), (event) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const messages = c.messages.map((m) =>
+          m.isStreaming && m.role === "assistant"
+            ? {
+                ...m,
+                inputTokens: event.payload.input_tokens,
+                outputTokens: event.payload.output_tokens,
+                cacheReadTokens: event.payload.cache_read_input_tokens,
+                cacheWriteTokens: event.payload.cache_creation_input_tokens,
+              }
+            : m,
+        );
+        const next = { ...c, messages, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  });
+
+  // F5: structured tool metadata — exit code / modified paths / stdout /
+  // stderr — arrives after the matching tool_result. Merge into the
+  // already-rendered tool call so the chat surface can show exit code etc.
+  const toolOutputExtendedUnlisten = await listen<{
+    id: string;
+    exit_code?: number | null;
+    modified_paths?: string[] | null;
+    stdout?: string | null;
+    stderr?: string | null;
+  }>(apiAgentToolOutputExtendedEvent(id), (event) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const messages = c.messages.map((m) => {
+          if (!m.toolCalls) return m;
+          let touched = false;
+          const toolCalls = m.toolCalls.map((tc) => {
+            if (tc.id !== event.payload.id) return tc;
+            touched = true;
+            return {
+              ...tc,
+              exitCode: event.payload.exit_code ?? tc.exitCode,
+              modifiedPaths:
+                event.payload.modified_paths ?? tc.modifiedPaths,
+              stdout: event.payload.stdout ?? tc.stdout,
+              stderr: event.payload.stderr ?? tc.stderr,
+            };
+          });
+          return touched ? { ...m, toolCalls } : m;
+        });
+        const next = { ...c, messages, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  });
+
+  apiConversationCleanup.set(id, () => {
+    chunkUnlisten();
+    toolStartUnlisten();
+    toolResultUnlisten();
+    doneUnlisten();
+    errorUnlisten();
+    thinkingUnlisten();
+    thinkingStopUnlisten();
+    permissionReqUnlisten();
+    pendingEditUnlisten();
+    planBlockUnlisten();
+    toolOutputExtendedUnlisten();
+    turnSummaryUnlisten();
+  });
 }
 
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
@@ -423,20 +894,39 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget, explicitId, skipBackendStart, allowedTools, memoryContextEnabled) => {
+  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget, explicitId, skipBackendStart, allowedTools, memoryContextEnabled, attachments, enabledMcpServerIds) => {
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
 
-    // Memory injection: when memoryContextEnabled, prepend the PacketADE memory
-    // layer's project context (learned patterns, prior lessons, recent summaries)
-    // to the system prompt. Requires a system-prompt override to anchor the
-    // injection — otherwise the backend default fires untouched.
+    // System-prompt assembly. Order (lowest in the prompt → highest):
+    //   1. AGENTS.md / CLAUDE.md from the project root (the de-facto standard
+    //      cross-tool instructions file).
+    //   2. PacketADE memory layer (learned patterns + recent summaries),
+    //      gated on the per-conversation `memoryContextEnabled` flag.
+    //   3. Profile / explicit `systemPromptOverride` (lives last so it wins
+    //      conflicts of intent — the user picked this profile deliberately).
     let effectiveSystemPrompt: string | null = systemPromptOverride ?? null;
-    if (memoryContextEnabled && effectiveSystemPrompt) {
-      const memoryContext = useMemoryStore.getState().getContextForSession(projectPath);
+
+    if (memoryContextEnabled) {
+      const memoryContext = useMemoryStore
+        .getState()
+        .getContextForSession(projectPath);
       if (memoryContext.trim().length > 0) {
-        effectiveSystemPrompt = `## Project memory (auto-injected from PacketADE memory layer)\n\n${memoryContext}\n\n---\n\n${effectiveSystemPrompt}`;
+        const base = effectiveSystemPrompt ?? "";
+        effectiveSystemPrompt = `## Project memory (auto-injected from PacketADE memory layer)\n\n${memoryContext}\n\n---\n\n${base}`;
       }
+    }
+
+    // AGENTS.md prepend — async fetch, best-effort; failures are silent so a
+    // missing file never blocks a launch.
+    try {
+      const agentsMd = await loadAgentsMd(projectPath);
+      if (agentsMd) {
+        const base = effectiveSystemPrompt ?? "";
+        effectiveSystemPrompt = `## Project guidance (from AGENTS.md / CLAUDE.md)\n\n${agentsMd}\n\n---\n\n${base}`;
+      }
+    } catch {
+      // Best-effort; absent file is the common case.
     }
 
     const now = Date.now();
@@ -486,6 +976,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         : undefined,
       allowedTools: allowedTools ?? undefined,
       memoryContextEnabled: memoryContextEnabled ?? false,
+      enabledMcpServerIds: enabledMcpServerIds ?? undefined,
     };
 
     set((s) => ({
@@ -494,15 +985,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }));
 
     try {
-      // Set up event listeners for API agent streaming
-      const {
-        apiAgentChunkEvent,
-        apiAgentToolStartEvent,
-        apiAgentToolResultEvent,
-        apiAgentDoneEvent,
-        apiAgentErrorEvent,
-      } = await import("@/lib/events");
-
       // Create a streaming assistant message
       const assistantMsgId = generateId("msg");
       set((s) => ({
@@ -525,268 +1007,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         ),
       }));
 
-      // Listen for text chunks
-      const chunkUnlisten = await listen<string>(apiAgentChunkEvent(id), (event) => {
-        let updated: AgentConversation | undefined;
-        set((s) => ({
-          conversations: s.conversations.map((c) => {
-            if (c.id !== id) return c;
-            const messages = c.messages.map((m) => {
-              if (m.isStreaming && m.role === "assistant") {
-                return { ...m, content: m.content + event.payload };
-              }
-              return m;
-            });
-            const next = { ...c, messages, updatedAt: Date.now() };
-            updated = next;
-            return next;
-          }),
-        }));
-        if (updated) scheduleSave(updated);
-      });
+      await installApiAgentListeners(id, get, set);
 
-      // Listen for tool starts
-      const toolStartUnlisten = await listen<{ id: string; name: string }>(
-        apiAgentToolStartEvent(id),
-        (event) => {
-          let updated: AgentConversation | undefined;
-          set((s) => ({
-            conversations: s.conversations.map((c) => {
-              if (c.id !== id) return c;
-              const messages = c.messages.map((m) => {
-                if (m.isStreaming && m.role === "assistant") {
-                  const toolCalls: AgentToolCall[] = [
-                    ...(m.toolCalls ?? []),
-                    { id: event.payload.id, name: event.payload.name, status: "running" as const },
-                  ];
-                  return { ...m, toolCalls };
-                }
-                return m;
-              });
-              const next = { ...c, messages, updatedAt: Date.now() };
-              updated = next;
-              return next;
-            }),
-          }));
-          if (updated) scheduleSave(updated);
-        }
-      );
-
-      // Listen for tool results
-      const toolResultUnlisten = await listen<{
-        id: string;
-        name: string;
-        content: string;
-        is_error: boolean;
-        input: string;
-      }>(apiAgentToolResultEvent(id), (event) => {
-        let updated: AgentConversation | undefined;
-        set((s) => ({
-          conversations: s.conversations.map((c) => {
-            if (c.id !== id) return c;
-            const messages = c.messages.map((m) => {
-              if (m.isStreaming && m.role === "assistant" && m.toolCalls) {
-                const toolCalls = m.toolCalls.map((tc) =>
-                  tc.id === event.payload.id
-                    ? {
-                        ...tc,
-                        status: (event.payload.is_error ? "error" : "done") as AgentToolCall["status"],
-                        summary: event.payload.content.slice(0, 200),
-                        fullContent: event.payload.content,
-                        input: event.payload.input,
-                      }
-                    : tc
-                );
-                return { ...m, toolCalls };
-              }
-              return m;
-            });
-            const next = { ...c, messages, updatedAt: Date.now() };
-            updated = next;
-            return next;
-          }),
-        }));
-        if (updated) scheduleSave(updated);
-      });
-
-      // Listen for done
-      const doneUnlisten = await listen<{
-        input_tokens: number;
-        output_tokens: number;
-        cache_read_input_tokens: number;
-        cache_creation_input_tokens: number;
-      }>(
-        apiAgentDoneEvent(id),
-        (event) => {
-          let updated: AgentConversation | undefined;
-          let nextQueued: string | undefined;
-          set((s) => ({
-            conversations: s.conversations.map((c) => {
-              if (c.id !== id) return c;
-              const messages = c.messages.map((m) =>
-                m.isStreaming
-                  ? {
-                      ...m,
-                      isStreaming: false,
-                      inputTokens: event.payload.input_tokens,
-                      outputTokens: event.payload.output_tokens,
-                      cacheReadTokens: event.payload.cache_read_input_tokens,
-                      cacheWriteTokens: event.payload.cache_creation_input_tokens,
-                    }
-                  : m
-              );
-              // Drain first queued message (if any)
-              const queued = c.queuedMessages ?? [];
-              let remainingQueued = queued;
-              if (queued.length > 0) {
-                nextQueued = queued[0];
-                remainingQueued = queued.slice(1);
-              }
-              const next: AgentConversation = {
-                ...c,
-                messages,
-                status: "idle",
-                updatedAt: Date.now(),
-                queuedMessages: remainingQueued,
-              };
-              updated = next;
-              return next;
-            }),
-          }));
-          if (updated) scheduleSave(updated);
-          // Trigger sendMessage for the dequeued message after state settles
-          if (nextQueued !== undefined) {
-            const drained = nextQueued;
-            setTimeout(() => {
-              get().sendMessage(id, drained);
-            }, 0);
-          }
-          // Desktop notification — only if user isn't actively viewing this conversation.
-          if (updated && get().selectedConversationId !== id) {
-            const finishedTitle = updated.title;
-            void import("@/lib/notifications").then(({ notifyConversationDone }) => {
-              void notifyConversationDone(finishedTitle);
-            });
-          }
-        }
-      );
-
-      // Listen for errors
-      const errorUnlisten = await listen<{ message: string }>(
-        apiAgentErrorEvent(id),
-        (event) => {
-          let updated: AgentConversation | undefined;
-          set((s) => ({
-            conversations: s.conversations.map((c) => {
-              if (c.id !== id) return c;
-              const messages = c.messages.map((m) =>
-                m.isStreaming
-                  ? {
-                      ...m,
-                      isStreaming: false,
-                      content: m.content + `\n\nError: ${event.payload.message}`,
-                    }
-                  : m
-              );
-              const next = { ...c, messages, status: "failed" as const, updatedAt: Date.now() };
-              updated = next;
-              return next;
-            }),
-          }));
-          if (updated) scheduleSave(updated);
-          if (updated) {
-            const failedTitle = `Failed: ${updated.title}`;
-            void import("@/lib/notifications").then(({ notifyConversationDone }) => {
-              void notifyConversationDone(failedTitle);
-            });
-          }
-        }
-      );
-
-      // Thinking deltas (Anthropic extended thinking)
-      const thinkingUnlisten = await listen<{ text: string }>(
-        apiAgentThinkingEvent(id),
-        (event) => {
-          let updated: AgentConversation | undefined;
-          set((s) => ({
-            conversations: s.conversations.map((c) => {
-              if (c.id !== id) return c;
-              const nextStream = (c.thinkingStream ?? "") + event.payload.text;
-              const messages = c.messages.map((m) =>
-                m.isStreaming && m.role === "assistant"
-                  ? { ...m, thinking: (m.thinking ?? "") + event.payload.text }
-                  : m,
-              );
-              const next = { ...c, messages, thinkingStream: nextStream, updatedAt: Date.now() };
-              updated = next;
-              return next;
-            }),
-          }));
-          if (updated) scheduleSave(updated);
-        },
-      );
-
-      // Thinking block stop
-      const thinkingStopUnlisten = await listen<unknown>(
-        apiAgentThinkingStopEvent(id),
-        () => {
-          set((s) => ({
-            conversations: s.conversations.map((c) =>
-              c.id === id ? { ...c, thinkingStream: "" } : c,
-            ),
-          }));
-        },
-      );
-
-      // Permission requests
-      const permissionReqUnlisten = await listen<PendingPermission>(
-        apiAgentPermissionRequestEvent(id),
-        (event) => {
-          let updated: AgentConversation | undefined;
-          set((s) => ({
-            conversations: s.conversations.map((c) => {
-              if (c.id !== id) return c;
-              const pending = [...(c.pendingPermissions ?? []), event.payload];
-              const next = { ...c, pendingPermissions: pending, updatedAt: Date.now() };
-              updated = next;
-              return next;
-            }),
-          }));
-          if (updated) scheduleSave(updated);
-        },
-      );
-
-      // Pending write-file edits
-      const pendingEditUnlisten = await listen<PendingEdit>(
-        apiAgentPendingEditEvent(id),
-        (event) => {
-          let updated: AgentConversation | undefined;
-          set((s) => ({
-            conversations: s.conversations.map((c) => {
-              if (c.id !== id) return c;
-              const pending = [...(c.pendingEdits ?? []), event.payload];
-              const next = { ...c, pendingEdits: pending, updatedAt: Date.now() };
-              updated = next;
-              return next;
-            }),
-          }));
-          if (updated) scheduleSave(updated);
-        },
-      );
-
-      // Store unlisten functions for cleanup (using rawOutput field as we don't need it for API mode)
-      // We'll store them in a module-level map instead
-      apiConversationCleanup.set(id, () => {
-        chunkUnlisten();
-        toolStartUnlisten();
-        toolResultUnlisten();
-        doneUnlisten();
-        errorUnlisten();
-        thinkingUnlisten();
-        thinkingStopUnlisten();
-        permissionReqUnlisten();
-        pendingEditUnlisten();
-      });
 
       // Start the API agent session unless the caller already did so.
       if (!skipBackendStart) {
@@ -808,10 +1030,12 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           initialMessage,
           effectiveSystemPrompt,
           thinkingEnabled ?? false,
-          undefined, // attachments — not wired in UI yet
+          attachments ?? undefined,
           planMode ?? false,
           sshConfig,
           allowedTools ?? null,
+          null, // resumeToken — fresh start
+          enabledMcpServerIds ?? null,
         );
       }
     } catch {
@@ -827,9 +1051,22 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  sendMessage: (conversationId, content) => {
+  sendMessage: (conversationId, content, attachments) => {
     const conv = get().conversations.find((c) => c.id === conversationId);
     if (!conv) return;
+    // Fresh user turn — re-arm auto-failover for this conversation.
+    failoverGuard.delete(conversationId);
+
+    // F1: hydrated API conversations have no live listeners — route the
+    // first send-after-restart through the resume path so the Rust side
+    // re-creates the session before the message arrives.
+    if (
+      conv.mode === "api" &&
+      !apiConversationCleanup.has(conversationId)
+    ) {
+      void get().resumeApiConversation(conversationId, content, attachments);
+      return;
+    }
 
     // If the agent is still running (API mode), queue the message and show a queued bubble.
     const isRunning =
@@ -911,7 +1148,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         ),
       }));
 
-      void sendApiAgentMessage(conversationId, content).catch(() => {
+      void sendApiAgentMessage(
+        conversationId,
+        content,
+        attachments ?? undefined,
+      ).catch(() => {
         set((s) => ({
           conversations: s.conversations.map((c) =>
             c.id === conversationId
@@ -1144,8 +1385,125 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     if (updated) scheduleSave(updated);
   },
 
-  respondEdit: async (id, toolId, decision) => {
-    await tauriRespondEdit(id, toolId, decision);
+  setEnabledMcpServerIds: (id, ids) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = {
+          ...c,
+          enabledMcpServerIds: ids ?? undefined,
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  setSpec: (id, criteria) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = {
+          ...c,
+          spec: { criteria, status: "draft", updatedAt: Date.now() },
+          specStage: c.specStage ?? "spec",
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  },
+
+  approveSpec: (id) => {
+    const conv = get().conversations.find((c) => c.id === id);
+    if (!conv || !conv.spec || conv.spec.criteria.length === 0) return;
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = {
+          ...c,
+          spec: { ...c.spec!, status: "approved", updatedAt: Date.now() },
+          specStage: "plan",
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+    // Synthesize a user turn requesting the structured plan.
+    const bullets = conv.spec.criteria
+      .map((c, i) => `${i + 1}. ${c}`)
+      .join("\n");
+    const prompt =
+      `Spec approved. Success criteria:\n${bullets}\n\n` +
+      `Now produce a Plan via TodoWrite covering each criterion. ` +
+      `Stop after the plan — wait for user approval before executing.`;
+    get().sendMessage(id, prompt);
+  },
+
+  approvePlan: (id) => {
+    const conv = get().conversations.find((c) => c.id === id);
+    if (!conv) return;
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = {
+          ...c,
+          planApproved: true,
+          specStage: "code",
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+    // Lift plan mode if it was on (the launcher's Plan mode set it on
+    // start) and tell the model to execute.
+    if (conv.planMode) {
+      void get().setPlanMode(id, false);
+    }
+    get().sendMessage(
+      id,
+      "Plan approved. Execute step-by-step, marking TodoWrite items as you complete them.",
+    );
+  },
+
+  cancelPendingTools: async (id) => {
+    // Optimistic UI clear — backend has no echo event.
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = {
+          ...c,
+          pendingPermissions: [],
+          pendingEdits: [],
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+    try {
+      await tauriCancelPendingTools(id);
+    } catch (e) {
+      console.warn("cancelPendingTools failed:", e);
+    }
+  },
+
+  respondEdit: async (id, toolId, decision, mergedContent) => {
+    await tauriRespondEdit(id, toolId, decision, mergedContent);
     let updated: AgentConversation | undefined;
     set((s) => ({
       conversations: s.conversations.map((c) => {
@@ -1284,6 +1642,98 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         };
       }),
     }));
+  },
+
+  /**
+   * F1 — re-establish a hydrated conversation. Run when sendMessage is
+   * called on an api-mode conversation that's been deserialized from disk
+   * but has no live event listeners. Re-attaches the listener block then
+   * calls `start_api_agent_session` with the conversation's resumeToken
+   * (if any) and `content` as the initial message.
+   *
+   * Routes around `sendApiAgentMessage` because the Rust side has no
+   * record of the session id — calling send before start would 404.
+   */
+  resumeApiConversation: async (conversationId, content, attachments) => {
+    const conv = get().conversations.find((c) => c.id === conversationId);
+    if (!conv || conv.mode !== "api" || !conv.provider || !conv.model) return;
+
+    failoverGuard.delete(conversationId);
+
+    // Append the user message + a streaming assistant placeholder so the
+    // chat UI doesn't go blank between resume click and first chunk.
+    const userMsg: AgentMessage = {
+      id: generateId("msg"),
+      role: "user",
+      content,
+      timestamp: Date.now(),
+    };
+    const assistantMsgId = generateId("msg");
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== conversationId) return c;
+        const next: AgentConversation = {
+          ...c,
+          messages: [
+            ...c.messages,
+            userMsg,
+            {
+              id: assistantMsgId,
+              role: "assistant",
+              content: "",
+              timestamp: Date.now(),
+              isStreaming: true,
+            },
+          ],
+          status: "active",
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+
+    try {
+      await installApiAgentListeners(conversationId, get, set);
+
+      const sshConfig = conv.sshTarget
+        ? {
+            host: conv.sshTarget.host,
+            port: 22,
+            user: conv.sshTarget.user,
+            remote_path: conv.sshTarget.remotePath,
+            key_path: null,
+            target_id: conv.sshTarget.id,
+          }
+        : null;
+
+      await startApiAgentSession(
+        conversationId,
+        conv.provider,
+        conv.model,
+        conv.projectPath,
+        content,
+        conv.systemPromptOverride ?? null,
+        conv.thinkingEnabled ?? false,
+        attachments ?? undefined,
+        conv.planMode ?? false,
+        sshConfig,
+        conv.allowedTools ?? null,
+        conv.resumeToken ?? null,
+        conv.enabledMcpServerIds ?? null,
+      );
+    } catch (e) {
+      console.warn("resumeApiConversation failed:", e);
+      set((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === conversationId
+            ? { ...c, status: "failed", updatedAt: Date.now() }
+            : c,
+        ),
+      }));
+    }
   },
 }));
 

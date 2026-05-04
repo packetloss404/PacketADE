@@ -11,6 +11,11 @@ export interface AgentToolCall {
   fullContent?: string;
   /** Raw tool input (JSON string the model passed to the tool). */
   input?: string;
+  /** v3 / F5: structured tool metadata from `tool_output_extended`. */
+  exitCode?: number;
+  modifiedPaths?: string[];
+  stdout?: string;
+  stderr?: string;
 }
 
 export interface AgentMessage {
@@ -51,6 +56,15 @@ export interface PendingEdit {
 }
 
 export type AgentMode = "pty" | "api";
+
+/** v3: structured plan/todo item, mirrors the Anthropic SDK's TodoWrite
+ * payload shape. Surfaced via the `api-agent:plan-block:*` event. */
+export interface AgentPlanItem {
+  id?: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm?: string;
+}
 
 /** How much detail to show in the transcript renderer. */
 export type TranscriptVerbosity = "summary" | "normal" | "verbose";
@@ -115,4 +129,28 @@ export interface AgentConversation {
    * separate Workspace pane. Kept so persisted conversations still parse;
    * new conversations should leave it unset and runtime UI ignores it. */
   workspaceId?: string;
+  /** v3: most recent structured plan from the provider's `plan_block` event
+   * (Anthropic's TodoWrite, etc.). PlanPanel reads from here when present
+   * and falls back to parsing tool calls otherwise. */
+  plan?: AgentPlanItem[];
+  /** v3: opaque resume token captured from the provider's `done` event.
+   * When set on a hydrated conversation, the next launch reuses it via
+   * `start_api_agent_session.resume`. */
+  resumeToken?: string;
+  /** F9: subset of MCP server names enabled for THIS conversation.
+   * `undefined` = all non-disabled servers (back-compat). Names match
+   * `McpServerEntry.name` from `useMcpStore`. Sidecar protocol has no
+   * mid-session MCP swap, so flips here apply on the NEXT session start. */
+  enabledMcpServerIds?: string[];
+  /** F10: Plan-first three-stage FSM. `"spec"` = collecting success
+   * criteria; `"plan"` = model has produced a plan (TodoWrite) waiting on
+   * user approval; `"code"` = approved, executing. Undefined = the
+   * pre-feature flow (mode buttons + planMode toggle drive everything). */
+  specStage?: "spec" | "plan" | "code";
+  /** F10: editable success-criteria bullets. Iterated by the user during
+   * specStage="spec"; locked when the user approves the spec. */
+  spec?: { criteria: string[]; status: "draft" | "approved"; updatedAt: number };
+  /** F10: true once the user has approved the model's plan. Setting this
+   * lifts plan mode and dispatches the "execute" turn. */
+  planApproved?: boolean;
 }

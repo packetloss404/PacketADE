@@ -1,4 +1,5 @@
 use crate::core::git;
+use crate::core::worktree;
 
 #[tauri::command]
 pub async fn get_git_branch(project_path: String) -> Result<String, String> {
@@ -77,4 +78,33 @@ pub async fn git_safety_check(project_path: String) -> Result<git::GitSafetyRepo
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// T3.F: provision a git worktree for an Agents-pane conversation. The
+/// worktree lives at `<project_path>/.pkt-worktrees/<conv_id>` on a new
+/// branch `pkt/<conv_id>` based off `base_branch`. Returns the absolute
+/// worktree path so the frontend can pass it to `start_api_agent_session`
+/// as the conversation's `project_path` — every subsequent tool call then
+/// runs inside the worktree.
+///
+/// Idempotent: if the worktree already exists, returns its path.
+#[tauri::command]
+pub async fn create_conversation_worktree(
+    project_path: String,
+    conv_id: String,
+    base_branch: String,
+) -> Result<String, String> {
+    super::validate_project_path(&project_path)?;
+    worktree::create_local_worktree(&project_path, &conv_id, &base_branch).await
+}
+
+/// T3.F: tear down a worktree previously created by
+/// `create_conversation_worktree`. Idempotent — missing worktrees succeed.
+#[tauri::command]
+pub async fn remove_conversation_worktree(
+    project_path: String,
+    conv_id: String,
+) -> Result<(), String> {
+    super::validate_project_path(&project_path)?;
+    worktree::remove_local_worktree(&project_path, &conv_id).await
 }

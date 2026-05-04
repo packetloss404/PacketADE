@@ -42,7 +42,15 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "echo"]
 ///
 /// v2 (Tier 3 slice B): added `set_permission_mode`, `set_model`, and `retry`
 /// request types on the wire.
-const EXPECTED_PROTOCOL_VERSION: u32 = 2;
+///
+/// v3 (PacketADE Tier 3 slice A): added typed `attachments` on start/send,
+/// `mergedContent` on edit_response, `batchId`/`batchSize` on
+/// `permission_request`, `resumeToken` on `done`, and three new events:
+/// `plan_block`, `tool_output_extended`, `turn_summary`.
+///
+/// v4 (F8): added `cancel_pending_tools` request — drains parked
+/// permission/edit prompts as denied without killing the session.
+const EXPECTED_PROTOCOL_VERSION: u32 = 4;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.
@@ -90,6 +98,15 @@ fn permission_request_event(session_id: &str) -> String {
 fn pending_edit_event(session_id: &str) -> String {
     format!("api-agent:pending-edit:{}", session_id)
 }
+fn plan_block_event(session_id: &str) -> String {
+    format!("api-agent:plan-block:{}", session_id)
+}
+fn tool_output_extended_event(session_id: &str) -> String {
+    format!("api-agent:tool-output-extended:{}", session_id)
+}
+fn turn_summary_event(session_id: &str) -> String {
+    format!("api-agent:turn-summary:{}", session_id)
+}
 
 // ---------------------------------------------------------------------------
 // Event payload shapes — must match `api_agent.rs` exactly so the frontend
@@ -121,6 +138,13 @@ struct PermissionRequestPayload {
     id: String,
     name: String,
     arguments: String,
+    /// v3: when the provider knows several permission requests are landing
+    /// as a logical batch (e.g. three Bash calls in a row), these tell the
+    /// UI to render an "approve all N" rollup with the right denominator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_size: Option<u64>,
 }
 
 #[derive(Clone, Serialize)]
@@ -136,6 +160,50 @@ struct PendingEditPayload {
 
 #[derive(Clone, Serialize)]
 struct DonePayload {
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_input_tokens: u64,
+    cache_creation_input_tokens: u64,
+    /// v3: opaque resume token the frontend can persist and re-send via
+    /// `start_api_agent_session.resume` to continue this conversation across
+    /// app restarts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resume_token: Option<String>,
+}
+
+/// v3: structured plan/todo item parsed by the provider from the
+/// Anthropic SDK's TodoWrite tool call (or equivalent).
+#[derive(Clone, Serialize)]
+struct PlanItemPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+    content: String,
+    /// "pending" | "in_progress" | "completed"
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_form: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct PlanBlockPayload {
+    items: Vec<PlanItemPayload>,
+}
+
+#[derive(Clone, Serialize)]
+struct ToolOutputExtendedPayload {
+    id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    modified_paths: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stdout: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stderr: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct TurnSummaryPayload {
     input_tokens: u64,
     output_tokens: u64,
     cache_read_input_tokens: u64,
@@ -350,6 +418,7 @@ impl SidecarManager {
         resume: Option<String>,
         thinking_enabled: Option<bool>,
         plan_mode: Option<bool>,
+        attachments: Value,
     ) -> Result<(), String> {
         {
             let mut sessions = self.owned_sessions.lock().await;
@@ -368,6 +437,7 @@ impl SidecarManager {
             "resume": resume,
             "thinkingEnabled": thinking_enabled,
             "planMode": plan_mode,
+            "attachments": attachments,
         });
         self.send_json(req).await
     }
@@ -404,16 +474,21 @@ impl SidecarManager {
         self.send_json(req).await
     }
 
-    /// Forward a pending-edit approval/rejection to the sidecar.
+    /// Forward a pending-edit approval/rejection to the sidecar. v3:
+    /// `merged_content` carries an override file body for per-hunk
+    /// acceptance — when present, the provider writes that content directly
+    /// instead of letting the SDK's tool land its full `after`.
     pub async fn forward_edit(
         &self,
         session_id: String,
         approved: bool,
+        merged_content: Option<String>,
     ) -> Result<(), String> {
         let req = json!({
             "type": "edit_response",
             "sessionId": session_id,
             "approved": approved,
+            "mergedContent": merged_content,
         });
         self.send_json(req).await
     }
@@ -465,6 +540,20 @@ impl SidecarManager {
     pub async fn forward_cancel(&self, session_id: String) -> Result<(), String> {
         let req = json!({
             "type": "cancel",
+            "sessionId": session_id,
+        });
+        self.send_json(req).await
+    }
+
+    /// F8: drain any parked permission/edit prompts as denied without
+    /// killing the agent loop. Used by the per-conversation "Cancel
+    /// pending" UI affordance.
+    pub async fn forward_cancel_pending_tools(
+        &self,
+        session_id: String,
+    ) -> Result<(), String> {
+        let req = json!({
+            "type": "cancel_pending_tools",
             "sessionId": session_id,
         });
         self.send_json(req).await
@@ -1064,9 +1153,20 @@ impl SidecarManager {
                         other => serde_json::to_string(other).unwrap_or_default(),
                     })
                     .unwrap_or_default();
+                let batch_id = value
+                    .get("batchId")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let batch_size = value.get("batchSize").and_then(|v| v.as_u64());
                 let _ = self.app_handle.emit(
                     &permission_request_event(&session_id),
-                    PermissionRequestPayload { id, name, arguments },
+                    PermissionRequestPayload {
+                        id,
+                        name,
+                        arguments,
+                        batch_id,
+                        batch_size,
+                    },
                 );
             }
             "pending_edit" => {
@@ -1114,6 +1214,10 @@ impl SidecarManager {
                     .get("cacheCreationInputTokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
+                let resume_token = value
+                    .get("resumeToken")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let _ = self.app_handle.emit(
                     &done_event(&session_id),
                     DonePayload {
@@ -1121,6 +1225,7 @@ impl SidecarManager {
                         output_tokens,
                         cache_read_input_tokens,
                         cache_creation_input_tokens,
+                        resume_token,
                     },
                 );
                 // Session is finished — drop it from the owned set. (Session
@@ -1128,6 +1233,106 @@ impl SidecarManager {
                 // resume token; that will re-insert it.)
                 let mut sessions = self.owned_sessions.lock().await;
                 sessions.remove(&session_id);
+            }
+            "plan_block" => {
+                let items: Vec<PlanItemPayload> = value
+                    .get("items")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|item| {
+                                let content = item
+                                    .get("content")
+                                    .and_then(|v| v.as_str())?
+                                    .to_string();
+                                let status = item
+                                    .get("status")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("pending")
+                                    .to_string();
+                                let id = item
+                                    .get("id")
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from);
+                                let active_form = item
+                                    .get("activeForm")
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from);
+                                Some(PlanItemPayload {
+                                    id,
+                                    content,
+                                    status,
+                                    active_form,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let _ = self.app_handle.emit(
+                    &plan_block_event(&session_id),
+                    PlanBlockPayload { items },
+                );
+            }
+            "tool_output_extended" => {
+                let id = value
+                    .get("toolUseId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let exit_code = value.get("exitCode").and_then(|v| v.as_i64());
+                let modified_paths = value
+                    .get("modifiedPaths")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|s| s.as_str().map(String::from))
+                            .collect()
+                    });
+                let stdout = value
+                    .get("stdout")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let stderr = value
+                    .get("stderr")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let _ = self.app_handle.emit(
+                    &tool_output_extended_event(&session_id),
+                    ToolOutputExtendedPayload {
+                        id,
+                        exit_code,
+                        modified_paths,
+                        stdout,
+                        stderr,
+                    },
+                );
+            }
+            "turn_summary" => {
+                let input_tokens = value
+                    .get("inputTokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let output_tokens = value
+                    .get("outputTokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let cache_read_input_tokens = value
+                    .get("cacheReadInputTokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let cache_creation_input_tokens = value
+                    .get("cacheCreationInputTokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let _ = self.app_handle.emit(
+                    &turn_summary_event(&session_id),
+                    TurnSummaryPayload {
+                        input_tokens,
+                        output_tokens,
+                        cache_read_input_tokens,
+                        cache_creation_input_tokens,
+                    },
+                );
             }
             "error" => {
                 let message = value

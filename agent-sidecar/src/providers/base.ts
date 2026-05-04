@@ -1,4 +1,5 @@
 import type {
+  CancelPendingToolsRequest,
   Emit,
   EditResponseRequest,
   PermissionResponseRequest,
@@ -25,4 +26,11 @@ export interface ProviderHandler {
   setPermissionMode?(req: SetPermissionModeRequest, emit: Emit): Promise<void>;
   setModel?(req: SetModelRequest, emit: Emit): Promise<void>;
   retry?(req: RetryRequest, emit: Emit): Promise<void>;
+  /** v3+: drain parked permission/edit prompts as denied without killing the
+   * session. The model continues with synthetic "User cancelled this tool"
+   * tool_results. Distinct from `cancel`, which tears the whole query down. */
+  cancelPendingTools?(
+    req: CancelPendingToolsRequest,
+    emit: Emit,
+  ): Promise<void>;
 }

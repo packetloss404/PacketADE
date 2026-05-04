@@ -6,12 +6,20 @@ import {
 } from "@/stores/agentTaskStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useSshTargetStore } from "@/stores/sshTargetStore";
+import { useProfileStore } from "@/stores/profileStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
 import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
+import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
-import { getProviderAuthStatus } from "@/lib/tauri";
+import {
+  getProviderAuthStatus,
+  createConversationWorktree,
+  getGitBranch,
+  type ImageAttachment,
+} from "@/lib/tauri";
+import { generateId } from "@/lib/storage";
 import { isSshUri, parseSshTargetId } from "@/types/ssh";
 import type { AgentMode } from "@/components/agents/AgentInputArea";
 
@@ -46,6 +54,11 @@ export function AgentsView() {
   const [selectedAgent, setSelectedAgent] = useState<AgentCli>(DEFAULT_AGENT);
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
+  const defaultProfileId = useProfileStore((s) => s.defaultProfileId);
+  const getProfile = useProfileStore((s) => s.getProfile);
+  const [selectedProfileId, setSelectedProfileId] =
+    useState<string>(defaultProfileId);
+  const [worktreeEnabled, setWorktreeEnabled] = useState<boolean>(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const autoPickRanRef = useRef(false);
 
@@ -120,78 +133,150 @@ export function AgentsView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleNewAgent]);
 
-  const handleLaunch = useCallback(() => {
-    const text = agentInputText.trim();
-    if (!text) return;
-    if (!selectedRepo) return;
+  const handleLaunch = useCallback(
+    (attachments: ImageAttachment[]) => {
+      const text = agentInputText.trim();
+      if (!text) return;
+      if (!selectedRepo) return;
 
-    const model = selectedModel || getDefaultModel(selectedAgent);
-    const systemPrompt: string | null = null;
+      const model = selectedModel || getDefaultModel(selectedAgent);
 
-    // Mode → planMode + post-create permissionMode.
-    const planMode = agentMode === "ask" || agentMode === "plan";
-    const postCreatePermissionMode: "auto" | "ask_for_risky" =
-      agentMode === "manual" ? "ask_for_risky" : "auto";
-    // Plan mode: prepend a brief instruction so the agent leads with a plan.
-    const initialMessage =
-      agentMode === "plan"
-        ? `Begin with a structured plan (## Plan / ## Files to change / ## Steps), then implement step by step.\n\n${text}`
-        : text;
+      // Profile contributes the system prompt + tool whitelist + memory flag.
+      // Mode (the four launcher buttons) wins for plan/permission posture so
+      // users can override a profile's defaults per-launch.
+      const profile = getProfile(selectedProfileId);
+      const systemPrompt: string | null =
+        profile && profile.systemPrompt.length > 0 ? profile.systemPrompt : null;
+      const allowedTools: string[] | null = profile?.allowedTools ?? null;
+      const memoryContextEnabled = profile?.memoryContextEnabled ?? false;
 
-    const setPermissionMode = useAgentTaskStore.getState().setPermissionMode;
+      // Mode → planMode + post-create permissionMode (mode overrides profile).
+      const planMode = agentMode === "ask" || agentMode === "plan";
+      const postCreatePermissionMode: "auto" | "ask_for_risky" =
+        agentMode === "manual" ? "ask_for_risky" : "auto";
+      // F10: Plan mode now drives the three-stage Spec → Plan → Code FSM.
+      // Tell the agent to lead with bullet success criteria and STOP — the
+      // SpecPanel will render those criteria as editable rows for the user.
+      const initialMessage =
+        agentMode === "plan"
+          ? `Before any plan or code, propose 3-7 success-criterion bullets for this task and STOP. Wait for the user to lock the spec before producing a Plan.\n\nTask:\n${text}`
+          : text;
 
-    void (async () => {
-      let convId: string | undefined;
-      if (isSshUri(selectedRepo)) {
-        const targetId = parseSshTargetId(selectedRepo);
-        const target = targetId
-          ? useSshTargetStore.getState().getTarget(targetId)
-          : undefined;
-        if (!target) {
-          alert("SSH target no longer exists. Reconnect it from the project dropdown.");
-          return;
+      const setPermissionMode = useAgentTaskStore.getState().setPermissionMode;
+      const att = attachments.length > 0 ? attachments : null;
+
+      void (async () => {
+        let convId: string | undefined;
+        if (isSshUri(selectedRepo)) {
+          const targetId = parseSshTargetId(selectedRepo);
+          const target = targetId
+            ? useSshTargetStore.getState().getTarget(targetId)
+            : undefined;
+          if (!target) {
+            alert(
+              "SSH target no longer exists. Reconnect it from the project dropdown.",
+            );
+            return;
+          }
+          useSshTargetStore.getState().touchTarget(target.id);
+          convId = await createApiConversation(
+            selectedAgent,
+            target.remotePath,
+            model,
+            initialMessage,
+            systemPrompt,
+            undefined,
+            planMode,
+            target,
+            undefined,
+            false,
+            allowedTools,
+            memoryContextEnabled,
+            att,
+          );
+        } else {
+          useProjectHistoryStore.getState().recordOpen(selectedRepo);
+
+          // T3.F: when worktree mode is on, provision a fresh worktree at
+          // <projectPath>/.pkt-worktrees/<convId> on a new pkt/<convId>
+          // branch off the current HEAD. The conversation then runs inside
+          // the worktree so its tool calls don't touch the main checkout.
+          let effectiveProjectPath = selectedRepo;
+          let explicitConvId: string | undefined;
+          if (worktreeEnabled) {
+            const provisionalConvId = generateId("conv");
+            try {
+              const branch = await getGitBranch(selectedRepo).catch(() => "");
+              const baseBranch = branch && branch.length > 0 ? branch : "HEAD";
+              const wtPath = await createConversationWorktree(
+                selectedRepo,
+                provisionalConvId,
+                baseBranch,
+              );
+              effectiveProjectPath = wtPath;
+              explicitConvId = provisionalConvId;
+            } catch (e) {
+              console.warn(
+                "Worktree provisioning failed; falling back to project root:",
+                e,
+              );
+            }
+          }
+
+          convId = await createApiConversation(
+            selectedAgent,
+            effectiveProjectPath,
+            model,
+            initialMessage,
+            systemPrompt,
+            undefined,
+            planMode,
+            null,
+            explicitConvId,
+            false,
+            allowedTools,
+            memoryContextEnabled,
+            att,
+          );
         }
-        useSshTargetStore.getState().touchTarget(target.id);
-        convId = await createApiConversation(
-          selectedAgent,
-          target.remotePath,
-          model,
-          initialMessage,
-          systemPrompt,
-          undefined,
-          planMode,
-          target,
-        );
-      } else {
-        useProjectHistoryStore.getState().recordOpen(selectedRepo);
-        convId = await createApiConversation(
-          selectedAgent,
-          selectedRepo,
-          model,
-          initialMessage,
-          systemPrompt,
-          undefined,
-          planMode,
-        );
-      }
-      if (convId && postCreatePermissionMode !== "auto") {
-        try {
-          await setPermissionMode(convId, postCreatePermissionMode);
-        } catch (e) {
-          console.warn("Failed to set permission mode:", e);
+        if (convId && postCreatePermissionMode !== "auto") {
+          try {
+            await setPermissionMode(convId, postCreatePermissionMode);
+          } catch (e) {
+            console.warn("Failed to set permission mode:", e);
+          }
         }
-      }
-    })();
-    setAgentInputText("");
-  }, [
-    agentInputText,
-    selectedRepo,
-    selectedAgent,
-    selectedModel,
-    setAgentInputText,
-    createApiConversation,
-    agentMode,
-  ]);
+        // F10: enter the spec stage so SpecPanel renders criteria as the
+        // model emits them. The model is instructed to bullet-and-stop.
+        if (convId && agentMode === "plan") {
+          useAgentTaskStore.setState((s) => ({
+            conversations: s.conversations.map((c) =>
+              c.id === convId
+                ? {
+                    ...c,
+                    specStage: "spec",
+                    spec: { criteria: [], status: "draft", updatedAt: Date.now() },
+                  }
+                : c,
+            ),
+          }));
+        }
+      })();
+      setAgentInputText("");
+    },
+    [
+      agentInputText,
+      selectedRepo,
+      selectedAgent,
+      selectedModel,
+      setAgentInputText,
+      createApiConversation,
+      agentMode,
+      selectedProfileId,
+      getProfile,
+      worktreeEnabled,
+    ],
+  );
 
   const handleCloseConversation = useCallback(
     (id: string) => {
@@ -201,7 +286,7 @@ export function AgentsView() {
   );
 
   return (
-    <div className="flex flex-1 overflow-hidden bg-bg-primary">
+    <div className="relative flex flex-1 overflow-hidden bg-bg-primary">
       <AgentSidebar
         onNewAgent={handleNewAgent}
         selectedId={selectedConversationId}
@@ -226,8 +311,14 @@ export function AgentsView() {
           onModelChange={setSelectedModel}
           agentMode={agentMode}
           onAgentModeChange={setAgentMode}
+          selectedProfileId={selectedProfileId}
+          onProfileChange={setSelectedProfileId}
+          worktreeEnabled={worktreeEnabled}
+          onWorktreeChange={setWorktreeEnabled}
         />
       )}
+
+      <AgentsOnboarding />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { Brain, FileEdit, TerminalSquare } from "lucide-react";
+import { getActivityLabel } from "./activityLabel";
 
 interface ActivityStripProps {
   state: string;
@@ -36,37 +37,3 @@ export function ActivityIcon({
   return <FileEdit size={10} className="text-text-muted flex-shrink-0" />;
 }
 
-export function getActivityLabel(
-  state: string,
-  tool: string | null,
-  file: string | null
-): string {
-  if (state === "thinking") return "Thinking...";
-
-  if (!tool) return "";
-
-  const shortFile = file
-    ? file.length > 50
-      ? "..." + file.slice(-47)
-      : file
-    : "";
-
-  switch (tool) {
-    case "Edit":
-      return `Editing ${shortFile}`;
-    case "Write":
-      return `Writing ${shortFile}`;
-    case "Read":
-      return `Reading ${shortFile}`;
-    case "Bash":
-      return `Running: ${shortFile}`;
-    case "Glob":
-      return `Searching: ${shortFile}`;
-    case "Grep":
-      return `Searching: ${shortFile}`;
-    case "Task":
-      return `Running task: ${shortFile}`;
-    default:
-      return `${tool} ${shortFile}`;
-  }
-}

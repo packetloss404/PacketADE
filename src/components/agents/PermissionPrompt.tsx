@@ -25,7 +25,7 @@ function prettyJson(raw: string): string {
  */
 function derivePatternHint(toolName: string, rawArgs: string): string | null {
   if (toolName === "bash") {
-    let cmd = "";
+    let cmd: string;
     try {
       const parsed = JSON.parse(rawArgs) as { command?: string };
       cmd = (parsed.command ?? "").trim();
