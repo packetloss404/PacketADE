@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import type { ComponentType, LazyExoticComponent } from "react";
 import type { LucideIcon } from "lucide-react";
 
 export type ModuleCategory = "ai" | "integration" | "utility" | "analysis";
@@ -9,7 +9,7 @@ export interface ModuleManifest {
   description: string;
   icon: LucideIcon;
   iconColor: string;
-  component: ComponentType;
+  component: ComponentType | LazyExoticComponent<ComponentType>;
   category: ModuleCategory;
   order?: number;
   enabledByDefault: boolean;

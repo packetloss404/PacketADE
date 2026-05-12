@@ -60,7 +60,10 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
                     return Ok(key);
                 }
             }
-            Err(format!("No API key configured for {}. Set one in Settings > API Keys.", provider))
+            Err(format!(
+                "No API key configured for {}. Set one in Settings > API Keys.",
+                provider
+            ))
         }
         Err(e) => Err(format!("Failed to read API key for {}: {}", provider, e)),
     }
@@ -78,8 +81,8 @@ pub async fn set_api_key(provider: String, key: String) -> Result<(), String> {
         return Err("API key cannot be empty.".to_string());
     }
 
-    let entry = keyring_entry(&provider)
-        .ok_or_else(|| "Credential store unavailable".to_string())?;
+    let entry =
+        keyring_entry(&provider).ok_or_else(|| "Credential store unavailable".to_string())?;
 
     entry
         .set_password(key.trim())

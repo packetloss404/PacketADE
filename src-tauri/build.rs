@@ -53,6 +53,5 @@ fn copy_per_triple_node() -> Result<(), String> {
 
     std::fs::copy(&src, &dest)
         .map_err(|e| format!("copy {} → {}: {}", src.display(), dest.display(), e))?;
-    println!("cargo:warning=copied {} alongside standalone exe", src_name);
     Ok(())
 }

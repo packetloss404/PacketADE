@@ -25,17 +25,21 @@ interface AttemptTileProps {
   attempt: Attempt;
 }
 
-const STATUS_META: Record<AttemptStatus, { label: string; color: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
-  queued:       { label: "Queued",       color: "text-text-muted",     icon: Loader2 },
-  provisioning: { label: "Provisioning", color: "text-accent-blue",    icon: Loader2 },
-  running:      { label: "Running",      color: "text-accent-blue",    icon: Loader2 },
-  reviewing:    { label: "Reviewing",    color: "text-accent-amber",   icon: AlertTriangle },
-  completed:    { label: "Completed",    color: "text-accent-green",   icon: CheckCircle2 },
-  failed:       { label: "Failed",       color: "text-accent-red",     icon: AlertTriangle },
-  cancelled:    { label: "Cancelled",    color: "text-text-muted",     icon: Square },
+const STATUS_META: Record<
+  AttemptStatus,
+  { label: string; color: string; icon: React.ComponentType<{ size?: number; className?: string }> }
+> = {
+  queued: { label: "Queued", color: "text-text-muted", icon: Loader2 },
+  provisioning: { label: "Provisioning", color: "text-accent-blue", icon: Loader2 },
+  running: { label: "Running", color: "text-accent-blue", icon: Loader2 },
+  reviewing: { label: "Reviewing", color: "text-accent-amber", icon: AlertTriangle },
+  completed: { label: "Completed", color: "text-accent-green", icon: CheckCircle2 },
+  failed: { label: "Failed", color: "text-accent-red", icon: AlertTriangle },
+  cancelled: { label: "Cancelled", color: "text-text-muted", icon: Square },
 };
 
 const SENTINEL_DONE = "<PACKETCODE_DONE>";
+const EMPTY_MESSAGES: AgentMessage[] = [];
 
 export function AttemptTile({ flight, attempt }: AttemptTileProps) {
   const conversation = useAgentTaskStore((s) =>
@@ -48,7 +52,7 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
 
   const [followUp, setFollowUp] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const messages = conversation?.messages ?? [];
+  const messages = conversation?.messages ?? EMPTY_MESSAGES;
 
   // Detect the agent's "done" sentinel and flip status to reviewing.
   const lastAssistantMsg = useMemo(
@@ -61,18 +65,22 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
     lastAssistantMsg.content.includes(SENTINEL_DONE)
   );
 
-  const attemptLabel =
-    attempt.target.kind === "ssh" ? attempt.target.targetId : "local";
+  const attemptLabel = attempt.target.kind === "ssh" ? attempt.target.targetId : "local";
 
   useEffect(() => {
-    if (
-      sentinelDetected &&
-      (attempt.status === "running" || attempt.status === "provisioning")
-    ) {
+    if (sentinelDetected && (attempt.status === "running" || attempt.status === "provisioning")) {
       void setAttemptStatus(flight.id, attempt.id, "reviewing");
       void notifyAttemptCompleted(flight.title, attemptLabel);
     }
-  }, [sentinelDetected, attempt.status, attempt.id, flight.id, flight.title, attemptLabel, setAttemptStatus]);
+  }, [
+    sentinelDetected,
+    attempt.status,
+    attempt.id,
+    flight.id,
+    flight.title,
+    attemptLabel,
+    setAttemptStatus,
+  ]);
 
   // Notify on transition into "failed" (whether from backend or UI rejection).
   useEffect(() => {
@@ -103,7 +111,10 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
 
   const meta = STATUS_META[attempt.status];
   const StatusIcon = meta.icon;
-  const isInProgress = attempt.status === "queued" || attempt.status === "provisioning" || attempt.status === "running";
+  const isInProgress =
+    attempt.status === "queued" ||
+    attempt.status === "provisioning" ||
+    attempt.status === "running";
 
   const visibleMessages = expanded ? messages : messages.slice(-5);
 
@@ -111,7 +122,7 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
   const targetLabel =
     attempt.target.kind === "ssh"
       ? attempt.target.targetId
-      : attempt.target.basePath.split(/[/\\]/).filter(Boolean).pop() ?? "local";
+      : (attempt.target.basePath.split(/[/\\]/).filter(Boolean).pop() ?? "local");
 
   function handleSend() {
     const text = followUp.trim();
@@ -128,9 +139,9 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
   }
 
   return (
-    <div className="flex flex-col bg-bg-primary border border-bg-border rounded overflow-hidden">
+    <div className="flex flex-col overflow-hidden rounded border border-bg-border bg-bg-primary">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-secondary border-b border-bg-border text-[11px]">
+      <div className="flex items-center gap-2 border-b border-bg-border bg-bg-secondary px-3 py-1.5 text-[11px]">
         <StatusIcon
           size={12}
           className={`${meta.color} ${isInProgress ? "animate-spin" : ""} flex-shrink-0`}
@@ -140,26 +151,26 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
           size: 11,
           className: "text-text-muted flex-shrink-0",
         })}
-        <span className="text-text-secondary truncate">{targetLabel}</span>
+        <span className="truncate text-text-secondary">{targetLabel}</span>
         <span className="text-text-muted">·</span>
-        <span className="text-text-muted truncate">{attempt.model.split("-").slice(0, 2).join("-")}</span>
+        <span className="truncate text-text-muted">
+          {attempt.model.split("-").slice(0, 2).join("-")}
+        </span>
         <span className="ml-auto text-text-muted">
           {attempt.tokens > 0 ? `${(attempt.tokens / 1000).toFixed(1)}k` : ""}
         </span>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 max-h-[340px] min-h-[160px]">
+      <div className="max-h-[340px] min-h-[160px] flex-1 space-y-2 overflow-y-auto px-3 py-2">
         {messages.length === 0 ? (
-          <div className="text-[10px] text-text-muted italic py-2">
-            Waiting for agent to start…
-          </div>
+          <div className="py-2 text-[10px] italic text-text-muted">Waiting for agent to start…</div>
         ) : (
           <>
             {messages.length > 5 && (
               <button
                 onClick={() => setExpanded((v) => !v)}
-                className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors"
+                className="flex items-center gap-1 text-[10px] text-text-muted transition-colors hover:text-text-primary"
               >
                 {expanded ? (
                   <>
@@ -167,7 +178,8 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
                   </>
                 ) : (
                   <>
-                    <ChevronRight size={10} /> {messages.length - 5} earlier message{messages.length - 5 === 1 ? "" : "s"}
+                    <ChevronRight size={10} /> {messages.length - 5} earlier message
+                    {messages.length - 5 === 1 ? "" : "s"}
                   </>
                 )}
               </button>
@@ -179,7 +191,7 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
         )}
 
         {attempt.errorMessage && (
-          <div className="text-[10px] text-accent-red bg-accent-red/10 border border-accent-red/30 rounded px-2 py-1">
+          <div className="bg-accent-red/10 border-accent-red/30 rounded border px-2 py-1 text-[10px] text-accent-red">
             {attempt.errorMessage}
           </div>
         )}
@@ -196,12 +208,12 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
               onKeyDown={handleKeyDown}
               placeholder="Send a follow-up message…"
               rows={1}
-              className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted resize-none outline-none focus:border-accent-green/40"
+              className="focus:border-accent-green/40 flex-1 resize-none rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11px] text-text-primary outline-none placeholder:text-text-muted"
             />
             <button
               onClick={handleSend}
               disabled={!followUp.trim()}
-              className="p-1 text-accent-green hover:bg-accent-green/10 rounded disabled:opacity-30"
+              className="hover:bg-accent-green/10 rounded p-1 text-accent-green disabled:opacity-30"
               title="Send (Enter)"
             >
               <Send size={12} />
@@ -210,18 +222,18 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
         )}
 
         {/* Action row */}
-        <div className="flex items-center justify-end gap-1 px-2 py-1 border-t border-bg-border/40">
+        <div className="border-bg-border/40 flex items-center justify-end gap-1 border-t px-2 py-1">
           {attempt.status === "reviewing" && (
             <>
               <button
                 onClick={() => void setAttemptStatus(flight.id, attempt.id, "completed")}
-                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-accent-green bg-accent-green/10 border border-accent-green/30 rounded hover:bg-accent-green/20"
+                className="bg-accent-green/10 border-accent-green/30 hover:bg-accent-green/20 flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] text-accent-green"
               >
                 <Check size={10} /> Accept
               </button>
               <button
                 onClick={() => void setAttemptStatus(flight.id, attempt.id, "failed")}
-                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-accent-red hover:bg-accent-red/10 border border-bg-border rounded"
+                className="hover:bg-accent-red/10 flex items-center gap-1 rounded border border-bg-border px-2 py-0.5 text-[10px] text-accent-red"
               >
                 <XIcon size={10} /> Reject
               </button>
@@ -230,7 +242,7 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
           {isInProgress && (
             <button
               onClick={() => void cancelAttempt(flight.id, attempt.id)}
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-accent-red border border-bg-border rounded"
+              className="flex items-center gap-1 rounded border border-bg-border px-2 py-0.5 text-[10px] text-text-muted hover:text-accent-red"
               title="Cancel attempt + remove worktree"
             >
               <Square size={10} /> Cancel
@@ -245,18 +257,14 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
 function MessageRow({ message }: { message: AgentMessage }) {
   if (message.role === "user") {
     return (
-      <div className="text-[11px] text-text-secondary bg-bg-secondary/50 border-l-2 border-accent-purple px-2 py-1 rounded-sm">
-        <span className="text-[9px] uppercase tracking-wide text-accent-purple mr-1.5">You</span>
+      <div className="bg-bg-secondary/50 rounded-sm border-l-2 border-accent-purple px-2 py-1 text-[11px] text-text-secondary">
+        <span className="mr-1.5 text-[9px] uppercase tracking-wide text-accent-purple">You</span>
         {message.content}
       </div>
     );
   }
   if (message.role === "system") {
-    return (
-      <div className="text-[10px] text-text-muted italic">
-        {message.content}
-      </div>
-    );
+    return <div className="text-[10px] italic text-text-muted">{message.content}</div>;
   }
   // assistant
   return (
@@ -269,12 +277,12 @@ function MessageRow({ message }: { message: AgentMessage }) {
         </div>
       )}
       {message.content && (
-        <div className="prose prose-invert prose-sm max-w-none [&>*]:text-[11px] [&>*]:my-1">
+        <div className="prose prose-invert prose-sm max-w-none [&>*]:my-1 [&>*]:text-[11px]">
           <MarkdownRenderer content={message.content} />
         </div>
       )}
       {message.isStreaming && (
-        <div className="flex items-center gap-1 text-[10px] text-text-muted mt-1">
+        <div className="mt-1 flex items-center gap-1 text-[10px] text-text-muted">
           <Loader2 size={10} className="animate-spin" /> streaming…
         </div>
       )}
@@ -282,7 +290,11 @@ function MessageRow({ message }: { message: AgentMessage }) {
   );
 }
 
-function ToolCallChip({ call }: { call: { id: string; name: string; status: string; summary?: string } }) {
+function ToolCallChip({
+  call,
+}: {
+  call: { id: string; name: string; status: string; summary?: string };
+}) {
   const color =
     call.status === "running"
       ? "text-accent-blue"
@@ -290,16 +302,13 @@ function ToolCallChip({ call }: { call: { id: string; name: string; status: stri
         ? "text-accent-red"
         : "text-accent-green";
   return (
-    <div
-      className={`flex items-center gap-1.5 text-[10px] ${color}`}
-      title={call.summary ?? ""}
-    >
+    <div className={`flex items-center gap-1.5 text-[10px] ${color}`} title={call.summary ?? ""}>
       <span className="font-mono">{call.name}</span>
       {call.status === "running" && <Loader2 size={9} className="animate-spin" />}
       {call.status === "done" && <Check size={9} />}
       {call.status === "error" && <AlertTriangle size={9} />}
       {call.summary && (
-        <span className="text-text-muted truncate max-w-[200px]">
+        <span className="max-w-[200px] truncate text-text-muted">
           {call.summary.split("\n")[0]}
         </span>
       )}

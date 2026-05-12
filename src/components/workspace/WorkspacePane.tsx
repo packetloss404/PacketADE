@@ -1,5 +1,21 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Cpu, Terminal, Sparkles, TerminalSquare, GripHorizontal, RotateCcw, Plus, Palette, Pin, Play, X, Maximize2, Minimize2, ChevronDown } from "lucide-react";
+import {
+  Bot,
+  Cpu,
+  Terminal,
+  Sparkles,
+  TerminalSquare,
+  GripHorizontal,
+  RotateCcw,
+  Plus,
+  Palette,
+  Pin,
+  Play,
+  X,
+  Maximize2,
+  Minimize2,
+  ChevronDown,
+} from "lucide-react";
 import { MosaicWindowContext } from "react-mosaic-component";
 import { TerminalPane, type TerminalHeaderRenderState } from "@/components/session/TerminalPane";
 import { useAgentStore } from "@/stores/agentStore";
@@ -135,13 +151,16 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, [showModelPicker]);
 
-  const pinnedCommands = pane.pinnedCommands ?? [];
+  const pinnedCommands = useMemo(() => pane.pinnedCommands ?? [], [pane.pinnedCommands]);
 
-  const runCommand = useCallback((cmd: string) => {
-    if (pane.sessionId) {
-      writePty(pane.sessionId, cmd + "\r");
-    }
-  }, [pane.sessionId]);
+  const runCommand = useCallback(
+    (cmd: string) => {
+      if (pane.sessionId) {
+        writePty(pane.sessionId, cmd + "\r");
+      }
+    },
+    [pane.sessionId],
+  );
 
   // Reach the mosaic drag source from the surrounding MosaicWindow so the
   // unified header bar acts as the drag handle for reordering tiles.
@@ -158,14 +177,13 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const bypassPermissions = workspace?.bypassPermissions ?? false;
   const model = workspace?.modelOverrides?.[pane.agentId] ?? null;
   const effort = workspace?.effortOverrides?.[pane.agentId] ?? null;
-  const initialPrompt =
-    pane.agentId !== "terminal" ? workspace?.prompt : undefined;
+  const initialPrompt = pane.agentId !== "terminal" ? workspace?.prompt : undefined;
 
   // Model selection
   const availableModels = useMemo(() => getModelsForAgent(pane.agentId), [pane.agentId]);
   const hasModelOptions = availableModels.length > 0 && pane.agentId !== "terminal";
   const modelLabel = model
-    ? availableModels.find((m) => m.value === model)?.label ?? model
+    ? (availableModels.find((m) => m.value === model)?.label ?? model)
     : "Default";
 
   const cliArgs: string[] | undefined = useMemo(() => {
@@ -238,14 +256,20 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
 
       const headerContent = (
         <div
-          className={`flex items-center gap-2 px-2 py-1 bg-bg-secondary border-b border-line-soft cursor-grab active:cursor-grabbing select-none ${accentBgTint}`}
+          className={`flex cursor-grab select-none items-center gap-2 border-b border-line-soft bg-bg-secondary px-2 py-1 active:cursor-grabbing ${accentBgTint}`}
           onDoubleClick={() => setZoomedPane(isZoomed ? null : pane.id)}
         >
-          <GripHorizontal size={11} className="text-text-muted shrink-0" />
-          <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass} ${state.alive ? "animate-pulse" : ""}`} />
+          <GripHorizontal size={11} className="shrink-0 text-text-muted" />
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full ${dotClass} ${state.alive ? "animate-pulse" : ""}`}
+          />
           <Icon size={11} className={`${agentTextClass} shrink-0`} />
-          <span className={`text-[11px] font-semibold truncate ${agentTextClass}`}>{agentName}</span>
-          <span className="font-mono text-[10px] text-text-muted shrink-0">{pillLabel.toLowerCase()}</span>
+          <span className={`truncate text-[11px] font-semibold ${agentTextClass}`}>
+            {agentName}
+          </span>
+          <span className="shrink-0 font-mono text-[10px] text-text-muted">
+            {pillLabel.toLowerCase()}
+          </span>
           {agentConfig && !agentConfig.installed && (
             <span className="text-[9px] text-accent-amber">not installed</span>
           )}
@@ -257,27 +281,32 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                   setShowModelPicker(!showModelPicker);
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
-                className={`flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full border transition-colors ${
+                className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] transition-colors ${
                   model
-                    ? "border-accent-green/40 text-accent-green bg-accent-green/10 hover:bg-accent-green/20"
-                    : "border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted"
+                    ? "border-accent-green/40 bg-accent-green/10 hover:bg-accent-green/20 text-accent-green"
+                    : "border-bg-border text-text-muted hover:border-text-muted hover:text-text-secondary"
                 }`}
                 title="Change model (applies on next session)"
               >
                 {modelLabel}
-                <ChevronDown size={8} className={`transition-transform ${showModelPicker ? "rotate-180" : ""}`} />
+                <ChevronDown
+                  size={8}
+                  className={`transition-transform ${showModelPicker ? "rotate-180" : ""}`}
+                />
               </button>
               {showModelPicker && (
-                <div className="absolute top-full mt-1 left-0 z-50 min-w-[140px] bg-bg-elevated border border-bg-border rounded-md shadow-xl py-1">
+                <div className="absolute left-0 top-full z-50 mt-1 min-w-[140px] rounded-md border border-bg-border bg-bg-elevated py-1 shadow-xl">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      useWorkspaceStore.getState().setModelOverride(workspaceId, pane.agentId, null);
+                      useWorkspaceStore
+                        .getState()
+                        .setModelOverride(workspaceId, pane.agentId, null);
                       setShowModelPicker(false);
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className={`w-full text-left px-3 py-1.5 text-[10px] hover:bg-bg-hover transition-colors ${
-                      !model ? "text-accent-green font-medium" : "text-text-primary"
+                    className={`w-full px-3 py-1.5 text-left text-[10px] transition-colors hover:bg-bg-hover ${
+                      !model ? "font-medium text-accent-green" : "text-text-primary"
                     }`}
                   >
                     Default
@@ -287,18 +316,20 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                       key={m.value}
                       onClick={(e) => {
                         e.stopPropagation();
-                        useWorkspaceStore.getState().setModelOverride(workspaceId, pane.agentId, m.value);
+                        useWorkspaceStore
+                          .getState()
+                          .setModelOverride(workspaceId, pane.agentId, m.value);
                         setShowModelPicker(false);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className={`w-full text-left px-3 py-1.5 text-[10px] hover:bg-bg-hover transition-colors ${
-                        model === m.value ? "text-accent-green font-medium" : "text-text-primary"
+                      className={`w-full px-3 py-1.5 text-left text-[10px] transition-colors hover:bg-bg-hover ${
+                        model === m.value ? "font-medium text-accent-green" : "text-text-primary"
                       }`}
                     >
                       {m.label}
                     </button>
                   ))}
-                  <div className="border-t border-bg-border mt-1 pt-1 px-3 py-1">
+                  <div className="mt-1 border-t border-bg-border px-3 py-1 pt-1">
                     <span className="text-[9px] text-text-muted">Takes effect on next session</span>
                   </div>
                 </div>
@@ -307,7 +338,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
           )}
           <div className="flex-1" />
           <span
-            className={`font-mono text-[9px] px-1.5 py-0.5 rounded-full shrink-0 ${statusPillClass}`}
+            className={`shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[9px] ${statusPillClass}`}
             title={state.error ?? statusLabel}
           >
             {statusLabel}
@@ -320,14 +351,14 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                 setShowColorPicker((v) => !v);
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              className="p-0.5 text-text-muted hover:text-text-primary transition-colors"
+              className="p-0.5 text-text-muted transition-colors hover:text-text-primary"
               title="Change accent color"
             >
               <Palette size={11} />
             </button>
             {showColorPicker && (
               <div
-                className="absolute right-0 top-full mt-1 z-50 flex items-center gap-1 px-2 py-1.5 bg-bg-tertiary border border-bg-border rounded-md shadow-lg"
+                className="absolute right-0 top-full z-50 mt-1 flex items-center gap-1 rounded-md border border-bg-border bg-bg-tertiary px-2 py-1.5 shadow-lg"
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 {ACCENT_OPTIONS.map((opt) => (
@@ -335,10 +366,12 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                     key={opt.token}
                     onClick={(e) => {
                       e.stopPropagation();
-                      useWorkspaceStore.getState().updatePane(workspaceId, pane.id, { accentColor: opt.token });
+                      useWorkspaceStore
+                        .getState()
+                        .updatePane(workspaceId, pane.id, { accentColor: opt.token });
                       setShowColorPicker(false);
                     }}
-                    className={`w-4 h-4 rounded-full ${opt.bg} transition-transform hover:scale-125 ${accent === opt.token ? `ring-2 ring-offset-1 ring-offset-bg-tertiary ${opt.border}` : ""}`}
+                    className={`h-4 w-4 rounded-full ${opt.bg} transition-transform hover:scale-125 ${accent === opt.token ? `ring-2 ring-offset-1 ring-offset-bg-tertiary ${opt.border}` : ""}`}
                     title={opt.token}
                   />
                 ))}
@@ -351,7 +384,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
               setShowPinPopover((v) => !v);
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className={`p-0.5 transition-colors shrink-0 ${pinnedCommands.length > 0 ? "text-accent-blue" : "text-text-muted"} hover:text-accent-blue`}
+            className={`shrink-0 p-0.5 transition-colors ${pinnedCommands.length > 0 ? "text-accent-blue" : "text-text-muted"} hover:text-accent-blue`}
             title="Pinned commands"
           >
             <Pin size={11} />
@@ -362,7 +395,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
               setZoomedPane(isZoomed ? null : pane.id);
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="p-0.5 text-text-muted hover:text-accent-blue transition-colors shrink-0"
+            className="shrink-0 p-0.5 text-text-muted transition-colors hover:text-accent-blue"
             title={isZoomed ? "Exit zoom (Esc)" : "Zoom to focus"}
           >
             {isZoomed ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
@@ -373,7 +406,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
               state.onRestart();
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="p-0.5 text-text-muted hover:text-accent-green transition-colors shrink-0"
+            className="shrink-0 p-0.5 text-text-muted transition-colors hover:text-accent-green"
             title={state.alive ? "Restart session" : "Start session"}
           >
             {state.alive ? <RotateCcw size={11} /> : <Plus size={11} />}
@@ -385,7 +418,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
               useWorkspaceStore.getState().removePane(workspaceId, pane.id);
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="p-0.5 text-text-muted hover:text-accent-red transition-colors shrink-0"
+            className="shrink-0 p-0.5 text-text-muted transition-colors hover:text-accent-red"
             title="Close pane"
           >
             <X size={11} />
@@ -396,16 +429,16 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
       const pinPopover = showPinPopover ? (
         <div
           ref={pinPopoverRef}
-          className="absolute right-1 top-full z-50 mt-0.5 w-64 bg-bg-primary border border-bg-border rounded shadow-lg"
+          className="absolute right-1 top-full z-50 mt-0.5 w-64 rounded border border-bg-border bg-bg-primary shadow-lg"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="p-2 space-y-1.5">
-            <div className="text-[10px] text-text-muted font-medium uppercase tracking-wider">
+          <div className="space-y-1.5 p-2">
+            <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted">
               Pinned Commands ({pinnedCommands.length}/5)
             </div>
             {pinnedCommands.map((cmd, i) => (
-              <div key={i} className="flex items-center gap-1 group">
-                <span className="flex-1 text-[11px] text-text-secondary truncate" title={cmd}>
+              <div key={i} className="group flex items-center gap-1">
+                <span className="flex-1 truncate text-[11px] text-text-secondary" title={cmd}>
                   {cmd}
                 </span>
                 <button
@@ -413,7 +446,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                     runCommand(cmd);
                     setShowPinPopover(false);
                   }}
-                  className="p-0.5 text-text-muted hover:text-accent-green transition-colors shrink-0"
+                  className="shrink-0 p-0.5 text-text-muted transition-colors hover:text-accent-green"
                   title="Run"
                   disabled={!pane.sessionId}
                 >
@@ -423,7 +456,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                   onClick={() =>
                     useWorkspaceStore.getState().removePinnedCommand(workspaceId, pane.id, i)
                   }
-                  className="p-0.5 text-text-muted hover:text-accent-red transition-colors shrink-0"
+                  className="shrink-0 p-0.5 text-text-muted transition-colors hover:text-accent-red"
                   title="Remove"
                 >
                   <X size={10} />
@@ -439,18 +472,18 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                     setNewPinCmd("");
                   }
                 }}
-                className="flex items-center gap-1 pt-1 border-t border-bg-border"
+                className="flex items-center gap-1 border-t border-bg-border pt-1"
               >
                 <input
                   type="text"
                   value={newPinCmd}
                   onChange={(e) => setNewPinCmd(e.target.value)}
                   placeholder="Add command..."
-                  className="flex-1 text-[11px] bg-bg-secondary text-text-primary px-1.5 py-0.5 rounded border border-bg-border focus:outline-none focus:border-accent-blue"
+                  className="flex-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-[11px] text-text-primary focus:border-accent-blue focus:outline-none"
                 />
                 <button
                   type="submit"
-                  className="p-0.5 text-text-muted hover:text-accent-green transition-colors shrink-0"
+                  className="shrink-0 p-0.5 text-text-muted transition-colors hover:text-accent-green"
                   title="Add"
                 >
                   <Plus size={10} />
@@ -463,13 +496,13 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
 
       const quickBar =
         pinnedCommands.length > 0 ? (
-          <div className="flex gap-1 px-2 py-1 border-b border-bg-border bg-bg-secondary/50 overflow-x-auto">
+          <div className="bg-bg-secondary/50 flex gap-1 overflow-x-auto border-b border-bg-border px-2 py-1">
             {pinnedCommands.map((cmd, i) => (
               <button
                 key={i}
                 onClick={() => runCommand(cmd)}
                 disabled={!pane.sessionId}
-                className="px-2 py-0.5 text-[9px] bg-bg-hover rounded text-text-secondary hover:text-text-primary truncate max-w-[120px] disabled:opacity-40"
+                className="max-w-[120px] truncate rounded bg-bg-hover px-2 py-0.5 text-[9px] text-text-secondary hover:text-text-primary disabled:opacity-40"
                 title={cmd}
               >
                 {cmd}
@@ -489,7 +522,31 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
       // Wire the bar as the mosaic drag source so users can drag it to reorder tiles.
       return mosaicWindowActions?.connectDragSource(fullHeader) ?? fullHeader;
     },
-    [Icon, accentTextClass, accentBgTint, accent, agentConfig, agentName, mosaicWindowActions, isZoomed, setZoomedPane, pane.id, pane.agentId, hasModelOptions, model, modelLabel, availableModels, showModelPicker, showColorPicker, workspaceId, pinnedCommands, showPinPopover, newPinCmd, runCommand, pane.sessionId],
+    [
+      Icon,
+      accentTextClass,
+      accentBgTint,
+      accent,
+      agentConfig,
+      agentName,
+      mosaicWindowActions,
+      isZoomed,
+      setZoomedPane,
+      pane.id,
+      pane.agentId,
+      hasModelOptions,
+      model,
+      modelLabel,
+      availableModels,
+      showModelPicker,
+      showColorPicker,
+      workspaceId,
+      pinnedCommands,
+      showPinPopover,
+      newPinCmd,
+      runCommand,
+      pane.sessionId,
+    ],
   );
 
   const wrapperBorderClass = isFocused
@@ -497,7 +554,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     : `border border-bg-border ${accentBorderClass}`;
 
   return (
-    <div className={`h-full flex flex-col rounded-md overflow-hidden ${wrapperBorderClass}`}>
+    <div className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass}`}>
       <TerminalPane
         paneId={pane.id}
         cliCommand={effectiveCommand}

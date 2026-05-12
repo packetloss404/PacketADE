@@ -10,4 +10,3 @@ pub use audio::*;
 pub use config::*;
 pub use history::*;
 pub use models::*;
-pub use whisper::*;

@@ -6,7 +6,6 @@ use crate::core::llm_types::*;
 use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use tokio::sync::mpsc;
-use tracing::warn;
 
 /// Configuration for an OpenAI-compatible endpoint.
 pub struct OpenAiCompatConfig {

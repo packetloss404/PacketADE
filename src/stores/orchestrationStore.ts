@@ -15,6 +15,8 @@ import {
 } from "@/lib/tauri";
 import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useAgentStore } from "@/stores/agentStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import {
   notifyApprovalNeeded as notifyApprovalNeededDesktop,
   notifyFlightFailed as notifyFlightFailedDesktop,
@@ -114,7 +116,6 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
   launchFlight: async (flightId) => {
     // Validate agent availability before launching
     try {
-      const { useAgentStore } = await import("@/stores/agentStore");
       const agents = useAgentStore.getState().agents;
       const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
       if (flight) {
@@ -193,14 +194,8 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
       const persisted = await notifyTaskComplete(taskId, success);
       await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
 
-      const flightAfter = useFlightStore
-        .getState()
-        .flights.find((f) => f.id === rt.flightId);
-      if (
-        flightAfter &&
-        flightAfter.status === "failed" &&
-        flightStatusBefore !== "failed"
-      ) {
+      const flightAfter = useFlightStore.getState().flights.find((f) => f.id === rt.flightId);
+      if (flightAfter && flightAfter.status === "failed" && flightStatusBefore !== "failed") {
         void notifyFlightFailedDesktop(flightName);
       }
 
@@ -209,24 +204,22 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
         .flatMap((m) => m.tasks)
         .find((t) => t.id === taskId);
       if (taskAfter && flightAfter) {
-        import("@/stores/memoryStore").then(({ useMemoryStore }) => {
-          useMemoryStore.getState().captureTaskCompleted(
-            {
-              taskId,
-              taskTitle: taskAfter.title,
-              flightId: rt.flightId,
-              flightTitle: flightAfter.title,
-              milestoneId: rt.milestoneId,
-              success,
-              exitCode: taskAfter.result?.exitCode ?? null,
-              summary: taskAfter.result?.summary ?? "",
-              filesChanged: taskAfter.result?.filesChanged ?? [],
-              errors: taskAfter.result?.errors ?? [],
-              durationMs: taskAfter.result?.duration ?? 0,
-            },
-            rt.projectPath,
-          );
-        }).catch(() => {});
+        useMemoryStore.getState().captureTaskCompleted(
+          {
+            taskId,
+            taskTitle: taskAfter.title,
+            flightId: rt.flightId,
+            flightTitle: flightAfter.title,
+            milestoneId: rt.milestoneId,
+            success,
+            exitCode: taskAfter.result?.exitCode ?? null,
+            summary: taskAfter.result?.summary ?? "",
+            filesChanged: taskAfter.result?.filesChanged ?? [],
+            errors: taskAfter.result?.errors ?? [],
+            durationMs: taskAfter.result?.duration ?? 0,
+          },
+          rt.projectPath,
+        );
       }
 
       // Auto-capture flight completion to Memory (retrospective)
@@ -237,25 +230,23 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
         flightStatusBefore !== "failed"
       ) {
         const allTasks = flightAfter.milestones.flatMap((m) => m.tasks);
-        import("@/stores/memoryStore").then(({ useMemoryStore }) => {
-          useMemoryStore.getState().captureFlightCompleted(
-            {
-              flightId: flightAfter.id,
-              flightTitle: flightAfter.title,
-              summary: `Flight "${flightAfter.title}" ${flightAfter.status}. ${allTasks.filter((t) => t.status === "done").length}/${allTasks.length} tasks completed.`,
-              whatWorked: allTasks
-                .filter((t) => t.status === "done" && t.result?.summary)
-                .map((t) => t.result!.summary),
-              whatFailed: allTasks
-                .filter((t) => t.status === "failed" && t.result?.errors.length)
-                .map((t) => `${t.title}: ${t.result!.errors[0]}`),
-              lessonsLearned: [],
-              suggestedImprovements: [],
-              tags: [flightAfter.priority, flightAfter.status],
-            },
-            rt.projectPath,
-          );
-        }).catch(() => {});
+        useMemoryStore.getState().captureFlightCompleted(
+          {
+            flightId: flightAfter.id,
+            flightTitle: flightAfter.title,
+            summary: `Flight "${flightAfter.title}" ${flightAfter.status}. ${allTasks.filter((t) => t.status === "done").length}/${allTasks.length} tasks completed.`,
+            whatWorked: allTasks
+              .filter((t) => t.status === "done" && t.result?.summary)
+              .map((t) => t.result!.summary),
+            whatFailed: allTasks
+              .filter((t) => t.status === "failed" && t.result?.errors.length)
+              .map((t) => `${t.title}: ${t.result!.errors[0]}`),
+            lessonsLearned: [],
+            suggestedImprovements: [],
+            tags: [flightAfter.priority, flightAfter.status],
+          },
+          rt.projectPath,
+        );
       }
     } catch {
       useOrchestrationStore.setState((s) => {
@@ -272,9 +263,7 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
       const rt = get().runningTasks.get(taskId);
       if (rt) {
         const flight = useFlightStore.getState().flights.find((f) => f.id === rt.flightId);
-        const task = flight?.milestones
-          .flatMap((m) => m.tasks)
-          .find((t) => t.id === taskId);
+        const task = flight?.milestones.flatMap((m) => m.tasks).find((t) => t.id === taskId);
         const name = task?.title ?? flight?.title ?? "Task";
         void notifyApprovalNeededDesktop(rt.sessionId ?? taskId, name);
       }
@@ -373,7 +362,11 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
       if (!flight || !milestone || !task || state.runningTasks.has(task.id)) continue;
 
       // Check for file ownership collisions before launching
-      const collisions = flightStore.checkFileCollisions(request.flightId, request.milestoneId, request.taskId);
+      const collisions = flightStore.checkFileCollisions(
+        request.flightId,
+        request.milestoneId,
+        request.taskId,
+      );
       if (collisions.length > 0) {
         console.warn(
           `[orchestration] File collision detected for task "${task.title}": ${collisions.join(", ")}. Blocking task.`,

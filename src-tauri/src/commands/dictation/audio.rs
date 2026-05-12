@@ -6,9 +6,9 @@ use std::sync::{
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rustfft::{num_complex::Complex, FftPlanner};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
-use super::models::AudioDevice;
+use super::{config::DictationConfig, models, models::AudioDevice, whisper};
 
 // ---------------------------------------------------------------------------
 // Managed state
@@ -44,11 +44,6 @@ struct WaveformPayload {
     bars: Vec<f32>,
 }
 
-#[derive(Clone, Serialize)]
-struct StatusPayload {
-    status: String,
-}
-
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -58,7 +53,9 @@ struct StatusPayload {
 pub fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
     let host = cpal::default_host();
 
-    let default_device_name = host.default_input_device().and_then(|d| d.name().ok());
+    let default_device_name = host
+        .default_input_device()
+        .and_then(|d| d.description().ok().map(|desc| desc.name().to_string()));
 
     let devices = host
         .input_devices()
@@ -66,7 +63,10 @@ pub fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
 
     let mut result: Vec<AudioDevice> = Vec::new();
     for (idx, device) in devices.enumerate() {
-        let name = device.name().unwrap_or_else(|_| format!("Device {}", idx));
+        let name = device
+            .description()
+            .map(|desc| desc.name().to_string())
+            .unwrap_or_else(|_| format!("Device {}", idx));
         let is_default = default_device_name
             .as_ref()
             .map(|d| d == &name)
@@ -241,15 +241,16 @@ pub fn start_recording(
     Ok(())
 }
 
-/// Stop recording and return the raw audio buffer.
+/// Stop recording and return the transcribed text.
 ///
 /// Emits a `dictation:status` event with `"transcribing"` so the UI can
 /// show a spinner while the whisper module processes the audio.
 #[tauri::command]
-pub fn stop_recording(
+pub async fn stop_recording(
     app_handle: AppHandle,
     state: tauri::State<'_, DictationState>,
-) -> Result<Vec<f32>, String> {
+    whisper_state: tauri::State<'_, whisper::WhisperState>,
+) -> Result<String, String> {
     if !state.is_recording.load(Ordering::SeqCst) {
         return Err("Not currently recording".to_string());
     }
@@ -272,12 +273,18 @@ pub fn stop_recording(
     };
 
     // Notify the frontend
-    let _ = app_handle.emit(
-        "dictation:status",
-        StatusPayload {
-            status: "transcribing".to_string(),
-        },
-    );
+    let _ = app_handle.emit("dictation:status", "transcribing");
 
-    Ok(audio)
+    let settings = super::config::get_dictation_settings()
+        .and_then(|raw| serde_json::from_str::<DictationConfig>(&raw).map_err(|e| e.to_string()))?;
+    let model_path = models::model_path(&settings.model_size)?
+        .to_string_lossy()
+        .to_string();
+    let whisper_state = (*whisper_state).clone();
+
+    tokio::task::spawn_blocking(move || {
+        whisper::transcribe_audio(&whisper_state, audio, &model_path)
+    })
+    .await
+    .map_err(|e| format!("Transcription task failed: {e}"))?
 }
