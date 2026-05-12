@@ -19,6 +19,9 @@ import {
   PanelRightOpen,
   Columns2,
   Sparkles,
+  ArrowDown,
+  Ban,
+  Bookmark,
 } from "lucide-react";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { PendingEditPrompt } from "./PendingEditPrompt";
@@ -264,6 +267,19 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const lastPreviewedPlanRef = useRef<string | null>(null);
+  const prevMessageCountRef = useRef(0);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Shell-style ↑/↓ prompt history — only triggers when caret is at start or
+  // composer is empty so it never fights with multiline editing.
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const historySourceRef = useRef<"user" | "history">("user");
+
+  // Ctrl+S stash slot. Single-slot per pane — newer stash replaces older.
+  // Survives the chat session but not a remount; that's acceptable since
+  // most stashes are minute-scale "ask a quick question then restore" loops.
+  const [stashedDraft, setStashedDraft] = useState<string | null>(null);
 
   const {
     isListening,
@@ -282,10 +298,46 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     }
   }, [transcript]);
 
-  // Auto-scroll to bottom on new messages
+  // Track scroll position — pause autoscroll if user scrolls >100px from bottom
   useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const atBottom = distFromBottom <= 100;
+      setIsAtBottom(atBottom);
+      if (atBottom) setUnreadCount(0);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Reset scroll state when switching conversations. Intentionally depends
+  // only on conversationId — message-length is read for initialization only.
+  useEffect(() => {
+    setIsAtBottom(true);
+    setUnreadCount(0);
+    prevMessageCountRef.current = conversation?.messages.length ?? 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
+
+  // Auto-scroll to bottom on new messages — only when user is at bottom
+  useEffect(() => {
+    const count = conversation?.messages.length ?? 0;
+    const prev = prevMessageCountRef.current;
+    prevMessageCountRef.current = count;
+    if (isAtBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    } else if (count > prev) {
+      setUnreadCount((u) => u + (count - prev));
+    }
+  }, [conversation?.messages, isAtBottom]);
+
+  const jumpToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation?.messages]);
+    setUnreadCount(0);
+    setIsAtBottom(true);
+  }, []);
 
   // Auto-resize textarea
   const resizeTextarea = useCallback(() => {
@@ -503,6 +555,12 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     setInput(text);
     const cursor = e.target.selectionStart ?? text.length;
     updateMentionStateFromInput(text, cursor);
+    // Reset history navigation when user types (vs change driven by history nav)
+    if (historySourceRef.current === "history") {
+      historySourceRef.current = "user";
+    } else if (historyIndex !== -1) {
+      setHistoryIndex(-1);
+    }
   }
 
   function handleSelectionChange() {
@@ -823,6 +881,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     if (!text) return;
     setInput("");
     setMentionState({ kind: "none" });
+    setHistoryIndex(-1);
     sendMessage(conversationId, text);
   }
 
@@ -988,6 +1047,51 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       }
     }
 
+    // Shell-style ↑/↓ history. Only triggers when no popover is open and
+    // either the composer is empty or the caret is at the very start so it
+    // doesn't fight multiline editing.
+    if (
+      mentionState.kind === "none" &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.shiftKey
+    ) {
+      const ta = textareaRef.current;
+      const caretAtStart =
+        !!ta && ta.selectionStart === 0 && ta.selectionEnd === 0;
+      const eligible = input.length === 0 || caretAtStart;
+      const userMsgs = messages
+        .filter((m) => m.role === "user")
+        .map((m) => m.content);
+
+      if (e.key === "ArrowUp" && eligible && userMsgs.length > 0) {
+        const nextIdx = Math.min(userMsgs.length - 1, historyIndex + 1);
+        if (nextIdx !== historyIndex) {
+          e.preventDefault();
+          setHistoryIndex(nextIdx);
+          historySourceRef.current = "history";
+          setInput(userMsgs[userMsgs.length - 1 - nextIdx]);
+        }
+        return;
+      }
+      if (e.key === "ArrowDown" && historyIndex >= 0) {
+        e.preventDefault();
+        const nextIdx = historyIndex - 1;
+        setHistoryIndex(nextIdx);
+        historySourceRef.current = "history";
+        setInput(nextIdx < 0 ? "" : userMsgs[userMsgs.length - 1 - nextIdx]);
+        return;
+      }
+      if (e.key === "Escape" && historyIndex >= 0) {
+        e.preventDefault();
+        setHistoryIndex(-1);
+        historySourceRef.current = "history";
+        setInput("");
+        return;
+      }
+    }
+
     // Claude-Code-style mode cycle. Shift+Tab walks default → plan → manual
     // → yolo → default and applies the flag triplet. Inside a textarea this
     // would otherwise just shift focus out, which isn't useful here.
@@ -1004,6 +1108,17 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       e.preventDefault();
       nudgeReasoning(e.key === "." ? "up" : "down");
       return;
+    }
+
+    // Ctrl+S — stash the current draft. Composer clears, chip appears above.
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      if (input.trim().length > 0) {
+        e.preventDefault();
+        setStashedDraft(input);
+        setInput("");
+        setHistoryIndex(-1);
+        return;
+      }
     }
 
     if (e.ctrlKey && e.key === "Enter") {
@@ -1366,6 +1481,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         projectPath={conversation.projectPath}
         onOpenMarkdown={handleOpenMarkdown}
       >
+        <div className="relative flex-1 flex flex-col min-h-0">
         <div
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5"
@@ -1376,8 +1492,30 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           )}
 
           {conversation.messages.length === 0 && (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex flex-col items-center justify-center h-full gap-3">
               <span className="text-[11px] text-text-muted">No messages yet</span>
+              <div className="flex flex-col gap-1.5 text-[11px] text-text-secondary">
+                <div className="flex items-center gap-2">
+                  <kbd className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[10px] font-mono">@</kbd>
+                  <span>files</span>
+                  <span className="text-text-muted">·</span>
+                  <kbd className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[10px] font-mono">/</kbd>
+                  <span>commands</span>
+                  <span className="text-text-muted">·</span>
+                  <kbd className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[10px] font-mono">⇧⇥</kbd>
+                  <span>mode</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <kbd className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[10px] font-mono">↑/↓</kbd>
+                  <span>history</span>
+                  <span className="text-text-muted">·</span>
+                  <kbd className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[10px] font-mono">⌃S</kbd>
+                  <span>stash</span>
+                  <span className="text-text-muted">·</span>
+                  <kbd className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[10px] font-mono">⌃N</kbd>
+                  <span>new</span>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1425,6 +1563,18 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           )}
 
           <div ref={messagesEndRef} />
+        </div>
+        {!isAtBottom && (
+          <button
+            type="button"
+            onClick={jumpToBottom}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 rounded-full bg-bg-primary border border-bg-border px-3 py-1 text-xs text-text-secondary shadow-md hover:text-text-primary hover:border-accent-green/60 transition-colors"
+            title="Jump to latest"
+          >
+            <ArrowDown size={12} />
+            <span>{unreadCount > 0 ? `${unreadCount} new` : "Latest"}</span>
+          </button>
+        )}
         </div>
       </ClickablePathsRoot>
 
@@ -1538,6 +1688,40 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
       {/* Input area */}
       <div className="shrink-0 border-t border-bg-border px-3 py-2 bg-bg-primary relative">
+        {/* History navigation index — shows while walking back through prior prompts */}
+        {historyIndex >= 0 && (
+          <div className="absolute top-1 right-3 text-[10px] text-text-muted/70 font-mono pointer-events-none select-none">
+            ↑ {historyIndex + 1}/{messages.filter((m) => m.role === "user").length}
+          </div>
+        )}
+        {/* Stashed-draft chip — Ctrl+S sets it aside, click restores */}
+        {stashedDraft !== null && (
+          <div className="mb-1.5 inline-flex items-center gap-1.5 text-[11px] text-text-secondary bg-bg-tertiary px-2 py-0.5 rounded">
+            <Bookmark size={11} className="text-text-muted" />
+            <span className="truncate max-w-[260px]">
+              Stashed draft ({stashedDraft.length} chars)
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setInput(stashedDraft);
+                setStashedDraft(null);
+                setTimeout(() => textareaRef.current?.focus(), 0);
+              }}
+              className="text-text-secondary hover:text-text-primary underline"
+            >
+              restore
+            </button>
+            <button
+              type="button"
+              onClick={() => setStashedDraft(null)}
+              className="text-text-muted hover:text-text-primary ml-1"
+              title="Discard stash"
+            >
+              <X size={11} />
+            </button>
+          </div>
+        )}
         {/* Popovers anchored above the textarea */}
         <div
           className="absolute left-3 right-3 bottom-full"
@@ -1593,12 +1777,32 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             </button>
           )}
 
+          {/* Cancel parked tool/edit prompts (F8) — drains them as denied
+              and lets the model continue; distinct from Stop which kills the
+              whole turn. Visible whenever the loop has stacked-up prompts. */}
+          {(() => {
+            const pendingCount =
+              (conversation.pendingEdits?.length ?? 0) +
+              (conversation.pendingPermissions?.length ?? 0);
+            if (pendingCount === 0) return null;
+            return (
+              <button
+                onClick={() => void cancelPendingTools(conversationId)}
+                className="inline-flex items-center gap-1 px-1.5 py-1 text-[11px] text-text-secondary hover:text-text-primary hover:bg-bg-secondary rounded transition-colors shrink-0"
+                title={`Drain ${pendingCount} parked prompt${pendingCount === 1 ? "" : "s"} as denied — agent loop continues`}
+              >
+                <Ban size={11} />
+                <span>Cancel {pendingCount}</span>
+              </button>
+            );
+          })()}
+
           {/* Send / Stop */}
           {isRunning ? (
             <button
               onClick={handleStop}
               className="p-1 text-accent-red hover:bg-accent-red/10 rounded transition-colors shrink-0"
-              title="Stop"
+              title="Stop turn"
             >
               <Square size={12} />
             </button>
