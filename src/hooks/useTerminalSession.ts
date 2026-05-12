@@ -8,6 +8,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useActivityStore } from "@/stores/activityStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import { usePtyStateDetector, type PtyDetectorState } from "@/hooks/usePtyStateDetector";
 import {
   notifyApprovalNeeded,
@@ -67,6 +68,9 @@ export function useTerminalSession({
   // Store callbacks in refs so they never destabilize memoised effects.
   const onSessionCreatedRef = useLatestRef(onSessionCreated);
   const onSessionEndedRef = useLatestRef(onSessionEnded);
+  const emitSessionEnded = useCallback(() => {
+    onSessionEndedRef.current?.();
+  }, [onSessionEndedRef]);
 
   const [alive, setAlive] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,44 +85,47 @@ export function useTerminalSession({
   const globalProjectPath = useLayoutStore((s) => s.projectPath);
   const projectPath = paneProjectPath ?? globalProjectPath;
 
-  const handleStateChange = useCallback((prev: PtyDetectorState, next: PtyDetectorState) => {
-    const tabId = tabIdRef.current;
-    const sessionId = sessionIdRef.current;
+  const handleStateChange = useCallback(
+    (prev: PtyDetectorState, next: PtyDetectorState) => {
+      const tabId = tabIdRef.current;
+      const sessionId = sessionIdRef.current;
 
-    setShowApproval(next.needsApproval);
-    setActivityInfo({
-      tool: next.currentTool,
-      file: next.currentFile,
-      state: next.agentState,
-    });
-
-    if (tabId) {
-      useActivityStore.getState().setActivity(tabId, {
-        currentTool: next.currentTool,
-        currentFile: next.currentFile,
-        agentState: next.agentState,
-        lastActivityAt: next.lastActivityAt,
+      setShowApproval(next.needsApproval);
+      setActivityInfo({
+        tool: next.currentTool,
+        file: next.currentFile,
+        state: next.agentState,
       });
-    }
 
-    if (tabId) {
-      if (next.needsApproval && !prev.needsApproval) {
-        useTabStore.getState().updateTabStatus(tabId, "waiting_approval");
-        const tab = useTabStore.getState().getTab(tabId);
-        if (sessionId && tab) {
-          notifyApprovalNeeded(sessionId, tab.name);
-        }
-        if (taskId) {
-          void useOrchestrationStore.getState().onTaskApprovalNeeded(taskId);
-        }
-      } else if (!next.needsApproval && prev.needsApproval) {
-        useTabStore.getState().updateTabStatus(tabId, "running");
-        if (taskId) {
-          void useOrchestrationStore.getState().onTaskApprovalResolved(taskId);
+      if (tabId) {
+        useActivityStore.getState().setActivity(tabId, {
+          currentTool: next.currentTool,
+          currentFile: next.currentFile,
+          agentState: next.agentState,
+          lastActivityAt: next.lastActivityAt,
+        });
+      }
+
+      if (tabId) {
+        if (next.needsApproval && !prev.needsApproval) {
+          useTabStore.getState().updateTabStatus(tabId, "waiting_approval");
+          const tab = useTabStore.getState().getTab(tabId);
+          if (sessionId && tab) {
+            notifyApprovalNeeded(sessionId, tab.name);
+          }
+          if (taskId) {
+            void useOrchestrationStore.getState().onTaskApprovalNeeded(taskId);
+          }
+        } else if (!next.needsApproval && prev.needsApproval) {
+          useTabStore.getState().updateTabStatus(tabId, "running");
+          if (taskId) {
+            void useOrchestrationStore.getState().onTaskApprovalResolved(taskId);
+          }
         }
       }
-    }
-  }, [taskId]);
+    },
+    [sessionIdRef, taskId],
+  );
 
   const detectorResult = usePtyStateDetector({
     sessionId: currentSessionId,
@@ -228,7 +235,7 @@ export function useTerminalSession({
         setCurrentSessionId(null);
         sessionIdRef.current = null;
         useLayoutStore.getState().setPaneSession(paneId, null);
-        onSessionEndedRef.current?.();
+        emitSessionEnded();
         term.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
         useTabStore.getState().updateTabStatus(tabId, "done");
         stopDurationTimer();
@@ -242,14 +249,9 @@ export function useTerminalSession({
 
         // Auto-learn from completed sessions (skip task sessions — those are captured via orchestration)
         if (!taskId && tab && projectPath && tab.durationMs > 30_000 && !wasRequested) {
-          import("@/stores/memoryStore").then(({ useMemoryStore }) => {
-            void useMemoryStore.getState().learnFromSession(
-              sessionId,
-              cliCommand,
-              projectPath,
-              tab.durationMs,
-            );
-          }).catch(() => {});
+          void useMemoryStore
+            .getState()
+            .learnFromSession(sessionId, cliCommand, projectPath, tab.durationMs);
         }
 
         if (taskId) {
@@ -295,6 +297,9 @@ export function useTerminalSession({
     xtermRef,
     fitAddonRef,
     taskId,
+    sessionIdRef,
+    onSessionCreatedRef,
+    emitSessionEnded,
   ]);
 
   // Auto-start on mount
@@ -318,14 +323,14 @@ export function useTerminalSession({
         killPty(sid).catch(() => {});
       }
       useLayoutStore.getState().setPaneSession(paneId, null);
-      onSessionEndedRef.current?.();
+      emitSessionEnded();
       const tid = tabIdRef.current;
       if (tid) {
         useTabStore.getState().removeTab(tid);
         useActivityStore.getState().clearActivity(tid);
       }
     };
-  }, [paneId, stopDurationTimer]);
+  }, [paneId, stopDurationTimer, sessionIdRef, emitSessionEnded]);
 
   const handleKill = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -338,14 +343,14 @@ export function useTerminalSession({
     setCurrentSessionId(null);
     sessionIdRef.current = null;
     useLayoutStore.getState().setPaneSession(paneId, null);
-    onSessionEndedRef.current?.();
+    emitSessionEnded();
     stopDurationTimer();
     const tid = tabIdRef.current;
     if (tid) {
       useTabStore.getState().updateTabStatus(tid, "done");
       useActivityStore.getState().clearActivity(tid);
     }
-  }, [paneId, stopDurationTimer]);
+  }, [paneId, stopDurationTimer, sessionIdRef, emitSessionEnded]);
 
   const handleRestart = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -358,7 +363,7 @@ export function useTerminalSession({
     setShowApproval(false);
     setCurrentSessionId(null);
     useLayoutStore.getState().setPaneSession(paneId, null);
-    onSessionEndedRef.current?.();
+    emitSessionEnded();
     stopDurationTimer();
 
     const tid = tabIdRef.current;
@@ -372,7 +377,7 @@ export function useTerminalSession({
     xtermRef.current?.clear();
 
     await startSession();
-  }, [paneId, startSession, stopDurationTimer, xtermRef]);
+  }, [paneId, startSession, stopDurationTimer, xtermRef, sessionIdRef, emitSessionEnded]);
 
   const handleApprove = useCallback(() => {
     const sid = sessionIdRef.current;
@@ -381,7 +386,7 @@ export function useTerminalSession({
     }
     setShowApproval(false);
     detectorResult.clearApproval();
-  }, [detectorResult]);
+  }, [detectorResult, sessionIdRef]);
 
   const handleDeny = useCallback(() => {
     const sid = sessionIdRef.current;
@@ -390,7 +395,7 @@ export function useTerminalSession({
     }
     setShowApproval(false);
     detectorResult.clearApproval();
-  }, [detectorResult]);
+  }, [detectorResult, sessionIdRef]);
 
   const handleAbort = useCallback(() => {
     const sid = sessionIdRef.current;
@@ -399,7 +404,7 @@ export function useTerminalSession({
     }
     setShowApproval(false);
     detectorResult.clearApproval();
-  }, [detectorResult]);
+  }, [detectorResult, sessionIdRef]);
 
   const clearApproval = detectorResult.clearApproval;
 

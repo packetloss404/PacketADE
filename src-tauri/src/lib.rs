@@ -6,6 +6,7 @@ pub mod core;
 use commands::agent_sidecar::SidecarManager;
 use commands::api_agent::ApiAgentState;
 use commands::dictation::audio::create_dictation_state;
+use commands::dictation::whisper::WhisperState;
 use commands::github::create_github_auth_state;
 use commands::orchestration::create_shared_orchestrator;
 use commands::pty::create_shared_pty_manager;
@@ -77,6 +78,7 @@ pub fn run() {
         .manage(create_shared_pty_manager())
         .manage(create_shared_orchestrator())
         .manage(create_dictation_state())
+        .manage(WhisperState::default())
         .manage(std::sync::Arc::new(ApiAgentState::new()))
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in

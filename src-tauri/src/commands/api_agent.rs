@@ -919,7 +919,7 @@ async fn run_agent_loop(
         )
     };
 
-    let provider = get_provider(&provider_name)?;
+    let _ = get_provider(&provider_name)?;
     let api_key = api_keys::load_api_key(&provider_name)?;
     let tools = {
         let all =

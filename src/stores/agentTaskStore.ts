@@ -47,6 +47,7 @@ import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
+import { notifyConversationDone } from "@/lib/notifications";
 import type { GitHubRepo } from "@/types/github";
 import type {
   AgentConversation,
@@ -178,7 +179,8 @@ export function repoDisplayName(projectPath: string, githubRepos: GitHubRepo[]):
   const folderName = segments[segments.length - 1] ?? projectPath;
   const match = githubRepos.find((r) => r.name === folderName);
   if (match) return match.full_name;
-  if (segments.length >= 2) return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+  if (segments.length >= 2)
+    return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
   return folderName;
 }
 
@@ -199,7 +201,12 @@ interface AgentTaskStore {
   selectedConversationId: string | null;
 
   // --- Existing task actions ---
-  launchTask: (title: string, description: string, agent: AgentCli, projectPath: string) => Promise<string>;
+  launchTask: (
+    title: string,
+    description: string,
+    agent: AgentCli,
+    projectPath: string,
+  ) => Promise<string>;
   cancelTask: (id: string) => void;
   deleteTask: (id: string) => void;
   selectTask: (id: string | null) => void;
@@ -246,7 +253,11 @@ interface AgentTaskStore {
     content: string,
     attachments?: ImageAttachment[] | null,
   ) => void;
-  addAssistantMessage: (conversationId: string, content: string, toolCalls?: AgentToolCall[]) => void;
+  addAssistantMessage: (
+    conversationId: string,
+    content: string,
+    toolCalls?: AgentToolCall[],
+  ) => void;
   updateAssistantMessage: (conversationId: string, messageId: string, content: string) => void;
   selectConversation: (id: string | null) => void;
   deleteConversation: (id: string) => void;
@@ -262,7 +273,11 @@ interface AgentTaskStore {
   setPlanMode: (id: string, enabled: boolean) => Promise<void>;
   setPermissionMode: (id: string, mode: PermissionMode) => Promise<void>;
   setApproveWrites: (id: string, enabled: boolean) => Promise<void>;
-  respondPermission: (id: string, toolId: string, decision: "allow_once" | "allow_always" | "deny") => Promise<void>;
+  respondPermission: (
+    id: string,
+    toolId: string,
+    decision: "allow_once" | "allow_always" | "deny",
+  ) => Promise<void>;
   respondEdit: (
     id: string,
     toolId: string,
@@ -286,10 +301,7 @@ interface AgentTaskStore {
   setParentConversation: (childId: string, parentId: string) => void;
   /** B1: queue a hover-`+` diff comment. Folded into the NEXT user
    * sendMessage as a "File comments:" preamble, then cleared. */
-  addDiffComment: (
-    id: string,
-    comment: Omit<DiffComment, "id" | "createdAt">,
-  ) => void;
+  addDiffComment: (id: string, comment: Omit<DiffComment, "id" | "createdAt">) => void;
   removeDiffComment: (id: string, commentId: string) => void;
   clearDiffComments: (id: string) => void;
   /** F9: set the per-conversation MCP server filter. null = all enabled
@@ -307,7 +319,11 @@ interface AgentTaskStore {
   approvePlan: (id: string) => void;
   retryLastTurn: (id: string, newModel?: string) => Promise<void>;
   saveCheckpoint: (id: string) => Promise<string | null>;
-  listCheckpoints: (id: string) => Promise<Array<{ id: string; createdAt: string; messageCount: number; messages: AgentMessage[] }>>;
+  listCheckpoints: (
+    id: string,
+  ) => Promise<
+    Array<{ id: string; createdAt: string; messageCount: number; messages: AgentMessage[] }>
+  >;
   restoreCheckpoint: (id: string, rawJson: string) => void;
   exportConversation: (id: string) => Promise<string>;
   /** F1: re-establish a hydrated conversation that lost its live session
@@ -410,9 +426,7 @@ async function installApiAgentListeners(
               tc.id === event.payload.id
                 ? {
                     ...tc,
-                    status: (event.payload.is_error
-                      ? "error"
-                      : "done") as AgentToolCall["status"],
+                    status: (event.payload.is_error ? "error" : "done") as AgentToolCall["status"],
                     summary: event.payload.content.slice(0, 200),
                     fullContent: event.payload.content,
                     input: event.payload.input,
@@ -483,118 +497,103 @@ async function installApiAgentListeners(
     }
     if (updated && get().selectedConversationId !== id) {
       const finishedTitle = updated.title;
-      void import("@/lib/notifications").then(({ notifyConversationDone }) => {
-        void notifyConversationDone(finishedTitle);
-      });
+      void notifyConversationDone(finishedTitle);
     }
   });
 
-  const errorUnlisten = await listen<{ message: string }>(
-    apiAgentErrorEvent(id),
-    (event) => {
-      const conv = get().conversations.find((c) => c.id === id);
-      if (
-        conv &&
-        conv.mode === "api" &&
-        conv.model &&
-        !failoverGuard.has(id) &&
-        looksLikeRateLimit(event.payload.message)
-      ) {
-        const fallback = pickFailoverModel(conv.model);
-        if (fallback && fallback !== conv.model) {
-          failoverGuard.add(id);
-          const noticeMsg: AgentMessage = {
-            id: generateId("msg"),
-            role: "system",
-            content: `(auto-failover: ${conv.model} hit "${event.payload.message.slice(0, 80)}" — retrying on ${fallback})`,
-            timestamp: Date.now(),
-          };
-          set((s) => ({
-            conversations: s.conversations.map((c) =>
-              c.id === id
-                ? {
-                    ...c,
-                    messages: [...c.messages, noticeMsg],
-                    updatedAt: Date.now(),
-                  }
-                : c,
-            ),
-          }));
-          void get().retryLastTurn(id, fallback);
-          return;
-        }
-      }
-
-      let updated: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const messages = c.messages.map((m) =>
-            m.isStreaming
+  const errorUnlisten = await listen<{ message: string }>(apiAgentErrorEvent(id), (event) => {
+    const conv = get().conversations.find((c) => c.id === id);
+    if (
+      conv &&
+      conv.mode === "api" &&
+      conv.model &&
+      !failoverGuard.has(id) &&
+      looksLikeRateLimit(event.payload.message)
+    ) {
+      const fallback = pickFailoverModel(conv.model);
+      if (fallback && fallback !== conv.model) {
+        failoverGuard.add(id);
+        const noticeMsg: AgentMessage = {
+          id: generateId("msg"),
+          role: "system",
+          content: `(auto-failover: ${conv.model} hit "${event.payload.message.slice(0, 80)}" — retrying on ${fallback})`,
+          timestamp: Date.now(),
+        };
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === id
               ? {
-                  ...m,
-                  isStreaming: false,
-                  content: m.content + `\n\nError: ${event.payload.message}`,
+                  ...c,
+                  messages: [...c.messages, noticeMsg],
+                  updatedAt: Date.now(),
                 }
-              : m,
-          );
-          const next = {
-            ...c,
-            messages,
-            status: "failed" as const,
-            updatedAt: Date.now(),
-          };
-          updated = next;
-          return next;
-        }),
-      }));
-      if (updated) scheduleSave(updated);
-      if (updated) {
-        const failedTitle = `Failed: ${updated.title}`;
-        void import("@/lib/notifications").then(({ notifyConversationDone }) => {
-          void notifyConversationDone(failedTitle);
-        });
+              : c,
+          ),
+        }));
+        void get().retryLastTurn(id, fallback);
+        return;
       }
-    },
-  );
+    }
 
-  const thinkingUnlisten = await listen<{ text: string }>(
-    apiAgentThinkingEvent(id),
-    (event) => {
-      let updated: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const nextStream = (c.thinkingStream ?? "") + event.payload.text;
-          const messages = c.messages.map((m) =>
-            m.isStreaming && m.role === "assistant"
-              ? { ...m, thinking: (m.thinking ?? "") + event.payload.text }
-              : m,
-          );
-          const next = {
-            ...c,
-            messages,
-            thinkingStream: nextStream,
-            updatedAt: Date.now(),
-          };
-          updated = next;
-          return next;
-        }),
-      }));
-      if (updated) scheduleSave(updated);
-    },
-  );
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const messages = c.messages.map((m) =>
+          m.isStreaming
+            ? {
+                ...m,
+                isStreaming: false,
+                content: m.content + `\n\nError: ${event.payload.message}`,
+              }
+            : m,
+        );
+        const next = {
+          ...c,
+          messages,
+          status: "failed" as const,
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+    if (updated) {
+      const failedTitle = `Failed: ${updated.title}`;
+      void notifyConversationDone(failedTitle);
+    }
+  });
 
-  const thinkingStopUnlisten = await listen<unknown>(
-    apiAgentThinkingStopEvent(id),
-    () => {
-      set((s) => ({
-        conversations: s.conversations.map((c) =>
-          c.id === id ? { ...c, thinkingStream: "" } : c,
-        ),
-      }));
-    },
-  );
+  const thinkingUnlisten = await listen<{ text: string }>(apiAgentThinkingEvent(id), (event) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const nextStream = (c.thinkingStream ?? "") + event.payload.text;
+        const messages = c.messages.map((m) =>
+          m.isStreaming && m.role === "assistant"
+            ? { ...m, thinking: (m.thinking ?? "") + event.payload.text }
+            : m,
+        );
+        const next = {
+          ...c,
+          messages,
+          thinkingStream: nextStream,
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  });
+
+  const thinkingStopUnlisten = await listen<unknown>(apiAgentThinkingStopEvent(id), () => {
+    set((s) => ({
+      conversations: s.conversations.map((c) => (c.id === id ? { ...c, thinkingStream: "" } : c)),
+    }));
+  });
 
   const permissionReqUnlisten = await listen<PendingPermission>(
     apiAgentPermissionRequestEvent(id),
@@ -613,22 +612,19 @@ async function installApiAgentListeners(
     },
   );
 
-  const pendingEditUnlisten = await listen<PendingEdit>(
-    apiAgentPendingEditEvent(id),
-    (event) => {
-      let updated: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const pending = [...(c.pendingEdits ?? []), event.payload];
-          const next = { ...c, pendingEdits: pending, updatedAt: Date.now() };
-          updated = next;
-          return next;
-        }),
-      }));
-      if (updated) scheduleSave(updated);
-    },
-  );
+  const pendingEditUnlisten = await listen<PendingEdit>(apiAgentPendingEditEvent(id), (event) => {
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const pending = [...(c.pendingEdits ?? []), event.payload];
+        const next = { ...c, pendingEdits: pending, updatedAt: Date.now() };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+  });
 
   const planBlockUnlisten = await listen<{ items: AgentPlanItem[] }>(
     apiAgentPlanBlockEvent(id),
@@ -690,8 +686,7 @@ async function installApiAgentListeners(
                 outputTokens: event.payload.output_tokens,
                 cacheReadTokens: event.payload.cache_read_input_tokens,
                 cacheWriteTokens: event.payload.cache_creation_input_tokens,
-                reasoningTokens:
-                  event.payload.reasoning_tokens ?? m.reasoningTokens,
+                reasoningTokens: event.payload.reasoning_tokens ?? m.reasoningTokens,
               }
             : m,
         );
@@ -726,8 +721,7 @@ async function installApiAgentListeners(
             return {
               ...tc,
               exitCode: event.payload.exit_code ?? tc.exitCode,
-              modifiedPaths:
-                event.payload.modified_paths ?? tc.modifiedPaths,
+              modifiedPaths: event.payload.modified_paths ?? tc.modifiedPaths,
               stdout: event.payload.stdout ?? tc.stdout,
               stderr: event.payload.stderr ?? tc.stderr,
             };
@@ -799,11 +793,17 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }));
 
     try {
-      const sessionId = await createPtySession(projectPath, 120, 40, command, args.length > 0 ? args : null);
+      const sessionId = await createPtySession(
+        projectPath,
+        120,
+        40,
+        command,
+        args.length > 0 ? args : null,
+      );
 
       // Store the session ID
       set((s) => ({
-        tasks: s.tasks.map((t) => t.id === id ? { ...t, sessionId } : t),
+        tasks: s.tasks.map((t) => (t.id === id ? { ...t, sessionId } : t)),
       }));
 
       // Listen for output
@@ -826,7 +826,14 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     } catch (err) {
       set((s) => ({
         tasks: s.tasks.map((t) =>
-          t.id === id ? { ...t, status: "failed", completedAt: Date.now(), output: t.output + `\nFailed to start: ${err}` } : t
+          t.id === id
+            ? {
+                ...t,
+                status: "failed",
+                completedAt: Date.now(),
+                output: t.output + `\nFailed to start: ${err}`,
+              }
+            : t,
         ),
       }));
     }
@@ -841,7 +848,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     void killPty(task.sessionId).catch(() => {});
     set((s) => ({
       tasks: s.tasks.map((t) =>
-        t.id === id ? { ...t, status: "cancelled", completedAt: Date.now() } : t
+        t.id === id ? { ...t, status: "cancelled", completedAt: Date.now() } : t,
       ),
     }));
   },
@@ -870,9 +877,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         const newOutput = t.output + text;
         return {
           ...t,
-          output: newOutput.length > MAX_OUTPUT_SIZE
-            ? newOutput.slice(-MAX_OUTPUT_SIZE)
-            : newOutput,
+          output:
+            newOutput.length > MAX_OUTPUT_SIZE ? newOutput.slice(-MAX_OUTPUT_SIZE) : newOutput,
         };
       }),
     }));
@@ -883,7 +889,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       tasks: s.tasks.map((t) =>
         t.id === id && t.status === "running"
           ? { ...t, status: exitCode === 0 ? "done" : "failed", completedAt: Date.now(), exitCode }
-          : t
+          : t,
       ),
     }));
   },
@@ -920,12 +926,16 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }));
 
     try {
-      const sessionId = await createPtySession(projectPath, 120, 40, command, args.length > 0 ? args : null);
+      const sessionId = await createPtySession(
+        projectPath,
+        120,
+        40,
+        command,
+        args.length > 0 ? args : null,
+      );
 
       set((s) => ({
-        conversations: s.conversations.map((c) =>
-          c.id === id ? { ...c, sessionId } : c
-        ),
+        conversations: s.conversations.map((c) => (c.id === id ? { ...c, sessionId } : c)),
       }));
 
       // Listen for PTY output
@@ -938,7 +948,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         outputUnlisten();
         set((s) => ({
           conversations: s.conversations.map((c) =>
-            c.id === id ? { ...c, status: "done", updatedAt: Date.now() } : c
+            c.id === id ? { ...c, status: "done", updatedAt: Date.now() } : c,
           ),
         }));
       });
@@ -952,7 +962,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
                 updatedAt: Date.now(),
                 rawOutput: c.rawOutput + `\nFailed to start: ${err}`,
               }
-            : c
+            : c,
         ),
       }));
     }
@@ -960,7 +970,22 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  createApiConversation: async (agent, projectPath, model, initialMessage, systemPromptOverride, thinkingEnabled, planMode, sshTarget, explicitId, skipBackendStart, allowedTools, memoryContextEnabled, attachments, enabledMcpServerIds) => {
+  createApiConversation: async (
+    agent,
+    projectPath,
+    model,
+    initialMessage,
+    systemPromptOverride,
+    thinkingEnabled,
+    planMode,
+    sshTarget,
+    explicitId,
+    skipBackendStart,
+    allowedTools,
+    memoryContextEnabled,
+    attachments,
+    enabledMcpServerIds,
+  ) => {
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
 
@@ -974,9 +999,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     let effectiveSystemPrompt: string | null = systemPromptOverride ?? null;
 
     if (memoryContextEnabled) {
-      const memoryContext = useMemoryStore
-        .getState()
-        .getContextForSession(projectPath);
+      const memoryContext = useMemoryStore.getState().getContextForSession(projectPath);
       if (memoryContext.trim().length > 0) {
         const base = effectiveSystemPrompt ?? "";
         effectiveSystemPrompt = `## Project memory (auto-injected from PacketADE memory layer)\n\n${memoryContext}\n\n---\n\n${base}`;
@@ -1069,12 +1092,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
                   },
                 ],
               }
-            : c
+            : c,
         ),
       }));
 
       await installApiAgentListeners(id, get, set);
-
 
       // Start the API agent session unless the caller already did so.
       if (!skipBackendStart) {
@@ -1107,9 +1129,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     } catch {
       set((s) => ({
         conversations: s.conversations.map((c) =>
-          c.id === id
-            ? { ...c, status: "failed", updatedAt: Date.now() }
-            : c
+          c.id === id ? { ...c, status: "failed", updatedAt: Date.now() } : c,
         ),
       }));
     }
@@ -1130,9 +1150,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     const queuedComments = conv.pendingDiffComments ?? [];
     let effectiveContent = content;
     if (queuedComments.length > 0) {
-      const block = queuedComments
-        .map((c) => `- ${c.path}:${c.line} — ${c.text}`)
-        .join("\n");
+      const block = queuedComments.map((c) => `- ${c.path}:${c.line} — ${c.text}`).join("\n");
       effectiveContent = `File comments:\n${block}\n\n${content}`;
       // Clear immediately so the chip strip empties on click; if the send
       // ultimately fails, the comments are gone (acceptable — they're now
@@ -1143,15 +1161,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     // F1: hydrated API conversations have no live listeners — route the
     // first send-after-restart through the resume path so the Rust side
     // re-creates the session before the message arrives.
-    if (
-      conv.mode === "api" &&
-      !apiConversationCleanup.has(conversationId)
-    ) {
-      void get().resumeApiConversation(
-        conversationId,
-        effectiveContent,
-        attachments,
-      );
+    if (conv.mode === "api" && !apiConversationCleanup.has(conversationId)) {
+      void get().resumeApiConversation(conversationId, effectiveContent, attachments);
       return;
     }
     // Continue with the comment-augmented content from here on.
@@ -1159,9 +1170,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
     // If the agent is still running (API mode), queue the message and show a queued bubble.
     const isRunning =
-      conv.mode === "api" &&
-      conv.status === "active" &&
-      conv.messages.some((m) => m.isStreaming);
+      conv.mode === "api" && conv.status === "active" && conv.messages.some((m) => m.isStreaming);
 
     if (isRunning) {
       const queuedMsg: AgentMessage = {
@@ -1233,20 +1242,14 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
                   },
                 ],
               }
-            : c
+            : c,
         ),
       }));
 
-      void sendApiAgentMessage(
-        conversationId,
-        content,
-        attachments ?? undefined,
-      ).catch(() => {
+      void sendApiAgentMessage(conversationId, content, attachments ?? undefined).catch(() => {
         set((s) => ({
           conversations: s.conversations.map((c) =>
-            c.id === conversationId
-              ? { ...c, status: "failed", updatedAt: Date.now() }
-              : c
+            c.id === conversationId ? { ...c, status: "failed", updatedAt: Date.now() } : c,
           ),
         }));
       });
@@ -1270,7 +1273,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       conversations: s.conversations.map((c) =>
         c.id === conversationId
           ? { ...c, messages: [...c.messages, msg], updatedAt: Date.now() }
-          : c
+          : c,
       ),
     }));
   },
@@ -1282,11 +1285,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           ? {
               ...c,
               updatedAt: Date.now(),
-              messages: c.messages.map((m) =>
-                m.id === messageId ? { ...m, content } : m
-              ),
+              messages: c.messages.map((m) => (m.id === messageId ? { ...m, content } : m)),
             }
-          : c
+          : c,
       ),
     }));
   },
@@ -1312,7 +1313,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }
     // Best-effort remove persisted file (API mode only)
     if (conv?.mode === "api") {
-      deleteConversationFile(id).catch((e) => console.warn("Failed to delete conversation file:", e));
+      deleteConversationFile(id).catch((e) =>
+        console.warn("Failed to delete conversation file:", e),
+      );
     }
     // Cancel any pending debounced save
     const timer = saveTimers.get(id);
@@ -1379,9 +1382,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     set((s) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
-        const messages = c.messages.map((m) =>
-          m.isStreaming ? { ...m, isStreaming: false } : m
-        );
+        const messages = c.messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
         const next: AgentConversation = {
           ...c,
           messages,
@@ -1520,9 +1521,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }));
     if (updated) scheduleSave(updated);
     // Synthesize a user turn requesting the structured plan.
-    const bullets = conv.spec.criteria
-      .map((c, i) => `${i + 1}. ${c}`)
-      .join("\n");
+    const bullets = conv.spec.criteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
     const prompt =
       `Spec approved. Success criteria:\n${bullets}\n\n` +
       `Now produce a Plan via TodoWrite covering each criterion. ` +
@@ -1607,9 +1606,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         if (c.id !== id) return c;
         const next: AgentConversation = {
           ...c,
-          pendingDiffComments: (c.pendingDiffComments ?? []).filter(
-            (d) => d.id !== commentId,
-          ),
+          pendingDiffComments: (c.pendingDiffComments ?? []).filter((d) => d.id !== commentId),
           updatedAt: Date.now(),
         };
         updated = next;
@@ -1624,8 +1621,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     set((s) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
-        if (!c.pendingDiffComments || c.pendingDiffComments.length === 0)
-          return c;
+        if (!c.pendingDiffComments || c.pendingDiffComments.length === 0) return c;
         const next: AgentConversation = {
           ...c,
           pendingDiffComments: [],
@@ -1754,15 +1750,21 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   listCheckpoints: async (id) => {
     try {
       const raw = await tauriListCheckpoints(id);
-      const parsed: Array<{ id: string; createdAt: string; messageCount: number; messages: AgentMessage[] }> = [];
+      const parsed: Array<{
+        id: string;
+        createdAt: string;
+        messageCount: number;
+        messages: AgentMessage[];
+      }> = [];
       for (let i = 0; i < raw.length; i++) {
         try {
           const obj = JSON.parse(raw[i]);
           parsed.push({
             id: `chk_${i}`,
             createdAt: obj.createdAt ?? "",
-            messageCount: obj.messageCount ?? (Array.isArray(obj.messages) ? obj.messages.length : 0),
-            messages: Array.isArray(obj.messages) ? obj.messages : (Array.isArray(obj) ? obj : []),
+            messageCount:
+              obj.messageCount ?? (Array.isArray(obj.messages) ? obj.messages.length : 0),
+            messages: Array.isArray(obj.messages) ? obj.messages : Array.isArray(obj) ? obj : [],
           });
         } catch {
           continue;
@@ -1778,7 +1780,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   restoreCheckpoint: (id, rawJson) => {
     try {
       const obj = JSON.parse(rawJson);
-      const messages: AgentMessage[] = Array.isArray(obj) ? obj : (Array.isArray(obj.messages) ? obj.messages : []);
+      const messages: AgentMessage[] = Array.isArray(obj)
+        ? obj
+        : Array.isArray(obj.messages)
+          ? obj.messages
+          : [];
       let updated: AgentConversation | undefined;
       set((s) => ({
         conversations: s.conversations.map((c) => {
@@ -1815,9 +1821,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         const newOutput = c.rawOutput + text;
         return {
           ...c,
-          rawOutput: newOutput.length > MAX_RAW_OUTPUT_SIZE
-            ? newOutput.slice(-MAX_RAW_OUTPUT_SIZE)
-            : newOutput,
+          rawOutput:
+            newOutput.length > MAX_RAW_OUTPUT_SIZE
+              ? newOutput.slice(-MAX_RAW_OUTPUT_SIZE)
+              : newOutput,
           updatedAt: Date.now(),
         };
       }),
@@ -1908,9 +1915,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       console.warn("resumeApiConversation failed:", e);
       set((s) => ({
         conversations: s.conversations.map((c) =>
-          c.id === conversationId
-            ? { ...c, status: "failed", updatedAt: Date.now() }
-            : c,
+          c.id === conversationId ? { ...c, status: "failed", updatedAt: Date.now() } : c,
         ),
       }));
     }

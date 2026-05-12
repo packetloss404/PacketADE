@@ -6,6 +6,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 /// Shared state holding a lazily-loaded Whisper model context.
 /// Managed via `tauri::State<WhisperState>` and registered in lib.rs.
+#[derive(Clone)]
 pub struct WhisperState {
     /// The loaded model context, or None if no model has been loaded yet.
     inner: Arc<Mutex<Option<LoadedModel>>>,
@@ -25,15 +26,6 @@ impl WhisperState {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    /// Unload the currently loaded model (if any).
-    pub fn unload(&self) {
-        let mut guard = self.inner.lock().unwrap();
-        if guard.is_some() {
-            info!("Unloading Whisper model");
-            *guard = None;
         }
     }
 }

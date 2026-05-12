@@ -38,7 +38,6 @@ async fn run_local_git(cwd: &str, args: &[&str]) -> Result<(String, String, i32)
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
