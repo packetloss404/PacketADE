@@ -5,10 +5,11 @@ import { CLAUDE_CODE_CONFIG } from "@/agents/claude-code";
 import { OPENCODE_CONFIG } from "@/agents/opencode";
 import { CODEX_CONFIG } from "@/agents/codex";
 import { GEMINI_CONFIG } from "@/agents/gemini";
+import { PACKETCODE_CONFIG } from "@/agents/packetcode";
 import { TERMINAL_CONFIG } from "@/agents/terminal";
 
 // Built-in agent configs (always present, user can override args/model)
-const BUILTIN_AGENTS: AgentConfig[] = [CLAUDE_CODE_CONFIG, OPENCODE_CONFIG, CODEX_CONFIG, GEMINI_CONFIG, TERMINAL_CONFIG];
+const BUILTIN_AGENTS: AgentConfig[] = [CLAUDE_CODE_CONFIG, OPENCODE_CONFIG, CODEX_CONFIG, GEMINI_CONFIG, PACKETCODE_CONFIG, TERMINAL_CONFIG];
 
 interface AgentStoreState {
   agents: AgentConfig[];

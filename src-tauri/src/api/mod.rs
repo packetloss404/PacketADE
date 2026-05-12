@@ -21,6 +21,8 @@ pub enum WorkspaceAgentSlotDto {
     Gemini,
     #[serde(rename = "opencode")]
     Opencode,
+    #[serde(rename = "packetcode")]
+    Packetcode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -570,6 +572,7 @@ impl From<String> for WorkspaceAgentSlotDto {
             "codex" => Self::Codex,
             "gemini" => Self::Gemini,
             "opencode" => Self::Opencode,
+            "packetcode" => Self::Packetcode,
             _ => Self::Terminal,
         }
     }
@@ -583,6 +586,7 @@ impl From<WorkspaceAgentSlotDto> for String {
             WorkspaceAgentSlotDto::Codex => "codex".to_string(),
             WorkspaceAgentSlotDto::Gemini => "gemini".to_string(),
             WorkspaceAgentSlotDto::Opencode => "opencode".to_string(),
+            WorkspaceAgentSlotDto::Packetcode => "packetcode".to_string(),
         }
     }
 }

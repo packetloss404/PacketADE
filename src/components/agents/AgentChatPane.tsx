@@ -101,6 +101,7 @@ const AGENT_LABELS: Record<string, string> = {
   codex: "Codex",
   gemini: "Gemini",
   opencode: "OpenCode",
+  packetcode: "PacketCode",
 };
 
 const AGENT_DOT_COLORS: Record<string, string> = {
@@ -108,6 +109,7 @@ const AGENT_DOT_COLORS: Record<string, string> = {
   codex: "bg-accent-blue",
   gemini: "bg-accent-purple",
   opencode: "bg-accent-green",
+  packetcode: "bg-accent-purple",
 };
 
 const STATUS_DISPLAY: Record<string, { label: string; className: string }> = {

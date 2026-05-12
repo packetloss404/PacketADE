@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 
-export type CoreView = "welcome" | "claude" | "codex" | "gemini" | "opencode" | "issues" | "missions" | "history" | "tools" | "github" | "memory" | "deploy" | "review_queue" | "workspace" | "agents" | "cost_dashboard" | "dictation";
+export type CoreView = "welcome" | "claude" | "codex" | "gemini" | "opencode" | "packetcode" | "issues" | "missions" | "history" | "tools" | "github" | "memory" | "deploy" | "review_queue" | "workspace" | "agents" | "cost_dashboard" | "dictation";
 export type AppView = CoreView | `mod:${string}`;
 
 export function isModuleView(view: AppView): boolean {
@@ -32,7 +32,7 @@ interface AppStore {
   setIsMaximized: (maximized: boolean) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setTheme: (theme: "dark" | "light") => void;
-  quickStartSession: (cli?: "claude" | "codex" | "gemini" | "opencode") => void;
+  quickStartSession: (cli?: "claude" | "codex" | "gemini" | "opencode" | "packetcode") => void;
 }
 
 export const useAppStore = create<AppStore>((set) => ({

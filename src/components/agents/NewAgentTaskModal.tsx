@@ -10,6 +10,7 @@ const AGENT_OPTIONS: { id: AgentCli; label: string }[] = [
   { id: "codex", label: "Codex CLI" },
   { id: "gemini", label: "Gemini CLI" },
   { id: "opencode", label: "OpenCode" },
+  { id: "packetcode", label: "PacketCode" },
 ];
 
 interface NewAgentTaskModalProps {

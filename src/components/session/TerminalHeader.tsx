@@ -42,12 +42,14 @@ export function TerminalHeader({
               cliCommand === "claude" ? "#f0b400"
               : cliCommand === "gemini" ? "#8ab4f8"
               : cliCommand === "opencode" ? "#3fb950"
+              : cliCommand === "packetcode" ? "#a89ad9"
               : "#58a6ff",
           }}
         >
           {cliCommand === "claude" ? "Claude"
             : cliCommand === "gemini" ? "Gemini"
             : cliCommand === "opencode" ? "OpenCode"
+            : cliCommand === "packetcode" ? "PacketCode"
             : "Codex"}
         </span>
       </div>

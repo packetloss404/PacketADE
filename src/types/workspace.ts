@@ -1,4 +1,4 @@
-export type WorkspaceAgentSlot = "terminal" | "claude-code" | "codex" | "gemini" | "opencode";
+export type WorkspaceAgentSlot = "terminal" | "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
 
 export interface WorkspacePane {
   id: string;

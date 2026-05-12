@@ -20,6 +20,7 @@ const VIEW_LABELS: Partial<Record<AppView, string>> = {
   codex: "Codex",
   gemini: "Gemini",
   opencode: "OpenCode",
+  packetcode: "PacketCode",
   welcome: "Welcome",
 };
 
