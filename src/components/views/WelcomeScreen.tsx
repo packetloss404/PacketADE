@@ -69,28 +69,57 @@ export function WelcomeScreen() {
             </button>
 
             <div className="flex flex-col gap-1.5">
-              {activeWorkspaces.slice(0, 5).map((ws) => (
+              {activeWorkspaces.slice(0, 5).map((ws, idx) => (
                 <button
                   key={ws.id}
                   onClick={() => openWorkspace(ws.id)}
-                  className="flex items-center gap-3 w-full px-4 py-2.5 bg-bg-secondary border border-bg-border rounded-lg hover:border-bg-hover hover:bg-bg-hover/50 transition-colors group text-left"
+                  className={`relative flex items-center gap-3 w-full px-4 py-2.5 ${idx === 0 ? "bg-bg-tertiary" : "bg-bg-secondary"} border border-bg-border rounded-lg hover:border-bg-hover hover:bg-bg-hover/50 transition-colors group text-left`}
                 >
-                  <div className="w-7 h-7 rounded-md bg-bg-elevated flex items-center justify-center">
+                  {idx === 0 && (
+                    <span
+                      className="absolute left-0 top-2 bottom-2 w-0.5 rounded-r"
+                      style={{ background: "var(--color-accent-green)" }}
+                    />
+                  )}
+                  <div className="w-7 h-7 rounded-md bg-bg-elevated flex items-center justify-center flex-shrink-0">
                     <LayoutGrid size={12} className="text-text-secondary" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-medium text-text-primary truncate">
                       {ws.name}
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] text-text-muted">
-                      <span>{ws.agents.length} agent{ws.agents.length !== 1 ? "s" : ""}</span>
-                      <span className="flex items-center gap-0.5">
+                    <div className="flex items-center gap-1.5 text-[10px] text-text-muted mt-0.5 min-w-0">
+                      <span className="font-mono truncate min-w-0">
+                        {shortenPath(ws.projectPath)}
+                      </span>
+                      {ws.panes.length > 0 && (
+                        <>
+                          <span className="text-text-faint flex-shrink-0">·</span>
+                          <div className="flex items-center gap-0.5 flex-shrink-0">
+                            {ws.panes.slice(0, 4).map((pane) => (
+                              <span
+                                key={pane.id}
+                                className="w-1.5 h-1.5 rounded-full inline-block"
+                                style={{ background: `var(--color-${pane.accentColor ?? "accent-green"})` }}
+                                title={pane.agentId}
+                              />
+                            ))}
+                            {ws.panes.length > 4 && (
+                              <span className="text-[9px] text-text-faint ml-0.5">
+                                +{ws.panes.length - 4}
+                              </span>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      <span className="text-text-faint flex-shrink-0">·</span>
+                      <span className="flex items-center gap-0.5 flex-shrink-0">
                         <Clock size={8} />
                         {relativeTime(ws.updatedAt)}
                       </span>
                     </div>
                   </div>
-                  <ChevronRight size={12} className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <ChevronRight size={12} className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                 </button>
               ))}
 
@@ -128,4 +157,10 @@ export function WelcomeScreen() {
       )}
     </div>
   );
+}
+
+function shortenPath(p: string): string {
+  const segments = p.split(/[/\\]/).filter(Boolean);
+  if (segments.length <= 2) return segments.join("/");
+  return "…/" + segments.slice(-2).join("/");
 }
