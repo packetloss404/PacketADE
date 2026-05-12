@@ -60,7 +60,11 @@ fn build_flight_chat_prompt(
 ) -> String {
     let mut conversation = String::new();
     for msg in messages {
-        let prefix = if msg.role == "user" { "User" } else { "Assistant" };
+        let prefix = if msg.role == "user" {
+            "User"
+        } else {
+            "Assistant"
+        };
         conversation.push_str(&format!("{}: {}\n\n", prefix, msg.content));
     }
 
@@ -234,12 +238,15 @@ pub async fn ask_flight_chat_stream(
 
         if !success && !stderr_text.trim().is_empty() {
             let classified = super::error_classifier::classify_cli_error(&stderr_text);
-            let _ = handle.emit(&flight_chat_error_event(&request_id), StreamError {
-                category: format!("{:?}", classified.category).to_lowercase(),
-                message: classified.message,
-                suggestion: classified.suggestion,
-                is_transient: classified.is_transient,
-            });
+            let _ = handle.emit(
+                &flight_chat_error_event(&request_id),
+                StreamError {
+                    category: format!("{:?}", classified.category).to_lowercase(),
+                    message: classified.message,
+                    suggestion: classified.suggestion,
+                    is_transient: classified.is_transient,
+                },
+            );
         }
 
         if let Err(e) = handle.emit(&flight_chat_done_event(&request_id), success) {

@@ -75,7 +75,7 @@ const BUILTINS: BuiltinDef[] = [
   {
     cmd: "compact",
     label: "/compact",
-    description: "Trim history to the last few messages to free context",
+    description: "Trim the local transcript view; backend context is unchanged",
     icon: <Scissors size={12} />,
   },
   {

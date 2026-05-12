@@ -44,9 +44,24 @@ pub fn validate_project_path(path: &str) -> Result<(), String> {
 
 /// Directories to always skip when traversing the file tree.
 pub const SKIP_DIRS: &[&str] = &[
-    ".git", "node_modules", "target", "dist", "build", ".next",
-    "__pycache__", ".venv", "venv", ".idea", ".vscode", "coverage",
-    ".turbo", ".cache", ".parcel-cache", "vendor", "pkg", ".svelte-kit",
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".idea",
+    ".vscode",
+    "coverage",
+    ".turbo",
+    ".cache",
+    ".parcel-cache",
+    "vendor",
+    "pkg",
+    ".svelte-kit",
 ];
 
 /// Maximum allowed size for PTY write payloads (64 KB).

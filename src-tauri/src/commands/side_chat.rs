@@ -8,9 +8,7 @@
 
 use crate::commands::api_keys;
 use crate::core::llm_provider::get_provider;
-use crate::core::llm_types::{
-    ChatMessage, ChatRole, LlmRequest, MessageContent, StreamChunk,
-};
+use crate::core::llm_types::{ChatMessage, ChatRole, LlmRequest, MessageContent, StreamChunk};
 use serde::Serialize;
 use tauri::Emitter;
 use tokio::sync::mpsc;
@@ -44,10 +42,7 @@ struct SideChatErrorPayload {
 fn emit_error(app_handle: &tauri::AppHandle, message: impl Into<String>) {
     let message = message.into();
     warn!("side_chat error: {}", message);
-    let _ = app_handle.emit(
-        SIDE_CHAT_ERROR_EVENT,
-        SideChatErrorPayload { message },
-    );
+    let _ = app_handle.emit(SIDE_CHAT_ERROR_EVENT, SideChatErrorPayload { message });
 }
 
 #[tauri::command]
@@ -67,10 +62,7 @@ pub async fn ask_side_chat_stream(
     let api_key = match api_keys::load_api_key(DEFAULT_PROVIDER) {
         Ok(key) => key,
         Err(e) => {
-            return Err(format!(
-                "Side chat requires an Anthropic API key. {}",
-                e
-            ));
+            return Err(format!("Side chat requires an Anthropic API key. {}", e));
         }
     };
 
@@ -125,9 +117,8 @@ pub async fn ask_side_chat_stream(
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::channel::<StreamChunk>(64);
 
-        let provider_task = tokio::spawn(async move {
-            provider.stream_chat(&api_key, request, tx).await
-        });
+        let provider_task =
+            tokio::spawn(async move { provider.stream_chat(&api_key, request, tx).await });
 
         let mut total_len: usize = 0;
         let mut error: Option<String> = None;
@@ -139,10 +130,9 @@ pub async fn ask_side_chat_stream(
                         continue;
                     }
                     total_len += text.len();
-                    if let Err(e) = handle.emit(
-                        SIDE_CHAT_CHUNK_EVENT,
-                        SideChatChunkPayload { delta: text },
-                    ) {
+                    if let Err(e) =
+                        handle.emit(SIDE_CHAT_CHUNK_EVENT, SideChatChunkPayload { delta: text })
+                    {
                         warn!("Failed to emit side-chat:chunk: {}", e);
                     }
                 }

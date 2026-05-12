@@ -3,7 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   File as FileIcon,
-  Sparkles,
+  Eye,
   PanelLeft,
   Check,
 } from "lucide-react";
@@ -55,11 +55,10 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
                 : "text-text-muted hover:text-text-secondary"
             }`}
           >
-            {t === "inspector" ? <PanelLeft size={12} /> : <Sparkles size={12} />}
+            {t === "inspector" ? <PanelLeft size={12} /> : <Eye size={12} />}
           </button>
         ))}
         <div className="flex-1" />
-        <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse mb-1" />
       </div>
     );
   }
@@ -70,8 +69,8 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         {(
           [
             { id: "inspector", icon: PanelLeft, label: "Inspector" },
-            { id: "preview", icon: Sparkles, label: "Preview", live: true },
-          ] as { id: Tab; icon: typeof PanelLeft; label: string; live?: boolean }[]
+            { id: "preview", icon: Eye, label: "Preview" },
+          ] as { id: Tab; icon: typeof PanelLeft; label: string }[]
         ).map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
@@ -87,12 +86,6 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
             >
               <Icon size={11} />
               <span>{t.label}</span>
-              {t.live && (
-                <span className="inline-flex items-center gap-1 px-1 rounded bg-accent-green/15 text-accent-green text-[9px]">
-                  <span className="w-1 h-1 rounded-full bg-accent-green animate-pulse" />
-                  live
-                </span>
-              )}
             </button>
           );
         })}
@@ -334,7 +327,7 @@ function KvRow({ k, v }: { k: string; v: React.ReactNode }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Preview tab — design-faithful placeholder browser chrome            */
+/* Preview tab — static placeholder browser chrome                     */
 /* ------------------------------------------------------------------ */
 
 function PreviewBrowser({ conversationId }: { conversationId: string }) {
@@ -352,17 +345,17 @@ function PreviewBrowser({ conversationId }: { conversationId: string }) {
           <ChevronRight size={11} />
         </button>
         <div className="flex-1 flex items-center gap-1.5 px-2 py-0.5 bg-bg-secondary border border-bg-border rounded text-[10.5px] font-mono">
-          <span className="w-2 h-2 rounded-full bg-accent-green" />
+          <span className="w-2 h-2 rounded-full bg-text-muted" />
           <span className="text-text-muted">localhost:</span>
           <span className="text-text-primary">1420</span>
           <span className="text-text-muted">/agents/{conversationId.slice(0, 6)}</span>
           <span className="flex-1" />
-          <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" />
+          <span className="text-[9px] text-text-muted">static</span>
         </div>
       </div>
       <div className="px-2 py-1 flex items-center gap-1.5 border-b border-line-soft bg-bg-secondary text-[10px] text-text-muted">
-        <span className="w-1.5 h-1.5 rounded-full bg-accent-green" />
-        <span>HMR connected</span>
+        <span className="w-1.5 h-1.5 rounded-full bg-text-muted" />
+        <span>Static preview state</span>
         <span>·</span>
         <span className="font-mono">{folder || "preview"}</span>
         <span className="flex-1" />
@@ -394,7 +387,7 @@ function PreviewBrowser({ conversationId }: { conversationId: string }) {
             <span className="w-[7px] h-[7px] rounded-full bg-accent-amber" />
             <span className="w-[7px] h-[7px] rounded-full bg-accent-green" />
             <span className="flex-1" />
-            <span className="text-[9px] text-text-muted">Agent chat · live</span>
+            <span className="text-[9px] text-text-muted">Agent chat · sample</span>
           </div>
           <div className="p-2.5 flex flex-col gap-2">
             <div className="flex gap-1.5">
@@ -420,7 +413,7 @@ function PreviewBrowser({ conversationId }: { conversationId: string }) {
           </div>
         </div>
         <div className="mt-2 text-[9.5px] text-text-muted text-center">
-          Auto-refreshes when agent edits land
+          Static sample; connect a local preview to inspect running changes
         </div>
       </div>
     </div>

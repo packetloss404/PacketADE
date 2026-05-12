@@ -25,7 +25,11 @@ fn resolve_command_path(command: &str) -> String {
         if let Ok(output) = where_cmd.output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                let lines: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+                let lines: Vec<&str> = stdout
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|l| !l.is_empty())
+                    .collect();
                 if let Some(exe) = lines.iter().find(|l| l.ends_with(".exe")) {
                     return exe.to_string();
                 }

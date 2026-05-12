@@ -1,10 +1,12 @@
-// Protocol v2 regression smoke test for the PacketADE agent sidecar.
+// Protocol v4 regression smoke test for the PacketADE agent sidecar.
 //
-// Validates that the three new protocol v2 request types (added in Tier 3
-// slice B) round-trip correctly through the dispatcher against the echo
-// provider. This is a wiring test only — it does not exercise any real
-// provider. The echo provider's v2 handlers emit one `chunk` echoing the
-// received field, then `done` with zero tokens.
+// Validates that the protocol v2 request types plus the v4
+// `cancel_pending_tools` request route correctly through the dispatcher
+// against the echo provider. This is a wiring test only — it does not
+// exercise any real provider. The echo provider's v2 handlers emit one
+// `chunk` echoing the received field, then `done` with zero tokens. Echo does
+// not implement v4 cancel_pending_tools, so the expected result for that
+// request is the registry's clean "not supported" error.
 //
 // Sequence:
 //   1. Spawn the sidecar, wait for `ready`.
@@ -14,8 +16,9 @@
 //   4. `set_model { model: "test-model" }` → expect chunk echoing
 //      "test-model" then `done`, within 3s.
 //   5. `retry` → expect chunk containing "retry" then `done`, within 3s.
+//   6. `cancel_pending_tools` → expect clean unsupported error, within 3s.
 //
-// Exits 0 if all three steps pass, 1 otherwise — printing which step failed
+// Exits 0 if all steps pass, 1 otherwise — printing which step failed
 // and why.
 
 import { spawn } from "node:child_process";
@@ -27,7 +30,8 @@ import { existsSync } from "node:fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SESSION_ID = "protocol-v2-smoke";
+const SESSION_ID = "protocol-v4-smoke";
+const EXPECTED_PROTOCOL_VERSION = 4;
 const STEP_TIMEOUT_MS = 3000;
 const START_TIMEOUT_MS = 3000;
 const READY_TIMEOUT_MS = 3000;
@@ -35,9 +39,9 @@ const READY_TIMEOUT_MS = 3000;
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");
 
 if (!existsSync(sidecarEntry)) {
-  console.error(`[protocol-v2-smoke] sidecar entry not found at ${sidecarEntry}`);
+  console.error(`[protocol-v4-smoke] sidecar entry not found at ${sidecarEntry}`);
   console.error(
-    `[protocol-v2-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
+    `[protocol-v4-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
   );
   process.exit(1);
 }
@@ -52,7 +56,7 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
 
 child.on("error", (err) => {
-  console.error(`[protocol-v2-smoke] child spawn error: ${err.message}`);
+  console.error(`[protocol-v4-smoke] child spawn error: ${err.message}`);
   process.exit(1);
 });
 
@@ -61,6 +65,7 @@ const chunks = [];
 const dones = [];
 const errors = [];
 let gotReady = false;
+let readyProtocolVersion = null;
 let readyResolver = null;
 
 // After each request, the test code sets a single waiter that resolves when
@@ -77,13 +82,14 @@ rl.on("line", (line) => {
   try {
     event = JSON.parse(trimmed);
   } catch {
-    console.error(`[protocol-v2-smoke] non-JSON stdout line: ${trimmed}`);
+    console.error(`[protocol-v4-smoke] non-JSON stdout line: ${trimmed}`);
     return;
   }
 
   switch (event.type) {
     case "ready":
       gotReady = true;
+      readyProtocolVersion = event.protocolVersion;
       if (readyResolver) {
         const r = readyResolver;
         readyResolver = null;
@@ -170,17 +176,17 @@ function shutdown(code) {
   }, 500);
   child.on("exit", () => clearTimeout(killTimer));
   if (code !== 0 && stderrChunks.length > 0) {
-    console.error(`[protocol-v2-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
+    console.error(`[protocol-v4-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
   }
   process.exit(code);
 }
 
 function fail(step, reason) {
-  console.error(`[protocol-v2-smoke] FAIL at step '${step}': ${reason}`);
+  console.error(`[protocol-v4-smoke] FAIL at step '${step}': ${reason}`);
   shutdown(1);
 }
 
-async function runStep(step, request, { expectSubstring }) {
+async function runStep(step, request, { expectSubstring = null, expectErrorSubstring = null }) {
   // Snapshot the chunk index so we only consider chunks emitted after this
   // request was dispatched.
   const chunkStart = chunks.length;
@@ -190,6 +196,22 @@ async function runStep(step, request, { expectSubstring }) {
     term = await waitForTerminal(STEP_TIMEOUT_MS, step);
   } catch (err) {
     fail(step, err.message);
+    return;
+  }
+  if (expectErrorSubstring !== null) {
+    if (term.kind !== "error") {
+      fail(step, `expected error containing ${JSON.stringify(expectErrorSubstring)}, got ${term.kind}`);
+      return;
+    }
+    const message = term.event.message ?? "";
+    if (!message.includes(expectErrorSubstring)) {
+      fail(
+        step,
+        `expected error containing ${JSON.stringify(expectErrorSubstring)}, got ${JSON.stringify(message)}`,
+      );
+      return;
+    }
+    console.log(`[protocol-v4-smoke] PASS: ${step}`);
     return;
   }
   if (term.kind === "error") {
@@ -211,7 +233,7 @@ async function runStep(step, request, { expectSubstring }) {
     );
     return;
   }
-  console.log(`[protocol-v2-smoke] PASS: ${step}`);
+  console.log(`[protocol-v4-smoke] PASS: ${step}`);
 }
 
 async function run() {
@@ -221,8 +243,15 @@ async function run() {
     fail("ready", err.message);
     return;
   }
+  if (readyProtocolVersion !== EXPECTED_PROTOCOL_VERSION) {
+    fail(
+      "ready",
+      `expected protocolVersion ${EXPECTED_PROTOCOL_VERSION}, got ${JSON.stringify(readyProtocolVersion)}`,
+    );
+    return;
+  }
 
-  // 1) start_session for echo and wait for the provider's initial `done`.
+  // 2) start_session for echo and wait for the provider's initial `done`.
   {
     const chunkStart = chunks.length;
     send({
@@ -249,35 +278,44 @@ async function run() {
     }
     // Not strictly required, but prove echo actually streamed something.
     void chunks.slice(chunkStart);
-    console.log(`[protocol-v2-smoke] PASS: start_session`);
+    console.log(`[protocol-v4-smoke] PASS: start_session`);
   }
 
-  // 2) set_permission_mode { mode: "plan" }
+  // 3) set_permission_mode { mode: "plan" }
   await runStep(
     "set_permission_mode",
     { type: "set_permission_mode", sessionId: SESSION_ID, mode: "plan" },
     { expectSubstring: "plan" },
   );
 
-  // 3) set_model { model: "test-model" }
+  // 4) set_model { model: "test-model" }
   await runStep(
     "set_model",
     { type: "set_model", sessionId: SESSION_ID, model: "test-model" },
     { expectSubstring: "test-model" },
   );
 
-  // 4) retry
+  // 5) retry
   await runStep(
     "retry",
     { type: "retry", sessionId: SESSION_ID },
     { expectSubstring: "retry" },
   );
 
-  console.log(`[protocol-v2-smoke] OK`);
+  // 6) cancel_pending_tools. Echo intentionally does not implement this
+  // method; the registry error proves index.ts dispatches v4 requests into
+  // the registry instead of dropping them as unknown request types.
+  await runStep(
+    "cancel_pending_tools",
+    { type: "cancel_pending_tools", sessionId: SESSION_ID },
+    { expectErrorSubstring: "does not support cancel_pending_tools" },
+  );
+
+  console.log(`[protocol-v4-smoke] OK`);
   shutdown(0);
 }
 
 run().catch((err) => {
-  console.error(`[protocol-v2-smoke] unexpected error: ${err?.stack ?? err}`);
+  console.error(`[protocol-v4-smoke] unexpected error: ${err?.stack ?? err}`);
   shutdown(1);
 });

@@ -43,6 +43,7 @@ import {
   apiAgentTurnSummaryEvent,
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
+import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
@@ -150,6 +151,26 @@ const apiConversationCleanup = new Map<string, () => void>();
 /** Per-conversation guard so auto-failover never loops. Cleared whenever
  * the user sends a fresh user turn; replenished on a successful turn. */
 const failoverGuard = new Set<string>();
+
+const PROJECT_LABELS_STORAGE_KEY = storageKey("project-labels");
+const LEGACY_PROJECT_LABELS_STORAGE_KEY = `${LEGACY_STORAGE_PREFIX}project-labels`;
+
+function loadProjectLabels(): Record<string, string> {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const currentRaw = localStorage.getItem(PROJECT_LABELS_STORAGE_KEY);
+    if (currentRaw) return JSON.parse(currentRaw) as Record<string, string>;
+
+    const legacyRaw = localStorage.getItem(LEGACY_PROJECT_LABELS_STORAGE_KEY);
+    if (!legacyRaw) return {};
+
+    const migrated = JSON.parse(legacyRaw) as Record<string, string>;
+    localStorage.setItem(PROJECT_LABELS_STORAGE_KEY, JSON.stringify(migrated));
+    return migrated;
+  } catch {
+    return {};
+  }
+}
 
 /** Derive a display name for a projectPath (e.g. "owner/repo" or last two segments). */
 export function repoDisplayName(projectPath: string, githubRepos: GitHubRepo[]): string {
@@ -1331,15 +1352,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     if (updated) scheduleSave(updated);
   },
 
-  projectLabels: ((): Record<string, string> => {
-    if (typeof localStorage === "undefined") return {};
-    try {
-      const raw = localStorage.getItem("packetcode:project-labels");
-      return raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    } catch {
-      return {};
-    }
-  })(),
+  projectLabels: loadProjectLabels(),
 
   setProjectLabel: (projectPath, label) => {
     set((s) => {
@@ -1348,7 +1361,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       if (trimmed) next[projectPath] = trimmed;
       else delete next[projectPath];
       try {
-        localStorage.setItem("packetcode:project-labels", JSON.stringify(next));
+        localStorage.setItem(PROJECT_LABELS_STORAGE_KEY, JSON.stringify(next));
       } catch {
         // Best effort.
       }

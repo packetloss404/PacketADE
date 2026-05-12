@@ -58,9 +58,20 @@ export class SessionRegistry {
     }
     const handler = factory();
     this.sessions.set(req.sessionId, { handler, provider: req.provider });
+    let startFailed = false;
+    const startEmit: Emit = (event) => {
+      if (event.type === "error" && event.sessionId === req.sessionId) {
+        startFailed = true;
+      }
+      emit(event);
+    };
     try {
-      await handler.start(req, emit);
+      await handler.start(req, startEmit);
+      if (startFailed) {
+        this.sessions.delete(req.sessionId);
+      }
     } catch (err) {
+      this.sessions.delete(req.sessionId);
       emit({
         type: "error",
         sessionId: req.sessionId,

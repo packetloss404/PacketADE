@@ -143,11 +143,7 @@ impl McpClient {
 
     /// Invoke a tool via `tools/call`. Joins all text content blocks from
     /// the response into a single string.
-    pub async fn call_tool(
-        &mut self,
-        name: &str,
-        arguments: &Value,
-    ) -> Result<String, String> {
+    pub async fn call_tool(&mut self, name: &str, arguments: &Value) -> Result<String, String> {
         let params = json!({
             "name": name,
             "arguments": arguments,
@@ -173,7 +169,10 @@ impl McpClient {
     /// close stdin, then attempt to reap the child.
     pub async fn shutdown(mut self) {
         let _ = self
-            .notify("notifications/cancelled", json!({ "reason": "client shutdown" }))
+            .notify(
+                "notifications/cancelled",
+                json!({ "reason": "client shutdown" }),
+            )
             .await;
         let _ = self.stdin.shutdown().await;
         // Don't block forever; if the child doesn't exit, kill it.
@@ -396,11 +395,7 @@ impl McpConnectionPool {
             })
             .unwrap_or_default();
 
-        Some(McpServerConfig {
-            command,
-            args,
-            env,
-        })
+        Some(McpServerConfig { command, args, env })
     }
 
     /// Get or spawn the client for a given server. Returns an `Arc<Mutex<_>>`
@@ -424,8 +419,8 @@ impl McpConnectionPool {
             )
         })?;
 
-        let client = McpClient::spawn(server_name, &config.command, &config.args, &config.env)
-            .await?;
+        let client =
+            McpClient::spawn(server_name, &config.command, &config.args, &config.env).await?;
         let arc = Arc::new(Mutex::new(client));
 
         // Insert (or, if a concurrent caller raced us, drop ours and reuse).
@@ -468,7 +463,9 @@ impl McpConnectionPool {
 fn home_dir() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        std::env::var("USERPROFILE").ok().map(std::path::PathBuf::from)
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(std::path::PathBuf::from)
     }
     #[cfg(not(target_os = "windows"))]
     {

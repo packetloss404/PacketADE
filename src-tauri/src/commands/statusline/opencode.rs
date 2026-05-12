@@ -1,5 +1,5 @@
-use crate::commands::shared::home_dir;
 use super::helpers::{now_epoch_seconds, STALE_SECONDS};
+use crate::commands::shared::home_dir;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
@@ -122,11 +122,13 @@ fn read_current_model(path: &PathBuf) -> (String, String) {
     // Use the first entry in "recent" as the current model
     if let Some(recent) = parsed.get("recent").and_then(|v| v.as_array()) {
         if let Some(first) = recent.first() {
-            let model = first.get("modelID")
+            let model = first
+                .get("modelID")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown")
                 .to_string();
-            let provider = first.get("providerID")
+            let provider = first
+                .get("providerID")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown")
                 .to_string();

@@ -83,16 +83,19 @@ fn is_comment_lang(lang: &str) -> bool {
 
 /// Count complexity keywords in a line for supported languages
 fn line_complexity(line: &str, lang: &str) -> u32 {
-    if matches!(lang, "json" | "yaml" | "toml" | "xml" | "markdown" | "html" | "css" | "sql") {
+    if matches!(
+        lang,
+        "json" | "yaml" | "toml" | "xml" | "markdown" | "html" | "css" | "sql"
+    ) {
         return 0;
     }
     let trimmed = line.trim();
     let mut score: u32 = 0;
     // Simple keyword-based complexity: each branch/loop adds 1
-    let keywords = ["if ", "if(", "else ", "else{", "for ", "for(",
-                     "while ", "while(", "switch ", "switch(",
-                     "match ", "match{", "case ", "catch ", "catch(",
-                     "? ", "&&", "||", "try ", "try{"];
+    let keywords = [
+        "if ", "if(", "else ", "else{", "for ", "for(", "while ", "while(", "switch ", "switch(",
+        "match ", "match{", "case ", "catch ", "catch(", "? ", "&&", "||", "try ", "try{",
+    ];
     for kw in &keywords {
         if trimmed.contains(kw) {
             score += 1;
@@ -158,13 +161,17 @@ fn analyze_file(path: &Path, lang: &str) -> (u32, u32, u32, u32, u32) {
             }
 
             // Line comments
-            if trimmed.starts_with("//") || (trimmed.starts_with('#') && matches!(lang, "python" | "ruby" | "shell" | "r" | "yaml" | "toml")) {
+            if trimmed.starts_with("//")
+                || (trimmed.starts_with('#')
+                    && matches!(lang, "python" | "ruby" | "shell" | "r" | "yaml" | "toml"))
+            {
                 comments += 1;
                 continue;
             }
 
             // Python/Rust doc comments
-            if (trimmed.starts_with("///") || trimmed.starts_with("//!")) && matches!(lang, "rust") {
+            if (trimmed.starts_with("///") || trimmed.starts_with("//!")) && matches!(lang, "rust")
+            {
                 comments += 1;
                 continue;
             }
@@ -186,44 +193,80 @@ fn calc_org_score(files: &[(String, String)]) -> u32 {
     let mut score: f64 = 50.0;
 
     // Check for source directory organization
-    let has_src = files.iter().any(|(p, _)| p.contains("/src/") || p.contains("\\src\\") || p.starts_with("src/") || p.starts_with("src\\"));
-    if has_src { score += 10.0; }
+    let has_src = files.iter().any(|(p, _)| {
+        p.contains("/src/")
+            || p.contains("\\src\\")
+            || p.starts_with("src/")
+            || p.starts_with("src\\")
+    });
+    if has_src {
+        score += 10.0;
+    }
 
     // Check for config files at root
     let has_config = files.iter().any(|(p, _)| {
         let name = p.rsplit(|c| c == '/' || c == '\\').next().unwrap_or("");
-        matches!(name, "package.json" | "Cargo.toml" | "pyproject.toml" | "go.mod" | "tsconfig.json")
+        matches!(
+            name,
+            "package.json" | "Cargo.toml" | "pyproject.toml" | "go.mod" | "tsconfig.json"
+        )
     });
-    if has_config { score += 5.0; }
+    if has_config {
+        score += 5.0;
+    }
 
     // Check for test organization
     let has_test_dir = files.iter().any(|(p, _)| {
-        p.contains("/tests/") || p.contains("\\tests\\") || p.contains("/__tests__/") || p.contains("\\__tests__\\")
+        p.contains("/tests/")
+            || p.contains("\\tests\\")
+            || p.contains("/__tests__/")
+            || p.contains("\\__tests__\\")
     });
-    if has_test_dir { score += 10.0; }
+    if has_test_dir {
+        score += 10.0;
+    }
 
     // Check for consistent naming (no mixed case styles in same dir)
     let has_readme = files.iter().any(|(p, _)| {
-        let name = p.rsplit(|c| c == '/' || c == '\\').next().unwrap_or("").to_lowercase();
+        let name = p
+            .rsplit(|c| c == '/' || c == '\\')
+            .next()
+            .unwrap_or("")
+            .to_lowercase();
         name == "readme.md" || name == "readme"
     });
-    if has_readme { score += 5.0; }
+    if has_readme {
+        score += 5.0;
+    }
 
     // Check average directory depth (shallow = better organized)
-    let avg_depth: f64 = files.iter().map(|(p, _)| {
-        p.matches('/').count() + p.matches('\\').count()
-    }).sum::<usize>() as f64 / files.len() as f64;
+    let avg_depth: f64 = files
+        .iter()
+        .map(|(p, _)| p.matches('/').count() + p.matches('\\').count())
+        .sum::<usize>() as f64
+        / files.len() as f64;
 
-    if avg_depth < 3.0 { score += 10.0; }
-    else if avg_depth < 5.0 { score += 5.0; }
+    if avg_depth < 3.0 {
+        score += 10.0;
+    } else if avg_depth < 5.0 {
+        score += 5.0;
+    }
 
     // Check for types/interfaces directory
-    let has_types = files.iter().any(|(p, _)| p.contains("/types/") || p.contains("\\types\\"));
-    if has_types { score += 5.0; }
+    let has_types = files
+        .iter()
+        .any(|(p, _)| p.contains("/types/") || p.contains("\\types\\"));
+    if has_types {
+        score += 5.0;
+    }
 
     // Check for components directory
-    let has_components = files.iter().any(|(p, _)| p.contains("/components/") || p.contains("\\components\\"));
-    if has_components { score += 5.0; }
+    let has_components = files
+        .iter()
+        .any(|(p, _)| p.contains("/components/") || p.contains("\\components\\"));
+    if has_components {
+        score += 5.0;
+    }
 
     score.min(100.0) as u32
 }
@@ -269,7 +312,8 @@ fn walk_dir_inner(dir: &Path, base: &Path, files: &mut Vec<(String, String)>, de
             if let Some(ext) = path.extension() {
                 let ext_str = ext.to_string_lossy().to_lowercase();
                 if let Some(lang) = get_language(&ext_str) {
-                    let rel_path = path.strip_prefix(base)
+                    let rel_path = path
+                        .strip_prefix(base)
                         .unwrap_or(&path)
                         .to_string_lossy()
                         .to_string();
@@ -302,7 +346,8 @@ pub fn analyze_code_quality(project_path: String) -> Result<CodeQualityReport, S
         let full_path = base.join(rel_path);
         let (code, comments, blanks, total, complexity) = analyze_file(&full_path, lang);
 
-        let ext = full_path.extension()
+        let ext = full_path
+            .extension()
             .map(|e| e.to_string_lossy().to_string())
             .unwrap_or_default();
 
@@ -438,11 +483,8 @@ mod tests {
     fn analyze_file_counts_code_comments_and_complexity() {
         let dir = temp_test_dir("code-quality-analyze-file");
         let path = dir.join("sample.rs");
-        fs::write(
-            &path,
-            "// comment\nlet x = 1;\nif x > 0 {\n}\n",
-        )
-        .expect("failed to write fixture");
+        fs::write(&path, "// comment\nlet x = 1;\nif x > 0 {\n}\n")
+            .expect("failed to write fixture");
 
         let (code, comments, blanks, total, complexity) = analyze_file(&path, "rust");
         assert_eq!(code, 3);
@@ -458,11 +500,15 @@ mod tests {
     fn walk_dir_skips_known_directories() {
         let dir = temp_test_dir("code-quality-walk-dir");
         fs::create_dir_all(dir.join("src")).expect("failed to create src dir");
-        fs::create_dir_all(dir.join("node_modules/pkg")).expect("failed to create node_modules dir");
+        fs::create_dir_all(dir.join("node_modules/pkg"))
+            .expect("failed to create node_modules dir");
 
         fs::write(dir.join("src/app.ts"), "export const x = 1;\n").expect("failed to write app.ts");
-        fs::write(dir.join("node_modules/pkg/index.ts"), "export const y = 2;\n")
-            .expect("failed to write node_modules fixture");
+        fs::write(
+            dir.join("node_modules/pkg/index.ts"),
+            "export const y = 2;\n",
+        )
+        .expect("failed to write node_modules fixture");
 
         let mut files = Vec::new();
         walk_dir(&dir, &dir, &mut files);
@@ -482,12 +528,18 @@ mod tests {
 
         fs::write(dir.join("src/main.ts"), "export const main = true;\n")
             .expect("failed to write main.ts");
-        fs::write(dir.join("src/specification.ts"), "export const spec = true;\n")
-            .expect("failed to write specification.ts");
+        fs::write(
+            dir.join("src/specification.ts"),
+            "export const spec = true;\n",
+        )
+        .expect("failed to write specification.ts");
         fs::write(dir.join("src/app.test.ts"), "describe('x', () => {});\n")
             .expect("failed to write app.test.ts");
-        fs::write(dir.join("tests/integration.ts"), "describe('i', () => {});\n")
-            .expect("failed to write tests/integration.ts");
+        fs::write(
+            dir.join("tests/integration.ts"),
+            "describe('i', () => {});\n",
+        )
+        .expect("failed to write tests/integration.ts");
 
         let report = analyze_code_quality(dir.to_string_lossy().to_string())
             .expect("analysis should succeed");

@@ -6,9 +6,7 @@
 //! the session.
 
 use crate::commands::agent_sidecar::SidecarManager;
-use crate::commands::api_agent::{
-    close_api_agent_session, start_api_agent_session, ApiAgentState,
-};
+use crate::commands::api_agent::{close_api_agent_session, start_api_agent_session, ApiAgentState};
 use crate::core::execution::SshConfig;
 use crate::core::flight::{Attempt, AttemptStatus, AttemptTarget};
 use crate::core::storage;
@@ -179,16 +177,12 @@ pub async fn launch_flight_async(
                     model,
                     ..
                 } => {
-                    let cfg = build_ssh_config_from_spec(&spec)
-                        .ok_or("Failed to build SshConfig")?;
-                    let path = worktree::create_remote_worktree(
-                        &cfg,
-                        base_path,
-                        &attempt_id,
-                        base_branch,
-                    )
-                    .await
-                    .map_err(|e| format!("Remote worktree provision failed: {}", e))?;
+                    let cfg =
+                        build_ssh_config_from_spec(&spec).ok_or("Failed to build SshConfig")?;
+                    let path =
+                        worktree::create_remote_worktree(&cfg, base_path, &attempt_id, base_branch)
+                            .await
+                            .map_err(|e| format!("Remote worktree provision failed: {}", e))?;
                     // SshConfig used by the API agent session must point at the
                     // worktree, not the original base path, so all tool calls
                     // operate inside the attempt's worktree.
@@ -253,24 +247,20 @@ pub async fn launch_flight_async(
             model.clone(),
             project_path,
             prompt.clone(),
-            None,                     // system_prompt_override — use default
-            Some(false),              // thinking_enabled
-            None,                     // attachments
-            Some(false),              // plan_mode
+            None,        // system_prompt_override — use default
+            Some(false), // thinking_enabled
+            None,        // attachments
+            Some(false), // plan_mode
             ssh_config_for_session,
-            None,                     // allowed_tools — flight attempts use full tool set
-            None,                     // resume_token — flights start fresh
-            None,                     // enabled_mcp_server_ids — flights use all enabled MCP servers
+            None, // allowed_tools — flight attempts use full tool set
+            None, // resume_token — flights start fresh
+            None, // enabled_mcp_server_ids — flights use all enabled MCP servers
         )
         .await
         {
             Ok(()) => {
-                let _ = update_attempt_status(
-                    &flight_id,
-                    &attempt_id,
-                    AttemptStatus::Running,
-                    None,
-                );
+                let _ =
+                    update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Running, None);
             }
             Err(e) => {
                 let _ = update_attempt_status(
@@ -325,7 +315,11 @@ pub async fn cancel_flight_attempt(
                 warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
             }
         }
-        AttemptTarget::Ssh { base_path, target_id, .. } => {
+        AttemptTarget::Ssh {
+            base_path,
+            target_id,
+            ..
+        } => {
             // Reconstruct an SshConfig from saved attempt info. We don't have
             // host/user/port here — for cleanup we leave the worktree in place
             // if we can't authenticate, since attempting to reconnect from a
@@ -409,7 +403,11 @@ pub async fn mark_attempt_status(
                     warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
                 }
             }
-            AttemptTarget::Ssh { base_path, target_id, .. } => {
+            AttemptTarget::Ssh {
+                base_path,
+                target_id,
+                ..
+            } => {
                 let _ = (base_path, target_id);
                 warn!(
                     attempt = %attempt_id,

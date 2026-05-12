@@ -61,14 +61,16 @@ The factory lives in `src/session-registry.ts`. Currently wired:
 
 ## Protocol summary
 
-**Protocol version: 2** (bumped by Tier 3 slice B). The version is advertised
+**Protocol version: 4**. The version is advertised
 in the `ready` event's `protocolVersion` field at startup, and the Rust
-supervisor's `EXPECTED_PROTOCOL_VERSION` constant must match. v2 added three
-new request types — `set_permission_mode`, `set_model`, and `retry` — for
-Claude-Code parity (command forwarding from the UI's `/model`, `/plan`, and
-retry affordances). Providers advertise support by implementing the matching
-handler methods on `ProviderHandler`; the registry emits a clean
-"not supported" error when a provider skips one.
+supervisor's `EXPECTED_PROTOCOL_VERSION` constant must match. v2 added
+`set_permission_mode`, `set_model`, and `retry`; v3 added typed attachments,
+per-hunk edit acceptance payloads, richer tool/plan/token events, and resume
+tokens on `done`; v4 added `cancel_pending_tools`, which drains parked
+permission/edit prompts as denied without killing the session. Providers
+advertise support by implementing the matching handler methods on
+`ProviderHandler`; the registry emits a clean "not supported" error when a
+provider skips one.
 
 **stdin (requests, one per line):**
 
@@ -83,6 +85,7 @@ handler methods on `ProviderHandler`; the registry emits a clean
 | `set_permission_mode`| v2: switch permission/approval mode mid-session  |
 | `set_model`          | v2: swap the model without restarting the session |
 | `retry`              | v2: re-run the last turn (UI "Retry" affordance) |
+| `cancel_pending_tools` | v4: deny parked tool/edit prompts without cancelling the turn |
 
 **stdout (events, one per line):**
 
@@ -96,6 +99,9 @@ handler methods on `ProviderHandler`; the registry emits a clean
 | `pending_edit`       | Ask supervisor for edit approval                 |
 | `done`               | Turn complete (includes token counts)            |
 | `error`              | Session or protocol error                        |
+| `plan_block`         | v3: structured plan/TodoWrite mirror             |
+| `tool_output_extended` | v3: tool exit code, paths, stdout/stderr       |
+| `turn_summary`       | v3: running token totals between turns           |
 
 See `src/protocol.ts` for the full TypeScript definitions — that file is the
 source of truth for the wire format.
@@ -110,7 +116,7 @@ When packaging PacketADE for release (`pnpm tauri build`), the sidecar is
 shipped alongside the app rather than relying on a system `node` or a
 system-installed sidecar source tree:
 
-- **Node runtime** — a pinned build of Node 20.17.0 is downloaded by
+- **Node runtime** — a pinned build of Node 24.15.0 is downloaded by
   `scripts/fetch-node.js` and staged as a Tauri `externalBin` under
   `src-tauri/binaries/`. The Tauri bundler picks it up from there. The
   fetcher covers all five supported target triples

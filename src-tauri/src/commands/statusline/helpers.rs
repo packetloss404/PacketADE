@@ -48,7 +48,11 @@ pub fn iso_to_epoch(ts: &str) -> u64 {
 
     let mut days: u64 = 0;
     for y in 1970..year {
-        days += if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+        days += if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+            366
+        } else {
+            365
+        };
     }
     let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let is_leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);

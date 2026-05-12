@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { createPtySession, sshExec as tauriSshExec } from "@/lib/tauri";
+import { createPtySession, killPty, sshExec as tauriSshExec } from "@/lib/tauri";
 import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
 import { useServerStore } from "@/stores/serverStore";
 import { buildSshExecArgs, REMOTE_INSTALL_COMMANDS, AGENT_CLI_NAMES } from "@/lib/ssh";
@@ -52,25 +52,38 @@ async function sshExec(
   );
 
   let output = "";
-
-  const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
-    output += event.payload;
-  });
-
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let resolveExit: (value: boolean) => void = () => {};
   const exitPromise = new Promise<boolean>((resolve) => {
+    resolveExit = resolve;
+  });
+
+  const [outputUnlisten, exitUnlisten] = await Promise.all([
+    listen<string>(ptyOutputEvent(sessionId), (event) => {
+      output += event.payload;
+    }),
     listen<string>(ptyExitEvent(sessionId), () => {
-      resolve(true);
+      resolveExit(true);
+    }),
+  ]);
+
+  let completed: boolean | undefined;
+  try {
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      timeoutId = setTimeout(() => resolve(false), 15_000);
     });
-  });
 
-  const timeoutPromise = new Promise<boolean>((resolve) => {
-    setTimeout(() => resolve(false), 15_000);
-  });
-
-  const completed = await Promise.race([exitPromise, timeoutPromise]);
-  outputUnlisten();
+    completed = await Promise.race([exitPromise, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    outputUnlisten();
+    exitUnlisten();
+  }
 
   if (!completed) {
+    await killPty(sessionId).catch(() => {});
     return { output: output + "\n[Connection timed out]", success: false };
   }
 

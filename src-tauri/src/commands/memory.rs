@@ -11,7 +11,10 @@ pub async fn scan_codebase_memory(project_path: String) -> Result<String, String
 }
 
 #[tauri::command]
-pub async fn summarize_session(project_path: String, session_log: String) -> Result<String, String> {
+pub async fn summarize_session(
+    project_path: String,
+    session_log: String,
+) -> Result<String, String> {
     super::validate_project_path(&project_path)?;
     super::validate_input_size(&session_log, super::MAX_INPUT_SIZE, "Session log")?;
     let prompt = format!(

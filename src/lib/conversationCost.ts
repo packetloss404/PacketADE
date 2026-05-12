@@ -11,14 +11,24 @@ const COST_PER_MTOK: Record<string, { input: number; output: number }> = {
   "claude-sonnet-4-6": { input: 3, output: 15 },
   "claude-haiku-4-5": { input: 1, output: 5 },
   "gpt-5.5": { input: 5, output: 15 },
+  "gpt-5-codex": { input: 5, output: 15 },
+  "gpt-5": { input: 5, output: 15 },
   "chatgpt-5.5": { input: 5, output: 15 },
+  "chatgpt-5.4": { input: 5, output: 15 },
   "openai/gpt-5.5": { input: 5, output: 15 },
   "openai/chatgpt-5.5": { input: 5, output: 15 },
+  "openai/chatgpt-5.4": { input: 5, output: 15 },
   "gpt-4o": { input: 2.5, output: 10 },
   o3: { input: 15, output: 60 },
   "o4-mini": { input: 1.1, output: 4.4 },
   "MiniMax-M2.7": { input: 0.3, output: 1.2 },
   "MiniMax-M2.7-highspeed": { input: 0.3, output: 1.2 },
+  "google/gemini-2.5-pro": { input: 1.25, output: 10 },
+  "meta-llama/llama-4-maverick": { input: 0.2, output: 0.6 },
+  "llama3.3:70b": { input: 0, output: 0 },
+  "qwen3:32b": { input: 0, output: 0 },
+  "deepseek-coder-v2": { input: 0, output: 0 },
+  "codellama:34b": { input: 0, output: 0 },
 };
 
 /**
@@ -27,12 +37,27 @@ const COST_PER_MTOK: Record<string, { input: number; output: number }> = {
  */
 function lookupRates(model: string | undefined): { input: number; output: number } | null {
   if (!model) return null;
-  const exact = COST_PER_MTOK[model];
-  if (exact) return exact;
-  // Strip trailing -YYYYMMDD if present
-  const stripped = model.replace(/-\d{8}$/, "");
-  if (stripped !== model && COST_PER_MTOK[stripped]) return COST_PER_MTOK[stripped];
+  for (const key of rateLookupKeys(model)) {
+    const rates = COST_PER_MTOK[key];
+    if (rates) return rates;
+  }
   return null;
+}
+
+function rateLookupKeys(model: string): string[] {
+  const keys = [model];
+  const strippedDate = model.replace(/-\d{8}$/, "");
+  if (strippedDate !== model) keys.push(strippedDate);
+
+  const slashIndex = strippedDate.indexOf("/");
+  if (slashIndex >= 0) {
+    const withoutProvider = strippedDate.slice(slashIndex + 1);
+    keys.push(withoutProvider);
+    const withoutProviderAndDate = withoutProvider.replace(/-\d{8}$/, "");
+    if (withoutProviderAndDate !== withoutProvider) keys.push(withoutProviderAndDate);
+  }
+
+  return [...new Set(keys)];
 }
 
 /**

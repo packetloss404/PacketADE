@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::core::flight::*;
-    use crate::core::storage::PersistedState;
     use crate::core::orchestrator::OrchestratorSettings;
+    use crate::core::storage::PersistedState;
 
     /// Build a fully-populated sample state for contract testing.
     fn sample_state() -> PersistedState {
@@ -112,55 +112,148 @@ mod tests {
         // Flight keys
         let flight = &value["flights"][0];
         assert!(flight.get("id").is_some(), "missing flight key: id");
-        assert!(flight.get("project_path").is_some(), "missing flight key: project_path");
-        assert!(flight.get("git_branch").is_some(), "missing flight key: git_branch");
-        assert!(flight.get("milestones").is_some(), "missing flight key: milestones");
-        assert!(flight.get("linked_session_ids").is_some(), "missing flight key: linked_session_ids");
-        assert!(flight.get("created_at").is_some(), "missing flight key: created_at");
-        assert!(flight.get("updated_at").is_some(), "missing flight key: updated_at");
-        assert!(flight.get("total_cost").is_some(), "missing flight key: total_cost");
-        assert!(flight.get("total_tokens").is_some(), "missing flight key: total_tokens");
+        assert!(
+            flight.get("project_path").is_some(),
+            "missing flight key: project_path"
+        );
+        assert!(
+            flight.get("git_branch").is_some(),
+            "missing flight key: git_branch"
+        );
+        assert!(
+            flight.get("milestones").is_some(),
+            "missing flight key: milestones"
+        );
+        assert!(
+            flight.get("linked_session_ids").is_some(),
+            "missing flight key: linked_session_ids"
+        );
+        assert!(
+            flight.get("created_at").is_some(),
+            "missing flight key: created_at"
+        );
+        assert!(
+            flight.get("updated_at").is_some(),
+            "missing flight key: updated_at"
+        );
+        assert!(
+            flight.get("total_cost").is_some(),
+            "missing flight key: total_cost"
+        );
+        assert!(
+            flight.get("total_tokens").is_some(),
+            "missing flight key: total_tokens"
+        );
 
         // Milestone keys
         let milestone = &flight["milestones"][0];
-        assert!(milestone.get("flight_id").is_some(), "missing milestone key: flight_id");
-        assert!(milestone.get("validation_criteria").is_some(), "missing milestone key: validation_criteria");
+        assert!(
+            milestone.get("flight_id").is_some(),
+            "missing milestone key: flight_id"
+        );
+        assert!(
+            milestone.get("validation_criteria").is_some(),
+            "missing milestone key: validation_criteria"
+        );
 
         // Task keys
         let task = &milestone["tasks"][0];
-        assert!(task.get("task_type").is_some(), "missing task key: task_type (not 'type')");
-        assert!(task.get("agent_config_id").is_some(), "missing task key: agent_config_id");
-        assert!(task.get("depends_on").is_some(), "missing task key: depends_on");
-        assert!(task.get("session_id").is_some(), "missing task key: session_id");
-        assert!(task.get("milestone_id").is_some(), "missing task key: milestone_id");
-        assert!(task.get("flight_id").is_some(), "missing task key: flight_id");
-        assert!(task.get("agent_args").is_none() || task.get("agent_args").is_some(), "agent_args should serialize or be absent");
-        assert!(task.get("created_at").is_some(), "missing task key: created_at");
-        assert!(task.get("started_at").is_some(), "missing task key: started_at");
+        assert!(
+            task.get("task_type").is_some(),
+            "missing task key: task_type (not 'type')"
+        );
+        assert!(
+            task.get("agent_config_id").is_some(),
+            "missing task key: agent_config_id"
+        );
+        assert!(
+            task.get("depends_on").is_some(),
+            "missing task key: depends_on"
+        );
+        assert!(
+            task.get("session_id").is_some(),
+            "missing task key: session_id"
+        );
+        assert!(
+            task.get("milestone_id").is_some(),
+            "missing task key: milestone_id"
+        );
+        assert!(
+            task.get("flight_id").is_some(),
+            "missing task key: flight_id"
+        );
+        assert!(
+            task.get("agent_args").is_none() || task.get("agent_args").is_some(),
+            "agent_args should serialize or be absent"
+        );
+        assert!(
+            task.get("created_at").is_some(),
+            "missing task key: created_at"
+        );
+        assert!(
+            task.get("started_at").is_some(),
+            "missing task key: started_at"
+        );
         assert!(task.get("cost").is_some(), "missing task key: cost");
         assert!(task.get("tokens").is_some(), "missing task key: tokens");
 
         // TaskResult keys
         let result = &task["result"];
-        assert!(result.get("exit_code").is_some(), "missing result key: exit_code");
-        assert!(result.get("files_changed").is_some(), "missing result key: files_changed");
-        assert!(result.get("duration_ms").is_some(), "missing result key: duration_ms");
-        assert!(result.get("handoff").is_some(), "missing result key: handoff");
-        assert!(result.get("validation").is_some(), "missing result key: validation");
+        assert!(
+            result.get("exit_code").is_some(),
+            "missing result key: exit_code"
+        );
+        assert!(
+            result.get("files_changed").is_some(),
+            "missing result key: files_changed"
+        );
+        assert!(
+            result.get("duration_ms").is_some(),
+            "missing result key: duration_ms"
+        );
+        assert!(
+            result.get("handoff").is_some(),
+            "missing result key: handoff"
+        );
+        assert!(
+            result.get("validation").is_some(),
+            "missing result key: validation"
+        );
 
         // TaskHandoff keys
         let handoff = &result["handoff"];
-        assert!(handoff.get("files_changed").is_some(), "missing handoff key: files_changed");
-        assert!(handoff.get("tests_needed").is_some(), "missing handoff key: tests_needed");
-        assert!(handoff.get("follow_ups").is_some(), "missing handoff key: follow_ups");
+        assert!(
+            handoff.get("files_changed").is_some(),
+            "missing handoff key: files_changed"
+        );
+        assert!(
+            handoff.get("tests_needed").is_some(),
+            "missing handoff key: tests_needed"
+        );
+        assert!(
+            handoff.get("follow_ups").is_some(),
+            "missing handoff key: follow_ups"
+        );
 
         // TaskValidationReport keys
         let validation = &result["validation"];
-        assert!(validation.get("verdict").is_some(), "missing validation key: verdict");
-        assert!(validation.get("assertions").is_some(), "missing validation key: assertions");
+        assert!(
+            validation.get("verdict").is_some(),
+            "missing validation key: verdict"
+        );
+        assert!(
+            validation.get("assertions").is_some(),
+            "missing validation key: assertions"
+        );
         let assertion = &validation["assertions"][0];
-        assert!(assertion.get("label").is_some(), "missing assertion key: label");
-        assert!(assertion.get("status").is_some(), "missing assertion key: status");
+        assert!(
+            assertion.get("label").is_some(),
+            "missing assertion key: label"
+        );
+        assert!(
+            assertion.get("status").is_some(),
+            "missing assertion key: status"
+        );
 
         // Verify enum serialization uses snake_case
         assert_eq!(flight["status"].as_str().unwrap(), "active");
@@ -172,10 +265,7 @@ mod tests {
         // Write fixture for TS tests
         let fixture_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test-fixtures");
         let _ = std::fs::create_dir_all(&fixture_dir);
-        std::fs::write(
-            fixture_dir.join("state.v2.fixture.json"),
-            &json,
-        ).unwrap();
+        std::fs::write(fixture_dir.join("state.v2.fixture.json"), &json).unwrap();
     }
 
     #[test]
@@ -214,7 +304,12 @@ mod tests {
         ];
         for (variant, expected) in statuses {
             let json = serde_json::to_string(&variant).unwrap();
-            assert_eq!(json, format!("\"{}\"", expected), "FlightStatus::{:?}", variant);
+            assert_eq!(
+                json,
+                format!("\"{}\"", expected),
+                "FlightStatus::{:?}",
+                variant
+            );
         }
 
         // TaskStatus — verify approval_needed (not "approvalNeeded")
@@ -244,7 +339,12 @@ mod tests {
         ];
         for (variant, expected) in verdicts {
             let json = serde_json::to_string(&variant).unwrap();
-            assert_eq!(json, format!("\"{}\"", expected), "ValidationVerdict::{:?}", variant);
+            assert_eq!(
+                json,
+                format!("\"{}\"", expected),
+                "ValidationVerdict::{:?}",
+                variant
+            );
         }
     }
 }

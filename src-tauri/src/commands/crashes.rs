@@ -29,11 +29,11 @@ fn dirs_home() -> Result<PathBuf, String> {
 
 fn validate_crash_path(path: &str) -> Result<PathBuf, String> {
     let dir = crashes_dir()?;
-    let canonical_dir = std::fs::canonicalize(&dir)
-        .map_err(|e| format!("Cannot resolve crashes dir: {}", e))?;
+    let canonical_dir =
+        std::fs::canonicalize(&dir).map_err(|e| format!("Cannot resolve crashes dir: {}", e))?;
     let target = Path::new(path);
-    let canonical_target = std::fs::canonicalize(target)
-        .map_err(|e| format!("Cannot resolve path: {}", e))?;
+    let canonical_target =
+        std::fs::canonicalize(target).map_err(|e| format!("Cannot resolve path: {}", e))?;
     if !canonical_target.starts_with(&canonical_dir) {
         return Err("Path is outside the crashes directory".to_string());
     }

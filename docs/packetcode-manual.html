@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PacketCode Manual | The Complete User Guide</title>
-<meta name="description" content="Complete user manual for PacketCode — the open-source AI desktop IDE. Setup, agents, workspaces, Flight Deck, integrations, and settings." />
-<link rel="canonical" href="https://packetcode.app/packetcode-manual.html" />
+<title>PacketADE Manual | The Complete User Guide</title>
+<meta name="description" content="Complete user manual for PacketADE — the open-source AI desktop IDE. Setup, agents, workspaces, Flight Deck, integrations, and settings." />
+<link rel="canonical" href="https://packetade.app/packetcode-manual.html" />
 <link rel="icon" type="image/png" href="favicon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -202,9 +202,9 @@ footer.manual-foot a{color:var(--text-secondary)}
 <!-- ===== NAV ===== -->
 <nav class="top">
   <div class="nav-inner">
-    <a href="index.html" class="nav-brand" aria-label="PacketCode Home">
+    <a href="index.html" class="nav-brand" aria-label="PacketADE Home">
       <img src="icon-192.png" alt="" width="28" height="28" />
-      PacketCode
+      PacketADE
       <span class="sub">Manual</span>
     </a>
     <div class="nav-actions">
@@ -213,8 +213,8 @@ footer.manual-foot a{color:var(--text-secondary)}
         Contents
       </button>
       <a href="index.html" class="btn-nav">&larr; Home</a>
-      <a href="https://github.com/packetloss404/PacketCode" class="btn-nav" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/packetloss404/PacketCode/releases" class="btn-nav primary">Download</a>
+      <a href="https://github.com/packetloss404/PacketADE" class="btn-nav" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-nav primary">Download</a>
     </div>
   </div>
 </nav>
@@ -228,7 +228,7 @@ footer.manual-foot a{color:var(--text-secondary)}
     <li class="ch-item">
       <a href="#chapter-1"><span class="ch-num">01</span>Getting Started</a>
       <ul class="subs">
-        <li><a href="#ch1-overview">What is PacketCode?</a></li>
+        <li><a href="#ch1-overview">What is PacketADE?</a></li>
         <li><a href="#ch1-install">Install &amp; first run</a></li>
         <li><a href="#ch1-cli-tools">Required CLIs &amp; tools</a></li>
         <li><a href="#ch1-views">Views at a glance</a></li>
@@ -298,7 +298,7 @@ footer.manual-foot a{color:var(--text-secondary)}
 <main class="manual">
   <header class="doc-head">
     <div class="eyebrow">The Complete User Guide</div>
-    <h1>PacketCode <span>Manual</span></h1>
+    <h1>PacketADE <span>Manual</span></h1>
     <p class="lede">Everything you need to run every agent, orchestrate flights, wire up integrations, and ship from one cockpit. Written to be readable top-to-bottom or dipped into by topic.</p>
     <div class="meta">
       <span>Apache 2.0</span>
@@ -310,22 +310,22 @@ footer.manual-foot a{color:var(--text-secondary)}
 <section class="chapter" id="chapter-1">
 <span class="chapter-badge">Chapter 01</span>
 <h2 class="chapter-title">Getting Started</h2>
-<p class="chapter-lede">A fast, opinionated tour of PacketCode &mdash; what it is, how to install it, and what you'll see the first time you launch it.</p>
+<p class="chapter-lede">A fast, opinionated tour of PacketADE &mdash; what it is, how to install it, and what you'll see the first time you launch it.</p>
 
-<h3 class="section-title" id="ch1-overview">What is PacketCode?</h3>
-<p>PacketCode is a Tauri v2 desktop IDE that unifies every AI coding agent you use into a single multi-pane cockpit. It wraps the major CLI agents &mdash; Claude Code, OpenAI Codex, Google Gemini, and OpenCode &mdash; alongside API agents for five providers (Anthropic, OpenAI, MiniMax, OpenRouter, and local Ollama) so you can run them side-by-side, share context between them, and stop paying for the same work twice.</p>
-<p>If you've spent a week bouncing between three terminal tabs, a kanban board, a browser full of dashboards, and a notes app tracking which agent knows what, PacketCode is the fix. Flight Deck orchestrates multi-step work across agents. Cross-provider cost tracking shows you exactly where your tokens went. BYOK means your keys stay local. Memory and Insights keep the useful context, so your next session doesn't start from scratch.</p>
-<p>It's built for solo developers and small teams who want an AI-first IDE without committing to a single vendor's walled garden. You bring the keys; PacketCode brings the cockpit.</p>
+<h3 class="section-title" id="ch1-overview">What is PacketADE?</h3>
+<p>PacketADE is a Tauri v2 desktop IDE that unifies every AI coding agent you use into a single multi-pane cockpit. It wraps the major CLI agents &mdash; Claude Code, OpenAI Codex, Google Gemini, and OpenCode &mdash; alongside seven provider rows spanning Anthropic subscription/API, OpenAI subscription/API, MiniMax, OpenRouter, and local Ollama so you can run them side-by-side, share context between them, and stop paying for the same work twice.</p>
+<p>If you've spent a week bouncing between three terminal tabs, a kanban board, a browser full of dashboards, and a notes app tracking which agent knows what, PacketADE is the fix. Flight Deck orchestrates multi-step work across agents. Cross-provider cost tracking shows you exactly where your tokens went. BYOK means your keys stay local. Memory and Insights keep the useful context, so your next session doesn't start from scratch.</p>
+<p>It's built for solo developers and small teams who want an AI-first IDE without committing to a single vendor's walled garden. You bring the keys; PacketADE brings the cockpit.</p>
 
 <h4 class="subsection-title">Key concepts</h4>
 <dl class="def-list">
-  <dt>Workspace</dt><dd>A project folder PacketCode has opened. Sessions, flights, issues, and memory are scoped per workspace.</dd>
+  <dt>Workspace</dt><dd>A project folder PacketADE has opened. Sessions, flights, issues, and memory are scoped per workspace.</dd>
   <dt>Session</dt><dd>A single running PTY pane &mdash; a shell, a CLI agent, or a terminal process tied to the workspace.</dd>
   <dt>Flight</dt><dd>The top-level unit of work. A flight bundles issues, sessions, a plan, and status rollup under one name.</dd>
   <dt>Agent profile</dt><dd>A saved configuration of provider, model, system prompt, tools, and defaults. Reusable across conversations.</dd>
   <dt>API agent</dt><dd>A conversation driven directly through a provider's API with full tool use and streaming. No CLI required.</dd>
   <dt>CLI agent</dt><dd>A conversation driven through a locally-installed vendor CLI (<code>claude</code>, <code>codex</code>, etc.) running in a PTY.</dd>
-  <dt>Memory</dt><dd>A persistent, searchable store of patterns, decisions, and events PacketCode has learned about your codebase.</dd>
+  <dt>Memory</dt><dd>A persistent, searchable store of patterns, decisions, and events PacketADE has learned about your codebase.</dd>
 </dl>
 
 <h3 class="section-title" id="ch1-install">Install &amp; first run</h3>
@@ -339,11 +339,11 @@ footer.manual-foot a{color:var(--text-secondary)}
 </ul>
 
 <h4 class="subsection-title">Option 1 &mdash; Download a release</h4>
-<p>Grab a signed installer for Windows, macOS, or Linux from the GitHub Releases page. Run it, open PacketCode, and skip ahead to the first-run section below.</p>
+<p>Grab a signed installer for Windows, macOS, or Linux from the GitHub Releases page. Run it, open PacketADE, and skip ahead to the first-run section below.</p>
 
 <h4 class="subsection-title">Option 2 &mdash; Build from source</h4>
-<pre><code>git clone https://github.com/packetloss404/PacketCode.git
-cd PacketCode
+<pre><code>git clone https://github.com/packetloss404/PacketADE.git
+cd PacketADE
 pnpm install
 pnpm tauri dev      # hot-reload dev mode
 pnpm tauri build    # production build</code></pre>
@@ -356,14 +356,14 @@ pnpm tauri build    # production build</code></pre>
 
 <h4 class="subsection-title">First run</h4>
 <ol class="step-list">
-  <li>PacketCode opens to the <strong>Welcome</strong> screen when no workspace is active.</li>
-  <li>Click <strong>Open Project</strong> and pick a folder. PacketCode scans it and reports the CLIs it finds on your <code>PATH</code>.</li>
+  <li>PacketADE opens to the <strong>Welcome</strong> screen when no workspace is active.</li>
+  <li>Click <strong>Open Project</strong> and pick a folder. PacketADE scans it and reports the CLIs it finds on your <code>PATH</code>.</li>
   <li>If a CLI is detected, you can start using it immediately &mdash; zero configuration.</li>
   <li>API agents need keys. Open <strong>Tools</strong> <span class="pill pill-muted">settings hub</span> and add keys under <strong>API Keys</strong>. Chapter 2 covers this in detail.</li>
 </ol>
 
 <h3 class="section-title" id="ch1-cli-tools">Required CLIs &amp; tools</h3>
-<p>Nothing is strictly required &mdash; PacketCode will run with no CLIs installed, using only API agents. But the more CLIs it finds, the more panes you can spin up.</p>
+<p>Nothing is strictly required &mdash; PacketADE will run with no CLIs installed, using only API agents. But the more CLIs it finds, the more panes you can spin up.</p>
 
 <table class="ref-table">
   <thead><tr><th>Tool</th><th>What it unlocks</th><th>Required?</th></tr></thead>
@@ -376,8 +376,8 @@ pnpm tauri build    # production build</code></pre>
     <tr><td><code>ollama</code></td><td>Local API agent &mdash; run models on your own hardware</td><td><span class="pill pill-muted">Optional</span></td></tr>
   </tbody>
 </table>
-<p>API agents do not require any CLI. The only exception is Ollama, which needs the <code>ollama</code> binary installed and <code>ollama serve</code> running on <code>localhost:11434</code> before PacketCode can talk to it.</p>
-<p>On Windows, PacketCode resolves <code>.cmd</code> wrappers automatically (for example, <code>claude.cmd</code> is found when you reference <code>claude</code>) and prefers native <code>.exe</code> binaries when both exist. You shouldn't need to rename anything.</p>
+<p>API agents do not require any CLI. The only exception is Ollama, which needs the <code>ollama</code> binary installed and <code>ollama serve</code> running on <code>localhost:11434</code> before PacketADE can talk to it.</p>
+<p>On Windows, PacketADE resolves <code>.cmd</code> wrappers automatically (for example, <code>claude.cmd</code> is found when you reference <code>claude</code>) and prefers native <code>.exe</code> binaries when both exist. You shouldn't need to rename anything.</p>
 
 <h3 class="section-title" id="ch1-views">Views at a glance</h3>
 <p>Every top-level screen is a "view." You can jump between them from the toolbar, the command palette, or keyboard shortcuts.</p>
@@ -405,7 +405,7 @@ pnpm tauri build    # production build</code></pre>
 </table>
 
 <h3 class="section-title" id="ch1-shortcuts">Global keyboard shortcuts</h3>
-<p>PacketCode is keyboard-first. Learn these six and you'll rarely touch the mouse.</p>
+<p>PacketADE is keyboard-first. Learn these six and you'll rarely touch the mouse.</p>
 
 <table class="ref-table">
   <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
@@ -431,10 +431,10 @@ pnpm tauri build    # production build</code></pre>
 </table>
 
 <h3 class="section-title" id="ch1-tour">A five-minute tour</h3>
-<p>The fastest way to understand PacketCode is to use it. Follow these steps in order.</p>
+<p>The fastest way to understand PacketADE is to use it. Follow these steps in order.</p>
 
 <ol class="step-list">
-  <li>Launch PacketCode and pick a project folder from the Welcome screen. The workspace opens with an empty pane.</li>
+  <li>Launch PacketADE and pick a project folder from the Welcome screen. The workspace opens with an empty pane.</li>
   <li>Press <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span> to open the <strong>Agents</strong> view. Click <strong>+ New Agent</strong>. Pick a provider &mdash; try <span class="pill pill-cyan">Ollama</span> if you want free and local &mdash; choose a model, type <em>"explain the architecture of this project"</em>, and press <span class="kbd-row"><kbd>Enter</kbd></span>. Watch the response stream in.</li>
   <li>Try a slash command. Type <code>/help</code> to open the cheatsheet; type <code>/model</code> to switch models mid-conversation without losing context.</li>
   <li>Mention a file. Type <code>@</code> and start typing a path &mdash; the popover filters as you type. Press <span class="kbd-row"><kbd>Tab</kbd></span> to insert the reference. The agent receives the file contents inline.</li>
@@ -451,10 +451,10 @@ pnpm tauri build    # production build</code></pre>
 <section class="chapter" id="chapter-2">
 <span class="chapter-badge">Chapter 02</span>
 <h2 class="chapter-title">Agents &amp; Chat</h2>
-<p class="chapter-lede">PacketCode runs two kinds of AI agents side by side: the familiar terminal-based CLIs you already know, and a first-class API-backed agent with streaming, tool use, and inline diffs. This chapter covers both &mdash; when to pick each, how to wire up keys, and every surface of the Agents view from slash commands to the voice mic.</p>
+<p class="chapter-lede">PacketADE runs two kinds of AI agents side by side: the familiar terminal-based CLIs you already know, and a first-class API-backed agent with streaming, tool use, and inline diffs. This chapter covers both &mdash; when to pick each, how to wire up keys, and every surface of the Agents view from slash commands to the voice mic.</p>
 
 <h3 class="section-title" id="ch2-modes">CLI vs API agents</h3>
-<p>PacketCode treats agents as a duality. A <strong>CLI agent</strong> is a real terminal session: PacketCode spawns the upstream binary (<code>claude</code>, <code>codex</code>, <code>gemini</code>, or <code>opencode</code>) inside a PTY and renders its output verbatim. You get the exact UI the vendor ships, warts and all. An <strong>API agent</strong> is a Rust-side agentic loop driven by the provider's raw inference API &mdash; PacketCode owns the system prompt, the tool schema, the streaming, and the UI.</p>
+<p>PacketADE treats agents as a duality. A <strong>CLI agent</strong> is a real terminal session: PacketADE spawns the upstream binary (<code>claude</code>, <code>codex</code>, <code>gemini</code>, or <code>opencode</code>) inside a PTY and renders its output verbatim. You get the exact UI the vendor ships, warts and all. An <strong>API agent</strong> is a Rust-side agentic loop driven by the provider's raw inference API &mdash; PacketADE owns the system prompt, the tool schema, the streaming, and the UI.</p>
 <p>Both modes live in the same Agents view. You decide per conversation which one you want.</p>
 
 <table class="ref-table">
@@ -465,7 +465,7 @@ pnpm tauri build    # production build</code></pre>
     <tr><td>Setup</td><td>Install the vendor CLI on <code>PATH</code></td><td>Paste an API key (or run Ollama locally)</td></tr>
     <tr><td>Tool use</td><td>Whatever the CLI implements</td><td>5 built-in tools, runtime-enforced</td></tr>
     <tr><td>Streaming</td><td>Raw terminal bytes</td><td>Token-level chunks via Tauri events</td></tr>
-    <tr><td>Persistence</td><td>Ephemeral &mdash; exits with the PTY</td><td>JSON files under <code>~/.packetcode/conversations/</code></td></tr>
+    <tr><td>Persistence</td><td>Ephemeral &mdash; exits with the PTY</td><td>JSON files under <code>~/.packetade/conversations/</code></td></tr>
     <tr><td>Permissions</td><td>Vendor-controlled bypass flags</td><td>You own the sandbox; tools run in project root</td></tr>
     <tr><td>Cost tracking</td><td>Best-effort from vendor output</td><td>Exact token + dollar cost per turn</td></tr>
     <tr><td>Use when</td><td>You want the real agent UI unchanged</td><td>You want diffs, audit, and reproducibility</td></tr>
@@ -491,7 +491,7 @@ pnpm tauri build    # production build</code></pre>
 <h4 class="subsection-title">AgentInputArea</h4>
 <p>The blank-slate composer surfaces every knob you need to start a new conversation:</p>
 <ul class="bullet-list">
-  <li><strong>Provider dropdown</strong> &mdash; pick between CLI agents and the five API providers.</li>
+  <li><strong>Provider dropdown</strong> &mdash; pick between CLI agents and the seven provider rows.</li>
   <li><strong>Model dropdown</strong> &mdash; filtered to whatever the selected provider supports.</li>
   <li><strong>Profile dropdown</strong> &mdash; defaults to <span class="pill pill-green">Auto (Optimized)</span>.</li>
   <li><strong>Mic button</strong> &mdash; one-tap voice capture (see <a href="#ch2-voice">Voice input</a>).</li>
@@ -513,11 +513,18 @@ pnpm tauri build    # production build</code></pre>
 </ol>
 
 <h3 class="section-title" id="ch2-providers">Providers &amp; models</h3>
-<p>PacketCode ships five API providers, each with a curated model list. Free, local, and BYOK tiers are distinguished by the pill color on each card.</p>
+<p>PacketADE ships seven provider rows, each with live auth status and a curated model list where applicable. Subscription, BYOK, and local tiers are distinguished by the pill color on each card.</p>
 
 <div class="feature-grid">
   <div class="feature-box">
-    <h4 class="subsection-title">Anthropic <span class="pill pill-amber">BYOK</span></h4>
+    <h4 class="subsection-title">Anthropic (Subscription) <span class="pill pill-cyan">OAuth</span></h4>
+    <ul class="bullet-list">
+      <li>Claude Agent SDK via Claude Code OAuth</li>
+      <li>Sidecar-backed tool and edit approvals</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4 class="subsection-title">Claude (API) <span class="pill pill-amber">BYOK</span></h4>
     <ul class="bullet-list">
       <li>Claude Opus 4.7</li>
       <li>Claude Opus 4.6</li>
@@ -526,7 +533,14 @@ pnpm tauri build    # production build</code></pre>
     </ul>
   </div>
   <div class="feature-box">
-    <h4 class="subsection-title">OpenAI <span class="pill pill-amber">BYOK</span></h4>
+    <h4 class="subsection-title">OpenAI (ChatGPT Plus/Pro) <span class="pill pill-cyan">OAuth</span></h4>
+    <ul class="bullet-list">
+      <li>Codex exec via Codex OAuth</li>
+      <li>Sidecar-backed subscription turns</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4 class="subsection-title">OpenAI (API) <span class="pill pill-amber">BYOK</span></h4>
     <ul class="bullet-list">
       <li>GPT-5.5 <span class="pill pill-muted">default</span></li>
       <li>ChatGPT 5.4</li>
@@ -566,7 +580,7 @@ pnpm tauri build    # production build</code></pre>
 </div>
 
 <h3 class="section-title" id="ch2-byok">API keys &amp; BYOK</h3>
-<p>Every BYOK provider needs one key, stored once. Keys live in your operating system's native keyring &mdash; Keychain on macOS, Credential Manager on Windows, Secret Service on Linux &mdash; under the namespace <code>packetcode:api-key-{provider}</code>. They are never written to disk in plaintext and never exposed to the frontend JavaScript context.</p>
+<p>Every BYOK provider needs one key, stored once. Keys live in your operating system's native keyring &mdash; Keychain on macOS, Credential Manager on Windows, Secret Service on Linux &mdash; under the namespace <code>packetade:api-key-{provider}</code>. They are never written to disk in plaintext and never exposed to the frontend JavaScript context.</p>
 
 <ol class="step-list">
   <li>Open <strong>Tools &rarr; API Keys</strong>.</li>
@@ -581,7 +595,7 @@ pnpm tauri build    # production build</code></pre>
 <p>Ollama runs entirely on your machine, so it needs no API key. Install it from <code>ollama.com</code>, then:</p>
 <pre><code>ollama serve
 ollama pull llama3.3:70b</code></pre>
-<p>Once the daemon is listening on the default port, PacketCode will discover it automatically. Any model you've pulled will appear in the Ollama dropdown.</p>
+<p>Once the daemon is listening on the default port, PacketADE will discover it automatically. Any model you've pulled will appear in the Ollama dropdown.</p>
 
 <div class="callout callout-info">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -589,7 +603,7 @@ ollama pull llama3.3:70b</code></pre>
 </div>
 
 <h3 class="section-title" id="ch2-profiles">Agent profiles</h3>
-<p>A profile is a named system-prompt override. PacketCode ships five, any of which can be selected from the profile dropdown in the input area. The choice rides along with each turn as <code>system_prompt_override</code>. Profiles persist in <code>localStorage</code> under <code>packetcode:profiles</code>, and the active pick under <code>packetcode:active-profile</code>.</p>
+<p>A profile is a named system-prompt override. PacketADE ships five, any of which can be selected from the profile dropdown in the input area. The choice rides along with each turn as <code>system_prompt_override</code>. Profiles persist in <code>localStorage</code> under <code>packetade:profiles</code>, and the active pick under <code>packetade:active-profile</code>.</p>
 
 <table class="ref-table">
   <thead>
@@ -675,7 +689,7 @@ ollama pull llama3.3:70b</code></pre>
 </div>
 
 <h3 class="section-title" id="ch2-voice">Voice input</h3>
-<p>The mic button in the input area starts voice capture. If you have a native Whisper model downloaded, PacketCode uses it &mdash; it calls <code>listWhisperModels()</code> on startup, and the presence of any installed model flips the hook into native mode. Otherwise it falls back to the browser's Web Speech API. Recognition is locked to <code>en-US</code>.</p>
+<p>The mic button in the input area starts voice capture. If you have a native Whisper model downloaded, PacketADE uses it &mdash; it calls <code>listWhisperModels()</code> on startup, and the presence of any installed model flips the hook into native mode. Otherwise it falls back to the browser's Web Speech API. Recognition is locked to <code>en-US</code>.</p>
 
 <p>The mic is gray when idle and turns a pulsing green while listening. When you stop, the transcript is <em>appended</em> to whatever is already in the composer &mdash; it never overwrites &mdash; so you can dictate in bursts, edit by keyboard, then dictate again. Note that if you pause mid-sentence with repeated numbers or digits, Whisper's built-in dedupe may collapse them; the Web Speech fallback does not.</p>
 
@@ -701,20 +715,20 @@ ollama pull llama3.3:70b</code></pre>
 </div>
 
 <h3 class="section-title" id="ch2-persistence">Conversation persistence</h3>
-<p>API conversations are saved to <code>~/.packetcode/conversations/{id}.json</code>, debounced at 500 ms so streaming doesn't hammer the disk. On startup, the frontend calls <code>load_conversations</code> and populates the sidebar. Everything you see in the sidebar corresponds to a file on disk, one-to-one.</p>
+<p>API conversations are saved to <code>~/.packetade/conversations/{id}.json</code>, debounced at 500 ms so streaming doesn't hammer the disk. On startup, the frontend calls <code>load_conversations</code> and populates the sidebar. Everything you see in the sidebar corresponds to a file on disk, one-to-one.</p>
 
 <ul class="bullet-list">
-  <li><strong>Export</strong> &mdash; copy the relevant <code>.json</code> file out of <code>~/.packetcode/conversations/</code>. It's a plain, human-readable record.</li>
+  <li><strong>Export</strong> &mdash; copy the relevant <code>.json</code> file out of <code>~/.packetade/conversations/</code>. It's a plain, human-readable record.</li>
   <li><strong>Backup</strong> &mdash; sync the whole directory to your dotfiles repo or a cloud drive.</li>
   <li><strong>Delete</strong> &mdash; the trash icon on each sidebar row removes the file from disk and the row from the list. There is no soft-delete.</li>
 </ul>
 
 <div class="callout callout-warn">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>PTY sessions do not persist.</strong> Only API conversations are written to disk. When you close a CLI agent session, its scrollback is gone &mdash; that's a property of the underlying vendor CLI, not a PacketCode choice. If you need a record, switch to the matching API provider.</div>
+  <div class="callout-body"><strong>PTY sessions do not persist.</strong> Only API conversations are written to disk. When you close a CLI agent session, its scrollback is gone &mdash; that's a property of the underlying vendor CLI, not a PacketADE choice. If you need a record, switch to the matching API provider.</div>
 </div>
 </section>
-<section class="chapter" id="chapter-3"><span class="chapter-badge">Chapter 03</span><h2 class="chapter-title">Workspaces, Flights &amp; Planning</h2><p class="chapter-lede">PacketCode organizes work in three tiers: workspaces bundle the panes, agents, and terminals you use day to day; flights capture the missions those agents run against; and the planning surfaces &mdash; issues, insights, ideation, and memory &mdash; keep the whole thing honest. This chapter walks through each layer, from splitting your first pane to retiring a flight.</p>
+<section class="chapter" id="chapter-3"><span class="chapter-badge">Chapter 03</span><h2 class="chapter-title">Workspaces, Flights &amp; Planning</h2><p class="chapter-lede">PacketADE organizes work in three tiers: workspaces bundle the panes, agents, and terminals you use day to day; flights capture the missions those agents run against; and the planning surfaces &mdash; issues, insights, ideation, and memory &mdash; keep the whole thing honest. This chapter walks through each layer, from splitting your first pane to retiring a flight.</p>
 
 <h3 class="section-title" id="ch3-workspace">Workspaces &amp; panes</h3>
 <p>A <strong>workspace</strong> is a named project context that bundles multiple AI agents and terminal panes scoped to a single project directory. It is deliberately more than a generic "project" &mdash; where a project is just a path, a workspace remembers <em>which</em> agents run in <em>which</em> panes, which models they use, which system prompts are injected, and whether bypass-permission toggles are on. Open a workspace and your entire rig comes back exactly as you left it.</p>
@@ -765,7 +779,7 @@ ollama pull llama3.3:70b</code></pre>
   <li>Run <em>Quick Claude Session</em> (or the Codex/Gemini equivalent) from the command palette, or</li>
   <li>Add an agent to the workspace &mdash; a session is launched for that pane automatically.</li>
 </ol>
-<p>The launch dialog exposes the CLI choice, an agent profile, a model override, extra CLI flags, and environment variables. For Claude, the bypass-permission toggle lives here. Recent history includes a fix that stopped PacketCode from passing Claude's bypass flag to OpenCode by accident &mdash; if you use both CLIs, you benefit from that transparently.</p>
+<p>The launch dialog exposes the CLI choice, an agent profile, a model override, extra CLI flags, and environment variables. For Claude, the bypass-permission toggle lives here. Recent history includes a fix that stopped PacketADE from passing Claude's bypass flag to OpenCode by accident &mdash; if you use both CLIs, you benefit from that transparently.</p>
 
 <h4 class="subsection-title">Working in the terminal</h4>
 <p>Terminals are powered by xterm.js with roughly 1000 lines of scrollback. Mouse selection auto-copies to the clipboard; paste with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>V</kbd></span>. Resizing the pane sends <code>SIGWINCH</code> to the child &mdash; run <code>stty size</code> to confirm the new dimensions were received.</p>
@@ -775,7 +789,7 @@ ollama pull llama3.3:70b</code></pre>
 
 <div class="callout callout-info">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  <div class="callout-body"><strong>Windows:</strong> PacketCode auto-resolves <code>.cmd</code> wrappers (for example, <code>claude.cmd</code>, <code>codex.cmd</code>) and prefers <code>.exe</code> binaries. You do not need to configure anything explicitly.</div>
+  <div class="callout-body"><strong>Windows:</strong> PacketADE auto-resolves <code>.cmd</code> wrappers (for example, <code>claude.cmd</code>, <code>codex.cmd</code>) and prefers <code>.exe</code> binaries. You do not need to configure anything explicitly.</div>
 </div>
 
 <h3 class="section-title" id="ch3-status">Status bars &amp; git info</h3>
@@ -799,7 +813,7 @@ ollama pull llama3.3:70b</code></pre>
 <p>A search bar at the top filters by message content; a project dropdown narrows to a specific folder. The <strong>Refresh</strong> button re-reads history from disk, which is useful after another tool has written to the transcripts.</p>
 
 <h3 class="section-title" id="ch3-flightdeck">Flight Deck</h3>
-<p>A <strong>flight</strong> is PacketCode's top-level planning unit &mdash; a mission composed of milestones, tasks, and linked issues. Flights roll their status up automatically from their contents, so the board tells you what needs attention without manual grooming.</p>
+<p>A <strong>flight</strong> is PacketADE's top-level planning unit &mdash; a mission composed of milestones, tasks, and linked issues. Flights roll their status up automatically from their contents, so the board tells you what needs attention without manual grooming.</p>
 
 <h4 class="subsection-title">Layout</h4>
 <p>Flight Deck is a two-panel view. The left rail groups flights by status:</p>
@@ -817,7 +831,7 @@ ollama pull llama3.3:70b</code></pre>
 <p>The rollup is evaluated in three tiers. Tasks are evaluated first &mdash; if any task is <code>approval_needed</code> the flight lands in <strong>Attention</strong>; if any task is <code>failed</code> the flight is <strong>failed</strong>; if all are <code>done</code> the flight moves to <strong>review</strong>; any <code>running</code> or <code>queued</code> task keeps it <strong>active</strong>; <code>blocked</code> also surfaces as <strong>active</strong>. If there are no tasks, linked issues decide: <code>blocked</code> or <code>needs_human</code> pause the flight; all <code>done</code> marks it <strong>done</strong>; any <code>in_progress</code> or <code>qa</code> keeps it <strong>active</strong>. Finally, if nothing upstream applies, the manual status you set is respected.</p>
 
 <h4 class="subsection-title">Blockers and collisions</h4>
-<p>Tasks in <code>approval_needed</code> always bubble into the Attention group. Issues in <code>blocked</code> or <code>needs_human</code> pause whichever flight they are linked to. PacketCode also runs file-collision detection: two tasks cannot simultaneously claim the same files, preventing agents from stomping each other.</p>
+<p>Tasks in <code>approval_needed</code> always bubble into the Attention group. Issues in <code>blocked</code> or <code>needs_human</code> pause whichever flight they are linked to. PacketADE also runs file-collision detection: two tasks cannot simultaneously claim the same files, preventing agents from stomping each other.</p>
 
 <h3 class="section-title" id="ch3-flights">Creating &amp; editing flights</h3>
 <p>Click <strong>+ New Flight</strong> in Flight Deck, the Flights view, or the main toolbar. The modal opens with two panels side-by-side: an AI chat on the left for drafting the plan, a form on the right for the data you will actually save.</p>
@@ -868,7 +882,7 @@ ollama pull llama3.3:70b</code></pre>
 </div>
 
 <h4 class="subsection-title">Linking issues</h4>
-<p>From either the New Issue form or the Issue Detail view, pick a flight from the dropdown. PacketCode calls <code>flightStore.addIssueToFlight</code> and <code>issueStore.assignToFlight</code> together so both sides of the link stay in sync. Unlink via the remove button on the flight card. One caveat: deleting an issue does not auto-unlink it from its flight &mdash; you need to clean that up manually.</p>
+<p>From either the New Issue form or the Issue Detail view, pick a flight from the dropdown. PacketADE calls <code>flightStore.addIssueToFlight</code> and <code>issueStore.assignToFlight</code> together so both sides of the link stay in sync. Unlink via the remove button on the flight card. One caveat: deleting an issue does not auto-unlink it from its flight &mdash; you need to clean that up manually.</p>
 
 <h3 class="section-title" id="ch3-issues">Kanban issues</h3>
 <p>Open the issue board from Toolbar &rarr; Issues or with <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>3</kbd></span>. Columns, left to right:</p>
@@ -1007,7 +1021,7 @@ ollama pull llama3.3:70b</code></pre>
 <section class="chapter" id="chapter-4">
 <span class="chapter-badge">Chapter 04</span>
 <h2 class="chapter-title">Integrations, Tools &amp; Settings</h2>
-<p class="chapter-lede">PacketCode is most useful when it is wired into the rest of your toolchain: GitHub for tickets and PRs, a deploy pipeline that runs from the app, MCP servers that extend every agent's toolbelt, quality analysis on demand, and a single Tools hub that exposes every knob. This chapter is the reference for each of those surfaces, plus the Cost Dashboard and the module system that keeps the sidebar extensible.</p>
+<p class="chapter-lede">PacketADE is most useful when it is wired into the rest of your toolchain: GitHub for tickets and PRs, a deploy pipeline that runs from the app, MCP servers that extend every agent's toolbelt, quality analysis on demand, and a single Tools hub that exposes every knob. This chapter is the reference for each of those surfaces, plus the Cost Dashboard and the module system that keeps the sidebar extensible.</p>
 
 <h3 class="section-title" id="ch4-github">GitHub integration</h3>
 <p>The GitHub view is reachable from the sidebar or the toolbar. On first launch you will see an empty auth screen &mdash; paste a Personal Access Token with <code>repo</code> scope and hit Connect. The token is handed to the Rust backend and kept in the OS credential store (Windows Credential Manager, macOS Keychain), but it is <strong>not persisted across app restarts</strong> &mdash; you reconnect on every launch. Treat it like a session cookie.</p>
@@ -1016,15 +1030,15 @@ ollama pull llama3.3:70b</code></pre>
 <ol class="step-list">
   <li>Go to <em>GitHub &rarr; Settings &rarr; Developer settings &rarr; Personal access tokens</em>.</li>
   <li>Click <em>Generate new token</em> (classic or fine-grained both work).</li>
-  <li>Give it <code>repo</code> scope. Add <code>workflow</code> only if you need to push workflow files.</li>
-  <li>Copy the token and paste it into PacketCode. It will not be shown to you again.</li>
+  <li>Give it <code>repo</code> scope.</li>
+  <li>Copy the token and paste it into PacketADE. It will not be shown to you again.</li>
 </ol>
 
 <h4 class="subsection-title">Browsing issues and PRs</h4>
 <p>Once connected, select a repo from the dropdown. Two tabs sit at the top: <strong>Issues</strong> and <strong>Pull Requests</strong>. A search box filters the visible list by title or number. Clicking an item opens the detail pane on the right with labels rendered as color-coded pills, the full markdown body, author, open date, and an <em>Open in GitHub</em> external link.</p>
 
 <h4 class="subsection-title">Triaging into the board</h4>
-<p>The green <strong>Import to Board</strong> button creates a kanban card using the template <code>[GH-{number}] {title}</code>, copies the body into the card description, preserves labels, and sets status <span class="pill pill-muted">todo</span> with priority <span class="pill pill-amber">medium</span>. From there the card behaves like any other PacketCode issue and can be linked to flights or launched into a session.</p>
+<p>The green <strong>Import to Board</strong> button creates a kanban card using the template <code>[GH-{number}] {title}</code>, copies the body into the card description, preserves labels, and sets status <span class="pill pill-muted">todo</span> with priority <span class="pill pill-amber">medium</span>. From there the card behaves like any other PacketADE issue and can be linked to flights or launched into a session.</p>
 
 <h4 class="subsection-title">Opening pull requests</h4>
 <p>The purple <strong>New PR</strong> button opens a modal with fields for title, description (markdown), head branch (required), and base branch (defaults to <code>main</code>). On success the new PR URL is returned and surfaced inline; click it to jump into GitHub.</p>
@@ -1038,12 +1052,12 @@ ollama pull llama3.3:70b</code></pre>
 </div>
 
 <h3 class="section-title" id="ch4-deploy">Deploy pipeline</h3>
-<p>The Deploy view is a core view, not a module. Reach it via the rocket icon in the toolbar. You can either create a deploy config manually or let PacketCode auto-detect one from project files.</p>
+<p>The Deploy view is a core view, not a module. Reach it via the rocket icon in the toolbar. You can either create a deploy config manually or let PacketADE auto-detect one from project files.</p>
 
 <h4 class="subsection-title">Auto-detection sources</h4>
 <p>On first open, Deploy scans the project in this priority order:</p>
 <ol class="step-list">
-  <li><code>packetcode.deploy.json</code> at the project root (explicit wins).</li>
+  <li><code>packetade.deploy.json</code> at the project root (explicit wins).</li>
   <li><code>package.json</code> scripts: <code>build</code>, <code>deploy</code>, <code>start</code>.</li>
   <li>Framework hints: <code>vercel.json</code>, <code>netlify.toml</code>, <code>Dockerfile</code>.</li>
 </ol>
@@ -1058,7 +1072,7 @@ ollama pull llama3.3:70b</code></pre>
 </div>
 
 <h3 class="section-title" id="ch4-mcp">MCP Hub</h3>
-<p>The <em>Model Context Protocol</em> is an open spec for tool and resource exposure: an MCP server publishes callable tools (e.g. "read_file", "query_db"), and a client like Claude or Codex discovers and invokes them. A common example is <code>@modelcontextprotocol/server-filesystem</code>, which adds sandboxed disk access to any client that connects. PacketCode exposes two cards in the Tools hub to manage this: <strong>MCP Servers</strong> and <strong>MCP Provider</strong>.</p>
+<p>The <em>Model Context Protocol</em> is an open spec for tool and resource exposure: an MCP server publishes callable tools (e.g. "read_file", "query_db"), and a client like Claude or Codex discovers and invokes them. A common example is <code>@modelcontextprotocol/server-filesystem</code>, which adds sandboxed disk access to any client that connects. PacketADE exposes two cards in the Tools hub to manage this: <strong>MCP Servers</strong> and <strong>MCP Provider</strong>.</p>
 
 <h4 class="subsection-title">Adding a server</h4>
 <p>The <strong>Add server</strong> modal takes:</p>
@@ -1072,7 +1086,7 @@ ollama pull llama3.3:70b</code></pre>
 <p>Global servers land in <code>~/.claude/settings.json</code>; project servers land in <code>./.mcp.json</code> at the project root. The pencil icon reopens the modal for edits (the name is locked once created); disabled servers show a badge in the list; the trash icon deletes with a confirmation dialog.</p>
 
 <h4 class="subsection-title">MCP Provider card</h4>
-<p>The Provider card turns PacketCode itself into an MCP server for other clients. Toggle the provider on, set a port (defaults start at 3000), and pick a scope (Global vs Project + Global). The <strong>Available Tools</strong> list has a per-tool enable checkbox so you can expose only what you trust. Tool routing &mdash; which agent or model handles which task type &mdash; is configured from <strong>Provider Routing</strong> in the Tools hub.</p>
+<p>The Provider card is a readiness/configuration surface for exposing PacketADE-owned resources through MCP. Today it persists the enabled state, port, scope, resource catalog, and per-tool allow list in the frontend store; the external MCP listener is not wired yet, so toggling it does not make PacketADE reachable from other clients by itself. Tool routing &mdash; which agent or model handles which task type &mdash; is configured from <strong>Provider Routing</strong> in the Tools hub.</p>
 
 <div class="callout callout-warn">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -1099,8 +1113,8 @@ ollama pull llama3.3:70b</code></pre>
 </div>
 
 <h3 class="section-title" id="ch4-crash">Crash Viewer</h3>
-<p>Open the Crash Viewer from the Tools hub <strong>Crash Reports</strong> card. It reads reports out of <code>~/.packetcode/crashes/</code> (on Windows that resolves to <code>%APPDATA%\packetcode\crashes\</code>). Each entry shows a timestamp and a one-line summary; the eye icon opens the full stack trace in a modal; the trash icon deletes a single report.</p>
-<p>Reports persist indefinitely &mdash; there is no automatic cleanup, so prune them by hand when the list gets long. If you hit a reproducible bug, open the stack trace, copy it, and paste it into a GitHub issue against the PacketCode repo.</p>
+<p>Open the Crash Viewer from the Tools hub <strong>Crash Reports</strong> card. It reads reports out of <code>~/.packetade/crashes/</code> (on Windows that resolves to <code>%APPDATA%\packetade\crashes\</code>). Each entry shows a timestamp and a one-line summary; the eye icon opens the full stack trace in a modal; the trash icon deletes a single report.</p>
+<p>Reports persist indefinitely &mdash; there is no automatic cleanup, so prune them by hand when the list gets long. If you hit a reproducible bug, open the stack trace, copy it, and paste it into a GitHub issue against the PacketADE repo.</p>
 
 <div class="callout callout-info">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -1123,7 +1137,7 @@ ollama pull llama3.3:70b</code></pre>
 </div>
 
 <h3 class="section-title" id="ch4-cost">Cost Dashboard</h3>
-<p>Reach the Cost Dashboard from the Tools hub <strong>Cost</strong> card or the <code>$</code> icon in the toolbar. It aggregates usage across every source PacketCode can observe: Claude CLI, Codex CLI, Claude API, OpenAI API, OpenRouter, and Ollama (local runs are almost always $0 but still counted for session totals).</p>
+<p>Reach the Cost Dashboard from the Tools hub <strong>Cost</strong> card or the <code>$</code> icon in the toolbar. It aggregates usage across every source PacketADE can observe: Claude CLI, Codex CLI, Claude subscription/API, OpenAI subscription/API, MiniMax, OpenRouter, and Ollama (local runs are almost always $0 but still counted for session totals).</p>
 
 <p>Four summary cards sit at the top: Total Cost, Total Sessions, Input Tokens, and Output Tokens. When the Claude API is in use, two extra pills surface <code>cache_read_input_tokens</code> and <code>cache_creation_input_tokens</code> &mdash; a material discount once prompt caching kicks in. Below the cards, a daily chart renders the last 30 days as green bars; hover for per-day totals.</p>
 
@@ -1138,7 +1152,7 @@ ollama pull llama3.3:70b</code></pre>
     <tr><td>Cost</td><td>USD, computed from the price table for that model.</td></tr>
   </tbody>
 </table>
-<p>A filter dropdown above the table narrows by source. Usage is persisted per-session to <code>~/.packetcode/usage.jsonl</code>; API agents write on each <em>Done</em> event, keeping the file append-only.</p>
+<p>A filter dropdown above the table narrows by source. Usage is persisted per-session to <code>~/.packetade/usage.jsonl</code>; API agents write on each <em>Done</em> event, keeping the file append-only.</p>
 
 <div class="callout callout-info">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -1158,7 +1172,7 @@ ollama pull llama3.3:70b</code></pre>
     <tr><td><code>ProviderRoutingCard</code></td><td>Task type &rarr; agent/model mapping.</td><td>Covers Code Review, Code Generation, Debugging, Testing, Planning, Analysis.</td></tr>
     <tr><td><code>ServersSettingsCard</code></td><td>PTY host/port, shell, env vars.</td><td>Change only if the defaults fight your shell.</td></tr>
     <tr><td><code>McpServersCard</code></td><td>Add, edit, delete MCP servers.</td><td>See the MCP Hub section above.</td></tr>
-    <tr><td><code>McpProviderCard</code></td><td>Toggle PacketCode as an MCP provider.</td><td>Port + per-tool enable checkboxes.</td></tr>
+    <tr><td><code>McpProviderCard</code></td><td>Configure MCP provider readiness.</td><td>Port, scope, resources, and per-tool enable checkboxes; external listener not wired yet.</td></tr>
     <tr><td><code>ModulesCard</code></td><td>Enable or disable sidebar modules.</td><td>See the next section.</td></tr>
     <tr><td><code>TagListCard</code></td><td>Manage Epics and Labels.</td><td>Color-coded; used across issues and flights.</td></tr>
     <tr><td><code>NotificationSettingsCard</code></td><td>Sound and desktop notifications.</td><td>Off by default.</td></tr>
@@ -1220,18 +1234,18 @@ export const myModule: ModuleManifest = {
     <p class="chapter-lede">Quick-reference tables for file locations, keyboard shortcuts, and common issues.</p>
 
     <h3 class="section-title" id="ap-files">File locations</h3>
-    <p>PacketCode persists state under your OS home directory. Most paths are relative to <code>~/.packetcode/</code> on macOS and Linux, and <code>%APPDATA%\packetcode\</code> on Windows.</p>
+    <p>PacketADE persists state under your OS home directory. Most paths are relative to <code>~/.packetade/</code> on macOS and Linux, and <code>%APPDATA%\packetade\</code> on Windows.</p>
     <table class="ref-table">
       <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
       <tbody>
-        <tr><td><code>~/.packetcode/conversations/</code></td><td>One JSON file per API agent conversation</td></tr>
-        <tr><td><code>~/.packetcode/usage.jsonl</code></td><td>Per-session token and cost records</td></tr>
-        <tr><td><code>~/.packetcode/crashes/</code></td><td>Stack traces captured by the crash reporter</td></tr>
-        <tr><td><code>~/.packetcode/state.json</code></td><td>TUI UI state, persisted on exit</td></tr>
+        <tr><td><code>~/.packetade/conversations/</code></td><td>One JSON file per API agent conversation</td></tr>
+        <tr><td><code>~/.packetade/usage.jsonl</code></td><td>Per-session token and cost records</td></tr>
+        <tr><td><code>~/.packetade/crashes/</code></td><td>Stack traces captured by the crash reporter</td></tr>
+        <tr><td><code>~/.packetade/state.json</code></td><td>TUI UI state, persisted on exit</td></tr>
         <tr><td><code>.mcp.json</code> (project root)</td><td>Project-scoped MCP servers</td></tr>
         <tr><td><code>~/.claude/settings.json</code></td><td>Global MCP server configuration</td></tr>
-        <tr><td><code>packetcode.deploy.json</code> (project root)</td><td>Deploy pipeline configs (when present)</td></tr>
-        <tr><td>OS keyring (<code>packetcode:api-key-*</code>)</td><td>BYOK API keys per provider</td></tr>
+        <tr><td><code>packetade.deploy.json</code> (project root)</td><td>Deploy pipeline configs (when present)</td></tr>
+        <tr><td>OS keyring (<code>packetade:api-key-*</code>)</td><td>BYOK API keys per provider</td></tr>
       </tbody>
     </table>
 
@@ -1259,25 +1273,25 @@ export const myModule: ModuleManifest = {
     <table class="ref-table">
       <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
       <tbody>
-        <tr><td>CLI agent pane shows "command not found"</td><td>CLI not on PATH</td><td>Install the agent CLI (<code>claude</code>, <code>codex</code>, &hellip;) and restart PacketCode</td></tr>
+        <tr><td>CLI agent pane shows "command not found"</td><td>CLI not on PATH</td><td>Install the agent CLI (<code>claude</code>, <code>codex</code>, &hellip;) and restart PacketADE</td></tr>
         <tr><td>API agent errors "No API key configured"</td><td>Keyring entry missing</td><td>Tools &rarr; API Keys &rarr; paste key for the provider</td></tr>
         <tr><td>Ollama agent fails to respond</td><td>Ollama daemon not running</td><td><code>ollama serve</code> and verify <code>http://localhost:11434</code></td></tr>
         <tr><td>GitHub disconnects after restart</td><td>Token is not persisted by design</td><td>Re-paste your PAT each launch (backend-only auth)</td></tr>
         <tr><td>PTY session on Windows shows "help" instead of starting</td><td><code>.cmd</code> wrapper resolved incorrectly</td><td>Ensure the CLI&rsquo;s <code>.exe</code> is reachable; check recent commit history for Windows PTY fixes</td></tr>
         <tr><td>Flight never leaves <code>draft</code></td><td>No milestones added</td><td>Open the flight, add at least one milestone with one task, then launch</td></tr>
-        <tr><td>Cost dashboard shows $0 for a provider</td><td>Pricing data missing for that model</td><td>Update PacketCode; verify the model ID is registered in the pricing table</td></tr>
+        <tr><td>Cost dashboard shows $0 for a provider</td><td>Pricing data missing for that model</td><td>Update PacketADE; verify the model ID is registered in the pricing table</td></tr>
       </tbody>
     </table>
 
     <div class="callout callout-info">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      <div class="callout-body"><strong>Still stuck?</strong> Open an issue at <a href="https://github.com/packetloss404/PacketCode/issues" target="_blank" rel="noopener">github.com/packetloss404/PacketCode/issues</a> with your OS, PacketCode version, and the crash file from <code>~/.packetcode/crashes/</code> if one was generated.</div>
+      <div class="callout-body"><strong>Still stuck?</strong> Open an issue at <a href="https://github.com/packetloss404/PacketADE/issues" target="_blank" rel="noopener">github.com/packetloss404/PacketADE/issues</a> with your OS, PacketADE version, and the crash file from <code>~/.packetade/crashes/</code> if one was generated.</div>
     </div>
   </section>
 
   <footer class="manual-foot">
-    <div>&copy; PacketCode &mdash; Apache 2.0 licensed. No telemetry. Your keys, your models.</div>
-    <div><a href="index.html">Home</a> &middot; <a href="https://github.com/packetloss404/PacketCode" target="_blank" rel="noopener">Source</a> &middot; <a href="https://github.com/packetloss404/PacketCode/releases" target="_blank" rel="noopener">Releases</a></div>
+    <div>&copy; PacketADE &mdash; Apache 2.0 licensed. No telemetry. Your keys, your models.</div>
+    <div><a href="index.html">Home</a> &middot; <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">Source</a> &middot; <a href="https://github.com/packetloss404/PacketADE/releases" target="_blank" rel="noopener">Releases</a></div>
   </footer>
 </main>
 </div>

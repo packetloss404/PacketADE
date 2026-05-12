@@ -22,7 +22,8 @@ fn db_path() -> Result<PathBuf, String> {
     let home = home_dir().ok_or("Could not resolve home directory")?;
     let dir = PathBuf::from(&home).join(DATA_DIR_NAME);
     if !dir.exists() {
-        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {DATA_DIR_NAME} dir: {e}"))?;
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create {DATA_DIR_NAME} dir: {e}"))?;
     }
     Ok(dir.join("dictation.db"))
 }
@@ -30,8 +31,7 @@ fn db_path() -> Result<PathBuf, String> {
 /// Open (or create) the dictation SQLite database and ensure the schema exists.
 pub fn get_db() -> Result<Connection, String> {
     let path = db_path()?;
-    let conn =
-        Connection::open(&path).map_err(|e| format!("Failed to open dictation DB: {e}"))?;
+    let conn = Connection::open(&path).map_err(|e| format!("Failed to open dictation DB: {e}"))?;
 
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS entries (

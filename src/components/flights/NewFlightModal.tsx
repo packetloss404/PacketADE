@@ -173,6 +173,7 @@ export function NewFlightModal({ onClose, onCreated }: NewFlightModalProps) {
             streamingContent={chat.streamingContent}
             latestSuggestion={chat.latestSuggestion}
             latestPlan={chat.latestPlan}
+            lastError={chat.lastError}
             onSend={handleChatSend}
             onApplySuggestion={handleApplySuggestion}
             onDismissSuggestion={chat.dismissSuggestion}

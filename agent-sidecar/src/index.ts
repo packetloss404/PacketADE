@@ -42,6 +42,7 @@ async function handleRequest(raw: string): Promise<void> {
     case "permission_response":
     case "edit_response":
     case "cancel":
+    case "cancel_pending_tools":
     case "set_permission_mode":
     case "set_model":
     case "retry":

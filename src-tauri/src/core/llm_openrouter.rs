@@ -20,10 +20,7 @@ impl LlmProvider for OpenRouterProvider {
         tx: mpsc::Sender<StreamChunk>,
     ) -> Result<(), String> {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "HTTP-Referer",
-            HeaderValue::from_static(BRAND_URL),
-        );
+        headers.insert("HTTP-Referer", HeaderValue::from_static(BRAND_URL));
         headers.insert("X-Title", HeaderValue::from_static(APP_NAME));
 
         let config = OpenAiCompatConfig {

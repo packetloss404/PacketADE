@@ -14,11 +14,19 @@ pub struct ScaffoldResult {
 fn tool_exists(name: &str) -> bool {
     #[cfg(target_os = "windows")]
     {
-        Command::new("where").arg(name).output().map(|o| o.status.success()).unwrap_or(false)
+        Command::new("where")
+            .arg(name)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        Command::new("which").arg(name).output().map(|o| o.status.success()).unwrap_or(false)
+        Command::new("which")
+            .arg(name)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
     }
 }
 
@@ -27,7 +35,10 @@ pub async fn check_scaffold_tools() -> Result<HashMap<String, bool>, String> {
     let mut map = HashMap::new();
     map.insert("node".to_string(), tool_exists("node"));
     map.insert("cargo".to_string(), tool_exists("cargo"));
-    map.insert("python".to_string(), tool_exists("python") || tool_exists("python3"));
+    map.insert(
+        "python".to_string(),
+        tool_exists("python") || tool_exists("python3"),
+    );
     Ok(map)
 }
 
@@ -43,7 +54,19 @@ pub async fn scaffold_project(
     match template.as_str() {
         "nextjs" => {
             let output = Command::new("npx")
-                .args(["create-next-app@latest", &project_name, "--ts", "--use-pnpm", "--no-git", "--eslint", "--no-tailwind", "--src-dir", "--no-app", "--import-alias", "@/*"])
+                .args([
+                    "create-next-app@latest",
+                    &project_name,
+                    "--ts",
+                    "--use-pnpm",
+                    "--no-git",
+                    "--eslint",
+                    "--no-tailwind",
+                    "--src-dir",
+                    "--no-app",
+                    "--import-alias",
+                    "@/*",
+                ])
                 .current_dir(&parent_dir)
                 .output()
                 .map_err(|e| format!("Failed to run npx: {}", e))?;
@@ -65,7 +88,12 @@ pub async fn scaffold_project(
         }
         "react-vite" => {
             let output = Command::new("npx")
-                .args(["create-vite@latest", &project_name, "--template", "react-ts"])
+                .args([
+                    "create-vite@latest",
+                    &project_name,
+                    "--template",
+                    "react-ts",
+                ])
                 .current_dir(&parent_dir)
                 .output()
                 .map_err(|e| format!("Failed to run npx: {}", e))?;
@@ -129,7 +157,8 @@ def health_check():
             let gitignore = "__pycache__/\n*.pyc\n.venv/\n.env\n";
 
             fs::write(project_path.join("main.py"), main_py).map_err(|e| e.to_string())?;
-            fs::write(project_path.join("requirements.txt"), requirements).map_err(|e| e.to_string())?;
+            fs::write(project_path.join("requirements.txt"), requirements)
+                .map_err(|e| e.to_string())?;
             fs::write(project_path.join(".gitignore"), gitignore).map_err(|e| e.to_string())?;
 
             Ok(ScaffoldResult {

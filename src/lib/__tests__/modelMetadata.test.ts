@@ -1,0 +1,56 @@
+import { describe, expect, it } from "vitest";
+import { API_PROVIDERS } from "@/lib/api-models";
+import { pickFailoverModel } from "@/lib/autoFailover";
+import { aggregateConversationCost } from "@/lib/conversationCost";
+import type { AgentConversation } from "@/types/agent-conversation";
+
+const catalogValues = new Set(
+  API_PROVIDERS.flatMap((provider) => provider.models.map((model) => model.value)),
+);
+
+function conversationWithModel(model: string): AgentConversation {
+  return {
+    mode: "api",
+    model,
+    messages: [
+      {
+        id: "msg_1",
+        role: "assistant",
+        content: "ok",
+        timestamp: 0,
+        inputTokens: 1_000,
+        outputTokens: 500,
+      },
+    ],
+  } as AgentConversation;
+}
+
+describe("model metadata", () => {
+  it("returns only catalog-backed failover models", () => {
+    const fallbacks = [
+      pickFailoverModel("claude-opus-4-7"),
+      pickFailoverModel("claude-opus-4-6-20250415"),
+      pickFailoverModel("anthropic/claude-opus-4-7"),
+      pickFailoverModel("gpt-5.5"),
+      pickFailoverModel("gpt-5-codex"),
+      pickFailoverModel("gpt-4o"),
+      pickFailoverModel("MiniMax-M2.7"),
+    ];
+
+    for (const fallback of fallbacks) {
+      expect(fallback).not.toBeNull();
+      expect(catalogValues.has(fallback!)).toBe(true);
+    }
+  });
+
+  it("covers fixed-price catalog models used by the cost pill", () => {
+    const fixedPriceModels = [...catalogValues].filter(
+      (model) => model !== "openrouter/auto",
+    );
+
+    for (const model of fixedPriceModels) {
+      const { estCost } = aggregateConversationCost(conversationWithModel(model));
+      expect(estCost, model).not.toBeNull();
+    }
+  });
+});

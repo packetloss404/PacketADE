@@ -102,7 +102,7 @@ export type RetryRequest = {
   sessionId: string;
 };
 
-/** v3+: drain every parked permission_request / pending_edit prompt as
+/** v4+: drain every parked permission_request / pending_edit prompt as
  * denied WITHOUT killing the agent loop. The model sees synthetic
  * "User cancelled this tool" tool_results and continues generating. Use
  * `cancel` (not this) when the user wants the whole session to stop. */

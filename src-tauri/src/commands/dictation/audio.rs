@@ -1,7 +1,10 @@
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rustfft::{FftPlanner, num_complex::Complex};
+use rustfft::{num_complex::Complex, FftPlanner};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -55,9 +58,7 @@ struct StatusPayload {
 pub fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
     let host = cpal::default_host();
 
-    let default_device_name = host
-        .default_input_device()
-        .and_then(|d| d.name().ok());
+    let default_device_name = host.default_input_device().and_then(|d| d.name().ok());
 
     let devices = host
         .input_devices()
@@ -138,7 +139,9 @@ pub fn start_recording(
         )
         .map_err(|e| format!("Failed to build input stream: {}", e))?;
 
-    stream.play().map_err(|e| format!("Failed to start stream: {}", e))?;
+    stream
+        .play()
+        .map_err(|e| format!("Failed to start stream: {}", e))?;
 
     // Store stream handle so we can stop it later -----------------------
     {
@@ -166,7 +169,8 @@ pub fn start_recording(
         // Precompute Hanning window
         let window: Vec<f32> = (0..FFT_SIZE)
             .map(|i| {
-                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (FFT_SIZE as f32 - 1.0)).cos())
+                0.5 * (1.0
+                    - (2.0 * std::f32::consts::PI * i as f32 / (FFT_SIZE as f32 - 1.0)).cos())
             })
             .collect();
 
@@ -213,10 +217,7 @@ pub fn start_recording(
             fft.process(&mut fft_input);
 
             // Compute magnitude spectrum (first half only)
-            let magnitudes: Vec<f32> = fft_input[..FFT_SIZE / 2]
-                .iter()
-                .map(|c| c.norm())
-                .collect();
+            let magnitudes: Vec<f32> = fft_input[..FFT_SIZE / 2].iter().map(|c| c.norm()).collect();
 
             // Map into NUM_BARS exponential bars, normalised to [0, 1]
             let max_mag = magnitudes.iter().cloned().fold(0.0f32, f32::max).max(1e-10);

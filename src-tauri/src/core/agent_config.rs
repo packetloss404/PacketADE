@@ -80,17 +80,61 @@ impl AgentConfig {
                 ],
                 thinking: vec![r"⏺\s*Thinking".into(), r"thinking\.\.\.".into()],
                 tool_use: vec![
-                    ToolUsePattern { pattern: r"⏺\s*Read\(([^)]+)\)".into(), tool: "Read".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"⏺\s*Edit\(([^)]+)\)".into(), tool: "Edit".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"⏺\s*Write\(([^)]+)\)".into(), tool: "Write".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"⏺\s*Bash\(([^)]*)\)".into(), tool: "Bash".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"⏺\s*Glob\(([^)]*)\)".into(), tool: "Glob".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"⏺\s*Grep\(([^)]*)\)".into(), tool: "Grep".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"⏺\s*Task\(([^)]*)\)".into(), tool: "Task".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Reading\s+(.+)".into(), tool: "Read".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Editing\s+(.+)".into(), tool: "Edit".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Writing\s+(.+)".into(), tool: "Write".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Running\s+(.+)".into(), tool: "Bash".into(), file_group: Some(1) },
+                    ToolUsePattern {
+                        pattern: r"⏺\s*Read\(([^)]+)\)".into(),
+                        tool: "Read".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"⏺\s*Edit\(([^)]+)\)".into(),
+                        tool: "Edit".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"⏺\s*Write\(([^)]+)\)".into(),
+                        tool: "Write".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"⏺\s*Bash\(([^)]*)\)".into(),
+                        tool: "Bash".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"⏺\s*Glob\(([^)]*)\)".into(),
+                        tool: "Glob".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"⏺\s*Grep\(([^)]*)\)".into(),
+                        tool: "Grep".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"⏺\s*Task\(([^)]*)\)".into(),
+                        tool: "Task".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Reading\s+(.+)".into(),
+                        tool: "Read".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Editing\s+(.+)".into(),
+                        tool: "Edit".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Writing\s+(.+)".into(),
+                        tool: "Write".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Running\s+(.+)".into(),
+                        tool: "Bash".into(),
+                        file_group: Some(1),
+                    },
                 ],
                 idle: vec![r"^\s*[>❯]\s*$".into()],
             },
@@ -129,12 +173,36 @@ impl AgentConfig {
                 ],
                 thinking: vec![r"thinking".into(), r"reasoning".into(), r"Planning".into()],
                 tool_use: vec![
-                    ToolUsePattern { pattern: r"Reading\s+(.+)".into(), tool: "Read".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Editing\s+(.+)".into(), tool: "Edit".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Writing\s+(.+)".into(), tool: "Write".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Running\s+(.+)".into(), tool: "Bash".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Searching\s+(.+)".into(), tool: "Search".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"tool.*running".into(), tool: "Tool".into(), file_group: None },
+                    ToolUsePattern {
+                        pattern: r"Reading\s+(.+)".into(),
+                        tool: "Read".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Editing\s+(.+)".into(),
+                        tool: "Edit".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Writing\s+(.+)".into(),
+                        tool: "Write".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Running\s+(.+)".into(),
+                        tool: "Bash".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Searching\s+(.+)".into(),
+                        tool: "Search".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"tool.*running".into(),
+                        tool: "Tool".into(),
+                        file_group: None,
+                    },
                 ],
                 idle: vec![r"^\s*[>❯\$]\s*$".into(), r"opencode>".into()],
             },
@@ -174,11 +242,31 @@ impl AgentConfig {
                 ],
                 thinking: vec![r"thinking\.\.\.".into(), r"Thinking".into()],
                 tool_use: vec![
-                    ToolUsePattern { pattern: r"Reading\s+(.+)".into(), tool: "Read".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Editing\s+(.+)".into(), tool: "Edit".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Writing\s+(.+)".into(), tool: "Write".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Running\s+(.+)".into(), tool: "Bash".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Applying\s+patch".into(), tool: "Patch".into(), file_group: None },
+                    ToolUsePattern {
+                        pattern: r"Reading\s+(.+)".into(),
+                        tool: "Read".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Editing\s+(.+)".into(),
+                        tool: "Edit".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Writing\s+(.+)".into(),
+                        tool: "Write".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Running\s+(.+)".into(),
+                        tool: "Bash".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Applying\s+patch".into(),
+                        tool: "Patch".into(),
+                        file_group: None,
+                    },
                 ],
                 idle: vec![r"^\s*[>❯\$]\s*$".into()],
             },
@@ -217,13 +305,37 @@ impl AgentConfig {
                     r"Do you want to (?:proceed|continue|allow)".into(),
                     r"Allow\s+\w+.*\?".into(),
                 ],
-                thinking: vec![r"Thinking".into(), r"thinking\.\.\.".into(), r"Planning".into()],
+                thinking: vec![
+                    r"Thinking".into(),
+                    r"thinking\.\.\.".into(),
+                    r"Planning".into(),
+                ],
                 tool_use: vec![
-                    ToolUsePattern { pattern: r"Reading\s+(.+)".into(), tool: "Read".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Editing\s+(.+)".into(), tool: "Edit".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Writing\s+(.+)".into(), tool: "Write".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Running\s+(.+)".into(), tool: "Bash".into(), file_group: Some(1) },
-                    ToolUsePattern { pattern: r"Searching\s+(.+)".into(), tool: "Search".into(), file_group: Some(1) },
+                    ToolUsePattern {
+                        pattern: r"Reading\s+(.+)".into(),
+                        tool: "Read".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Editing\s+(.+)".into(),
+                        tool: "Edit".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Writing\s+(.+)".into(),
+                        tool: "Write".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Running\s+(.+)".into(),
+                        tool: "Bash".into(),
+                        file_group: Some(1),
+                    },
+                    ToolUsePattern {
+                        pattern: r"Searching\s+(.+)".into(),
+                        tool: "Search".into(),
+                        file_group: Some(1),
+                    },
                 ],
                 idle: vec![r"^\s*[>❯\$]\s*$".into()],
             },
@@ -240,7 +352,11 @@ impl AgentConfig {
         Self {
             id: "terminal".into(),
             name: "Terminal".into(),
-            command: if cfg!(windows) { "powershell".into() } else { "bash".into() },
+            command: if cfg!(windows) {
+                "powershell".into()
+            } else {
+                "bash".into()
+            },
             default_args: vec![],
             description: "Plain terminal shell".into(),
             installed: true,
@@ -263,6 +379,12 @@ impl AgentConfig {
     }
 
     pub fn builtins() -> Vec<Self> {
-        vec![Self::claude_code(), Self::opencode(), Self::codex(), Self::gemini(), Self::terminal()]
+        vec![
+            Self::claude_code(),
+            Self::opencode(),
+            Self::codex(),
+            Self::gemini(),
+            Self::terminal(),
+        ]
     }
 }

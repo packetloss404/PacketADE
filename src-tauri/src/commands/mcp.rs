@@ -46,7 +46,11 @@ fn read_json_file(path: &PathBuf) -> Value {
 }
 
 fn extract_servers(json: &Value, scope: &str) -> Vec<McpServerEntry> {
-    let servers_key = if scope == "global" { "mcpServers" } else { "mcpServers" };
+    let servers_key = if scope == "global" {
+        "mcpServers"
+    } else {
+        "mcpServers"
+    };
     let servers = match json.get(servers_key) {
         Some(Value::Object(map)) => map,
         _ => return Vec::new(),

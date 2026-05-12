@@ -1,5 +1,5 @@
-use crate::commands::shared::home_dir;
 use super::helpers::{now_epoch_seconds, STALE_SECONDS};
+use crate::commands::shared::home_dir;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
@@ -29,7 +29,9 @@ pub fn read_statusline_states() -> Vec<StatusLineData> {
         None => return vec![],
     };
 
-    let state_dir = PathBuf::from(&home).join(".claude").join("statusline-state");
+    let state_dir = PathBuf::from(&home)
+        .join(".claude")
+        .join("statusline-state");
     let entries = match fs::read_dir(&state_dir) {
         Ok(e) => e,
         Err(_) => return vec![],
@@ -75,7 +77,11 @@ pub fn read_statusline_states() -> Vec<StatusLineData> {
             }
         }
 
-        let raw_model = parsed.get("model").and_then(|v| v.as_str()).unwrap_or("Unknown").trim();
+        let raw_model = parsed
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .trim();
         let model = raw_model
             .strip_suffix(" for Cursor")
             .or_else(|| raw_model.strip_suffix(" for cursor"))
@@ -88,19 +94,61 @@ pub fn read_statusline_states() -> Vec<StatusLineData> {
         };
 
         let data = StatusLineData {
-            session_id: parsed.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+            session_id: parsed
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
             model,
-            cwd: parsed.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            dir_name: parsed.get("dir_name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            context_percent: parsed.get("context_percent").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            context_current_k: parsed.get("context_current_k").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            context_max_k: parsed.get("context_max_k").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            git_branch: parsed.get("git_branch").and_then(|v| v.as_str()).unwrap_or("-").to_string(),
-            cost_usd: parsed.get("cost_usd").and_then(|v| v.as_f64()).unwrap_or(0.0),
-            cost_display: parsed.get("cost_display").and_then(|v| v.as_str()).unwrap_or("$0.00").to_string(),
-            duration_minutes: parsed.get("duration_minutes").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            context_icon: parsed.get("context_icon").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            timestamp: parsed.get("timestamp").and_then(|v| v.as_u64()).unwrap_or(0),
+            cwd: parsed
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            dir_name: parsed
+                .get("dir_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            context_percent: parsed
+                .get("context_percent")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32,
+            context_current_k: parsed
+                .get("context_current_k")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32,
+            context_max_k: parsed
+                .get("context_max_k")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32,
+            git_branch: parsed
+                .get("git_branch")
+                .and_then(|v| v.as_str())
+                .unwrap_or("-")
+                .to_string(),
+            cost_usd: parsed
+                .get("cost_usd")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+            cost_display: parsed
+                .get("cost_display")
+                .and_then(|v| v.as_str())
+                .unwrap_or("$0.00")
+                .to_string(),
+            duration_minutes: parsed
+                .get("duration_minutes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32,
+            context_icon: parsed
+                .get("context_icon")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            timestamp: parsed
+                .get("timestamp")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
         };
 
         results.push(data);

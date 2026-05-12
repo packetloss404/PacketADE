@@ -3,7 +3,14 @@
 use crate::core::brand::{KEYRING_SERVICE, LEGACY_KEYRING_SERVICE};
 use tracing::{info, warn};
 
-const VALID_PROVIDERS: &[&str] = &["anthropic", "openai", "minimax", "openrouter", "ollama"];
+const VALID_PROVIDERS: &[&str] = &[
+    "anthropic",
+    "openai",
+    "minimax",
+    "openrouter",
+    "ollama",
+    "gemini",
+];
 
 fn validate_provider(provider: &str) -> Result<(), String> {
     if !VALID_PROVIDERS.contains(&provider) {

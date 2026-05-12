@@ -38,12 +38,10 @@ fn validate_id(id: &str) -> Result<(), String> {
 pub fn save_conversation(id: String, data: String) -> Result<(), String> {
     validate_id(&id)?;
     let dir = conversations_dir()?;
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create conversations dir: {}", e))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create conversations dir: {}", e))?;
 
     let file_path = dir.join(format!("{}.json", id));
-    fs::write(&file_path, data)
-        .map_err(|e| format!("Failed to write conversation: {}", e))?;
+    fs::write(&file_path, data).map_err(|e| format!("Failed to write conversation: {}", e))?;
     Ok(())
 }
 
@@ -95,8 +93,7 @@ pub fn delete_conversation_file(id: String) -> Result<(), String> {
     if !file_path.exists() {
         return Ok(());
     }
-    fs::remove_file(&file_path)
-        .map_err(|e| format!("Failed to delete conversation: {}", e))?;
+    fs::remove_file(&file_path).map_err(|e| format!("Failed to delete conversation: {}", e))?;
     Ok(())
 }
 
@@ -125,7 +122,10 @@ pub fn export_conversation_markdown(
     ));
 
     for msg in arr {
-        let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let role = msg
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         let content = msg
             .get("content")
             .and_then(|v| v.as_str())
@@ -147,10 +147,7 @@ pub fn export_conversation_markdown(
                 if !tool_calls.is_empty() {
                     out.push_str("### Tool calls\n\n");
                     for tc in tool_calls {
-                        let name = tc
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
+                        let name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
                         let status = tc
                             .get("status")
                             .and_then(|v| v.as_str())

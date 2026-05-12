@@ -6,8 +6,8 @@
 use crate::core::execution::ExecutionTarget;
 use crate::core::llm_types::{ToolCall, ToolDefinition, ToolResult};
 use crate::core::tool_runtime_ssh;
-use std::path::Path;
-use tracing::{info, warn};
+use std::path::{Path, PathBuf};
+use tracing::info;
 
 /// Maximum file size for tool reads (2 MB).
 const MAX_FILE_SIZE: u64 = 2_000_000;
@@ -18,25 +18,86 @@ const MAX_OUTPUT_SIZE: usize = 262_144;
 /// Default bash command timeout in seconds.
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
-/// Validate that a path is within the project workspace.
-fn validate_path(path: &str, project_path: &str) -> Result<String, String> {
-    let full = if Path::new(path).is_absolute() {
-        path.to_string()
-    } else {
-        format!("{}/{}", project_path.trim_end_matches('/').trim_end_matches('\\'), path)
-    };
-
-    // Canonicalize both and check containment
+/// Resolve a user-provided path and validate that it stays inside the workspace.
+///
+/// Existing path components are canonicalized so symlink targets are checked,
+/// while missing leaf components are resolved after the nearest existing
+/// ancestor has been canonicalized.
+pub(crate) fn resolve_workspace_path(
+    path: &str,
+    project_path: &str,
+    must_exist: bool,
+) -> Result<PathBuf, String> {
     let canonical_workspace = std::fs::canonicalize(project_path)
         .map_err(|e| format!("Cannot resolve workspace: {}", e))?;
-    let canonical_path = std::fs::canonicalize(&full)
-        .map_err(|e| format!("Cannot resolve path '{}': {}", full, e))?;
 
-    if !canonical_path.starts_with(&canonical_workspace) {
+    let requested = Path::new(path);
+    let full = if requested.is_absolute() {
+        requested.to_path_buf()
+    } else {
+        Path::new(project_path).join(requested)
+    };
+
+    if must_exist || std::fs::symlink_metadata(&full).is_ok() {
+        let canonical_path = std::fs::canonicalize(&full)
+            .map_err(|e| format!("Cannot resolve path '{}': {}", full.display(), e))?;
+        if !canonical_path.starts_with(&canonical_workspace) {
+            return Err(format!("Path '{}' is outside the project workspace", path));
+        }
+        return Ok(canonical_path);
+    }
+
+    let mut existing = full.as_path();
+    while !existing.exists() {
+        existing = existing
+            .parent()
+            .ok_or_else(|| format!("Cannot resolve path '{}'", full.display()))?;
+    }
+
+    let canonical_existing = std::fs::canonicalize(existing)
+        .map_err(|e| format!("Cannot resolve path '{}': {}", existing.display(), e))?;
+    if !canonical_existing.starts_with(&canonical_workspace) {
         return Err(format!("Path '{}' is outside the project workspace", path));
     }
 
-    Ok(canonical_path.to_string_lossy().to_string())
+    let suffix = full
+        .strip_prefix(existing)
+        .unwrap_or_else(|_| Path::new(""));
+    let mut resolved = canonical_existing;
+    for component in suffix.components() {
+        match component {
+            std::path::Component::Normal(part) => resolved.push(part),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                resolved.pop();
+            }
+            std::path::Component::Prefix(_) | std::path::Component::RootDir => {
+                return Err(format!("Cannot resolve path '{}'", full.display()));
+            }
+        }
+    }
+
+    if !resolved.starts_with(&canonical_workspace) {
+        return Err(format!("Path '{}' is outside the project workspace", path));
+    }
+
+    Ok(resolved)
+}
+
+/// Validate that an existing path is within the project workspace.
+fn validate_path(path: &str, project_path: &str) -> Result<String, String> {
+    resolve_workspace_path(path, project_path, true).map(|p| p.to_string_lossy().to_string())
+}
+
+fn truncate_to_char_boundary(s: &mut String, max_bytes: usize) {
+    if s.len() <= max_bytes {
+        return;
+    }
+    let mut boundary = max_bytes;
+    while boundary > 0 && !s.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    s.truncate(boundary);
 }
 
 /// Get all tool definitions for the API request.
@@ -44,6 +105,12 @@ fn validate_path(path: &str, project_path: &str) -> Result<String, String> {
 /// Async because MCP discovery spawns child processes and performs JSON-RPC
 /// over stdio. Callers must `.await` it.
 pub async fn tool_definitions() -> Vec<ToolDefinition> {
+    tool_definitions_with_mcp_allowlist(None).await
+}
+
+pub async fn tool_definitions_with_mcp_allowlist(
+    enabled_mcp_server_ids: Option<&[String]>,
+) -> Vec<ToolDefinition> {
     let base = vec![
         ToolDefinition {
             name: "read_file".to_string(),
@@ -138,7 +205,7 @@ pub async fn tool_definitions() -> Vec<ToolDefinition> {
     // Append MCP tool defs discovered from user-configured servers.
     let mut all = base;
     all.extend(crate::core::tool_tasks::task_tool_definitions());
-    all.extend(crate::core::mcp_bridge::load_mcp_tool_definitions().await);
+    all.extend(crate::core::mcp_bridge::load_mcp_tool_definitions(enabled_mcp_server_ids).await);
     // Append custom-agent tool defs (~/.claude/agents/<name>.md).
     all.extend(crate::core::tool_custom_agent::load_custom_agent_definitions());
     // Append GitHub tools (gh_list_issues, gh_get_issue, gh_list_prs).
@@ -148,6 +215,14 @@ pub async fn tool_definitions() -> Vec<ToolDefinition> {
 
 /// Execute a tool call against either the local project or a remote SSH host.
 pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResult {
+    execute_tool_with_mcp_allowlist(call, target, None).await
+}
+
+pub async fn execute_tool_with_mcp_allowlist(
+    call: &ToolCall,
+    target: &ExecutionTarget,
+    enabled_mcp_server_ids: Option<&[String]>,
+) -> ToolResult {
     let result = match call.name.as_str() {
         "read_file" => match target {
             ExecutionTarget::Local { project_path } => {
@@ -204,7 +279,8 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
             .await
         }
         "create_pull_request" => {
-            crate::core::tool_pull_request::execute_create_pull_request(&call.arguments, target).await
+            crate::core::tool_pull_request::execute_create_pull_request(&call.arguments, target)
+                .await
         }
         "task_create" => {
             // Host-agnostic: tasks live in the PacketADE process.
@@ -220,7 +296,8 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
             crate::core::tool_tasks::execute_task_list(&call.arguments)
         }
         name if name.starts_with("mcp__") => {
-            crate::core::mcp_bridge::execute_mcp_tool(name, &call.arguments).await
+            crate::core::mcp_bridge::execute_mcp_tool(name, &call.arguments, enabled_mcp_server_ids)
+                .await
         }
         name if name.starts_with("gh_") => {
             // Host-agnostic: GitHub API calls go from the PacketADE process.
@@ -253,10 +330,7 @@ pub async fn execute_tool(call: &ToolCall, target: &ExecutionTarget) -> ToolResu
     }
 }
 
-async fn execute_read_file(
-    args: &serde_json::Value,
-    project_path: &str,
-) -> Result<String, String> {
+async fn execute_read_file(args: &serde_json::Value, project_path: &str) -> Result<String, String> {
     let path = args
         .get("path")
         .and_then(|p| p.as_str())
@@ -265,8 +339,8 @@ async fn execute_read_file(
     let full_path = validate_path(path, project_path)?;
     info!(path = %full_path, "Tool: read_file");
 
-    let metadata = std::fs::metadata(&full_path)
-        .map_err(|e| format!("Cannot access '{}': {}", path, e))?;
+    let metadata =
+        std::fs::metadata(&full_path).map_err(|e| format!("Cannot access '{}': {}", path, e))?;
 
     if !metadata.is_file() {
         return Err(format!("'{}' is not a file", path));
@@ -280,8 +354,7 @@ async fn execute_read_file(
         ));
     }
 
-    std::fs::read_to_string(&full_path)
-        .map_err(|e| format!("Failed to read '{}': {}", path, e))
+    std::fs::read_to_string(&full_path).map_err(|e| format!("Failed to read '{}': {}", path, e))
 }
 
 async fn execute_write_file(
@@ -297,50 +370,55 @@ async fn execute_write_file(
         .and_then(|c| c.as_str())
         .ok_or("Missing 'content' parameter")?;
 
-    // For write, the file may not exist yet, so validate the parent directory
-    let full = if Path::new(path).is_absolute() {
-        path.to_string()
-    } else {
-        format!("{}/{}", project_path.trim_end_matches('/').trim_end_matches('\\'), path)
-    };
+    let full_path = resolve_workspace_path(path, project_path, false)?;
+    let canonical_workspace = std::fs::canonicalize(project_path)
+        .map_err(|e| format!("Cannot resolve workspace: {}", e))?;
 
-    // Create parent directories if needed
-    if let Some(parent) = Path::new(&full).parent() {
+    if let Some(parent) = full_path.parent() {
+        if !parent.starts_with(&canonical_workspace) {
+            return Err(format!("Path '{}' is outside the project workspace", path));
+        }
         if !parent.exists() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create directories: {}", e))?;
         }
-        // Validate parent is within workspace
-        let canonical_workspace = std::fs::canonicalize(project_path)
-            .map_err(|e| format!("Cannot resolve workspace: {}", e))?;
-        let canonical_parent = std::fs::canonicalize(parent)
-            .map_err(|e| format!("Cannot resolve parent: {}", e))?;
+        let canonical_parent =
+            std::fs::canonicalize(parent).map_err(|e| format!("Cannot resolve parent: {}", e))?;
         if !canonical_parent.starts_with(&canonical_workspace) {
             return Err(format!("Path '{}' is outside the project workspace", path));
         }
     }
 
-    info!(path = %full, "Tool: write_file");
-    std::fs::write(&full, content)
+    if std::fs::symlink_metadata(&full_path).is_ok() {
+        let canonical_target = std::fs::canonicalize(&full_path)
+            .map_err(|e| format!("Cannot resolve path '{}': {}", path, e))?;
+        if !canonical_target.starts_with(&canonical_workspace) {
+            return Err(format!("Path '{}' is outside the project workspace", path));
+        }
+    }
+
+    info!(path = %full_path.display(), "Tool: write_file");
+    std::fs::write(&full_path, content)
         .map_err(|e| format!("Failed to write '{}': {}", path, e))?;
 
-    Ok(format!("Successfully wrote {} bytes to {}", content.len(), path))
+    Ok(format!(
+        "Successfully wrote {} bytes to {}",
+        content.len(),
+        path
+    ))
 }
 
 async fn execute_list_directory(
     args: &serde_json::Value,
     project_path: &str,
 ) -> Result<String, String> {
-    let path = args
-        .get("path")
-        .and_then(|p| p.as_str())
-        .unwrap_or(".");
+    let path = args.get("path").and_then(|p| p.as_str()).unwrap_or(".");
 
     let full_path = validate_path(path, project_path)?;
     info!(path = %full_path, "Tool: list_directory");
 
-    let entries = std::fs::read_dir(&full_path)
-        .map_err(|e| format!("Failed to list '{}': {}", path, e))?;
+    let entries =
+        std::fs::read_dir(&full_path).map_err(|e| format!("Failed to list '{}': {}", path, e))?;
 
     let skip_dirs = crate::core::shared::SKIP_DIRS;
     let mut lines: Vec<String> = Vec::new();
@@ -350,10 +428,7 @@ async fn execute_list_directory(
         if name.starts_with('.') {
             continue;
         }
-        let is_dir = entry
-            .metadata()
-            .map(|m| m.is_dir())
-            .unwrap_or(false);
+        let is_dir = entry.metadata().map(|m| m.is_dir()).unwrap_or(false);
 
         if is_dir && skip_dirs.contains(&name.as_str()) {
             continue;
@@ -370,10 +445,7 @@ async fn execute_list_directory(
     Ok(lines.join("\n"))
 }
 
-async fn execute_bash(
-    args: &serde_json::Value,
-    project_path: &str,
-) -> Result<String, String> {
+async fn execute_bash(args: &serde_json::Value, project_path: &str) -> Result<String, String> {
     let command = args
         .get("command")
         .and_then(|c| c.as_str())
@@ -403,7 +475,6 @@ async fn execute_bash(
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
@@ -435,41 +506,34 @@ async fn execute_bash(
 
     // Truncate if too large
     if result.len() > MAX_OUTPUT_SIZE {
-        result.truncate(MAX_OUTPUT_SIZE);
+        truncate_to_char_boundary(&mut result, MAX_OUTPUT_SIZE);
         result.push_str("\n... [output truncated]");
     }
 
     let exit_code = output.status.code().unwrap_or(-1);
     if exit_code != 0 {
         result.push_str(&format!("\n[exit code: {}]", exit_code));
+        return Err(result);
     }
 
     Ok(result)
 }
 
-async fn execute_grep(
-    args: &serde_json::Value,
-    project_path: &str,
-) -> Result<String, String> {
+async fn execute_grep(args: &serde_json::Value, project_path: &str) -> Result<String, String> {
     let pattern = args
         .get("pattern")
         .and_then(|p| p.as_str())
         .ok_or("Missing 'pattern' parameter")?;
 
-    let search_path = args
-        .get("path")
-        .and_then(|p| p.as_str())
-        .unwrap_or(".");
+    let search_path = args.get("path").and_then(|p| p.as_str()).unwrap_or(".");
 
-    let include = args
-        .get("include")
-        .and_then(|i| i.as_str());
+    let include = args.get("include").and_then(|i| i.as_str());
 
     let full_path = validate_path(search_path, project_path)?;
     info!(pattern = %pattern, path = %full_path, "Tool: grep");
 
-    let re = regex::Regex::new(pattern)
-        .map_err(|e| format!("Invalid regex '{}': {}", pattern, e))?;
+    let re =
+        regex::Regex::new(pattern).map_err(|e| format!("Invalid regex '{}': {}", pattern, e))?;
 
     let skip_dirs = crate::core::shared::SKIP_DIRS;
     let mut results: Vec<String> = Vec::new();
@@ -510,7 +574,15 @@ async fn execute_grep(
                 if skip_dirs.contains(&name.as_str()) {
                     continue;
                 }
-                walk_dir(&path, re, include, skip_dirs, results, max_results, base_path);
+                walk_dir(
+                    &path,
+                    re,
+                    include,
+                    skip_dirs,
+                    results,
+                    max_results,
+                    base_path,
+                );
             } else {
                 // Check include glob
                 if let Some(glob_pattern) = include {
@@ -542,7 +614,15 @@ async fn execute_grep(
     }
 
     let base = Path::new(&full_path);
-    walk_dir(base, &re, include, &skip_dirs, &mut results, max_results, base);
+    walk_dir(
+        base,
+        &re,
+        include,
+        &skip_dirs,
+        &mut results,
+        max_results,
+        base,
+    );
 
     if results.is_empty() {
         Ok(format!("No matches found for pattern '{}'", pattern))
@@ -552,5 +632,96 @@ async fn execute_grep(
             output.push_str(&format!("\n... [limited to {} results]", max_results));
         }
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::llm_types::ToolCall;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    fn temp_workspace(name: &str) -> (PathBuf, PathBuf) {
+        let base = std::env::temp_dir().join("packetade-tests").join(format!(
+            "{}-{}",
+            name,
+            Uuid::new_v4()
+        ));
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        (base, workspace)
+    }
+
+    #[cfg(unix)]
+    fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
+        std::os::unix::fs::symlink(original, link)
+    }
+
+    #[cfg(windows)]
+    fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
+        std::os::windows::fs::symlink_dir(original, link)
+    }
+
+    #[tokio::test]
+    async fn write_file_rejects_escape_before_creating_parent_dirs() {
+        let (base, workspace) = temp_workspace("write-escape");
+        let outside = base.join("outside");
+        let args = json!({
+            "path": "../outside/nested/file.txt",
+            "content": "nope"
+        });
+
+        let err = execute_write_file(&args, &workspace.to_string_lossy())
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("outside the project workspace"));
+        assert!(!outside.exists());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn write_file_rejects_symlink_parent_target_outside_workspace() {
+        let (base, workspace) = temp_workspace("write-symlink");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let link = workspace.join("link");
+        if symlink_dir(&outside, &link).is_err() {
+            let _ = std::fs::remove_dir_all(base);
+            return;
+        }
+        let args = json!({
+            "path": "link/evil.txt",
+            "content": "nope"
+        });
+
+        let err = execute_write_file(&args, &workspace.to_string_lossy())
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("outside the project workspace"));
+        assert!(!outside.join("evil.txt").exists());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn local_bash_nonzero_exit_is_error() {
+        let (base, workspace) = temp_workspace("bash-error");
+        let command = if cfg!(windows) { "exit /B 7" } else { "exit 7" };
+        let call = ToolCall {
+            id: "tool-1".to_string(),
+            name: "bash".to_string(),
+            arguments: json!({ "command": command }),
+        };
+        let target = ExecutionTarget::Local {
+            project_path: workspace.to_string_lossy().to_string(),
+        };
+
+        let result = execute_tool(&call, &target).await;
+
+        assert!(result.is_error);
+        assert!(result.content.contains("[exit code: 7]"));
+        let _ = std::fs::remove_dir_all(base);
     }
 }

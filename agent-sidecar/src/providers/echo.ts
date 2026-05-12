@@ -51,10 +51,10 @@ export class EchoProvider implements ProviderHandler {
     // Echo provider has no long-lived work to cancel; no-op.
   }
 
-  // Protocol v2 (Tier 3 slice B) — the three new request types are implemented
-  // here purely as smoke-test shims. Each emits a single `chunk` echoing the
-  // received field, then `done` with zero tokens. The `protocol-v2-smoke` test
-  // uses these to verify the dispatcher routes the new types end-to-end.
+  // Protocol control requests are implemented here purely as smoke-test shims.
+  // Each emits a single `chunk` echoing the received field, then `done` with
+  // zero tokens. The protocol smoke test uses these to verify dispatcher
+  // routing end-to-end.
   async setPermissionMode(req: SetPermissionModeRequest, emit: Emit): Promise<void> {
     emit({
       type: "chunk",

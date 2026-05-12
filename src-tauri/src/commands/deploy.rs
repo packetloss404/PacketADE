@@ -140,15 +140,14 @@ pub async fn validate_deploy(project_path: String, command: String) -> Result<St
     // Validate project path
     let base = Path::new(&project_path);
     if !base.is_dir() {
-        errors.push(format!("Project path '{}' is not a directory", project_path));
+        errors.push(format!(
+            "Project path '{}' is not a directory",
+            project_path
+        ));
     }
 
     // Parse command to get the binary name (first word)
-    let binary = command
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_string();
+    let binary = command.split_whitespace().next().unwrap_or("").to_string();
 
     if binary.is_empty() {
         errors.push("Deploy command is empty".to_string());
@@ -195,12 +194,14 @@ pub async fn validate_deploy(project_path: String, command: String) -> Result<St
                 let status_output = String::from_utf8_lossy(&output.stdout);
                 has_uncommitted = !status_output.trim().is_empty();
                 if has_uncommitted {
-                    warnings.push("There are uncommitted changes in the working directory".to_string());
+                    warnings
+                        .push("There are uncommitted changes in the working directory".to_string());
                 }
             }
         }
     } else {
-        warnings.push("Not a git repository — cannot check branch or uncommitted changes".to_string());
+        warnings
+            .push("Not a git repository — cannot check branch or uncommitted changes".to_string());
     }
 
     let valid = errors.is_empty();
@@ -296,8 +297,7 @@ pub fn run_deploy(
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let data =
-                        crate::core::pty::decode_terminal_chunk(&buf[..n], &mut pending);
+                    let data = crate::core::pty::decode_terminal_chunk(&buf[..n], &mut pending);
                     // Emit on both the standard pty:output channel (for DeployTerminal xterm)
                     // and a deploy-specific channel (for output capture in store)
                     let _ = app_handle.emit(&format!("pty:output:{}", sid), &data);
@@ -317,10 +317,7 @@ pub fn run_deploy(
         }
 
         // Try to get exit status
-        let exit_code = _child
-            .wait()
-            .map(|status| status.exit_code())
-            .unwrap_or(1);
+        let exit_code = _child.wait().map(|status| status.exit_code()).unwrap_or(1);
 
         info!(session_id = %sid, run_id = %rid, exit_code = exit_code, "Deploy PTY session exited");
         let _ = app_handle.emit(&format!("pty:exit:{}", sid), &sid);

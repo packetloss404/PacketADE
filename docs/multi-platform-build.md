@@ -5,10 +5,6 @@ ship on macOS and Linux as well. This doc tells a future macOS or Linux
 developer everything they need to produce a working local bundle on their
 platform. If you are adding a new target triple, extend this doc.
 
-See the matching CI skeleton at
-[`.github/workflows/build.yml`](../.github/workflows/build.yml) for a ready-to-
-turn-on GitHub Actions job that builds all three OSes on hosted runners.
-
 ## Supported target triples
 
 | OS            | Triple                         | Bundle formats         |
@@ -91,7 +87,7 @@ pnpm tauri build --target aarch64-unknown-linux-gnu
 ```
 
 `pnpm fetch-node:all` downloads every supported Node binary at once —
-useful for populating a CI matrix cache. `pnpm fetch-node` alone picks
+useful for populating a release matrix cache. `pnpm fetch-node` alone picks
 the host's target; use `--target=<triple>` or the `TAURI_TARGET` env
 var to select one explicitly.
 
@@ -127,7 +123,7 @@ var to select one explicitly.
   triple-suffixed filename (e.g. `node-aarch64-apple-darwin`). The Node
   fetcher reads `TAURI_TARGET` and downloads the matching Node binary.
 - Cross-compiling **Windows from macOS/Linux** or **macOS from anywhere
-  else** is not supported by this setup. Use a native runner or CI.
+  else** is not supported by this setup. Use a native runner for that OS.
 
 ## Installer sizes (for reference)
 

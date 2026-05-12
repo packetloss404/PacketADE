@@ -1,9 +1,10 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { LayoutGrid, Check, FileText, ShieldOff, Loader2, FolderOpen, ChevronDown, Zap } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useServerStore } from "@/stores/serverStore";
 // Memory context is now injected live at session launch, not baked into workspace prompt
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
@@ -56,22 +57,46 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
   const [bypassPermissions, setBypassPermissions] = useState(false);
   const [prompt, setPrompt] = useState("");
   const projectPath = useLayoutStore((s) => s.projectPath);
-  const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath);
+  const initialProjectPath = remoteProjectPath ?? projectPath;
+  const [selectedProjectPath, setSelectedProjectPath] = useState(initialProjectPath);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
 
   const agents = useAgentStore((s) => s.agents);
   const detecting = useAgentStore((s) => s.detecting);
+  const server = useServerStore((s) => serverId ? s.servers.find((srv) => srv.id === serverId) : undefined);
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
+
+  const installedAgentIds = useMemo(() => {
+    if (serverId) {
+      return new Set(server?.installedAgents ?? []);
+    }
+    return new Set(agents.filter((agent) => agent.installed).map((agent) => agent.id));
+  }, [agents, server?.installedAgents, serverId]);
+
+  const isAgentInstalled = useCallback((id: WorkspaceAgentSlot) => {
+    return id === "terminal" || installedAgentIds.has(id);
+  }, [installedAgentIds]);
 
   // Unique project paths from existing workspaces + current global path
   const recentProjectPaths = useMemo(() => {
+    if (serverId) {
+      return initialProjectPath ? [initialProjectPath] : [];
+    }
     const paths = new Set<string>([projectPath]);
     for (const w of useWorkspaceStore.getState().workspaces) {
       if (w.projectPath) paths.add(w.projectPath);
     }
     return Array.from(paths);
-  }, [projectPath]);
+  }, [initialProjectPath, projectPath, serverId]);
+
+  useEffect(() => {
+    setSelected((prev) => {
+      const available = Array.from(prev).filter((agent) => isAgentInstalled(agent));
+      if (available.length === prev.size) return prev;
+      return new Set(available);
+    });
+  }, [isAgentInstalled]);
 
   // Close project dropdown on outside click
   useEffect(() => {
@@ -93,18 +118,17 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
   const selectedAiAgents = AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
 
   function applyTemplate(template: typeof WORKSPACE_TEMPLATES[number]) {
+    const availableAgents = template.agents.filter((agent) => isAgentInstalled(agent));
+    if (availableAgents.length === 0) return;
     setSelectedTemplateId(template.id);
-    setSelected(new Set(template.agents));
+    setSelected(new Set(availableAgents));
     if (!name.trim()) {
       setName(template.label);
     }
   }
 
   function toggleAgent(id: WorkspaceAgentSlot) {
-    if (id !== "terminal") {
-      const cfg = agents.find((a) => a.id === id);
-      if (!cfg?.installed) return;
-    }
+    if (!isAgentInstalled(id)) return;
     setSelectedTemplateId(null);
     setSelected((prev) => {
       const next = new Set(prev);
@@ -122,8 +146,10 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
     if (!name.trim() || selected.size === 0) return;
 
     const orderedAgents = AGENT_SLOTS
-      .filter((s) => selected.has(s.id))
+      .filter((s) => selected.has(s.id) && isAgentInstalled(s.id))
       .map((s) => s.id);
+
+    if (orderedAgents.length === 0) return;
 
     const finalPrompt = prompt.trim();
 
@@ -240,15 +266,22 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
             {WORKSPACE_TEMPLATES.map((tpl) => {
               const isActive = selectedTemplateId === tpl.id;
               const agentLabels = tpl.agents.map((a) => AGENT_SLOTS.find((s) => s.id === a)?.label ?? a);
+              const availableAgents = tpl.agents.filter((agent) => isAgentInstalled(agent));
+              const disabled = availableAgents.length === 0;
+              const unavailableLabels = tpl.agents
+                .filter((agent) => !isAgentInstalled(agent))
+                .map((agent) => AGENT_SLOTS.find((s) => s.id === agent)?.label ?? agent);
               return (
                 <button
                   key={tpl.id}
                   onClick={() => applyTemplate(tpl)}
+                  disabled={disabled}
+                  title={unavailableLabels.length > 0 ? `Unavailable: ${unavailableLabels.join(", ")}` : tpl.description}
                   className={`flex flex-col items-start px-3 py-2 text-[11px] rounded border transition-colors ${
                     isActive
                       ? "bg-accent-green/15 border-accent-green/40"
                       : "bg-bg-primary border-bg-border hover:border-text-muted/30"
-                  }`}
+                  } ${disabled ? "opacity-50 cursor-not-allowed hover:border-bg-border" : ""}`}
                 >
                   <span className={`font-medium ${isActive ? "text-accent-green" : "text-text-primary"}`}>
                     {tpl.label}
@@ -274,8 +307,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
           )}
           <div className="flex flex-wrap items-center gap-1.5">
             {AGENT_SLOTS.map((slot) => {
-              const agentConfig = agents.find((a) => a.id === slot.id);
-              const installed = slot.id === "terminal" || !!agentConfig?.installed;
+              const installed = isAgentInstalled(slot.id);
               const isSelected = selected.has(slot.id);
               const hint = INSTALL_HINTS[slot.id];
 

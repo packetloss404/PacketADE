@@ -413,6 +413,11 @@ impl SidecarManager {
         }
     }
 
+    async fn forget_owned_session(&self, session_id: &str) {
+        let mut sessions = self.owned_sessions.lock().await;
+        sessions.remove(session_id);
+    }
+
     /// Forward a start_session request to the sidecar.
     pub async fn forward_start(
         &self,
@@ -448,7 +453,11 @@ impl SidecarManager {
             "planMode": plan_mode,
             "attachments": attachments,
         });
-        self.send_json(req).await
+        let result = self.send_json(req).await;
+        if result.is_err() {
+            self.forget_owned_session(&session_id).await;
+        }
+        result
     }
 
     /// Forward a send_message request for an existing sidecar session.
@@ -464,7 +473,11 @@ impl SidecarManager {
             "content": content,
             "attachments": attachments,
         });
-        self.send_json(req).await
+        let result = self.send_json(req).await;
+        if result.is_err() {
+            self.forget_owned_session(&session_id).await;
+        }
+        result
     }
 
     /// Forward a permission decision to the sidecar.
@@ -521,11 +534,7 @@ impl SidecarManager {
 
     /// Forward a model swap to the sidecar. Providers that can't hot-swap
     /// (e.g. Codex one-shot exec) stash the value for the next spawn.
-    pub async fn forward_set_model(
-        &self,
-        session_id: String,
-        model: String,
-    ) -> Result<(), String> {
+    pub async fn forward_set_model(&self, session_id: String, model: String) -> Result<(), String> {
         let req = json!({
             "type": "set_model",
             "sessionId": session_id,
@@ -557,10 +566,7 @@ impl SidecarManager {
     /// F8: drain any parked permission/edit prompts as denied without
     /// killing the agent loop. Used by the per-conversation "Cancel
     /// pending" UI affordance.
-    pub async fn forward_cancel_pending_tools(
-        &self,
-        session_id: String,
-    ) -> Result<(), String> {
+    pub async fn forward_cancel_pending_tools(&self, session_id: String) -> Result<(), String> {
         let req = json!({
             "type": "cancel_pending_tools",
             "sessionId": session_id,
@@ -575,10 +581,7 @@ impl SidecarManager {
             "sessionId": session_id,
         });
         let result = self.send_json(req).await;
-        {
-            let mut sessions = self.owned_sessions.lock().await;
-            sessions.remove(&session_id);
-        }
+        self.forget_owned_session(&session_id).await;
         result
     }
 
@@ -646,15 +649,13 @@ impl SidecarManager {
                         // without a recorded error still deserves *some*
                         // breadcrumb for the status chip's tooltip.
                         if s.last_error.is_none() && s.state == SidecarState::Ready {
-                            s.last_error =
-                                Some("Sidecar exited unexpectedly".to_string());
+                            s.last_error = Some("Sidecar exited unexpectedly".to_string());
                         }
                         s.pid = None;
                         // Lifetime bookkeeping: count the crash, remember the
                         // error for future sessions, and fold the just-ended
                         // uptime window into the cumulative total.
-                        s.lifetime.total_crashes =
-                            s.lifetime.total_crashes.saturating_add(1);
+                        s.lifetime.total_crashes = s.lifetime.total_crashes.saturating_add(1);
                         s.lifetime.last_crash_time = Some(now_rfc3339.clone());
                         s.lifetime.last_error = s.last_error.clone();
                         if let Some(start) = s.session_start.take() {
@@ -674,8 +675,7 @@ impl SidecarManager {
                         s.pid = None;
                         // Treat a spawn failure as a crash for lifetime
                         // purposes — it's the same user-visible outcome.
-                        s.lifetime.total_crashes =
-                            s.lifetime.total_crashes.saturating_add(1);
+                        s.lifetime.total_crashes = s.lifetime.total_crashes.saturating_add(1);
                         s.lifetime.last_crash_time = Some(now_rfc3339.clone());
                         s.lifetime.last_error = Some(msg);
                         if let Some(start) = s.session_start.take() {
@@ -1203,7 +1203,12 @@ impl SidecarManager {
                     .map(String::from);
                 let _ = self.app_handle.emit(
                     &pending_edit_event(&session_id),
-                    PendingEditPayload { id, path, content, before },
+                    PendingEditPayload {
+                        id,
+                        path,
+                        content,
+                        before,
+                    },
                 );
             }
             "done" => {
@@ -1237,11 +1242,9 @@ impl SidecarManager {
                         resume_token,
                     },
                 );
-                // Session is finished — drop it from the owned set. (Session
-                // configs can still be resumed via `forward_start` with a
-                // resume token; that will re-insert it.)
-                let mut sessions = self.owned_sessions.lock().await;
-                sessions.remove(&session_id);
+                // A `done` event marks the current turn complete, not the
+                // lifetime of the sidecar conversation. Keep ownership so the
+                // next send/cancel/model change still routes to the sidecar.
             }
             "plan_block" => {
                 let items: Vec<PlanItemPayload> = value
@@ -1250,19 +1253,14 @@ impl SidecarManager {
                     .map(|arr| {
                         arr.iter()
                             .filter_map(|item| {
-                                let content = item
-                                    .get("content")
-                                    .and_then(|v| v.as_str())?
-                                    .to_string();
+                                let content =
+                                    item.get("content").and_then(|v| v.as_str())?.to_string();
                                 let status = item
                                     .get("status")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("pending")
                                     .to_string();
-                                let id = item
-                                    .get("id")
-                                    .and_then(|v| v.as_str())
-                                    .map(String::from);
+                                let id = item.get("id").and_then(|v| v.as_str()).map(String::from);
                                 let active_form = item
                                     .get("activeForm")
                                     .and_then(|v| v.as_str())
@@ -1277,10 +1275,9 @@ impl SidecarManager {
                             .collect()
                     })
                     .unwrap_or_default();
-                let _ = self.app_handle.emit(
-                    &plan_block_event(&session_id),
-                    PlanBlockPayload { items },
-                );
+                let _ = self
+                    .app_handle
+                    .emit(&plan_block_event(&session_id), PlanBlockPayload { items });
             }
             "tool_output_extended" => {
                 let id = value
@@ -1289,14 +1286,15 @@ impl SidecarManager {
                     .unwrap_or("")
                     .to_string();
                 let exit_code = value.get("exitCode").and_then(|v| v.as_i64());
-                let modified_paths = value
-                    .get("modifiedPaths")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|s| s.as_str().map(String::from))
-                            .collect()
-                    });
+                let modified_paths =
+                    value
+                        .get("modifiedPaths")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|s| s.as_str().map(String::from))
+                                .collect()
+                        });
                 let stdout = value
                     .get("stdout")
                     .and_then(|v| v.as_str())
@@ -1333,9 +1331,7 @@ impl SidecarManager {
                     .get("cacheCreationInputTokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                let reasoning_tokens = value
-                    .get("reasoningTokens")
-                    .and_then(|v| v.as_u64());
+                let reasoning_tokens = value.get("reasoningTokens").and_then(|v| v.as_u64());
                 let address = value
                     .get("address")
                     .and_then(|v| v.as_str())
@@ -1365,10 +1361,7 @@ impl SidecarManager {
                         message: message.clone(),
                     },
                 );
-                {
-                    let mut sessions = self.owned_sessions.lock().await;
-                    sessions.remove(&session_id);
-                }
+                self.forget_owned_session(&session_id).await;
                 // Record the most-recent per-session error so the chip's
                 // tooltip has something meaningful if the supervisor later
                 // transitions to `down`. Does not change `state`.
@@ -1550,14 +1543,12 @@ fn save_lifetime_stats(stats: &SidecarLifetimeStats) -> Result<(), String> {
     let path = lifetime_stats_path();
     if let Some(parent) = path.parent() {
         if !parent.exists() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("create {:?}: {}", parent, e))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("create {:?}: {}", parent, e))?;
         }
     }
     let json = serde_json::to_string_pretty(stats)
         .map_err(|e| format!("serialize sidecar lifetime stats: {}", e))?;
-    write_atomic(&path, json.as_bytes())
-        .map_err(|e| format!("write {:?}: {}", path, e))?;
+    write_atomic(&path, json.as_bytes()).map_err(|e| format!("write {:?}: {}", path, e))?;
     Ok(())
 }
 
@@ -1602,7 +1593,11 @@ fn format_rfc3339_utc(mut secs: i64) -> String {
 
     // Shift epoch so 0 == 0000-03-01 (the anchor Hinnant's algorithm uses).
     days += 719_468;
-    let era = if days >= 0 { days / 146_097 } else { (days - 146_096) / 146_097 };
+    let era = if days >= 0 {
+        days / 146_097
+    } else {
+        (days - 146_096) / 146_097
+    };
     let doe = (days - era * 146_097) as u64; // [0, 146096]
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365; // [0, 399]
     let y = yoe as i64 + era * 400;

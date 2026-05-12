@@ -115,7 +115,11 @@ async fn ssh_git(cfg: &SshConfig, base: &str, args: &[&str]) -> Result<(String, 
     let output = crate::core::tool_runtime_ssh::ssh_run_for_worktree(cfg, &cmd).await?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let combined = if stderr.is_empty() { stdout } else { format!("{}\n{}", stdout, stderr) };
+    let combined = if stderr.is_empty() {
+        stdout
+    } else {
+        format!("{}\n{}", stdout, stderr)
+    };
     Ok((combined, output.status.code().unwrap_or(-1)))
 }
 
@@ -129,21 +133,13 @@ pub async fn create_remote_worktree(
     let path = worktree_path(base, attempt_id);
     let branch = branch_name(attempt_id);
 
-    let (_, code) = ssh_git(
-        cfg,
-        base,
-        &["rev-parse", "--git-dir"],
-    )
-    .await?;
+    let (_, code) = ssh_git(cfg, base, &["rev-parse", "--git-dir"]).await?;
     if code != 0 {
         return Err("Remote base path is not a git repo".to_string());
     }
 
     // Use `[ -d ... ]` to short-circuit if the worktree already exists.
-    let check = format!(
-        "if [ -d {} ]; then echo EXISTS; fi",
-        sh_quote(&path),
-    );
+    let check = format!("if [ -d {} ]; then echo EXISTS; fi", sh_quote(&path),);
     let existing = crate::core::tool_runtime_ssh::ssh_run_for_worktree(cfg, &check).await?;
     if String::from_utf8_lossy(&existing.stdout).contains("EXISTS") {
         info!(path = %path, "Remote worktree already exists, reusing");
@@ -174,8 +170,7 @@ pub async fn remove_remote_worktree(
     attempt_id: &str,
 ) -> Result<(), String> {
     let path = worktree_path(base, attempt_id);
-    let (combined, code) =
-        ssh_git(cfg, base, &["worktree", "remove", "--force", &path]).await?;
+    let (combined, code) = ssh_git(cfg, base, &["worktree", "remove", "--force", &path]).await?;
     if code != 0 && !combined.contains("not a working tree") {
         warn!(path = %path, output = %combined.trim(), "remote git worktree remove failed");
         return Err(format!(

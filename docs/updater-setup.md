@@ -10,7 +10,7 @@ downloading a fresh NSIS installer.
 
 This document describes how to enable Tauri v2's updater for a
 **full-installer** strategy that is compatible with the bundled Node sidecar
-(`agent-sidecar/`) and the pinned Node 20.17.0 runtime shipped as a Tauri
+(`agent-sidecar/`) and the pinned Node 24.15.0 runtime shipped as a Tauri
 `externalBin`. Diff-patch updates are deliberately **out of scope** — see
 [Recommended strategy](#recommended-strategy-for-the-bundled-sidecar) below.
 
@@ -39,8 +39,8 @@ deferred), so this guide is a runbook, not a code change.
 pnpm tauri signer generate -w ~/.tauri/packetade.key
 ```
 
-You will be prompted for a password. Store it in a password manager; CI
-will need it later via `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+You will be prompted for a password. Store it in a password manager; the
+release machine will need it later via `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
 Commit the **public** key to `src-tauri/tauri.conf.json`:
 
@@ -122,8 +122,8 @@ The `latest.json` manifest is a small signed descriptor of the form:
 }
 ```
 
-Generate `latest.json` as part of the release workflow — there are off-the-shelf
-GitHub Actions (e.g. `tauri-apps/tauri-action`) that produce it.
+Generate `latest.json` as part of the release process and upload it alongside
+the signed installer artifacts.
 
 ### 5. Build signed releases
 
@@ -147,10 +147,10 @@ release build time.
 ### 6. Keep the private key offline
 
 - Never commit `packetade.key`.
-- Dev machines do not need it — only the release pipeline does.
-- In CI, store the private key + password as repo secrets
-  (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) and
-  inject them into the build step's env.
+- Dev machines do not need it — only the release machine does.
+- On the release machine, provide the private key + password as environment
+  variables (`TAURI_SIGNING_PRIVATE_KEY`,
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) for the build step.
 
 ## Recommended strategy for the bundled sidecar
 
@@ -164,7 +164,7 @@ The Tauri NSIS updater can deliver either:
 Diff patching has known friction with `externalBin` + `resources` across
 versions. The bundled payload is:
 
-- `binaries/node.exe` — pinned Node 20.17.0, ~66 MB.
+- `binaries/node.exe` — pinned Node 24.15.0, ~66 MB.
 - `agent-sidecar/node_modules/` — pruned production deps, ~256 MB
   uncompressed, thousands of small files.
 - `agent-sidecar/dist/` — compiled sidecar, tiny but shifts every release.
@@ -189,11 +189,11 @@ user launches the updated build.
 - **Prompt before applying.** Tauri's updater surfaces a UI prompt by
   default. Keep it that way. A dev tool should not silently restart
   mid-session.
-- **CI signing secrets.** The private key goes into
-  `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as
-  repo secrets. Rotate on key compromise — existing installs will stop
-  accepting updates signed with a new key unless you ship a migration
-  release first.
+- **Signing secrets.** The private key is provided through
+  `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` on the
+  release machine. Rotate on key compromise — existing installs will stop
+  accepting updates signed with a new key unless you ship a migration release
+  first.
 - **Endpoint availability.** Failed update checks should be silent in the
   UI (a toast at most). Never block app startup on the updater's HTTP
   request.

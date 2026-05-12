@@ -170,10 +170,7 @@ pub fn matches_tool_call(matcher: Option<&str>, tool_name: &str, args: &Value) -
             }
             // Strip optional :* suffix; treat the remainder as a literal prefix.
             let prefix = inner.strip_suffix(":*").unwrap_or(inner);
-            let cmd = args
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
             return cmd.starts_with(prefix);
         }
     }
@@ -265,16 +262,8 @@ mod tests {
     #[test]
     fn matcher_bash_prefix_matches_command() {
         let args = json!({ "command": "git push origin main" });
-        assert!(matches_tool_call(
-            Some("Bash(git push:*)"),
-            "bash",
-            &args
-        ));
-        assert!(!matches_tool_call(
-            Some("Bash(git pull:*)"),
-            "bash",
-            &args
-        ));
+        assert!(matches_tool_call(Some("Bash(git push:*)"), "bash", &args));
+        assert!(!matches_tool_call(Some("Bash(git pull:*)"), "bash", &args));
         // Wrong tool — never matches a Bash(...) selector.
         assert!(!matches_tool_call(
             Some("Bash(git push:*)"),

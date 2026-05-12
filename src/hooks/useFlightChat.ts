@@ -45,6 +45,8 @@ interface StreamErrorEvent {
   suggestion: string;
 }
 
+export type FlightChatError = StreamErrorEvent;
+
 const VALID_PRIORITIES = ["low", "medium", "high", "critical"];
 const VALID_TASK_TYPES = ["implementation", "testing", "review", "validation", "research", "refactor", "documentation"];
 
@@ -125,8 +127,10 @@ export function useFlightChat() {
   const [streamingContent, setStreamingContent] = useState("");
   const [latestSuggestion, setLatestSuggestion] = useState<FlightSuggestion | null>(null);
   const [latestPlan, setLatestPlan] = useState<FlightPlanSuggestion | null>(null);
-  const [lastError, setLastError] = useState<{ category: string; message: string; suggestion: string } | null>(null);
+  const [lastError, setLastError] = useState<FlightChatError | null>(null);
   const msgCounterRef = useRef(0);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const inFlightRef = useRef(false);
   const unlistenChunkRef = useRef<UnlistenFn | null>(null);
   const unlistenDoneRef = useRef<UnlistenFn | null>(null);
   const unlistenErrorRef = useRef<UnlistenFn | null>(null);
@@ -157,6 +161,10 @@ export function useFlightChat() {
     };
   }, [cleanupListeners]);
 
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   const sendMessage = useCallback(
     async (
       content: string,
@@ -167,7 +175,9 @@ export function useFlightChat() {
         milestones?: Array<{ title: string; tasks: Array<{ title: string; type: string }> }>;
       },
     ) => {
-      if (isLoading) return; // Prevent concurrent requests
+      if (inFlightRef.current || isLoading) return; // Prevent concurrent requests, including same-tick sends
+
+      inFlightRef.current = true;
 
       const msgId = ++msgCounterRef.current;
       const userMsg: ChatMessage = {
@@ -176,13 +186,10 @@ export function useFlightChat() {
         content,
       };
 
-      // Use functional update to avoid stale closure over messages
-      let allMessages: { role: string; content: string }[] = [];
-      setMessages((prev) => {
-        const next = [...prev, userMsg];
-        allMessages = next.map((m) => ({ role: m.role, content: m.content }));
-        return next;
-      });
+      const nextMessages = [...messagesRef.current, userMsg];
+      messagesRef.current = nextMessages;
+      const allMessages = nextMessages.map((m) => ({ role: m.role, content: m.content }));
+      setMessages(nextMessages);
 
       setIsLoading(true);
       setStreamingContent("");
@@ -195,36 +202,44 @@ export function useFlightChat() {
 
       let accumulated = "";
       const requestId = crypto.randomUUID();
+      let backendError: FlightChatError | null = null;
 
       try {
-        const unlistenChunk = await listen<string>(
-          flightChatChunkEvent(requestId),
-          (event) => {
-            accumulated += event.payload + "\n";
-            if (mountedRef.current) {
-              setStreamingContent(accumulated);
-            }
-          },
-        );
-        unlistenChunkRef.current = unlistenChunk;
-
-        // Listen for classified errors from the backend
-        listen<StreamErrorEvent>(
-          flightChatErrorEvent(requestId),
-          (event) => {
-            if (mountedRef.current) setLastError(event.payload);
-          },
-        ).then((unlisten) => {
-          unlistenErrorRef.current = unlisten;
+        let resolveDone: (success: boolean) => void = () => {};
+        const streamDonePromise = new Promise<boolean>((resolve) => {
+          resolveDone = resolve;
         });
 
-        const donePromise = new Promise<boolean>((resolve) => {
+        await Promise.all([
+          listen<string>(
+            flightChatChunkEvent(requestId),
+            (event) => {
+              accumulated += event.payload + "\n";
+              if (mountedRef.current) {
+                setStreamingContent(accumulated);
+              }
+            },
+          ).then((unlisten) => {
+            unlistenChunkRef.current = unlisten;
+            return unlisten;
+          }),
+          listen<StreamErrorEvent>(
+            flightChatErrorEvent(requestId),
+            (event) => {
+              backendError = event.payload;
+              if (mountedRef.current) setLastError(event.payload);
+            },
+          ).then((unlisten) => {
+            unlistenErrorRef.current = unlisten;
+            return unlisten;
+          }),
           listen<boolean>(flightChatDoneEvent(requestId), (event) => {
-            resolve(event.payload);
+            resolveDone(event.payload);
           }).then((unlisten) => {
             unlistenDoneRef.current = unlisten;
-          });
-        });
+            return unlisten;
+          }),
+        ]);
 
         const projectPath = useLayoutStore.getState().projectPath;
         const retroContext = useMemoryStore.getState().getContextForSession(projectPath);
@@ -235,7 +250,7 @@ export function useFlightChat() {
           retroContext || undefined,
           requestId,
         );
-        await donePromise;
+        const doneOk = await streamDonePromise;
 
         // Clean up listeners immediately after done
         cleanupListeners();
@@ -243,14 +258,38 @@ export function useFlightChat() {
         if (!mountedRef.current) return;
 
         const finalContent = accumulated.trim();
+        if (!doneOk) {
+          const streamError = backendError ?? {
+            category: "stream",
+            message: "Flight planner stopped before finishing.",
+            suggestion: "Try again or adjust the prompt.",
+          };
+          setLastError(streamError);
+          const errorMsg: ChatMessage = {
+            id: `fc_${++msgCounterRef.current}`,
+            role: "assistant",
+            content: `Error: ${streamError.message}\n\n${streamError.suggestion}`,
+          };
+          setMessages((prev) => {
+            const next = [...prev, errorMsg];
+            messagesRef.current = next;
+            return next;
+          });
+          setStreamingContent("");
+          return;
+        }
+
         const assistantMsg: ChatMessage = {
           id: `fc_${++msgCounterRef.current}`,
           role: "assistant",
           content: finalContent,
         };
-        setMessages((prev) => [...prev, assistantMsg]);
+        setMessages((prev) => {
+          const next = [...prev, assistantMsg];
+          messagesRef.current = next;
+          return next;
+        });
         setStreamingContent("");
-        setIsLoading(false);
 
         // Try flight-plan first (superset), fall back to basic flight suggestion
         const plan = parseFlightPlan(finalContent);
@@ -274,14 +313,28 @@ export function useFlightChat() {
         cleanupListeners();
         if (!mountedRef.current) return;
 
+        const error = {
+          category: "request",
+          message: err instanceof Error ? err.message : String(err),
+          suggestion: "Try again or check the backend logs.",
+        };
+        setLastError(error);
         const errorMsg: ChatMessage = {
           id: `fc_${++msgCounterRef.current}`,
           role: "assistant",
-          content: `Error: ${err instanceof Error ? err.message : String(err)}`,
+          content: `Error: ${error.message}`,
         };
-        setMessages((prev) => [...prev, errorMsg]);
+        setMessages((prev) => {
+          const next = [...prev, errorMsg];
+          messagesRef.current = next;
+          return next;
+        });
         setStreamingContent("");
-        setIsLoading(false);
+      } finally {
+        inFlightRef.current = false;
+        if (mountedRef.current) {
+          setIsLoading(false);
+        }
       }
     },
     [isLoading, cleanupListeners],

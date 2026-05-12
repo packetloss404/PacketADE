@@ -80,12 +80,16 @@ fn load_from_disk_or_default() -> ProviderLaunchStats {
 /// failure is returned as `Err(String)` — callers decide whether to surface
 /// or swallow it.
 fn save_to_disk(stats: &ProviderLaunchStats) -> Result<(), String> {
-    let path =
-        stats_file_path().ok_or_else(|| "Could not resolve home directory".to_string())?;
+    let path = stats_file_path().ok_or_else(|| "Could not resolve home directory".to_string())?;
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create data directory {}: {}", parent.display(), e))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "Failed to create data directory {}: {}",
+                parent.display(),
+                e
+            )
+        })?;
     }
 
     let json = serde_json::to_vec_pretty(stats)
@@ -145,7 +149,10 @@ pub fn record_launch(provider: &str) {
     };
 
     if let Err(e) = save_to_disk(&snapshot) {
-        eprintln!("provider_stats: failed to persist launch for '{}': {}", provider, e);
+        eprintln!(
+            "provider_stats: failed to persist launch for '{}': {}",
+            provider, e
+        );
     }
 }
 

@@ -340,21 +340,27 @@ pub struct Flight {
 impl Flight {
     /// Get all tasks across all milestones.
     pub fn all_tasks(&self) -> Vec<&Task> {
-        self.milestones.iter().flat_map(|m| m.tasks.iter()).collect()
+        self.milestones
+            .iter()
+            .flat_map(|m| m.tasks.iter())
+            .collect()
     }
 
     /// Count done / total tasks.
     pub fn progress(&self) -> (usize, usize) {
         let tasks = self.all_tasks();
-        let done = tasks.iter().filter(|t| t.status == TaskStatus::Done).count();
+        let done = tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Done)
+            .count();
         (done, tasks.len())
     }
 
     /// Check if any tasks need attention (approval or failed).
     pub fn needs_attention(&self) -> bool {
-        self.all_tasks().iter().any(|t| {
-            t.status == TaskStatus::ApprovalNeeded || t.status == TaskStatus::Failed
-        })
+        self.all_tasks()
+            .iter()
+            .any(|t| t.status == TaskStatus::ApprovalNeeded || t.status == TaskStatus::Failed)
     }
 }
 
@@ -453,7 +459,10 @@ mod tests {
     #[test]
     fn all_tasks_returns_tasks_across_milestones() {
         let m1 = make_milestone(vec![make_task(TaskStatus::Done)]);
-        let m2 = make_milestone(vec![make_task(TaskStatus::Pending), make_task(TaskStatus::Running)]);
+        let m2 = make_milestone(vec![
+            make_task(TaskStatus::Pending),
+            make_task(TaskStatus::Running),
+        ]);
         let flight = make_flight(vec![m1, m2]);
         assert_eq!(flight.all_tasks().len(), 3);
     }
@@ -470,7 +479,9 @@ mod tests {
 
     #[test]
     fn needs_attention_detects_approval_needed() {
-        let flight = make_flight(vec![make_milestone(vec![make_task(TaskStatus::ApprovalNeeded)])]);
+        let flight = make_flight(vec![make_milestone(vec![make_task(
+            TaskStatus::ApprovalNeeded,
+        )])]);
         assert!(flight.needs_attention());
     }
 

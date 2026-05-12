@@ -92,7 +92,7 @@ pub async fn execute_read_file(
         .and_then(|p| p.as_str())
         .ok_or("Missing 'path' parameter")?;
 
-    let full = resolve_remote_path(&config.remote_path, path);
+    let full = resolve_remote_path(&config.remote_path, path)?;
     info!(remote_path = %full, "Tool(ssh): read_file");
 
     let script = format!(
@@ -151,7 +151,7 @@ pub async fn execute_write_file(
         .and_then(|c| c.as_str())
         .ok_or("Missing 'content' parameter")?;
 
-    let full = resolve_remote_path(&config.remote_path, path);
+    let full = resolve_remote_path(&config.remote_path, path)?;
     info!(remote_path = %full, bytes = content.len(), "Tool(ssh): write_file");
 
     // Embed the content via a single-quoted heredoc so we don't depend on
@@ -190,12 +190,9 @@ pub async fn execute_list_directory(
     args: &serde_json::Value,
     config: &SshConfig,
 ) -> Result<String, String> {
-    let path = args
-        .get("path")
-        .and_then(|p| p.as_str())
-        .unwrap_or(".");
+    let path = args.get("path").and_then(|p| p.as_str()).unwrap_or(".");
 
-    let full = resolve_remote_path(&config.remote_path, path);
+    let full = resolve_remote_path(&config.remote_path, path)?;
     info!(remote_path = %full, "Tool(ssh): list_directory");
 
     let script = format!(
@@ -230,10 +227,7 @@ pub async fn execute_list_directory(
         .to_string())
 }
 
-pub async fn execute_bash(
-    args: &serde_json::Value,
-    config: &SshConfig,
-) -> Result<String, String> {
+pub async fn execute_bash(args: &serde_json::Value, config: &SshConfig) -> Result<String, String> {
     let command = args
         .get("command")
         .and_then(|c| c.as_str())
@@ -246,11 +240,7 @@ pub async fn execute_bash(
 
     info!(command = %command, timeout = %timeout_secs, "Tool(ssh): bash");
 
-    let remote_cmd = format!(
-        "cd {} && {}",
-        sh_quote(&config.remote_path),
-        command
-    );
+    let remote_cmd = format!("cd {} && {}", sh_quote(&config.remote_path), command);
 
     let output = ssh_run(config, &remote_cmd, timeout_secs).await?;
 
@@ -275,27 +265,26 @@ pub async fn execute_bash(
 
     let exit_code = output.status.code().unwrap_or(-1);
     if exit_code != 0 {
-        result.push_str(&format!("\n[exit code: {}]", exit_code));
+        if result.is_empty() {
+            result = format!("[exit code: {}]", exit_code);
+        } else {
+            result.push_str(&format!("\n[exit code: {}]", exit_code));
+        }
+        return Err(result);
     }
 
     Ok(result)
 }
 
-pub async fn execute_grep(
-    args: &serde_json::Value,
-    config: &SshConfig,
-) -> Result<String, String> {
+pub async fn execute_grep(args: &serde_json::Value, config: &SshConfig) -> Result<String, String> {
     let pattern = args
         .get("pattern")
         .and_then(|p| p.as_str())
         .ok_or("Missing 'pattern' parameter")?;
-    let search_path = args
-        .get("path")
-        .and_then(|p| p.as_str())
-        .unwrap_or(".");
+    let search_path = args.get("path").and_then(|p| p.as_str()).unwrap_or(".");
     let include = args.get("include").and_then(|i| i.as_str());
 
-    let full = resolve_remote_path(&config.remote_path, search_path);
+    let full = resolve_remote_path(&config.remote_path, search_path)?;
     info!(pattern = %pattern, remote_path = %full, "Tool(ssh): grep");
 
     let mut cmd = String::from(

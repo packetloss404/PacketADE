@@ -4,7 +4,7 @@ import { writePty } from "@/lib/tauri";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAppStore } from "@/stores/appStore";
-import { getDefaultModel } from "@/lib/api-models";
+import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
 import { SCOUT_SYSTEM_PROMPT, SCOUT_ALLOWED_TOOLS, SCOUT_MEMORY_CONTEXT_DEFAULT } from "@/lib/scout-config";
 import type { PromptTemplate } from "@/types/prompt";
 
@@ -82,7 +82,12 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
     if (!template) return;
     const projectPath = useLayoutStore.getState().projectPath;
     if (!projectPath) return;
-    const agent = "api-claude";
+    const agentState = useAgentTaskStore.getState();
+    const selected = agentState.conversations.find((c) => c.id === agentState.selectedConversationId);
+    const agent =
+      selected?.mode === "api" && API_PROVIDERS.some((p) => p.agentCli === selected.agent)
+        ? selected.agent
+        : "api-claude";
     const id = await useAgentTaskStore.getState().createApiConversation(
       agent,
       projectPath,

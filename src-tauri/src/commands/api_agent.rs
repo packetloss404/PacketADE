@@ -68,7 +68,9 @@ pub enum EditDecision {
     /// Apply the edit. `merged_content`, when set, is the user-merged file
     /// body (per-hunk acceptance) — the agent loop swaps it in for the
     /// model's original `content` before invoking the write_file tool.
-    Apply { merged_content: Option<String> },
+    Apply {
+        merged_content: Option<String>,
+    },
     Reject,
 }
 
@@ -101,6 +103,9 @@ struct SessionConfig {
     /// Optional allowlist of tool names. None = all tools; Some(list) = only those.
     /// Used by the Scout profile for read-only investigation.
     allowed_tools: Option<Vec<String>>,
+    /// Optional per-conversation MCP server allowlist. None = all enabled MCP
+    /// servers; Some(empty) = no MCP servers.
+    enabled_mcp_server_ids: Option<Vec<String>>,
 }
 
 impl ApiAgentState {
@@ -191,11 +196,11 @@ struct DonePayload {
 }
 
 /// Fire all SessionEnd hooks (best-effort; failures logged).
-async fn fire_session_end_hooks(
-    hooks_list: &[crate::core::hooks::HookConfig],
-    session_id: &str,
-) {
-    for hook in hooks_list.iter().filter(|h| h.event == HookEvent::SessionEnd) {
+async fn fire_session_end_hooks(hooks_list: &[crate::core::hooks::HookConfig], session_id: &str) {
+    for hook in hooks_list
+        .iter()
+        .filter(|h| h.event == HookEvent::SessionEnd)
+    {
         let payload = serde_json::json!({
             "session_id": session_id,
             "event": "SessionEnd",
@@ -294,10 +299,7 @@ async fn build_mcp_config_for_sidecar(
             Value::Array(entry.config.args.into_iter().map(Value::String).collect()),
         );
         if !entry.config.env.is_empty() {
-            obj.insert(
-                "env".to_string(),
-                json!(entry.config.env),
-            );
+            obj.insert("env".to_string(), json!(entry.config.env));
         }
         // Later (project-scope) insertions overwrite earlier (global-scope)
         // ones with the same key — Rust's `Map::insert` replaces the value.
@@ -349,11 +351,8 @@ pub async fn start_api_agent_session(
         // server configs, drop disabled entries, and transform into the shape
         // the Claude Agent SDK expects. See `build_mcp_config_for_sidecar`
         // below for the exact output shape and per-entry fields.
-        let mcp_servers = build_mcp_config_for_sidecar(
-            &project_path,
-            enabled_mcp_server_ids.as_deref(),
-        )
-        .await;
+        let mcp_servers =
+            build_mcp_config_for_sidecar(&project_path, enabled_mcp_server_ids.as_deref()).await;
         // v3: pass attachments through to the sidecar — Anthropic provider
         // builds an image-block content array when present.
         let attachments_json = match &attachments {
@@ -430,6 +429,7 @@ pub async fn start_api_agent_session(
                 auto_allow_tools: HashSet::new(),
                 approve_writes: false,
                 allowed_tools,
+                enabled_mcp_server_ids,
             },
         );
 
@@ -456,21 +456,13 @@ pub async fn start_api_agent_session(
 
     // Spawn the agentic loop
     tokio::spawn(async move {
-        let result = run_agent_loop(
-            &app_handle,
-            &state_clone,
-            &session_id_clone,
-            cancel_rx,
-        )
-        .await;
+        let result = run_agent_loop(&app_handle, &state_clone, &session_id_clone, cancel_rx).await;
 
         if let Err(e) = &result {
             warn!(session_id = %session_id_clone, error = %e, "Agent loop error");
             let _ = app_handle.emit(
                 &error_event(&session_id_clone),
-                ErrorPayload {
-                    message: e.clone(),
-                },
+                ErrorPayload { message: e.clone() },
             );
         }
 
@@ -534,21 +526,13 @@ pub async fn send_api_agent_message(
     let session_id_clone = session_id.clone();
 
     tokio::spawn(async move {
-        let result = run_agent_loop(
-            &app_handle,
-            &state_clone,
-            &session_id_clone,
-            cancel_rx,
-        )
-        .await;
+        let result = run_agent_loop(&app_handle, &state_clone, &session_id_clone, cancel_rx).await;
 
         if let Err(e) = &result {
             warn!(session_id = %session_id_clone, error = %e, "Agent loop error");
             let _ = app_handle.emit(
                 &error_event(&session_id_clone),
-                ErrorPayload {
-                    message: e.clone(),
-                },
+                ErrorPayload { message: e.clone() },
             );
         }
 
@@ -644,8 +628,8 @@ pub async fn set_permission_mode(
         return sidecar.forward_set_permission_mode(session_id, mode).await;
     }
 
-    let parsed = PermissionMode::parse(&mode)
-        .ok_or_else(|| format!("Unknown permission mode: {}", mode))?;
+    let parsed =
+        PermissionMode::parse(&mode).ok_or_else(|| format!("Unknown permission mode: {}", mode))?;
     let mut configs = state.configs.lock().await;
     let config = configs
         .get_mut(&session_id)
@@ -665,7 +649,9 @@ pub async fn respond_permission(
 ) -> Result<(), String> {
     // Phase 3 slice C: forward to sidecar if it owns this session.
     if sidecar.owns_session(&session_id) {
-        return sidecar.forward_permission(session_id, tool_id, decision).await;
+        return sidecar
+            .forward_permission(session_id, tool_id, decision)
+            .await;
     }
 
     let _ = session_id;
@@ -744,9 +730,7 @@ pub async fn respond_edit(
 
     let _ = session_id;
     let decision = match decision.as_str() {
-        "apply" => EditDecision::Apply {
-            merged_content,
-        },
+        "apply" => EditDecision::Apply { merged_content },
         "reject" => EditDecision::Reject,
         _ => return Err(format!("Unknown edit decision: {}", decision)),
     };
@@ -814,9 +798,7 @@ pub async fn retry_last_turn(
     // new model; then emit the retry frame itself.
     if sidecar.owns_session(&session_id) {
         if let Some(model) = new_model {
-            sidecar
-                .forward_set_model(session_id.clone(), model)
-                .await?;
+            sidecar.forward_set_model(session_id.clone(), model).await?;
         }
         return sidecar.forward_retry(session_id).await;
     }
@@ -857,21 +839,13 @@ pub async fn retry_last_turn(
     let session_id_clone = session_id.clone();
 
     tokio::spawn(async move {
-        let result = run_agent_loop(
-            &app_handle,
-            &state_clone,
-            &session_id_clone,
-            cancel_rx,
-        )
-        .await;
+        let result = run_agent_loop(&app_handle, &state_clone, &session_id_clone, cancel_rx).await;
 
         if let Err(e) = &result {
             warn!(session_id = %session_id_clone, error = %e, "Retry loop error");
             let _ = app_handle.emit(
                 &error_event(&session_id_clone),
-                ErrorPayload {
-                    message: e.clone(),
-                },
+                ErrorPayload { message: e.clone() },
             );
         }
 
@@ -921,7 +895,15 @@ async fn run_agent_loop(
     session_id: &str,
     mut cancel_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
-    let (provider_name, model, execution, system_prompt, thinking_enabled, allowed_tools) = {
+    let (
+        provider_name,
+        model,
+        execution,
+        system_prompt,
+        thinking_enabled,
+        allowed_tools,
+        enabled_mcp_server_ids,
+    ) = {
         let configs = state.configs.lock().await;
         let config = configs
             .get(session_id)
@@ -933,13 +915,16 @@ async fn run_agent_loop(
             config.system_prompt.clone(),
             config.thinking_enabled,
             config.allowed_tools.clone(),
+            config.enabled_mcp_server_ids.clone(),
         )
     };
 
     let provider = get_provider(&provider_name)?;
     let api_key = api_keys::load_api_key(&provider_name)?;
     let tools = {
-        let all = tool_runtime::tool_definitions().await;
+        let all =
+            tool_runtime::tool_definitions_with_mcp_allowlist(enabled_mcp_server_ids.as_deref())
+                .await;
         match allowed_tools.as_ref() {
             Some(allow) => all
                 .into_iter()
@@ -963,7 +948,10 @@ async fn run_agent_loop(
     let all_hooks = hooks::load_hooks_with_project(&project_path_for_hooks);
 
     // Fire SessionStart hooks (best-effort, no veto).
-    for hook in all_hooks.iter().filter(|h| h.event == HookEvent::SessionStart) {
+    for hook in all_hooks
+        .iter()
+        .filter(|h| h.event == HookEvent::SessionStart)
+    {
         let payload = serde_json::json!({
             "session_id": session_id,
             "provider": provider_name,
@@ -1013,10 +1001,7 @@ async fn run_agent_loop(
         // Get current message history
         let messages = {
             let histories = state.histories.lock().await;
-            histories
-                .get(session_id)
-                .cloned()
-                .unwrap_or_default()
+            histories.get(session_id).cloned().unwrap_or_default()
         };
 
         // Take pending attachments (only apply to iteration 0 — tool-result iterations don't re-attach).
@@ -1256,6 +1241,7 @@ async fn run_agent_loop(
                 let session_id = session_id.to_string();
                 let state = Arc::clone(state);
                 let hooks_for_tool = all_hooks.clone();
+                let enabled_mcp_server_ids = enabled_mcp_server_ids.clone();
                 async move {
                     // Plan mode gate
                     if plan_mode_active && !PLAN_MODE_ALLOWED.contains(&tc.name.as_str()) {
@@ -1388,25 +1374,94 @@ async fn run_agent_loop(
 
                     // Pending edit gate (write_file with approve_writes enabled)
                     if tc.name == "write_file" && approve_writes {
-                        let path = tc
+                        let path = match tc
                             .arguments
                             .get("path")
                             .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let content = tc
+                        {
+                            Some(path) => path.to_string(),
+                            None => {
+                                let err = ToolResult {
+                                    tool_call_id: tc.id.clone(),
+                                    content: "Missing 'path' parameter".to_string(),
+                                    is_error: true,
+                                };
+                                let _ = app_handle.emit(
+                                    &tool_result_event(&session_id),
+                                    ToolResultPayload {
+                                        id: tc.id.clone(),
+                                        name: tc.name.clone(),
+                                        content: err.content.clone(),
+                                        is_error: true,
+                                        input: serde_json::to_string(&tc.arguments)
+                                            .unwrap_or_default(),
+                                    },
+                                );
+                                return (tc.id.clone(), err);
+                            }
+                        };
+                        let content = match tc
                             .arguments
                             .get("content")
                             .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                        {
+                            Some(content) => content.to_string(),
+                            None => {
+                                let err = ToolResult {
+                                    tool_call_id: tc.id.clone(),
+                                    content: "Missing 'content' parameter".to_string(),
+                                    is_error: true,
+                                };
+                                let _ = app_handle.emit(
+                                    &tool_result_event(&session_id),
+                                    ToolResultPayload {
+                                        id: tc.id.clone(),
+                                        name: tc.name.clone(),
+                                        content: err.content.clone(),
+                                        is_error: true,
+                                        input: serde_json::to_string(&tc.arguments)
+                                            .unwrap_or_default(),
+                                    },
+                                );
+                                return (tc.id.clone(), err);
+                            }
+                        };
+                        let resolved_local_path = match &execution {
+                            ExecutionTarget::Local { project_path } => {
+                                match tool_runtime::resolve_workspace_path(
+                                    &path,
+                                    project_path,
+                                    false,
+                                ) {
+                                    Ok(path) => Some(path),
+                                    Err(e) => {
+                                        let err = ToolResult {
+                                            tool_call_id: tc.id.clone(),
+                                            content: e,
+                                            is_error: true,
+                                        };
+                                        let _ = app_handle.emit(
+                                            &tool_result_event(&session_id),
+                                            ToolResultPayload {
+                                                id: tc.id.clone(),
+                                                name: tc.name.clone(),
+                                                content: err.content.clone(),
+                                                is_error: true,
+                                                input: serde_json::to_string(&tc.arguments)
+                                                    .unwrap_or_default(),
+                                            },
+                                        );
+                                        return (tc.id.clone(), err);
+                                    }
+                                }
+                            }
+                            ExecutionTarget::Ssh { .. } => None,
+                        };
                         // Read prior content for before/after diff. None for
-                        // new files (or unreadable paths) — the frontend
-                        // treats that as a green-only diff.
-                        let before = if path.is_empty() {
-                            None
-                        } else {
-                            tokio::fs::read_to_string(&path).await.ok()
+                        // new files, remote targets, or unreadable paths.
+                        let before = match resolved_local_path {
+                            Some(path) => tokio::fs::read_to_string(path).await.ok(),
+                            None => None,
                         };
 
                         let (tx, rx) = oneshot::channel::<EditDecision>();
@@ -1542,7 +1597,12 @@ async fn run_agent_loop(
                     }
 
                     // Execute tool
-                    let result = tool_runtime::execute_tool(&tc, &execution).await;
+                    let result = tool_runtime::execute_tool_with_mcp_allowlist(
+                        &tc,
+                        &execution,
+                        enabled_mcp_server_ids.as_deref(),
+                    )
+                    .await;
                     let _ = app_handle.emit(
                         &tool_result_event(&session_id),
                         ToolResultPayload {

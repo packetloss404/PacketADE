@@ -2,7 +2,8 @@ pub mod agent;
 pub mod agent_config;
 pub mod agents_md;
 pub mod brand;
-pub mod migration;
+#[cfg(test)]
+mod contract_tests;
 pub mod error_classifier;
 pub mod execution;
 pub mod flight;
@@ -19,6 +20,7 @@ pub mod llm_system_prompt;
 pub mod llm_types;
 pub mod mcp_bridge;
 pub mod mcp_client;
+pub mod migration;
 pub mod orchestrator;
 pub mod pty;
 pub mod shared;
@@ -33,11 +35,9 @@ pub mod tool_tasks;
 pub mod tool_web;
 pub mod workspace;
 pub mod worktree;
-#[cfg(test)]
-mod contract_tests;
 
-pub use pty::{PtyManager, PtySessionInfo, PtyEvent};
-pub use flight::{Flight, Milestone, Task, FlightStatus, TaskStatus};
 pub use agent_config::AgentConfig;
+pub use flight::{Flight, FlightStatus, Milestone, Task, TaskStatus};
 pub use orchestrator::Orchestrator;
-pub use shared::{home_dir, lock_mutex, hide_window, SKIP_DIRS};
+pub use pty::{PtyEvent, PtyManager, PtySessionInfo};
+pub use shared::{hide_window, home_dir, lock_mutex, SKIP_DIRS};

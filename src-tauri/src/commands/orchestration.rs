@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use crate::api::{OrchestratorSnapshotDto, PersistedStateDto, TaskSpawnRequestDto};
 use crate::commands::pty::SharedPtyManager;
 use crate::core::orchestrator::{Orchestrator, TaskSpawnRequest};
-use crate::core::storage::{self, PersistedState};
 use crate::core::shared::lock_mutex;
+use crate::core::storage::{self, PersistedState};
 
 /// Shared orchestrator state managed by Tauri
 pub type SharedOrchestrator = Arc<Mutex<Orchestrator>>;
@@ -171,7 +171,11 @@ pub fn orchestration_tick(
 ) -> Result<Vec<TaskSpawnRequestDto>, String> {
     let mut orch = lock_mutex(&orchestrator)?;
     let state = storage::load_state();
-    Ok(orch.tick(&state.flights, &state.agents).into_iter().map(Into::into).collect())
+    Ok(orch
+        .tick(&state.flights, &state.agents)
+        .into_iter()
+        .map(Into::into)
+        .collect())
 }
 
 #[tauri::command]
@@ -181,17 +185,26 @@ pub fn get_orchestration_state(
     let orch = lock_mutex(&orchestrator)?;
     Ok(OrchestratorSnapshot {
         running_task_ids: orch.running_tasks.keys().cloned().collect(),
-        running_tasks: orch.running_tasks.values().map(|rt| RunningTaskSnapshot {
-            task_id: rt.task_id.clone(),
-            milestone_id: rt.milestone_id.clone(),
-            flight_id: rt.flight_id.clone(),
-            session_id: rt.session_id.clone(),
-            agent_config_id: rt.agent_config_id.clone(),
-            started_at: rt.started_at,
-        }).collect(),
+        running_tasks: orch
+            .running_tasks
+            .values()
+            .map(|rt| RunningTaskSnapshot {
+                task_id: rt.task_id.clone(),
+                milestone_id: rt.milestone_id.clone(),
+                flight_id: rt.flight_id.clone(),
+                session_id: rt.session_id.clone(),
+                agent_config_id: rt.agent_config_id.clone(),
+                started_at: rt.started_at,
+            })
+            .collect(),
         active_flight_ids: orch.active_flight_ids.iter().cloned().collect(),
-        paused_at_milestone: orch.paused_at_milestone.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-    }.into())
+        paused_at_milestone: orch
+            .paused_at_milestone
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    }
+    .into())
 }
 
 #[tauri::command]

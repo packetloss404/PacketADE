@@ -390,9 +390,8 @@ pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthSt
             }
         }
         "ollama" => {
-            let base_url = std::env::var("PACKETCODE_OLLAMA_URL")
-                .unwrap_or_else(|_| "http://localhost:11434".to_string());
-            let url = format!("{}/api/tags", base_url.trim_end_matches("/v1").trim_end_matches('/'));
+            let base_url = crate::commands::ollama::resolve_base_url();
+            let url = format!("{}/api/tags", base_url);
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_millis(500))
                 .build()

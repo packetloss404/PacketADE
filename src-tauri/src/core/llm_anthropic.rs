@@ -1,7 +1,7 @@
 //! Anthropic Messages API provider.
 
-use crate::core::llm_types::*;
 use crate::core::llm_provider::LlmProvider;
+use crate::core::llm_types::*;
 use futures::StreamExt;
 use reqwest::header::{HeaderValue, CONTENT_TYPE};
 use tokio::sync::mpsc;
@@ -57,40 +57,40 @@ fn build_anthropic_messages(
                     }));
                 }
             }
-            ChatRole::Assistant => {
-                match &msg.content {
-                    MessageContent::Text(text) => {
-                        out.push(serde_json::json!({
-                            "role": "assistant",
-                            "content": text,
-                        }));
-                    }
-                    MessageContent::Blocks(blocks) => {
-                        let content_blocks: Vec<serde_json::Value> = blocks
-                            .iter()
-                            .filter_map(|b| match b {
-                                ContentBlock::Text { text } => Some(serde_json::json!({
-                                    "type": "text",
-                                    "text": text,
-                                })),
-                                ContentBlock::ToolUse { id, name, arguments } => {
-                                    Some(serde_json::json!({
-                                        "type": "tool_use",
-                                        "id": id,
-                                        "name": name,
-                                        "input": arguments,
-                                    }))
-                                }
-                                _ => None,
-                            })
-                            .collect();
-                        out.push(serde_json::json!({
-                            "role": "assistant",
-                            "content": content_blocks,
-                        }));
-                    }
+            ChatRole::Assistant => match &msg.content {
+                MessageContent::Text(text) => {
+                    out.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": text,
+                    }));
                 }
-            }
+                MessageContent::Blocks(blocks) => {
+                    let content_blocks: Vec<serde_json::Value> = blocks
+                        .iter()
+                        .filter_map(|b| match b {
+                            ContentBlock::Text { text } => Some(serde_json::json!({
+                                "type": "text",
+                                "text": text,
+                            })),
+                            ContentBlock::ToolUse {
+                                id,
+                                name,
+                                arguments,
+                            } => Some(serde_json::json!({
+                                "type": "tool_use",
+                                "id": id,
+                                "name": name,
+                                "input": arguments,
+                            })),
+                            _ => None,
+                        })
+                        .collect();
+                    out.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": content_blocks,
+                    }));
+                }
+            },
             ChatRole::Tool => {
                 // Anthropic uses role "user" with tool_result content blocks
                 if let MessageContent::Blocks(blocks) = &msg.content {
@@ -227,16 +227,12 @@ impl LlmProvider for AnthropicProvider {
 
                 if let Some(data) = line.strip_prefix("data: ") {
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-                        let event_type = parsed
-                            .get("type")
-                            .and_then(|t| t.as_str())
-                            .unwrap_or("");
+                        let event_type = parsed.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
                         match event_type {
                             "message_start" => {
-                                if let Some(usage) = parsed
-                                    .get("message")
-                                    .and_then(|m| m.get("usage"))
+                                if let Some(usage) =
+                                    parsed.get("message").and_then(|m| m.get("usage"))
                                 {
                                     input_tokens = usage
                                         .get("input_tokens")
@@ -299,9 +295,8 @@ impl LlmProvider for AnthropicProvider {
                                             }
                                         }
                                         "input_json_delta" => {
-                                            if let Some(partial) = delta
-                                                .get("partial_json")
-                                                .and_then(|p| p.as_str())
+                                            if let Some(partial) =
+                                                delta.get("partial_json").and_then(|p| p.as_str())
                                             {
                                                 current_tool_args.push_str(partial);
                                                 let _ = tx
@@ -328,10 +323,9 @@ impl LlmProvider for AnthropicProvider {
                             }
                             "content_block_stop" => {
                                 if current_block_type == "tool_use" && !current_tool_id.is_empty() {
-                                    let args = serde_json::from_str(&current_tool_args)
-                                        .unwrap_or(serde_json::Value::Object(
-                                            serde_json::Map::new(),
-                                        ));
+                                    let args = serde_json::from_str(&current_tool_args).unwrap_or(
+                                        serde_json::Value::Object(serde_json::Map::new()),
+                                    );
                                     let _ = tx
                                         .send(StreamChunk::ToolUseEnd {
                                             id: current_tool_id.clone(),
