@@ -22,10 +22,13 @@ import {
   ArrowDown,
   Ban,
   Bookmark,
+  Pencil,
 } from "lucide-react";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { PendingEditPrompt } from "./PendingEditPrompt";
 import { PendingApprovalsRollup } from "./PendingApprovalsRollup";
+import { TurnDiffSummary } from "./TurnDiffSummary";
+import { ContextUsageRing } from "./ContextUsageRing";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
@@ -225,6 +228,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const removeDiffComment = useAgentTaskStore((s) => s.removeDiffComment);
   const clearDiffComments = useAgentTaskStore((s) => s.clearDiffComments);
   const retryLastTurn = useAgentTaskStore((s) => s.retryLastTurn);
+  const forkAndResend = useAgentTaskStore((s) => s.forkAndResend);
   const exportConversation = useAgentTaskStore((s) => s.exportConversation);
   const previewOpen = usePreviewPaneStore((s) => s.open);
   const togglePreview = usePreviewPaneStore((s) => s.toggle);
@@ -280,6 +284,12 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   // Survives the chat session but not a remount; that's acceptable since
   // most stashes are minute-scale "ask a quick question then restore" loops.
   const [stashedDraft, setStashedDraft] = useState<string | null>(null);
+
+  // M2.7 — inline edit on a prior user message. When set, the matching
+  // message in the transcript renders an editable textarea instead of its
+  // static bubble; submit forks the conversation from that point.
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   const {
     isListening,
@@ -1279,6 +1289,11 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           </button>
         )}
 
+        {/* Context-usage ring — silent until the first turn finishes. */}
+        {conversation.mode === "api" && (
+          <ContextUsageRing conversation={conversation} />
+        )}
+
         {/* Model switcher (API mode only) */}
         {providerInfo && conversation.mode === "api" && (
           <div data-agent-pane-model-dropdown={conversationId}>
@@ -1530,6 +1545,27 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
                     ? () => void retryLastTurn(conversationId)
                     : undefined
                 }
+                isEditing={editingMessageId === msg.id}
+                editingText={editingText}
+                onStartEdit={
+                  msg.role === "user"
+                    ? () => {
+                        setEditingMessageId(msg.id);
+                        setEditingText(msg.content);
+                      }
+                    : undefined
+                }
+                onChangeEdit={setEditingText}
+                onSubmitEdit={() => {
+                  const text = editingText;
+                  setEditingMessageId(null);
+                  setEditingText("");
+                  void forkAndResend(conversationId, msg.id, text);
+                }}
+                onCancelEdit={() => {
+                  setEditingMessageId(null);
+                  setEditingText("");
+                }}
               />
               {showQuickActions && msg.id === lastAssistantMessage?.id && (
                 <AgentQuickActions
@@ -1581,6 +1617,20 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       {/* Pending user-approval prompts */}
       {(conversation.pendingEdits ?? conversation.pendingPermissions) && (
         <div className="shrink-0 px-3 py-2 flex flex-col gap-2 border-t border-bg-border bg-bg-primary">
+          <TurnDiffSummary
+            conversationId={conversationId}
+            pendingEdits={conversation.pendingEdits ?? []}
+            onApplyAll={() => {
+              for (const item of conversation.pendingEdits ?? []) {
+                void respondEdit(conversationId, item.id, "apply");
+              }
+            }}
+            onDiscardAll={() => {
+              for (const item of conversation.pendingEdits ?? []) {
+                void respondEdit(conversationId, item.id, "reject");
+              }
+            }}
+          />
           <PendingApprovalsRollup
             pendingEdits={conversation.pendingEdits ?? []}
             pendingPermissions={conversation.pendingPermissions ?? []}
@@ -1867,11 +1917,23 @@ function MessageBubble({
   conversation,
   isLastAssistant,
   onRetry,
+  isEditing,
+  editingText,
+  onStartEdit,
+  onChangeEdit,
+  onSubmitEdit,
+  onCancelEdit,
 }: {
   message: AgentMessage;
   conversation: AgentConversation;
   isLastAssistant?: boolean;
   onRetry?: () => void;
+  isEditing?: boolean;
+  editingText?: string;
+  onStartEdit?: () => void;
+  onChangeEdit?: (text: string) => void;
+  onSubmitEdit?: () => void;
+  onCancelEdit?: () => void;
 }) {
   if (message.role === "system") {
     return (
@@ -1887,10 +1949,61 @@ function MessageBubble({
   }
 
   if (message.role === "user") {
+    if (isEditing) {
+      return (
+        <div className="flex justify-end">
+          <div className="max-w-[85%] w-full px-3 py-2 rounded-lg text-xs bg-accent-blue/10 border border-accent-blue/40 flex flex-col gap-1.5">
+            <textarea
+              autoFocus
+              value={editingText ?? ""}
+              onChange={(e) => onChangeEdit?.(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  onSubmitEdit?.();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  onCancelEdit?.();
+                }
+              }}
+              rows={Math.min(8, Math.max(2, (editingText ?? "").split("\n").length))}
+              className="w-full bg-transparent text-xs text-text-primary placeholder:text-text-muted focus:outline-none resize-none leading-relaxed"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className="text-[10px] text-text-muted"
+                title="Truncates the transcript to this point and re-runs from here"
+              >
+                Forks the conversation from this turn
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={onCancelEdit}
+                  className="text-[11px] px-2 py-0.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                  title="Cancel (Esc)"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={onSubmitEdit}
+                  disabled={!(editingText ?? "").trim()}
+                  className="text-[11px] px-2 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Send (Ctrl+Enter)"
+                >
+                  Resend
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="flex justify-end">
+      <div className="group flex justify-end">
         <div
-          className={`max-w-[85%] px-3 py-1.5 rounded-lg text-xs text-text-primary ${
+          className={`max-w-[85%] px-3 py-1.5 rounded-lg text-xs text-text-primary relative ${
             message.queued
               ? "bg-accent-amber/10 border border-accent-amber/30"
               : "bg-accent-blue/15"
@@ -1901,6 +2014,16 @@ function MessageBubble({
             <span className="text-[10px] text-accent-amber ml-1">
               (queued)
             </span>
+          )}
+          {onStartEdit && !message.queued && (
+            <button
+              type="button"
+              onClick={onStartEdit}
+              className="absolute -left-6 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-opacity"
+              title="Edit & resend — forks the conversation from this turn"
+            >
+              <Pencil size={11} />
+            </button>
           )}
         </div>
       </div>
