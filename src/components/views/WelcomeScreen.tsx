@@ -23,13 +23,13 @@ export function WelcomeScreen() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-bg-primary select-none">
-      <img src="/favicon.png" alt="PacketADE" className="w-14 h-14 mb-5" />
+    <div className="flex flex-col items-center justify-center h-full bg-bg-primary select-none" style={{ animation: 'welcomeFadeIn 200ms cubic-bezier(0.16, 1, 0.3, 1) both' }}>
+      <img src="/favicon.png" alt="PacketADE" className="w-20 h-20 mb-6" />
       <h1 className="text-xl font-semibold text-text-primary mb-1">
         PacketADE
       </h1>
       <p className="text-xs text-text-muted mb-8">
-        Multi-agent development environment
+        Multiple coding agents. Shared context. You stay in control.
       </p>
 
       <div className="flex flex-col gap-4 w-full max-w-sm">
