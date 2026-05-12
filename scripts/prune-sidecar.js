@@ -77,9 +77,7 @@ function walk(root) {
     } catch (err) {
       // A missing or permission-denied dir during walking is not fatal
       // for a *report* — we just skip it and continue.
-      process.stderr.write(
-        `prune-sidecar: warn: could not read ${dir}: ${err.message}\n`,
-      );
+      process.stderr.write(`prune-sidecar: warn: could not read ${dir}: ${err.message}\n`);
       continue;
     }
     for (const entry of entries) {
@@ -117,10 +115,27 @@ function formatBytes(n) {
   return `${v.toFixed(2)} ${units[i]}`;
 }
 
-function resolvePnpmCommand() {
-  // On Windows, pnpm is a `.CMD` shim. `spawnSync` with `shell: true`
-  // is the portable way to locate it via PATH.
-  return process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+function pnpmSpawn(commandArgs) {
+  const env = {
+    ...process.env,
+    NODE_OPTIONS: [
+      ...(process.env.NODE_OPTIONS ?? "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .filter((option) => option !== "--trace-deprecation"),
+      "--no-deprecation",
+    ].join(" "),
+  };
+
+  if (process.platform === "win32") {
+    return {
+      command: process.env.ComSpec ?? "cmd.exe",
+      args: ["/d", "/s", "/c", "pnpm.cmd", ...commandArgs],
+      env,
+    };
+  }
+
+  return { command: "pnpm", args: commandArgs, env };
 }
 
 // ---------------------------------------------------------------------------
@@ -154,24 +169,19 @@ function main() {
   //     produces a symlink-free, Tauri-bundler-friendly tree containing
   //     only production dependencies.
   log(`installing prod deps with hoisted linker in ${SIDECAR_DIR}`);
-  const pnpmCmd = resolvePnpmCommand();
-  const installResult = spawnSync(
-    pnpmCmd,
-    [
-      "-C",
-      SIDECAR_DIR,
-      "install",
-      "--prod",
-      "--ignore-scripts",
-      "--config.node-linker=hoisted",
-    ],
-    {
-      stdio: "inherit",
-      // `shell: true` on Windows lets `.cmd` shim resolution happen via
-      // cmd.exe's PATHEXT logic; harmless on POSIX.
-      shell: process.platform === "win32",
-    },
-  );
+  const pnpm = pnpmSpawn([
+    "-C",
+    SIDECAR_DIR,
+    "install",
+    "--prod",
+    "--ignore-scripts",
+    "--config.node-linker=hoisted",
+  ]);
+  const installResult = spawnSync(pnpm.command, pnpm.args, {
+    env: pnpm.env,
+    shell: false,
+    stdio: "inherit",
+  });
   if (installResult.error) {
     fail(`failed to spawn pnpm install`, installResult.error);
   }

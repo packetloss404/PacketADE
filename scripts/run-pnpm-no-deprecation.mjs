@@ -16,10 +16,12 @@ const env = {
   NODE_OPTIONS: [...existingNodeOptions, "--no-deprecation"].join(" "),
 };
 
-const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const result = spawnSync(command, args, {
+const isWindows = process.platform === "win32";
+const command = isWindows ? (process.env.ComSpec ?? "cmd.exe") : "pnpm";
+const spawnArgs = isWindows ? ["/d", "/s", "/c", "pnpm.cmd", ...args] : args;
+const result = spawnSync(command, spawnArgs, {
   env,
-  shell: process.platform === "win32",
+  shell: false,
   stdio: "inherit",
 });
 
