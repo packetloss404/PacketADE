@@ -38,6 +38,7 @@
     "check": "pnpm run preflight && pnpm run e2e && pnpm run sidecar:check && pnpm run check:tauri-schema && pnpm run rust:check && pnpm run rust:test"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "@tauri-apps/api": "^2.5.0",
     "@tauri-apps/plugin-dialog": "^2.2.1",
     "@tauri-apps/plugin-fs": "^2.2.0",
