@@ -1,5 +1,5 @@
-use crate::commands::shared::home_dir;
 use super::helpers::*;
+use crate::commands::shared::home_dir;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -100,7 +100,11 @@ fn read_codex_config(home: &str) -> (String, String) {
         Err(_) => return ("unknown".to_string(), "medium".to_string()),
     };
 
-    let model = parsed.get("model").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+    let model = parsed
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
     let effort = parsed
         .get("model_reasoning_effort")
         .or_else(|| parsed.get("reasoning_effort"))
@@ -129,7 +133,11 @@ fn parse_codex_session_meta(first_line: &str) -> Option<CachedCodexSessionMeta> 
         .and_then(|v| v.as_str())
         .unwrap_or("unknown")
         .to_string();
-    let cwd = source.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let cwd = source
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let cli_version = source
         .get("cli_version")
         .or_else(|| source.get("version"))
@@ -137,7 +145,11 @@ fn parse_codex_session_meta(first_line: &str) -> Option<CachedCodexSessionMeta> 
         .unwrap_or("")
         .to_string();
 
-    Some(CachedCodexSessionMeta { session_id, cwd, cli_version })
+    Some(CachedCodexSessionMeta {
+        session_id,
+        cwd,
+        cli_version,
+    })
 }
 
 fn parse_codex_tail_snapshot(path: &Path) -> CodexTailSnapshot {
@@ -157,44 +169,64 @@ fn parse_codex_tail_snapshot(path: &Path) -> CodexTailSnapshot {
                 Some(p) => p,
                 None => continue,
             };
-            let inner_type = inner_payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let inner_type = inner_payload
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
 
             if inner_type == "token_count" {
                 snapshot.has_token_count = true;
 
-                let ts_str = parsed.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+                let ts_str = parsed
+                    .get("timestamp")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 snapshot.latest_timestamp = iso_to_epoch(ts_str);
 
                 let info = inner_payload.get("info");
                 let usage = info.and_then(|i| i.get("total_token_usage"));
 
-                let input_tokens = usage.and_then(|u| u.get("input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
-                let output_tokens = usage.and_then(|u| u.get("output_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+                let input_tokens = usage
+                    .and_then(|u| u.get("input_tokens"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let output_tokens = usage
+                    .and_then(|u| u.get("output_tokens"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
 
                 snapshot.input_tokens = input_tokens;
                 snapshot.output_tokens = output_tokens;
                 snapshot.reasoning_tokens = usage
                     .and_then(|u| u.get("reasoning_output_tokens"))
                     .or_else(|| usage.and_then(|u| u.get("reasoning_tokens")))
-                    .and_then(|v| v.as_u64()).unwrap_or(0);
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 snapshot.cached_tokens = usage
                     .and_then(|u| u.get("cached_input_tokens"))
                     .or_else(|| usage.and_then(|u| u.get("cached_tokens")))
-                    .and_then(|v| v.as_u64()).unwrap_or(0);
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 snapshot.total_tokens = usage
                     .and_then(|u| u.get("total_tokens"))
-                    .and_then(|v| v.as_u64()).unwrap_or(input_tokens + output_tokens);
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(input_tokens + output_tokens);
                 snapshot.context_window = info
                     .and_then(|i| i.get("model_context_window"))
-                    .and_then(|v| v.as_u64()).unwrap_or(200_000);
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(200_000);
 
                 let rate_limits = inner_payload.get("rate_limits");
                 snapshot.rate_limit_primary_pct = rate_limits
-                    .and_then(|r| r.get("primary")).and_then(|r| r.get("used_percent"))
-                    .and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    .and_then(|r| r.get("primary"))
+                    .and_then(|r| r.get("used_percent"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 snapshot.rate_limit_secondary_pct = rate_limits
-                    .and_then(|r| r.get("secondary")).and_then(|r| r.get("used_percent"))
-                    .and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    .and_then(|r| r.get("secondary"))
+                    .and_then(|r| r.get("used_percent"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
             }
         }
 
@@ -280,7 +312,8 @@ pub fn read_codex_statusline_states() -> Vec<CodexStatusLineData> {
         }
 
         let len = metadata.len();
-        let unchanged = cached.modified_epoch == modified_epoch && cached.len == len && cached.data.is_some();
+        let unchanged =
+            cached.modified_epoch == modified_epoch && cached.len == len && cached.data.is_some();
 
         if unchanged {
             if let Some(data) = cached.data.clone() {
@@ -295,14 +328,20 @@ pub fn read_codex_statusline_states() -> Vec<CodexStatusLineData> {
         let meta = if cached.meta.is_some() && len >= cached.len {
             cached.meta.clone()
         } else {
-            read_first_line(&path).as_deref().and_then(parse_codex_session_meta)
+            read_first_line(&path)
+                .as_deref()
+                .and_then(parse_codex_session_meta)
         };
 
         let mut data: Option<CodexStatusLineData> = None;
         if let Some(session_meta) = meta.as_ref() {
             if !session_meta.cwd.is_empty() {
                 let tail = parse_codex_tail_snapshot(&path);
-                let timestamp = if tail.latest_timestamp > 0 { tail.latest_timestamp } else { modified_epoch };
+                let timestamp = if tail.latest_timestamp > 0 {
+                    tail.latest_timestamp
+                } else {
+                    modified_epoch
+                };
 
                 let context_percent = if tail.context_window > 0 {
                     ((tail.total_tokens as f64 / tail.context_window as f64) * 100.0).round() as u32
@@ -311,7 +350,11 @@ pub fn read_codex_statusline_states() -> Vec<CodexStatusLineData> {
                 };
 
                 let current = CodexStatusLineData {
-                    session_id: if session_meta.session_id.is_empty() { "unknown".to_string() } else { session_meta.session_id.clone() },
+                    session_id: if session_meta.session_id.is_empty() {
+                        "unknown".to_string()
+                    } else {
+                        session_meta.session_id.clone()
+                    },
                     model: tail.latest_model.unwrap_or_else(|| config_model.clone()),
                     reasoning_effort: config_effort.clone(),
                     cwd: session_meta.cwd.clone(),
@@ -335,7 +378,15 @@ pub fn read_codex_statusline_states() -> Vec<CodexStatusLineData> {
             }
         }
 
-        next_cache.insert(path_str, CachedCodexFile { modified_epoch, len, meta, data });
+        next_cache.insert(
+            path_str,
+            CachedCodexFile {
+                modified_epoch,
+                len,
+                meta,
+                data,
+            },
+        );
     }
 
     {
@@ -358,9 +409,19 @@ pub mod tests_support {
         parse_codex_session_meta(line).map(|m| (m.session_id, m.cwd, m.cli_version))
     }
 
-    pub fn parse_codex_tail_snapshot_test(path: &std::path::Path) -> (Option<String>, u64, u64, u64, u64, u64, bool) {
+    pub fn parse_codex_tail_snapshot_test(
+        path: &std::path::Path,
+    ) -> (Option<String>, u64, u64, u64, u64, u64, bool) {
         let s = parse_codex_tail_snapshot(path);
-        (s.latest_model, s.input_tokens, s.output_tokens, s.reasoning_tokens, s.cached_tokens, s.total_tokens, s.has_token_count)
+        (
+            s.latest_model,
+            s.input_tokens,
+            s.output_tokens,
+            s.reasoning_tokens,
+            s.cached_tokens,
+            s.total_tokens,
+            s.has_token_count,
+        )
     }
 
     pub fn should_full_scan_test_empty(now: u64) -> bool {
@@ -373,7 +434,9 @@ pub mod tests_support {
             files: HashMap::new(),
             last_full_scan_epoch: 100,
         };
-        cache.files.insert("file.jsonl".to_string(), CachedCodexFile::default());
+        cache
+            .files
+            .insert("file.jsonl".to_string(), CachedCodexFile::default());
         should_full_scan(&cache, now)
     }
 }

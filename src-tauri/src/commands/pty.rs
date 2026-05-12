@@ -46,7 +46,11 @@ fn resolve_windows_command(command: &str) -> String {
     if let Ok(output) = where_cmd.output() {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let lines: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+            let lines: Vec<&str> = stdout
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .collect();
 
             // Prefer .exe over .cmd; skip extensionless entries (npm shell stubs)
             if let Some(exe) = lines.iter().find(|l| l.ends_with(".exe")) {
@@ -57,7 +61,10 @@ fn resolve_windows_command(command: &str) -> String {
             }
             // Last resort: any entry with a file extension
             if let Some(with_ext) = lines.iter().find(|l| {
-                l.rsplit('\\').next().map(|f| f.contains('.')).unwrap_or(false)
+                l.rsplit('\\')
+                    .next()
+                    .map(|f| f.contains('.'))
+                    .unwrap_or(false)
             }) {
                 return with_ext.to_string();
             }
@@ -447,7 +454,9 @@ pub async fn ssh_exec(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn ssh: {}", e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn ssh: {}", e))?;
 
     // Feed password to stdin if provided, then close stdin so SSH proceeds
     if let Some(pw) = password {

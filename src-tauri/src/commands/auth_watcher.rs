@@ -82,8 +82,7 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // doesn't exist, fall back to watching the home dir and filter events
     // by path prefix. This lets us catch the *first* login.
     let mut watch_targets: Vec<PathBuf> = Vec::new();
-    let watch_home_fallback =
-        !claude_dir.is_dir() || !codex_dir.is_dir();
+    let watch_home_fallback = !claude_dir.is_dir() || !codex_dir.is_dir();
     if claude_dir.is_dir() {
         watch_targets.push(claude_dir.clone());
     }

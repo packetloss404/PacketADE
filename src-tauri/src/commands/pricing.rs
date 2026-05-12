@@ -91,10 +91,7 @@ pub fn pricing_for(model: &str) -> Option<ModelPricing> {
 
     // --- Anthropic (direct + OpenRouter mirror) ---
     // Strip a leading `anthropic/` (OpenRouter) for matching.
-    let anthro = m
-        .strip_prefix("anthropic/")
-        .unwrap_or(&m)
-        .to_string();
+    let anthro = m.strip_prefix("anthropic/").unwrap_or(&m).to_string();
 
     if anthro.starts_with("claude-opus-4-7") {
         return Some(ModelPricing::anthropic(15.0, 75.0));

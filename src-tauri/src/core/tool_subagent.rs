@@ -58,7 +58,8 @@ async fn read_only_tool_definitions() -> Vec<ToolDefinition> {
     if !tools.iter().any(|t| t.name == "web_fetch") {
         tools.push(ToolDefinition {
             name: "web_fetch".to_string(),
-            description: "Fetch the contents of a URL and return the response body as text.".to_string(),
+            description: "Fetch the contents of a URL and return the response body as text."
+                .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -85,8 +86,16 @@ async fn collect_response(
     while let Some(chunk) = rx.recv().await {
         match chunk {
             StreamChunk::TextDelta { text: t } => text.push_str(&t),
-            StreamChunk::ToolUseEnd { id, name, arguments } => {
-                tool_calls.push(ToolCall { id, name, arguments });
+            StreamChunk::ToolUseEnd {
+                id,
+                name,
+                arguments,
+            } => {
+                tool_calls.push(ToolCall {
+                    id,
+                    name,
+                    arguments,
+                });
             }
             StreamChunk::Error { message } => return Err(message),
             StreamChunk::Done { .. } => break,
@@ -251,8 +260,7 @@ mod tests {
         let g1 = SubagentDepthGuard::acquire().expect("depth 1 should acquire");
         let g2 = SubagentDepthGuard::acquire().expect("depth 2 should acquire");
         let g3 = SubagentDepthGuard::acquire().expect("depth 3 should acquire");
-        let err = SubagentDepthGuard::acquire()
-            .expect_err("depth 4 should refuse");
+        let err = SubagentDepthGuard::acquire().expect_err("depth 4 should refuse");
         assert!(err.contains("recursion depth"));
         assert_eq!(SUBAGENT_DEPTH.load(Ordering::SeqCst), MAX_SUBAGENT_DEPTH);
 

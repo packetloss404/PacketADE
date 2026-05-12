@@ -175,8 +175,7 @@ pub fn list_skills(project_path: String) -> Result<Vec<SkillDef>, String> {
     }
 
     // Project overrides global by name.
-    let mut by_name: std::collections::HashMap<String, SkillDef> =
-        std::collections::HashMap::new();
+    let mut by_name: std::collections::HashMap<String, SkillDef> = std::collections::HashMap::new();
     for s in global_skills {
         by_name.insert(s.name.clone(), s);
     }

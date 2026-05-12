@@ -662,14 +662,15 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     }
 
     if (cmd === "compact") {
-      // Pragmatic v1 compact: keep system msg + last 4 messages + a synthetic
-      // note. Real summarization is a future LLM round-trip.
+      // Pragmatic v1 compact: trim the local transcript view only. It does
+      // not call a provider-specific context compaction API.
       setInput(remaining);
       setMentionState({ kind: "none" });
       const noteMsg: AgentMessage = {
         id: generateId("msg"),
         role: "system",
-        content: "(history compacted — older messages dropped to free context)",
+        content:
+          "(local transcript trimmed — provider/backend context was not compacted)",
         timestamp: Date.now(),
       };
       useAgentTaskStore.setState((s) => ({

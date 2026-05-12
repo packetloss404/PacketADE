@@ -4,6 +4,8 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useEditorStore } from "@/stores/editorStore";
 import { useMosaicStore } from "@/stores/mosaicStore";
 import { useMemoryStore } from "@/stores/memoryStore";
+import { useAgentStore } from "@/stores/agentStore";
+import { useServerStore } from "@/stores/serverStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
@@ -49,6 +51,8 @@ export function WorkspaceView() {
   const switcherRef = useRef<HTMLDivElement>(null);
   const addAgentRef = useRef<HTMLDivElement>(null);
   const addPane = useWorkspaceStore((s) => s.addPane);
+  const agents = useAgentStore((s) => s.agents);
+  const servers = useServerStore((s) => s.servers);
 
   const openFiles = useEditorStore((s) => s.openFiles);
   const activeFileId = useEditorStore((s) => s.activeFileId);
@@ -60,6 +64,14 @@ export function WorkspaceView() {
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const activeNonArchived = workspaces.filter((w) => w.status === "active");
+  const isAgentInstalledForWorkspace = (agent: WorkspaceAgentSlot, workspace: Workspace) => {
+    if (agent === "terminal") return true;
+    if (workspace.serverId) {
+      const server = servers.find((srv) => srv.id === workspace.serverId);
+      return !!server?.installedAgents.includes(agent);
+    }
+    return !!agents.find((cfg) => cfg.id === agent)?.installed;
+  };
 
   const showOnboarding =
     initialized && !onboardingDone && activeNonArchived.length === 0 && !projectPath;
@@ -166,19 +178,29 @@ export function WorkspaceView() {
                 </button>
                 {addAgentOpen && activeWorkspace && (
                   <div className="absolute right-0 top-full mt-1 bg-bg-tertiary border border-bg-border rounded shadow-lg z-50 min-w-[150px] py-1">
-                    {(["claude-code", "codex", "gemini", "opencode", "terminal"] as WorkspaceAgentSlot[]).map((agent) => (
-                      <button
-                        key={agent}
-                        onClick={() => {
-                          addPane(activeWorkspace.id, agent);
-                          setAddAgentOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-1.5 text-[11px] text-text-secondary hover:text-text-primary hover:bg-bg-secondary transition-colors flex items-center gap-2"
-                      >
-                        <span className={`w-2 h-2 rounded-full ${agentColor[agent]?.split(" ")[0] ?? "bg-text-muted/20"}`} />
-                        {agentLabel[agent]}
-                      </button>
-                    ))}
+                    {(["claude-code", "codex", "gemini", "opencode", "terminal"] as WorkspaceAgentSlot[]).map((agent) => {
+                      const installed = isAgentInstalledForWorkspace(agent, activeWorkspace);
+                      return (
+                        <button
+                          key={agent}
+                          onClick={() => {
+                            if (!installed) return;
+                            addPane(activeWorkspace.id, agent);
+                            setAddAgentOpen(false);
+                          }}
+                          disabled={!installed}
+                          title={installed ? `Add ${agentLabel[agent]}` : `${agentLabel[agent]} is not installed for this workspace`}
+                          className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-2 ${
+                            installed
+                              ? "text-text-secondary hover:text-text-primary hover:bg-bg-secondary"
+                              : "text-text-muted opacity-50 cursor-not-allowed"
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${agentColor[agent]?.split(" ")[0] ?? "bg-text-muted/20"}`} />
+                          {agentLabel[agent]}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

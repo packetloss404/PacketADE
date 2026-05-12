@@ -19,10 +19,8 @@ interface CheckpointPanelProps {
 /**
  * Claude-Code-style rewind panel.
  *
- * Lists checkpoint snapshots for the current conversation with three actions
- * per row: restore code+conv (placeholder for git-worktree work), restore conv
- * only, and fork-from-here (creates a new conversation seeded with the
- * checkpoint's messages).
+ * Lists checkpoint snapshots for the current conversation. Checkpoints only
+ * store messages today; code rollback needs a future git-worktree path.
  */
 export function CheckpointPanel({
   conversationId,
@@ -80,17 +78,6 @@ export function CheckpointPanel({
         conversationId,
         JSON.stringify({ messages: cp.messages }),
       );
-  }
-
-  async function handleRestoreCodeAndConv(cp: Checkpoint) {
-    setBusyAction(`code-${cp.id}`);
-    try {
-      // v1: only message restore. Code rollback is git-worktree territory.
-      restoreMessages(cp);
-      onClose();
-    } finally {
-      setBusyAction(null);
-    }
   }
 
   async function handleRestoreConvOnly(cp: Checkpoint) {
@@ -206,7 +193,6 @@ export function CheckpointPanel({
 
         <ul className="divide-y divide-bg-border">
           {checkpoints.map((cp) => {
-            const codeBusy = busyAction === `code-${cp.id}`;
             const convBusy = busyAction === `conv-${cp.id}`;
             const forkBusy = busyAction === `fork-${cp.id}`;
             const anyBusy = busyAction !== null;
@@ -224,17 +210,12 @@ export function CheckpointPanel({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => void handleRestoreCodeAndConv(cp)}
-                    disabled={anyBusy}
-                    title="Code rollback coming next phase. Restores conversation messages only for now."
-                    className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-text-secondary border border-bg-border hover:border-accent-blue/40 hover:text-accent-blue rounded transition-colors disabled:opacity-50"
+                    disabled
+                    title="Code rollback is not implemented yet; this checkpoint only includes conversation messages."
+                    className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-text-muted border border-bg-border rounded transition-colors opacity-45 cursor-not-allowed"
                   >
-                    {codeBusy ? (
-                      <Loader2 size={10} className="animate-spin" />
-                    ) : (
-                      <RotateCcw size={10} />
-                    )}
-                    Restore code + conv
+                    <RotateCcw size={10} />
+                    Code restore unavailable
                   </button>
                   <button
                     type="button"
@@ -248,7 +229,7 @@ export function CheckpointPanel({
                     ) : (
                       <RotateCcw size={10} />
                     )}
-                    Restore conv only
+                    Restore conversation
                   </button>
                   <button
                     type="button"

@@ -117,7 +117,7 @@ interface AgentInputAreaProps {
   onAgentChange: (agent: AgentCli) => void;
   /** Called when the user submits. Staged image attachments (drag-drop /
    * paste) are passed through; an empty array if none. */
-  onLaunch: (attachments: ImageAttachment[]) => void;
+  onLaunch: (attachments: ImageAttachment[]) => boolean;
   selectedModel: string;
   onModelChange: (model: string) => void;
   agentMode?: AgentMode;
@@ -222,6 +222,7 @@ export function AgentInputArea({
   };
   const [staged, setStaged] = useState<StagedAttachment[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const stagedPreviewUrlsRef = useRef<Set<string>>(new Set());
 
   const addFiles = useCallback(async (files: File[]) => {
     const next: StagedAttachment[] = [];
@@ -250,21 +251,28 @@ export function AgentInputArea({
   }, []);
 
   const removeStaged = useCallback((id: string) => {
-    setStaged((prev) => {
-      const dropped = prev.find((s) => s.id === id);
-      if (dropped) URL.revokeObjectURL(dropped.previewUrl);
-      return prev.filter((s) => s.id !== id);
-    });
+    setStaged((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
-  // Cleanup object URLs on unmount.
+  // Revoke preview URLs as staged attachments are removed or replaced.
+  useEffect(() => {
+    const nextUrls = new Set(staged.map((s) => s.previewUrl));
+    for (const url of stagedPreviewUrlsRef.current) {
+      if (!nextUrls.has(url)) {
+        URL.revokeObjectURL(url);
+      }
+    }
+    stagedPreviewUrlsRef.current = nextUrls;
+  }, [staged]);
+
+  // Cleanup any remaining object URLs on unmount.
   useEffect(() => {
     return () => {
-      for (const s of staged) URL.revokeObjectURL(s.previewUrl);
+      for (const url of stagedPreviewUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      stagedPreviewUrlsRef.current.clear();
     };
-    // We deliberately don't react to `staged` here — the per-removal cleanup
-    // happens inside `removeStaged` and on launch. This is the unmount sweep.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handlePaste = useCallback(
@@ -308,10 +316,10 @@ export function AgentInputArea({
 
   const submitWithAttachments = useCallback(() => {
     const toSend = staged.map((s) => s.attachment);
-    onLaunch(toSend);
-    // Clear staged + free preview URLs after launching.
-    for (const s of staged) URL.revokeObjectURL(s.previewUrl);
-    setStaged([]);
+    const accepted = onLaunch(toSend);
+    if (accepted) {
+      setStaged([]);
+    }
   }, [onLaunch, staged]);
 
   const { isListening, transcript, startListening, stopListening, isSupported } =

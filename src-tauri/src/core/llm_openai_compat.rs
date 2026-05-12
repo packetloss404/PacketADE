@@ -71,7 +71,11 @@ fn build_openai_messages(
                     for block in blocks {
                         match block {
                             ContentBlock::Text { text } => text_parts.push(text.clone()),
-                            ContentBlock::ToolUse { id, name, arguments } => {
+                            ContentBlock::ToolUse {
+                                id,
+                                name,
+                                arguments,
+                            } => {
                                 tool_calls.push(serde_json::json!({
                                     "id": id,
                                     "type": "function",
@@ -172,6 +176,10 @@ pub async fn stream_chat_compat(
         "max_tokens": request.max_tokens,
     });
 
+    if matches!(config.provider_id.as_str(), "openai" | "openrouter") {
+        body["stream_options"] = serde_json::json!({ "include_usage": true });
+    }
+
     if !tools.is_empty() {
         body["tools"] = serde_json::Value::Array(tools);
     }
@@ -205,7 +213,10 @@ pub async fn stream_chat_compat(
             .unwrap_or_else(|_| "Failed to read response body".to_string());
         let _ = tx
             .send(StreamChunk::Error {
-                message: format!("{} API error ({}): {}", config.provider_id, status, body_text),
+                message: format!(
+                    "{} API error ({}): {}",
+                    config.provider_id, status, body_text
+                ),
             })
             .await;
         return Err(format!("API error ({}): {}", status, body_text));
@@ -288,12 +299,10 @@ pub async fn stream_chat_compat(
                                         {
                                             // Finish previous tool call if any
                                             if !current_tool_id.is_empty() {
-                                                let args = serde_json::from_str(
-                                                    &current_tool_args,
-                                                )
-                                                .unwrap_or(serde_json::Value::Object(
-                                                    serde_json::Map::new(),
-                                                ));
+                                                let args = serde_json::from_str(&current_tool_args)
+                                                    .unwrap_or(serde_json::Value::Object(
+                                                        serde_json::Map::new(),
+                                                    ));
                                                 let _ = tx
                                                     .send(StreamChunk::ToolUseEnd {
                                                         id: current_tool_id.clone(),
@@ -343,10 +352,9 @@ pub async fn stream_chat_compat(
                                     || finish_reason == "function_call")
                                     && !current_tool_id.is_empty()
                                 {
-                                    let args =
-                                        serde_json::from_str(&current_tool_args).unwrap_or(
-                                            serde_json::Value::Object(serde_json::Map::new()),
-                                        );
+                                    let args = serde_json::from_str(&current_tool_args).unwrap_or(
+                                        serde_json::Value::Object(serde_json::Map::new()),
+                                    );
                                     let _ = tx
                                         .send(StreamChunk::ToolUseEnd {
                                             id: current_tool_id.clone(),

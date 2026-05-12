@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use crate::commands::shared::{hide_window, hide_window_async, home_dir};
+use std::path::PathBuf;
 
 /// Discover the Claude CLI binary path.
 /// Checks PATH first (via `where` on Windows), then common global install locations.
@@ -59,8 +59,9 @@ pub fn find_claude_binary() -> Option<PathBuf> {
 /// Build a `tokio::process::Command` for the Claude CLI with the correct binary path
 /// and Windows console-hiding flags pre-applied.
 pub fn claude_command() -> Result<tokio::process::Command, String> {
-    let binary = find_claude_binary()
-        .ok_or_else(|| "Failed to run Claude CLI: program not found. Is claude installed and on PATH?".to_string())?;
+    let binary = find_claude_binary().ok_or_else(|| {
+        "Failed to run Claude CLI: program not found. Is claude installed and on PATH?".to_string()
+    })?;
 
     let mut cmd = tokio::process::Command::new(binary);
     cmd.env_remove("CLAUDECODE");
@@ -80,14 +81,23 @@ pub async fn run_claude(prompt: &str, project_path: Option<&str>) -> Result<Stri
 
     for attempt in 0..=MAX_RETRIES {
         let mut cmd = claude_command()?;
-        cmd.args(&["-p", prompt, "--output-format", "text", "--allowedTools", "Read,Glob,Grep,Bash(read-only)"]);
+        cmd.args(&[
+            "-p",
+            prompt,
+            "--output-format",
+            "text",
+            "--allowedTools",
+            "Read,Glob,Grep,Bash(read-only)",
+        ]);
         if let Some(cwd) = project_path {
             cmd.current_dir(cwd);
         }
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| format!("Failed to run Claude CLI: {}. Is claude installed and on PATH?", e))?;
+        let output = cmd.output().await.map_err(|e| {
+            format!(
+                "Failed to run Claude CLI: {}. Is claude installed and on PATH?",
+                e
+            )
+        })?;
 
         if output.status.success() {
             return Ok(String::from_utf8_lossy(&output.stdout).to_string());
@@ -108,7 +118,10 @@ pub async fn run_claude(prompt: &str, project_path: Option<&str>) -> Result<Stri
             continue;
         }
 
-        return Err(format!("{} — {}", classified.message, classified.suggestion));
+        return Err(format!(
+            "{} — {}",
+            classified.message, classified.suggestion
+        ));
     }
 
     unreachable!()

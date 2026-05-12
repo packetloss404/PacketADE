@@ -30,7 +30,7 @@ pub fn build_system_prompt(project_path: &str) -> String {
             if !content.trim().is_empty() {
                 prompt.push_str("\n## Project Instructions (CLAUDE.md)\n\n");
                 if content.len() > 8192 {
-                    prompt.push_str(&content[..8192]);
+                    prompt.push_str(truncate_utf8(&content, 8192));
                     prompt.push_str("\n... [truncated]");
                 } else {
                     prompt.push_str(&content);
@@ -41,6 +41,17 @@ pub fn build_system_prompt(project_path: &str) -> String {
     }
 
     prompt
+}
+
+fn truncate_utf8(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut boundary = max_bytes;
+    while boundary > 0 && !s.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    &s[..boundary]
 }
 
 const BASE_SYSTEM_PROMPT: &str = r#"You are an expert software engineer working as an AI coding assistant inside PacketADE, a desktop agent development environment. You have file/shell tools and run inside a real workspace.
@@ -99,3 +110,27 @@ When you have finished the work and verified it (tests pass, build is green, or 
 
 This signals to the Flight Deck UI that your attempt is ready for human review. Place the sentinel on its own line at the very end of the message, after a one-paragraph summary of what you changed and how to verify it. If you bail out early without completing the task, do not emit the sentinel — just explain the blocker.
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn claude_md_truncation_does_not_split_utf8_boundary() {
+        let dir = std::env::temp_dir()
+            .join("packetade-tests")
+            .join(format!("system-prompt-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("CLAUDE.md"),
+            format!("{}é trailing", "a".repeat(8191)),
+        )
+        .unwrap();
+
+        let prompt = build_system_prompt(&dir.to_string_lossy());
+
+        assert!(prompt.contains("... [truncated]"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}

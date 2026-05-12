@@ -161,8 +161,8 @@ export function AgentsView() {
   const handleLaunch = useCallback(
     (attachments: ImageAttachment[]) => {
       const text = agentInputText.trim();
-      if (!text) return;
-      if (!selectedRepo) return;
+      if (!text) return false;
+      if (!selectedRepo) return false;
 
       // Profile contributes the system prompt + tool whitelist + memory flag.
       // Mode (the four launcher buttons) wins for plan/permission posture so
@@ -294,6 +294,7 @@ export function AgentsView() {
         }
       })();
       setAgentInputText("");
+      return true;
     },
     [
       agentInputText,

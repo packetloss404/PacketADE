@@ -5,11 +5,8 @@ use ts_rs::TS;
 
 use crate::commands::orchestration::{OrchestratorSnapshot, RunningTaskSnapshot};
 use crate::core::{
-    agent_config as core_agent,
-    flight as core_flight,
-    orchestrator as core_orchestrator,
-    storage as core_storage,
-    workspace as core_workspace,
+    agent_config as core_agent, flight as core_flight, orchestrator as core_orchestrator,
+    storage as core_storage, workspace as core_workspace,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -549,13 +546,19 @@ pub struct OrchestratorSnapshotDto {
 
 impl From<core_workspace::GridPosition> for GridPositionDto {
     fn from(value: core_workspace::GridPosition) -> Self {
-        Self { row: value.row, col: value.col }
+        Self {
+            row: value.row,
+            col: value.col,
+        }
     }
 }
 
 impl From<GridPositionDto> for core_workspace::GridPosition {
     fn from(value: GridPositionDto) -> Self {
-        Self { row: value.row, col: value.col }
+        Self {
+            row: value.row,
+            col: value.col,
+        }
     }
 }
 
@@ -741,13 +744,21 @@ impl From<AgentCapabilityDto> for core_agent::AgentCapability {
 
 impl From<core_agent::ToolUsePattern> for ToolUsePatternDto {
     fn from(value: core_agent::ToolUsePattern) -> Self {
-        Self { pattern: value.pattern, tool: value.tool, file_group: value.file_group }
+        Self {
+            pattern: value.pattern,
+            tool: value.tool,
+            file_group: value.file_group,
+        }
     }
 }
 
 impl From<ToolUsePatternDto> for core_agent::ToolUsePattern {
     fn from(value: ToolUsePatternDto) -> Self {
-        Self { pattern: value.pattern, tool: value.tool, file_group: value.file_group }
+        Self {
+            pattern: value.pattern,
+            tool: value.tool,
+            file_group: value.file_group,
+        }
     }
 }
 
@@ -775,13 +786,21 @@ impl From<AgentStatusPatternsDto> for core_agent::AgentStatusPatterns {
 
 impl From<core_agent::AgentApprovalActions> for AgentApprovalActionsDto {
     fn from(value: core_agent::AgentApprovalActions) -> Self {
-        Self { approve: value.approve, deny: value.deny, abort: value.abort }
+        Self {
+            approve: value.approve,
+            deny: value.deny,
+            abort: value.abort,
+        }
     }
 }
 
 impl From<AgentApprovalActionsDto> for core_agent::AgentApprovalActions {
     fn from(value: AgentApprovalActionsDto) -> Self {
-        Self { approve: value.approve, deny: value.deny, abort: value.abort }
+        Self {
+            approve: value.approve,
+            deny: value.deny,
+            abort: value.abort,
+        }
     }
 }
 
@@ -928,13 +947,21 @@ impl From<TaskHandoffDto> for core_flight::TaskHandoff {
 
 impl From<core_flight::TaskValidationAssertion> for TaskValidationAssertionDto {
     fn from(value: core_flight::TaskValidationAssertion) -> Self {
-        Self { label: value.label, status: value.status.into(), details: value.details }
+        Self {
+            label: value.label,
+            status: value.status.into(),
+            details: value.details,
+        }
     }
 }
 
 impl From<TaskValidationAssertionDto> for core_flight::TaskValidationAssertion {
     fn from(value: TaskValidationAssertionDto) -> Self {
-        Self { label: value.label, status: value.status.into(), details: value.details }
+        Self {
+            label: value.label,
+            status: value.status.into(),
+            details: value.details,
+        }
     }
 }
 
@@ -1139,12 +1166,22 @@ impl From<AttemptStatusDto> for core_flight::AttemptStatus {
 impl From<core_flight::AttemptTarget> for AttemptTargetDto {
     fn from(t: core_flight::AttemptTarget) -> Self {
         match t {
-            core_flight::AttemptTarget::Local { base_path, worktree_path } => {
-                Self::Local { base_path, worktree_path }
-            }
-            core_flight::AttemptTarget::Ssh { target_id, base_path, worktree_path } => {
-                Self::Ssh { target_id, base_path, worktree_path }
-            }
+            core_flight::AttemptTarget::Local {
+                base_path,
+                worktree_path,
+            } => Self::Local {
+                base_path,
+                worktree_path,
+            },
+            core_flight::AttemptTarget::Ssh {
+                target_id,
+                base_path,
+                worktree_path,
+            } => Self::Ssh {
+                target_id,
+                base_path,
+                worktree_path,
+            },
         }
     }
 }
@@ -1152,12 +1189,22 @@ impl From<core_flight::AttemptTarget> for AttemptTargetDto {
 impl From<AttemptTargetDto> for core_flight::AttemptTarget {
     fn from(t: AttemptTargetDto) -> Self {
         match t {
-            AttemptTargetDto::Local { base_path, worktree_path } => {
-                Self::Local { base_path, worktree_path }
-            }
-            AttemptTargetDto::Ssh { target_id, base_path, worktree_path } => {
-                Self::Ssh { target_id, base_path, worktree_path }
-            }
+            AttemptTargetDto::Local {
+                base_path,
+                worktree_path,
+            } => Self::Local {
+                base_path,
+                worktree_path,
+            },
+            AttemptTargetDto::Ssh {
+                target_id,
+                base_path,
+                worktree_path,
+            } => Self::Ssh {
+                target_id,
+                base_path,
+                worktree_path,
+            },
         }
     }
 }
@@ -1346,14 +1393,19 @@ impl From<OrchestratorSnapshot> for OrchestratorSnapshotDto {
 #[cfg(test)]
 fn generated_typescript_schema() -> String {
     let mut lines = vec![
-        "// Auto-generated from Rust API DTOs. Run `pnpm generate:tauri-schema` to refresh.".to_string(),
+        "// Auto-generated from Rust API DTOs. Run `pnpm generate:tauri-schema` to refresh."
+            .to_string(),
         String::new(),
     ];
 
     macro_rules! push_decl {
         ($ty:ty) => {{
             let decl = <$ty as TS>::decl();
-            lines.push(format!("export {}{}", decl, if decl.ends_with('\n') { "" } else { "\n" }));
+            lines.push(format!(
+                "export {}{}",
+                decl,
+                if decl.ends_with('\n') { "" } else { "\n" }
+            ));
         }};
     }
 
@@ -1406,7 +1458,11 @@ mod tests {
     fn export_api_bindings() {
         let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/generated");
         std::fs::create_dir_all(&out_dir).unwrap();
-        std::fs::write(out_dir.join("tauri-schema.ts"), generated_typescript_schema()).unwrap();
+        std::fs::write(
+            out_dir.join("tauri-schema.ts"),
+            generated_typescript_schema(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1493,11 +1549,18 @@ mod tests {
         assert!(value["settings"].get("milestoneGating").is_some());
         assert!(value["settings"].get("projectPath").is_some());
         assert!(value["flights"][0].get("projectPath").is_some());
-        assert!(value["flights"][0]["milestones"][0].get("flightId").is_some());
-        assert!(value["flights"][0]["milestones"][0]["tasks"][0].get("milestoneId").is_some());
-        assert!(value["flights"][0]["milestones"][0]["tasks"][0].get("agentConfigId").is_some());
-        assert!(value["flights"][0]["milestones"][0]["tasks"][0]["result"].get("filesChanged").is_some());
+        assert!(value["flights"][0]["milestones"][0]
+            .get("flightId")
+            .is_some());
+        assert!(value["flights"][0]["milestones"][0]["tasks"][0]
+            .get("milestoneId")
+            .is_some());
+        assert!(value["flights"][0]["milestones"][0]["tasks"][0]
+            .get("agentConfigId")
+            .is_some());
+        assert!(value["flights"][0]["milestones"][0]["tasks"][0]["result"]
+            .get("filesChanged")
+            .is_some());
         assert_eq!(value["ui"]["theme"], "dark");
     }
 }
-

@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use tracing::info;
 
-use super::flight::*;
 use super::agent_config::AgentConfig;
+use super::flight::*;
 
 /// A running task tracked by the orchestrator
 #[derive(Debug, Clone)]
@@ -58,7 +58,9 @@ impl Orchestrator {
     /// Check if a task's dependencies are all done.
     fn deps_resolved(task: &Task, all_tasks: &[Task]) -> bool {
         task.depends_on.iter().all(|dep_id| {
-            all_tasks.iter().any(|t| t.id == *dep_id && t.status == TaskStatus::Done)
+            all_tasks
+                .iter()
+                .any(|t| t.id == *dep_id && t.status == TaskStatus::Done)
         })
     }
 
@@ -143,7 +145,11 @@ impl Orchestrator {
             if let Some(ms_idx) = flight.milestones.iter().position(|ms| ms.id == next_ms_id) {
                 Self::activate_milestone(flight, ms_idx, false);
             }
-        } else if let Some(ms_idx) = flight.milestones.iter().position(|ms| ms.status == MilestoneStatus::Active) {
+        } else if let Some(ms_idx) = flight
+            .milestones
+            .iter()
+            .position(|ms| ms.status == MilestoneStatus::Active)
+        {
             Self::activate_milestone(flight, ms_idx, true);
         } else if let Some(ms_idx) = Self::first_open_milestone_index(flight) {
             Self::activate_milestone(flight, ms_idx, true);
@@ -196,8 +202,16 @@ impl Orchestrator {
         };
 
         // Update the task status
-        if let Some(task) = flight.milestones[ms_idx].tasks.iter_mut().find(|t| t.id == *task_id) {
-            task.status = if success { TaskStatus::Done } else { TaskStatus::Failed };
+        if let Some(task) = flight.milestones[ms_idx]
+            .tasks
+            .iter_mut()
+            .find(|t| t.id == *task_id)
+        {
+            task.status = if success {
+                TaskStatus::Done
+            } else {
+                TaskStatus::Failed
+            };
             task.completed_at = Some(now());
         }
 
@@ -205,18 +219,29 @@ impl Orchestrator {
         Self::queue_ready_tasks(&mut flight.milestones[ms_idx], false);
 
         // Check milestone completion
-        let all_done = flight.milestones[ms_idx].tasks.iter().all(|t| t.status.is_terminal());
-        let any_failed = flight.milestones[ms_idx].tasks.iter().any(|t| t.status == TaskStatus::Failed);
+        let all_done = flight.milestones[ms_idx]
+            .tasks
+            .iter()
+            .all(|t| t.status.is_terminal());
+        let any_failed = flight.milestones[ms_idx]
+            .tasks
+            .iter()
+            .any(|t| t.status == TaskStatus::Failed);
 
         if all_done {
-            flight.milestones[ms_idx].status = if any_failed { MilestoneStatus::Failed } else { MilestoneStatus::Done };
+            flight.milestones[ms_idx].status = if any_failed {
+                MilestoneStatus::Failed
+            } else {
+                MilestoneStatus::Done
+            };
 
             let has_next = ms_idx + 1 < flight.milestones.len();
 
             if has_next && !any_failed {
                 if self.settings.milestone_gating {
                     let next_ms_id = flight.milestones[ms_idx + 1].id.clone();
-                    self.paused_at_milestone.insert(flight.id.clone(), next_ms_id);
+                    self.paused_at_milestone
+                        .insert(flight.id.clone(), next_ms_id);
                     flight.status = FlightStatus::Review;
                     self.active_flight_ids.remove(&flight.id);
                 } else {
@@ -292,7 +317,10 @@ impl Orchestrator {
                 }
 
                 for task in &mut ms.tasks {
-                    if matches!(task.status, TaskStatus::Queued | TaskStatus::Running | TaskStatus::ApprovalNeeded) {
+                    if matches!(
+                        task.status,
+                        TaskStatus::Queued | TaskStatus::Running | TaskStatus::ApprovalNeeded
+                    ) {
                         task.status = TaskStatus::Paused;
                         interrupted = true;
                     }
@@ -312,12 +340,11 @@ impl Orchestrator {
 
     /// Scheduling tick: spawn agent sessions for queued tasks up to max parallel.
     /// Returns list of (flight_id, milestone_id, task_id, command, args, prompt) to spawn.
-    pub fn tick(
-        &mut self,
-        flights: &[Flight],
-        agents: &[AgentConfig],
-    ) -> Vec<TaskSpawnRequest> {
-        let available = self.settings.max_parallel_sessions.saturating_sub(self.running_tasks.len());
+    pub fn tick(&mut self, flights: &[Flight], agents: &[AgentConfig]) -> Vec<TaskSpawnRequest> {
+        let available = self
+            .settings
+            .max_parallel_sessions
+            .saturating_sub(self.running_tasks.len());
         if available == 0 {
             return vec![];
         }
@@ -326,9 +353,15 @@ impl Orchestrator {
         let mut slots_used = 0;
 
         for flight in flights {
-            if slots_used >= available { break; }
-            if !self.active_flight_ids.contains(&flight.id) { continue; }
-            if self.paused_at_milestone.contains_key(&flight.id) { continue; }
+            if slots_used >= available {
+                break;
+            }
+            if !self.active_flight_ids.contains(&flight.id) {
+                continue;
+            }
+            if self.paused_at_milestone.contains_key(&flight.id) {
+                continue;
+            }
 
             for ms in &flight.milestones {
                 if ms.status == MilestoneStatus::Done || ms.status == MilestoneStatus::Failed {
@@ -336,12 +369,20 @@ impl Orchestrator {
                 }
 
                 for task in &ms.tasks {
-                    if slots_used >= available { break; }
-                    if task.status != TaskStatus::Queued { continue; }
-                    if self.running_tasks.contains_key(&task.id) { continue; }
+                    if slots_used >= available {
+                        break;
+                    }
+                    if task.status != TaskStatus::Queued {
+                        continue;
+                    }
+                    if self.running_tasks.contains_key(&task.id) {
+                        continue;
+                    }
 
                     let agent = agents.iter().find(|a| a.id == task.agent_config_id);
-                    if agent.is_none() { continue; }
+                    if agent.is_none() {
+                        continue;
+                    }
                     let agent = agent.unwrap();
 
                     let mut args = agent.default_args.clone();
@@ -383,7 +424,12 @@ impl Orchestrator {
     }
 
     /// Record that a task has been spawned.
-    pub fn record_spawn(&mut self, session_id: &str, req: &TaskSpawnRequest, flights: &mut [Flight]) {
+    pub fn record_spawn(
+        &mut self,
+        session_id: &str,
+        req: &TaskSpawnRequest,
+        flights: &mut [Flight],
+    ) {
         if let Some(flight) = flights.iter_mut().find(|flight| flight.id == req.flight_id) {
             if let Some((milestone_idx, task_idx)) = Self::task_position(flight, &req.task_id) {
                 if flight.milestones[milestone_idx].status == MilestoneStatus::Pending {
@@ -403,19 +449,25 @@ impl Orchestrator {
             }
         }
 
-        self.running_tasks.insert(req.task_id.to_string(), RunningTask {
-            task_id: req.task_id.to_string(),
-            milestone_id: req.milestone_id.clone(),
-            flight_id: req.flight_id.clone(),
-            session_id: session_id.to_string(),
-            agent_config_id: req.agent_config_id.clone(),
-            started_at: now(),
-        });
+        self.running_tasks.insert(
+            req.task_id.to_string(),
+            RunningTask {
+                task_id: req.task_id.to_string(),
+                milestone_id: req.milestone_id.clone(),
+                flight_id: req.flight_id.clone(),
+                session_id: session_id.to_string(),
+                agent_config_id: req.agent_config_id.clone(),
+                started_at: now(),
+            },
+        );
     }
 
     /// Get running tasks for a specific flight.
     pub fn running_tasks_for_flight(&self, flight_id: &str) -> Vec<&RunningTask> {
-        self.running_tasks.values().filter(|rt| rt.flight_id == flight_id).collect()
+        self.running_tasks
+            .values()
+            .filter(|rt| rt.flight_id == flight_id)
+            .collect()
     }
 }
 
@@ -538,10 +590,16 @@ mod tests {
 
         orchestrator.record_spawn("session-1", &request, &mut flights);
         orchestrator.on_task_approval_needed("task-1", &mut flights);
-        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::ApprovalNeeded);
+        assert_eq!(
+            flights[0].milestones[0].tasks[0].status,
+            TaskStatus::ApprovalNeeded
+        );
 
         orchestrator.on_task_approval_resolved("task-1", &mut flights);
-        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Running);
+        assert_eq!(
+            flights[0].milestones[0].tasks[0].status,
+            TaskStatus::Running
+        );
     }
 
     fn sample_agent() -> AgentConfig {
@@ -635,7 +693,10 @@ mod tests {
 
         // Record spawn
         orchestrator.record_spawn("sess-1", &requests[0], &mut flights);
-        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Running);
+        assert_eq!(
+            flights[0].milestones[0].tasks[0].status,
+            TaskStatus::Running
+        );
 
         // Complete task-1 successfully
         orchestrator.on_task_complete("task-1", true, &mut flights);
@@ -725,7 +786,10 @@ mod tests {
         assert_eq!(flights[0].milestones[0].status, MilestoneStatus::Done);
         assert_eq!(flights[0].status, FlightStatus::Review);
         assert!(orchestrator.paused_at_milestone.contains_key("flight-1"));
-        assert_eq!(orchestrator.paused_at_milestone.get("flight-1").unwrap(), "ms-2");
+        assert_eq!(
+            orchestrator.paused_at_milestone.get("flight-1").unwrap(),
+            "ms-2"
+        );
 
         // Resume flight
         orchestrator.resume_flight(&mut flights[0]);
@@ -778,13 +842,19 @@ mod tests {
         let requests = orchestrator.tick(&flights, &agents);
         assert_eq!(requests.len(), 1);
         orchestrator.record_spawn("sess-1", &requests[0], &mut flights);
-        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Running);
+        assert_eq!(
+            flights[0].milestones[0].tasks[0].status,
+            TaskStatus::Running
+        );
 
         // Cancel flight
         orchestrator.cancel_flight(&mut flights[0]);
 
         assert_eq!(flights[0].status, FlightStatus::Cancelled);
-        assert_eq!(flights[0].milestones[0].tasks[0].status, TaskStatus::Cancelled);
+        assert_eq!(
+            flights[0].milestones[0].tasks[0].status,
+            TaskStatus::Cancelled
+        );
         assert!(orchestrator.running_tasks.is_empty());
     }
 }

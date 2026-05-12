@@ -47,8 +47,8 @@ pub async fn list_directory(dir_path: String, workspace: String) -> Result<Vec<D
 
         let mut entries: Vec<DirEntry> = Vec::new();
 
-        let read_dir = fs::read_dir(path)
-            .map_err(|e| format!("Failed to read directory: {}", e))?;
+        let read_dir =
+            fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
         for entry in read_dir.flatten() {
             let file_name = entry.file_name().to_string_lossy().to_string();
@@ -137,8 +137,8 @@ pub async fn list_subdirectories(dir_path: String) -> Result<Vec<String>, String
             return Err(format!("Not a directory: {}", dir_path));
         }
 
-        let read_dir = fs::read_dir(path)
-            .map_err(|e| format!("Failed to read directory: {}", e))?;
+        let read_dir =
+            fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
         let mut dirs: Vec<String> = Vec::new();
         for entry in read_dir.flatten() {
@@ -171,8 +171,7 @@ pub async fn read_file_contents(file_path: String, workspace: String) -> Result<
             return Err(format!("Not a file: {}", file_path));
         }
 
-        let meta = fs::metadata(path)
-            .map_err(|e| format!("Cannot read file metadata: {}", e))?;
+        let meta = fs::metadata(path).map_err(|e| format!("Cannot read file metadata: {}", e))?;
         if meta.len() > MAX_EDITOR_FILE_SIZE {
             return Err(format!(
                 "File too large for editor ({} bytes, limit {} bytes)",
@@ -181,8 +180,7 @@ pub async fn read_file_contents(file_path: String, workspace: String) -> Result<
             ));
         }
 
-        fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read file: {}", e))
+        fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
@@ -202,12 +200,14 @@ pub async fn write_file_contents(
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             if !parent.exists() {
-                return Err(format!("Parent directory does not exist: {}", parent.display()));
+                return Err(format!(
+                    "Parent directory does not exist: {}",
+                    parent.display()
+                ));
             }
         }
 
-        fs::write(path, content)
-            .map_err(|e| format!("Failed to write file: {}", e))
+        fs::write(path, content).map_err(|e| format!("Failed to write file: {}", e))
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
@@ -343,10 +343,7 @@ pub async fn read_file_for_diff(
         let canonical_joined = fs::canonicalize(&joined)
             .map_err(|e| format!("Cannot resolve file '{}': {}", rel_path, e))?;
         if !canonical_joined.starts_with(&canonical_root) {
-            return Err(format!(
-                "Path '{}' escapes project root",
-                rel_path
-            ));
+            return Err(format!("Path '{}' escapes project root", rel_path));
         }
 
         if !canonical_joined.is_file() {

@@ -261,7 +261,7 @@ fn filter_artifacts(text: &str) -> String {
     while result.contains("  ") {
         result = result.replace("  ", " ");
     }
-    result
+    result.trim().to_string()
 }
 
 /// Detect if the transcription is numeric garbage (a common Whisper hallucination
@@ -274,7 +274,9 @@ fn is_numeric_hallucination(text: &str) -> bool {
     let total = text.len() as f64;
     let numeric_chars = text
         .chars()
-        .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-' || *c == 'e' || *c == 'E' || *c == '+')
+        .filter(|c| {
+            c.is_ascii_digit() || *c == '.' || *c == '-' || *c == 'e' || *c == 'E' || *c == '+'
+        })
         .count() as f64;
 
     // If more than 60% of the text is numeric/scientific notation chars, it's garbage

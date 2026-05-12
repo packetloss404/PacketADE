@@ -88,11 +88,7 @@ fn try_section(path: &Path) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
-    Some(format!(
-        "<!-- source: {} -->\n{}",
-        path.display(),
-        trimmed
-    ))
+    Some(format!("<!-- source: {} -->\n{}", path.display(), trimmed))
 }
 
 /// Build the inclusive root → cwd directory chain. Uses `git

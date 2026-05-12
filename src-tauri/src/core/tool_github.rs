@@ -10,7 +10,10 @@
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use tracing::warn;
 
-use crate::core::brand::{DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE, USER_AGENT as BRAND_USER_AGENT};
+use crate::core::brand::{
+    DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE,
+    USER_AGENT as BRAND_USER_AGENT,
+};
 use crate::core::llm_types::ToolDefinition;
 
 const MAX_OUTPUT_CHARS: usize = 8000;
@@ -80,9 +83,8 @@ fn github_client(token: &str) -> Result<reqwest::Client, String> {
 }
 
 fn client_or_err() -> Result<reqwest::Client, String> {
-    let token = load_github_token().ok_or_else(|| {
-        "GitHub token not configured. Run `github_set_token` first.".to_string()
-    })?;
+    let token = load_github_token()
+        .ok_or_else(|| "GitHub token not configured. Run `github_set_token` first.".to_string())?;
     github_client(&token)
 }
 
@@ -239,10 +241,7 @@ pub fn github_tool_definitions() -> Vec<ToolDefinition> {
 
 // -------------------- dispatcher --------------------
 
-pub async fn execute_github_tool(
-    name: &str,
-    args: &serde_json::Value,
-) -> Result<String, String> {
+pub async fn execute_github_tool(name: &str, args: &serde_json::Value) -> Result<String, String> {
     match name {
         "gh_list_issues" => execute_list_issues(args).await,
         "gh_get_issue" => execute_get_issue(args).await,
@@ -318,10 +317,13 @@ async fn execute_get_issue(args: &serde_json::Value) -> Result<String, String> {
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     let issue_body = handle_status(issue_resp).await?;
-    let issue: serde_json::Value = serde_json::from_str(&issue_body)
-        .map_err(|e| format!("Failed to parse issue: {}", e))?;
+    let issue: serde_json::Value =
+        serde_json::from_str(&issue_body).map_err(|e| format!("Failed to parse issue: {}", e))?;
 
-    let title = issue.get("title").and_then(|v| v.as_str()).unwrap_or("(no title)");
+    let title = issue
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(no title)");
     let state = issue.get("state").and_then(|v| v.as_str()).unwrap_or("");
     let user = issue
         .get("user")
@@ -363,12 +365,12 @@ async fn execute_get_issue(args: &serde_json::Value) -> Result<String, String> {
                 .and_then(|u| u.get("login"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            let created = c
-                .get("created_at")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let created = c.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
             let cbody = c.get("body").and_then(|v| v.as_str()).unwrap_or("");
-            out.push_str(&format!("### @{} — {}\n\n{}\n\n---\n\n", author, created, cbody));
+            out.push_str(&format!(
+                "### @{} — {}\n\n{}\n\n---\n\n",
+                author, created, cbody
+            ));
         }
     }
 
@@ -395,8 +397,8 @@ async fn execute_list_prs(args: &serde_json::Value) -> Result<String, String> {
         .map_err(|e| format!("Request failed: {}", e))?;
     let body = handle_status(resp).await?;
 
-    let items: Vec<serde_json::Value> = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse PRs response: {}", e))?;
+    let items: Vec<serde_json::Value> =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse PRs response: {}", e))?;
 
     if items.is_empty() {
         return Ok(format!("No {} pull requests found in {}.", state, repo));

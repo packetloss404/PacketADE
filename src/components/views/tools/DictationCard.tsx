@@ -2,8 +2,13 @@ import { useState, useEffect } from "react";
 import { Mic, Download, Check, X, Plus, ExternalLink, Keyboard, Key } from "lucide-react";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useAppStore } from "@/stores/appStore";
-import { listAudioDevices } from "@/lib/tauri";
+import { deleteApiKey, getApiKeyExists, listAudioDevices, setApiKey } from "@/lib/tauri";
+import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import type { AudioDevice } from "@/types/dictation";
+
+const GEMINI_PROVIDER = "gemini";
+const GEMINI_API_KEY_STORAGE_KEY = storageKey("gemini-api-key");
+const LEGACY_GEMINI_API_KEY_STORAGE_KEY = `${LEGACY_STORAGE_PREFIX}gemini-api-key`;
 
 export function DictationCard() {
   const models = useDictationStore((s) => s.models);
@@ -18,6 +23,8 @@ export function DictationCard() {
   const [newWord, setNewWord] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
   const [geminiKeySaved, setGeminiKeySaved] = useState(false);
+  const [geminiKeySaving, setGeminiKeySaving] = useState(false);
+  const [geminiKeyError, setGeminiKeyError] = useState<string | null>(null);
 
   useEffect(() => {
     loadModels();
@@ -28,9 +35,35 @@ export function DictationCard() {
         setDevices(parsed);
       })
       .catch(() => {});
-    // Load saved Gemini key indicator
-    const saved = localStorage.getItem("packetade:gemini-api-key");
-    if (saved) setGeminiKeySaved(true);
+    let cancelled = false;
+    const loadGeminiKeyStatus = async () => {
+      const legacySaved =
+        localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY)?.trim() ||
+        localStorage.getItem(LEGACY_GEMINI_API_KEY_STORAGE_KEY)?.trim() ||
+        "";
+
+      if (legacySaved) {
+        try {
+          await setApiKey(GEMINI_PROVIDER, legacySaved);
+        } catch (error) {
+          console.warn("Failed to migrate Gemini API key to keyring", error);
+        } finally {
+          localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
+          localStorage.removeItem(LEGACY_GEMINI_API_KEY_STORAGE_KEY);
+        }
+      }
+
+      try {
+        const exists = await getApiKeyExists(GEMINI_PROVIDER);
+        if (!cancelled) setGeminiKeySaved(exists);
+      } catch (error) {
+        console.warn("Failed to check Gemini API key status", error);
+      }
+    };
+    void loadGeminiKeyStatus();
+    return () => {
+      cancelled = true;
+    };
   }, [loadModels, loadSettings]);
 
   const handleDeviceChange = (idx: number) => {
@@ -60,16 +93,36 @@ export function DictationCard() {
     });
   };
 
-  const handleSaveGeminiKey = () => {
+  const handleSaveGeminiKey = async () => {
     if (!geminiKey.trim()) return;
-    localStorage.setItem("packetade:gemini-api-key", geminiKey.trim());
-    setGeminiKeySaved(true);
-    setGeminiKey("");
+    setGeminiKeySaving(true);
+    setGeminiKeyError(null);
+    try {
+      await setApiKey(GEMINI_PROVIDER, geminiKey.trim());
+      localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
+      localStorage.removeItem(LEGACY_GEMINI_API_KEY_STORAGE_KEY);
+      setGeminiKeySaved(true);
+      setGeminiKey("");
+    } catch (error) {
+      setGeminiKeyError(error instanceof Error ? error.message : "Failed to save API key");
+    } finally {
+      setGeminiKeySaving(false);
+    }
   };
 
-  const handleClearGeminiKey = () => {
-    localStorage.removeItem("packetade:gemini-api-key");
-    setGeminiKeySaved(false);
+  const handleClearGeminiKey = async () => {
+    setGeminiKeySaving(true);
+    setGeminiKeyError(null);
+    try {
+      await deleteApiKey(GEMINI_PROVIDER);
+      localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
+      localStorage.removeItem(LEGACY_GEMINI_API_KEY_STORAGE_KEY);
+      setGeminiKeySaved(false);
+    } catch (error) {
+      setGeminiKeyError(error instanceof Error ? error.message : "Failed to clear API key");
+    } finally {
+      setGeminiKeySaving(false);
+    }
   };
 
   return (
@@ -231,6 +284,7 @@ export function DictationCard() {
           {geminiKeySaved ? (
             <button
               onClick={handleClearGeminiKey}
+              disabled={geminiKeySaving}
               className="px-2 py-1 text-[10px] text-text-muted hover:text-accent-red transition-colors"
             >
               Clear
@@ -245,17 +299,20 @@ export function DictationCard() {
               onChange={(e) => setGeminiKey(e.target.value)}
               placeholder="AIza..."
               className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
-              onKeyDown={(e) => e.key === "Enter" && handleSaveGeminiKey()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleSaveGeminiKey();
+              }}
             />
             <button
               onClick={handleSaveGeminiKey}
-              disabled={!geminiKey.trim()}
+              disabled={!geminiKey.trim() || geminiKeySaving}
               className="px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors disabled:opacity-50"
             >
               Save
             </button>
           </div>
         )}
+        {geminiKeyError ? <p className="text-[10px] text-accent-red mt-2">{geminiKeyError}</p> : null}
       </div>
     </div>
   );

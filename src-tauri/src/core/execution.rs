@@ -84,7 +84,13 @@ impl SshConfig {
             if !trimmed.is_empty() {
                 return trimmed
                     .chars()
-                    .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+                    .map(|c| {
+                        if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
                     .collect();
             }
         }
@@ -122,16 +128,37 @@ pub fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Resolve `rel` against the remote base path. Absolute paths pass through;
-/// `.` and empty map to the base; otherwise join with `/`.
-pub fn resolve_remote_path(base: &str, rel: &str) -> String {
+/// Resolve `rel` against the configured remote workspace.
+///
+/// Remote tool paths must stay inside `base`: absolute paths and `..`
+/// components are rejected instead of being passed through to the remote shell.
+pub fn resolve_remote_path(base: &str, rel: &str) -> Result<String, String> {
+    let base_trim = base.trim_end_matches('/');
+    if base_trim.is_empty() {
+        return Err("Remote workspace path is empty".to_string());
+    }
     if rel.starts_with('/') {
-        rel.to_string()
-    } else if rel == "." || rel.is_empty() {
-        base.trim_end_matches('/').to_string()
+        return Err("Remote tool paths must be relative to the workspace".to_string());
+    }
+
+    let mut parts = Vec::new();
+    for part in rel.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                return Err("Remote tool paths may not contain '..'".to_string());
+            }
+            _ if part.contains('\0') => {
+                return Err("Remote tool paths may not contain NUL bytes".to_string());
+            }
+            _ => parts.push(part),
+        }
+    }
+
+    if parts.is_empty() {
+        Ok(base_trim.to_string())
     } else {
-        let base_trim = base.trim_end_matches('/');
-        format!("{}/{}", base_trim, rel)
+        Ok(format!("{}/{}", base_trim, parts.join("/")))
     }
 }
 
@@ -161,7 +188,8 @@ mod tests {
             args
         );
         assert!(
-            args.iter().any(|a| a.starts_with("ControlPath=~/.ssh/.pkt-cm-")),
+            args.iter()
+                .any(|a| a.starts_with("ControlPath=~/.ssh/.pkt-cm-")),
             "expected ControlPath with per-target socket in args: {:?}",
             args
         );
@@ -206,5 +234,23 @@ mod tests {
         let suffix = cfg.control_socket_suffix();
         assert!(!suffix.contains('/'));
         assert!(!suffix.contains(' '));
+    }
+
+    #[test]
+    fn resolve_remote_path_rejects_absolute_paths() {
+        let err = resolve_remote_path("/home/alice/project", "/etc/passwd").unwrap_err();
+        assert!(err.contains("relative"));
+    }
+
+    #[test]
+    fn resolve_remote_path_rejects_parent_components() {
+        let err = resolve_remote_path("/home/alice/project", "src/../../secret").unwrap_err();
+        assert!(err.contains(".."));
+    }
+
+    #[test]
+    fn resolve_remote_path_keeps_relative_paths_under_base() {
+        let path = resolve_remote_path("/home/alice/project/", "./src/main.rs").unwrap();
+        assert_eq!(path, "/home/alice/project/src/main.rs");
     }
 }

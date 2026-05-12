@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, memo } from "react";
-import { Send, Bot, User, Loader2, Sparkles, Check, X, ListTree, Mic } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, Check, X, ListTree, Mic, AlertTriangle } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
-import type { ChatMessage, FlightSuggestion, FlightPlanSuggestion } from "@/hooks/useFlightChat";
+import type { ChatMessage, FlightSuggestion, FlightPlanSuggestion, FlightChatError } from "@/hooks/useFlightChat";
 
 interface FlightChatPanelProps {
   messages: ChatMessage[];
@@ -10,6 +10,7 @@ interface FlightChatPanelProps {
   streamingContent: string;
   latestSuggestion: FlightSuggestion | null;
   latestPlan: FlightPlanSuggestion | null;
+  lastError: FlightChatError | null;
   onSend: (content: string) => void;
   onApplySuggestion: () => void;
   onDismissSuggestion: () => void;
@@ -102,6 +103,24 @@ function PlanBanner({
   );
 }
 
+function ErrorBanner({ error }: { error: FlightChatError }) {
+  return (
+    <div className="mx-3 mb-2 px-3 py-2 bg-accent-red/10 border border-accent-red/30 rounded-lg flex items-start gap-2">
+      <AlertTriangle size={12} className="text-accent-red flex-shrink-0 mt-0.5" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] text-accent-red font-medium truncate">
+          {error.message}
+        </div>
+        {error.suggestion && (
+          <div className="text-[10px] text-text-muted mt-0.5">
+            {error.suggestion}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const ChatBubble = memo(function ChatBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
   return (
@@ -141,6 +160,7 @@ export function FlightChatPanel({
   streamingContent,
   latestSuggestion,
   latestPlan,
+  lastError,
   onSend,
   onApplySuggestion,
   onDismissSuggestion,
@@ -248,6 +268,8 @@ export function FlightChatPanel({
           onDismiss={onDismissSuggestion}
         />
       )}
+
+      {lastError && <ErrorBanner error={lastError} />}
 
       {/* Input */}
       <div className="px-3 pb-3 pt-1">

@@ -1,5 +1,5 @@
-use std::process::Command;
 use super::shared::{hide_window, validate_project_path};
+use std::process::Command;
 use tracing::info;
 
 fn status_lines(project_path: &str) -> Result<Vec<String>, String> {
@@ -30,7 +30,9 @@ fn git_command(args: &[&str], cwd: &str) -> Result<std::process::Output, String>
     let mut cmd = Command::new("git");
     cmd.args(args).current_dir(cwd);
     hide_window(&mut cmd);
-    let output = cmd.output().map_err(|e| format!("Failed to run git: {}", e))?;
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
 
     // Audit log
     let success = output.status.success();
@@ -87,7 +89,10 @@ pub fn commit(project_path: &str, message: &str, stage_all: bool) -> Result<Stri
     }
 
     if stage_all {
-        return Err("Stage-all commits are disabled in the in-app flow. Stage files explicitly first.".to_string());
+        return Err(
+            "Stage-all commits are disabled in the in-app flow. Stage files explicitly first."
+                .to_string(),
+        );
     }
 
     if !has_staged_changes(project_path)? {
@@ -107,7 +112,9 @@ pub fn push(project_path: &str) -> Result<String, String> {
     }
 
     if !worktree_is_clean(project_path)? {
-        return Err("Cannot push with local changes present. Commit or stash them first.".to_string());
+        return Err(
+            "Cannot push with local changes present. Commit or stash them first.".to_string(),
+        );
     }
 
     // Check upstream tracking
@@ -132,13 +139,20 @@ pub fn push(project_path: &str) -> Result<String, String> {
 
 pub fn pull(project_path: &str) -> Result<String, String> {
     if !worktree_is_clean(project_path)? {
-        return Err("Cannot pull with local changes present. Commit, stash, or discard them first.".to_string());
+        return Err(
+            "Cannot pull with local changes present. Commit, stash, or discard them first."
+                .to_string(),
+        );
     }
 
     git_command_result(&["pull", "--ff-only"], project_path)
 }
 
-pub fn create_branch(project_path: &str, branch_name: &str, checkout: bool) -> Result<String, String> {
+pub fn create_branch(
+    project_path: &str,
+    branch_name: &str,
+    checkout: bool,
+) -> Result<String, String> {
     validate_branch_name(branch_name)?;
     if checkout {
         git_command_result(&["checkout", "-b", "--", branch_name], project_path)
@@ -154,9 +168,14 @@ fn validate_branch_name(name: &str) -> Result<(), String> {
     if name.starts_with('-') {
         return Err("Branch name cannot start with '-'".to_string());
     }
-    if name.contains("..") || name.contains(' ') || name.contains('~')
-        || name.contains('^') || name.contains(':') || name.contains('\\')
-        || name.contains('\x7f') || name.contains('\0')
+    if name.contains("..")
+        || name.contains(' ')
+        || name.contains('~')
+        || name.contains('^')
+        || name.contains(':')
+        || name.contains('\\')
+        || name.contains('\x7f')
+        || name.contains('\0')
     {
         return Err("Branch name contains invalid characters".to_string());
     }
@@ -198,10 +217,8 @@ pub fn safety_check(project_path: &str) -> GitSafetyReport {
     let uncommitted_count = lines.len();
     let is_clean = uncommitted_count == 0;
 
-    let has_upstream = git_command_result(
-        &["rev-parse", "--abbrev-ref", "@{upstream}"],
-        project_path,
-    ).is_ok();
+    let has_upstream =
+        git_command_result(&["rev-parse", "--abbrev-ref", "@{upstream}"], project_path).is_ok();
 
     let behind_upstream = if has_upstream {
         git_command_result(&["rev-list", "HEAD..@{upstream}", "--count"], project_path)

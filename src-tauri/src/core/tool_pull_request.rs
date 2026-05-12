@@ -95,10 +95,7 @@ pub async fn execute_create_pull_request(
         .filter(|s| !s.is_empty())
         .unwrap_or(DEFAULT_BASE_BRANCH);
 
-    let draft = args
-        .get("draft")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let draft = args.get("draft").and_then(|v| v.as_bool()).unwrap_or(false);
 
     info!(title = %title, base = %base, draft = %draft, "Tool: create_pull_request");
 

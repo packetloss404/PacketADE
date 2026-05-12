@@ -1,14 +1,14 @@
 pub mod api;
-pub mod core;
 mod claude;
 mod commands;
+pub mod core;
 
 use commands::agent_sidecar::SidecarManager;
 use commands::api_agent::ApiAgentState;
-use commands::github::create_github_auth_state;
-use commands::pty::create_shared_pty_manager;
-use commands::orchestration::create_shared_orchestrator;
 use commands::dictation::audio::create_dictation_state;
+use commands::github::create_github_auth_state;
+use commands::orchestration::create_shared_orchestrator;
+use commands::pty::create_shared_pty_manager;
 
 fn init_tracing() {
     use tracing_subscriber::{fmt, EnvFilter};
@@ -20,8 +20,7 @@ fn init_tracing() {
     // Leak the guard so the writer stays alive for the process lifetime
     std::mem::forget(_guard);
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     fmt()
         .with_env_filter(filter)
@@ -34,12 +33,13 @@ fn dirs_log_dir() -> std::path::PathBuf {
     use crate::core::brand::LOG_DIR_NAME;
     #[cfg(target_os = "linux")]
     {
-        let base = std::env::var("XDG_DATA_HOME")
-            .unwrap_or_else(|_| {
-                let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-                format!("{}/.local/share", home)
-            });
-        std::path::PathBuf::from(base).join(LOG_DIR_NAME).join("logs")
+        let base = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            format!("{}/.local/share", home)
+        });
+        std::path::PathBuf::from(base)
+            .join(LOG_DIR_NAME)
+            .join("logs")
     }
     #[cfg(target_os = "macos")]
     {
@@ -54,7 +54,9 @@ fn dirs_log_dir() -> std::path::PathBuf {
         let appdata = std::env::var("LOCALAPPDATA")
             .or_else(|_| std::env::var("APPDATA"))
             .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-        std::path::PathBuf::from(appdata).join(LOG_DIR_NAME).join("logs")
+        std::path::PathBuf::from(appdata)
+            .join(LOG_DIR_NAME)
+            .join("logs")
     }
 }
 

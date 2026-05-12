@@ -1,8 +1,8 @@
+use serde::Serialize;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use serde::Serialize;
 use tracing::{info, warn};
 
 use super::agent_config::AgentConfig;
@@ -118,7 +118,11 @@ pub fn ensure_data_dir() -> Result<PathBuf, String> {
     if !dir.exists() {
         fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create data dir {:?}: {}", dir, e))?;
-        info!("Created {} data dir: {:?}", crate::core::brand::APP_NAME, dir);
+        info!(
+            "Created {} data dir: {:?}",
+            crate::core::brand::APP_NAME,
+            dir
+        );
     }
     Ok(dir)
 }
@@ -147,14 +151,18 @@ fn save_state_inner(state: &PersistedState) -> Result<(), String> {
 }
 
 pub fn save_state(state: &PersistedState) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = state.clone();
     state.version += 1;
     save_state_inner(&state)
 }
 
 pub fn save_flights(flights: Vec<Flight>) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.flights = flights;
     state.version += 1;
@@ -162,7 +170,9 @@ pub fn save_flights(flights: Vec<Flight>) -> Result<(), String> {
 }
 
 pub fn save_agents(agents: Vec<AgentConfig>) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.agents = agents;
     state.version += 1;
@@ -170,7 +180,9 @@ pub fn save_agents(agents: Vec<AgentConfig>) -> Result<(), String> {
 }
 
 pub fn save_settings(settings: OrchestratorSettings) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.settings = settings;
     state.version += 1;
@@ -178,7 +190,9 @@ pub fn save_settings(settings: OrchestratorSettings) -> Result<(), String> {
 }
 
 pub fn save_ui(ui: PersistedUiState) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.ui = ui;
     state.version += 1;
@@ -186,7 +200,9 @@ pub fn save_ui(ui: PersistedUiState) -> Result<(), String> {
 }
 
 pub fn save_issues(issues: Vec<Issue>) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.issues = issues;
     state.version += 1;
@@ -194,7 +210,9 @@ pub fn save_issues(issues: Vec<Issue>) -> Result<(), String> {
 }
 
 pub fn save_workspaces(workspaces: Vec<Workspace>) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.workspaces = workspaces;
     state.version += 1;
@@ -202,15 +220,22 @@ pub fn save_workspaces(workspaces: Vec<Workspace>) -> Result<(), String> {
 }
 
 pub fn save_servers(servers: Vec<ServerConfig>) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.servers = servers;
     state.version += 1;
     save_state_inner(&state)
 }
 
-pub fn save_memory(events: Vec<serde_json::Value>, patterns: Vec<serde_json::Value>) -> Result<(), String> {
-    let _lock = STATE_LOCK.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+pub fn save_memory(
+    events: Vec<serde_json::Value>,
+    patterns: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
     state.memory_events = events;
     state.memory_patterns = patterns;
@@ -219,8 +244,18 @@ pub fn save_memory(events: Vec<serde_json::Value>, patterns: Vec<serde_json::Val
 }
 
 fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {
-    let tmp_path = path.with_extension(format!("{}.tmp", path.extension().and_then(|ext| ext.to_str()).unwrap_or("json")));
-    let backup_path = path.with_extension(format!("{}.bak", path.extension().and_then(|ext| ext.to_str()).unwrap_or("json")));
+    let tmp_path = path.with_extension(format!(
+        "{}.tmp",
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("json")
+    ));
+    let backup_path = path.with_extension(format!(
+        "{}.bak",
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("json")
+    ));
 
     {
         let mut file = fs::File::create(&tmp_path)
@@ -234,19 +269,17 @@ fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {
     }
 
     if path.exists() {
-        let previous = fs::read(path)
-            .map_err(|e| format!("Failed to read existing {:?}: {}", path, e))?;
+        let previous =
+            fs::read(path).map_err(|e| format!("Failed to read existing {:?}: {}", path, e))?;
         fs::write(&backup_path, previous)
             .map_err(|e| format!("Failed to write backup {:?}: {}", backup_path, e))?;
     }
 
     if path.exists() {
-        fs::remove_file(path)
-            .map_err(|e| format!("Failed to replace {:?}: {}", path, e))?;
+        fs::remove_file(path).map_err(|e| format!("Failed to replace {:?}: {}", path, e))?;
     }
 
-    fs::rename(&tmp_path, path)
-        .map_err(|e| format!("Failed to replace {:?}: {}", path, e))?;
+    fs::rename(&tmp_path, path).map_err(|e| format!("Failed to replace {:?}: {}", path, e))?;
 
     Ok(())
 }

@@ -51,7 +51,7 @@ import * as tar from "tar";
 // Pinned constants
 // ---------------------------------------------------------------------------
 
-const NODE_VERSION = "20.17.0";
+const NODE_VERSION = "24.15.0";
 const SHASUMS_URL = `https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt`;
 const DIST_BASE = `https://nodejs.org/dist/v${NODE_VERSION}`;
 

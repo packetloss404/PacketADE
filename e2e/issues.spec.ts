@@ -8,8 +8,8 @@ test.describe("Issue board", () => {
     // IssueBoard renders kanban columns — at minimum a "Todo" column header.
     // Use a loose match since the store is persisted to localStorage (cleared
     // per-test by the fixture) so the board always starts empty.
-    await expect(page.getByText(/to ?do/i).first()).toBeVisible();
-    await expect(page.getByText(/in progress/i).first()).toBeVisible();
+    await expect(page.getByText(/^To Do$/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^In Progress$/)).toBeVisible();
   });
 
   test("issue board is interactive after navigation", async ({ page }) => {
@@ -20,10 +20,9 @@ test.describe("Issue board", () => {
     // accepts input. Creating a full issue requires the NewIssueForm modal
     // which depends on several backend invokes — covered once we add deeper
     // Tauri mocks.
-    const searchInputs = page.getByPlaceholder(/search/i);
-    if ((await searchInputs.count()) > 0) {
-      await searchInputs.first().fill("hello");
-      await expect(searchInputs.first()).toHaveValue("hello");
-    }
+    const searchInput = page.getByPlaceholder("Filter by label, agent, flight…");
+    await expect(searchInput).toBeVisible({ timeout: 15_000 });
+    await searchInput.fill("hello");
+    await expect(searchInput).toHaveValue("hello");
   });
 });

@@ -1,7 +1,7 @@
-mod helpers;
 pub mod claude;
 pub mod codex;
 pub mod gemini;
+mod helpers;
 pub mod opencode;
 
 #[cfg(test)]
@@ -88,9 +88,9 @@ mod tests {
         assert!(snapshot.6); // has_token_count
         assert_eq!(snapshot.0.as_deref(), Some("new-model")); // latest_model
         assert_eq!(snapshot.1, 20); // input_tokens
-        assert_eq!(snapshot.2, 8);  // output_tokens
-        assert_eq!(snapshot.3, 4);  // reasoning_tokens
-        assert_eq!(snapshot.4, 6);  // cached_tokens
+        assert_eq!(snapshot.2, 8); // output_tokens
+        assert_eq!(snapshot.3, 4); // reasoning_tokens
+        assert_eq!(snapshot.4, 6); // cached_tokens
         assert_eq!(snapshot.5, 28); // total_tokens
 
         let _ = fs::remove_dir_all(dir);

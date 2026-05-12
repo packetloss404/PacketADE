@@ -1,5 +1,5 @@
+use super::helpers::{iso_to_epoch, now_epoch_seconds, STALE_SECONDS};
 use crate::commands::shared::home_dir;
-use super::helpers::{now_epoch_seconds, iso_to_epoch, STALE_SECONDS};
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
@@ -81,19 +81,19 @@ pub fn read_gemini_statusline_states() -> Vec<GeminiStatusLineData> {
 
         // Extract from the latest entry
         let last = &entries[entries.len() - 1];
-        let session_id = last.get("sessionId")
+        let session_id = last
+            .get("sessionId")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
 
-        let last_role = last.get("type")
+        let last_role = last
+            .get("type")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
 
-        let timestamp_str = last.get("timestamp")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let timestamp_str = last.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
         let timestamp = iso_to_epoch(timestamp_str);
 
         // Skip if the last message is stale
@@ -102,14 +102,17 @@ pub fn read_gemini_statusline_states() -> Vec<GeminiStatusLineData> {
         }
 
         // Find model from the most recent assistant message with model info
-        let model = entries.iter().rev()
+        let model = entries
+            .iter()
+            .rev()
             .filter_map(|e| e.get("model").and_then(|v| v.as_str()))
             .next()
             .unwrap_or("Gemini")
             .to_string();
 
         // Resolve sandbox name to project directory path
-        let cwd = project_map.iter()
+        let cwd = project_map
+            .iter()
             .find(|(_, v)| v.as_str() == sandbox_name)
             .map(|(k, _)| k.clone())
             .unwrap_or_default();
@@ -144,7 +147,8 @@ fn read_project_map(path: &PathBuf) -> Vec<(String, String)> {
         None => return vec![],
     };
 
-    projects.iter()
+    projects
+        .iter()
         .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
         .collect()
 }

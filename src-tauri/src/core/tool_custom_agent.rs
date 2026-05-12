@@ -77,14 +77,19 @@ pub fn load_custom_agent_definitions() -> Vec<ToolDefinition> {
 fn find_agent(tool_name: &str, project_path: &str) -> Option<CustomAgentDef> {
     let suffix = tool_name.strip_prefix(TOOL_PREFIX)?;
     let agents = discover_custom_agents(project_path);
-    agents.into_iter().find(|a| sanitize_name(&a.name) == suffix)
+    agents
+        .into_iter()
+        .find(|a| sanitize_name(&a.name) == suffix)
 }
 
 /// Build the tool subset this agent is allowed to call. Empty `allowed_tools`
 /// falls back to the read-only default set.
 async fn build_allowed_tools(agent: &CustomAgentDef) -> Vec<ToolDefinition> {
     let allowed: Vec<String> = if agent.allowed_tools.is_empty() {
-        DEFAULT_READ_ONLY_TOOLS.iter().map(|s| s.to_string()).collect()
+        DEFAULT_READ_ONLY_TOOLS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     } else {
         agent.allowed_tools.clone()
     };
@@ -97,9 +102,7 @@ async fn build_allowed_tools(agent: &CustomAgentDef) -> Vec<ToolDefinition> {
 
     // `web_fetch` may not be defined in tool_runtime — provide a minimal
     // fallback so the model can still call it when listed.
-    if allowed.iter().any(|n| n == "web_fetch")
-        && !tools.iter().any(|t| t.name == "web_fetch")
-    {
+    if allowed.iter().any(|n| n == "web_fetch") && !tools.iter().any(|t| t.name == "web_fetch") {
         tools.push(ToolDefinition {
             name: "web_fetch".to_string(),
             description: "Fetch the contents of a URL and return the response body as text."
@@ -127,8 +130,16 @@ async fn collect_response(
     while let Some(chunk) = rx.recv().await {
         match chunk {
             StreamChunk::TextDelta { text: t } => text.push_str(&t),
-            StreamChunk::ToolUseEnd { id, name, arguments } => {
-                tool_calls.push(ToolCall { id, name, arguments });
+            StreamChunk::ToolUseEnd {
+                id,
+                name,
+                arguments,
+            } => {
+                tool_calls.push(ToolCall {
+                    id,
+                    name,
+                    arguments,
+                });
             }
             StreamChunk::Error { message } => return Err(message),
             StreamChunk::Done { .. } => break,

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import type { AgentConversation } from "@/types/agent-conversation";
+import type { AgentCli } from "@/stores/agentTaskStore";
 
 interface MenuItemProps {
   icon: React.ReactNode;
@@ -67,15 +68,36 @@ interface ContinueInMenuProps {
   conversation: AgentConversation;
 }
 
+interface CliContinuation {
+  command: string;
+  label: string;
+}
+
+const CONTINUATION_CLIS: Partial<Record<AgentCli, CliContinuation>> = {
+  "claude-code": { command: "claude", label: "Claude" },
+  codex: { command: "codex", label: "Codex" },
+  gemini: { command: "gemini", label: "Gemini" },
+  opencode: { command: "opencode", label: "OpenCode" },
+  "api-claude-oauth": { command: "claude", label: "Claude" },
+  "api-openai-codex": { command: "codex", label: "Codex" },
+};
+
+function getCliContinuation(agent: AgentCli): CliContinuation | null {
+  return CONTINUATION_CLIS[agent] ?? null;
+}
+
+function quoteShellArg(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
 /**
  * "Continue in ..." menu, modeled after Claude Code Desktop's affordance for
  * jumping a conversation's context into another surface.
  *
  * Items:
  *  1. Open project folder in OS    — `open(path)` via tauri-plugin-shell
- *  2. Continue in CLI (claude)     — copy `cd <path> && claude` to clipboard
- *                                    (cross-platform terminal spawning is fragile;
- *                                    a paste-into-terminal flow is the v1 trade-off)
+ *  2. Continue in CLI              — copy a provider-matched command when
+ *                                    this conversation has a known local CLI
  *  3. Open in VS Code              — `vscode://file/<absolutePath>`
  *  4. Open in Cursor               — `cursor://file/<absolutePath>`
  *
@@ -89,6 +111,8 @@ export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
   const isRemote = Boolean(conversation.sshTarget);
   const hasPath = Boolean(projectPath);
   const localOnlyDisabled = isRemote || !hasPath;
+  const cliContinuation = getCliContinuation(conversation.agent);
+  const cliDisabled = localOnlyDisabled || !cliContinuation;
 
   function flashFeedback(msg: string) {
     setFeedback(msg);
@@ -105,15 +129,15 @@ export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
   }
 
   async function handleContinueInCli() {
-    if (localOnlyDisabled) return;
-    // Cross-platform "spawn a detached terminal at <path> running claude" is a
+    if (cliDisabled || !cliContinuation) return;
+    // Cross-platform detached terminal spawning is a
     // mess (Terminal.app, Windows Terminal, gnome-terminal, kitty, etc. all
     // diverge). For v1, copy a ready-to-paste invocation and let the user
     // paste it into whatever shell they prefer.
-    const cmd = `cd "${projectPath}" && claude`;
+    const cmd = `cd ${quoteShellArg(projectPath)} && ${cliContinuation.command}`;
     try {
       await navigator.clipboard.writeText(cmd);
-      flashFeedback("Path copied — paste into your terminal");
+      flashFeedback("Command copied - paste into your terminal");
     } catch (err) {
       console.warn("[ContinueInMenu] clipboard write failed:", err);
       flashFeedback("Could not copy to clipboard");
@@ -162,13 +186,23 @@ export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
           />
           <MenuItem
             icon={<Terminal size={12} />}
-            label="Continue in CLI (claude)"
-            subtitle="Copy `cd <path> && claude` to clipboard"
-            disabled={localOnlyDisabled}
+            label={
+              cliContinuation
+                ? `Continue in CLI (${cliContinuation.label})`
+                : "Continue in CLI"
+            }
+            subtitle={
+              cliContinuation
+                ? `Copy cd <path> && ${cliContinuation.command} to clipboard`
+                : "No local CLI handoff for this provider"
+            }
+            disabled={cliDisabled}
             disabledReason={
               isRemote
                 ? "Path is on a remote SSH host"
-                : "No project path on this conversation"
+                : !hasPath
+                  ? "No project path on this conversation"
+                  : "This API provider does not have a mapped local CLI"
             }
             onClick={handleContinueInCli}
           />

@@ -26,9 +26,15 @@ fn copy_per_triple_node() -> Result<(), String> {
         .map_err(|e| format!("read CARGO_MANIFEST_DIR: {}", e))?;
     let out_dir = std::env::var("OUT_DIR").map_err(|e| format!("read OUT_DIR: {}", e))?;
 
-    let ext = if target.contains("windows") { ".exe" } else { "" };
+    let ext = if target.contains("windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let src_name = format!("node-{}{}", target, ext);
-    let src = PathBuf::from(&manifest_dir).join("binaries").join(&src_name);
+    let src = PathBuf::from(&manifest_dir)
+        .join("binaries")
+        .join(&src_name);
     if !src.exists() {
         return Err(format!("source {} missing", src.display()));
     }

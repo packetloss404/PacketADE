@@ -29,7 +29,8 @@ fn config_path() -> Result<PathBuf, String> {
     let home = home_dir().ok_or("Could not resolve home directory")?;
     let dir = PathBuf::from(&home).join(DATA_DIR_NAME);
     if !dir.exists() {
-        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {DATA_DIR_NAME} dir: {e}"))?;
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create {DATA_DIR_NAME} dir: {e}"))?;
     }
     Ok(dir.join("dictation.json"))
 }

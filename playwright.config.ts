@@ -1,7 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const port = Number(process.env.PLAYWRIGHT_PORT ?? 1420);
+const baseURL = `http://127.0.0.1:${port}`;
+
 /**
- * Playwright E2E configuration for PacketCode.
+ * Playwright E2E configuration for PacketADE.
  *
  * This runs the React frontend against the Vite dev server (web mode).
  * Tauri-specific IPC calls are mocked via `e2e/setup/mock-tauri.ts`.
@@ -18,7 +21,7 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 5_000 },
   use: {
-    baseURL: "http://localhost:1420",
+    baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -29,8 +32,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:1420",
+    command: `pnpm exec vite --host 127.0.0.1 --port ${port} --strictPort`,
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     stdout: "ignore",

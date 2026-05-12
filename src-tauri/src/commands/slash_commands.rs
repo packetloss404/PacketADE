@@ -112,7 +112,9 @@ pub fn list_slash_commands(project_path: String) -> Result<Vec<SlashCommandDef>,
     let mut global_cmds: Vec<SlashCommandDef> = Vec::new();
     if let Some(home) = home_dir() {
         // Scan legacy first so new-name files win on conflict.
-        let legacy_dir = PathBuf::from(&home).join(LEGACY_DATA_DIR_NAME).join("commands");
+        let legacy_dir = PathBuf::from(&home)
+            .join(LEGACY_DATA_DIR_NAME)
+            .join("commands");
         scan_dir(&legacy_dir, "global", &mut global_cmds);
         let dir = PathBuf::from(home).join(DATA_DIR_NAME).join("commands");
         scan_dir(&dir, "global", &mut global_cmds);

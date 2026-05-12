@@ -1,4 +1,7 @@
-use crate::core::brand::{DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_KEYRING_SERVICE, USER_AGENT as BRAND_USER_AGENT};
+use crate::core::brand::{
+    DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE,
+    USER_AGENT as BRAND_USER_AGENT,
+};
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use tauri::State;
 use tokio::sync::RwLock;
@@ -13,7 +16,10 @@ fn validate_github_name(name: &str, field: &str) -> Result<(), String> {
     if name.len() > 100 {
         return Err(format!("{} is too long", field));
     }
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
         return Err(format!(
             "{} contains invalid characters (allowed: alphanumeric, -, _, .)",
             field
@@ -23,14 +29,20 @@ fn validate_github_name(name: &str, field: &str) -> Result<(), String> {
 }
 
 fn token_file_path() -> Option<std::path::PathBuf> {
-    super::shared::home_dir()
-        .map(|h| std::path::PathBuf::from(h).join(DATA_DIR_NAME).join("github-token"))
+    super::shared::home_dir().map(|h| {
+        std::path::PathBuf::from(h)
+            .join(DATA_DIR_NAME)
+            .join("github-token")
+    })
 }
 
-/// Also check the old `.packetcode/github-token` file for pre-rename installs.
+/// Also check the old data dir for pre-rename installs.
 fn legacy_token_file_path() -> Option<std::path::PathBuf> {
-    super::shared::home_dir()
-        .map(|h| std::path::PathBuf::from(h).join(crate::core::brand::LEGACY_DATA_DIR_NAME).join("github-token"))
+    super::shared::home_dir().map(|h| {
+        std::path::PathBuf::from(h)
+            .join(LEGACY_DATA_DIR_NAME)
+            .join("github-token")
+    })
 }
 
 fn keyring_entry() -> Option<keyring::Entry> {
@@ -47,80 +59,98 @@ fn legacy_keyring_entry() -> Option<keyring::Entry> {
     keyring::Entry::new(LEGACY_KEYRING_SERVICE, "github-token").ok()
 }
 
-fn load_persisted_token() -> Option<String> {
-    // Try new keyring service first
+fn delete_keyring_credential(entry: Option<keyring::Entry>, label: &str) {
+    if let Some(entry) = entry {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(e) => warn!(
+                "Failed to delete {} GitHub token from keyring: {}",
+                label, e
+            ),
+        }
+    }
+}
+
+fn clear_persisted_token() {
+    delete_keyring_credential(keyring_entry(), "current");
+    delete_keyring_credential(legacy_keyring_entry(), "legacy");
+
+    for path in [token_file_path(), legacy_token_file_path()]
+        .into_iter()
+        .flatten()
+    {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+fn load_legacy_persisted_token() -> Option<String> {
+    let mut loaded: Option<String> = None;
+    let mut found_persisted = false;
+
+    // Read old/current persisted locations once, then scrub them. GitHub auth
+    // is process-memory-only after startup.
     if let Some(entry) = keyring_entry() {
         match entry.get_password() {
-            Ok(token) => return Some(token),
-            Err(keyring::Error::NoEntry) => {} // fall through to migrations
+            Ok(token) => {
+                found_persisted = true;
+                let trimmed = token.trim();
+                if !trimmed.is_empty() {
+                    loaded = Some(trimmed.to_string());
+                }
+            }
+            Err(keyring::Error::NoEntry) => {}
             Err(e) => {
                 warn!("Failed to read token from keyring: {}", e);
             }
         }
     }
 
-    // Legacy keyring service migration ("packetcode" → "packetade")
-    if let Some(legacy) = legacy_keyring_entry() {
-        if let Ok(token) = legacy.get_password() {
-            if let Some(new_entry) = keyring_entry() {
-                let _ = new_entry.set_password(&token);
-                let _ = legacy.delete_credential();
-                info!("Migrated GitHub token from legacy keyring service");
-            }
-            return Some(token);
-        }
-    }
-
-    // Legacy file-based migration fallback — check BOTH new and old data dirs
-    let path = token_file_path()
-        .filter(|p| p.exists())
-        .or_else(legacy_token_file_path)?;
-    let raw = Zeroizing::new(std::fs::read_to_string(&path).ok()?);
-    let trimmed = raw.trim().to_string();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    // Migrate to keyring and remove legacy file
-    if let Some(entry) = keyring_entry() {
-        match entry.set_password(&trimmed) {
-            Ok(()) => {
-                let _ = std::fs::remove_file(&path);
-                info!("Migrated GitHub token from file to OS credential store");
-            }
-            Err(e) => {
-                warn!("Failed to migrate token to keyring: {}", e);
+    if loaded.is_none() {
+        if let Some(legacy) = legacy_keyring_entry() {
+            if let Ok(token) = legacy.get_password() {
+                found_persisted = true;
+                let trimmed = token.trim();
+                if !trimmed.is_empty() {
+                    loaded = Some(trimmed.to_string());
+                }
             }
         }
     }
 
-    Some(trimmed)
-}
-
-fn persist_token(token: &str) {
-    if let Some(entry) = keyring_entry() {
-        if let Err(e) = entry.set_password(token) {
-            warn!("Failed to store GitHub token in keyring: {}", e);
-        }
-    } else {
-        warn!("Keyring unavailable; GitHub token was NOT persisted");
-    }
-}
-
-fn clear_persisted_token() {
-    if let Some(entry) = keyring_entry() {
-        match entry.delete_credential() {
-            Ok(()) => {}
-            Err(keyring::Error::NoEntry) => {}
-            Err(e) => {
-                warn!("Failed to delete token from keyring: {}", e);
+    if loaded.is_none() {
+        for path in [token_file_path(), legacy_token_file_path()]
+            .into_iter()
+            .flatten()
+        {
+            if !path.exists() {
+                continue;
+            }
+            found_persisted = true;
+            let raw = match std::fs::read_to_string(&path) {
+                Ok(raw) => Zeroizing::new(raw),
+                Err(e) => {
+                    warn!("Failed to read GitHub token file {:?}: {}", path, e);
+                    continue;
+                }
+            };
+            let trimmed = raw.trim().to_string();
+            if !trimmed.is_empty() {
+                loaded = Some(trimmed);
+                break;
             }
         }
     }
-    // Also clean up legacy file if it exists
-    if let Some(path) = token_file_path() {
-        let _ = std::fs::remove_file(&path);
+
+    if found_persisted {
+        clear_persisted_token();
+        if loaded.is_some() {
+            info!("Loaded GitHub token into memory and removed persisted legacy copies");
+        } else {
+            info!("Removed empty persisted GitHub token copies");
+        }
     }
+
+    loaded
 }
 
 pub struct GitHubAuthState {
@@ -130,7 +160,7 @@ pub struct GitHubAuthState {
 impl GitHubAuthState {
     pub fn new() -> Self {
         Self {
-            token: RwLock::new(load_persisted_token()),
+            token: RwLock::new(load_legacy_persisted_token()),
         }
     }
 }
@@ -204,7 +234,7 @@ pub async fn github_set_token(
     if trimmed.is_empty() {
         return Err("GitHub token cannot be empty".to_string());
     }
-    persist_token(trimmed);
+    clear_persisted_token();
     let mut guard = auth.token.write().await;
     *guard = Some(trimmed.to_string());
     info!("GitHub token set");
@@ -312,10 +342,7 @@ pub async fn github_create_pr(
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
     let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/pulls",
-        owner, repo
-    );
+    let url = format!("https://api.github.com/repos/{}/{}/pulls", owner, repo);
 
     let payload = serde_json::json!({
         "title": title,
