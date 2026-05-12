@@ -318,6 +318,17 @@ interface AgentTaskStore {
    * and posts a "Plan approved — execute" user turn. */
   approvePlan: (id: string) => void;
   retryLastTurn: (id: string, newModel?: string) => Promise<void>;
+  /** M2.7 — Cursor-style "edit a prior user message and re-run from there."
+   * Truncates the transcript to before the target user message, cancels any
+   * active turn, and dispatches the new content as a fresh user turn. The
+   * model receives the truncated history on the next send and the agent runs
+   * forward from that fork point. File-state rewind isn't part of this v1
+   * pass — only the transcript forks. */
+  forkAndResend: (
+    id: string,
+    messageId: string,
+    newContent: string,
+  ) => Promise<void>;
   saveCheckpoint: (id: string) => Promise<string | null>;
   listCheckpoints: (
     id: string,
@@ -1691,6 +1702,55 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       }),
     }));
     if (updated) scheduleSave(updated);
+  },
+
+  forkAndResend: async (id, messageId, newContent) => {
+    const text = newContent.trim();
+    if (!text) return;
+    const state = get();
+    const conv = state.conversations.find((c) => c.id === id);
+    if (!conv) return;
+    const idx = conv.messages.findIndex((m) => m.id === messageId);
+    if (idx < 0) return;
+
+    // Cancel any in-flight turn before truncating — leftover streams would
+    // append to a transcript that no longer matches the model's history.
+    if (conv.status === "active") {
+      try {
+        await state.cancelActiveConversation(id);
+      } catch {
+        // Best-effort; proceed even if cancel failed.
+      }
+    }
+
+    // Truncate locally to before the edited user message and detach any
+    // live session so sendMessage will spin up a fresh one with the
+    // truncated history as resume context.
+    let updated: AgentConversation | undefined;
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        const next: AgentConversation = {
+          ...c,
+          messages: c.messages.slice(0, idx),
+          sessionId: null,
+          resumeToken: undefined,
+          status: "idle",
+          thinkingStream: "",
+          pendingEdits: undefined,
+          pendingPermissions: undefined,
+          updatedAt: Date.now(),
+        };
+        updated = next;
+        return next;
+      }),
+    }));
+    if (updated) scheduleSave(updated);
+
+    // Send the edited content as the next user turn — sendMessage handles
+    // session re-establishment for api-mode conversations that lost their
+    // live session.
+    await get().sendMessage(id, text);
   },
 
   retryLastTurn: async (id, newModel) => {
