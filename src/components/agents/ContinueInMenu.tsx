@@ -78,6 +78,7 @@ const CONTINUATION_CLIS: Partial<Record<AgentCli, CliContinuation>> = {
   codex: { command: "codex", label: "Codex" },
   gemini: { command: "gemini", label: "Gemini" },
   opencode: { command: "opencode", label: "OpenCode" },
+  packetcode: { command: "packetcode", label: "PacketCode" },
   "api-claude-oauth": { command: "claude", label: "Claude" },
   "api-openai-codex": { command: "codex", label: "Codex" },
 };

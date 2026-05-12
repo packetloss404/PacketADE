@@ -23,6 +23,7 @@ const agentLabel: Record<WorkspaceAgentSlot, string> = {
   "codex": "Codex",
   "gemini": "Gemini",
   "opencode": "OpenCode",
+  "packetcode": "PacketCode",
 };
 
 const agentColor: Record<WorkspaceAgentSlot, string> = {
@@ -31,6 +32,7 @@ const agentColor: Record<WorkspaceAgentSlot, string> = {
   "codex": "bg-blue-500/20 text-blue-400",
   "gemini": "bg-purple-500/20 text-purple-400",
   "opencode": "bg-orange-500/20 text-orange-400",
+  "packetcode": "bg-purple-500/20 text-purple-400",
 };
 
 function folderName(path: string): string {
@@ -178,7 +180,7 @@ export function WorkspaceView() {
                 </button>
                 {addAgentOpen && activeWorkspace && (
                   <div className="absolute right-0 top-full mt-1 bg-bg-tertiary border border-bg-border rounded shadow-lg z-50 min-w-[150px] py-1">
-                    {(["claude-code", "codex", "gemini", "opencode", "terminal"] as WorkspaceAgentSlot[]).map((agent) => {
+                    {(["claude-code", "codex", "gemini", "opencode", "packetcode", "terminal"] as WorkspaceAgentSlot[]).map((agent) => {
                       const installed = isAgentInstalledForWorkspace(agent, activeWorkspace);
                       return (
                         <button

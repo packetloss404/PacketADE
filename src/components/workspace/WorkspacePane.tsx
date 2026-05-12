@@ -50,6 +50,7 @@ const CLI_PILL_LABEL: Record<string, string> = {
   gemini: "Gemini",
   opencode: "OpenCode",
   codex: "Codex",
+  packetcode: "PacketCode",
 };
 
 /** Tailwind classes for the agent identity dot (background + glow shadow). */
@@ -58,6 +59,7 @@ const AGENT_DOT_CLASS: Record<string, string> = {
   codex: "bg-accent-amber shadow-[0_0_8px_var(--color-accent-amber,#d4b25c)]",
   gemini: "bg-accent-blue shadow-[0_0_8px_var(--color-accent-blue,#6b9ed9)]",
   opencode: "bg-accent-purple shadow-[0_0_8px_var(--color-accent-purple,#a89ad9)]",
+  packetcode: "bg-accent-purple shadow-[0_0_8px_var(--color-accent-purple,#a89ad9)]",
 };
 
 const AGENT_TEXT_CLASS: Record<string, string> = {
@@ -65,6 +67,7 @@ const AGENT_TEXT_CLASS: Record<string, string> = {
   codex: "text-accent-amber",
   gemini: "text-accent-blue",
   opencode: "text-accent-purple",
+  packetcode: "text-accent-purple",
 };
 
 const ACCENT_OPTIONS = [

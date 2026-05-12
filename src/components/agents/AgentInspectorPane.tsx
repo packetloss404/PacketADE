@@ -446,6 +446,7 @@ function agentDisplayName(agent: string): string {
     codex: "Codex",
     gemini: "Gemini",
     opencode: "OpenCode",
+    packetcode: "PacketCode",
   };
   return labels[agent] ?? agent;
 }

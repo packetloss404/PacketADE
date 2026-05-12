@@ -32,6 +32,10 @@ export const EFFORT_LEVELS: { label: string; value: EffortLevel }[] = [
 
 export const OPENCODE_MODELS: ModelOption[] = [];
 
+// PacketCode reads its default from `~/.packetcode/config.toml`; no curated
+// list yet — the CLI accepts any provider-specific model name via --model.
+export const PACKETCODE_MODELS: ModelOption[] = [];
+
 /** Return the model list appropriate for a given agent */
 export function getModelsForAgent(agentConfigId: string): ModelOption[] {
   switch (agentConfigId) {
@@ -43,6 +47,8 @@ export function getModelsForAgent(agentConfigId: string): ModelOption[] {
       return GEMINI_MODELS;
     case "opencode":
       return OPENCODE_MODELS;
+    case "packetcode":
+      return PACKETCODE_MODELS;
     default:
       return [{ label: "System Default", value: null }];
   }

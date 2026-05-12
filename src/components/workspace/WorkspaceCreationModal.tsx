@@ -10,10 +10,10 @@ import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
 import { computeGridLayout } from "@/lib/gridLayout";
 import { INSTALL_HINTS } from "@/lib/agent-install-hints";
-import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
+import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS, PACKETCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
 
-type AgentChoice = "claude-code" | "codex" | "gemini" | "opencode";
+type AgentChoice = "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
 
 /** Agents that support the --effort flag */
 const EFFORT_SUPPORTED = new Set<string>(["claude-code"]);
@@ -24,6 +24,7 @@ const AGENT_SLOTS: { id: WorkspaceAgentSlot; cliId: AgentChoice | null; label: s
   { id: "codex", cliId: "codex", label: "Codex CLI", cliCommand: "codex" },
   { id: "gemini", cliId: "gemini", label: "Gemini CLI", cliCommand: "gemini" },
   { id: "opencode", cliId: "opencode", label: "OpenCode", cliCommand: "opencode" },
+  { id: "packetcode", cliId: "packetcode", label: "PacketCode", cliCommand: "packetcode" },
 ];
 
 const WORKSPACE_TEMPLATES = [
@@ -39,6 +40,7 @@ const CLI_MODEL_MAP: Record<AgentChoice, typeof CLAUDE_MODELS> = {
   codex: CODEX_MODELS,
   gemini: GEMINI_MODELS,
   opencode: OPENCODE_MODELS,
+  packetcode: PACKETCODE_MODELS,
 };
 
 interface WorkspaceCreationModalProps {

@@ -82,6 +82,7 @@ export type AgentCli =
   | "codex"
   | "gemini"
   | "opencode"
+  | "packetcode"
   | "api-claude-oauth"
   | "api-claude"
   | "api-openai-codex"
@@ -133,15 +134,17 @@ const CLI_COMMANDS: Partial<Record<AgentCli, string>> = {
   codex: "codex",
   gemini: "gemini",
   opencode: "opencode",
+  packetcode: "packetcode",
 };
 
 /** Bypass-permissions flags for autonomous execution.
  * OpenCode is intentionally omitted — it has no equivalent launch flag and
- * passing one makes it print `--help` and exit. */
+ * passing one makes it print `--help` and exit. PacketCode uses `--trust`. */
 const BYPASS_FLAGS: Partial<Record<AgentCli, string>> = {
   "claude-code": "--dangerously-skip-permissions",
   codex: "--full-auto",
   gemini: "--yolo",
+  packetcode: "--trust",
 };
 
 export type AgentInputMode = "build" | "plan";

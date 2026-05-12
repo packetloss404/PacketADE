@@ -24,6 +24,7 @@ const ALLOWED_COMMANDS: &[&str] = &[
     "codex",
     "gemini",
     "opencode",
+    "packetcode",
     "bash",
     "sh",
     "zsh",
