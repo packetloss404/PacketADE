@@ -731,7 +731,11 @@ export class AnthropicProvider implements ProviderHandler {
       logStderr(`respondPermission: no pending request for toolUseId=${req.toolUseId}`);
       return;
     }
-    if (req.decision === "approve") {
+    if (
+      req.decision === "approve" ||
+      req.decision === "allow_once" ||
+      req.decision === "allow_always"
+    ) {
       resolver({ behavior: "allow" });
     } else {
       resolver({ behavior: "deny", message: "denied by user" });

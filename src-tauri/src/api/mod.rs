@@ -456,6 +456,8 @@ pub struct ServerConfigDto {
     pub last_connected_at: Option<u64>,
     #[serde(default)]
     pub installed_agents: Vec<String>,
+    #[serde(default)]
+    pub host_fingerprint: Option<String>,
 }
 
 impl From<core_storage::ServerConfig> for ServerConfigDto {
@@ -471,6 +473,7 @@ impl From<core_storage::ServerConfig> for ServerConfigDto {
             remote_path: s.remote_path,
             last_connected_at: s.last_connected_at,
             installed_agents: s.installed_agents,
+            host_fingerprint: s.host_fingerprint,
         }
     }
 }
@@ -488,6 +491,7 @@ impl From<ServerConfigDto> for core_storage::ServerConfig {
             remote_path: s.remote_path,
             last_connected_at: s.last_connected_at,
             installed_agents: s.installed_agents,
+            host_fingerprint: s.host_fingerprint,
         }
     }
 }

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Workspace, WorkspacePane, WorkspaceAgentSlot } from "@/types/workspace";
 import { saveWorkspacesSlice } from "@/lib/tauri";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useServerStore } from "@/stores/serverStore";
 
 
 export interface WorkspaceSessionConfig {
@@ -111,6 +112,32 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   createWorkspace: (name, agents, projectPath, sessionConfig) => {
+    const serverId = sessionConfig?.serverId;
+    const remoteProjectPath = sessionConfig?.remoteProjectPath;
+
+    if (serverId) {
+      // Remote workspace: serverId must point to a real registered server
+      // and we require an explicit remote project path. The pane launch
+      // code in WorkspacePane.tsx reads `workspace.remoteProjectPath` so
+      // we need it stored on the workspace itself.
+      const server = useServerStore.getState().getServer(serverId);
+      if (!server) {
+        throw new Error(`createWorkspace: serverId "${serverId}" does not match any registered server`);
+      }
+      if (!remoteProjectPath || !remoteProjectPath.trim()) {
+        throw new Error("createWorkspace: remoteProjectPath is required when serverId is set");
+      }
+    }
+
+    // For remote workspaces the legacy `projectPath` becomes the remote
+    // path string so any code that reads `workspace.projectPath` without
+    // checking `serverId` still gets a stable label (used in workspace
+    // headers, history, etc.). Local-only operations must guard with
+    // `if (!workspace.serverId)` — see e.g. `IdeationView.handleGenerate`.
+    const effectiveProjectPath = serverId
+      ? (remoteProjectPath ?? "").trim() || projectPath
+      : projectPath;
+
     const id = crypto.randomUUID();
     const now = Date.now();
     const workspace: Workspace = {
@@ -118,7 +145,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       name,
       agents,
       panes: buildPanes(agents),
-      projectPath,
+      projectPath: effectiveProjectPath,
       prompt: sessionConfig?.prompt,
       createdAt: now,
       updatedAt: now,
@@ -126,8 +153,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       bypassPermissions: sessionConfig?.bypassPermissions ?? false,
       modelOverrides: sessionConfig?.modelOverrides,
       effortOverrides: sessionConfig?.effortOverrides,
-      serverId: sessionConfig?.serverId,
-      remoteProjectPath: sessionConfig?.remoteProjectPath,
+      serverId,
+      remoteProjectPath,
     };
     set(commitWorkspaces((s) => {
       const workspaces = [...s.workspaces, workspace];
@@ -158,7 +185,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set({ activeWorkspaceId: id });
     if (id) {
       const workspace = get().workspaces.find((w) => w.id === id);
-      if (workspace) {
+      // Only sync `layoutStore.projectPath` for local workspaces — for
+      // remote workspaces the path is on the remote host and would
+      // confuse local-only features (file watcher, git dashboard, etc.).
+      if (workspace && !workspace.serverId) {
         useLayoutStore.getState().setProjectPath(workspace.projectPath);
       }
     }

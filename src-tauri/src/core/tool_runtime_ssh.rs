@@ -82,6 +82,17 @@ pub async fn ssh_run_for_worktree(
     ssh_run(config, remote_cmd, 30).await
 }
 
+/// Public wrapper for long-running remote git operations (Phase 3.2 — `git
+/// clone` of large repos can take many minutes). Caller picks the timeout
+/// in seconds.
+pub async fn ssh_run_with_timeout(
+    config: &SshConfig,
+    remote_cmd: &str,
+    timeout_secs: u64,
+) -> Result<std::process::Output, String> {
+    ssh_run(config, remote_cmd, timeout_secs).await
+}
+
 pub async fn execute_read_file(
     args: &serde_json::Value,
     config: &SshConfig,

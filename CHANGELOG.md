@@ -1,6 +1,116 @@
 # Changelog
 
-All notable changes to PacketADE are documented in this file.
+All notable changes to PacketADE are documented in this file. Outstanding work
+lives in [`backlog.md`](./backlog.md) at the project root.
+
+## [0.6.0] - 2026-05-12
+
+### Added — SSH hardening & remote workspaces (Phases 1–3)
+
+#### Phase 1 — security & correctness
+- **Sidecar SSH guard** — selecting an SSH target with `api-claude-oauth` or
+  `api-openai-codex` now returns a clear error rather than silently running
+  locally; matching frontend UI gate disables SSH selector when a sidecar
+  provider is active (`src-tauri/src/commands/api_agent.rs`,
+  `src/components/agents/AgentInputArea.tsx`).
+- **Shell-escaped `buildSshArgs`** — `remoteCommand` and `remoteArgs` now run
+  through `shellEscape`, closing a latent shell-injection surface
+  (`src/lib/ssh.ts`).
+- **Replaced TOFU host-key acceptance with explicit pinning** — three new
+  Tauri commands (`ssh_fetch_fingerprint`, `ssh_pin_host`,
+  `get_app_known_hosts_path`), app-managed `known_hosts` file at
+  `<app_data_dir>/ssh/known_hosts`, "Verify host key" UX in `ServerFormModal`
+  with SHA256 display + "Trust this host" gate. Legacy servers without a
+  pinned fingerprint fall back to `accept-new` with a tracing warning.
+  Persisted `host_fingerprint` field added to `ServerConfig` (TS + Rust DTO).
+  Touches `src-tauri/src/commands/pty.rs`, `src-tauri/src/core/execution.rs`,
+  `src/components/servers/ServerFormModal.tsx`, `src/lib/bootstrap.ts`.
+- **ControlMaster hardening** — sockets moved from `~/.ssh/.pkt-cm-*.sock`
+  to `<app_data_dir>/ssh-cm/` (0700, Unix only via `#[cfg(unix)]`);
+  `ControlPersist` reduced from 10m to 60s
+  (`src-tauri/src/core/execution.rs`).
+
+#### Phase 2 — consolidate SSH stacks
+- **Unified `ServerConfig` + `SshTarget`** onto a single canonical
+  `ServerConfig` model. Deleted `src/types/ssh.ts`,
+  `src/stores/sshTargetStore.ts`, `src/components/agents/SshConnectModal.tsx`.
+- **`AgentInputArea`** now uses `serverStore` + `ServerSelectorPopover` for
+  SSH selection. New URI scheme `ssh://<serverId>?path=<encoded>`
+  in `src/lib/ssh-uri.ts` for per-conversation remote paths.
+- **One-time migration** of legacy `packetade:ssh-targets` localStorage
+  records into `serverStore` at app bootstrap
+  (`src/lib/sshTargetMigration.ts`); preserves IDs so persisted
+  `AgentConversation.sshTarget.id` references still resolve. Reads both new
+  and legacy `packetcode:ssh-targets` keys, deletes both on success.
+- **`flight_attempts.rs`** now propagates `host_fingerprint` end-to-end into
+  `AttemptTargetSpec::Ssh`, so flight attempts honor pinning instead of
+  silently degrading to TOFU.
+
+#### Phase 3 — remote workspaces
+- **"Location: Local / Remote (SSH)" step in `WorkspaceCreationModal`** —
+  pick a registered server (fingerprint-verified), enter remote project path,
+  see a live probe of existence / is-directory / is-git-repo.
+- **`ssh_check_remote_path` Tauri command** — pinned-mode SSH probe parsing
+  `DIR_GIT | DIR | FILE | MISSING` with 8s timeout
+  (`src-tauri/src/commands/pty.rs`).
+- **`clone_repo_remote` command** — `git clone -- <url> <dest>` over SSH with
+  defense-in-depth: allowlist validators (branch / dest / repo URL all
+  reject `-`-prefix and shell metacharacters), `--` flag-parsing terminator,
+  `sh_quote` shell-escape on every positional arg, 10-minute
+  `ssh_run_with_timeout`. 11 new unit tests for the validators.
+  (`src-tauri/src/core/worktree.rs`,
+  `src-tauri/src/commands/scaffold.rs`).
+- **Remote git dashboard** — new `get_git_branch_remote` /
+  `get_git_status_remote` commands. `GitDashboard.tsx` accepts an optional
+  `serverId` prop, routes refresh to remote variants, classifies SSH errors
+  (`server-missing | not-a-repo | connection | other`) with a retry button.
+  Commit / push / pull / branch operations disabled with an explanatory note
+  for remote workspaces (write commands deferred to a future phase).
+- **`workspaceStore.createWorkspace`** validates `serverId` against
+  `serverStore` and requires non-empty `remoteProjectPath`.
+  `setActiveWorkspace` no longer pushes the remote path into
+  `layoutStore.projectPath`.
+- **DTO round-trip fix** — `tauri.ts::fromDtoWorkspace` /
+  `toDtoWorkspace` now preserve `serverId` and `remoteProjectPath` (was
+  silently dropping both on persistence).
+- **Phase 1 host-key pinning is honored** by all four new commands.
+
+### Fixed — remote-workspace consumer gaps
+- **`CodeQualityModal`** short-circuits with "not yet supported on remote
+  workspaces" message; toolbar Quality button disabled with tooltip when
+  the active workspace is remote
+  (`src/components/quality/CodeQualityModal.tsx`,
+  `src/components/layout/Toolbar.tsx`).
+- **`EditorPane`** replaced with a placeholder card for remote workspaces —
+  file tabs still render so open-files state remains visible
+  (`src/components/views/WorkspaceView.tsx`).
+- **`MultiTargetPicker.localOptions`** filters out remote workspaces so
+  flight launches can't pick a remote path as a local base
+  (`src/components/flights/MultiTargetPicker.tsx`).
+- **`IdeationView`** already gates remote workspaces with a "not supported
+  yet" message (landed earlier in Phase 3.1).
+
+### Added — polish & integrations
+- **PacketCode CLI** wired as a built-in agent.
+- **Dictation** — global hotkeys, focus-aware insertion, OS-level plugin.
+- **Workspace boot performance** — local cache of workspaces, deferred
+  heavy hydration on startup.
+- **First-open polish** — Inter font self-hosted, branded splash, welcome
+  motion, welcome rows, splash alignment, scrollbar tokens.
+- **Agents pane decoupled from workspaces** — agents can run independently
+  of an open workspace.
+
+### Removed
+- `src/types/ssh.ts`, `src/stores/sshTargetStore.ts`,
+  `src/components/agents/SshConnectModal.tsx` (consolidated into
+  `ServerConfig`).
+
+### Tests
+- All 197 vitest tests pass (incl. new `workspaceStore` cases).
+- All 164 cargo `--lib` tests pass (incl. clone-validator unit tests and
+  host-key pinning regression tests).
+
+---
 
 ## [0.5.0] - 2026-05-04
 

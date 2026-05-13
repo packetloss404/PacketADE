@@ -2,6 +2,57 @@
 //! host reached via the system `ssh` binary.
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+use crate::core::shared::home_dir;
+
+/// Returns the app-managed `known_hosts` file path
+/// (`<app_data_dir>/ssh/known_hosts`). Used to pin host keys explicitly
+/// rather than accepting TOFU via `StrictHostKeyChecking=accept-new`.
+pub fn app_known_hosts_path() -> PathBuf {
+    let home = home_dir().unwrap_or_else(|| ".".to_string());
+    PathBuf::from(home)
+        .join(crate::core::brand::DATA_DIR_NAME)
+        .join("ssh")
+        .join("known_hosts")
+}
+
+/// Ensure the parent directory of the known_hosts file exists. On Unix,
+/// tighten permissions to 0700 so other local users cannot read or write.
+pub fn ensure_known_hosts_dir() -> Result<PathBuf, String> {
+    let path = app_known_hosts_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create known_hosts dir {:?}: {}", parent, e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+    Ok(path)
+}
+
+/// Returns the app-managed ControlMaster socket directory
+/// (`<app_data_dir>/ssh-cm/`). Created at startup with mode 0700 on Unix.
+#[cfg(unix)]
+pub fn app_controlmaster_dir() -> PathBuf {
+    let home = home_dir().unwrap_or_else(|| ".".to_string());
+    PathBuf::from(home)
+        .join(crate::core::brand::DATA_DIR_NAME)
+        .join("ssh-cm")
+}
+
+/// Ensure the ControlMaster socket directory exists with mode 0700.
+#[cfg(unix)]
+pub fn ensure_controlmaster_dir() -> Result<PathBuf, String> {
+    let dir = app_controlmaster_dir();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create ssh-cm dir {:?}: {}", dir, e))?;
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    Ok(dir)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshConfig {
@@ -11,10 +62,19 @@ pub struct SshConfig {
     pub remote_path: String,
     #[serde(default)]
     pub key_path: Option<String>,
-    /// Frontend SshTarget id — used to look up the saved password in the
-    /// OS keychain. None means key-only auth.
+    /// Frontend `ServerConfig.id` — used to look up the saved password in
+    /// the OS keychain (keyring entry: `ssh-<id>`). None means key-only
+    /// auth. Phase 2 consolidated `SshTarget` into `ServerConfig`, so all
+    /// new callers should pass `ServerConfig.id` here.
     #[serde(default)]
     pub target_id: Option<String>,
+    /// SHA256 host-key fingerprint captured at first-connect. When present,
+    /// SSH is invoked with `StrictHostKeyChecking=yes` + an app-managed
+    /// `UserKnownHostsFile`. When `None`, falls back to legacy
+    /// `accept-new` (TOFU) for backward compatibility with existing saved
+    /// servers — a warning is logged so users can upgrade.
+    #[serde(default)]
+    pub host_fingerprint: Option<String>,
 }
 
 impl SshConfig {
@@ -36,24 +96,61 @@ impl SshConfig {
             "-p".into(),
             self.port.to_string(),
             "-o".into(),
-            "StrictHostKeyChecking=accept-new".into(),
-            "-o".into(),
             "ConnectTimeout=10".into(),
         ];
 
-        if cfg!(target_os = "windows") {
+        // Host-key verification: prefer explicit pinning against an
+        // app-managed known_hosts file. Legacy entries without a saved
+        // fingerprint fall back to TOFU `accept-new` for one connection so
+        // existing setups keep working — a warning is logged on the Rust
+        // side, and the Servers UI prompts users to re-pin on next edit.
+        if self.host_fingerprint.is_some() {
+            let kh = app_known_hosts_path();
+            args.push("-o".into());
+            args.push("StrictHostKeyChecking=yes".into());
+            args.push("-o".into());
+            args.push(format!("UserKnownHostsFile={}", kh.to_string_lossy()));
+        } else {
+            tracing::warn!(
+                host = %self.host,
+                port = %self.port,
+                "SSH target has no pinned host fingerprint — falling back to TOFU. Re-save the server to pin the key."
+            );
+            args.push("-o".into());
+            args.push("StrictHostKeyChecking=accept-new".into());
+        }
+
+        #[cfg(target_os = "windows")]
+        {
             // Windows OpenSSH lacks ControlMaster (no Unix domain sockets).
             // ServerAliveInterval keeps long-running commands healthy.
             args.push("-o".into());
             args.push("ServerAliveInterval=30".into());
-        } else {
+        }
+        #[cfg(unix)]
+        {
             let suffix = self.control_socket_suffix();
+            // Best-effort: create the socket dir with mode 0700. If this
+            // fails we fall back to a per-target path inside HOME (legacy
+            // behaviour) so the SSH call still succeeds.
+            let socket_path = match ensure_controlmaster_dir() {
+                Ok(dir) => dir
+                    .join(format!("pkt-cm-{}.sock", suffix))
+                    .to_string_lossy()
+                    .to_string(),
+                Err(e) => {
+                    tracing::warn!(error = %e, "Falling back to ~/.ssh ControlMaster socket");
+                    format!("~/.ssh/.pkt-cm-{}.sock", suffix)
+                }
+            };
             args.push("-o".into());
             args.push("ControlMaster=auto".into());
             args.push("-o".into());
-            args.push(format!("ControlPath=~/.ssh/.pkt-cm-{}.sock", suffix));
+            args.push(format!("ControlPath={}", socket_path));
             args.push("-o".into());
-            args.push("ControlPersist=10m".into());
+            // Reduced from 10m → 60s: shorter window of opportunity for a
+            // local attacker to hijack the socket after disconnect.
+            args.push("ControlPersist=60".into());
         }
 
         if password_auth {
@@ -78,6 +175,7 @@ impl SshConfig {
     /// Per-target unique suffix for the ControlMaster socket path. Prefers the
     /// frontend `target_id` (stable across restarts); otherwise hashes
     /// host+port+user so the same target still maps to the same socket.
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
     fn control_socket_suffix(&self) -> String {
         if let Some(id) = self.target_id.as_ref() {
             let trimmed = id.trim();
@@ -174,6 +272,7 @@ mod tests {
             remote_path: "/home/alice/project".into(),
             key_path: None,
             target_id: Some("target-abc".into()),
+            host_fingerprint: None,
         }
     }
 
@@ -189,13 +288,46 @@ mod tests {
         );
         assert!(
             args.iter()
-                .any(|a| a.starts_with("ControlPath=~/.ssh/.pkt-cm-")),
+                .any(|a| a.starts_with("ControlPath=") && a.contains("pkt-cm-")),
             "expected ControlPath with per-target socket in args: {:?}",
             args
         );
         assert!(
-            args.iter().any(|a| a == "ControlPersist=10m"),
-            "expected ControlPersist=10m in args: {:?}",
+            args.iter().any(|a| a == "ControlPersist=60"),
+            "expected ControlPersist=60 in args: {:?}",
+            args
+        );
+    }
+
+    #[test]
+    fn ssh_args_uses_pinned_known_hosts_when_fingerprint_set() {
+        let mut cfg = sample_cfg();
+        cfg.host_fingerprint = Some("SHA256:abc123".into());
+        let args = cfg.ssh_args(false);
+        assert!(
+            args.iter().any(|a| a == "StrictHostKeyChecking=yes"),
+            "expected pinned mode when fingerprint set: {:?}",
+            args
+        );
+        assert!(
+            args.iter().any(|a| a.starts_with("UserKnownHostsFile=")),
+            "expected UserKnownHostsFile when fingerprint set: {:?}",
+            args
+        );
+        assert!(
+            !args.iter().any(|a| a == "StrictHostKeyChecking=accept-new"),
+            "should not use accept-new when fingerprint set: {:?}",
+            args
+        );
+    }
+
+    #[test]
+    fn ssh_args_falls_back_to_accept_new_when_unpinned() {
+        let cfg = sample_cfg();
+        let args = cfg.ssh_args(false);
+        assert!(
+            args.iter().any(|a| a == "StrictHostKeyChecking=accept-new"),
+            "expected TOFU fallback when no fingerprint: {:?}",
             args
         );
     }

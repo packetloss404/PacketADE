@@ -53,10 +53,20 @@ vi.mock("@/stores/projectHistoryStore", () => ({
   ),
 }));
 
-vi.mock("@/stores/sshTargetStore", () => ({
-  useSshTargetStore: vi.fn(
-    (selector: (state: { targets: unknown[]; touchTarget: () => void }) => unknown) =>
-      selector({ targets: [], touchTarget: vi.fn() }),
+vi.mock("@/stores/serverStore", () => ({
+  useServerStore: vi.fn(
+    (selector: (state: {
+      servers: unknown[];
+      updateServer: () => void;
+    }) => unknown) =>
+      selector({ servers: [], updateServer: vi.fn() }),
+  ),
+}));
+
+vi.mock("@/stores/appStore", () => ({
+  useAppStore: vi.fn(
+    (selector: (state: { setActiveView: () => void }) => unknown) =>
+      selector({ setActiveView: vi.fn() }),
   ),
 }));
 
@@ -94,10 +104,6 @@ vi.mock("@/hooks/useVoiceInput", () => ({
 
 vi.mock("@/components/agents/FileMentionPopover", () => ({
   FileMentionPopover: () => null,
-}));
-
-vi.mock("@/components/agents/SshConnectModal", () => ({
-  SshConnectModal: () => null,
 }));
 
 vi.mock("@/lib/tauri", () => ({

@@ -151,6 +151,78 @@ export async function getGitStatus(projectPath: string): Promise<string> {
   return invoke<string>("get_git_status", { projectPath });
 }
 
+/** Phase 3.3: minimum SSH config the remote git commands need. The
+ *  frontend builds this by looking up the workspace's `serverId` in
+ *  `serverStore`. Field names are camelCase so the Tauri layer can
+ *  deserialize them via `#[serde(rename_all = "camelCase")]`. */
+export interface GitServerConfigInput {
+  id: string;
+  host: string;
+  port: number;
+  username: string;
+  keyPath?: string | null;
+  hostFingerprint?: string | null;
+}
+
+/** Convert a saved `ServerConfig` to the minimum shape the remote git +
+ *  clone commands accept. Centralised so callers can't accidentally
+ *  forget to forward `hostFingerprint` (which would silently downgrade
+ *  to TOFU). */
+export function toGitServerConfigInput(server: ServerConfig): GitServerConfigInput {
+  return {
+    id: server.id,
+    host: server.host,
+    port: server.port,
+    username: server.username,
+    keyPath: server.keyPath ?? null,
+    hostFingerprint: server.hostFingerprint ?? null,
+  };
+}
+
+/** Phase 3.3: remote variant of `getGitBranch`. Runs `git rev-parse
+ *  --abbrev-ref HEAD` on the remote host described by `serverConfig`. */
+export async function getGitBranchRemote(
+  serverConfig: GitServerConfigInput,
+  remotePath: string,
+): Promise<string> {
+  return invoke<string>("get_git_branch_remote", { serverConfig, remotePath });
+}
+
+/** Phase 3.3: remote variant of `getGitStatus`. Returns `git status
+ *  --short` output verbatim so the existing parser keeps working. */
+export async function getGitStatusRemote(
+  serverConfig: GitServerConfigInput,
+  remotePath: string,
+): Promise<string> {
+  return invoke<string>("get_git_status_remote", { serverConfig, remotePath });
+}
+
+/** Phase 3.2: clone `repoUrl` into `destPath` on the SSH host. Returns
+ *  the remote path that was created plus the freshly-cloned default
+ *  branch (`git rev-parse --abbrev-ref HEAD`). The Tauri layer
+ *  validates `branch`, `destPath`, and `repoUrl` against a tight
+ *  allowlist before running anything on the remote shell. */
+export interface CloneRemoteResult {
+  remotePath: string;
+  defaultBranch: string;
+}
+
+export async function cloneRepoRemote(args: {
+  serverId: string;
+  serverConfig: GitServerConfigInput;
+  repoUrl: string;
+  destPath: string;
+  branch?: string | null;
+}): Promise<CloneRemoteResult> {
+  return invoke<CloneRemoteResult>("clone_repo_remote", {
+    serverId: args.serverId,
+    serverConfig: args.serverConfig,
+    repoUrl: args.repoUrl,
+    destPath: args.destPath,
+    branch: args.branch ?? null,
+  });
+}
+
 export async function gitCommit(
   projectPath: string,
   message: string,
@@ -255,6 +327,7 @@ export async function sshTestConnection(args: {
   user: string;
   keyPath?: string | null;
   password?: string | null;
+  hostFingerprint?: string | null;
 }): Promise<void> {
   return invoke("ssh_test_connection", {
     host: args.host,
@@ -262,6 +335,70 @@ export async function sshTestConnection(args: {
     user: args.user,
     keyPath: args.keyPath ?? null,
     password: args.password ?? null,
+    hostFingerprint: args.hostFingerprint ?? null,
+  });
+}
+
+/** One discovered SSH host key — matches `commands::pty::HostKey`. */
+export interface HostKey {
+  algorithm: string;
+  /** Raw `known_hosts`-format line from `ssh-keyscan`. */
+  key: string;
+  /** SHA256:<base64> fingerprint derived via `ssh-keygen -lf -`. */
+  fingerprint: string;
+}
+
+/** Run `ssh-keyscan` on a host and return its public host keys + SHA256
+ *  fingerprints. Used by the Servers UI on first save so the user can
+ *  verify and pin the host key before any traffic is sent. */
+export async function sshFetchFingerprint(host: string, port: number): Promise<HostKey[]> {
+  return invoke<HostKey[]>("ssh_fetch_fingerprint", { host, port });
+}
+
+/** Append a `known_hosts`-format line to the app-managed known_hosts
+ *  file. Called after the user confirms the fingerprint shown by
+ *  `sshFetchFingerprint`. Idempotent. */
+export async function sshPinHost(host: string, port: number, hostkeyLine: string): Promise<void> {
+  return invoke("ssh_pin_host", { host, port, hostkeyLine });
+}
+
+/** Absolute path of the app-managed `known_hosts` file. Fetch once at
+ *  startup and cache in `serverStore.knownHostsPath`. */
+export async function getAppKnownHostsPath(): Promise<string> {
+  return invoke<string>("get_app_known_hosts_path");
+}
+
+/** Result of probing a remote filesystem path over SSH. */
+export interface RemotePathCheck {
+  exists: boolean;
+  isDirectory: boolean;
+  isGitRepo: boolean;
+}
+
+/** Probe a remote SSH host to check whether `remotePath` exists, is a
+ *  directory, and contains `.git`. Used by the workspace creation modal
+ *  for live validation of the "Remote project path" input. Times out at
+ *  8s. When `hostFingerprint` is provided, SSH connects with strict
+ *  host-key checking against the app-managed known_hosts file. */
+export async function sshCheckRemotePath(args: {
+  host: string;
+  port: number;
+  user: string;
+  authMethod: "agent" | "key" | "password";
+  keyPath?: string | null;
+  password?: string | null;
+  hostFingerprint?: string | null;
+  remotePath: string;
+}): Promise<RemotePathCheck> {
+  return invoke<RemotePathCheck>("ssh_check_remote_path", {
+    host: args.host,
+    port: args.port,
+    user: args.user,
+    authMethod: args.authMethod,
+    keyPath: args.keyPath ?? null,
+    password: args.password ?? null,
+    hostFingerprint: args.hostFingerprint ?? null,
+    remotePath: args.remotePath,
   });
 }
 
@@ -294,6 +431,11 @@ export type AttemptTargetSpec =
       port: number;
       user: string;
       keyPath?: string | null;
+      /** Phase 2: pinned SHA256 host-key fingerprint, copied from
+       *  `ServerConfig.hostFingerprint`. When omitted, the per-attempt
+       *  SSH connection falls back to TOFU `accept-new` and the Rust
+       *  side logs a warning. */
+      hostFingerprint?: string | null;
       basePath: string;
       baseBranch: string;
       agentConfigId: string;
@@ -324,6 +466,7 @@ export async function launchFlightAsync(
       port: t.port,
       user: t.user,
       key_path: t.keyPath ?? null,
+      host_fingerprint: t.hostFingerprint ?? null,
       base_path: t.basePath,
       base_branch: t.baseBranch,
       agent_config_id: t.agentConfigId,
@@ -354,6 +497,9 @@ export async function cleanupAttemptWorktreeSsh(args: {
   keyPath?: string | null;
   basePath: string;
   targetId: string;
+  /** Phase 2: pinned SHA256 host-key fingerprint, sourced from the saved
+   *  `ServerConfig.hostFingerprint`. */
+  hostFingerprint?: string | null;
 }): Promise<void> {
   return invoke("cleanup_attempt_worktree_ssh", {
     flightId: args.flightId,
@@ -364,6 +510,7 @@ export async function cleanupAttemptWorktreeSsh(args: {
     keyPath: args.keyPath ?? null,
     basePath: args.basePath,
     targetId: args.targetId,
+    hostFingerprint: args.hostFingerprint ?? null,
   });
 }
 
@@ -792,6 +939,8 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
     bypassPermissions: workspace.bypassPermissions,
     modelOverrides: normalizeOptionalRecord(workspace.modelOverrides),
     effortOverrides: normalizeOptionalRecord(workspace.effortOverrides),
+    serverId: workspace.serverId,
+    remoteProjectPath: workspace.remoteProjectPath,
   };
 }
 
@@ -814,6 +963,8 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDto {
     bypassPermissions: workspace.bypassPermissions,
     modelOverrides: workspace.modelOverrides,
     effortOverrides: workspace.effortOverrides,
+    serverId: workspace.serverId,
+    remoteProjectPath: workspace.remoteProjectPath,
   };
 }
 
@@ -1287,6 +1438,13 @@ export interface SshConfigInput {
   user: string;
   remote_path: string;
   key_path?: string | null;
+  /** Phase 2: callers should derive this from `ServerConfig` (the canonical
+   *  SSH model) so flight attempts and API-agent sessions pin host keys
+   *  instead of falling back to TOFU. Frontend conversion site lives in
+   *  `agentTaskStore` (per-message build) and `LaunchAsyncFlightModal`
+   *  (per-attempt spec build). */
+  target_id?: string | null;
+  host_fingerprint?: string | null;
 }
 
 export interface SlashCommandDef {

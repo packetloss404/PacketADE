@@ -42,6 +42,14 @@ export function IdeationView() {
 
   async function handleGenerate() {
     if (enabledTypes.length === 0 || !activeWorkspaceId || !workspace) return;
+    // Remote workspaces aren't scannable locally — Phase 3.2/3.3 will
+    // wire up a remote-aware scan path. For now, surface a clear message
+    // instead of running the local scan against a remote path that
+    // doesn't exist on this machine.
+    if (workspace.serverId) {
+      setError("Ideation scanning isn't supported for remote workspaces yet.");
+      return;
+    }
     setError(null);
     try {
       await generate(activeWorkspaceId, workspace.projectPath, enabledTypes);

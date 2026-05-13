@@ -242,7 +242,12 @@ export function WorkspaceView() {
             ))}
           </div>
 
-          {/* Editor panel */}
+          {/* Editor panel.
+              Phase 3.1: EditorPane uses local-FS Tauri commands
+              (`read_file_contents` / `write_file_contents`) and isn't
+              wired for remote workspaces yet, so we render a
+              placeholder instead. Phase 3.2/3.3 will add a remote-aware
+              editor path. */}
           {editorVisible && activeWorkspace && activeOpenFile && (
             <div className="w-[480px] shrink-0 border-l border-bg-border bg-bg-primary overflow-hidden flex flex-col">
               {/* File tabs */}
@@ -268,19 +273,40 @@ export function WorkspaceView() {
                   })}
                 </div>
               )}
-              <EditorPane
-                key={activeOpenFile.id}
-                filePath={activeOpenFile.path}
-                workspace={activeWorkspace.projectPath}
-                onClose={() => closeFile(activeOpenFile.id)}
-              />
+              {activeWorkspace.serverId ? (
+                <div className="flex flex-col items-center justify-center flex-1 px-6 text-center select-none">
+                  <FileText size={20} className="text-text-muted opacity-40 mb-2" />
+                  <p className="text-xs text-text-secondary mb-1">
+                    Editor not yet available for remote workspaces
+                  </p>
+                  <p className="text-[11px] text-text-muted">
+                    Open the workspace locally to edit files.
+                  </p>
+                </div>
+              ) : (
+                <EditorPane
+                  key={activeOpenFile.id}
+                  filePath={activeOpenFile.path}
+                  workspace={activeWorkspace.projectPath}
+                  onClose={() => closeFile(activeOpenFile.id)}
+                />
+              )}
             </div>
           )}
 
-          {/* Git Dashboard slide-out panel */}
+          {/* Git Dashboard slide-out panel.
+              Phase 3.3: for remote workspaces the dashboard reads via SSH
+              using the workspace's `serverId` + `remoteProjectPath`. */}
           {gitPanelOpen && activeWorkspace && (
             <div className="w-[280px] shrink-0 border-l border-bg-border bg-bg-primary overflow-hidden flex flex-col">
-              <GitDashboard projectPath={activeWorkspace.projectPath} />
+              <GitDashboard
+                projectPath={
+                  activeWorkspace.serverId
+                    ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
+                    : activeWorkspace.projectPath
+                }
+                serverId={activeWorkspace.serverId}
+              />
             </div>
           )}
         </div>

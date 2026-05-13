@@ -27,11 +27,15 @@ function pickedToSpec(p: PickedTarget): AttemptTargetSpec {
   }
   return {
     kind: "ssh",
-    targetId: p.target.id,
-    host: p.target.host,
-    port: p.target.port,
-    user: p.target.user,
-    keyPath: p.target.keyPath ?? null,
+    // Phase 2: targetId is now the ServerConfig.id (was SshTarget.id).
+    // The backend agent will be updated to call the field `serverId`
+    // in the same PR — until then we keep the name for wire compat.
+    targetId: p.server.id,
+    host: p.server.host,
+    port: p.server.port,
+    user: p.server.username,
+    keyPath: p.server.keyPath ?? null,
+    hostFingerprint: p.server.hostFingerprint ?? null,
     basePath: p.basePath,
     baseBranch: p.baseBranch,
     agentConfigId: p.agent,

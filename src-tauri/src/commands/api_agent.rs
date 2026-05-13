@@ -345,8 +345,26 @@ pub async fn start_api_agent_session(
     // request and return early. In-process providers fall through to the
     // existing LlmProvider runtime untouched.
     if is_sidecar_provider(&provider) {
+        // Sidecar providers don't speak SSH yet — the sidecar dispatch
+        // path runs the underlying CLI locally and silently ignores any
+        // ssh_config. Fail loudly so users aren't surprised by edits landing
+        // on the wrong machine. In-process API-key providers (api-claude,
+        // api-openai, etc.) handle SSH via ExecutionTarget below.
+        if ssh_config.is_some() {
+            return Err(
+                "Remote SSH execution is not yet supported for sidecar providers (Anthropic Subscription, OpenAI ChatGPT, OpenAI Agents SDK). Use Claude (API) or OpenAI (API) for remote execution, or run this provider locally.".to_string(),
+            );
+        }
+        if provider == "openai-agents" {
+            super::validate_project_path(&project_path)?;
+        }
         let sys_prompt = system_prompt_override.clone().unwrap_or_default();
         let tools = allowed_tools.clone().unwrap_or_default();
+        let api_key = if provider == "openai-agents" {
+            Some(api_keys::load_api_key("openai")?)
+        } else {
+            None
+        };
         // Merge global (~/.claude/settings.json) and project (.mcp.json) MCP
         // server configs, drop disabled entries, and transform into the shape
         // the Claude Agent SDK expects. See `build_mcp_config_for_sidecar`
@@ -369,6 +387,7 @@ pub async fn start_api_agent_session(
                 mcp_servers,
                 project_path.clone(),
                 initial_message.clone(),
+                api_key,
                 resume_token.clone(),
                 thinking_enabled,
                 plan_mode,

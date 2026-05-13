@@ -10,6 +10,7 @@ const SOURCE_LABELS: Record<string, string> = {
   "api-claude": "Claude API",
   "openai-codex": "OpenAI (ChatGPT)",
   "api-openai": "OpenAI API",
+  "openai-agents": "OpenAI Agents SDK",
   "api-minimax": "MiniMax API",
   "api-openrouter": "OpenRouter",
   "api-ollama": "Ollama (local)",
@@ -23,6 +24,7 @@ const SOURCE_PILL_CLASSES: Record<string, string> = {
   "codex": "text-accent-blue border-accent-blue/30",
   "openai-codex": "text-accent-green border-accent-green/30",
   "api-openai": "text-accent-green border-accent-green/30",
+  "openai-agents": "text-accent-green border-accent-green/30",
   "api-openrouter": "text-accent-purple border-accent-purple/30",
 };
 function sourcePillClass(s: string): string {

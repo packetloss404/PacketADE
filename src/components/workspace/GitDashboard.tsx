@@ -12,15 +12,20 @@ import {
   Loader2,
   AlertCircle,
   GitBranchPlus,
+  Server,
 } from "lucide-react";
 import {
   getGitBranch,
   getGitStatus,
+  getGitBranchRemote,
+  getGitStatusRemote,
   gitCommit,
   gitPush,
   gitPull,
   gitCreateBranch,
+  toGitServerConfigInput,
 } from "@/lib/tauri";
+import { useServerStore } from "@/stores/serverStore";
 
 interface ChangedFile {
   status: string;
@@ -75,9 +80,43 @@ function statusColor(status: string): string {
 
 interface GitDashboardProps {
   projectPath: string;
+  /** Phase 3.3: when set, the dashboard reads git state from the matching
+   *  saved server via SSH instead of the local filesystem. `projectPath`
+   *  is then treated as the *remote* working tree on the host. */
+  serverId?: string;
 }
 
-export function GitDashboard({ projectPath }: GitDashboardProps) {
+/** Phase 3.3: structured failure modes for git state loads. The dashboard
+ *  uses these to pick between "Not a git repo", "Unable to connect, retry?"
+ *  and the generic error toast — instead of dumping every error into a
+ *  toast and leaving the panel stuck on a spinner. */
+type LoadError =
+  | { kind: "server-missing"; msg: string }
+  | { kind: "not-a-repo"; msg: string }
+  | { kind: "connection"; msg: string }
+  | { kind: "other"; msg: string };
+
+function classifyError(err: unknown): LoadError {
+  const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+  if (lower.includes("is not inside a git repository") || lower.includes("not a git repository")) {
+    return { kind: "not-a-repo", msg: raw };
+  }
+  if (
+    lower.includes("ssh failed") ||
+    lower.includes("ssh command timed out") ||
+    lower.includes("failed to spawn ssh") ||
+    lower.includes("connection refused") ||
+    lower.includes("connection reset") ||
+    lower.includes("permission denied") ||
+    lower.includes("host key verification failed")
+  ) {
+    return { kind: "connection", msg: raw };
+  }
+  return { kind: "other", msg: raw };
+}
+
+export function GitDashboard({ projectPath, serverId }: GitDashboardProps) {
   const [branch, setBranch] = useState<string>("");
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -87,23 +126,50 @@ export function GitDashboard({ projectPath }: GitDashboardProps) {
   const [feedback, setFeedback] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const [newBranch, setNewBranch] = useState("");
   const [showBranchInput, setShowBranchInput] = useState(false);
+  const [loadError, setLoadError] = useState<LoadError | null>(null);
+
+  const server = useServerStore((s) => (serverId ? s.servers.find((srv) => srv.id === serverId) : undefined));
+  const isRemote = !!serverId;
 
   const refresh = useCallback(async () => {
     if (!projectPath) return;
     setLoading(true);
+    setLoadError(null);
     try {
-      const [b, s] = await Promise.all([
-        getGitBranch(projectPath),
-        getGitStatus(projectPath),
-      ]);
-      setBranch(b.trim());
-      setFiles(parseGitStatus(s));
+      if (isRemote) {
+        if (!server) {
+          setLoadError({
+            kind: "server-missing",
+            msg: `Server '${serverId}' is no longer configured. Reconnect or attach the workspace to a different server.`,
+          });
+          setBranch("");
+          setFiles([]);
+          return;
+        }
+        const serverConfig = toGitServerConfigInput(server);
+        const [b, s] = await Promise.all([
+          getGitBranchRemote(serverConfig, projectPath),
+          getGitStatusRemote(serverConfig, projectPath),
+        ]);
+        setBranch(b.trim());
+        setFiles(parseGitStatus(s));
+      } else {
+        const [b, s] = await Promise.all([
+          getGitBranch(projectPath),
+          getGitStatus(projectPath),
+        ]);
+        setBranch(b.trim());
+        setFiles(parseGitStatus(s));
+      }
     } catch (e: unknown) {
-      setFeedback({ type: "err", msg: `Failed to load git info: ${e}` });
+      const classified = classifyError(e);
+      setLoadError(classified);
+      setBranch("");
+      setFiles([]);
     } finally {
       setLoading(false);
     }
-  }, [projectPath]);
+  }, [projectPath, isRemote, server, serverId]);
 
   useEffect(() => {
     refresh();
@@ -172,36 +238,55 @@ export function GitDashboard({ projectPath }: GitDashboardProps) {
     }
   }
 
+  // Phase 3.3: remote workspaces are read-only in this slice — commit /
+  // push / pull / create-branch over SSH lands in a later phase. Disable
+  // the action buttons but still expose status + refresh.
+  const remoteReadOnlyTip = isRemote ? "Remote commit/push/pull not yet supported" : undefined;
+
   return (
     <div className="flex flex-col h-full text-xs overflow-hidden">
       {/* Header: branch + actions */}
       <div className="px-3 py-2 border-b border-bg-border bg-bg-secondary flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <GitBranch size={12} className="text-accent-green shrink-0" />
-          <span className="text-text-primary font-medium truncate">{branch || "..."}</span>
-          <button
-            onClick={() => setShowBranchInput((v) => !v)}
-            className="p-0.5 text-text-muted hover:text-text-primary transition-colors"
-            title="Create branch"
-          >
-            <GitBranchPlus size={11} />
-          </button>
+          {isRemote ? (
+            <Server size={12} className="text-accent-blue shrink-0" />
+          ) : (
+            <GitBranch size={12} className="text-accent-green shrink-0" />
+          )}
+          <span className="text-text-primary font-medium truncate">{branch || (loadError ? "—" : "...")}</span>
+          {isRemote && (
+            <span
+              className="shrink-0 rounded-full bg-accent-blue/10 px-1.5 py-0.5 font-mono text-[9px] text-accent-blue"
+              title={server ? `${server.username}@${server.host}` : "remote"}
+            >
+              remote
+            </span>
+          )}
+          {!isRemote && (
+            <button
+              onClick={() => setShowBranchInput((v) => !v)}
+              className="p-0.5 text-text-muted hover:text-text-primary transition-colors"
+              title="Create branch"
+            >
+              <GitBranchPlus size={11} />
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={handlePull}
-            disabled={!!actionLoading}
+            disabled={!!actionLoading || isRemote}
             className="px-1.5 py-0.5 rounded text-[10px] bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-border transition-colors disabled:opacity-40 flex items-center gap-1"
-            title="Pull"
+            title={remoteReadOnlyTip ?? "Pull"}
           >
             {actionLoading === "pull" ? <Loader2 size={10} className="animate-spin" /> : <ArrowDownToLine size={10} />}
             Pull
           </button>
           <button
             onClick={handlePush}
-            disabled={!!actionLoading}
+            disabled={!!actionLoading || isRemote}
             className="px-1.5 py-0.5 rounded text-[10px] bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-border transition-colors disabled:opacity-40 flex items-center gap-1"
-            title="Push"
+            title={remoteReadOnlyTip ?? "Push"}
           >
             {actionLoading === "push" ? <Loader2 size={10} className="animate-spin" /> : <ArrowUpFromLine size={10} />}
             Push
@@ -255,12 +340,62 @@ export function GitDashboard({ projectPath }: GitDashboardProps) {
 
       {/* Changed files list */}
       <div className="flex-1 overflow-y-auto px-1 py-1">
-        {files.length === 0 && !loading && (
+        {loadError && (
+          <div className="px-3 py-4 flex flex-col items-center gap-2 text-[11px]">
+            <AlertCircle size={20} className="text-accent-amber" />
+            <div className="text-text-secondary text-center">
+              {loadError.kind === "server-missing" && (
+                <span className="text-accent-red">{loadError.msg}</span>
+              )}
+              {loadError.kind === "not-a-repo" && (
+                <>
+                  <div className="font-medium text-text-primary">Not a git repository</div>
+                  <div className="text-text-muted text-[10px] mt-0.5">
+                    {projectPath}
+                  </div>
+                </>
+              )}
+              {loadError.kind === "connection" && (
+                <>
+                  <div className="font-medium text-text-primary">Unable to connect</div>
+                  <div className="text-text-muted text-[10px] mt-1 break-words">
+                    {loadError.msg}
+                  </div>
+                </>
+              )}
+              {loadError.kind === "other" && (
+                <>
+                  <div className="font-medium text-text-primary">Failed to load git info</div>
+                  <div className="text-text-muted text-[10px] mt-1 break-words">
+                    {loadError.msg}
+                  </div>
+                </>
+              )}
+            </div>
+            {loadError.kind !== "not-a-repo" && (
+              <button
+                onClick={refresh}
+                disabled={loading}
+                className="mt-1 px-2 py-1 rounded text-[10px] bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-border transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              >
+                {loading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+        {!loadError && files.length === 0 && !loading && (
           <div className="flex items-center justify-center py-6 text-text-muted text-[10px]">
             Working tree clean
           </div>
         )}
-        {files.map((f, i) => (
+        {!loadError && loading && files.length === 0 && (
+          <div className="flex items-center justify-center py-6 text-text-muted text-[10px] gap-1.5">
+            <Loader2 size={11} className="animate-spin" />
+            Loading{isRemote ? " over SSH" : ""}...
+          </div>
+        )}
+        {!loadError && files.map((f, i) => (
           <div
             key={`${f.path}-${i}`}
             className="flex items-center gap-1.5 px-2 py-[3px] rounded hover:bg-bg-secondary transition-colors group"
@@ -276,7 +411,15 @@ export function GitDashboard({ projectPath }: GitDashboardProps) {
         ))}
       </div>
 
-      {/* Commit section */}
+      {/* Commit section — local workspaces only. Remote commit/push lands
+          in a follow-up phase; for now we hide the form and surface a
+          short note. */}
+      {isRemote ? (
+        <div className="px-3 py-2 border-t border-bg-border bg-bg-secondary shrink-0 text-[10px] text-text-muted">
+          Remote write actions (commit, push, pull, branch) are not yet
+          supported. Use a terminal session on the remote host for now.
+        </div>
+      ) : (
       <div className="px-3 py-2 border-t border-bg-border bg-bg-secondary shrink-0 space-y-1.5">
         <label className="flex items-center gap-1.5 text-[10px] text-text-muted cursor-pointer select-none">
           <input
@@ -313,6 +456,7 @@ export function GitDashboard({ projectPath }: GitDashboardProps) {
           Commit{stageAll ? " (stage all)" : ""}
         </button>
       </div>
+      )}
     </div>
   );
 }

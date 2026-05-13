@@ -6,9 +6,10 @@ newline-delimited JSON on stdin/stdout.
 
 ## Why a sidecar?
 
-The Anthropic subscription provider uses the Claude Agent SDK, while the
-OpenAI subscription provider wraps `codex exec` behind the same sidecar
-protocol. Keeping both in an isolated Node child process lets the Rust
+The Anthropic subscription provider uses the Claude Agent SDK, the OpenAI
+subscription provider wraps `codex exec`, and the OpenAI Agents SDK provider
+uses the OpenAI API key path behind the same sidecar protocol. Keeping these
+in an isolated Node child process lets the Rust
 supervisor handle lifecycle, crash restart, and routing events into Tauri
 event channels for the React UI without making the frontend care which
 transport produced a turn.
@@ -58,6 +59,14 @@ The factory lives in `src/session-registry.ts`. Currently wired:
     than queued.
   - Auth is handled by the Codex CLI itself — run `codex login` before using
     this provider.
+- **`openai-agents`** — OpenAI Agents SDK via `@openai/agents`
+  (`src/providers/openai-agents.ts`). Auth uses the existing OpenAI API key
+  from the PacketADE keyring; Rust passes it to the sidecar only on
+  `start_session` and the sidecar does not persist it. V1 focuses on parity
+  with the Agents pane event contract: streaming text, local project-path
+  tools, permission prompts, pending edit review, cancellation, MCP stdio
+  passthrough, and model switching. SDK tracing/export, handoff UI, hosted
+  sandboxes, Agent Builder, and voice agents are intentionally deferred.
 
 ## Protocol summary
 
@@ -122,7 +131,7 @@ system-installed sidecar source tree:
   fetcher covers all five supported target triples
   (`x86_64-pc-windows-msvc`, `x86_64-apple-darwin`, `aarch64-apple-darwin`,
   `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`); see
-  [`docs/multi-platform-build.md`](../docs/multi-platform-build.md) for the
+  [`dev/multi-platform-build.md`](../dev/multi-platform-build.md) for the
   full per-platform prerequisites and `TAURI_TARGET` usage.
 - **Sidecar payload** — the `agent-sidecar/` source, the compiled
   `dist/` output, and a pruned `node_modules/` containing only production

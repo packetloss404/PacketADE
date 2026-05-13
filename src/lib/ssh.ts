@@ -8,12 +8,36 @@ function shellEscape(s: string): string {
 /** Ensure common bin dirs are on PATH for non-login SSH shells. */
 const PATH_SETUP = 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/.opencode/bin:$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node/ 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH" 2>/dev/null;';
 
-/** Common SSH flags shared across all connection types. */
-function baseSshArgs(server: ServerConfig, { allocatePty = true } = {}): string[] {
-  const args: string[] = [
-    "-o", "StrictHostKeyChecking=accept-new",
-    "-o", "ConnectTimeout=10",
-  ];
+/** Common SSH flags shared across all connection types.
+ *
+ *  Host-key verification mode is decided here:
+ *  - If `server.hostFingerprint` is set AND `knownHostsPath` was provided
+ *    by the caller, pin against the app-managed `known_hosts` file with
+ *    `StrictHostKeyChecking=yes`.
+ *  - Otherwise fall back to TOFU `accept-new` (legacy entries / first
+ *    connect) with a console warning so the user can re-save to pin. */
+function baseSshArgs(
+  server: ServerConfig,
+  knownHostsPath: string | undefined,
+  { allocatePty = true } = {},
+): string[] {
+  const args: string[] = ["-o", "ConnectTimeout=10"];
+
+  if (server.hostFingerprint && knownHostsPath) {
+    args.push("-o", "StrictHostKeyChecking=yes");
+    args.push("-o", `UserKnownHostsFile=${knownHostsPath}`);
+  } else {
+    if (!server.hostFingerprint) {
+      console.warn(
+        `[ssh] Server "${server.name}" has no pinned host fingerprint — using accept-new (TOFU). Re-save the server to pin the key.`,
+      );
+    } else if (!knownHostsPath) {
+      console.warn(
+        "[ssh] knownHostsPath unavailable — falling back to accept-new. Bootstrap may not have fetched get_app_known_hosts_path yet.",
+      );
+    }
+    args.push("-o", "StrictHostKeyChecking=accept-new");
+  }
 
   // Only request pseudo-terminal when running through a PTY.
   // Password auth uses a direct process (no PTY), so -t would warn.
@@ -38,18 +62,31 @@ function baseSshArgs(server: ServerConfig, { allocatePty = true } = {}): string[
   return args;
 }
 
-/** Build SSH command-line args for spawning a remote CLI session via PTY. */
+/** Build SSH command-line args for spawning a remote CLI session via PTY.
+ *
+ *  `knownHostsPath` is the absolute path returned by the Rust
+ *  `get_app_known_hosts_path` command. When provided alongside a
+ *  `server.hostFingerprint`, SSH uses strict host-key checking against
+ *  that file. Callers are expected to fetch this once at startup and
+ *  cache it (see `serverStore.knownHostsPath`). */
 export function buildSshArgs(
   server: ServerConfig,
   remotePath: string,
   remoteCommand: string,
   remoteArgs?: string[],
+  knownHostsPath?: string,
 ): string[] {
-  const args = baseSshArgs(server);
+  const args = baseSshArgs(server, knownHostsPath);
   args.push(`${server.username}@${server.host}`);
 
-  // Build the remote command string with PATH augmentation
-  const cmdParts = [remoteCommand, ...(remoteArgs ?? [])].join(" ");
+  // Build the remote command string with PATH augmentation. Each component is
+  // shell-escaped so paths or args containing spaces, quotes, or shell
+  // metacharacters can't break out of the remote `sh -c` shell that SSH
+  // wraps the command in.
+  const cmdParts = [
+    shellEscape(remoteCommand),
+    ...(remoteArgs ?? []).map(shellEscape),
+  ].join(" ");
   const remoteCmd = remotePath
     ? `${PATH_SETUP} cd ${shellEscape(remotePath)} && ${cmdParts}`
     : `${PATH_SETUP} ${cmdParts}`;
@@ -62,10 +99,11 @@ export function buildSshArgs(
 export function buildSshExecArgs(
   server: ServerConfig,
   remoteCommand: string,
+  knownHostsPath?: string,
 ): string[] {
   // Password auth runs via direct process (no PTY), so skip -t to avoid warning
   const allocatePty = server.authMethod !== "password";
-  const args = baseSshArgs(server, { allocatePty });
+  const args = baseSshArgs(server, knownHostsPath, { allocatePty });
   args.push(`${server.username}@${server.host}`);
   args.push(remoteCommand);
 

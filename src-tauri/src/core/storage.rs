@@ -50,6 +50,11 @@ pub struct ServerConfig {
     pub last_connected_at: Option<u64>,
     #[serde(default)]
     pub installed_agents: Vec<String>,
+    /// SHA256 fingerprint of the host key captured at first-connect.
+    /// `None` for legacy entries — those connect via TOFU fallback until
+    /// the user re-saves the server to pin the key.
+    #[serde(default)]
+    pub host_fingerprint: Option<String>,
 }
 
 fn default_ssh_port() -> u16 {

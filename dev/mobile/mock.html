@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PacketADE Mobile — PWA Mock</title>
+<style>
+  :root {
+    /* Base canvas */
+    --canvas: #07090d;
+    --canvas-2: #11151c;
+
+    /* PWA palette (Claude-inspired, PacketADE Graphite blend) */
+    --bg-0: #0d1117;
+    --bg-1: #161b22;
+    --bg-2: #1c2128;
+    --bg-3: #252b34;
+    --border: #2a313b;
+    --border-strong: #3a424d;
+    --text-1: #ece6dd;       /* warm off-white like Claude */
+    --text-2: #b8b0a4;
+    --text-3: #7a766e;
+
+    /* Anthropic-warm copper accent */
+    --accent: #d97757;
+    --accent-soft: rgba(217, 119, 87, 0.16);
+    --accent-strong: #e88a6b;
+
+    --green: #3fb950;
+    --amber: #d29922;
+    --red: #f85149;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", system-ui, sans-serif;
+    --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.5rem 1.5rem 4rem; background: var(--canvas); color: var(--text-1); font-family: var(--font-sans); }
+
+  .page-head { max-width: 1400px; margin: 0 auto 2.5rem; }
+  .page-head h1 { font-size: 1.65rem; margin: 0 0 0.3rem; letter-spacing: -0.02em; }
+  .page-head p { color: var(--text-2); max-width: 720px; margin: 0; font-size: 14px; line-height: 1.5; }
+  .page-head .meta { color: var(--text-3); font-family: var(--font-mono); font-size: 11px; margin-top: 0.5rem; }
+
+  .grid {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2rem;
+  }
+  @media (max-width: 1240px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px)  { .grid { grid-template-columns: 1fr; } }
+
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.8rem; }
+  .frame-label { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); text-align: center; max-width: 280px; }
+  .frame-label strong { color: var(--text-1); font-family: var(--font-sans); font-weight: 600; display: block; margin-bottom: 0.2rem; font-size: 13px; }
+
+  /* iPhone shell */
+  .phone {
+    width: 300px;
+    height: 640px;
+    border-radius: 44px;
+    background: #0a0c10;
+    box-shadow:
+      0 0 0 6px #1a1d22,
+      0 0 0 7px #2a2d32,
+      0 30px 60px rgba(0,0,0,0.5),
+      inset 0 0 0 0.5px rgba(255,255,255,0.04);
+    padding: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+  .screen {
+    width: 100%;
+    height: 100%;
+    border-radius: 38px;
+    background: var(--bg-0);
+    overflow: hidden;
+    position: relative;
+    color: var(--text-1);
+    font-size: 13px;
+    line-height: 1.45;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Dynamic Island */
+  .island {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100px;
+    height: 26px;
+    background: #000;
+    border-radius: 18px;
+    z-index: 50;
+  }
+
+  /* Status bar */
+  .statusbar {
+    height: 44px;
+    padding: 0 20px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding-bottom: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-1);
+    flex-shrink: 0;
+  }
+  .statusbar .right { display: flex; gap: 4px; align-items: center; font-size: 11px; color: var(--text-1); }
+
+  /* App header */
+  .app-header {
+    padding: 8px 16px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .app-header.center { justify-content: center; position: relative; }
+  .app-header h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .app-header .subtitle { font-size: 11px; color: var(--text-2); margin-top: 1px; font-weight: 400; }
+  .icon-btn {
+    width: 32px; height: 32px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: var(--bg-2);
+    color: var(--text-1);
+    font-size: 18px;
+    border: 1px solid var(--border);
+  }
+  .header-back {
+    position: absolute;
+    left: 12px; top: 50%; transform: translateY(calc(-50% + 4px));
+    color: var(--accent);
+    font-size: 22px;
+    text-decoration: none;
+  }
+  .header-right-pill {
+    position: absolute;
+    right: 12px; top: 50%; transform: translateY(calc(-50% + 4px));
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    padding: 3px 9px;
+    border-radius: 99px;
+    font-size: 10px;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+  }
+
+  /* Body */
+  .body { flex: 1; overflow-y: auto; }
+
+  /* === Screen 1: conversation list === */
+  .conv-row {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .conv-avatar {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+    font-weight: 600;
+  }
+  .conv-row.alt .conv-avatar { background: rgba(63,185,80,0.14); color: var(--green); }
+  .conv-row.alt2 .conv-avatar { background: rgba(88,166,255,0.16); color: #58a6ff; }
+  .conv-info { flex: 1; min-width: 0; }
+  .conv-title-row { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .conv-title { font-weight: 600; font-size: 14px; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-time { font-size: 11px; color: var(--text-3); flex-shrink: 0; font-family: var(--font-mono); }
+  .conv-preview { font-size: 12.5px; color: var(--text-2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .conv-meta { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+  .badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 99px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+  }
+  .badge.dot::before {
+    content: "●";
+    color: var(--green);
+    margin-right: 4px;
+  }
+  .badge.attention { background: rgba(248,81,73,0.14); color: var(--red); border-color: rgba(248,81,73,0.35); }
+  .badge.attention::before { content: "●"; color: var(--red); margin-right: 4px; }
+
+  /* Bottom tab bar */
+  .tabbar {
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 0 22px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-0);
+    flex-shrink: 0;
+  }
+  .tab {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 10px;
+    color: var(--text-3);
+    font-weight: 500;
+  }
+  .tab.active { color: var(--accent); }
+  .tab .ico { font-size: 18px; line-height: 1; }
+
+  /* === Screen 2: chat view === */
+  .chat-meta-strip {
+    padding: 8px 16px;
+    background: var(--bg-1);
+    font-size: 11px;
+    color: var(--text-2);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+    flex-shrink: 0;
+  }
+  .chat-meta-strip .ctx { color: var(--text-3); }
+  .chat-meta-strip .branch { color: var(--accent); }
+
+  .turn { padding: 12px 16px; }
+  .turn-role {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-3);
+    font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .bubble {
+    padding: 10px 13px;
+    border-radius: 14px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    word-wrap: break-word;
+  }
+  .bubble.user {
+    background: var(--accent-soft);
+    color: var(--text-1);
+    margin-left: 14px;
+    border: 1px solid rgba(217, 119, 87, 0.22);
+  }
+  .bubble.assistant {
+    background: var(--bg-1);
+    color: var(--text-1);
+    margin-right: 14px;
+    border: 1px solid var(--border);
+  }
+  .bubble code {
+    background: rgba(0,0,0,0.32);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .stream-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 14px;
+    background: var(--accent);
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    animation: blink 1.05s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .tool-card {
+    margin: 8px 14px 0;
+    padding: 9px 11px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-left: 2.5px solid var(--accent);
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-family: var(--font-mono);
+    color: var(--text-2);
+  }
+  .tool-card .name { color: var(--accent); font-weight: 600; }
+  .tool-card .args { color: var(--text-3); margin-top: 2px; }
+
+  .composer {
+    padding: 10px 12px 22px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-1);
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+  .composer .input {
+    flex: 1;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 9px 14px;
+    color: var(--text-1);
+    font-size: 13.5px;
+    min-height: 36px;
+  }
+  .composer .input.placeholder { color: var(--text-3); }
+  .send-btn {
+    width: 36px; height: 36px;
+    background: var(--accent);
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .send-btn.disabled { background: var(--bg-3); color: var(--text-3); }
+
+  /* === Screen 3: chat with permission sheet === */
+  .sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(2px);
+    z-index: 40;
+    display: flex;
+    align-items: flex-end;
+    border-radius: 38px;
+    overflow: hidden;
+  }
+  .sheet {
+    width: 100%;
+    background: var(--bg-1);
+    border-radius: 22px 22px 0 0;
+    padding: 14px 18px 26px;
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
+  }
+  .sheet-grabber {
+    width: 36px;
+    height: 4px;
+    background: var(--bg-3);
+    border-radius: 2px;
+    margin: 0 auto 14px;
+  }
+  .sheet-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .sheet-subtitle {
+    font-size: 12px;
+    color: var(--text-2);
+    margin-bottom: 12px;
+  }
+  .sheet-tool {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-left: 2.5px solid var(--accent);
+    border-radius: 8px;
+    padding: 10px 11px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-2);
+    margin-bottom: 14px;
+  }
+  .sheet-tool .label { color: var(--text-3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+  .sheet-tool .cmd { color: var(--accent-strong); }
+  .sheet-actions { display: flex; flex-direction: column; gap: 8px; }
+  .sheet-btn {
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: 11px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    text-align: center;
+  }
+  .sheet-btn.primary { background: var(--accent); color: #fff; }
+  .sheet-btn.secondary { background: var(--bg-2); color: var(--text-1); border: 1px solid var(--border); }
+  .sheet-btn.danger { background: transparent; color: var(--red); border: 1px solid rgba(248,81,73,0.4); }
+  .sheet-foot { font-size: 11px; color: var(--text-3); text-align: center; margin-top: 12px; }
+
+  /* === Screen 4: pairing === */
+  .pair-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0 24px;
+    text-align: center;
+    gap: 18px;
+  }
+  .qr-frame {
+    width: 200px; height: 200px;
+    background: #fff;
+    border-radius: 16px;
+    padding: 14px;
+    box-shadow: 0 14px 38px rgba(0,0,0,0.55);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .qr-grid {
+    width: 100%; height: 100%;
+    display: grid;
+    grid-template-columns: repeat(13, 1fr);
+    grid-template-rows: repeat(13, 1fr);
+    gap: 1px;
+  }
+  .qr-grid div { background: transparent; }
+  .qr-grid div.b { background: #0d1117; border-radius: 1px; }
+  .pair-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .pair-desc { color: var(--text-2); font-size: 13px; line-height: 1.5; max-width: 240px; }
+  .fingerprint {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-3);
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 9px;
+    letter-spacing: 0.04em;
+  }
+  .pair-cancel {
+    background: transparent;
+    color: var(--accent);
+    border: none;
+    font-size: 14px;
+    padding: 10px 16px;
+    font-weight: 500;
+  }
+
+  /* Notes panel */
+  .notes {
+    max-width: 1400px;
+    margin: 3.5rem auto 0;
+    background: var(--canvas-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 1.75rem;
+  }
+  .notes h3 { margin: 0 0 0.85rem; font-size: 1.05rem; }
+  .notes ul { margin: 0; padding-left: 1.2rem; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+  .notes li { margin-bottom: 0.35rem; }
+  .notes strong { color: var(--text-1); }
+  .notes code { background: rgba(0,0,0,0.4); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>PacketADE Mobile — PWA visual mock</h1>
+  <p>Four key screens at the look-and-feel we'd target. SF Pro / system fonts, dark theme with Anthropic-warm copper accent, generous spacing, rounded cards, iOS-style bottom sheets. Estimated ~85–90% native fidelity, ~80% interactive fidelity in a real PWA build (Vaul for sheets, Framer Motion for spring physics).</p>
+  <div class="meta">Mock only — no interaction, no real WebSocket. iPhone 15 Pro frame (393×852 logical, shown at ~300px wide).</div>
+</div>
+
+<div class="grid">
+
+  <!-- ============== SCREEN 1: Conversation list ============== -->
+  <div class="frame-wrap">
+    <div class="phone">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar">
+          <span>9:41</span>
+          <div class="right"><span>•••</span><span>5G</span><span>🔋</span></div>
+        </div>
+        <div class="app-header">
+          <div>
+            <h2>PacketADE</h2>
+            <div class="subtitle">3 active · 1 needs you</div>
+          </div>
+          <div class="icon-btn">+</div>
+        </div>
+
+        <div class="body">
+
+          <div class="conv-row">
+            <div class="conv-avatar">⚡</div>
+            <div class="conv-info">
+              <div class="conv-title-row">
+                <div class="conv-title">SSH hardening phase 4</div>
+                <div class="conv-time">now</div>
+              </div>
+              <div class="conv-preview">Needs approval to run <code>pnpm install</code> in the sidecar package</div>
+              <div class="conv-meta">
+                <span class="badge attention">Approval needed</span>
+                <span class="badge">claude-sonnet-4-6</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="conv-row alt">
+            <div class="conv-avatar">◆</div>
+            <div class="conv-info">
+              <div class="conv-title-row">
+                <div class="conv-title">Refactor mobile relay tests</div>
+                <div class="conv-time">3m</div>
+              </div>
+              <div class="conv-preview">Running the new vitest harness. 14 of 22 passed so far, no failures yet…</div>
+              <div class="conv-meta">
+                <span class="badge dot">streaming</span>
+                <span class="badge">codex-gpt-5</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="conv-row alt2">
+            <div class="conv-avatar">▲</div>
+            <div class="conv-info">
+              <div class="conv-title-row">
+                <div class="conv-title">Mock the four PWA screens</div>
+                <div class="conv-time">12m</div>
+              </div>
+              <div class="conv-preview">Finished — saved to docs/roadmap and dev/mobile/mock.html. Ready for review.</div>
+              <div class="conv-meta">
+                <span class="badge">done</span>
+                <span class="badge">claude-opus-4-7</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="conv-row">
+            <div class="conv-avatar">⚡</div>
+            <div class="conv-info">
+              <div class="conv-title-row">
+                <div class="conv-title">Audit consumer paths</div>
+                <div class="conv-time">1h</div>
+              </div>
+              <div class="conv-preview">Found 6 remaining consumers treating workspace.projectPath as local. Should I…</div>
+              <div class="conv-meta">
+                <span class="badge">paused</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="conv-row alt">
+            <div class="conv-avatar">◆</div>
+            <div class="conv-info">
+              <div class="conv-title-row">
+                <div class="conv-title">Bug — Codex 401 on retry</div>
+                <div class="conv-time">yesterday</div>
+              </div>
+              <div class="conv-preview">Trace shows the OAuth token expires mid-stream. Refresh path missing in…</div>
+              <div class="conv-meta">
+                <span class="badge">done</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="tabbar">
+          <div class="tab active"><span class="ico">◐</span><span>Chats</span></div>
+          <div class="tab"><span class="ico">⚠</span><span>Approvals</span></div>
+          <div class="tab"><span class="ico">⚙</span><span>Settings</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="frame-label">
+      <strong>1 · Conversation list</strong>
+      Provider avatars, status badges, last-message preview, attention surfacing. Bottom tab bar mirrors Claude's mobile.
+    </div>
+  </div>
+
+  <!-- ============== SCREEN 2: Chat view streaming ============== -->
+  <div class="frame-wrap">
+    <div class="phone">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar">
+          <span>9:41</span>
+          <div class="right"><span>•••</span><span>5G</span><span>🔋</span></div>
+        </div>
+        <div class="app-header center">
+          <a class="header-back" href="#">‹</a>
+          <div>
+            <h2>SSH hardening phase 4</h2>
+            <div class="subtitle">claude · sonnet-4-6</div>
+          </div>
+          <div class="header-right-pill">82% ctx</div>
+        </div>
+
+        <div class="chat-meta-strip">
+          <span>$0.32</span>
+          <span>·</span>
+          <span class="branch">main</span>
+          <span>·</span>
+          <span class="ctx">14,221 tokens</span>
+        </div>
+
+        <div class="body">
+          <div class="turn">
+            <div class="turn-role" style="text-align:right; margin-right:14px;">You</div>
+            <div class="bubble user">Add `mkdir -p` over SSH when the remote project path doesn't exist on workspace start.</div>
+          </div>
+
+          <div class="turn">
+            <div class="turn-role" style="margin-left:14px;">Claude</div>
+            <div class="bubble assistant">I'll add an <code>ssh_ensure_remote_dir</code> command and wire it into the workspace activation flow. Let me first check the existing remote-path probe to see where it slots in cleanly.</div>
+          </div>
+
+          <div class="tool-card">
+            <span class="name">Read</span>
+            <div class="args">src-tauri/src/commands/pty.rs · lines 700-780</div>
+          </div>
+          <div class="tool-card">
+            <span class="name">Read</span>
+            <div class="args">src/components/workspace/WorkspaceCreationModal.tsx</div>
+          </div>
+
+          <div class="turn">
+            <div class="turn-role" style="margin-left:14px;">Claude</div>
+            <div class="bubble assistant">Found it — <code>ssh_check_remote_path</code> already reports <code>MISSING</code>. I can add a parallel <code>ssh_create_remote_dir</code> that's called from <code>WorkspacePane.tsx</code> on activate when the probe came back missing<span class="stream-cursor"></span></div>
+          </div>
+        </div>
+
+        <div class="composer">
+          <div class="input placeholder">Reply…</div>
+          <button class="send-btn disabled">↑</button>
+        </div>
+      </div>
+    </div>
+    <div class="frame-label">
+      <strong>2 · Chat view (streaming)</strong>
+      User-right / assistant-left bubbles. Inline tool cards. Streaming cursor on the active turn. Compact context strip below header.
+    </div>
+  </div>
+
+  <!-- ============== SCREEN 3: Permission sheet (bottom sheet over chat) ============== -->
+  <div class="frame-wrap">
+    <div class="phone">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar">
+          <span>9:41</span>
+          <div class="right"><span>•••</span><span>5G</span><span>🔋</span></div>
+        </div>
+        <div class="app-header center">
+          <a class="header-back" href="#">‹</a>
+          <div>
+            <h2>SSH hardening phase 4</h2>
+            <div class="subtitle">claude · sonnet-4-6</div>
+          </div>
+          <div class="header-right-pill">82% ctx</div>
+        </div>
+
+        <div class="body">
+          <div class="turn">
+            <div class="turn-role" style="margin-left:14px;">Claude</div>
+            <div class="bubble assistant">I need to install a missing dependency before continuing. Requesting permission to run pnpm install in the sidecar package.</div>
+          </div>
+        </div>
+
+        <!-- bottom sheet overlay -->
+        <div class="sheet-backdrop">
+          <div class="sheet">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-title">Allow this tool call?</div>
+            <div class="sheet-subtitle">Claude wants to run a Bash command</div>
+            <div class="sheet-tool">
+              <div class="label">Bash</div>
+              <div class="cmd">pnpm install</div>
+              <div class="args" style="margin-top:5px; color: var(--text-3);">in agent-sidecar/</div>
+            </div>
+
+            <div class="sheet-actions">
+              <button class="sheet-btn primary">Allow once</button>
+              <button class="sheet-btn secondary">Always allow <code style="font-size:10.5px; background:rgba(0,0,0,0.25); padding:1px 5px; border-radius:3px; margin-left:3px;">Bash(pnpm:*)</code></button>
+              <button class="sheet-btn danger">Deny</button>
+            </div>
+            <div class="sheet-foot">Swipe down to dismiss</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame-label">
+      <strong>3 · Permission sheet</strong>
+      Bottom sheet (Vaul-style) rises over chat. Tool name + exact args shown in monospace. Three actions: Allow once · Always allow with derived rule · Deny.
+    </div>
+  </div>
+
+  <!-- ============== SCREEN 4: Pairing ============== -->
+  <div class="frame-wrap">
+    <div class="phone">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar">
+          <span>9:41</span>
+          <div class="right"><span>•••</span><span>5G</span><span>🔋</span></div>
+        </div>
+        <div class="app-header center">
+          <a class="header-back" href="#">‹</a>
+          <div>
+            <h2>Pair with desktop</h2>
+            <div class="subtitle">Step 1 of 2</div>
+          </div>
+        </div>
+
+        <div class="pair-body">
+          <div class="qr-frame">
+            <div class="qr-grid" id="qr"></div>
+          </div>
+          <div class="pair-title">Scan the QR code</div>
+          <div class="pair-desc">
+            Open PacketADE on your desktop, go to
+            <strong style="color: var(--text-1);">Settings → Mobile</strong>,
+            and scan this code.
+          </div>
+          <div class="fingerprint">SHA-256 · 8f3a · 92e1 · 4b07 · de5c</div>
+          <button class="pair-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+    <div class="frame-label">
+      <strong>4 · Pairing</strong>
+      QR encodes <code>{relay URL, sessionId, devicePubkey, expiry}</code>. Fingerprint shown out-of-band for verification. Mirrors the SSH host-key pin UX from v0.6.0.
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <h3>Design choices</h3>
+  <ul>
+    <li><strong>Type</strong> — SF Pro Display via <code>-apple-system</code> stack. Identical to native on iOS.</li>
+    <li><strong>Color</strong> — dark base (<code>#0d1117</code>) with Anthropic-warm copper accent (<code>#d97757</code>) and warm off-white text (<code>#ece6dd</code>). Borrows Claude's palette while staying compatible with PacketADE's existing Graphite tokens.</li>
+    <li><strong>Bubbles</strong> — user on right with soft accent tint; assistant on left with elevated dark card. 14 px border radius, 12–13 px padding, generous line height for legibility on mobile.</li>
+    <li><strong>Tool cards</strong> — left-accent border, monospace, dimmed text. Inline between turns. Tappable in the real build to expand the result.</li>
+    <li><strong>Bottom sheet</strong> — backdrop dim + blur, top-rounded card sliding up. In the real build, Vaul gives this native iOS rubber-band physics.</li>
+    <li><strong>Status bar</strong> — translucent, content bleeds under the Dynamic Island.</li>
+    <li><strong>Tab bar</strong> — three primary destinations only: Chats, Approvals (cross-conversation rollup), Settings. Matches Claude's mobile pattern.</li>
+    <li><strong>Header context badges</strong> — `82% ctx` pill is the equivalent of the desktop's <code>SessionHealthBar</code> — context % + cost + branch in one strip.</li>
+    <li><strong>QR pairing</strong> — desktop generates Ed25519 keypair on demand, encodes pubkey + relay URL + expiry into QR. Fingerprint shown both sides for verify-out-of-band, mirroring <code>ssh_pin_host</code>.</li>
+  </ul>
+</div>
+
+<script>
+  // Generate a believable QR pattern (not a real QR — just visual)
+  (function() {
+    const grid = document.getElementById('qr');
+    if (!grid) return;
+    const size = 13;
+    // deterministic pattern using a small PRNG so it looks "QR-like"
+    let s = 1337;
+    function rand() { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }
+    const cells = [];
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        const div = document.createElement('div');
+        // three finder patterns in corners
+        const isFinderArea =
+          (r < 4 && c < 4) ||
+          (r < 4 && c >= size - 4) ||
+          (r >= size - 4 && c < 4);
+        let on = false;
+        if (isFinderArea) {
+          const fr = r < 4 ? r : size - 1 - r;
+          const fc = c < 4 ? c : size - 1 - c;
+          if (fr === 0 || fc === 0 || fr === 3 || fc === 3) on = true;
+          else if (fr === 1 || fc === 1) on = false;
+          else on = true;
+        } else {
+          on = rand() < 0.48;
+        }
+        if (on) div.classList.add('b');
+        grid.appendChild(div);
+      }
+    }
+  })();
+</script>
+
+</body>
+</html>

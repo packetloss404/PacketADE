@@ -217,6 +217,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const server = workspace?.serverId
     ? useServerStore.getState().getServer(workspace.serverId)
     : undefined;
+  const knownHostsPath = useServerStore((s) => s.knownHostsPath);
   const isRemote = !!server;
   const effectiveCommand = isRemote ? "ssh" : command;
   const effectiveArgs = useMemo(() => {
@@ -226,8 +227,9 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
       workspace?.remoteProjectPath ?? server.remotePath ?? "",
       command,
       cliArgs,
+      knownHostsPath ?? undefined,
     );
-  }, [isRemote, server, command, cliArgs, workspace?.remoteProjectPath]);
+  }, [isRemote, server, command, cliArgs, workspace?.remoteProjectPath, knownHostsPath]);
 
   // Accent color derivations
   const accent = pane.accentColor ?? "accent-green";

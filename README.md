@@ -6,7 +6,7 @@ PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issu
 
 ## What It Does
 
-- Chat with seven coding-agent providers from a **single Agents pane** that normalizes Claude Code subscription, Codex subscription, four API-key providers, and local Ollama into one event contract
+- Chat with eight coding-agent providers from a **single Agents pane** that normalizes Claude Code subscription, Codex subscription, OpenAI Agents SDK, four API-key providers, and local Ollama into one event contract
 - Run multiple agent sessions side-by-side in PTY-backed panes inside a **Workspace** (your terminal-CLI command center)
 - Plan and supervise larger units of work from the **Flight Deck** — a single-screen master-detail mission control
 - Track issues on a kanban board and send them directly to workspace sessions
@@ -35,17 +35,18 @@ PacketADE runs two kinds of agents side-by-side.
 | Claude (API) | `api-claude` | Anthropic API key in OS keyring |
 | OpenAI (ChatGPT Plus/Pro) | `api-openai-codex` | Codex CLI OAuth (`codex login`) — uses your ChatGPT subscription |
 | OpenAI (API) | `api-openai` | `OPENAI_API_KEY` in OS keyring |
+| OpenAI Agents SDK (API) | `api-openai-agents` | `OPENAI_API_KEY` in OS keyring |
 | MiniMax | `api-minimax` | API key in OS keyring |
 | OpenRouter | `api-openrouter` | API key in OS keyring |
 | Ollama | `api-ollama` | none — local daemon at `localhost:11434` |
 
-Auth status is probed live and shown as a badge next to each row (`ready` / `login_required` / `missing_key` / `service_down`). An fs watcher flips the badge automatically after a `claude login` / `codex login` completes, and expired-but-refreshable tokens stay `ready` (the SDK / CLI refreshes them transparently). API-key providers run in-process in Rust; subscription providers run in a Node sidecar that hosts the Anthropic Claude Agent SDK and wraps `codex exec`. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
+Auth status is probed live and shown as a badge next to each row (`ready` / `login_required` / `missing_key` / `service_down`). An fs watcher flips the badge automatically after a `claude login` / `codex login` completes, and expired-but-refreshable tokens stay `ready` (the SDK / CLI refreshes them transparently). Most API-key providers run in-process in Rust; subscription providers and the OpenAI Agents SDK provider run in the Node sidecar. Each session can be launched with agent-specific arguments and model selections exposed through the UI.
 
 ## Main Features
 
 ### Agents Pane — Unified Chat for Every Provider
 
-The Agents pane is the front door. One composer, two backends (in-process Rust + Node sidecar), one event contract — pick any of the seven providers from a grouped dropdown and the chat UI is identical.
+The Agents pane is the front door. One composer, two backends (in-process Rust + Node sidecar), one event contract — pick any of the eight providers from a grouped dropdown and the chat UI is identical.
 
 - **Live SessionHealthBar** in the chat header: model · context % gauge · cumulative tokens · session $ · git branch
 - **Drag-drop and clipboard-paste images** into the launcher (5 MB cap, removable thumbnail chips); image blocks land in the SDK content array on send
@@ -211,13 +212,13 @@ PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription) 
 
 - To point the app at a custom sidecar entry point (e.g. when running from a different working copy), set `PACKETADE_SIDECAR_PATH` to the absolute path of the compiled entry file before launching PacketADE.
 
-`pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 20.17.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from a Windows build: NSIS installer ~74 MB, MSI installer ~114 MB (both are produced because `bundle.targets` is `"all"`), standalone `packetade.exe` ~30 MB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
+`pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 24.15.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from a Windows build: NSIS installer ~74 MB, MSI installer ~114 MB (both are produced because `bundle.targets` is `"all"`), standalone `packetade.exe` ~30 MB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
 
 #### Sidecar status
 
 The sidecar work is complete across the original four v2 tiers and the v3 / v4 protocol additions that power the unified Agents pane:
 
-- **v2 Tier 1 — Bundling:** pinned Node 20.17.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
+- **v2 Tier 1 — Bundling:** pinned Node 24.15.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
 - **v2 Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
 - **v2 Tier 3 — Protocol & UX:** `pending_edit` diff preview for Anthropic Subscription turns, command forwarding (`set_permission_mode`, `set_model`, `retry`) through a versioned protocol. Codex MCP remains intentionally deferred — the upstream Codex SDK does not yet expose MCP hooks.
 - **v2 Tier 4 — Observability & updates:** sidecar lifetime stats (uptime, restart count, last-exit reason), per-provider launch counters surfaced to the UI, and a documented Tauri auto-updater setup.
@@ -225,12 +226,13 @@ The sidecar work is complete across the original four v2 tiers and the v3 / v4 p
 - **v3 — Protocol additions for the Agents pane:** typed image attachments on `start_session` / `send_message`; `mergedContent` on `edit_response` (per-hunk acceptance); `batchId`/`batchSize` on `permission_request`; `resumeToken` on `done`; new `plan_block` event mirroring `TodoWrite`; `tool_output_extended` event with Bash exit code + stdout/stderr + Write/Edit modified paths; `turn_summary` event for live mid-stream token totals.
 - **v4 — `cancel_pending_tools`:** drains parked permission/edit prompts as denied without aborting the SDK query, so the model receives synthetic "User cancelled this tool" results and the loop continues.
 - **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so CostDashboard reports GPT-5.5 spend correctly; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
+- **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with the same OpenAI API key as `api-openai`, preserving the existing Agents pane event contract while leaving the stable Rust OpenAI API provider and Codex subscription provider untouched.
 - **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.
-- See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`docs/updater-setup.md`](./docs/updater-setup.md) for signing / release channel configuration.
+- See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`dev/updater-setup.md`](./dev/updater-setup.md) for signing / release channel configuration.
 
 ### Multi-platform builds
 
-PacketADE is developed on Windows but is designed to ship on macOS and Linux as well. For per-platform prerequisites, supported target triples, and cross-compilation notes, see [`docs/multi-platform-build.md`](./docs/multi-platform-build.md). Builds and releases are produced locally — there is no GitHub Actions CI in this repo.
+PacketADE is developed on Windows but is designed to ship on macOS and Linux as well. For per-platform prerequisites, supported target triples, and cross-compilation notes, see [`dev/multi-platform-build.md`](./dev/multi-platform-build.md). Builds and releases are produced locally — there is no GitHub Actions CI in this repo.
 
 ### Run The Desktop App
 

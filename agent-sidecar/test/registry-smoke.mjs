@@ -97,6 +97,23 @@ const CASES = [
     },
   },
   {
+    provider: "openai-agents",
+    sessionId: "registry-smoke-openai-agents",
+    verifyNoRetainedStartError: true,
+    classify: (term) => {
+      if (term.kind === "done") return { ok: true, outcome: "done" };
+      if (term.kind === "error")
+        return {
+          ok: true,
+          outcome: `error: ${term.message}`,
+        };
+      return {
+        ok: true,
+        outcome: `timeout after ${PER_SESSION_TIMEOUT_MS}ms (registered, no terminal event)`,
+      };
+    },
+  },
+  {
     provider: "bogus-provider",
     sessionId: "registry-smoke-bogus",
     // Must be an "Unknown provider:" error. A done would be catastrophic.

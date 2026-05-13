@@ -23,7 +23,7 @@ Add a target with `rustup target add <triple>` before building.
 
 - Xcode Command Line Tools: `xcode-select --install`
 - Rust stable: `rustup toolchain install stable`
-- Node 20.17 and pnpm (`corepack enable` is enough on recent Node)
+- Node 24.15 and pnpm (`corepack enable` is enough on recent Node)
 - **Codesigning** is optional for local dev; required for distribution. An
   Apple Developer ID is needed to sign and later notarize the DMG — see
   "Not covered here" below.
@@ -158,4 +158,4 @@ pursue it:
 - Snap and Flatpak packaging for Linux
 - Cross-compiling Windows from macOS or Linux
 - Auto-update channel signing (covered separately in
-  [`docs/updater-setup.md`](./updater-setup.md))
+  [`dev/updater-setup.md`](./updater-setup.md))

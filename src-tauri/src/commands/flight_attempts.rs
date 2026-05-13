@@ -33,6 +33,13 @@ pub enum AttemptTargetSpec {
         user: String,
         #[serde(default)]
         key_path: Option<String>,
+        /// Pinned SHA256 host-key fingerprint, copied from the saved
+        /// `ServerConfig.hostFingerprint`. When present, the per-attempt
+        /// `SshConfig` uses strict host-key checking against the
+        /// app-managed `known_hosts` file. When absent (legacy entries),
+        /// the runtime falls back to TOFU `accept-new` and logs a warning.
+        #[serde(default)]
+        host_fingerprint: Option<String>,
         base_path: String,
         base_branch: String,
         agent_config_id: String,
@@ -108,6 +115,7 @@ fn build_ssh_config_from_spec(spec: &AttemptTargetSpec) -> Option<SshConfig> {
         port,
         user,
         key_path,
+        host_fingerprint,
         base_path,
         ..
     } = spec
@@ -119,6 +127,10 @@ fn build_ssh_config_from_spec(spec: &AttemptTargetSpec) -> Option<SshConfig> {
             remote_path: base_path.clone(),
             key_path: key_path.clone(),
             target_id: Some(target_id.clone()),
+            // Phase 2: propagate the saved `ServerConfig.hostFingerprint`
+            // from the picker through the spec so flight attempts pin
+            // host keys instead of falling back to TOFU.
+            host_fingerprint: host_fingerprint.clone(),
         })
     } else {
         None
@@ -324,7 +336,7 @@ pub async fn cancel_flight_attempt(
             // host/user/port here — for cleanup we leave the worktree in place
             // if we can't authenticate, since attempting to reconnect from a
             // partial config would error out. Frontend can re-issue cleanup
-            // later once it re-resolves the SshTarget.
+            // later once it re-resolves the `ServerConfig` via `serverStore`.
             let _ = (base_path, target_id);
             warn!(attempt = %attempt_id, "SSH worktree cleanup deferred — requires frontend to call cleanup_attempt_worktree");
         }
@@ -343,6 +355,10 @@ pub async fn cleanup_attempt_worktree_ssh(
     key_path: Option<String>,
     base_path: String,
     target_id: String,
+    // Phase 2: optional pinned fingerprint, sourced from the saved
+    // `ServerConfig.hostFingerprint`. Falls back to TOFU when absent
+    // (legacy callers that haven't been updated yet).
+    host_fingerprint: Option<String>,
 ) -> Result<(), String> {
     let cfg = SshConfig {
         host,
@@ -351,6 +367,7 @@ pub async fn cleanup_attempt_worktree_ssh(
         remote_path: base_path.clone(),
         key_path,
         target_id: Some(target_id),
+        host_fingerprint,
     };
     let _ = (flight_id, attempt_id.clone());
     worktree::remove_remote_worktree(&cfg, &base_path, &attempt_id).await

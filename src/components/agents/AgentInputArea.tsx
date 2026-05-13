@@ -30,14 +30,15 @@ import {
 } from "@/stores/agentTaskStore";
 import { useGitHubStore } from "@/stores/githubStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
-import { useSshTargetStore } from "@/stores/sshTargetStore";
+import { useServerStore } from "@/stores/serverStore";
 import { useProfileStore } from "@/stores/profileStore";
+import { useAppStore } from "@/stores/appStore";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import { FileMentionPopover } from "./FileMentionPopover";
-import { SshConnectModal } from "./SshConnectModal";
 import type { AgentCli } from "@/stores/agentTaskStore";
+import type { ServerConfig } from "@/types/server";
 import {
   API_PROVIDERS,
   getProviderForAgent,
@@ -51,12 +52,7 @@ import {
   type OllamaModel,
   type ProviderAuthStatus,
 } from "@/lib/tauri";
-import {
-  isSshUri,
-  makeSshUri,
-  parseSshTargetId,
-  type SshTarget,
-} from "@/types/ssh";
+import { isSshUri, makeSshUri, parseSshUri } from "@/lib/ssh-uri";
 
 /** Cursor-style launch modes. */
 export type AgentMode = "agent" | "ask" | "manual" | "plan";
@@ -105,9 +101,33 @@ const MODE_ORDER: AgentMode[] = ["agent", "ask", "manual", "plan"];
  */
 const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
   { label: "Anthropic", agents: ["api-claude-oauth" as AgentCli, "api-claude"] },
-  { label: "OpenAI", agents: ["api-openai-codex" as AgentCli, "api-openai"] },
+  {
+    label: "OpenAI",
+    agents: [
+      "api-openai-codex" as AgentCli,
+      "api-openai",
+      "api-openai-agents",
+    ],
+  },
   { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama"] },
 ];
+
+/** Sidecar-routed providers — the backend rejects ssh_config for these
+ * because the Node sidecar always runs provider work locally. Keep this
+ * list in sync with the SIDECAR_PROVIDERS table in
+ * `src-tauri/src/commands/agent_sidecar.rs`. */
+const SIDECAR_AGENTS: readonly AgentCli[] = [
+  "api-claude-oauth" as AgentCli,
+  "api-openai-codex" as AgentCli,
+  "api-openai-agents" as AgentCli,
+];
+
+function isSidecarAgent(agent: AgentCli): boolean {
+  return SIDECAR_AGENTS.includes(agent);
+}
+
+const SSH_NOT_SUPPORTED_TOOLTIP =
+  "Sidecar providers don't support remote SSH yet";
 
 type AuthEntry = ProviderAuthStatus | "loading";
 
@@ -204,10 +224,20 @@ export function AgentInputArea({
   const repos = useGitHubStore((s) => s.repos);
   const projectHistory = useProjectHistoryStore((s) => s.projects);
   const recordOpenProject = useProjectHistoryStore((s) => s.recordOpen);
-  const sshTargets = useSshTargetStore((s) => s.targets);
-  const touchSshTarget = useSshTargetStore((s) => s.touchTarget);
+  // Phase 2: unified server registry — same store as workspace PTY launches.
+  // Sorted by lastConnectedAt (descending) so the "recents" feel matches the
+  // pre-Phase-2 SshTarget recents.
+  const servers = useServerStore((s) => s.servers);
+  const setActiveView = useAppStore((s) => s.setActiveView);
+  const updateServer = useServerStore((s) => s.updateServer);
 
-  const [sshModalOpen, setSshModalOpen] = useState(false);
+  // Sidecar (OAuth) providers route through the Node sidecar, which doesn't
+  // speak SSH. The backend now rejects ssh_config for these providers, so we
+  // gate the SSH affordances in the UI to match. If a target is already
+  // selected we leave it visible (with the tooltip) rather than auto-clearing
+  // — the user might be mid-switch and we don't want to lose their choice.
+  const sshDisabled = isSidecarAgent(selectedAgent);
+  const sshDisabledTitle = sshDisabled ? SSH_NOT_SUPPORTED_TOOLTIP : undefined;
 
   // Staged image attachments (from drag-drop or clipboard paste) that will be
   // sent with the next launch. Cleared after onLaunch fires successfully.
@@ -337,7 +367,7 @@ export function AgentInputArea({
 
   type RecentItem =
     | { kind: "local"; path: string; ts: number }
-    | { kind: "ssh"; target: SshTarget; ts: number };
+    | { kind: "ssh"; server: ServerConfig; ts: number };
 
   const recentItems: RecentItem[] = useMemo(() => {
     const localSeen = new Set<string>();
@@ -347,23 +377,34 @@ export function AgentInputArea({
       localSeen.add(p.path);
       local.push({ kind: "local", path: p.path, ts: p.lastOpened });
     }
-    const ssh: RecentItem[] = sshTargets.map((t) => ({
+    const ssh: RecentItem[] = servers.map((s) => ({
       kind: "ssh",
-      target: t,
-      ts: t.lastUsed ?? t.createdAt,
+      server: s,
+      ts: s.lastConnectedAt ?? 0,
     }));
     return [...local, ...ssh].sort((a, b) => b.ts - a.ts);
-  }, [projectHistory, sshTargets]);
+  }, [projectHistory, servers]);
+
+  // Per-session SSH remote path. Seeded from the selected server's default
+  // and editable inline when an SSH target is picked. Encoded into
+  // `selectedRepo` as `ssh://<serverId>?path=<encoded>` so the launch path
+  // can pick it up without an extra store slot.
+  const selectedSshUri = useMemo(
+    () => (selectedRepo && isSshUri(selectedRepo) ? parseSshUri(selectedRepo) : null),
+    [selectedRepo],
+  );
+  const selectedServer = useMemo(
+    () => (selectedSshUri ? servers.find((s) => s.id === selectedSshUri.serverId) : undefined),
+    [selectedSshUri, servers],
+  );
 
   const currentDisplayName = useMemo(() => {
     if (!selectedRepo) return "Select a project";
-    if (isSshUri(selectedRepo)) {
-      const id = parseSshTargetId(selectedRepo);
-      const target = id ? sshTargets.find((t) => t.id === id) : undefined;
-      return target ? target.name : "SSH target";
+    if (selectedSshUri) {
+      return selectedServer ? selectedServer.name : "SSH target";
     }
     return repoDisplayName(selectedRepo, repos);
-  }, [selectedRepo, repos, sshTargets]);
+  }, [selectedRepo, repos, selectedSshUri, selectedServer]);
 
   const mentionProjectPath =
     selectedRepo && !isSshUri(selectedRepo) ? selectedRepo : "";
@@ -388,20 +429,33 @@ export function AgentInputArea({
   );
 
   const handleSelectSsh = useCallback(
-    (targetId: string) => {
-      setSelectedRepo(makeSshUri(targetId));
-      touchSshTarget(targetId);
+    (server: ServerConfig) => {
+      // Seed the per-session remote path with the server's default. Users
+      // can override inline (different project per server is common).
+      const initialPath = server.remotePath ?? "";
+      setSelectedRepo(makeSshUri(server.id, initialPath || undefined));
+      // Stamp lastConnectedAt so the recents list reflects use order.
+      updateServer(server.id, { lastConnectedAt: Date.now() });
     },
-    [setSelectedRepo, touchSshTarget],
+    [setSelectedRepo, updateServer],
   );
 
-  const handleSshConnected = useCallback(
-    (target: SshTarget) => {
-      setSelectedRepo(makeSshUri(target.id));
-      setSshModalOpen(false);
+  /** Inline edit of the remote project path on the currently-selected SSH
+   *  server. Re-encodes the URI; the launch path reads the path back from
+   *  `parseSshUri(selectedRepo)`. */
+  const handleRemotePathChange = useCallback(
+    (path: string) => {
+      if (!selectedSshUri) return;
+      setSelectedRepo(makeSshUri(selectedSshUri.serverId, path || undefined));
     },
-    [setSelectedRepo],
+    [selectedSshUri, setSelectedRepo],
   );
+
+  const handleOpenServersView = useCallback(() => {
+    // Phase 2: no per-agent "Connect SSH" modal. Servers are managed in
+    // the Tools / Servers view alongside workspace PTY targets.
+    setActiveView("tools");
+  }, [setActiveView]);
 
   // ─── @ file-mention state ─────────────────────────────────────────────
   const [mentionState, setMentionState] = useState<MentionState>(
@@ -702,9 +756,17 @@ export function AgentInputArea({
                 className={`flex items-center gap-1.5 ${
                   selectedRepo ? "text-text-primary" : "text-text-muted"
                 }`}
+                title={
+                  sshDisabled && selectedRepo && isSshUri(selectedRepo)
+                    ? SSH_NOT_SUPPORTED_TOOLTIP
+                    : undefined
+                }
               >
                 {selectedRepo && isSshUri(selectedRepo) ? (
-                  <Server size={12} className="text-accent-green" />
+                  <Server
+                    size={12}
+                    className={sshDisabled ? "text-text-muted" : "text-accent-green"}
+                  />
                 ) : (
                   <Monitor size={12} className="text-text-muted" />
                 )}
@@ -731,14 +793,22 @@ export function AgentInputArea({
                 </DropdownItem>
               ) : (
                 <DropdownItem
-                  key={`ssh:${item.target.id}`}
-                  onClick={() => handleSelectSsh(item.target.id)}
+                  key={`ssh:${item.server.id}`}
+                  onClick={() => {
+                    if (sshDisabled) return;
+                    handleSelectSsh(item.server);
+                  }}
                 >
-                  <RecentRow
-                    icon={<Server size={12} className="text-accent-green" />}
-                    label={item.target.name}
-                    selected={selectedRepo === makeSshUri(item.target.id)}
-                  />
+                  <span
+                    className={sshDisabled ? "opacity-50 cursor-not-allowed block" : "block"}
+                    title={sshDisabledTitle}
+                  >
+                    <RecentRow
+                      icon={<Server size={12} className="text-accent-green" />}
+                      label={item.server.name}
+                      selected={selectedSshUri?.serverId === item.server.id}
+                    />
+                  </span>
                 </DropdownItem>
               ),
             )}
@@ -753,13 +823,44 @@ export function AgentInputArea({
                 Open Folder
               </span>
             </DropdownItem>
-            <DropdownItem onClick={() => setSshModalOpen(true)}>
-              <span className="flex items-center gap-1.5 text-text-secondary">
+            <DropdownItem
+              onClick={() => {
+                if (sshDisabled) return;
+                handleOpenServersView();
+              }}
+            >
+              <span
+                className={`flex items-center gap-1.5 text-text-secondary ${sshDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                title={sshDisabledTitle}
+              >
                 <Server size={12} />
-                Connect SSH
+                {servers.length === 0 ? "Configure servers…" : "Manage servers…"}
               </span>
             </DropdownItem>
           </Dropdown>
+
+          {/* Phase 2: inline remote-path editor for SSH selections. Servers
+              are reusable across projects, so the path is per-conversation,
+              not stored on the server config. Seeded from
+              `ServerConfig.remotePath` (a server-level default) on first
+              pick; edits re-encode into `selectedRepo`. */}
+          {selectedSshUri && selectedServer && !sshDisabled && (
+            <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+              <Server size={11} className="text-accent-green shrink-0" />
+              <span className="text-text-muted shrink-0">
+                {selectedServer.username}@{selectedServer.host}
+                {selectedServer.port !== 22 ? `:${selectedServer.port}` : ""}
+                {": "}
+              </span>
+              <input
+                type="text"
+                value={selectedSshUri.remotePath ?? ""}
+                onChange={(e) => handleRemotePathChange(e.target.value)}
+                placeholder="/home/user/project"
+                className="flex-1 bg-bg-primary border border-bg-border rounded px-1.5 py-0.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/60"
+              />
+            </div>
+          )}
         </div>
 
         {/* Input box */}
@@ -1292,12 +1393,6 @@ export function AgentInputArea({
         </p>
       </div>
 
-      {sshModalOpen && (
-        <SshConnectModal
-          onClose={() => setSshModalOpen(false)}
-          onConnected={handleSshConnected}
-        />
-      )}
     </div>
   );
 }
