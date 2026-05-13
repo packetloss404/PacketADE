@@ -1,7 +1,8 @@
-import { GitBranch, FolderGit2 } from "lucide-react";
+import { GitBranch, FolderGit2, Mic, Loader2 } from "lucide-react";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, type AppView } from "@/stores/appStore";
+import { useDictationStore } from "@/stores/dictationStore";
 
 const VIEW_LABELS: Partial<Record<AppView, string>> = {
   agents: "Agents",
@@ -45,6 +46,9 @@ export function StatusStrip() {
   const gitBranch = useGitInfo();
   const projectPath = useLayoutStore((s) => s.projectPath);
   const activeView = useAppStore((s) => s.activeView);
+  const dictationStatus = useDictationStore((s) => s.status);
+  const isRecording = useDictationStore((s) => s.isRecording);
+  const isTranscribing = useDictationStore((s) => s.isTranscribing);
 
   const projectName = projectPath ? (projectPath.split(/[/\\]/).pop() ?? null) : null;
   const viewLabel = VIEW_LABELS[activeView] ?? null;
@@ -68,6 +72,31 @@ export function StatusStrip() {
       {viewLabel && <StatField label="View" value={viewLabel} accent="green" />}
 
       <span className="flex-1" />
+
+      {isRecording && (
+        <span
+          className="flex items-center gap-1.5 text-[10.5px] text-accent-red"
+          title="Dictation recording — release Ctrl+Shift+V or press Escape to stop"
+        >
+          <Mic size={10} className="animate-pulse" />
+          <span className="font-mono">REC</span>
+        </span>
+      )}
+      {isTranscribing && !isRecording && (
+        <span
+          className="flex items-center gap-1.5 text-[10.5px] text-accent-amber"
+          title="Transcribing dictation"
+        >
+          <Loader2 size={10} className="animate-spin" />
+          <span className="font-mono">Transcribing…</span>
+        </span>
+      )}
+      {dictationStatus === "error" && !isRecording && !isTranscribing && (
+        <span className="flex items-center gap-1.5 text-[10.5px] text-accent-red" title="Last dictation failed">
+          <Mic size={10} />
+          <span className="font-mono">Err</span>
+        </span>
+      )}
 
       <span className="flex items-center gap-1.5 text-[10.5px] text-text-muted">
         <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" />

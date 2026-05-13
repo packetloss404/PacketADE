@@ -51,7 +51,7 @@ export function DictationView() {
   const bars: number[] = waveform && waveform.length > 0 ? waveform.slice(0, 32) : Array(32).fill(0);
 
   return (
-    <div className="flex flex-1 overflow-hidden bg-bg-primary">
+    <div className="flex flex-1 overflow-hidden bg-bg-primary" data-dictation="off">
       {/* Left: Recording area */}
       <div className="w-[340px] flex-shrink-0 flex flex-col items-center border-r border-bg-border bg-bg-secondary px-6 py-8">
         <div className="w-full max-w-[280px] space-y-6">
