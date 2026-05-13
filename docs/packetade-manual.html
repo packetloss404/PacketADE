@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketADE Manual | The Complete User Guide</title>
 <meta name="description" content="Complete user manual for PacketADE — the open-source AI desktop IDE. Setup, agents, workspaces, Flight Deck, integrations, and settings." />
-<link rel="canonical" href="https://packetade.app/packetcode-manual.html" />
+<link rel="canonical" href="https://packetade.app/packetade-manual.html" />
 <link rel="icon" type="image/png" href="favicon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -1122,18 +1122,31 @@ ollama pull llama3.3:70b</code></pre>
 </div>
 
 <h3 class="section-title" id="ch4-dictation">Dictation &amp; voice-to-text</h3>
-<p>The full Dictation view is reachable from the VT purple button in the toolbar or the <strong>Dictation</strong> card in Tools. The center of the view is a large microphone button ringed in green &mdash; click it to start, and it pulses red while recording. A 32-bar live waveform visualizes audio level.</p>
-<p>Stop by clicking again or pressing the bound shortcut. Audio is handed to a local Whisper model for transcription; the status line shows <em>Transcribing&hellip;</em> while processing. Completed transcripts auto-append to history and are searchable by keyword.</p>
+<p>The full Dictation view is reachable from the VT purple button in the toolbar, the <strong>Dictation</strong> card in Tools, or the <code>Ctrl+Shift+D</code> shortcut. The center of the view is a large microphone button ringed in green &mdash; click it to start, and it pulses red while recording. A 32-bar live waveform visualizes audio level, and a <code>REC</code> chip appears in the bottom status strip whenever capture is live so you can tell the mic is hot from anywhere in the app.</p>
+<p>Stop by clicking again, pressing the bound shortcut, or <code>Escape</code> to cancel. Audio is handed to a local Whisper model for transcription; the status strip flips to <em>Transcribing&hellip;</em> while processing. Completed transcripts auto-append to history and are searchable by keyword.</p>
+
+<h4 class="subsection-title">Keyboard shortcuts</h4>
+<table class="ref-table">
+  <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td><code>Ctrl+Shift+V</code> (hold)</td><td>Push-to-talk &mdash; records while held, transcribes on release.</td></tr>
+    <tr><td><code>Ctrl+Shift+R</code></td><td>Toggle recording on/off.</td></tr>
+    <tr><td><code>Ctrl+Shift+D</code></td><td>Open the Dictation view.</td></tr>
+    <tr><td><code>Escape</code></td><td>Cancel an active recording (result is discarded client-side).</td></tr>
+  </tbody>
+</table>
+<p>All four are registered as OS-level global shortcuts via <code>tauri-plugin-global-shortcut</code>, so push-to-talk works even when PacketADE is not the focused application. In-window listeners are kept as a fallback for cases where OS registration is denied (e.g., macOS Accessibility permission not granted).</p>
+
+<h4 class="subsection-title">Focus-aware insertion</h4>
+<p>PacketADE tracks the most recently focused text input across every view. When transcription finishes and the <em>Auto-paste after transcription</em> setting is on (default), the result is inserted at that input's cursor &mdash; whether it's an agent chat box, a flight title, an issue description, the prompt library, or anywhere else you've typed recently. Terminal panes and the Dictation view's own search box are deliberately excluded.</p>
+<p>If you dictated from another app via the global hotkey and no PacketADE input was tracked, the transcript falls back to the system clipboard so you can paste it wherever you actually need it.</p>
 
 <h4 class="subsection-title">Analytics</h4>
 <p>The dashboard surfaces Total Words, Avg WPM, Fastest WPM, Avg Sentiment, Total Time, Entries, Daily Streak, an estimated Time Saved, and a Vocab Diversity score. Charts include Sentiment over Time (bar), WPM over Time (line), Activity by Hour (histogram), Top Words (frequency bars), and Words per Entry (distribution).</p>
 
-<h4 class="subsection-title">Voice in agent chat</h4>
-<p>A mic button lives inside every agent chat input. Transcripts <em>append</em> to the current input text rather than replacing it, so you can dictate a paragraph, stop, type a tweak, and send.</p>
-
 <div class="callout callout-warn">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-  <div class="callout-body"><strong>Gotchas:</strong> native mode requires a Whisper model to be downloaded (checked via <code>listWhisperModels()</code>); the Web Speech API is a fallback but less accurate. Sentiment is a heuristic over word polarity, not an ML emotion classifier.</div>
+  <div class="callout-body"><strong>Gotchas:</strong> native mode requires a Whisper model to be downloaded (checked via <code>listWhisperModels()</code>); the Web Speech API is a fallback but less accurate. Sentiment is a heuristic over word polarity, not an ML emotion classifier. <code>Escape</code> only stops capture client-side &mdash; the backend has no abort command yet, so the captured audio still runs through transcription once before being discarded.</div>
 </div>
 
 <h3 class="section-title" id="ch4-cost">Cost Dashboard</h3>

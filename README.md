@@ -119,6 +119,18 @@ The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a No
 - Live context injection into workspace sessions (patterns + lessons + recent summaries)
 - Per-project scoping with bounded context to avoid token overflow
 
+### Dictation — Voice-to-Text
+
+- Local Whisper transcription (no audio leaves the machine); model size, audio device, and custom dictionary configurable from `Tools → Dictation`
+- OS-level global shortcuts via `tauri-plugin-global-shortcut` so the hotkeys work even when PacketADE is not the focused application:
+  - `Ctrl+Shift+V` (hold) — push-to-talk; records while held, transcribes on release
+  - `Ctrl+Shift+R` — toggle recording on/off
+  - `Ctrl+Shift+D` — open the Dictation view
+  - `Escape` — cancel an active recording
+- **Focus-aware insertion**: tracks the most recently focused text input across the app and inserts the transcript at its cursor on completion — works in agent chats, flight title/objective, issue forms, prompt library, anywhere you type. Terminals are excluded.
+- **Clipboard fallback** when dictation was triggered from another app and no PacketADE input was tracked
+- Live `REC` indicator in the status strip, 32-bar waveform, history search, and an analytics dashboard (WPM, sentiment trend, top words, daily streak, time saved estimate)
+
 ### Ideation Scanner
 
 - AI-powered codebase analysis that generates improvement ideas across categories (code quality, security, performance, documentation, UI/UX)
@@ -140,7 +152,7 @@ The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a No
 - Local crash report browsing and cleanup
 - Agent profile management and AI routing configuration
 - Prompt template library
-- Local Whisper dictation and searchable transcription history
+- Local Whisper dictation with OS-global hotkeys and focus-aware transcript insertion (see [Dictation](#dictation--voice-to-text))
 
 ## Tech Stack
 

@@ -90,6 +90,9 @@ export const useDictationStore = create<DictationStore>((set, get) => {
     models: [],
 
     async startRecording(deviceIndex?: number) {
+      // Idempotent: in-window hotkey + OS-global hotkey can both fire for the same press.
+      const state = get();
+      if (state.isRecording || state.isTranscribing) return;
       try {
         set({ error: null, status: "recording", lastResult: null, waveform: [] });
         await startRecordingCmd(deviceIndex);
@@ -100,6 +103,8 @@ export const useDictationStore = create<DictationStore>((set, get) => {
     },
 
     async stopRecording() {
+      // Idempotent: skip if not actively recording (double-fire on key release / abort)
+      if (!get().isRecording) return get().lastResult ?? "";
       try {
         set({ isRecording: false, isTranscribing: true, status: "transcribing" });
         const result = await stopRecordingCmd();

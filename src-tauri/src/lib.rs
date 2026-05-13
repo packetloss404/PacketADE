@@ -15,7 +15,7 @@ fn init_tracing() {
     use tracing_subscriber::{fmt, EnvFilter};
 
     let log_dir = dirs_log_dir();
-    let file_appender = tracing_appender::rolling::daily(log_dir, "packetcode.log");
+    let file_appender = tracing_appender::rolling::daily(log_dir, "packetade.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
     // Leak the guard so the writer stays alive for the process lifetime
@@ -74,6 +74,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(create_github_auth_state())
         .manage(create_shared_pty_manager())
         .manage(create_shared_orchestrator())

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, lazy, Suspense } from "react";
+import { useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { LeftRail } from "@/components/layout/LeftRail";
@@ -9,12 +9,15 @@ import { CommandPalette } from "@/components/common/CommandPalette";
 import { DiffPane } from "@/components/agents/DiffPane";
 import { SideChatOverlay } from "@/components/agents/SideChatOverlay";
 import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
+import { useDictationTarget } from "@/hooks/useDictationTarget";
+import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useMosaicStore } from "@/stores/mosaicStore";
 import { useAppStore, getModuleId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
+import { useDictationStore } from "@/stores/dictationStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { getModule } from "@/modules/registry";
 import { useStatusLinePoller, useCodexStatusLinePoller, useGeminiStatusLinePoller, useOpenCodeStatusLinePoller } from "@/hooks/useStatusLine";
@@ -55,6 +58,10 @@ export default function App() {
   useStatusLinePoller();
   // Cmd/Ctrl+; opens the side chat overlay
   useSideChatHotkey();
+  // Tracks the last-focused text input and inserts dictated transcripts at its cursor
+  useDictationTarget();
+  // OS-level global hotkeys so dictation works even when PacketADE is not focused
+  useDictationGlobalShortcuts();
   useCodexStatusLinePoller();
   useGeminiStatusLinePoller();
   useOpenCodeStatusLinePoller();
@@ -103,6 +110,10 @@ export default function App() {
 
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
+  // Tracks whether Ctrl+Shift+V is currently held for push-to-talk recording.
+  // Set on keydown of V, cleared on keyup of V/Ctrl/Shift.
+  const pushToTalkActiveRef = useRef(false);
+
   // Global keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -119,6 +130,16 @@ export default function App() {
         e.preventDefault();
         useAppStore.getState().setCommandPaletteOpen(false);
         return;
+      }
+      // Escape to cancel an active dictation recording (when palette is closed)
+      if (e.key === "Escape") {
+        const ds = useDictationStore.getState();
+        if (ds.isRecording) {
+          e.preventDefault();
+          pushToTalkActiveRef.current = false;
+          void ds.stopRecording().then(() => useDictationStore.getState().clearResult());
+          return;
+        }
       }
       // Ctrl+\ to split pane
       if (e.ctrlKey && e.key === "\\") {
@@ -144,6 +165,34 @@ export default function App() {
           setActiveView("workspace");
           return;
         }
+        // Ctrl+Shift+D → Dictation view
+        if (e.key === "D") {
+          e.preventDefault();
+          setActiveView("dictation");
+          return;
+        }
+        // Ctrl+Shift+R → Toggle recording (start/stop)
+        if (e.key === "R") {
+          e.preventDefault();
+          const ds = useDictationStore.getState();
+          if (ds.isRecording) {
+            void ds.stopRecording();
+          } else {
+            void ds.startRecording();
+          }
+          return;
+        }
+        // Ctrl+Shift+V → Push-to-talk: start on first keydown, stop on keyup (see keyup handler)
+        if (e.key === "V") {
+          e.preventDefault();
+          if (e.repeat) return;
+          const ds = useDictationStore.getState();
+          if (!ds.isRecording && !pushToTalkActiveRef.current) {
+            pushToTalkActiveRef.current = true;
+            void ds.startRecording();
+          }
+          return;
+        }
         const viewMap: Record<string, AppView> = {
           "!": "claude",    // Shift+1
           "@": "codex",     // Shift+2
@@ -164,6 +213,24 @@ export default function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
+
+  // Push-to-talk release: stop recording when V (or any modifier) is released
+  // while pushToTalkActiveRef is set. Uses store snapshot to avoid stale closures.
+  useEffect(() => {
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!pushToTalkActiveRef.current) return;
+      const k = e.key;
+      if (k === "V" || k === "v" || k === "Control" || k === "Shift") {
+        pushToTalkActiveRef.current = false;
+        const ds = useDictationStore.getState();
+        if (ds.isRecording) {
+          void ds.stopRecording();
+        }
+      }
+    };
+    window.addEventListener("keyup", handleKeyUp);
+    return () => window.removeEventListener("keyup", handleKeyUp);
+  }, []);
 
   // Global listeners for agent-login requests dispatched from the Agents pane.
   // Parallel slice B dispatches `packetade:open-claude-login` / `packetade:open-codex-login`
