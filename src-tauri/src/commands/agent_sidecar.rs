@@ -23,7 +23,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{ChildStdin, Command};
+use tokio::process::{ChildStderr, ChildStdin, Command};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 
@@ -763,8 +763,16 @@ impl SidecarManager {
         } else if cfg!(debug_assertions) {
             // Dev: system `node` on PATH.
             self.spawn_via_tokio(None).await
+        } else if let Some(node_path) = resolve_bundled_node_path(&self.app_handle) {
+            // Release/standalone: prefer the colocated bundled Node binary
+            // with the Tokio path. The shell plugin's sidecar resolver works
+            // in installed bundles, but can fail for direct
+            // `target/release/packetade.exe` launches even when build.rs has
+            // copied Node beside the executable.
+            self.spawn_via_tokio(Some(node_path)).await
         } else {
-            // Release: Tauri-bundled Node via the shell plugin sidecar API.
+            // Release fallback: Tauri-bundled Node via the shell plugin
+            // sidecar API.
             self.spawn_via_shell_sidecar().await
         }
     }
@@ -776,20 +784,19 @@ impl SidecarManager {
         node_override: Option<PathBuf>,
     ) -> Result<(), String> {
         let node_exe: PathBuf = node_override.unwrap_or_else(|| PathBuf::from("node"));
+        let sidecar_arg = node_compatible_path(&self.sidecar_path);
         let mut cmd = Command::new(&node_exe);
-        cmd.arg(&self.sidecar_path)
+        cmd.arg(&sidecar_arg)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            // stderr inherits so sidecar logs reach the terminal / log
-            // aggregator without us having to relay them.
-            .stderr(Stdio::inherit());
+            .stderr(Stdio::piped());
         hide_window_async(&mut cmd);
 
         let mut child = cmd.spawn().map_err(|e| {
             format!(
                 "spawn node sidecar (node={}, entry={}): {}",
                 node_exe.display(),
-                self.sidecar_path.display(),
+                sidecar_arg.display(),
                 e
             )
         })?;
@@ -798,7 +805,7 @@ impl SidecarManager {
         info!(
             pid = ?child_pid,
             node = %node_exe.display(),
-            path = %self.sidecar_path.display(),
+            path = %sidecar_arg.display(),
             strategy = "tokio",
             "agent sidecar spawned"
         );
@@ -811,6 +818,10 @@ impl SidecarManager {
             .stdout
             .take()
             .ok_or_else(|| "sidecar stdout was not piped".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "sidecar stderr was not piped".to_string())?;
 
         // Writer task: pull lines from an mpsc channel, append '\n', write.
         let (writer_tx, writer_rx) = mpsc::unbounded_channel::<String>();
@@ -825,6 +836,7 @@ impl SidecarManager {
         let reader_handle = tokio::spawn(async move {
             reader_mgr.reader_loop(stdout).await;
         });
+        let stderr_handle = tokio::spawn(stderr_loop(stderr));
 
         // Wait for the child to exit.
         let status = match child.wait().await {
@@ -839,6 +851,15 @@ impl SidecarManager {
         };
 
         warn!(?status, pid = ?child_pid, "agent sidecar exited");
+        if !status.success() {
+            let message = format!("Sidecar exited with {}", status);
+            self.update_status(|s| {
+                if s.last_error.is_none() {
+                    s.last_error = Some(message);
+                }
+            })
+            .await;
+        }
 
         // Drop the writer channel so the writer task winds down.
         {
@@ -848,6 +869,7 @@ impl SidecarManager {
 
         // Reader task will end on its own once stdout hits EOF.
         let _ = reader_handle.await;
+        let _ = stderr_handle.await;
         let _ = writer_handle.await;
 
         Ok(())
@@ -857,12 +879,13 @@ impl SidecarManager {
     /// resolves `node` to the app-bundled binary declared in
     /// `tauri.conf.json > bundle.externalBin` (see slice B). Used in release.
     async fn spawn_via_shell_sidecar(self: &Arc<Self>) -> Result<(), String> {
+        let sidecar_arg = node_compatible_path(&self.sidecar_path);
         let command = self
             .app_handle
             .shell()
             .sidecar("node")
             .map_err(|e| format!("resolve bundled node sidecar: {}", e))?
-            .arg(&self.sidecar_path);
+            .arg(&sidecar_arg);
 
         let (mut rx, mut child) = command
             .spawn()
@@ -871,7 +894,7 @@ impl SidecarManager {
         let child_pid = child.pid();
         info!(
             pid = child_pid,
-            path = %self.sidecar_path.display(),
+            path = %sidecar_arg.display(),
             strategy = "shell-sidecar",
             "agent sidecar spawned"
         );
@@ -947,6 +970,19 @@ impl SidecarManager {
                             pid = child_pid,
                             "agent sidecar exited"
                         );
+                        if payload.code != Some(0) {
+                            let message = match payload.code {
+                                Some(code) => format!("Sidecar exited with code {}", code),
+                                None => "Sidecar exited unexpectedly".to_string(),
+                            };
+                            reader_mgr
+                                .update_status(|s| {
+                                    if s.last_error.is_none() {
+                                        s.last_error = Some(message);
+                                    }
+                                })
+                                .await;
+                        }
                         break;
                     }
                     _ => {}
@@ -1424,6 +1460,25 @@ async fn writer_loop(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<Stri
     }
 }
 
+async fn stderr_loop(stderr: ChildStderr) {
+    let mut lines = BufReader::new(stderr).lines();
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                let trimmed = line.trim_end();
+                if !trimmed.is_empty() {
+                    warn!(target: "agent_sidecar::stderr", "{}", trimmed);
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                warn!(error = %e, "agent sidecar stderr read failed");
+                break;
+            }
+        }
+    }
+}
+
 /// Resolve the path to the sidecar entrypoint.
 ///
 /// Three-branch resolution:
@@ -1478,6 +1533,82 @@ fn resolved_node_override() -> Option<PathBuf> {
         .ok()
         .map(PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty())
+}
+
+/// Node 24.15 on Windows cannot load a main module path in verbatim form
+/// (`\\?\D:\...`), which Tauri may return for bundled resources. Strip that
+/// prefix only for the argument we pass to Node; filesystem checks can keep
+/// using the original `PathBuf`.
+#[cfg(windows)]
+fn node_compatible_path(path: &Path) -> PathBuf {
+    let rendered = path.to_string_lossy();
+    if let Some(rest) = rendered.strip_prefix("\\\\?\\UNC\\") {
+        PathBuf::from(format!("\\\\{}", rest))
+    } else if let Some(rest) = rendered.strip_prefix("\\\\?\\") {
+        PathBuf::from(rest)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+#[cfg(not(windows))]
+fn node_compatible_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
+}
+
+fn bundled_node_names() -> &'static [&'static str] {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"))]
+    {
+        &["node.exe", "node-x86_64-pc-windows-msvc.exe"]
+    }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        &["node", "node-x86_64-apple-darwin"]
+    }
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        &["node", "node-aarch64-apple-darwin"]
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        &["node", "node-x86_64-unknown-linux-gnu"]
+    }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        &["node", "node-aarch64-unknown-linux-gnu"]
+    }
+    #[cfg(not(any(
+        all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "aarch64")
+    )))]
+    {
+        &[]
+    }
+}
+
+fn resolve_bundled_node_path(app_handle: &AppHandle) -> Option<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            roots.push(parent.to_path_buf());
+        }
+    }
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        roots.push(resource_dir);
+    }
+
+    for root in roots {
+        for name in bundled_node_names() {
+            let candidate = root.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 /// Trim a string for log output.
