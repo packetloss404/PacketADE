@@ -7,6 +7,7 @@ import {
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useProfileStore } from "@/stores/profileStore";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
@@ -25,7 +26,6 @@ import type {
   AgentMode,
   ComposerMode,
 } from "@/components/agents/AgentInputArea";
-import { storageKey } from "@/lib/brand";
 
 /**
  * Preference order for the initial auto-picked agent on a fresh Agents pane.
@@ -63,28 +63,10 @@ export function AgentsView() {
   const getProfile = useProfileStore((s) => s.getProfile);
   const [selectedProfileId, setSelectedProfileId] =
     useState<string>(defaultProfileId);
-  // B2: Codex-App-style Local / Worktree / Cloud picker. Persists in
-  // localStorage so users don't re-pick on every launch. Lazy initializer
-  // keeps SSR safe (the `typeof localStorage` guard) and falls back to
-  // "local" on missing/invalid persisted value.
-  const [composerMode, setComposerMode] = useState<ComposerMode>(() => {
-    if (typeof localStorage === "undefined") return "local";
-    try {
-      const raw = localStorage.getItem(storageKey("composer-mode"));
-      if (raw === "local" || raw === "worktree" || raw === "cloud") return raw;
-    } catch {
-      // ignore
-    }
-    return "local";
-  });
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    try {
-      localStorage.setItem(storageKey("composer-mode"), composerMode);
-    } catch {
-      // ignore
-    }
-  }, [composerMode]);
+  const composerMode = useAgentSettingsStore(
+    (s) => s.composerMode,
+  ) as ComposerMode;
+  const setComposerMode = useAgentSettingsStore((s) => s.setComposerMode);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const autoPickRanRef = useRef(false);
 

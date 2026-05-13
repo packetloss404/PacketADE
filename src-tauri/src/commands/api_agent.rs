@@ -195,6 +195,37 @@ struct DonePayload {
     cache_creation_input_tokens: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResumeMessage {
+    role: ChatRole,
+    content: String,
+}
+
+fn build_start_history(
+    resume_messages: Option<Vec<ResumeMessage>>,
+    initial_message: &str,
+) -> Vec<ChatMessage> {
+    let mut messages: Vec<ChatMessage> = resume_messages
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|message| {
+            let content = message.content.trim();
+            if content.is_empty() {
+                return None;
+            }
+            Some(ChatMessage {
+                role: message.role,
+                content: MessageContent::text(content.to_string()),
+            })
+        })
+        .collect();
+    messages.push(ChatMessage {
+        role: ChatRole::User,
+        content: MessageContent::text(initial_message),
+    });
+    messages
+}
+
 /// Fire all SessionEnd hooks (best-effort; failures logged).
 async fn fire_session_end_hooks(hooks_list: &[crate::core::hooks::HookConfig], session_id: &str) {
     for hook in hooks_list
@@ -216,6 +247,7 @@ fn provider_to_source(provider: &str) -> &'static str {
     match provider {
         "claude" | "anthropic" | "api-claude" => "api-claude",
         "openai" | "api-openai" => "api-openai",
+        "openai-agents" | "api-openai-agents" => "api-openai-agents",
         "minimax" | "api-minimax" => "api-minimax",
         "openrouter" | "api-openrouter" => "api-openrouter",
         "ollama" | "api-ollama" => "api-ollama",
@@ -334,6 +366,9 @@ pub async fn start_api_agent_session(
     allowed_tools: Option<Vec<String>>,
     resume_token: Option<String>,
     enabled_mcp_server_ids: Option<Vec<String>>,
+    resume_messages: Option<Vec<ResumeMessage>>,
+    permission_mode: Option<String>,
+    approve_writes: Option<bool>,
 ) -> Result<(), String> {
     // v2 Tier 4 slice B: bump the local-only per-provider launch counter
     // before any routing decision so both sidecar and in-process launches are
@@ -377,6 +412,10 @@ pub async fn start_api_agent_session(
             Some(a) => serde_json::to_value(a).unwrap_or(serde_json::Value::Null),
             None => serde_json::Value::Null,
         };
+        let resume_messages_json = match &resume_messages {
+            Some(messages) => serde_json::to_value(messages).unwrap_or(serde_json::Value::Null),
+            None => serde_json::Value::Null,
+        };
         let result = sidecar
             .forward_start(
                 session_id.clone(),
@@ -392,6 +431,9 @@ pub async fn start_api_agent_session(
                 thinking_enabled,
                 plan_mode,
                 attachments_json,
+                resume_messages_json,
+                permission_mode.clone(),
+                approve_writes,
             )
             .await;
         if let Err(e) = result {
@@ -425,11 +467,13 @@ pub async fn start_api_agent_session(
         _ => build_system_prompt(&prompt_workspace),
     };
 
-    // Create initial message history
-    let messages = vec![ChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::text(&initial_message),
-    }];
+    let parsed_permission_mode = match permission_mode.as_deref() {
+        Some(mode) => PermissionMode::parse(mode)
+            .ok_or_else(|| format!("Unknown permission mode: {}", mode))?,
+        None => PermissionMode::Auto,
+    };
+
+    let messages = build_start_history(resume_messages, &initial_message);
 
     // Store session config and history
     {
@@ -444,9 +488,9 @@ pub async fn start_api_agent_session(
                 thinking_enabled: thinking_enabled.unwrap_or(false),
                 pending_attachments: attachments.unwrap_or_default(),
                 plan_mode: plan_mode.unwrap_or(false),
-                permission_mode: PermissionMode::Auto,
+                permission_mode: parsed_permission_mode,
                 auto_allow_tools: HashSet::new(),
-                approve_writes: false,
+                approve_writes: approve_writes.unwrap_or(false),
                 allowed_tools,
                 enabled_mcp_server_ids,
             },

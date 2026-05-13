@@ -264,9 +264,12 @@ pub async fn launch_flight_async(
             None,        // attachments
             Some(false), // plan_mode
             ssh_config_for_session,
-            None, // allowed_tools — flight attempts use full tool set
-            None, // resume_token — flights start fresh
-            None, // enabled_mcp_server_ids — flights use all enabled MCP servers
+            None,        // allowed_tools — flight attempts use full tool set
+            None,        // resume_token — flights start fresh
+            None,        // enabled_mcp_server_ids — flights use all enabled MCP servers
+            None,        // resume_messages — flights start fresh
+            None,        // permission_mode — default auto
+            Some(false), // approve_writes
         )
         .await
         {

@@ -29,7 +29,9 @@ import type {
   EditResponseRequest,
   Emit,
   ImageAttachment,
+  PermissionMode,
   PermissionResponseRequest,
+  ResumeMessage,
   RetryRequest,
   SendMessageRequest,
   SetModelRequest,
@@ -56,7 +58,6 @@ const SKIP_DIRS = new Set([
   ".tauri",
 ]);
 
-type PermissionMode = "auto" | "ask_for_risky" | "allow_all" | "deny_all";
 type QueuedTurn = {
   input: string | AgentInputItem[];
   userText: string;
@@ -156,6 +157,31 @@ function buildUserInput(
   ];
 }
 
+function resumeMessagesToAgentItems(messages: ResumeMessage[] | undefined): AgentInputItem[] {
+  if (!messages || messages.length === 0) return [];
+  return messages
+    .filter((message) => message.content.trim().length > 0)
+    .map((message) => {
+      if (message.role === "assistant") {
+        return {
+          role: "assistant",
+          status: "completed",
+          content: [{ type: "output_text", text: message.content }],
+        } as AgentInputItem;
+      }
+      if (message.role === "system") {
+        return {
+          role: "system",
+          content: message.content,
+        } as AgentInputItem;
+      }
+      return {
+        role: "user",
+        content: message.content,
+      } as AgentInputItem;
+    });
+}
+
 export class OpenAIAgentsProvider implements ProviderHandler {
   private sessionId = "";
   private projectPath = "";
@@ -196,8 +222,8 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     this.systemPrompt = req.systemPrompt;
     this.allowedTools = req.allowedTools ?? [];
     this.planMode = req.planMode === true;
-    this.permissionMode = "auto";
-    this.approveWrites = false;
+    this.permissionMode = req.permissionMode ?? "auto";
+    this.approveWrites = req.approveWrites === true;
 
     if (!req.apiKey || req.apiKey.trim().length === 0) {
       emit({
@@ -212,7 +238,10 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     setTracingDisabled(true);
 
     this.mcpServers = this.buildMcpServers(req.mcpServers ?? {});
-    this.session = new MemorySession({ sessionId: req.sessionId });
+    this.session = new MemorySession({
+      sessionId: req.sessionId,
+      initialItems: resumeMessagesToAgentItems(req.resumeMessages),
+    });
     this.agent = this.buildAgent();
     this.enqueue(
       buildUserInput(req.initialMessage, req.attachments),

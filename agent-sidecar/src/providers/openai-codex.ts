@@ -55,6 +55,7 @@ import type {
   EditResponseRequest,
   Emit,
   PermissionResponseRequest,
+  ResumeMessage,
   RetryRequest,
   SendMessageRequest,
   SetModelRequest,
@@ -89,6 +90,9 @@ interface CodexSandboxFlags {
  *   - bypassPermissions   → `--dangerously-bypass-approvals-and-sandbox`
  *   - acceptEdits         → `--sandbox workspace-write -a never`
  *                           (writes allowed, no per-call prompt)
+ *   - allow_all           → same as bypassPermissions
+ *   - deny_all            → read-only with no approval prompts
+ *   - ask_for_risky       → same as default
  *   - dontAsk / auto      → same as bypassPermissions (closest Codex equivalent;
  *                           those SDK modes don't prompt the user)
  *   - default / <unset>   → `--sandbox workspace-write -a on-request`
@@ -101,10 +105,16 @@ function modeToCodexFlags(mode: string | null | undefined): CodexSandboxFlags {
         hasApprovals: true,
       };
     case "bypassPermissions":
+    case "allow_all":
     case "dontAsk":
     case "auto":
       return {
         args: ["--dangerously-bypass-approvals-and-sandbox"],
+        hasApprovals: false,
+      };
+    case "deny_all":
+      return {
+        args: ["--sandbox", "read-only", "-a", "never"],
         hasApprovals: false,
       };
     case "acceptEdits":
@@ -112,6 +122,7 @@ function modeToCodexFlags(mode: string | null | undefined): CodexSandboxFlags {
         args: ["--sandbox", "workspace-write", "-a", "never"],
         hasApprovals: false,
       };
+    case "ask_for_risky":
     case "default":
     case null:
     case undefined:
@@ -188,6 +199,26 @@ function extractTextBlock(content: unknown): string {
     return parts.join("");
   }
   return "";
+}
+
+function buildResumeFallbackPrompt(
+  messages: ResumeMessage[] | undefined,
+  nextUserMessage: string,
+): string {
+  if (!messages || messages.length === 0) return nextUserMessage;
+  const transcript = messages
+    .filter((message) => message.content.trim().length > 0)
+    .map((message) => `${message.role.toUpperCase()}:\n${message.content}`)
+    .join("\n\n");
+  if (!transcript) return nextUserMessage;
+  return [
+    "Continue this PacketADE conversation using the persisted transcript below.",
+    "<conversation_history>",
+    transcript,
+    "</conversation_history>",
+    "Next user message:",
+    nextUserMessage,
+  ].join("\n\n");
 }
 
 /**
@@ -295,7 +326,11 @@ export class OpenAICodexProvider implements ProviderHandler {
     // Seed effective overrides from the initial request. `set_model` /
     // `set_permission_mode` can override these for subsequent spawns.
     this.effectiveModel = req.model ?? "";
-    this.effectivePermissionMode = null;
+    this.effectivePermissionMode = req.planMode
+      ? null
+      : req.approveWrites
+        ? "acceptEdits"
+        : (req.permissionMode ?? null);
     this.lastUserMessage = req.initialMessage ?? null;
 
     if (req.mcpServers && Object.keys(req.mcpServers).length > 0) {
@@ -330,8 +365,11 @@ export class OpenAICodexProvider implements ProviderHandler {
     if (req.systemPrompt && req.systemPrompt.length > 0) {
       promptParts.push(`<system>\n${req.systemPrompt}\n</system>`);
     }
-    if (req.initialMessage && req.initialMessage.length > 0) {
-      promptParts.push(req.initialMessage);
+    const initialMessage = req.resume
+      ? req.initialMessage
+      : buildResumeFallbackPrompt(req.resumeMessages, req.initialMessage);
+    if (initialMessage && initialMessage.length > 0) {
+      promptParts.push(initialMessage);
     }
     const prompt = promptParts.join("\n\n");
     if (prompt.length > 0) {
@@ -413,6 +451,7 @@ export class OpenAICodexProvider implements ProviderHandler {
           sessionId,
           inputTokens: this.lastInputTokens,
           outputTokens: this.lastOutputTokens,
+          resumeToken: this.codexSessionId ?? undefined,
         });
       } else {
         emit({
@@ -762,6 +801,7 @@ export class OpenAICodexProvider implements ProviderHandler {
           sessionId,
           inputTokens: this.lastInputTokens,
           outputTokens: this.lastOutputTokens,
+          resumeToken: this.codexSessionId ?? undefined,
         });
       }
       return;
@@ -872,7 +912,7 @@ export class OpenAICodexProvider implements ProviderHandler {
     const opType = kind === "apply_patch_approval_request"
       ? "patch_approval"
       : "exec_approval";
-    const decision = req.decision === "approve" ? "approved" : "denied";
+    const decision = req.decision === "deny" ? "denied" : "approved";
     const submission = {
       id: req.toolUseId,
       op: { type: opType, decision },

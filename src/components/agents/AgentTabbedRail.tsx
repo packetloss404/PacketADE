@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   CheckSquare,
   GitBranch,
@@ -7,7 +7,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { storageKey } from "@/lib/brand";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { PlanPanel } from "./PlanPanel";
 import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
 import { AgentInspectorPane } from "./AgentInspectorPane";
@@ -26,8 +26,6 @@ const TABS: TabDef[] = [
   { id: "inspector", label: "Inspector", icon: Activity },
 ];
 
-const COLLAPSED_KEY = storageKey("agent-tabbed-rail-collapsed");
-
 interface AgentTabbedRailProps {
   conversationId: string;
 }
@@ -36,7 +34,8 @@ interface AgentTabbedRailProps {
  * B4 — Codex-App-style right rail with Plan / Diff / Inspector tabs in a
  * single 320px column. Lighter alternative to the full mosaic split for
  * users with smaller screens. Toggle from the chat header chevron;
- * collapse-to-30px state persists in localStorage so it survives reloads.
+ * collapse-to-30px state is backed by the Agents settings store so it
+ * survives reloads and can be changed from Settings.
  *
  * Active-tab choice is in-memory only (resets per mount) — matches how
  * AgentInspectorPane already handles its sub-tabs. The rail is a
@@ -47,22 +46,8 @@ export function AgentTabbedRail({ conversationId }: AgentTabbedRailProps) {
     s.conversations.find((c) => c.id === conversationId),
   );
   const [activeTab, setActiveTab] = useState<RailTab>("plan");
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (typeof localStorage === "undefined") return false;
-    try {
-      return localStorage.getItem(COLLAPSED_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    try {
-      localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
-    } catch {
-      // ignore
-    }
-  }, [collapsed]);
+  const collapsed = useAgentSettingsStore((s) => s.railCollapsed);
+  const setCollapsed = useAgentSettingsStore((s) => s.setRailCollapsed);
 
   if (!conversation) return null;
 

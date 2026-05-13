@@ -1,8 +1,5 @@
-import { useState, useEffect } from "react";
 import { Folder, Zap, Paperclip, Slash, X, Sparkles } from "lucide-react";
-import { storageKey } from "@/lib/brand";
-
-const DISMISS_KEY = storageKey("agents-onboarding-dismissed");
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 
 interface OnboardingCard {
   icon: React.ComponentType<{ size?: number; className?: string }>;
@@ -38,45 +35,17 @@ const CARDS: OnboardingCard[] = [
   },
 ];
 
-function readDismissed(): boolean {
-  if (typeof localStorage === "undefined") return true;
-  try {
-    return localStorage.getItem(DISMISS_KEY) === "1";
-  } catch {
-    return true;
-  }
-}
-
-function writeDismissed(): void {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(DISMISS_KEY, "1");
-  } catch {
-    // Best-effort; if storage is full or blocked, the overlay just shows again
-    // next session. That's a tolerable failure mode.
-  }
-}
-
 /**
  * One-time welcome overlay shown the first time a user opens the Agents view.
- * Dismissed forever via the `packetade:agents-onboarding-dismissed` flag. Has
- * no effect after dismissal — the component renders nothing.
+ * Dismissed via the Agents settings store and can be shown again from Settings.
  */
 export function AgentsOnboarding() {
-  const [open, setOpen] = useState<boolean>(false);
+  const onboardingDismissed = useAgentSettingsStore(
+    (s) => s.onboardingDismissed,
+  );
+  const dismiss = useAgentSettingsStore((s) => s.dismissOnboarding);
 
-  // Defer the read to an effect so SSR/cold-start state doesn't briefly flash
-  // the overlay before localStorage tells us the user already dismissed it.
-  useEffect(() => {
-    if (!readDismissed()) setOpen(true);
-  }, []);
-
-  function dismiss(): void {
-    writeDismissed();
-    setOpen(false);
-  }
-
-  if (!open) return null;
+  if (onboardingDismissed) return null;
 
   return (
     <div

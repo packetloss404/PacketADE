@@ -318,12 +318,9 @@ pub async fn clone_repo_remote_ssh(
         REMOTE_CLONE_TIMEOUT_SECS,
     );
 
-    let output = crate::core::tool_runtime_ssh::ssh_run_with_timeout(
-        cfg,
-        &cmd,
-        REMOTE_CLONE_TIMEOUT_SECS,
-    )
-    .await?;
+    let output =
+        crate::core::tool_runtime_ssh::ssh_run_with_timeout(cfg, &cmd, REMOTE_CLONE_TIMEOUT_SECS)
+            .await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -376,10 +373,7 @@ pub enum RemoteRepoState {
 
 /// Run `git -C <remote_path> rev-parse --is-inside-work-tree`. Returns the
 /// classification, or an error if the SSH connection itself failed.
-async fn ssh_classify_repo(
-    cfg: &SshConfig,
-    remote_path: &str,
-) -> Result<RemoteRepoState, String> {
+async fn ssh_classify_repo(cfg: &SshConfig, remote_path: &str) -> Result<RemoteRepoState, String> {
     let cmd = format!(
         "git -C {p} rev-parse --is-inside-work-tree 2>/dev/null",
         p = sh_quote(remote_path)
@@ -407,10 +401,7 @@ pub async fn ssh_get_status(cfg: &SshConfig, remote_path: &str) -> Result<String
         }
         RemoteRepoState::GitRepo => {}
     }
-    let cmd = format!(
-        "git -C {p} status --short",
-        p = sh_quote(remote_path)
-    );
+    let cmd = format!("git -C {p} status --short", p = sh_quote(remote_path));
     let output = crate::core::tool_runtime_ssh::ssh_run_for_worktree(cfg, &cmd).await?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();

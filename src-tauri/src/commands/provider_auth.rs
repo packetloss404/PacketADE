@@ -408,7 +408,7 @@ pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthSt
                 }),
                 _ => Ok(ProviderAuthStatus {
                     status: "service_down".to_string(),
-                    hint: "Ollama not running on localhost:11434".to_string(),
+                    hint: format!("Ollama not reachable at {}", base_url),
                 }),
             }
         }

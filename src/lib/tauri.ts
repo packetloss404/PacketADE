@@ -1406,7 +1406,7 @@ export async function deleteApiKey(provider: string): Promise<void> {
 
 export type ProviderAuthStatus = {
   status: "ready" | "login_required" | "missing_key" | "service_down" | "coming_soon";
-  hint: string; // short CTA/explanation, e.g. "Run claude login" or "Ollama not running on localhost:11434"
+  hint: string; // short CTA/explanation, e.g. "Run claude login" or "Ollama not reachable"
 };
 
 export async function getProviderAuthStatus(provider: string): Promise<ProviderAuthStatus> {
@@ -1416,12 +1416,20 @@ export async function getProviderAuthStatus(provider: string): Promise<ProviderA
 // Ollama local model discovery — queries the Ollama daemon's /api/tags
 // endpoint to list models the user has pulled locally. Returns an empty
 // array when the daemon is reachable but has no models. Throws on
-// connection failure (e.g. Ollama not running).
+// connection failure.
 export type OllamaModel = {
   name: string;
   size: number | null;
   modified_at: string | null;
 };
+
+export async function getOllamaBaseUrl(): Promise<string> {
+  return invoke<string>("get_ollama_base_url");
+}
+
+export async function setOllamaBaseUrl(baseUrl: string | null): Promise<string> {
+  return invoke<string>("set_ollama_base_url", { baseUrl });
+}
 
 export async function listOllamaModels(): Promise<OllamaModel[]> {
   return invoke("list_ollama_models");
@@ -1430,6 +1438,11 @@ export async function listOllamaModels(): Promise<OllamaModel[]> {
 export interface ImageAttachment {
   media_type: string;
   data_base64: string;
+}
+
+export interface ResumeMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
 }
 
 export interface SshConfigInput {
@@ -1475,6 +1488,11 @@ export async function startApiAgentSession(
    * forwarded to the sidecar. Applied on session start; no mid-session
    * swap (sidecar protocol has no `set_mcp_servers`). */
   enabledMcpServerIds?: string[] | null,
+  /** Persisted transcript used when rehydrating providers that do not have a
+   * native provider resume token, or when restoring in-process histories. */
+  resumeMessages?: ResumeMessage[] | null,
+  permissionMode?: "auto" | "ask_for_risky" | "allow_all" | "deny_all" | null,
+  approveWrites?: boolean | null,
 ): Promise<void> {
   return invoke("start_api_agent_session", {
     sessionId,
@@ -1490,6 +1508,9 @@ export async function startApiAgentSession(
     allowedTools: allowedTools ?? null,
     resumeToken: resumeToken ?? null,
     enabledMcpServerIds: enabledMcpServerIds ?? null,
+    resumeMessages: resumeMessages ?? null,
+    permissionMode: permissionMode ?? null,
+    approveWrites: approveWrites ?? null,
   });
 }
 

@@ -62,8 +62,17 @@ fn default_ssh_port() -> u16 {
 }
 
 pub const STATE_FILENAME: &str = "state.v1.json";
+const PROVIDER_SETTINGS_FILENAME: &str = "provider-settings.v1.json";
+pub const DEFAULT_OLLAMA_ROOT_BASE_URL: &str = "http://localhost:11434";
 
 static STATE_LOCK: Mutex<()> = Mutex::new(());
+static PROVIDER_SETTINGS_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
+struct ProviderRuntimeSettings {
+    #[serde(default)]
+    ollama_base_url: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
 pub struct PersistedUiState {
@@ -246,6 +255,92 @@ pub fn save_memory(
     state.memory_patterns = patterns;
     state.version += 1;
     save_state_inner(&state)
+}
+
+fn provider_settings_path() -> PathBuf {
+    data_dir().join(PROVIDER_SETTINGS_FILENAME)
+}
+
+fn load_provider_runtime_settings() -> ProviderRuntimeSettings {
+    let path = provider_settings_path();
+    match fs::read_to_string(&path) {
+        Ok(content) => match serde_json::from_str::<ProviderRuntimeSettings>(&content) {
+            Ok(settings) => settings,
+            Err(e) => {
+                warn!(
+                    "Failed to parse provider settings {:?}: {}, using defaults",
+                    path, e
+                );
+                ProviderRuntimeSettings::default()
+            }
+        },
+        Err(_) => ProviderRuntimeSettings::default(),
+    }
+}
+
+fn save_provider_runtime_settings(settings: &ProviderRuntimeSettings) -> Result<(), String> {
+    let dir = ensure_data_dir()?;
+    let path = dir.join(PROVIDER_SETTINGS_FILENAME);
+    let json = serde_json::to_string_pretty(settings)
+        .map_err(|e| format!("Failed to serialize provider settings: {}", e))?;
+    write_with_backup(&path, &json)
+}
+
+pub fn normalize_ollama_root_base_url(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Ollama URL cannot be empty.".to_string());
+    }
+
+    let mut parsed = reqwest::Url::parse(trimmed)
+        .map_err(|_| "Enter a full Ollama URL, for example http://localhost:11434.".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Ollama URL must start with http:// or https://.".to_string());
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("Ollama URL cannot include query parameters or fragments.".to_string());
+    }
+
+    let path = parsed.path().trim_end_matches('/');
+    let root_path = path
+        .strip_suffix("/v1")
+        .or_else(|| path.strip_suffix("/api/tags"))
+        .unwrap_or(path)
+        .to_string();
+    parsed.set_path(&root_path);
+
+    Ok(parsed.as_str().trim_end_matches('/').to_string())
+}
+
+pub fn load_saved_ollama_base_url() -> Option<String> {
+    load_provider_runtime_settings()
+        .ollama_base_url
+        .and_then(|url| normalize_ollama_root_base_url(&url).ok())
+}
+
+pub fn save_ollama_base_url(base_url: Option<String>) -> Result<(), String> {
+    let _lock = PROVIDER_SETTINGS_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut settings = load_provider_runtime_settings();
+    settings.ollama_base_url = base_url;
+    save_provider_runtime_settings(&settings)
+}
+
+pub fn resolve_ollama_root_base_url() -> String {
+    if let Some(saved) = load_saved_ollama_base_url() {
+        return saved;
+    }
+
+    std::env::var("PACKETADE_OLLAMA_URL")
+        .or_else(|_| std::env::var("PACKETCODE_OLLAMA_URL"))
+        .ok()
+        .and_then(|url| normalize_ollama_root_base_url(&url).ok())
+        .unwrap_or_else(|| DEFAULT_OLLAMA_ROOT_BASE_URL.to_string())
+}
+
+pub fn resolve_ollama_openai_base_url() -> String {
+    format!("{}/v1", resolve_ollama_root_base_url())
 }
 
 fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {

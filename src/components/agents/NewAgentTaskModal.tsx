@@ -1,17 +1,9 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bot, Check } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
-
-const AGENT_OPTIONS: { id: AgentCli; label: string }[] = [
-  { id: "claude-code", label: "Claude Code" },
-  { id: "codex", label: "Codex CLI" },
-  { id: "gemini", label: "Gemini CLI" },
-  { id: "opencode", label: "OpenCode" },
-  { id: "packetcode", label: "PacketCode" },
-];
 
 interface NewAgentTaskModalProps {
   onClose: () => void;
@@ -25,9 +17,20 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
   const agents = useAgentStore((s) => s.agents);
   const launchTask = useAgentTaskStore((s) => s.launchTask);
   const projectPath = useLayoutStore((s) => s.projectPath);
+  const agentOptions = useMemo(
+    () => agents.filter((a) => a.id !== "terminal" && !a.id.startsWith("api-")),
+    [agents],
+  );
+  const selectedAgent = agentOptions.find((a) => a.id === agent);
+
+  useEffect(() => {
+    if (agentOptions.some((a) => a.id === agent)) return;
+    const fallback = agentOptions.find((a) => a.installed) ?? agentOptions[0];
+    if (fallback) setAgent(fallback.id as AgentCli);
+  }, [agent, agentOptions]);
 
   async function handleLaunch() {
-    if (!description.trim()) return;
+    if (!description.trim() || !selectedAgent?.installed) return;
     const taskTitle = title.trim() || description.trim().slice(0, 60);
     await launchTask(taskTitle, description.trim(), agent, projectPath);
     onClose();
@@ -56,7 +59,7 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
           </button>
           <button
             onClick={() => void handleLaunch()}
-            disabled={!description.trim()}
+            disabled={!description.trim() || !selectedAgent?.installed}
             className="px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
           >
             Launch Agent
@@ -83,14 +86,13 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
         <div>
           <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">Agent</label>
           <div className="flex flex-wrap gap-1.5">
-            {AGENT_OPTIONS.map((opt) => {
-              const agentConfig = agents.find((a) => a.id === opt.id);
-              const installed = !!agentConfig?.installed;
+            {agentOptions.map((opt) => {
+              const installed = !!opt.installed;
               const selected = agent === opt.id;
               return (
                 <button
                   key={opt.id}
-                  onClick={() => installed && setAgent(opt.id)}
+                  onClick={() => installed && setAgent(opt.id as AgentCli)}
                   disabled={!installed}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded border transition-colors ${
                     selected
@@ -101,9 +103,9 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
                   <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
                     selected ? "bg-accent-green border-accent-green" : "border-bg-border"
                   }`}>
-                    {selected && <Check size={8} className="text-bg-primary" />}
+                  {selected && <Check size={8} className="text-bg-primary" />}
                   </div>
-                  {opt.label}
+                  {opt.name}
                 </button>
               );
             })}

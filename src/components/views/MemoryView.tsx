@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useMemoryStore } from "@/stores/memoryStore";
+import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
 import type {
   MemoryEventType,
@@ -29,7 +30,7 @@ const FILTERS: { key: FilterType; label: string }[] = [
   { key: "all", label: "All" },
   { key: "session_completed", label: "Sessions" },
   { key: "task_completed", label: "Tasks" },
-  { key: "flight_completed", label: "Flights" },
+  { key: "flight_completed", label: "Missions" },
 ];
 
 const CATEGORY_ORDER: PatternCategory[] = [
@@ -91,6 +92,9 @@ export function MemoryView() {
   const refreshPatterns = useMemoryStore((s) => s.refreshPatterns);
   const clearMemory = useMemoryStore((s) => s.clearMemory);
   const getContextForSession = useMemoryStore((s) => s.getContextForSession);
+  const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
+  const captureTasks = useMemorySettingsStore((s) => s.captureTasks);
+  const captureMissions = useMemorySettingsStore((s) => s.captureMissions);
 
   const [activeTab, setActiveTab] = useState<Tab>("patterns");
   const [filter, setFilter] = useState<FilterType>("all");
@@ -149,6 +153,7 @@ export function MemoryView() {
   const tokenEstimate = Math.round(
     (injectedPreview.length || patterns.length * 32) / 4,
   );
+  const captureEnabled = captureSessions || captureTasks || captureMissions;
 
   function handleRefreshPatterns() {
     if (projectPath) void refreshPatterns(projectPath);
@@ -285,6 +290,7 @@ export function MemoryView() {
           counts={eventCounts}
           events={filtered}
           totalEvents={events.length}
+          captureEnabled={captureEnabled}
           onDeleteEvent={deleteEvent}
         />
       )}
@@ -605,6 +611,7 @@ interface TimelineTabProps {
   counts: Record<FilterType, number>;
   events: ReturnType<typeof useMemoryStore.getState>["events"];
   totalEvents: number;
+  captureEnabled: boolean;
   onDeleteEvent: (id: string) => void;
 }
 
@@ -616,6 +623,7 @@ function TimelineTab({
   counts,
   events,
   totalEvents,
+  captureEnabled,
   onDeleteEvent,
 }: TimelineTabProps) {
   return (
@@ -670,7 +678,9 @@ function TimelineTab({
             }
             body={
               totalEvents === 0
-                ? "Memory captures session, task, and flight completions automatically."
+                ? captureEnabled
+                  ? "Memory captures session, task, and mission completions automatically."
+                  : "Memory capture is disabled in Settings."
                 : "Try a different filter or clear your search."
             }
           />

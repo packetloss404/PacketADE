@@ -146,8 +146,14 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       const merged = BUILTIN_AGENTS.map((builtin) => {
         const persisted_agent = state.agents.find((a) => a.id === builtin.id);
         if (persisted_agent) {
-          // Keep persisted overrides (installed status) but use current code defaults
-          return { ...builtin, installed: persisted_agent.installed };
+          return {
+            ...builtin,
+            command: persisted_agent.command || builtin.command,
+            defaultArgs: Array.isArray(persisted_agent.defaultArgs)
+              ? persisted_agent.defaultArgs
+              : builtin.defaultArgs,
+            installed: persisted_agent.installed,
+          };
         }
         return builtin;
       });

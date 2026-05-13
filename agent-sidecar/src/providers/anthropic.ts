@@ -18,6 +18,7 @@ import type {
   ImageAttachment,
   PermissionResponseRequest,
   PlanItem,
+  ResumeMessage,
   RetryRequest,
   SendMessageRequest,
   SetModelRequest,
@@ -105,9 +106,25 @@ class PushableAsyncIterable<T> implements AsyncIterable<T> {
  */
 function choosePermissionMode(req: StartSessionRequest): PermissionMode {
   if (req.planMode) return "plan";
+  if (req.permissionMode === "allow_all") return "bypassPermissions";
+  if (req.permissionMode === "ask_for_risky") return "default";
+  if (req.permissionMode === "deny_all") return "dontAsk";
   // Default: let the SDK prompt via `canUseTool`. That callback translates
   // to `permission_request` events on our wire protocol.
   return "default";
+}
+
+function toClaudePermissionMode(mode: SetPermissionModeRequest["mode"]): PermissionMode {
+  switch (mode) {
+    case "ask_for_risky":
+      return "default";
+    case "allow_all":
+      return "bypassPermissions";
+    case "deny_all":
+      return "dontAsk";
+    default:
+      return mode as PermissionMode;
+  }
 }
 
 /**
@@ -207,6 +224,26 @@ function buildUserContent(
   }));
   blocks.push({ type: "text", text });
   return blocks;
+}
+
+function buildResumeFallbackPrompt(
+  messages: ResumeMessage[] | undefined,
+  nextUserMessage: string,
+): string {
+  if (!messages || messages.length === 0) return nextUserMessage;
+  const transcript = messages
+    .filter((message) => message.content.trim().length > 0)
+    .map((message) => `${message.role.toUpperCase()}:\n${message.content}`)
+    .join("\n\n");
+  if (!transcript) return nextUserMessage;
+  return [
+    "Continue this PacketADE conversation using the persisted transcript below.",
+    "<conversation_history>",
+    transcript,
+    "</conversation_history>",
+    "Next user message:",
+    nextUserMessage,
+  ].join("\n\n");
 }
 
 /**
@@ -328,10 +365,12 @@ export class AnthropicProvider implements ProviderHandler {
    * same streaming prompt pipeline so the model takes another pass at it.
    */
   private lastUserMessage: string | null = null;
+  private approveWrites = false;
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.emitCurrent = emit;
     this.abort = new AbortController();
+    this.approveWrites = req.approveWrites === true;
 
     const prompt = new PushableAsyncIterable<SDKUserMessage>();
     this.prompt = prompt;
@@ -378,7 +417,7 @@ export class AnthropicProvider implements ProviderHandler {
     // still go through `canUseTool` above for the regular permission prompt.
     const preToolUse: HookCallback = async (rawInput, toolUseID, { signal }) => {
       const input = rawInput as PreToolUseHookInput;
-      if (!WRITE_TOOLS.has(input.tool_name)) {
+      if (!this.approveWrites || !WRITE_TOOLS.has(input.tool_name)) {
         return { continue: true };
       }
       const ti = (input.tool_input ?? {}) as Record<string, unknown>;
@@ -469,11 +508,14 @@ export class AnthropicProvider implements ProviderHandler {
     // Push the initial user message onto the pump, then start the query.
     // v3: when attachments are present, build a content array with image
     // blocks alongside the text so the model can read screenshots / images.
+    const initialMessage = req.resume
+      ? req.initialMessage
+      : buildResumeFallbackPrompt(req.resumeMessages, req.initialMessage);
     prompt.push({
       type: "user",
       message: {
         role: "user",
-        content: buildUserContent(req.initialMessage, req.attachments) as never,
+        content: buildUserContent(initialMessage, req.attachments) as never,
       },
       parent_tool_use_id: null,
     });
@@ -685,12 +727,17 @@ export class AnthropicProvider implements ProviderHandler {
         return;
       }
       case "result": {
-        const usage = (msg as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+        const result = msg as {
+          usage?: { input_tokens?: number; output_tokens?: number };
+          session_id?: string;
+        };
+        const usage = result.usage;
         emit({
           type: "done",
           sessionId,
           inputTokens: usage?.input_tokens ?? 0,
           outputTokens: usage?.output_tokens ?? 0,
+          resumeToken: result.session_id,
         });
         return;
       }
@@ -860,7 +907,12 @@ export class AnthropicProvider implements ProviderHandler {
       return;
     }
     try {
-      await this.q.setPermissionMode(req.mode as PermissionMode);
+      await this.q.setPermissionMode(toClaudePermissionMode(req.mode));
+      if (req.mode === "acceptEdits") {
+        this.approveWrites = true;
+      } else if (req.mode === "default") {
+        this.approveWrites = false;
+      }
     } catch (err) {
       emit({
         type: "error",

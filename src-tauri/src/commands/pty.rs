@@ -818,25 +818,21 @@ pub async fn ssh_check_remote_path(
 
     // Enforce an outer timeout in case SSH itself hangs despite ConnectTimeout.
     let fut = ssh_exec(args, pw_in);
-    let output =
-        match tokio::time::timeout(std::time::Duration::from_secs(8), fut).await {
-            Ok(res) => res?,
-            Err(_) => return Err("Probe timed out after 8s".to_string()),
-        };
+    let output = match tokio::time::timeout(std::time::Duration::from_secs(8), fut).await {
+        Ok(res) => res?,
+        Err(_) => return Err("Probe timed out after 8s".to_string()),
+    };
 
     let trimmed = output.trim();
     // Walk lines from the end — the probe's echo is always last; earlier
     // lines may contain SSH banners / motd noise.
-    let tag = trimmed
-        .lines()
-        .rev()
-        .find_map(|line| {
-            let t = line.trim();
-            match t {
-                "DIR_GIT" | "DIR" | "FILE" | "MISSING" => Some(t),
-                _ => None,
-            }
-        });
+    let tag = trimmed.lines().rev().find_map(|line| {
+        let t = line.trim();
+        match t {
+            "DIR_GIT" | "DIR" | "FILE" | "MISSING" => Some(t),
+            _ => None,
+        }
+    });
 
     match tag {
         Some("DIR_GIT") => Ok(RemotePathCheck {
@@ -861,21 +857,26 @@ pub async fn ssh_check_remote_path(
         }),
         _ => {
             let lower = trimmed.to_lowercase();
-            let msg = if lower.contains("permission denied") || lower.contains("authentication failed") {
-                "Authentication failed — verify the server credentials."
-            } else if lower.contains("could not resolve") || lower.contains("name or service not known") {
-                "Could not resolve host."
-            } else if lower.contains("connection refused") {
-                "Connection refused."
-            } else if lower.contains("connection timed out") || lower.contains("operation timed out") {
-                "Connection timed out."
-            } else if lower.contains("host key verification failed") {
-                "Host key verification failed — re-pin the host key on the Servers page."
-            } else if trimmed.is_empty() {
-                "SSH returned no output."
-            } else {
-                return Err(trimmed.to_string());
-            };
+            let msg =
+                if lower.contains("permission denied") || lower.contains("authentication failed") {
+                    "Authentication failed — verify the server credentials."
+                } else if lower.contains("could not resolve")
+                    || lower.contains("name or service not known")
+                {
+                    "Could not resolve host."
+                } else if lower.contains("connection refused") {
+                    "Connection refused."
+                } else if lower.contains("connection timed out")
+                    || lower.contains("operation timed out")
+                {
+                    "Connection timed out."
+                } else if lower.contains("host key verification failed") {
+                    "Host key verification failed — re-pin the host key on the Servers page."
+                } else if trimmed.is_empty() {
+                    "SSH returned no output."
+                } else {
+                    return Err(trimmed.to_string());
+                };
             Err(msg.to_string())
         }
     }
