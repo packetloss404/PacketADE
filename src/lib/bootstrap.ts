@@ -16,23 +16,17 @@ export async function initializeApp(): Promise<void> {
   try {
     const state = await loadPersistedState();
 
-    // Hydrate stores in parallel (each accepts the pre-loaded state to avoid extra round-trips)
-    // Workspace + Memory stores — synchronous hydration
+    // Synchronous hydrations — these stores feed the welcome screen and
+    // global chrome; render-blocking by design.
     useWorkspaceStore.getState().hydrateFromBackend(state.workspaces);
     useMemoryStore.getState().hydrateFromBackend(state);
     useServerStore.getState().hydrateFromBackend(state.servers);
-    await Promise.allSettled([
-      useFlightStore.getState().hydrateFromBackend(state),
-      useAgentStore.getState().hydrateFromBackend(state),
-      useOrchestrationStore.getState().hydrateFromBackend(state),
-    ]);
 
-    // Restore UI state
+    // Apply theme + force welcome view before doing anything else, so the
+    // first paint of the post-bootstrap UI is correctly themed.
     if (state.ui.theme === "dark" || state.ui.theme === "light") {
       useAppStore.getState().setTheme(state.ui.theme);
     }
-
-    // Always open to welcome screen on startup
     useAppStore.getState().setActiveView("welcome");
 
     // Restore project path: backend settings > localStorage > CWD
@@ -50,8 +44,18 @@ export async function initializeApp(): Promise<void> {
         // no CWD available
       }
     }
+
+    // Mark app as initialized so UI persistence can begin.
+    useAppStore.getState().setInitialized(true);
+
+    // Heavy stores hydrate in the background — welcome doesn't need them,
+    // and they don't make additional backend calls when given pre-loaded
+    // state, so this is really just a clarity/intent signal.
+    void useFlightStore.getState().hydrateFromBackend(state).catch(() => undefined);
+    void useAgentStore.getState().hydrateFromBackend(state).catch(() => undefined);
+    void useOrchestrationStore.getState().hydrateFromBackend(state).catch(() => undefined);
   } catch {
-    // Backend unavailable — fall back to localStorage defaults
+    // Backend unavailable — fall back to localStorage defaults.
     const localPath = localStorage.getItem("packetade:project-path");
     if (localPath) {
       useLayoutStore.getState().setProjectPath(localPath);
@@ -63,10 +67,8 @@ export async function initializeApp(): Promise<void> {
         // no CWD available
       }
     }
+    useAppStore.getState().setInitialized(true);
   }
-
-  // Mark app as initialized
-  useAppStore.getState().setInitialized(true);
 
   // Kick CLI detection in the background — surfaces installed status to the
   // onboarding flow and the workspace creation modal. Must not block startup.

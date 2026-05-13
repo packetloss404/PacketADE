@@ -52,8 +52,37 @@ function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
   }));
 }
 
+const WORKSPACES_CACHE_KEY = "packetade:workspaces-cache";
+
+/**
+ * Read the cached workspace list from localStorage. Lets the welcome screen
+ * render with workspaces on day-2+ launches before the backend round-trip
+ * completes — avoids the brief empty → populated flicker.
+ */
+function loadCachedWorkspaces(): Workspace[] {
+  try {
+    if (typeof localStorage === "undefined") return [];
+    const cached = localStorage.getItem(WORKSPACES_CACHE_KEY);
+    if (!cached) return [];
+    const parsed = JSON.parse(cached);
+    return Array.isArray(parsed) ? (parsed as Workspace[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function syncToLocalStorage(workspaces: Workspace[]) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(WORKSPACES_CACHE_KEY, JSON.stringify(workspaces));
+  } catch {
+    // Quota exceeded or storage unavailable — silent fail
+  }
+}
+
 function syncToBackend(workspaces: Workspace[]) {
   saveWorkspacesSlice(workspaces).catch(() => {});
+  syncToLocalStorage(workspaces);
 }
 
 function commitWorkspaces(
@@ -69,7 +98,7 @@ function commitWorkspaces(
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
-  workspaces: [],
+  workspaces: loadCachedWorkspaces(),
   activeWorkspaceId: null,
   keepTerminalsAlive: typeof localStorage !== "undefined" && localStorage.getItem(KEEP_ALIVE_KEY) === "true",
   zoomedPaneId: null,
@@ -299,6 +328,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   hydrateFromBackend: (workspaces) => {
     if (workspaces) {
       set({ workspaces });
+      syncToLocalStorage(workspaces);
     }
   },
 }));
