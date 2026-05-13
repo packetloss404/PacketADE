@@ -129,12 +129,18 @@ pub fn run() {
             commands::pty::read_pty_transcript,
             commands::pty::ssh_exec,
             commands::pty::ssh_test_connection,
+            commands::pty::ssh_fetch_fingerprint,
+            commands::pty::ssh_pin_host,
+            commands::pty::ssh_check_remote_path,
+            commands::pty::get_app_known_hosts_path,
             commands::ssh_keys::set_ssh_password,
             commands::ssh_keys::delete_ssh_password,
             commands::ssh_keys::get_ssh_password_exists,
             // Git
             commands::git::get_git_branch,
             commands::git::get_git_status,
+            commands::git::get_git_branch_remote,
+            commands::git::get_git_status_remote,
             commands::git::git_commit,
             commands::git::git_push,
             commands::git::git_pull,
@@ -229,6 +235,7 @@ pub fn run() {
             // Project scaffolding
             commands::scaffold::scaffold_project,
             commands::scaffold::check_scaffold_tools,
+            commands::scaffold::clone_repo_remote,
             // Dictation / audio capture
             commands::dictation::list_audio_devices,
             commands::dictation::start_recording,

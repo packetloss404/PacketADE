@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PacketADE — Roadmap & Backlog Plan</title>
+<style>
+  :root {
+    --bg-0: #0d1117;
+    --bg-1: #11161d;
+    --bg-2: #161b22;
+    --bg-3: #1f242c;
+    --border: #2a313b;
+    --border-strong: #3a424d;
+    --text-1: #e6edf3;
+    --text-2: #b8c3cf;
+    --text-3: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --amber: #d29922;
+    --red: #f85149;
+    --purple: #a371f7;
+    --teal: #39d0d8;
+    --shadow: 0 2px 12px rgba(0,0,0,0.35);
+    --radius: 8px;
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg-0); color: var(--text-1); font-family: var(--font-sans); font-size: 14px; line-height: 1.55; }
+  body { padding-bottom: 6rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--bg-3); padding: 1px 5px; border-radius: 4px; color: var(--text-2); }
+
+  /* Layout */
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 1.5rem; }
+
+  header.top {
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+    padding: 3rem 0 2rem;
+  }
+  header.top h1 { margin: 0 0 0.5rem; font-size: 2.25rem; letter-spacing: -0.02em; font-weight: 700; }
+  header.top .tagline { color: var(--text-2); max-width: 780px; margin: 0 0 1.5rem; font-size: 1rem; }
+  header.top .meta { color: var(--text-3); font-size: 12px; font-family: var(--font-mono); }
+  header.top nav { margin-top: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  header.top nav a {
+    padding: 0.5rem 0.9rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--bg-2);
+    color: var(--text-1);
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  header.top nav a:hover { background: var(--bg-3); border-color: var(--accent); text-decoration: none; }
+
+  section { padding: 3rem 0 1rem; border-top: 1px solid var(--border); }
+  section:first-of-type { border-top: none; }
+  h2.section-title { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; display: flex; align-items: baseline; gap: 0.6rem; }
+  h2.section-title .num { color: var(--accent); font-family: var(--font-mono); font-size: 1.1rem; }
+  .section-sub { color: var(--text-2); max-width: 820px; margin: 0 0 2rem; }
+
+  /* Phase columns */
+  .phases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+  @media (max-width: 960px) { .phases { grid-template-columns: 1fr; } }
+  .phase {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .phase header {
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .phase header h3 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+  .phase header .count { color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }
+  .phase.now header { background: linear-gradient(90deg, rgba(248,81,73,0.12), transparent); }
+  .phase.next header { background: linear-gradient(90deg, rgba(210,153,34,0.12), transparent); }
+  .phase.later header { background: linear-gradient(90deg, rgba(63,185,80,0.10), transparent); }
+  .phase .items { padding: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem; }
+  .phase .item {
+    padding: 0.55rem 0.7rem;
+    border-radius: 5px;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    font-size: 12.5px;
+    display: flex;
+    gap: 0.55rem;
+    align-items: flex-start;
+  }
+  .phase .item:hover { border-color: var(--border-strong); }
+  .phase .item .pill { font-family: var(--font-mono); font-size: 10px; padding: 1px 6px; border-radius: 99px; flex-shrink: 0; margin-top: 1px; }
+  .pill.p1 { background: rgba(248,81,73,0.16); color: var(--red); border: 1px solid rgba(248,81,73,0.35); }
+  .pill.p2 { background: rgba(210,153,34,0.16); color: var(--amber); border: 1px solid rgba(210,153,34,0.35); }
+  .pill.p3 { background: rgba(63,185,80,0.13); color: var(--green); border: 1px solid rgba(63,185,80,0.32); }
+  .pill.tier1 { background: rgba(248,81,73,0.16); color: var(--red); border: 1px solid rgba(248,81,73,0.35); }
+  .pill.tier2 { background: rgba(210,153,34,0.16); color: var(--amber); border: 1px solid rgba(210,153,34,0.35); }
+  .pill.tier3 { background: rgba(88,166,255,0.18); color: var(--accent); border: 1px solid rgba(88,166,255,0.35); }
+  .pill.tier4 { background: rgba(163,113,247,0.18); color: var(--purple); border: 1px solid rgba(163,113,247,0.35); }
+  .pill.tier5 { background: rgba(57,208,216,0.16); color: var(--teal); border: 1px solid rgba(57,208,216,0.35); }
+  .pill.eff { background: var(--bg-3); color: var(--text-2); border: 1px solid var(--border-strong); }
+
+  /* Legend */
+  .legend { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1.5rem; font-size: 12px; color: var(--text-3); }
+  .legend .item { display: inline-flex; gap: 0.4rem; align-items: center; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 99px; }
+
+  /* Benefit cards */
+  .cat-group { margin-bottom: 2rem; }
+  .cat-group h3 { font-size: 1rem; margin: 0 0 0.85rem; color: var(--text-1); display: flex; align-items: baseline; gap: 0.6rem; }
+  .cat-group h3 .count { color: var(--text-3); font-family: var(--font-mono); font-size: 12px; font-weight: 400; }
+  .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.85rem; }
+  @media (max-width: 800px) { .cards { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.95rem 1.1rem;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  .card:hover { border-color: var(--border-strong); }
+  .card .head { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.4rem; }
+  .card .head h4 { margin: 0; font-size: 13.5px; font-weight: 600; flex: 1; line-height: 1.4; }
+  .card .body { display: grid; grid-template-columns: 56px 1fr; gap: 0.35rem 0.7rem; font-size: 12.5px; color: var(--text-2); }
+  .card .body .k { color: var(--text-3); font-family: var(--font-mono); font-size: 11px; padding-top: 2px; }
+  .card .body .v code { font-size: 11px; }
+  .card .verdict {
+    margin-top: 0.55rem;
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-1);
+    border-left: 2px solid var(--accent);
+    border-radius: 0 4px 4px 0;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .card.p1 { border-left: 3px solid var(--red); }
+  .card.p2 { border-left: 3px solid var(--amber); }
+  .card.p3 { border-left: 3px solid var(--green); }
+
+  /* Vision tiers */
+  .tier-nav { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .tier-nav button {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    padding: 0.45rem 0.85rem;
+    border-radius: 5px;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+  .tier-nav button:hover { border-color: var(--border-strong); color: var(--text-1); }
+  .tier-nav button.active { background: var(--bg-3); border-color: var(--accent); color: var(--text-1); }
+  .vision-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.85rem; }
+  @media (max-width: 800px) { .vision-grid { grid-template-columns: 1fr; } }
+  .vision {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.95rem 1.1rem;
+  }
+  .vision.tier1 { border-top: 2px solid var(--red); }
+  .vision.tier2 { border-top: 2px solid var(--amber); }
+  .vision.tier3 { border-top: 2px solid var(--accent); }
+  .vision.tier4 { border-top: 2px solid var(--purple); }
+  .vision.tier5 { border-top: 2px solid var(--teal); }
+  .vision .head { display: flex; align-items: flex-start; gap: 0.6rem; margin-bottom: 0.45rem; }
+  .vision .head .n { font-family: var(--font-mono); color: var(--text-3); font-size: 12px; flex-shrink: 0; padding-top: 1px; }
+  .vision .head h4 { margin: 0; font-size: 13.5px; font-weight: 600; flex: 1; line-height: 1.4; }
+  .vision .pitch { font-size: 12.5px; color: var(--text-2); margin: 0 0 0.55rem; }
+  .vision .slot { font-size: 11.5px; color: var(--text-3); font-family: var(--font-mono); border-top: 1px dashed var(--border); padding-top: 0.45rem; }
+  .vision .meta { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.55rem; }
+
+  /* Wedges callout */
+  .wedges {
+    margin-top: 2.5rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem 1.4rem;
+  }
+  .wedges h3 { margin: 0 0 0.8rem; font-size: 1rem; }
+  .wedges ul { margin: 0; padding-left: 1.2rem; color: var(--text-2); font-size: 13px; }
+  .wedges li { margin-bottom: 0.4rem; }
+  .wedges strong { color: var(--text-1); }
+
+  footer.bottom { padding: 3rem 0 1rem; color: var(--text-3); font-size: 12px; border-top: 1px solid var(--border); margin-top: 3rem; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <h1>PacketADE — Roadmap &amp; Backlog Plan</h1>
+    <p class="tagline">A working view of what ships next, why each backlog item is worth doing (or not), and 30 ideas for after the current backlog clears. Source: <code>/backlog.md</code> and <code>/CHANGELOG.md</code> at project root.</p>
+    <div class="meta">Generated 2026-05-12 · Anchored to v0.6.0 · 29 backlog items + 30 post-backlog ideas</div>
+    <nav>
+      <a href="#plan">1 — Project plan</a>
+      <a href="#benefits">2 — Benefits: why / why not</a>
+      <a href="#vision">3 — 30 post-backlog ideas</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ============================================================
+     SECTION 1: PROJECT PLAN
+     ============================================================ -->
+<section id="plan">
+  <div class="wrap">
+    <h2 class="section-title"><span class="num">01</span> Project plan — phased</h2>
+    <p class="section-sub">P1 items run now. P2 items fill the next sprint or two. P3 items sit in the cleanup queue and get pulled when adjacent code is already open. Each card links the priority directly to a section in <code>/backlog.md</code>.</p>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--red)"></span> P1 — ship next</span>
+      <span class="item"><span class="swatch" style="background:var(--amber)"></span> P2 — this quarter</span>
+      <span class="item"><span class="swatch" style="background:var(--green)"></span> P3 — opportunistic</span>
+    </div>
+
+    <div class="phases">
+      <!-- NOW -->
+      <div class="phase now">
+        <header><h3>Now — P1 (ship next)</h3><span class="count">2 items</span></header>
+        <div class="items">
+          <div class="item"><span class="pill p1">P1</span><span><strong>Remote-workspace consumer sweep</strong> — type-level fix or guard every <code>workspace.projectPath</code> consumer for remote workspaces.</span></div>
+          <div class="item"><span class="pill p1">P1</span><span><strong>Sidecar-over-SSH (Phase 4.1)</strong> — swap local <code>node</code> for ssh-piped node in <code>agent_sidecar.rs::forward_start</code>; unblocks OAuth providers against remote codebases.</span></div>
+        </div>
+      </div>
+
+      <!-- NEXT -->
+      <div class="phase next">
+        <header><h3>Next — P2 (this quarter)</h3><span class="count">11 items</span></header>
+        <div class="items">
+          <div class="item"><span class="pill p2">P2</span><span><strong>Auto-updater (full Tauri v2 wiring)</strong> — keypair + signed <code>latest.json</code> + UI prompt. Runbook in <code>dev/updater-setup.md</code>.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong>macOS code signing + notarization</strong> — replaces <code>xattr -cr</code> workaround.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong>Windows Authenticode signing</strong> — kills SmartScreen warning on first run.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong>MCP servers over SSH (Phase 4.2)</strong> — <code>build_mcp_config_for_sidecar</code> resolves remote command strings when session is SSH.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong>Read-only remote git dashboard</strong> — add <code>git_commit_remote</code> / <code>push</code> / <code>pull</code> / <code>create_branch_remote</code>.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong>Cost dashboard alerts</strong> — see <code>dev/moat/cost-dashboard-plan.md</code>.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong>Swarm Phase 4 escalation</strong> — auto-reassignment for stuck attempts.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong>MCP provider transport</strong> — <code>dev/mcp-provider-transport.md</code> Phases 2-3.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong>"Will be created" copy fix</strong> — either <code>mkdir -p</code> over SSH on first launch, or revise <code>WorkspaceCreationModal</code> wording.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong><code>ssh_check_remote_path</code> uses keyring</strong> — pull from keyring when auth is password and inline pwd absent.</span></div>
+          <div class="item"><span class="pill p2">P2</span><span><strong>Password-auth migration fix</strong> — <code>sshTargetMigration.ts:67</code> currently downgrades password-auth users to "agent" silently.</span></div>
+        </div>
+      </div>
+
+      <!-- LATER -->
+      <div class="phase later">
+        <header><h3>Later — P3 (opportunistic)</h3><span class="count">16 items</span></header>
+        <div class="items">
+          <div class="item"><span class="pill p3">P3</span><span><strong>Consolidate <code>CloneServerConfigDto</code> + <code>GitServerConfigDto</code></strong> — byte-identical, drift risk.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong><code>clone_repo_remote</code> needs a frontend caller</strong> — or remove the binding.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Sidecar-providers list drift</strong> — FE <code>SIDECAR_AGENTS</code> vs BE <code>SIDECAR_PROVIDERS</code> hand-mirrored.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Dead Tauri commands</strong> — <code>set_ssh_password</code>, <code>delete_ssh_password</code>, <code>get_ssh_password_exists</code>, <code>ssh_test_connection</code>.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Rename <code>target_id</code> → <code>server_id</code></strong> across the wire.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong><code>resumeApiConversation</code> partial live-config lookup</strong> — host/user/remotePath still come from persisted state.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Sentinel rename</strong> — <code>PACKETCODE_SSH_OK</code> / <code>PACKETCODE_EOF_*</code> still use old brand.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong><code>cancel_flight_attempt</code> fingerprint asymmetry</strong> — minor codepath split.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Unit test for <code>sshTargetMigration.ts</code></strong> — idempotency, ID preservation, dual-legacy-key cleanup.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Heredoc terminator predictability</strong> — random hex suffix instead of unix-nanos.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong><code>keyPath</code> argv hygiene</strong> — reject paths with non-printable / shell metacharacters at save.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>SFTP / port-forward / file size cap (Phase 4.3)</strong> — files currently cap at 2 MB.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Windows-OpenSSH remote hosts</strong> — probes/git commands assume POSIX.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Snap / Flatpak packaging</strong> — broaden Linux distro reach.</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Cross-compile Windows from macOS / Linux</strong> — track as "won't-fix until release matrix demands it".</span></div>
+          <div class="item"><span class="pill p3">P3</span><span><strong>Workspace UX gaps</strong> — git review packet ties, prompt-library command-palette integration.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SECTION 2: BENEFITS — WHY / WHY NOT
+     ============================================================ -->
+<section id="benefits">
+  <div class="wrap">
+    <h2 class="section-title"><span class="num">02</span> Benefits — why / why not</h2>
+    <p class="section-sub">For each backlog item: the case for doing it, the case against, and a verdict. Cards keyed by category (SSH &amp; remote workspaces · Platform &amp; distribution · Product tracks).</p>
+
+    <!-- =================== SSH & REMOTE WORKSPACES =================== -->
+    <div class="cat-group">
+      <h3>SSH &amp; remote workspaces <span class="count">20 items</span></h3>
+      <div class="cards">
+
+        <div class="card p1">
+          <div class="head"><h4>Remote-workspace consumer sweep</h4><span class="pill p1">P1</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v"><code>workspace.projectPath</code> holds either a local or remote path; latent bug class. Scout in <code>IdeaCard.tsx:26</code> already relies on upstream gating only.</span>
+            <span class="k">Why not</span><span class="v">Typing the union right means touching many consumers; risk of regressing local flows.</span>
+          </div>
+          <div class="verdict">Worth doing now — the underlying type confusion is a footgun for every new feature that touches a workspace.</div>
+        </div>
+
+        <div class="card p1">
+          <div class="head"><h4>Sidecar-over-SSH (Phase 4.1)</h4><span class="pill p1">P1</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Unlocks Anthropic Subscription + OpenAI ChatGPT providers against remote codebases — the biggest user-visible gap after v0.6.0.</span>
+            <span class="k">Why not</span><span class="v">Requires bundling sidecar + Node onto the remote (parallel to CLI auto-install). Larger than a one-week task.</span>
+          </div>
+          <div class="verdict">High leverage — currently hard-blocked by the Phase 1.1 error gate, so the gate is "free" to remove once this ships.</div>
+        </div>
+
+        <div class="card p2">
+          <div class="head"><h4>"Will be created" copy fix</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">User-visible truth bug — the modal promises something the app doesn't deliver.</span>
+            <span class="k">Why not</span><span class="v">Either ship the <code>mkdir -p</code> or revise copy — picking is a 5-minute call.</span>
+          </div>
+          <div class="verdict">Cheap; fix the copy in the same PR as the <code>mkdir -p</code> if we do it.</div>
+        </div>
+
+        <div class="card p2">
+          <div class="head"><h4><code>ssh_check_remote_path</code> uses keyring password</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Password-auth users can't validate remote paths in the wizard — silent failure mode.</span>
+            <span class="k">Why not</span><span class="v">Adds one keyring lookup; trivial.</span>
+          </div>
+          <div class="verdict">Do it — keyring read is small and unblocks a documented auth method.</div>
+        </div>
+
+        <div class="card p2">
+          <div class="head"><h4>Password-auth migration silently downgrades</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Existing users with keyring-stored SSH passwords lose that method on upgrade and won't know why connections fail.</span>
+            <span class="k">Why not</span><span class="v">Touches the migration that already shipped — risk of re-introducing migration bugs.</span>
+          </div>
+          <div class="verdict">Ship a one-time toast + check <code>getSshPasswordExists</code> during migration.</div>
+        </div>
+
+        <div class="card p2">
+          <div class="head"><h4>Read-only remote git dashboard</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Today remote workspaces show git status but can't commit/push/pull — half-implemented feature is worse than no feature.</span>
+            <span class="k">Why not</span><span class="v">4 new Tauri commands with validation and shell-escape; not trivial but the harness from Phase 3.3 is reusable.</span>
+          </div>
+          <div class="verdict">Land it — completes a flagship v0.6.0 surface.</div>
+        </div>
+
+        <div class="card p2">
+          <div class="head"><h4>MCP servers over SSH (Phase 4.2)</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Without it, remote workspaces lose MCP — a big chunk of the agent toolset evaporates.</span>
+            <span class="k">Why not</span><span class="v">Touches the sidecar protocol seam; coordinate with Phase 4.1.</span>
+          </div>
+          <div class="verdict">Do after 4.1 lands — same code paths benefit.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Consolidate <code>CloneServerConfigDto</code> + <code>GitServerConfigDto</code></h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Byte-identical structs in two files — drift will happen.</span>
+            <span class="k">Why not</span><span class="v">Pure cleanup, no user-visible win.</span>
+          </div>
+          <div class="verdict">Do opportunistically when next touching either file.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4><code>clone_repo_remote</code> needs a frontend caller</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Backend command + binding exist with no UI — dead code or undelivered feature.</span>
+            <span class="k">Why not</span><span class="v">Surfacing a UI is more than P3 effort; removing is the cheaper P3.</span>
+          </div>
+          <div class="verdict">Either surface it in a "Clone to remote workspace" wizard step, or remove the binding. Decide before next refactor.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Sidecar-providers list drift</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Hand-mirrored lists in TS and Rust — silent drift breaks the Phase 1.1 sidecar guard.</span>
+            <span class="k">Why not</span><span class="v">Existing list is small (2 entries); breakage is loud not silent.</span>
+          </div>
+          <div class="verdict">Wait until adding a 3rd sidecar provider; do the codegen then.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Dead Tauri commands</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Four registered commands with no callers — attack surface for no benefit.</span>
+            <span class="k">Why not</span><span class="v">Some may be repurposable for the keyring-password fix above.</span>
+          </div>
+          <div class="verdict">Either reuse for the password-auth probe, or strip in one cleanup PR.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Rename <code>target_id</code> → <code>server_id</code></h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Field name preserved for back-compat; long-term clarity matters.</span>
+            <span class="k">Why not</span><span class="v">Breaks any persisted state from older versions if not migrated.</span>
+          </div>
+          <div class="verdict">Schedule after 1–2 minor versions ship; pair with a schema-version migration.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4><code>resumeApiConversation</code> partial live-config lookup</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Host/user/remotePath from persisted state means a renamed server resumes wrong.</span>
+            <span class="k">Why not</span><span class="v">Fail-fast on creds is arguably the correct mode; users notice instantly.</span>
+          </div>
+          <div class="verdict">Document, don't fix, until a user reports it.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Sentinel rename PACKETCODE_*</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Brand consistency in two server-internal constants.</span>
+            <span class="k">Why not</span><span class="v">Pure cosmetic — neither user nor logs see it.</span>
+          </div>
+          <div class="verdict">Fold into the next pty.rs / tool_runtime_ssh.rs touch.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4><code>cancel_flight_attempt</code> fingerprint asymmetry</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Codepath asymmetry — FE carries fingerprint, BE doesn't.</span>
+            <span class="k">Why not</span><span class="v">Cleanup is deferred to FE; works correctly today.</span>
+          </div>
+          <div class="verdict">Cosmetic; align when refactoring flight cancel paths.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Unit test for <code>sshTargetMigration.ts</code></h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Idempotency + ID preservation + dual-legacy-key cleanup deserve direct coverage.</span>
+            <span class="k">Why not</span><span class="v">Migration ran fine in v0.6.0; live signal is good.</span>
+          </div>
+          <div class="verdict">Worth ~30 minutes for a regression test before any future migration touches the path.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Heredoc terminator predictability</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Predictable terminator is grep-able; minor hygiene.</span>
+            <span class="k">Why not</span><span class="v">Existing collision check catches the failure case.</span>
+          </div>
+          <div class="verdict">Random hex suffix is a 5-line change; do it for hygiene.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4><code>keyPath</code> argv hygiene</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Argv-level injection is safe by construction, but logged paths with shell metachars could surprise.</span>
+            <span class="k">Why not</span><span class="v">No live exploit path — defensive only.</span>
+          </div>
+          <div class="verdict">Reject obviously hostile paths at <code>ServerFormModal</code> save; one regex.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>SFTP / port-forward / 2 MB file cap (Phase 4.3)</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Heredoc-piped file ops cap at 2 MB — blocks legitimate large-file workflows.</span>
+            <span class="k">Why not</span><span class="v">SFTP adds a second transport layer; large change for a corner-case use.</span>
+          </div>
+          <div class="verdict">Defer until a real user hits the cap. Track usage telemetry first.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Windows-OpenSSH remote hosts</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">POSIX <code>[ -e ]</code> / <code>git -C</code> assumptions break on Windows-OpenSSH targets.</span>
+            <span class="k">Why not</span><span class="v">Very few users target Windows as a remote dev host.</span>
+          </div>
+          <div class="verdict">Document the limitation; revisit only if requested.</div>
+        </div>
+
+      </div><!-- /cards -->
+    </div><!-- /cat-group -->
+
+    <!-- =================== PLATFORM & DISTRIBUTION =================== -->
+    <div class="cat-group">
+      <h3>Platform &amp; distribution <span class="count">5 items</span></h3>
+      <div class="cards">
+
+        <div class="card p2">
+          <div class="head"><h4>Auto-updater (full Tauri v2 wiring)</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Manual-install is friction for a daily dev tool. Updater unlocks rapid iteration without retraining users to download installers.</span>
+            <span class="k">Why not</span><span class="v">Signing keypair, hosted manifest, release pipeline — three concurrent prerequisites. Runbook exists in <code>dev/updater-setup.md</code>.</span>
+          </div>
+          <div class="verdict">Highest-leverage P2; pair with macOS + Windows signing for a coherent "trust the binary" milestone.</div>
+        </div>
+
+        <div class="card p2">
+          <div class="head"><h4>macOS code signing + notarization</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Unsigned <code>.app</code> hits Gatekeeper. Notarization is required for distribution-grade DMGs.</span>
+            <span class="k">Why not</span><span class="v">Apple Developer ID enrollment + <code>notarytool</code> setup are ops tasks; cost ~$99/yr.</span>
+          </div>
+          <div class="verdict">Required for shipping macOS. Bundle with the auto-updater milestone.</div>
+        </div>
+
+        <div class="card p2">
+          <div class="head"><h4>Windows Authenticode signing</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">SmartScreen warning on first run hurts trust signal.</span>
+            <span class="k">Why not</span><span class="v">EV cert is $200–$400/yr; standard cert needs reputation accrual.</span>
+          </div>
+          <div class="verdict">Required for shipping Windows publicly. Same milestone as macOS signing.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Snap / Flatpak packaging for Linux</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Broadens distro reach beyond AppImage + DEB.</span>
+            <span class="k">Why not</span><span class="v">Two more packaging targets, each with their own quirks.</span>
+          </div>
+          <div class="verdict">Only after the AppImage user base proves Linux is a real channel.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Cross-compile Windows from macOS / Linux</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Lets CI matrix collapse to one runner.</span>
+            <span class="k">Why not</span><span class="v">Officially unsupported by the current Tauri toolchain.</span>
+          </div>
+          <div class="verdict">Won't-fix until release matrix demands it. Use native runners instead.</div>
+        </div>
+
+      </div>
+    </div><!-- /cat-group -->
+
+    <!-- =================== PRODUCT TRACKS =================== -->
+    <div class="cat-group">
+      <h3>Product tracks <span class="count">4 items</span></h3>
+      <div class="cards">
+
+        <div class="card p2">
+          <div class="head"><h4>Cost dashboard alerts</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Cost anxiety is the #1 reason users don't leave agents running unattended. Alerts unblock confident automation.</span>
+            <span class="k">Why not</span><span class="v">Notification surface decisions (modal? toast? OS?) need design.</span>
+          </div>
+          <div class="verdict">Ship the simplest threshold-based alert first; iterate UX.</div>
+        </div>
+
+        <div class="card p2">
+          <div class="head"><h4>Swarm orchestration Phase 4 escalation</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Auto-reassignment of stuck flight attempts closes the resilience gap for autonomous flights.</span>
+            <span class="k">Why not</span><span class="v">Heuristics for "stuck" are non-trivial; false escalations are worse than none.</span>
+          </div>
+          <div class="verdict">Build on top of bounded-concurrency / orchestrator backpressure; do them together.</div>
+        </div>
+
+        <div class="card p2">
+          <div class="head"><h4>PacketADE MCP provider transport</h4><span class="pill p2">P2</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Phase 1 frontend exists; transport layer makes the MCP-provider story actually usable.</span>
+            <span class="k">Why not</span><span class="v">Plan doc is comprehensive but several months old; verify against current code.</span>
+          </div>
+          <div class="verdict">Do after the MCP-over-SSH (Phase 4.2) work — same surfaces.</div>
+        </div>
+
+        <div class="card p3">
+          <div class="head"><h4>Workspace UX gaps</h4><span class="pill p3">P3</span></div>
+          <div class="body">
+            <span class="k">Why</span><span class="v">Git review-packet ties + command-palette integration round out the v0.5 workspace work.</span>
+            <span class="k">Why not</span><span class="v">Two unrelated half-features; better split into separate PRs.</span>
+          </div>
+          <div class="verdict">Pull when adjacent code is open; not worth a dedicated sprint.</div>
+        </div>
+
+      </div>
+    </div><!-- /cat-group -->
+
+  </div>
+</section>
+
+<!-- ============================================================
+     SECTION 3: 30 POST-BACKLOG IDEAS
+     ============================================================ -->
+<section id="vision">
+  <div class="wrap">
+    <h2 class="section-title"><span class="num">03</span> 30 ideas after the backlog ships</h2>
+    <p class="section-sub">Curated from a 60-idea brainstorm by two parallel agents (product/UX angle + engineering excellence angle). Tiered by category; effort labels are S (≤ 1 wk) · M (1–2 wk) · L (2–4 wk) · XL (&gt; 1 mo).</p>
+
+    <div class="tier-nav">
+      <button class="active" data-tier="all">All 30</button>
+      <button data-tier="tier1">Killer features (10)</button>
+      <button data-tier="tier2">Power-user surfaces (5)</button>
+      <button data-tier="tier3">Platform &amp; ecosystem (5)</button>
+      <button data-tier="tier4">Reliability &amp; data integrity (5)</button>
+      <button data-tier="tier5">Performance &amp; security (5)</button>
+    </div>
+
+    <div class="vision-grid">
+
+      <!-- TIER 1 — KILLER FEATURES -->
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">01</span><h4>Time-travel "rewind to here"</h4></div>
+        <p class="pitch">Click any chat turn to restore worktree + memory + plan state to that exact point and branch a new attempt. Undoes the "agent went off the rails" panic without <code>git reset</code> gymnastics.</p>
+        <div class="slot">Extend <code>agentTaskStore</code> with checkpoint indexes · new <code>rewind_conversation</code> Tauri command snapshotting <code>.pkt-worktrees/&lt;convId&gt;</code> · <code>RewindMenu</code> in <code>AgentChatPane</code>.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">XL</span></div>
+      </div>
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">02</span><h4>Plan-then-Race mode</h4></div>
+        <p class="pitch">Write one goal; dispatch the same plan to Claude + Codex + Gemini in parallel worktrees; a Reviewer agent picks the winning diff or merges hunks across attempts. Direct extension of the existing Plan→Codex handoff.</p>
+        <div class="slot">New <code>RaceController</code> in <code>orchestration.rs</code> · third launch mode in <code>NewFlightModal</code> · reuses worktree-per-conversation from v0.5.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">L</span></div>
+      </div>
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">03</span><h4>Mission DAG canvas</h4></div>
+        <p class="pitch">Visual node-graph of mission → phases → tasks → attempts with streaming agent positions, blocked edges, and approval gates rendered as glowing seams. Replaces master-detail lists with a spatial map.</p>
+        <div class="slot">New <code>MissionDagCanvas.tsx</code> in <code>src/components/missions/</code> · fed by <code>flightStore</code> + <code>flight_attempts.rs</code> · React Flow or custom SVG.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">L</span></div>
+      </div>
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">04</span><h4>Agent screencast replay</h4></div>
+        <p class="pitch">Every conversation auto-records a deterministic replay (tool calls + diffs + plan blocks, not raw stdin) playable at 4× like a debugger trace. Scrubable, exportable as a shareable <code>.pktcast</code> file.</p>
+        <div class="slot">Persist <code>session-registry</code> events in SQLite · new <code>ReplayPane.tsx</code> · export through <code>history.rs</code>.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">05</span><h4>Goal-bound contracts (Definition of Done)</h4></div>
+        <p class="pitch">Each <code>/goal</code> gains a machine-checkable contract: passing test command, file-path checklist, or LLM-judged predicate. PlanPanel footer shows green/amber/red; agents auto-stop when contract passes.</p>
+        <div class="slot">Extends <code>goalStore</code> + <code>MilestonesPanel</code> · new <code>goal.contract</code> field · runner in <code>orchestration.rs</code>.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">06</span><h4>Pair Mode — dual-agent chat</h4></div>
+        <p class="pitch">Split <code>AgentChatPane</code> vertically with two agents on the same goal; user types once, both stream, diffs/plans cross-link, accept-the-better-hunk merges into the active worktree. Productizes the manual "two terminals" workflow.</p>
+        <div class="slot">New <code>PairChatPane.tsx</code> wrapping two <code>AgentChatPane</code>s · <code>agentTaskStore</code> adds <code>pairId</code> linking two conversations.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">07</span><h4>Live PR co-review</h4></div>
+        <p class="pitch">Attach a flight to a GitHub PR URL; agent reviews the diff in a ReviewPane showing inline AI comments, severity dots, and "Apply suggestion" → commits to a fixup branch via the existing PR-creation flow.</p>
+        <div class="slot">New <code>PrReviewPane</code> · backend <code>gh_fetch_pr_diff</code> · reuses <code>/review</code> subagent from v0.5.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">L</span></div>
+      </div>
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">08</span><h4>Conversation forking + merge</h4></div>
+        <p class="pitch">Right-click any turn → "Fork from here" spawns a sibling conversation that shares history but diverges. "Merge into parent" replays a summarized result back. Solves "I want to try a tangent without losing my place."</p>
+        <div class="slot"><code>agentTaskStore</code> adds <code>parentId</code> + <code>forkedFromTurnId</code> · UI in turn context menu and <code>AgentSidebar</code>.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">09</span><h4>Acceptance-criteria-driven test gen</h4></div>
+        <p class="pitch">From an Issue's acceptance criteria, "Generate test stubs" creates failing tests in the worktree before the agent starts. Mission closes when tests go green. Closes the loop between issue tracker and agent.</p>
+        <div class="slot"><code>issueStore</code> → new <code>generate_tests_from_criteria</code> command in <code>code_quality.rs</code> · hooked from issue detail modal.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier1" data-tier="tier1">
+        <div class="head"><span class="n">10</span><h4>Memory layer "ask the past"</h4></div>
+        <p class="pitch">Semantic search over Session History + Learned Patterns + Memories with citation back to the originating conversation. Exposed as <code>/recall &lt;query&gt;</code> slash command and as a <code>MemoryRecallPane</code>.</p>
+        <div class="slot">New embeddings index (sqlite-vec) on <code>memoryStore</code> · <code>/recall</code> in slash-command registry · pane in tabbed right rail.</div>
+        <div class="meta"><span class="pill tier1">Killer feature</span><span class="pill eff">L</span></div>
+      </div>
+
+      <!-- TIER 2 — POWER-USER SURFACES -->
+
+      <div class="vision tier2" data-tier="tier2">
+        <div class="head"><span class="n">11</span><h4>Universal command palette</h4></div>
+        <p class="pitch">Cmd-K opens a Raycast-style palette unifying every slash command, every saved prompt template, every MCP tool, every project-defined skill. Power-user retention bait — once you live in Cmd-K you don't switch.</p>
+        <div class="slot">New <code>CommandPaletteModal</code> · pulls from <code>agentTaskStore.slashCommands</code>, <code>promptLibraryStore</code>, <code>mcpStore</code>, new <code>skillStore</code>.</div>
+        <div class="meta"><span class="pill tier2">Power-user</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier2" data-tier="tier2">
+        <div class="head"><span class="n">12</span><h4>PacketADE Skills (project-scoped macros)</h4></div>
+        <p class="pitch"><code>.packetade/skills/&lt;name&gt;.md</code> is a Markdown skill (prompt + allowed tools + optional script). Auto-discovered, surfaced in palette, shareable in repo, callable from agent as <code>Skill(name)</code>.</p>
+        <div class="slot">New <code>skill.rs</code> watching project root · integrates with <code>core::agents_md</code> cascading resolver · <code>SkillsCard</code> in Settings.</div>
+        <div class="meta"><span class="pill tier2">Power-user</span><span class="pill eff">L</span></div>
+      </div>
+
+      <div class="vision tier2" data-tier="tier2">
+        <div class="head"><span class="n">13</span><h4>Workspace recipes (one-line dev envs)</h4></div>
+        <p class="pitch">A <code>.packetade/workspace.yaml</code> declaring panes, agents, profiles, env vars, kickoff prompts. Open the repo → pane layout, agents, and starter goals reconstitute in two seconds. Devcontainer for agent IDEs.</p>
+        <div class="slot">New <code>recipe.rs</code> + loader in <code>workspaceStore.createWorkspace</code> · "Use repo recipe" toggle in <code>WorkspaceCreationModal</code>.</div>
+        <div class="meta"><span class="pill tier2">Power-user</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier2" data-tier="tier2">
+        <div class="head"><span class="n">14</span><h4>Smart approval policies as code</h4></div>
+        <p class="pitch"><code>~/.packetade/policies.toml</code> with rules like <code>allow when tool == Write &amp;&amp; path.startsWith("test/")</code> or <code>require_human when diff.lines &gt; 200</code>. Versionable, reviewable, team-shareable.</p>
+        <div class="slot">New <code>core/policy.rs</code> evaluating against <code>permission_request</code> · UI in <code>Settings → Policies</code> · pairs with profiles' <code>allowedTools</code>.</div>
+        <div class="meta"><span class="pill tier2">Power-user</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier2" data-tier="tier2">
+        <div class="head"><span class="n">15</span><h4>Project Briefcase export</h4></div>
+        <p class="pitch">One-click bundle of AGENTS.md + policies + skills + saved prompts + MCP config + agent profiles into a signed <code>.pktbrief</code> file. Team members run "Import briefcase" and their environment matches.</p>
+        <div class="slot">New <code>briefcase.rs</code> packing from existing stores · UI in <code>Settings → Team</code>.</div>
+        <div class="meta"><span class="pill tier2">Power-user</span><span class="pill eff">M</span></div>
+      </div>
+
+      <!-- TIER 3 — PLATFORM & ECOSYSTEM -->
+
+      <div class="vision tier3" data-tier="tier3">
+        <div class="head"><span class="n">16</span><h4>Plugin SDK v0 — declarative manifest</h4></div>
+        <p class="pitch">Define a plugin manifest: declarative views, declarative toolbar buttons, declarative slash commands wired to MCP tools. Ship a marketplace registry. Defer arbitrary-JS plugins to v1 (sandboxing is hard).</p>
+        <div class="slot">Generalize <code>src/modules/registry.ts</code> to load from disk · new <code>core/plugin_manifest.rs</code> · existing module registry becomes the first consumer.</div>
+        <div class="meta"><span class="pill tier3">Platform</span><span class="pill eff">XL</span></div>
+      </div>
+
+      <div class="vision tier3" data-tier="tier3">
+        <div class="head"><span class="n">17</span><h4>MCP Marketplace pane</h4></div>
+        <p class="pitch">First-party curated registry inside the app: search, one-click install with scope picker, sandboxed credential prompts, rating + last-verified-with-PacketADE badge. Owns MCP discovery before competitors do.</p>
+        <div class="slot">New <code>McpMarketplaceView.tsx</code> · builds on <code>mcpStore</code> + <code>mcp.rs</code> · static JSON manifest hosted at <code>marketplace.packetade.dev</code>.</div>
+        <div class="meta"><span class="pill tier3">Platform</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier3" data-tier="tier3">
+        <div class="head"><span class="n">18</span><h4>TodayView — mission inbox &amp; standup</h4></div>
+        <p class="pitch">First-tab default on app open: missions paused awaiting approval, attempts that finished overnight (diff stat + cost + tests passed Y/N), new GitHub PR comments on linked PRs. Brings users back daily.</p>
+        <div class="slot">New <code>TodayView.tsx</code> as the first-tab default · reads <code>flightStore</code>, <code>analyticsStore</code>, <code>gh.rs</code>.</div>
+        <div class="meta"><span class="pill tier3">Platform</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier3" data-tier="tier3">
+        <div class="head"><span class="n">19</span><h4>Spec-to-suite generator</h4></div>
+        <p class="pitch">Paste a PRD or a Figma frame URL, get back: issues with acceptance criteria, draft test stubs, file scaffolds, and a Mission DAG linking them — all editable before commit. PRD-to-PR-in-progress pipeline.</p>
+        <div class="slot">Extends <code>spec.rs</code> + Spec2Tick · pipes into idea 09 (tests) + 03 (DAG canvas).</div>
+        <div class="meta"><span class="pill tier3">Platform</span><span class="pill eff">L</span></div>
+      </div>
+
+      <div class="vision tier3" data-tier="tier3">
+        <div class="head"><span class="n">20</span><h4>Scripting hooks for flight lifecycle</h4></div>
+        <p class="pitch">Extend <code>core/hooks.rs</code> with <code>flight.created</code>, <code>flight.task.completed</code>, <code>flight.attempt.failed</code>, <code>agent.permission.requested</code>. Allow per-event shell-script hooks in <code>~/.packetade/hooks/</code>.</p>
+        <div class="slot"><code>src-tauri/src/core/hooks.rs</code> · <code>commands/flight_attempts.rs</code> emit sites.</div>
+        <div class="meta"><span class="pill tier3">Platform</span><span class="pill eff">M</span></div>
+      </div>
+
+      <!-- TIER 4 — RELIABILITY & DATA INTEGRITY -->
+
+      <div class="vision tier4" data-tier="tier4">
+        <div class="head"><span class="n">21</span><h4>Schema versioning + forward-compat reader</h4></div>
+        <p class="pitch">Every blob in <code>core/storage.rs</code> gets <code>{ "schema": N, "data": ... }</code> with a migration registry. Prevents the next <code>host_fingerprint</code>-style silent-deserialization panic on old installs.</p>
+        <div class="slot"><code>core/storage.rs</code> + new <code>core/schema_versions.rs</code> with <code>MIGRATIONS</code> array.</div>
+        <div class="meta"><span class="pill tier4">Reliability</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier4" data-tier="tier4">
+        <div class="head"><span class="n">22</span><h4>Crash-safe atomic writes for all state</h4></div>
+        <p class="pitch">Replace direct <code>fs::write</code> with write-temp-then-rename + <code>fsync</code> in <code>storage.rs</code>. A power loss mid-<code>save_workspaces_slice</code> currently truncates the slice to zero bytes, wiping every workspace.</p>
+        <div class="slot"><code>src-tauri/src/core/storage.rs</code> write helpers.</div>
+        <div class="meta"><span class="pill tier4">Reliability</span><span class="pill eff">S</span></div>
+      </div>
+
+      <div class="vision tier4" data-tier="tier4">
+        <div class="head"><span class="n">23</span><h4>DTO round-trip contract tests</h4></div>
+        <p class="pitch">For every Zustand store with a <code>localStorage</code> slice: fuzz a record, persist, hydrate, deep-equal assert. The <code>serverId</code>/<code>remoteProjectPath</code> silent-drop bug was systemic — this kills the bug class.</p>
+        <div class="slot"><code>src/stores/__tests__/dtoRoundtrip.test.ts</code> + helper in <code>lib/tauri.ts</code> · wired into vitest run.</div>
+        <div class="meta"><span class="pill tier4">Reliability</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier4" data-tier="tier4">
+        <div class="head"><span class="n">24</span><h4>Integration test harness — scripted PTY + sidecar</h4></div>
+        <p class="pitch">Headless Tauri (<code>MockRuntime</code>) boots, spawns the real sidecar against a stub echo provider, drives 20 message turns, asserts no leaked tasks/files/handles. Would have caught both v0.5.0 standalone-exe regressions.</p>
+        <div class="slot">New <code>src-tauri/tests/it_sidecar_smoke.rs</code> · reuses <code>agent-sidecar/test/registry-smoke.mjs</code> stub.</div>
+        <div class="meta"><span class="pill tier4">Reliability</span><span class="pill eff">L</span></div>
+      </div>
+
+      <div class="vision tier4" data-tier="tier4">
+        <div class="head"><span class="n">25</span><h4>Flight orchestrator backpressure + bounded queue</h4></div>
+        <p class="pitch"><code>tokio::sync::Semaphore</code> per flight + a global cap on concurrent attempts. Prevents a 100-task flight from launching 100 sidecar sessions, ballooning RAM and tripping rate limits.</p>
+        <div class="slot"><code>src-tauri/src/core/orchestrator.rs</code> · prerequisite for the swarm Phase 4 escalation work in the current backlog.</div>
+        <div class="meta"><span class="pill tier4">Reliability</span><span class="pill eff">M</span></div>
+      </div>
+
+      <!-- TIER 5 — PERFORMANCE & SECURITY -->
+
+      <div class="vision tier5" data-tier="tier5">
+        <div class="head"><span class="n">26</span><h4>W3C traceparent across FE → Rust → sidecar</h4></div>
+        <p class="pitch">Every Tauri invoke gets a <code>traceparent</code>; Rust logs it via <code>tracing::Span</code>; sidecar protocol gains a <code>trace</code> envelope. Debug a stuck <code>api-agent:done</code> with one <code>rg &lt;id&gt;</code> across all three layers.</p>
+        <div class="slot">New <code>src/lib/trace.ts</code> wrapping <code>invoke</code> · <code>SidecarRequest</code> gains <code>trace_id</code> (protocol v5) · <code>Span::record</code> in <code>lib.rs</code>.</div>
+        <div class="meta"><span class="pill tier5">Perf / Sec</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier5" data-tier="tier5">
+        <div class="head"><span class="n">27</span><h4>Sidecar warm-start daemon</h4></div>
+        <p class="pitch">Persist the sidecar process across PacketADE restarts via a small <code>packetade-sidecard</code> socket (named pipe on Windows, unix socket elsewhere). Kills the ~600ms cold node-spawn + SDK-import on first agent message.</p>
+        <div class="slot"><code>agent_sidecar.rs</code> connection-or-spawn branch · new <code>agent-sidecar/src/daemon.ts</code> entry.</div>
+        <div class="meta"><span class="pill tier5">Perf / Sec</span><span class="pill eff">L</span></div>
+      </div>
+
+      <div class="vision tier5" data-tier="tier5">
+        <div class="head"><span class="n">28</span><h4><code>packetade doctor</code> CLI + diagnostics bundle</h4></div>
+        <p class="pitch">A bundled small binary that prints: Node version + path, sidecar dist hash, Tauri runtime version, AppData paths, sidecar reachable Y/N, CLI versions, known_hosts entry count, keyring service names. Plus a "Diagnostics → Export bundle" UI action zipping logs + crash reports + redacted server list.</p>
+        <div class="slot">New <code>src-tauri/src/bin/doctor.rs</code> with <code>[[bin]]</code> entry · UI surface in <code>Tools → About</code> · pairs with existing <code>crashes.rs</code>.</div>
+        <div class="meta"><span class="pill tier5">Perf / Sec</span><span class="pill eff">M</span></div>
+      </div>
+
+      <div class="vision tier5" data-tier="tier5">
+        <div class="head"><span class="n">29</span><h4>Sidecar sandboxing (sandbox-exec / bwrap)</h4></div>
+        <p class="pitch">Wrap the node sidecar in OS-level sandbox: macOS <code>sandbox-exec</code>, Linux <code>bwrap</code> / seccomp. Deny everything except the project path, <code>~/.claude/</code>, <code>~/.codex/</code>, and outbound HTTPS. Mitigates malicious MCP servers and prompt-injected tool calls.</p>
+        <div class="slot"><code>agent_sidecar.rs::spawn_*</code> paths · new <code>core/sandbox.rs</code>. Windows AppContainer is a stretch goal.</div>
+        <div class="meta"><span class="pill tier5">Perf / Sec</span><span class="pill eff">L</span></div>
+      </div>
+
+      <div class="vision tier5" data-tier="tier5">
+        <div class="head"><span class="n">30</span><h4>Tracing log redaction + keyring segmentation</h4></div>
+        <p class="pitch">A <code>tracing</code> Layer that scrubs <code>/api[-_]?key|password|token|secret|authorization/i</code> before the file appender. Plus split <code>KEYRING_SERVICE</code> into per-provider, per-tenant names so one leak doesn't blast-radius.</p>
+        <div class="slot"><code>lib.rs::init_tracing</code> adds <code>RedactLayer</code> · <code>commands/api_keys.rs</code> + <code>commands/ssh_keys.rs</code> service-name refactor.</div>
+        <div class="meta"><span class="pill tier5">Perf / Sec</span><span class="pill eff">S</span></div>
+      </div>
+
+    </div><!-- /vision-grid -->
+
+    <!-- Wedges -->
+    <div class="wedges">
+      <h3>If you only do four things — three wedges</h3>
+      <ul>
+        <li><strong>Platform readiness wedge:</strong> 16 Plugin SDK · 24 Integration test harness · 26 W3C traceparent · 20 Lifecycle hooks. Everything else gets easier once these land.</li>
+        <li><strong>Data-integrity wedge:</strong> 21 Schema versioning · 22 Crash-safe writes · 23 DTO contract tests. Prevents future silent-drop bugs like the v0.6.0 <code>serverId</code> round-trip miss.</li>
+        <li><strong>Next security pass:</strong> 29 Sidecar sandboxing · 30 Log redaction + keyring segmentation. The coherent follow-on to the SSH hardening already shipped.</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<footer class="bottom">
+  <div class="wrap">
+    Single-file static page · written 2026-05-12 alongside <code>/backlog.md</code> and <code>/CHANGELOG.md</code>. Update by editing this file directly; no build step.
+  </div>
+</footer>
+
+<script>
+  // Tier filter
+  const tierButtons = document.querySelectorAll('.tier-nav button');
+  const visions = document.querySelectorAll('.vision');
+  tierButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = btn.dataset.tier;
+      tierButtons.forEach(b => b.classList.toggle('active', b === btn));
+      visions.forEach(v => {
+        if (t === 'all' || v.dataset.tier === t) {
+          v.style.display = '';
+        } else {
+          v.style.display = 'none';
+        }
+      });
+    });
+  });
+
+  // Smooth scroll
+  document.querySelectorAll('header.top nav a').forEach(a => {
+    a.addEventListener('click', e => {
+      const id = a.getAttribute('href');
+      if (id?.startsWith('#')) {
+        e.preventDefault();
+        document.querySelector(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

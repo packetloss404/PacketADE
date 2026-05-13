@@ -40,6 +40,12 @@ export function Toolbar() {
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const moduleStates = useModuleStore((s) => s.states);
+  // Code Quality analysis only works on local paths. Disable the button
+  // for remote workspaces (mirrors IdeationView's guard).
+  const activeWorkspaceIsRemote = useWorkspaceStore((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    return Boolean(ws?.serverId);
+  });
 
   const projectName = projectPath.split(/[/\\]/).pop() || "PacketADE";
   const enabledModules = getModulesSorted().filter((mod) => moduleStates[mod.id]?.enabled ?? false);
@@ -151,8 +157,11 @@ export function Toolbar() {
         {/* Code Quality button */}
         <button
           onClick={() => setShowCodeQuality(true)}
-          className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-accent-amber transition-colors"
-          title="Code Quality — run lint, type-check, and test suites for the current project from one panel."
+          disabled={activeWorkspaceIsRemote}
+          className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-accent-amber transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-secondary"
+          title={activeWorkspaceIsRemote
+            ? "Code Quality analysis is not yet supported on remote workspaces. Open the workspace locally to run it."
+            : "Code Quality — run lint, type-check, and test suites for the current project from one panel."}
         >
           <Diamond size={12} className="text-accent-amber" />
           <span>Quality</span>

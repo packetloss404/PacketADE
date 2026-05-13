@@ -33,7 +33,8 @@ use crate::core::shared::home_dir;
 
 /// Providers whose sessions are routed through the Node sidecar rather than
 /// the in-process Rust runtime. Keep in sync with slice C's dispatch logic.
-pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "echo"];
+pub const SIDECAR_PROVIDERS: &[&str] =
+    &["claude-oauth", "openai-codex", "openai-agents", "echo"];
 
 /// Wire protocol version this supervisor was built against. Must match
 /// `PROTOCOL_VERSION` in `agent-sidecar/src/protocol.ts`. We log a warning if
@@ -429,6 +430,7 @@ impl SidecarManager {
         mcp_servers: Value,
         project_path: String,
         initial_message: String,
+        api_key: Option<String>,
         resume: Option<String>,
         thinking_enabled: Option<bool>,
         plan_mode: Option<bool>,
@@ -448,6 +450,7 @@ impl SidecarManager {
             "mcpServers": mcp_servers,
             "projectPath": project_path,
             "initialMessage": initial_message,
+            "apiKey": api_key,
             "resume": resume,
             "thinkingEnabled": thinking_enabled,
             "planMode": plan_mode,

@@ -38,6 +38,9 @@ export type StartSessionRequest = {
   mcpServers: Record<string, unknown>;
   projectPath: string;
   initialMessage: string;
+  /** v4: API-key sidecar providers may receive a transient key from Rust.
+   * This is never persisted by the frontend or sidecar. */
+  apiKey?: string;
   resume?: string;
   thinkingEnabled?: boolean;
   planMode?: boolean;
@@ -57,7 +60,7 @@ export type PermissionResponseRequest = {
   type: "permission_response";
   sessionId: string;
   toolUseId: string;
-  decision: "approve" | "deny";
+  decision: "approve" | "allow_once" | "allow_always" | "deny";
 };
 
 export type EditResponseRequest = {
@@ -88,7 +91,16 @@ export type CloseSessionRequest = {
 export type SetPermissionModeRequest = {
   type: "set_permission_mode";
   sessionId: string;
-  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto";
+  mode:
+    | "default"
+    | "acceptEdits"
+    | "bypassPermissions"
+    | "plan"
+    | "dontAsk"
+    | "auto"
+    | "ask_for_risky"
+    | "allow_all"
+    | "deny_all";
 };
 
 export type SetModelRequest = {
@@ -135,8 +147,16 @@ export type SidecarEvent =
   | { type: "chunk"; sessionId: string; text: string }
   | { type: "thinking"; sessionId: string; text: string }
   | { type: "thinking_stop"; sessionId: string }
-  | { type: "tool_start"; sessionId: string; toolUseId: string; name: string; input: unknown }
-  | { type: "tool_result"; sessionId: string; toolUseId: string; output: string; isError: boolean }
+  | { type: "tool_start"; sessionId: string; toolUseId: string; name: string; input?: unknown }
+  | {
+      type: "tool_result";
+      sessionId: string;
+      toolUseId: string;
+      output: string;
+      isError: boolean;
+      name?: string;
+      input?: unknown;
+    }
   | {
       type: "permission_request";
       sessionId: string;
@@ -149,12 +169,21 @@ export type SidecarEvent =
       batchId?: string;
       batchSize?: number;
     }
-  | { type: "pending_edit"; sessionId: string; path: string; before: string; after: string }
+  | {
+      type: "pending_edit";
+      sessionId: string;
+      toolUseId?: string;
+      path: string;
+      before?: string;
+      after: string;
+    }
   | {
       type: "done";
       sessionId: string;
       inputTokens: number;
       outputTokens: number;
+      cacheReadInputTokens?: number;
+      cacheCreationInputTokens?: number;
       /** v3: opaque token the supervisor can persist and re-send via
        * StartSessionRequest.resume to continue this conversation after a
        * cold start. Provider-defined; treated as a black box by the host. */

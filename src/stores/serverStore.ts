@@ -7,6 +7,11 @@ interface ServerStore {
   servers: ServerConfig[];
   activeServerId: string | null;
   connectionStates: Record<string, ServerConnectionState>;
+  /** Absolute path of the app-managed `known_hosts` file, fetched from
+   *  the Rust `get_app_known_hosts_path` command at bootstrap. `null`
+   *  until the call returns — `buildSshArgs` callers should pass this
+   *  through unmodified so pinned-mode SSH works in production. */
+  knownHostsPath: string | null;
 
   // CRUD
   addServer: (config: Omit<ServerConfig, "id" | "installedAgents">) => ServerConfig;
@@ -22,6 +27,7 @@ interface ServerStore {
 
   // Hydration
   hydrateFromBackend: (servers?: ServerConfig[]) => void;
+  setKnownHostsPath: (path: string) => void;
 }
 
 function syncToBackend(servers: ServerConfig[]) {
@@ -32,6 +38,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   servers: [],
   activeServerId: null,
   connectionStates: {},
+  knownHostsPath: null,
 
   addServer: (config) => {
     const server: ServerConfig = {
@@ -106,4 +113,6 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       set({ servers });
     }
   },
+
+  setKnownHostsPath: (path) => set({ knownHostsPath: path }),
 }));

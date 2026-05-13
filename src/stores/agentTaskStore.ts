@@ -25,7 +25,32 @@ import {
   exportConversationMarkdown,
   type ImageAttachment,
 } from "@/lib/tauri";
-import type { SshTarget } from "@/types/ssh";
+/** Phase 2: SSH conversations now reference a `ServerConfig` from
+ *  `serverStore` plus a per-session remote path. This payload is what the
+ *  Agents UI hands to `createApiConversation` — it carries every field we
+ *  need to start the backend session AND seed `AgentConversation.sshTarget`
+ *  without re-reading `serverStore`. The legacy `SshTarget` type / store
+ *  was deleted in Phase 2; persisted records were migrated into
+ *  `serverStore`'s servers list. */
+export interface AgentSshConfigInput {
+  /** ServerConfig id from `serverStore`. Persisted on the conversation so
+   *  later hydration can re-resolve the server (or fall back gracefully
+   *  if the server was deleted). */
+  serverId: string;
+  /** Display name surfaced in the conversation sidebar / header. */
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  /** Per-session remote project path. May differ from
+   *  `ServerConfig.remotePath` (the server-level default). */
+  remotePath: string;
+  keyPath?: string | null;
+  /** Pinned SHA256 host-key fingerprint, copied from
+   *  `ServerConfig.hostFingerprint`. Forwarded to the backend so strict
+   *  host-key checking applies. */
+  hostFingerprint?: string | null;
+}
 import {
   ptyOutputEvent,
   ptyExitEvent,
@@ -86,6 +111,7 @@ export type AgentCli =
   | "api-claude-oauth"
   | "api-claude"
   | "api-openai-codex"
+  | "api-openai-agents"
   | "api-openai"
   | "api-minimax"
   | "api-openrouter"
@@ -102,6 +128,7 @@ export function apiAgentProvider(agent: AgentCli): string {
     "api-claude-oauth": "claude-oauth",
     "api-claude": "anthropic",
     "api-openai-codex": "openai-codex",
+    "api-openai-agents": "openai-agents",
     "api-openai": "openai",
     "api-minimax": "minimax",
     "api-openrouter": "openrouter",
@@ -230,7 +257,7 @@ interface AgentTaskStore {
     systemPromptOverride?: string | null,
     thinkingEnabled?: boolean,
     planMode?: boolean,
-    sshTarget?: SshTarget | null,
+    sshTarget?: AgentSshConfigInput | null,
     /** When set, use this id instead of generating a new one. Used by Flight
      * Deck attempts so the conversation id matches the backend session id. */
     explicitId?: string,
@@ -1070,7 +1097,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       thinkingStream: "",
       sshTarget: sshTarget
         ? {
-            id: sshTarget.id,
+            // Phase 2: `id` carries the ServerConfig id from serverStore.
+            // Persisted conversations keep the field named `id` to preserve
+            // back-compat with hydrated records from before the rename.
+            id: sshTarget.serverId,
             name: sshTarget.name,
             host: sshTarget.host,
             user: sshTarget.user,
@@ -1121,7 +1151,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
               user: sshTarget.user,
               remote_path: sshTarget.remotePath,
               key_path: sshTarget.keyPath ?? null,
-              target_id: sshTarget.id,
+              // Phase 2: backend still calls this `target_id` for now. It
+              // accepts the unified `ServerConfig.id`; the parallel backend
+              // PR is unifying naming.
+              target_id: sshTarget.serverId,
+              host_fingerprint: sshTarget.hostFingerprint ?? null,
             }
           : null;
         await startApiAgentSession(
@@ -1948,16 +1982,34 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     try {
       await installApiAgentListeners(conversationId, get, set);
 
-      const sshConfig = conv.sshTarget
-        ? {
-            host: conv.sshTarget.host,
-            port: 22,
-            user: conv.sshTarget.user,
-            remote_path: conv.sshTarget.remotePath,
-            key_path: null,
-            target_id: conv.sshTarget.id,
-          }
-        : null;
+      // Phase 2: resolve the live ServerConfig from `serverStore` to pick
+      // up the port, keyPath, and pinned host fingerprint — the persisted
+      // conversation only stored the display subset (host/user/remotePath).
+      // If the server was deleted since the conversation was created we
+      // fall back to the stored values; the backend will fail-fast on bad
+      // creds, which is the right failure mode.
+      let sshConfig: {
+        host: string;
+        port: number;
+        user: string;
+        remote_path: string;
+        key_path: string | null;
+        target_id: string;
+        host_fingerprint: string | null;
+      } | null = null;
+      if (conv.sshTarget) {
+        const { useServerStore } = await import("@/stores/serverStore");
+        const server = useServerStore.getState().getServer(conv.sshTarget.id);
+        sshConfig = {
+          host: conv.sshTarget.host,
+          port: server?.port ?? 22,
+          user: conv.sshTarget.user,
+          remote_path: conv.sshTarget.remotePath,
+          key_path: server?.keyPath ?? null,
+          target_id: conv.sshTarget.id,
+          host_fingerprint: server?.hostFingerprint ?? null,
+        };
+      }
 
       await startApiAgentSession(
         conversationId,

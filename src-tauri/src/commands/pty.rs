@@ -481,6 +481,11 @@ pub async fn ssh_exec(
 
 /// Test an SSH connection. Returns Ok(()) on success; Err with a human-readable
 /// reason on failure ("Authentication failed", "Could not reach host", etc).
+///
+/// When `host_fingerprint` is Some, SSH is invoked with
+/// `StrictHostKeyChecking=yes` + an `UserKnownHostsFile` pointing at the
+/// app-managed `known_hosts` file. When None (legacy / first-time test),
+/// falls back to `accept-new` for one connection.
 #[tauri::command]
 pub async fn ssh_test_connection(
     host: String,
@@ -488,6 +493,7 @@ pub async fn ssh_test_connection(
     user: String,
     key_path: Option<String>,
     password: Option<String>,
+    host_fingerprint: Option<String>,
 ) -> Result<(), String> {
     const SENTINEL: &str = "PACKETCODE_SSH_OK";
 
@@ -497,10 +503,20 @@ pub async fn ssh_test_connection(
         "-o".to_string(),
         "ConnectTimeout=8".to_string(),
         "-o".to_string(),
-        "StrictHostKeyChecking=accept-new".to_string(),
-        "-o".to_string(),
         "NumberOfPasswordPrompts=1".to_string(),
     ];
+
+    if host_fingerprint.is_some() {
+        let kh = crate::core::execution::app_known_hosts_path();
+        args.push("-o".to_string());
+        args.push("StrictHostKeyChecking=yes".to_string());
+        args.push("-o".to_string());
+        args.push(format!("UserKnownHostsFile={}", kh.to_string_lossy()));
+    } else {
+        tracing::warn!(host = %host, port = %port, "ssh_test_connection without pinned fingerprint — TOFU fallback");
+        args.push("-o".to_string());
+        args.push("StrictHostKeyChecking=accept-new".to_string());
+    }
 
     // If no password, force key-only auth so SSH doesn't hang waiting for a TTY.
     if password.is_none() {
@@ -543,4 +559,324 @@ pub async fn ssh_test_connection(
         return Err(output.trim().to_string());
     };
     Err(msg.to_string())
+}
+
+/// One discovered host key (algorithm + raw `known_hosts`-format line +
+/// derived SHA256 fingerprint). The frontend shows the fingerprint to the
+/// user for confirmation; the `key` line is what gets appended to the
+/// app-managed `known_hosts` file via `ssh_pin_host`.
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostKey {
+    pub algorithm: String,
+    pub key: String,
+    pub fingerprint: String,
+}
+
+/// Run `ssh-keyscan` for the given host:port and return parsed host keys
+/// (one per discovered algorithm). Fingerprints are derived via
+/// `ssh-keygen -lf -`. Used by the Servers UI on first save so the user
+/// can verify and pin the key before any traffic is sent.
+#[tauri::command]
+pub async fn ssh_fetch_fingerprint(host: String, port: u16) -> Result<Vec<HostKey>, String> {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+
+    let mut keyscan = tokio::process::Command::new("ssh-keyscan");
+    keyscan
+        .arg("-T")
+        .arg("8")
+        .arg("-t")
+        .arg("ed25519,rsa,ecdsa")
+        .arg("-p")
+        .arg(port.to_string())
+        .arg(&host);
+    keyscan.stdin(Stdio::null());
+    keyscan.stdout(Stdio::piped());
+    keyscan.stderr(Stdio::piped());
+
+    let output = keyscan
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ssh-keyscan: {}. Is OpenSSH installed?", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .collect();
+
+    if lines.is_empty() {
+        let hint = if stderr.to_lowercase().contains("no route to host")
+            || stderr.to_lowercase().contains("timed out")
+            || stderr.to_lowercase().contains("connection refused")
+        {
+            stderr.trim().to_string()
+        } else {
+            format!("ssh-keyscan returned no keys for {}:{}", host, port)
+        };
+        return Err(hint);
+    }
+
+    let mut results: Vec<HostKey> = Vec::with_capacity(lines.len());
+    for line in &lines {
+        // Each line looks like: `<host>[:port] <algorithm> <base64-key>`.
+        // Extract algorithm for the result struct (frontend displays it
+        // alongside the fingerprint).
+        let mut parts = line.split_whitespace();
+        let _host_part = parts.next();
+        let algorithm = parts.next().unwrap_or("").to_string();
+
+        // Derive the SHA256 fingerprint by piping the keyscan line to
+        // `ssh-keygen -lf -`. Output: "<bits> SHA256:<...> <comment> (<alg>)".
+        let mut keygen = tokio::process::Command::new("ssh-keygen");
+        keygen.arg("-l").arg("-f").arg("-");
+        keygen.stdin(Stdio::piped());
+        keygen.stdout(Stdio::piped());
+        keygen.stderr(Stdio::piped());
+
+        let mut child = keygen
+            .spawn()
+            .map_err(|e| format!("Failed to spawn ssh-keygen: {}", e))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(line.as_bytes()).await;
+            let _ = stdin.write_all(b"\n").await;
+            let _ = stdin.flush().await;
+            drop(stdin);
+        }
+        let out = child
+            .wait_with_output()
+            .await
+            .map_err(|e| format!("ssh-keygen failed: {}", e))?;
+
+        let fp_line = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        // Pluck the SHA256:<...> token out of the keygen output.
+        let fingerprint = fp_line
+            .split_whitespace()
+            .find(|tok| tok.starts_with("SHA256:"))
+            .unwrap_or("")
+            .to_string();
+
+        if !fingerprint.is_empty() {
+            results.push(HostKey {
+                algorithm,
+                key: line.to_string(),
+                fingerprint,
+            });
+        }
+    }
+
+    if results.is_empty() {
+        return Err("Failed to derive SHA256 fingerprints from ssh-keyscan output".to_string());
+    }
+    Ok(results)
+}
+
+/// Append a `known_hosts`-format line to the app-managed file. Idempotent:
+/// duplicate lines are skipped. Called by the Servers UI after the user
+/// confirms the fingerprint shown by `ssh_fetch_fingerprint`.
+#[tauri::command]
+pub fn ssh_pin_host(host: String, port: u16, hostkey_line: String) -> Result<(), String> {
+    use std::io::BufRead;
+
+    let _ = (host, port); // host/port already encoded in the keyscan line
+    let trimmed = hostkey_line.trim();
+    if trimmed.is_empty() {
+        return Err("Empty host key line".to_string());
+    }
+
+    let path = crate::core::execution::ensure_known_hosts_dir()?;
+    // De-dupe: skip if the exact line already exists.
+    if path.exists() {
+        if let Ok(file) = std::fs::File::open(&path) {
+            for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+                if line.trim() == trimmed {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("Failed to open {:?}: {}", path, e))?;
+    use std::io::Write;
+    writeln!(file, "{}", trimmed).map_err(|e| format!("Failed to write known_hosts: {}", e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+/// Return the absolute path of the app-managed `known_hosts` file. The
+/// frontend fetches this once at startup and passes it into
+/// `buildSshArgs` so JS-side SSH invocations match the Rust-side pinning.
+#[tauri::command]
+pub fn get_app_known_hosts_path() -> Result<String, String> {
+    let path = crate::core::execution::ensure_known_hosts_dir()?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Result of probing a remote filesystem path over SSH.
+///
+/// Used by the workspace creation modal to validate that the user-supplied
+/// remote project path exists and is a directory before persisting a new
+/// remote workspace. `is_git_repo` is a hint shown next to the path field.
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemotePathCheck {
+    pub exists: bool,
+    pub is_directory: bool,
+    pub is_git_repo: bool,
+}
+
+/// Probe a remote SSH host to determine whether `remote_path` exists, is a
+/// directory, and contains a `.git` directory. Used by the workspace
+/// creation modal for live validation of the "Remote project path" input.
+///
+/// Times out after 8 seconds. Host-key pinning behaves identically to
+/// `ssh_test_connection`: when `host_fingerprint` is `Some` we use the
+/// app-managed `known_hosts` file with `StrictHostKeyChecking=yes`;
+/// otherwise we fall back to TOFU `accept-new`. Callers that care about
+/// safety should require a verified fingerprint before invoking this.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn ssh_check_remote_path(
+    host: String,
+    port: u16,
+    user: String,
+    auth_method: String,
+    key_path: Option<String>,
+    password: Option<String>,
+    host_fingerprint: Option<String>,
+    remote_path: String,
+) -> Result<RemotePathCheck, String> {
+    if remote_path.trim().is_empty() {
+        return Err("Remote path is empty".to_string());
+    }
+
+    let mut args: Vec<String> = vec![
+        "-p".to_string(),
+        port.to_string(),
+        "-o".to_string(),
+        "ConnectTimeout=8".to_string(),
+        "-o".to_string(),
+        "NumberOfPasswordPrompts=1".to_string(),
+    ];
+
+    if host_fingerprint.is_some() {
+        let kh = crate::core::execution::app_known_hosts_path();
+        args.push("-o".to_string());
+        args.push("StrictHostKeyChecking=yes".to_string());
+        args.push("-o".to_string());
+        args.push(format!("UserKnownHostsFile={}", kh.to_string_lossy()));
+    } else {
+        tracing::warn!(
+            host = %host,
+            port = %port,
+            "ssh_check_remote_path without pinned fingerprint — TOFU fallback"
+        );
+        args.push("-o".to_string());
+        args.push("StrictHostKeyChecking=accept-new".to_string());
+    }
+
+    // Mirror the auth heuristics from ssh_test_connection: if we have a
+    // password to pipe to stdin, allow interactive password auth;
+    // otherwise require key-only / BatchMode so SSH cannot hang.
+    let pw_in = match auth_method.as_str() {
+        "password" => password.clone(),
+        _ => None,
+    };
+    if pw_in.is_none() {
+        args.push("-o".to_string());
+        args.push("BatchMode=yes".to_string());
+    } else {
+        args.push("-o".to_string());
+        args.push("PreferredAuthentications=password,keyboard-interactive".to_string());
+    }
+
+    if let Some(kp) = key_path.as_ref().filter(|s| !s.trim().is_empty()) {
+        args.push("-i".to_string());
+        args.push(kp.clone());
+    }
+
+    args.push(format!("{}@{}", user, host));
+
+    let quoted = crate::core::execution::sh_quote(&remote_path);
+    // Single-line POSIX shell probe — emits exactly one of:
+    //   DIR_GIT | DIR | FILE | MISSING
+    let probe = format!(
+        "P={}; if [ -e \"$P\" ]; then if [ -d \"$P\" ]; then if [ -d \"$P/.git\" ]; then echo DIR_GIT; else echo DIR; fi; else echo FILE; fi; else echo MISSING; fi",
+        quoted
+    );
+    args.push(probe);
+
+    // Enforce an outer timeout in case SSH itself hangs despite ConnectTimeout.
+    let fut = ssh_exec(args, pw_in);
+    let output =
+        match tokio::time::timeout(std::time::Duration::from_secs(8), fut).await {
+            Ok(res) => res?,
+            Err(_) => return Err("Probe timed out after 8s".to_string()),
+        };
+
+    let trimmed = output.trim();
+    // Walk lines from the end — the probe's echo is always last; earlier
+    // lines may contain SSH banners / motd noise.
+    let tag = trimmed
+        .lines()
+        .rev()
+        .find_map(|line| {
+            let t = line.trim();
+            match t {
+                "DIR_GIT" | "DIR" | "FILE" | "MISSING" => Some(t),
+                _ => None,
+            }
+        });
+
+    match tag {
+        Some("DIR_GIT") => Ok(RemotePathCheck {
+            exists: true,
+            is_directory: true,
+            is_git_repo: true,
+        }),
+        Some("DIR") => Ok(RemotePathCheck {
+            exists: true,
+            is_directory: true,
+            is_git_repo: false,
+        }),
+        Some("FILE") => Ok(RemotePathCheck {
+            exists: true,
+            is_directory: false,
+            is_git_repo: false,
+        }),
+        Some("MISSING") => Ok(RemotePathCheck {
+            exists: false,
+            is_directory: false,
+            is_git_repo: false,
+        }),
+        _ => {
+            let lower = trimmed.to_lowercase();
+            let msg = if lower.contains("permission denied") || lower.contains("authentication failed") {
+                "Authentication failed — verify the server credentials."
+            } else if lower.contains("could not resolve") || lower.contains("name or service not known") {
+                "Could not resolve host."
+            } else if lower.contains("connection refused") {
+                "Connection refused."
+            } else if lower.contains("connection timed out") || lower.contains("operation timed out") {
+                "Connection timed out."
+            } else if lower.contains("host key verification failed") {
+                "Host key verification failed — re-pin the host key on the Servers page."
+            } else if trimmed.is_empty() {
+                "SSH returned no output."
+            } else {
+                return Err(trimmed.to_string());
+            };
+            Err(msg.to_string())
+        }
+    }
 }

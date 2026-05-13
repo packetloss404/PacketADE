@@ -63,6 +63,19 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     ],
   },
   {
+    id: "openai-agents",
+    agentCli: "api-openai-agents",
+    name: "OpenAI Agents SDK (API)",
+    needsKey: true,
+    models: [
+      { label: "GPT-5.5 (default)", value: "gpt-5.5" },
+      { label: "ChatGPT 5.4", value: "chatgpt-5.4" },
+      { label: "GPT-4o", value: "gpt-4o" },
+      { label: "o3", value: "o3" },
+      { label: "o4-mini", value: "o4-mini" },
+    ],
+  },
+  {
     id: "minimax",
     agentCli: "api-minimax",
     name: "MiniMax (API)",

@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import { Folder, Server, X, Check } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useSshTargetStore } from "@/stores/sshTargetStore";
+import { useServerStore } from "@/stores/serverStore";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
 import type { AgentCli } from "@/stores/agentTaskStore";
-import type { SshTarget } from "@/types/ssh";
+import type { ServerConfig } from "@/types/server";
 import type { Workspace } from "@/types/workspace";
 
 export type PickedTarget =
@@ -21,7 +21,9 @@ export type PickedTarget =
   | {
       kind: "ssh";
       key: string;
-      target: SshTarget;
+      /** Phase 2: ServerConfig from the unified server registry. Was
+       *  `SshTarget` from the deleted sshTargetStore. */
+      server: ServerConfig;
       label: string;
       basePath: string;
       baseBranch: string;
@@ -43,7 +45,7 @@ export function MultiTargetPicker({
   defaultAgent = "api-claude",
 }: MultiTargetPickerProps) {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const sshTargets = useSshTargetStore((s) => s.targets);
+  const sshServers = useServerStore((s) => s.servers);
 
   const isPicked = (key: string) => picked.some((p) => p.key === key);
 
@@ -51,7 +53,7 @@ export function MultiTargetPicker({
     () =>
       workspaces
         .filter((w): w is Workspace & { projectPath: string } =>
-          Boolean(w.projectPath),
+          Boolean(w.projectPath) && !w.serverId,
         )
         .map((w) => ({
           key: `local:${w.id}`,
@@ -81,8 +83,8 @@ export function MultiTargetPicker({
     ]);
   }
 
-  function toggleSsh(target: SshTarget) {
-    const key = `ssh:${target.id}`;
+  function toggleSsh(server: ServerConfig) {
+    const key = `ssh:${server.id}`;
     if (isPicked(key)) {
       onChange(picked.filter((p) => p.key !== key));
       return;
@@ -92,9 +94,12 @@ export function MultiTargetPicker({
       {
         kind: "ssh",
         key,
-        target,
-        label: target.name,
-        basePath: target.remotePath,
+        server,
+        label: server.name,
+        // Phase 2: ServerConfig.remotePath is optional (it's a default,
+        // not a per-attempt path). Fall back to "" so the row's path
+        // input shows up empty and the user can fill it in.
+        basePath: server.remotePath ?? "",
         baseBranch: DEFAULT_BRANCH,
         agent: defaultAgent,
         model: getDefaultModel(defaultAgent),
@@ -118,9 +123,9 @@ export function MultiTargetPicker({
           Targets — click to add
         </span>
         <div className="flex flex-wrap gap-1.5">
-          {localOptions.length === 0 && sshTargets.length === 0 && (
+          {localOptions.length === 0 && sshServers.length === 0 && (
             <span className="text-[11px] text-text-muted italic">
-              No workspaces or SSH targets — open a folder or connect SSH first.
+              No workspaces or SSH servers — open a folder or add a server first.
             </span>
           )}
           {localOptions.map(({ key, workspace }) => {
@@ -140,13 +145,13 @@ export function MultiTargetPicker({
               </button>
             );
           })}
-          {sshTargets.map((target) => {
-            const key = `ssh:${target.id}`;
+          {sshServers.map((server) => {
+            const key = `ssh:${server.id}`;
             const selected = isPicked(key);
             return (
               <button
                 key={key}
-                onClick={() => toggleSsh(target)}
+                onClick={() => toggleSsh(server)}
                 className={`flex items-center gap-1.5 px-2 py-1 text-[11px] rounded border transition-colors ${
                   selected
                     ? "bg-accent-purple/15 text-accent-purple border-accent-purple/40"
@@ -154,7 +159,7 @@ export function MultiTargetPicker({
                 }`}
               >
                 {selected ? <Check size={11} /> : <Server size={11} />}
-                {target.name}
+                {server.name}
               </button>
             );
           })}

@@ -1,4 +1,4 @@
-import { loadPersistedState, getCwd, saveUiSlice } from "@/lib/tauri";
+import { loadPersistedState, getCwd, saveUiSlice, getAppKnownHostsPath } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useAgentStore } from "@/stores/agentStore";
@@ -7,6 +7,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useServerStore } from "@/stores/serverStore";
+import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
 
 /**
  * App initialization — called once on mount.
@@ -21,6 +22,21 @@ export async function initializeApp(): Promise<void> {
     useWorkspaceStore.getState().hydrateFromBackend(state.workspaces);
     useMemoryStore.getState().hydrateFromBackend(state);
     useServerStore.getState().hydrateFromBackend(state.servers);
+
+    // Phase 2: one-time migration of legacy SshTarget records from
+    // localStorage into the unified `serverStore`. Runs after hydration so
+    // it can merge alongside backend-persisted ServerConfig entries.
+    try {
+      migrateSshTargetsToServers();
+    } catch (e) {
+      console.warn("[bootstrap] SshTarget migration failed:", e);
+    }
+
+    // Fetch the app-managed known_hosts path once so buildSshArgs can pin
+    // host keys instead of falling back to TOFU. Non-fatal on failure.
+    void getAppKnownHostsPath()
+      .then((p) => useServerStore.getState().setKnownHostsPath(p))
+      .catch((e) => console.warn("[bootstrap] getAppKnownHostsPath failed:", e));
 
     // Apply theme + force welcome view before doing anything else, so the
     // first paint of the post-bootstrap UI is correctly themed.

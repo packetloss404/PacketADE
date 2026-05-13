@@ -1,8 +1,22 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { WorkspaceView } from "@/components/views/WorkspaceView";
 import type { Workspace } from "@/types/workspace";
+
+// Phase 3.1: the modal probes the remote path via Tauri before allowing
+// Save. Mock the probe so the test doesn't need a real SSH backend.
+vi.mock("@/lib/tauri", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return {
+    ...actual,
+    sshCheckRemotePath: vi.fn().mockResolvedValue({
+      exists: true,
+      isDirectory: true,
+      isGitRepo: false,
+    }),
+  };
+});
 
 const mocks = vi.hoisted(() => {
   const remoteWorkspace: Workspace = {
@@ -60,6 +74,10 @@ const mocks = vi.hoisted(() => {
           authMethod: "agent",
           remotePath: "/srv/app",
           installedAgents: ["claude-code"],
+          // Phase 3.1: the workspace creation modal blocks Save when the
+          // selected server has no pinned host fingerprint. Provide one
+          // so the existing remote-template assertion still passes.
+          hostFingerprint: "SHA256:example-fingerprint-for-test",
         },
       ],
     },
@@ -168,7 +186,7 @@ describe("workspace launch installed-agent checks", () => {
     vi.clearAllMocks();
   });
 
-  it("filters remote workspace templates through server installedAgents", () => {
+  it("filters remote workspace templates through server installedAgents", async () => {
     render(
       <WorkspaceCreationModal
         onClose={vi.fn()}
@@ -178,7 +196,12 @@ describe("workspace launch installed-agent checks", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /duo/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+
+    // The new Location step debounces an SSH probe before enabling Save.
+    // Wait for the button to become enabled before clicking it.
+    const saveBtn = screen.getByRole("button", { name: "Create Workspace" });
+    await waitFor(() => expect(saveBtn).not.toBeDisabled(), { timeout: 2000 });
+    fireEvent.click(saveBtn);
 
     expect(mocks.workspaceState.createWorkspace).toHaveBeenCalledWith(
       "Duo",

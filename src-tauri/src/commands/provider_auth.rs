@@ -368,8 +368,13 @@ pub struct ProviderAuthStatus {
 #[tauri::command]
 pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthStatus, String> {
     match provider.as_str() {
-        "anthropic" | "openai" | "minimax" | "openrouter" => {
-            let exists = get_api_key_exists(provider.clone()).await?;
+        "anthropic" | "openai" | "openai-agents" | "minimax" | "openrouter" => {
+            let key_provider = if provider == "openai-agents" {
+                "openai".to_string()
+            } else {
+                provider.clone()
+            };
+            let exists = get_api_key_exists(key_provider.clone()).await?;
             if exists {
                 Ok(ProviderAuthStatus {
                     status: "ready".to_string(),
@@ -378,7 +383,7 @@ pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthSt
             } else {
                 let label = match provider.as_str() {
                     "anthropic" => "Anthropic",
-                    "openai" => "OpenAI",
+                    "openai" | "openai-agents" => "OpenAI",
                     "minimax" => "MiniMax",
                     "openrouter" => "OpenRouter",
                     _ => &provider,

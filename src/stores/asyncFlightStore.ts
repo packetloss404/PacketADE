@@ -8,7 +8,7 @@ import {
 } from "@/lib/tauri";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
-import { useSshTargetStore } from "@/stores/sshTargetStore";
+import { useServerStore } from "@/stores/serverStore";
 import type { Attempt, AttemptStatus } from "@/types/flight";
 
 interface AsyncFlightStore {
@@ -64,11 +64,21 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // we pass `skipBackendStart=true`.
     const createApi = useAgentTaskStore.getState().createApiConversation;
     for (const a of attempts) {
-      let sshTarget = null;
+      let sshTarget: Parameters<typeof createApi>[7] = null;
       if (a.target.kind === "ssh") {
-        sshTarget = useSshTargetStore
-          .getState()
-          .getTarget(a.target.targetId) ?? null;
+        const server = useServerStore.getState().getServer(a.target.targetId);
+        if (server) {
+          sshTarget = {
+            serverId: server.id,
+            name: server.name,
+            host: server.host,
+            port: server.port,
+            user: server.username,
+            remotePath: a.target.basePath,
+            keyPath: server.keyPath ?? null,
+            hostFingerprint: server.hostFingerprint ?? null,
+          };
+        }
       }
       const projectPath =
         a.target.kind === "local"
@@ -123,24 +133,24 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     });
 
     // SSH worktree cleanup is deferred from the backend cancel because it
-    // doesn't have full SshTarget info — issue it from here using the saved
-    // SshTarget from sshTargetStore.
+    // doesn't have full ServerConfig info — issue it from here using the
+    // saved ServerConfig from serverStore (Phase 2 — was sshTargetStore).
     if (attempt && attempt.target.kind === "ssh") {
       try {
-        const { useSshTargetStore } = await import("@/stores/sshTargetStore");
-        const target = useSshTargetStore
+        const server = useServerStore
           .getState()
-          .getTarget(attempt.target.targetId);
-        if (target) {
+          .getServer(attempt.target.targetId);
+        if (server) {
           await cleanupAttemptWorktreeSsh({
             flightId,
             attemptId,
-            host: target.host,
-            port: target.port,
-            user: target.user,
-            keyPath: target.keyPath ?? null,
+            host: server.host,
+            port: server.port,
+            user: server.username,
+            keyPath: server.keyPath ?? null,
             basePath: attempt.target.basePath,
-            targetId: target.id,
+            targetId: server.id,
+            hostFingerprint: server.hostFingerprint ?? null,
           });
         }
       } catch (err) {

@@ -22,7 +22,8 @@ async function sshExec(
   remoteCommand: string,
   ephemeralPassword?: string,
 ): Promise<{ output: string; success: boolean }> {
-  const args = buildSshExecArgs(server, remoteCommand);
+  const knownHostsPath = useServerStore.getState().knownHostsPath ?? undefined;
+  const args = buildSshExecArgs(server, remoteCommand, knownHostsPath);
 
   // Password auth: use direct process with stdin piping (bypasses Windows terminal issues)
   if (server.authMethod === "password") {

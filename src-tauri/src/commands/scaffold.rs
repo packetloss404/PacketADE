@@ -1,14 +1,99 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+use crate::core::execution::SshConfig;
+use crate::core::worktree::{self, RemoteCloneResult};
 
 #[derive(Clone, Serialize)]
 pub struct ScaffoldResult {
     pub success: bool,
     pub project_path: String,
     pub message: String,
+}
+
+/// Phase 3.2: subset of the frontend `ServerConfig` that the SSH layer
+/// actually needs. We accept this as a flat DTO rather than reusing the
+/// full `ServerConfigDto` so callers don't have to ship `installed_agents`
+/// or `last_connected_at` for a one-off clone.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneServerConfigDto {
+    pub id: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    #[serde(default)]
+    pub key_path: Option<String>,
+    #[serde(default)]
+    pub host_fingerprint: Option<String>,
+}
+
+impl CloneServerConfigDto {
+    fn into_ssh_config(self, remote_path: String) -> SshConfig {
+        SshConfig {
+            host: self.host,
+            port: self.port,
+            user: self.username,
+            remote_path,
+            key_path: self.key_path,
+            target_id: Some(self.id),
+            host_fingerprint: self.host_fingerprint,
+        }
+    }
+}
+
+/// Phase 3.2: result returned to the frontend after a successful remote
+/// clone. Mirrors `core::worktree::RemoteCloneResult` but lives here so the
+/// `tauri::command` signature stays in the command layer.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneRemoteResultDto {
+    pub remote_path: String,
+    pub default_branch: String,
+}
+
+impl From<RemoteCloneResult> for CloneRemoteResultDto {
+    fn from(r: RemoteCloneResult) -> Self {
+        Self {
+            remote_path: r.remote_path,
+            default_branch: r.default_branch,
+        }
+    }
+}
+
+/// Phase 3.2: clone `repo_url` to `dest_path` on the SSH host described by
+/// `server_config`. Behaviour & security guarantees live in
+/// [`worktree::clone_repo_remote_ssh`]; this command is a thin wrapper that
+/// turns the DTO into an `SshConfig`.
+#[tauri::command]
+pub async fn clone_repo_remote(
+    server_id: String,
+    server_config: CloneServerConfigDto,
+    repo_url: String,
+    dest_path: String,
+    branch: Option<String>,
+) -> Result<CloneRemoteResultDto, String> {
+    // `server_id` is also embedded inside `server_config.id`. We accept the
+    // explicit param for symmetry with the rest of the SSH commands and
+    // sanity-check that they agree so a UI bug can't accidentally send
+    // mismatched values (and pull a saved password for the wrong host).
+    if !server_id.is_empty() && server_id != server_config.id {
+        return Err(format!(
+            "server_id '{}' does not match server_config.id '{}'",
+            server_id, server_config.id
+        ));
+    }
+
+    // `remote_path` on the SshConfig is unused by the clone itself (clone
+    // does not `cd` first), but `target_id` is — that's how the keychain
+    // password lookup finds the saved password.
+    let cfg = server_config.into_ssh_config(dest_path.clone());
+    let branch_ref = branch.as_deref();
+    let result = worktree::clone_repo_remote_ssh(&cfg, &repo_url, &dest_path, branch_ref).await?;
+    Ok(result.into())
 }
 
 fn tool_exists(name: &str) -> bool {

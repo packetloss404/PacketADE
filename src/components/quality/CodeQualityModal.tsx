@@ -37,14 +37,25 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
   );
   const projectPath = workspace?.projectPath ?? useLayoutStore.getState().projectPath;
+  // Remote workspaces store the remote path string in `projectPath` for
+  // label compatibility, but `analyzeCodeQuality` is a local-FS Tauri
+  // command. Bail out with a clear message — Phase 3.2/3.3 will wire up a
+  // remote-aware analyzer (matches IdeationView's guard).
+  const isRemote = Boolean(workspace?.serverId);
 
   useEffect(() => {
+    if (isRemote) {
+      setReport(null);
+      setLoading(false);
+      setError("Code Quality analysis is not yet supported on remote workspaces. Open the workspace locally to run it.");
+      return;
+    }
     setLoading(true);
     setError(null);
     analyzeCodeQuality(projectPath)
       .then((r) => { setReport(r); setLoading(false); })
       .catch((err) => { setError(String(err)); setLoading(false); });
-  }, [projectPath]);
+  }, [projectPath, isRemote]);
 
   const commentScore = report ? calcCommentScore(report.comment_ratio) : 0;
   const testScore = report ? calcTestScore(report.test_ratio) : 0;

@@ -1,8 +1,17 @@
 # Dev Planning Docs
 
-Last updated: 2026-04-28
+Last updated: 2026-05-12
 
-This directory holds **active** planning docs with outstanding work items. Completed docs have been moved to `dev/archive/`.
+This directory holds **active** planning docs with outstanding work items plus the engineering reference docs that used to live in `docs/`. Completed docs have been moved to `dev/archive/`.
+
+## Reference
+
+Technical runbooks and how-tos. Not backlog items themselves (those live in [`/backlog.md`](../backlog.md)), but the docs the backlog points at.
+
+- `local-quality-gates.md` — preflight / full-check pipeline, individual gate commands
+- `multi-platform-build.md` — macOS / Linux / Windows prerequisites + build flow + cross-compile notes
+- `updater-setup.md` — runbook for wiring up the Tauri v2 auto-updater (currently not enabled)
+- `ssh-tech-debt.md` — redirect to `/backlog.md` (left for old links)
 
 ## Active (Outstanding Items)
 
@@ -11,7 +20,7 @@ This directory holds **active** planning docs with outstanding work items. Compl
   
 ### Swarm Orchestration
 - `bridgemind/swarm-orchestration-plan.md` — Phase 4 escalation (auto-reassignment) partial
-- `bridgemind/packetcode-mcp-server-plan.md` — legacy filename; PacketADE MCP provider Phase 1 frontend done, transport layer deferred
+- `bridgemind/packetade-mcp-server-plan.md` — PacketADE MCP provider Phase 1 frontend done, transport layer deferred
 
 ### MCP Provider
 - `mcp-provider-transport.md` — Phases 2-3 deferred (local MCP server transport)
@@ -19,7 +28,6 @@ This directory holds **active** planning docs with outstanding work items. Compl
 ### Workspace UX
 - `zen-workspace/features-git-workspace.md` — Phase 3 review packet ties partial
 - `zen-workspace/features-prompt-library.md` — command palette integration not started
-- `zen-workspace/features-project-workspaces.md` — fully done but kept for reference
 
 ## Archive
 
@@ -29,7 +37,7 @@ This directory holds **active** planning docs with outstanding work items. Compl
 - `archive/moat/` — memory layer, insights, deploy, scaffold, analytics, cost unification specs
 - `archive/bridgemind/` — gap analysis, workspace editor scale, positioning notes
 - `archive/quadcode/` — gap analysis, terminal features, AI platform features
-- `archive/zen-workspace/` — workspace model plan, gap analysis, research
+- `archive/zen-workspace/` — workspace model plan, gap analysis, research, project-workspaces feature spec
 - `archive/vibetotext/` — sprint plan, features spec, README
 
 ## Tracks (All Implemented)

@@ -5,7 +5,7 @@ import {
   type AgentCli,
 } from "@/stores/agentTaskStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
-import { useSshTargetStore } from "@/stores/sshTargetStore";
+import { useServerStore } from "@/stores/serverStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { AgentInputArea } from "@/components/agents/AgentInputArea";
@@ -20,7 +20,7 @@ import {
   type ImageAttachment,
 } from "@/lib/tauri";
 import { generateId } from "@/lib/storage";
-import { isSshUri, parseSshTargetId } from "@/types/ssh";
+import { isSshUri, parseSshUri } from "@/lib/ssh-uri";
 import type {
   AgentMode,
   ComposerMode,
@@ -37,6 +37,7 @@ const AGENT_AUTO_PICK_ORDER: AgentCli[] = [
   "api-claude",
   "api-openai-codex",
   "api-openai",
+  "api-openai-agents",
   "api-openrouter",
   "api-ollama",
   "api-minimax",
@@ -199,26 +200,50 @@ export function AgentsView() {
       void (async () => {
         let convId: string | undefined;
         if (isSshUri(selectedRepo)) {
-          const targetId = parseSshTargetId(selectedRepo);
-          const target = targetId
-            ? useSshTargetStore.getState().getTarget(targetId)
+          const parsed = parseSshUri(selectedRepo);
+          const server = parsed
+            ? useServerStore.getState().getServer(parsed.serverId)
             : undefined;
-          if (!target) {
+          if (!parsed || !server) {
             alert(
-              "SSH target no longer exists. Reconnect it from the project dropdown.",
+              "SSH server no longer exists. Pick another from the project dropdown.",
             );
             return;
           }
-          useSshTargetStore.getState().touchTarget(target.id);
+          // Per-session remote path comes from the URI (edited inline in
+          // AgentInputArea), falling back to the server-level default.
+          const remotePath =
+            (parsed.remotePath && parsed.remotePath.trim().length > 0
+              ? parsed.remotePath.trim()
+              : server.remotePath?.trim()) ?? "";
+          if (!remotePath) {
+            alert(
+              "Enter a remote project path for this SSH server before launching.",
+            );
+            return;
+          }
+          // Stamp lastConnectedAt so the recents ordering reflects use.
+          useServerStore.getState().updateServer(server.id, {
+            lastConnectedAt: Date.now(),
+          });
           convId = await createApiConversation(
             selectedAgent,
-            target.remotePath,
+            remotePath,
             model,
             initialMessage,
             systemPrompt,
             undefined,
             planMode,
-            target,
+            {
+              serverId: server.id,
+              name: server.name,
+              host: server.host,
+              port: server.port,
+              user: server.username,
+              remotePath,
+              keyPath: server.keyPath ?? null,
+              hostFingerprint: server.hostFingerprint ?? null,
+            },
             undefined,
             false,
             allowedTools,

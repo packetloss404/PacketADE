@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { LayoutGrid, Check, FileText, ShieldOff, Loader2, FolderOpen, ChevronDown, Zap } from "lucide-react";
+import { LayoutGrid, Check, FileText, ShieldOff, Loader2, FolderOpen, ChevronDown, Zap, Server, AlertTriangle, CheckCircle2, XCircle, GitBranch } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -11,7 +11,16 @@ import { useAppStore } from "@/stores/appStore";
 import { computeGridLayout } from "@/lib/gridLayout";
 import { INSTALL_HINTS } from "@/lib/agent-install-hints";
 import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS, PACKETCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
+import { sshCheckRemotePath, type RemotePathCheck } from "@/lib/tauri";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
+
+type LocationMode = "local" | "remote";
+
+type PathProbeState =
+  | { kind: "idle" }
+  | { kind: "probing" }
+  | { kind: "ok"; result: RemotePathCheck }
+  | { kind: "error"; message: string };
 
 type AgentChoice = "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
 
@@ -50,7 +59,7 @@ interface WorkspaceCreationModalProps {
   remoteProjectPath?: string;
 }
 
-export function WorkspaceCreationModal({ onClose, initialSelected, serverId, remoteProjectPath }: WorkspaceCreationModalProps) {
+export function WorkspaceCreationModal({ onClose, initialSelected, serverId: initialServerId, remoteProjectPath: initialRemoteProjectPath }: WorkspaceCreationModalProps) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(() => initialSelected ?? new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -59,22 +68,46 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
   const [bypassPermissions, setBypassPermissions] = useState(false);
   const [prompt, setPrompt] = useState("");
   const projectPath = useLayoutStore((s) => s.projectPath);
-  const initialProjectPath = remoteProjectPath ?? projectPath;
-  const [selectedProjectPath, setSelectedProjectPath] = useState(initialProjectPath);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Location: Local vs Remote. Pre-selects "remote" when the caller passes
+  // a serverId (e.g. the Servers view's "New workspace on this server"
+  // button). Otherwise defaults to Local.
+  const [locationMode, setLocationMode] = useState<LocationMode>(initialServerId ? "remote" : "local");
+  const [serverId, setServerId] = useState<string | undefined>(initialServerId);
+  const [remoteProjectPath, setRemoteProjectPath] = useState<string>(initialRemoteProjectPath ?? "");
+  const [serverDropdownOpen, setServerDropdownOpen] = useState(false);
+  const serverDropdownRef = useRef<HTMLDivElement>(null);
+  const [pathProbe, setPathProbe] = useState<PathProbeState>({ kind: "idle" });
+
+  // Local project path (only used when locationMode === "local").
+  const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath);
+
   const agents = useAgentStore((s) => s.agents);
   const detecting = useAgentStore((s) => s.detecting);
-  const server = useServerStore((s) => serverId ? s.servers.find((srv) => srv.id === serverId) : undefined);
+  const servers = useServerStore((s) => s.servers);
+  const server = useMemo(
+    () => (serverId ? servers.find((srv) => srv.id === serverId) : undefined),
+    [serverId, servers],
+  );
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
+  const setActiveView = useAppStore((s) => s.setActiveView);
+
+  // If the user picks a server and the path field is empty, seed it from
+  // the server's default remotePath (matches the legacy
+  // `initialRemoteProjectPath ?? server.remotePath` behaviour).
+  useEffect(() => {
+    if (locationMode !== "remote" || !server) return;
+    setRemoteProjectPath((prev) => (prev.trim() ? prev : server.remotePath ?? ""));
+  }, [locationMode, server]);
 
   const installedAgentIds = useMemo(() => {
-    if (serverId) {
+    if (locationMode === "remote") {
       return new Set(server?.installedAgents ?? []);
     }
     return new Set(agents.filter((agent) => agent.installed).map((agent) => agent.id));
-  }, [agents, server?.installedAgents, serverId]);
+  }, [agents, server?.installedAgents, locationMode]);
 
   const isAgentInstalled = useCallback((id: WorkspaceAgentSlot) => {
     return id === "terminal" || installedAgentIds.has(id);
@@ -82,15 +115,15 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
 
   // Unique project paths from existing workspaces + current global path
   const recentProjectPaths = useMemo(() => {
-    if (serverId) {
-      return initialProjectPath ? [initialProjectPath] : [];
+    if (locationMode === "remote") {
+      return remoteProjectPath ? [remoteProjectPath] : [];
     }
     const paths = new Set<string>([projectPath]);
     for (const w of useWorkspaceStore.getState().workspaces) {
-      if (w.projectPath) paths.add(w.projectPath);
+      if (w.projectPath && !w.serverId) paths.add(w.projectPath);
     }
     return Array.from(paths);
-  }, [initialProjectPath, projectPath, serverId]);
+  }, [remoteProjectPath, projectPath, locationMode]);
 
   useEffect(() => {
     setSelected((prev) => {
@@ -106,10 +139,68 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
       if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
         setProjectDropdownOpen(false);
       }
+      if (serverDropdownRef.current && !serverDropdownRef.current.contains(e.target as Node)) {
+        setServerDropdownOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  // Live-validate the remote path. Debounced so each keystroke does not
+  // dispatch an SSH command. Skipped entirely when the server lacks a
+  // pinned host fingerprint — running an SSH probe to an unverified host
+  // would defeat the whole point of host-key pinning.
+  useEffect(() => {
+    if (locationMode !== "remote") {
+      setPathProbe({ kind: "idle" });
+      return;
+    }
+    if (!server) {
+      setPathProbe({ kind: "idle" });
+      return;
+    }
+    if (!server.hostFingerprint) {
+      // Skip the probe — the user must verify the host key on the
+      // Servers page first. The fingerprint banner takes over from here.
+      setPathProbe({ kind: "idle" });
+      return;
+    }
+    const trimmed = remoteProjectPath.trim();
+    if (!trimmed) {
+      setPathProbe({ kind: "idle" });
+      return;
+    }
+
+    let cancelled = false;
+    setPathProbe({ kind: "probing" });
+
+    const handle = window.setTimeout(() => {
+      sshCheckRemotePath({
+        host: server.host,
+        port: server.port,
+        user: server.username,
+        authMethod: server.authMethod,
+        keyPath: server.keyPath,
+        hostFingerprint: server.hostFingerprint,
+        remotePath: trimmed,
+      })
+        .then((result) => {
+          if (cancelled) return;
+          setPathProbe({ kind: "ok", result });
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          const message = err instanceof Error ? err.message : String(err);
+          setPathProbe({ kind: "error", message });
+        });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [locationMode, server, remoteProjectPath]);
 
   const preview = useMemo(() => {
     if (selected.size === 0) return null;
@@ -144,8 +235,26 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
     setModelOverrides((prev) => ({ ...prev, [agentId]: model }));
   }
 
+  // Save is only enabled when the form is in a valid state. Memoised so we
+  // can both gate the button and short-circuit handleCreate.
+  const saveBlockedReason = useMemo<string | null>(() => {
+    if (!name.trim()) return "Workspace name is required";
+    if (selected.size === 0) return "Select at least one agent";
+    if (locationMode === "remote") {
+      if (!serverId || !server) return "Choose a server";
+      if (!server.hostFingerprint) return "Verify the server's host key on the Servers page before connecting";
+      if (!remoteProjectPath.trim()) return "Remote project path is required";
+      if (pathProbe.kind === "probing") return "Verifying remote path…";
+      if (pathProbe.kind === "ok" && pathProbe.result.exists && !pathProbe.result.isDirectory) {
+        return "Remote path exists but is a file, not a directory";
+      }
+      if (pathProbe.kind === "error") return pathProbe.message;
+    }
+    return null;
+  }, [name, selected.size, locationMode, serverId, server, remoteProjectPath, pathProbe]);
+
   function handleCreate() {
-    if (!name.trim() || selected.size === 0) return;
+    if (saveBlockedReason) return;
 
     const orderedAgents = AGENT_SLOTS
       .filter((s) => selected.has(s.id) && isAgentInstalled(s.id))
@@ -155,16 +264,26 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
 
     const finalPrompt = prompt.trim();
 
-    createWorkspace(name.trim(), orderedAgents, selectedProjectPath, {
+    // For remote workspaces, the "root path" we store is the remote path
+    // (workspaceStore will use it as `projectPath`). For local workspaces
+    // we keep using the user-selected local directory.
+    const effectivePath = locationMode === "remote" ? remoteProjectPath.trim() : selectedProjectPath;
+
+    createWorkspace(name.trim(), orderedAgents, effectivePath, {
       prompt: finalPrompt || undefined,
       modelOverrides,
       effortOverrides,
       bypassPermissions,
-      serverId,
-      remoteProjectPath,
+      serverId: locationMode === "remote" ? serverId : undefined,
+      remoteProjectPath: locationMode === "remote" ? remoteProjectPath.trim() : undefined,
     });
 
     useAppStore.getState().setActiveView("workspace");
+    onClose();
+  }
+
+  function handleOpenServersView() {
+    setActiveView("tools");
     onClose();
   }
 
@@ -191,7 +310,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
           </button>
           <button
             onClick={handleCreate}
-            disabled={!name.trim() || selected.size === 0}
+            disabled={saveBlockedReason !== null}
+            title={saveBlockedReason ?? undefined}
             className="px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
           >
             Create Workspace
@@ -200,50 +320,206 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
       }
     >
       <div className="px-5 py-4 flex flex-col gap-4 max-h-[70vh] overflow-y-auto" onKeyDown={handleKeyDown}>
-        {/* Project Path */}
-        <div ref={projectDropdownRef}>
-          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Project</label>
-          <div className="relative">
+        {/* Location: Local vs Remote (SSH) */}
+        <div>
+          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Location</label>
+          <div className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
-              className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
+              onClick={() => setLocationMode("local")}
+              className={`flex items-center gap-2 px-3 py-2 text-[11px] rounded border transition-colors ${
+                locationMode === "local"
+                  ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
+                  : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+              }`}
             >
-              <FolderOpen size={12} className="text-accent-green flex-shrink-0" />
-              <span className="flex-1 truncate text-text-primary" title={selectedProjectPath}>
-                {selectedProjectPath.split(/[\\/]/).pop()}
+              <FolderOpen size={12} />
+              <span className="flex flex-col items-start">
+                <span>Local</span>
+                <span className="text-[10px] text-text-muted">This machine</span>
               </span>
-              <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={selectedProjectPath}>
-                {selectedProjectPath}
-              </span>
-              <ChevronDown
-                size={10}
-                className={`text-text-muted flex-shrink-0 transition-transform ${projectDropdownOpen ? "rotate-180" : ""}`}
-              />
             </button>
-            {projectDropdownOpen && recentProjectPaths.length > 1 && (
-              <div className="absolute top-full left-0 mt-1 w-full bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1 max-h-[160px] overflow-y-auto">
-                {recentProjectPaths.map((p) => (
+            <button
+              type="button"
+              onClick={() => setLocationMode("remote")}
+              className={`flex items-center gap-2 px-3 py-2 text-[11px] rounded border transition-colors ${
+                locationMode === "remote"
+                  ? "bg-accent-blue/15 border-accent-blue/40 text-accent-blue font-medium"
+                  : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+              }`}
+            >
+              <Server size={12} />
+              <span className="flex flex-col items-start">
+                <span>Remote (SSH)</span>
+                <span className="text-[10px] text-text-muted">Saved server</span>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Local: Project Path */}
+        {locationMode === "local" && (
+          <div ref={projectDropdownRef}>
+            <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Project</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
+                className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
+              >
+                <FolderOpen size={12} className="text-accent-green flex-shrink-0" />
+                <span className="flex-1 truncate text-text-primary" title={selectedProjectPath}>
+                  {selectedProjectPath.split(/[\\/]/).pop()}
+                </span>
+                <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={selectedProjectPath}>
+                  {selectedProjectPath}
+                </span>
+                <ChevronDown
+                  size={10}
+                  className={`text-text-muted flex-shrink-0 transition-transform ${projectDropdownOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {projectDropdownOpen && recentProjectPaths.length > 1 && (
+                <div className="absolute top-full left-0 mt-1 w-full bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1 max-h-[160px] overflow-y-auto">
+                  {recentProjectPaths.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        setSelectedProjectPath(p);
+                        setProjectDropdownOpen(false);
+                      }}
+                      className={`flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-bg-hover transition-colors ${
+                        p === selectedProjectPath ? "bg-accent-green/10" : ""
+                      }`}
+                    >
+                      <FolderOpen size={11} className={p === selectedProjectPath ? "text-accent-green" : "text-text-muted"} />
+                      <span className="flex-1 truncate text-[11px] text-text-primary">{p.split(/[\\/]/).pop()}</span>
+                      <span className="text-[10px] text-text-muted truncate max-w-[180px]">{p}</span>
+                      {p === selectedProjectPath && <Check size={10} className="text-accent-green flex-shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Remote: Server picker + remote project path */}
+        {locationMode === "remote" && (
+          <div className="flex flex-col gap-3">
+            {servers.length === 0 ? (
+              <div className="rounded border border-bg-border bg-bg-primary px-3 py-3 text-[11px] text-text-secondary">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Server size={12} className="text-text-muted" />
+                  <span className="font-medium text-text-primary">No servers configured</span>
+                </div>
+                <p className="text-text-muted text-[10px] mb-2">
+                  Add a server in the Tools view to use it as a remote workspace target.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleOpenServersView}
+                  className="text-[11px] text-accent-blue hover:underline"
+                >
+                  Open Servers settings →
+                </button>
+              </div>
+            ) : (
+              <div ref={serverDropdownRef}>
+                <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Server</label>
+                <div className="relative">
                   <button
-                    key={p}
-                    onClick={() => {
-                      setSelectedProjectPath(p);
-                      setProjectDropdownOpen(false);
-                    }}
-                    className={`flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-bg-hover transition-colors ${
-                      p === selectedProjectPath ? "bg-accent-green/10" : ""
-                    }`}
+                    type="button"
+                    onClick={() => setServerDropdownOpen(!serverDropdownOpen)}
+                    className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
                   >
-                    <FolderOpen size={11} className={p === selectedProjectPath ? "text-accent-green" : "text-text-muted"} />
-                    <span className="flex-1 truncate text-[11px] text-text-primary">{p.split(/[\\/]/).pop()}</span>
-                    <span className="text-[10px] text-text-muted truncate max-w-[180px]">{p}</span>
-                    {p === selectedProjectPath && <Check size={10} className="text-accent-green flex-shrink-0" />}
+                    <Server size={12} className="text-accent-blue flex-shrink-0" />
+                    {server ? (
+                      <>
+                        <span className="flex-1 truncate text-text-primary" title={server.name}>
+                          {server.name}
+                        </span>
+                        <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={`${server.username}@${server.host}:${server.port}`}>
+                          {server.username}@{server.host}:{server.port}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="flex-1 text-text-muted italic">Choose a server…</span>
+                    )}
+                    <ChevronDown
+                      size={10}
+                      className={`text-text-muted flex-shrink-0 transition-transform ${serverDropdownOpen ? "rotate-180" : ""}`}
+                    />
                   </button>
-                ))}
+                  {serverDropdownOpen && (
+                    <div className="absolute top-full left-0 mt-1 w-full bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1 max-h-[200px] overflow-y-auto">
+                      {servers.map((srv) => (
+                        <button
+                          key={srv.id}
+                          onClick={() => {
+                            setServerId(srv.id);
+                            // Reset path probe + seed path field from
+                            // the new server's default remotePath if the
+                            // user hasn't typed anything.
+                            setRemoteProjectPath((prev) => (prev.trim() ? prev : srv.remotePath ?? ""));
+                            setServerDropdownOpen(false);
+                          }}
+                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-bg-hover transition-colors ${
+                            srv.id === serverId ? "bg-accent-blue/10" : ""
+                          }`}
+                        >
+                          <Server size={11} className={srv.id === serverId ? "text-accent-blue" : "text-text-muted"} />
+                          <span className="flex-1 truncate text-[11px] text-text-primary">{srv.name}</span>
+                          <span className="text-[10px] text-text-muted truncate max-w-[180px]">
+                            {srv.username}@{srv.host}:{srv.port}
+                          </span>
+                          {srv.id === serverId && <Check size={10} className="text-accent-blue flex-shrink-0" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Host-key warning */}
+            {server && !server.hostFingerprint && (
+              <div className="rounded border border-accent-amber/30 bg-accent-amber/5 px-3 py-2 text-[11px] text-accent-amber flex items-start gap-2">
+                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-medium">Host key not verified.</div>
+                  <p className="text-text-secondary mt-1">
+                    Verify the host key on the Servers page before connecting. We won't probe an unpinned host.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleOpenServersView}
+                    className="mt-1 text-[11px] underline hover:text-accent-amber"
+                  >
+                    Open Servers settings →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Remote project path input */}
+            {server && server.hostFingerprint && (
+              <div>
+                <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">
+                  Remote Project Path
+                </label>
+                <input
+                  type="text"
+                  value={remoteProjectPath}
+                  onChange={(e) => setRemoteProjectPath(e.target.value)}
+                  placeholder={server.remotePath || "/srv/projects/my-app"}
+                  className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-blue"
+                />
+                <RemotePathProbeIndicator state={pathProbe} />
               </div>
             )}
           </div>
-        </div>
+        )}
 
         {/* Name */}
         <div>
@@ -501,6 +777,68 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId, rem
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Small inline status row underneath the Remote Project Path input.
+ *  Reflects the debounced `sshCheckRemotePath` probe state. Never returns
+ *  null — empty/idle renders a placeholder so the modal height stays
+ *  stable while the user types. */
+function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
+  if (state.kind === "idle") {
+    return (
+      <p className="text-[10px] text-text-muted mt-1">
+        Type a path to verify it exists on the host.
+      </p>
+    );
+  }
+  if (state.kind === "probing") {
+    return (
+      <p className="flex items-center gap-1 text-[10px] text-text-muted mt-1">
+        <Loader2 size={10} className="animate-spin" />
+        Checking remote path…
+      </p>
+    );
+  }
+  if (state.kind === "error") {
+    return (
+      <p className="flex items-center gap-1 text-[10px] text-accent-red mt-1">
+        <XCircle size={10} />
+        {state.message}
+      </p>
+    );
+  }
+  // ok
+  const { exists, isDirectory, isGitRepo } = state.result;
+  if (!exists) {
+    return (
+      <p className="flex items-center gap-1 text-[10px] text-accent-amber mt-1">
+        <AlertTriangle size={10} />
+        Path does not exist — it will be created when the workspace starts.
+      </p>
+    );
+  }
+  if (!isDirectory) {
+    return (
+      <p className="flex items-center gap-1 text-[10px] text-accent-red mt-1">
+        <XCircle size={10} />
+        Path is a file, not a directory.
+      </p>
+    );
+  }
+  if (isGitRepo) {
+    return (
+      <p className="flex items-center gap-1 text-[10px] text-accent-green mt-1">
+        <GitBranch size={10} />
+        Git repository detected.
+      </p>
+    );
+  }
+  return (
+    <p className="flex items-center gap-1 text-[10px] text-accent-green mt-1">
+      <CheckCircle2 size={10} />
+      Directory exists.
+    </p>
   );
 }
 
