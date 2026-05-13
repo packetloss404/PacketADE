@@ -24,6 +24,7 @@ import {
   listCheckpoints as tauriListCheckpoints,
   exportConversationMarkdown,
   type ImageAttachment,
+  type ResumeMessage,
 } from "@/lib/tauri";
 /** Phase 2: SSH conversations now reference a `ServerConfig` from
  *  `serverStore` plus a per-session remote path. This payload is what the
@@ -70,6 +71,11 @@ import {
 import { generateId } from "@/lib/storage";
 import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import { useMemoryStore } from "@/stores/memoryStore";
+import {
+  getAgentAutoArchiveIdleMs,
+  useAgentSettingsStore,
+} from "@/stores/agentSettingsStore";
+import { useAgentStore } from "@/stores/agentStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
 import { notifyConversationDone } from "@/lib/notifications";
@@ -102,6 +108,17 @@ function scheduleSave(conv: AgentConversation): void {
   saveTimers.set(conv.id, handle);
 }
 
+export type BuiltinCliAgent = "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
+export type ApiAgentCli =
+  | "api-claude-oauth"
+  | "api-claude"
+  | "api-openai-codex"
+  | "api-openai-agents"
+  | "api-openai"
+  | "api-minimax"
+  | "api-openrouter"
+  | "api-ollama";
+
 export type AgentCli =
   | "claude-code"
   | "codex"
@@ -115,7 +132,8 @@ export type AgentCli =
   | "api-openai"
   | "api-minimax"
   | "api-openrouter"
-  | "api-ollama";
+  | "api-ollama"
+  | (string & {});
 
 /** Check if an agent type uses API mode (vs PTY/CLI mode). */
 export function isApiAgent(agent: AgentCli): boolean {
@@ -155,8 +173,8 @@ export interface AgentTask {
 /** Max output buffer per task (256 KB) to avoid memory bloat */
 const MAX_OUTPUT_SIZE = 256 * 1024;
 
-/** CLI command names for PTY-based agents (API agents don't use CLI commands) */
-const CLI_COMMANDS: Partial<Record<AgentCli, string>> = {
+/** Fallback command names for PTY-based agents if the agent store has not hydrated yet. */
+const CLI_COMMANDS: Record<BuiltinCliAgent, string> = {
   "claude-code": "claude",
   codex: "codex",
   gemini: "gemini",
@@ -167,12 +185,39 @@ const CLI_COMMANDS: Partial<Record<AgentCli, string>> = {
 /** Bypass-permissions flags for autonomous execution.
  * OpenCode is intentionally omitted — it has no equivalent launch flag and
  * passing one makes it print `--help` and exit. PacketCode uses `--trust`. */
-const BYPASS_FLAGS: Partial<Record<AgentCli, string>> = {
+const BYPASS_FLAGS: Partial<Record<BuiltinCliAgent, string>> = {
   "claude-code": "--dangerously-skip-permissions",
   codex: "--full-auto",
   gemini: "--yolo",
   packetcode: "--trust",
 };
+
+function isBuiltinCliAgent(agent: AgentCli): agent is BuiltinCliAgent {
+  return Object.prototype.hasOwnProperty.call(CLI_COMMANDS, agent);
+}
+
+function resolveCliLaunch(
+  agent: AgentCli,
+  options: { includeAutonomyFlag?: boolean } = {},
+): { command: string; args: string[]; displayName: string } | null {
+  if (isApiAgent(agent)) return null;
+
+  const config = useAgentStore.getState().getAgent(agent);
+  if (config && config.id !== "terminal") {
+    const args = [...config.defaultArgs];
+    if (options.includeAutonomyFlag && isBuiltinCliAgent(agent)) {
+      const flag = BYPASS_FLAGS[agent];
+      if (flag && !args.includes(flag)) args.unshift(flag);
+    }
+    return { command: config.command, args, displayName: config.name };
+  }
+
+  if (!isBuiltinCliAgent(agent)) return null;
+  const args: string[] = [];
+  const flag = options.includeAutonomyFlag ? BYPASS_FLAGS[agent] : undefined;
+  if (flag) args.push(flag);
+  return { command: CLI_COMMANDS[agent], args, displayName: agent };
+}
 
 export type AgentInputMode = "build" | "plan";
 
@@ -216,6 +261,59 @@ export function repoDisplayName(projectPath: string, githubRepos: GitHubRepo[]):
 
 /** Max conversation raw output buffer (256 KB) */
 const MAX_RAW_OUTPUT_SIZE = 256 * 1024;
+const MAX_RESUME_MESSAGES = 80;
+const MAX_RESUME_CHARS = 120_000;
+const MAX_TOOL_RESUME_CHARS = 4_000;
+
+function truncateResumeText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n... [truncated]`;
+}
+
+function toolCallsResumeText(toolCalls: AgentToolCall[] | undefined): string {
+  if (!toolCalls || toolCalls.length === 0) return "";
+  const lines = toolCalls.map((tc) => {
+    const parts = [`- ${tc.name} (${tc.status})`];
+    if (tc.input) parts.push(`input: ${truncateResumeText(tc.input, 800)}`);
+    const output = tc.fullContent ?? tc.summary ?? "";
+    if (output) parts.push(`result: ${truncateResumeText(output, MAX_TOOL_RESUME_CHARS)}`);
+    return parts.join("\n  ");
+  });
+  return `Tool calls:\n${lines.join("\n")}`;
+}
+
+function messageResumeContent(message: AgentMessage): string {
+  const parts = [message.content.trim()];
+  if (message.role === "assistant") {
+    const toolText = toolCallsResumeText(message.toolCalls);
+    if (toolText) parts.push(toolText);
+  }
+  return parts.filter(Boolean).join("\n\n");
+}
+
+export function buildConversationResumeMessages(messages: AgentMessage[]): ResumeMessage[] {
+  const normalized = messages
+    .filter((m) => !m.isStreaming && !m.queued)
+    .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
+    .map((m) => ({
+      role: m.role,
+      content: messageResumeContent(m),
+    }))
+    .filter((m) => m.content.length > 0);
+
+  const kept: ResumeMessage[] = [];
+  let totalChars = 0;
+  for (let i = normalized.length - 1; i >= 0; i -= 1) {
+    const message = normalized[i];
+    const nextChars = totalChars + message.content.length;
+    if (kept.length >= MAX_RESUME_MESSAGES || nextChars > MAX_RESUME_CHARS) {
+      break;
+    }
+    kept.unshift(message);
+    totalChars = nextChars;
+  }
+  return kept;
+}
 
 interface AgentTaskStore {
   // --- Existing task state (used by Flight orchestration and legacy task launches) ---
@@ -548,6 +646,7 @@ async function installApiAgentListeners(
       conv &&
       conv.mode === "api" &&
       conv.model &&
+      useAgentSettingsStore.getState().autoFailoverEnabled &&
       !failoverGuard.has(id) &&
       looksLikeRateLimit(event.payload.message)
     ) {
@@ -807,12 +906,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
   launchTask: async (title, description, agent, projectPath) => {
     const id = generateId("agt");
-    const command = CLI_COMMANDS[agent];
-    if (!command) return id; // API agents don't use PTY tasks
-    const args: string[] = [];
-
-    const bypassFlag = BYPASS_FLAGS[agent];
-    if (bypassFlag) args.push(bypassFlag);
+    const launch = resolveCliLaunch(agent, { includeAutonomyFlag: true });
+    if (!launch) return id; // API agents don't use PTY tasks
 
     const task: AgentTask = {
       id,
@@ -838,8 +933,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         projectPath,
         120,
         40,
-        command,
-        args.length > 0 ? args : null,
+        launch.command,
+        launch.args.length > 0 ? launch.args : null,
       );
 
       // Store the session ID
@@ -939,9 +1034,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
   createConversation: async (agent, projectPath) => {
     const id = generateId("conv");
-    const command = CLI_COMMANDS[agent as keyof typeof CLI_COMMANDS];
-    if (!command) return id; // API agents should use createApiConversation
-    const args: string[] = [];
+    const launch = resolveCliLaunch(agent);
+    if (!launch) return id; // API agents should use createApiConversation
 
     const now = Date.now();
     const segments = projectPath.replace(/\\/g, "/").split("/").filter(Boolean);
@@ -969,11 +1063,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     try {
       const sessionId = await createPtySession(
         projectPath,
-        120,
-        40,
-        command,
-        args.length > 0 ? args : null,
-      );
+      120,
+      40,
+      launch.command,
+      launch.args.length > 0 ? launch.args : null,
+    );
 
       set((s) => ({
         conversations: s.conversations.map((c) => (c.id === id ? { ...c, sessionId } : c)),
@@ -1172,6 +1266,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           allowedTools ?? null,
           null, // resumeToken — fresh start
           enabledMcpServerIds ?? null,
+          null,
+          "auto",
+          false,
         );
       }
     } catch {
@@ -1759,6 +1856,18 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         // Best-effort; proceed even if cancel failed.
       }
     }
+    if (conv.mode === "api") {
+      try {
+        await closeApiAgentSession(id);
+      } catch {
+        // Best-effort; the next send will start a fresh session locally.
+      }
+      const cleanup = apiConversationCleanup.get(id);
+      if (cleanup) {
+        cleanup();
+        apiConversationCleanup.delete(id);
+      }
+    }
 
     // Truncate locally to before the edited user message and detach any
     // live session so sendMessage will spin up a fresh one with the
@@ -1981,6 +2090,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
     try {
       await installApiAgentListeners(conversationId, get, set);
+      const resumeMessages = buildConversationResumeMessages(conv.messages);
 
       // Phase 2: resolve the live ServerConfig from `serverStore` to pick
       // up the port, keyPath, and pinned host fingerprint — the persisted
@@ -2025,6 +2135,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         conv.allowedTools ?? null,
         conv.resumeToken ?? null,
         conv.enabledMcpServerIds ?? null,
+        resumeMessages,
+        conv.permissionMode ?? "auto",
+        conv.approveWrites ?? false,
       );
     } catch (e) {
       console.warn("resumeApiConversation failed:", e);
@@ -2037,17 +2150,16 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   },
 }));
 
-/** Idle threshold (14 days) for auto-archiving completed conversations. */
-const AUTO_ARCHIVE_IDLE_MS = 14 * 24 * 60 * 60 * 1000;
-
 /** One-time pass over hydrated conversations: any conversation with
- * status === "done" that has been idle longer than AUTO_ARCHIVE_IDLE_MS and
- * isn't already archived gets auto-archived. Mutates `conv` in place and
- * returns whether it changed (so callers can re-persist). */
+ * status === "done" that has been idle longer than the Agents settings
+ * threshold and isn't already archived gets auto-archived. Mutates `conv` in
+ * place and returns whether it changed (so callers can re-persist). */
 function maybeAutoArchive(conv: AgentConversation): boolean {
   if (conv.archived) return false;
   if (conv.status !== "done") return false;
-  if (conv.updatedAt >= Date.now() - AUTO_ARCHIVE_IDLE_MS) return false;
+  const autoArchiveIdleMs = getAgentAutoArchiveIdleMs();
+  if (autoArchiveIdleMs === null) return false;
+  if (conv.updatedAt >= Date.now() - autoArchiveIdleMs) return false;
   conv.archived = true;
   return true;
 }

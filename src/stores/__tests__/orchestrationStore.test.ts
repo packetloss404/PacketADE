@@ -66,7 +66,7 @@ vi.mock("@/stores/tabStore", () => ({
 }));
 
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
-import { getOrchestrationState, orchestrationTick } from "@/lib/tauri";
+import { getOrchestrationState, orchestrationTick, saveSettingsSlice } from "@/lib/tauri";
 
 describe("orchestrationStore", () => {
   beforeEach(() => {
@@ -95,6 +95,21 @@ describe("orchestrationStore", () => {
   it("setMaxParallelSessions updates state", () => {
     useOrchestrationStore.getState().setMaxParallelSessions(5);
     expect(useOrchestrationStore.getState().maxParallelSessions).toBe(5);
+  });
+
+  it("setMaxParallelSessions clamps unsafe values", async () => {
+    useOrchestrationStore.getState().setMaxParallelSessions(50);
+    expect(useOrchestrationStore.getState().maxParallelSessions).toBe(12);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(saveSettingsSlice).toHaveBeenLastCalledWith({
+      maxParallelSessions: 12,
+      milestoneGating: true,
+      projectPath: ".",
+    });
+
+    useOrchestrationStore.getState().setMaxParallelSessions(0);
+    expect(useOrchestrationStore.getState().maxParallelSessions).toBe(1);
   });
 
   it("setMilestoneGating updates state", () => {
@@ -205,5 +220,21 @@ describe("orchestrationStore", () => {
     const state = useOrchestrationStore.getState();
     expect(state.maxParallelSessions).toBe(5);
     expect(state.milestoneGating).toBe(false);
+  });
+
+  it("hydrateFromBackend clamps unsafe max parallel settings", async () => {
+    await useOrchestrationStore.getState().hydrateFromBackend({
+      version: 1,
+      flights: [],
+      agents: [],
+      settings: {
+        maxParallelSessions: 50,
+        milestoneGating: true,
+        projectPath: "/test",
+      },
+      ui: {},
+    } as never);
+
+    expect(useOrchestrationStore.getState().maxParallelSessions).toBe(12);
   });
 });

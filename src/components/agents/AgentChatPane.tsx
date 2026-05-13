@@ -59,7 +59,6 @@ import { TaskListCard } from "./TaskListCard";
 import { ContinueInMenu } from "./ContinueInMenu";
 import { AgentMosaicShell } from "./AgentMosaicShell";
 import { AgentTabbedRail } from "./AgentTabbedRail";
-import { storageKey } from "@/lib/brand";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
 import { SessionHealthBar } from "./SessionHealthBar";
 import { PlanPanel } from "./PlanPanel";
@@ -89,6 +88,7 @@ import { useMemoryStore } from "@/stores/memoryStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useGoalStore } from "@/stores/goalStore";
 import { useFlightStore } from "@/stores/flightStore";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { buildReviewPrompt } from "@/lib/conversationReview";
 import type {
   AgentConversation,
@@ -234,27 +234,10 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const exportConversation = useAgentTaskStore((s) => s.exportConversation);
   const previewOpen = usePreviewPaneStore((s) => s.open);
   const togglePreview = usePreviewPaneStore((s) => s.toggle);
-  // B4 — compact tabbed rail toggle (Plan / Diff / Inspector in one
-  // 340px column). Persisted in localStorage; off by default.
-  const [useCompactRail, setUseCompactRail] = useState<boolean>(() => {
-    if (typeof localStorage === "undefined") return false;
-    try {
-      return localStorage.getItem(storageKey("agent-tabbed-rail-mode")) === "1";
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    try {
-      localStorage.setItem(
-        storageKey("agent-tabbed-rail-mode"),
-        useCompactRail ? "1" : "0",
-      );
-    } catch {
-      // ignore
-    }
-  }, [useCompactRail]);
+  const useCompactRail = useAgentSettingsStore((s) => s.compactRailMode);
+  const setCompactRailMode = useAgentSettingsStore(
+    (s) => s.setCompactRailMode,
+  );
   const openMarkdownPreview = usePreviewPaneStore((s) => s.openMarkdown);
   const openPlanPreview = usePreviewPaneStore((s) => s.openPlan);
   const promptTemplates = usePromptStore((s) => s.templates);
@@ -1438,7 +1421,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             Inspector in a single column) on/off. Persisted. */}
         <button
           type="button"
-          onClick={() => setUseCompactRail((v) => !v)}
+          onClick={() => setCompactRailMode(!useCompactRail)}
           className={`p-0.5 rounded transition-colors ${
             useCompactRail
               ? "text-accent-blue bg-accent-blue/10"

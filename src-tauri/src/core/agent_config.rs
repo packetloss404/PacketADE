@@ -384,8 +384,8 @@ impl AgentConfig {
             name: "PacketCode".into(),
             command: "packetcode".into(),
             default_args: vec![],
-            description:
-                "Keyboard-first multi-provider terminal coding agent (sibling project)".into(),
+            description: "Keyboard-first multi-provider terminal coding agent (sibling project)"
+                .into(),
             installed: false,
             capabilities: vec![
                 AgentCapability::CodeEdit,

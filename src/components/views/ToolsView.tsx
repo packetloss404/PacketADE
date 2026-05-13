@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { Wrench, FolderOpen, Ticket, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower, Mic, Key, Server, User } from "lucide-react";
+import { Wrench, FolderOpen, Ticket, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower, Mic, Key, Server, User, GitBranch, Terminal, Bot, Brain } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useIssueStore } from "@/stores/issueStore";
@@ -18,23 +18,33 @@ import { DictationCard } from "./tools/DictationCard";
 import { ApiKeysCard } from "./tools/ApiKeysCard";
 import { ServersSettingsCard } from "./tools/ServersSettingsCard";
 import { AgentProfilesCard } from "./tools/AgentProfilesCard";
+import { AgentSettingsCard } from "./tools/AgentSettingsCard";
+import { CliAgentsCard } from "./tools/CliAgentsCard";
 import { ProjectRulesCard } from "./tools/ProjectRulesCard";
+import { OrchestrationSettingsCard } from "./tools/OrchestrationSettingsCard";
+import { ProviderEndpointsCard } from "./tools/ProviderEndpointsCard";
+import { WorkspaceSettingsCard } from "./tools/WorkspaceSettingsCard";
+import { MemorySettingsCard } from "./tools/MemorySettingsCard";
 import type { PromptTemplate } from "@/types/prompt";
 
 const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
 
-type SettingsSection = "project" | "project-rules" | "issues" | "routing" | "api-keys" | "servers" | "mcp" | "mcp-provider" | "profiles" | "modules" | "templates" | "history" | "cost" | "dictation";
+type SettingsSection = "project" | "project-rules" | "issues" | "missions" | "routing" | "api-keys" | "servers" | "cli-agents" | "mcp" | "mcp-provider" | "agents" | "profiles" | "memory" | "modules" | "templates" | "history" | "cost" | "dictation";
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
   { key: "project", label: "Project", icon: FolderOpen },
   { key: "project-rules", label: "Project Rules", icon: FileText },
   { key: "issues", label: "Issues", icon: Ticket },
+  { key: "missions", label: "Missions", icon: GitBranch },
   { key: "routing", label: "AI Routing", icon: Route },
   { key: "api-keys", label: "API Keys", icon: Key },
   { key: "servers", label: "Servers", icon: Server },
+  { key: "cli-agents", label: "CLI Agents", icon: Terminal },
   { key: "mcp", label: "MCP Servers", icon: Plug },
   { key: "mcp-provider", label: "MCP Provider", icon: RadioTower },
+  { key: "agents", label: "Agents", icon: Bot },
   { key: "profiles", label: "Agent Profiles", icon: User },
+  { key: "memory", label: "Memory", icon: Brain },
   { key: "modules", label: "Modules", icon: Puzzle },
   { key: "templates", label: "Templates", icon: FileText },
   { key: "history", label: "History", icon: Clock },
@@ -84,6 +94,7 @@ export function ToolsView() {
         {activeSection === "project" && (
           <div className="grid grid-cols-2 gap-4 max-w-2xl">
             <ProjectInfoCard projectPath={projectPath} gitBranch={gitBranch} />
+            <WorkspaceSettingsCard />
             <NotificationSettingsCard />
             <CrashViewerCard />
           </div>
@@ -115,15 +126,28 @@ export function ToolsView() {
           </div>
         )}
 
-        {activeSection === "api-keys" && (
+        {activeSection === "missions" && (
           <div className="max-w-2xl">
+            <OrchestrationSettingsCard />
+          </div>
+        )}
+
+        {activeSection === "api-keys" && (
+          <div className="grid grid-cols-2 gap-4 max-w-4xl">
             <ApiKeysCard />
+            <ProviderEndpointsCard />
           </div>
         )}
 
         {activeSection === "servers" && (
           <div className="max-w-2xl">
             <ServersSettingsCard />
+          </div>
+        )}
+
+        {activeSection === "cli-agents" && (
+          <div className="max-w-3xl">
+            <CliAgentsCard />
           </div>
         )}
 
@@ -139,9 +163,21 @@ export function ToolsView() {
           </div>
         )}
 
+        {activeSection === "agents" && (
+          <div className="max-w-2xl">
+            <AgentSettingsCard />
+          </div>
+        )}
+
         {activeSection === "profiles" && (
           <div className="max-w-3xl">
             <AgentProfilesCard />
+          </div>
+        )}
+
+        {activeSection === "memory" && (
+          <div className="max-w-2xl">
+            <MemorySettingsCard />
           </div>
         )}
 

@@ -83,6 +83,14 @@ interface OrchestrationStore extends OrchestrationState {
   hydrateFromBackend: (persisted?: Awaited<ReturnType<typeof loadPersistedState>>) => Promise<void>;
 }
 
+const MIN_PARALLEL_SESSIONS = 1;
+const MAX_PARALLEL_SESSIONS = 12;
+
+function clampParallelSessions(value: number): number {
+  if (!Number.isFinite(value)) return 3;
+  return Math.min(MAX_PARALLEL_SESSIONS, Math.max(MIN_PARALLEL_SESSIONS, Math.round(value)));
+}
+
 async function patchPersistedSettings(
   patch: Partial<Awaited<ReturnType<typeof loadPersistedState>>["settings"]>,
 ) {
@@ -443,8 +451,9 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
   },
 
   setMaxParallelSessions: (max) => {
-    set({ maxParallelSessions: max });
-    void patchPersistedSettings({ maxParallelSessions: max });
+    const clamped = clampParallelSessions(max);
+    set({ maxParallelSessions: clamped });
+    void patchPersistedSettings({ maxParallelSessions: clamped });
   },
   setMilestoneGating: (enabled) => {
     set({ milestoneGating: enabled });
@@ -495,7 +504,7 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
     try {
       const state = persisted ?? (await loadPersistedState());
       set({
-        maxParallelSessions: state.settings.maxParallelSessions,
+        maxParallelSessions: clampParallelSessions(state.settings.maxParallelSessions),
         milestoneGating: state.settings.milestoneGating,
       });
     } catch {

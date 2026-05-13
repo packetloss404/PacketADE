@@ -28,6 +28,17 @@ export type ImageAttachment = {
   data_base64: string;
 };
 
+export type ResumeMessage = {
+  role: "user" | "assistant" | "system";
+  content: string;
+};
+
+export type PermissionMode =
+  | "auto"
+  | "ask_for_risky"
+  | "allow_all"
+  | "deny_all";
+
 export type StartSessionRequest = {
   type: "start_session";
   sessionId: string;
@@ -46,6 +57,11 @@ export type StartSessionRequest = {
   planMode?: boolean;
   /** v3: image attachments inlined into the initial user message. */
   attachments?: ImageAttachment[];
+  /** Persisted UI transcript used when a provider cannot resume from a
+   * native session token, and as the seed for SDK memory sessions. */
+  resumeMessages?: ResumeMessage[];
+  permissionMode?: PermissionMode;
+  approveWrites?: boolean;
 };
 
 export type SendMessageRequest = {
@@ -97,10 +113,7 @@ export type SetPermissionModeRequest = {
     | "bypassPermissions"
     | "plan"
     | "dontAsk"
-    | "auto"
-    | "ask_for_risky"
-    | "allow_all"
-    | "deny_all";
+    | PermissionMode;
 };
 
 export type SetModelRequest = {

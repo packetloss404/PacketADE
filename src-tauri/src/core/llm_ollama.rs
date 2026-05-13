@@ -6,12 +6,8 @@ use crate::core::llm_types::*;
 use reqwest::header::HeaderMap;
 use tokio::sync::mpsc;
 
-const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434/v1";
-
 fn resolve_base_url() -> String {
-    std::env::var("PACKETADE_OLLAMA_URL")
-        .or_else(|_| std::env::var("PACKETCODE_OLLAMA_URL"))
-        .unwrap_or_else(|_| DEFAULT_OLLAMA_BASE_URL.to_string())
+    crate::core::storage::resolve_ollama_openai_base_url()
 }
 
 pub struct OllamaProvider;
@@ -46,7 +42,6 @@ impl LlmProvider for OllamaProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::{Mutex, OnceLock};
 
     fn env_lock() -> &'static Mutex<()> {
@@ -55,35 +50,26 @@ mod tests {
     }
 
     #[test]
-    fn resolve_base_url_defaults_to_ollama_v1() {
+    fn default_root_base_url_maps_to_ollama_v1() {
         let _guard = env_lock().lock().unwrap();
-        std::env::remove_var("PACKETADE_OLLAMA_URL");
-        std::env::remove_var("PACKETCODE_OLLAMA_URL");
-        assert_eq!(resolve_base_url(), DEFAULT_OLLAMA_BASE_URL);
+        assert_eq!(
+            format!("{}/v1", crate::core::storage::DEFAULT_OLLAMA_ROOT_BASE_URL),
+            "http://localhost:11434/v1"
+        );
     }
 
     #[test]
-    fn resolve_base_url_prefers_packetade_env() {
+    fn normalize_base_url_accepts_ollama_v1() {
         let _guard = env_lock().lock().unwrap();
-        std::env::set_var("PACKETADE_OLLAMA_URL", "http://new.example.com:11434/v1");
-        std::env::set_var(
-            "PACKETCODE_OLLAMA_URL",
-            "http://legacy.example.com:11434/v1",
-        );
-        assert_eq!(resolve_base_url(), "http://new.example.com:11434/v1");
-        std::env::remove_var("PACKETADE_OLLAMA_URL");
-        std::env::remove_var("PACKETCODE_OLLAMA_URL");
+        let root =
+            crate::core::storage::normalize_ollama_root_base_url("http://new.example.com:11434/v1")
+                .unwrap();
+        assert_eq!(format!("{}/v1", root), "http://new.example.com:11434/v1");
     }
 
     #[test]
-    fn resolve_base_url_falls_back_to_legacy_env() {
+    fn normalize_base_url_rejects_missing_scheme() {
         let _guard = env_lock().lock().unwrap();
-        std::env::remove_var("PACKETADE_OLLAMA_URL");
-        std::env::set_var(
-            "PACKETCODE_OLLAMA_URL",
-            "http://legacy.example.com:11434/v1",
-        );
-        assert_eq!(resolve_base_url(), "http://legacy.example.com:11434/v1");
-        std::env::remove_var("PACKETCODE_OLLAMA_URL");
+        assert!(crate::core::storage::normalize_ollama_root_base_url("localhost:11434").is_err());
     }
 }

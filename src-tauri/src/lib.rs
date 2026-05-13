@@ -263,6 +263,8 @@ pub fn run() {
             // Local-only per-provider launch counter (Tier 4 slice B)
             commands::provider_stats::get_provider_launch_stats,
             // Ollama local model discovery
+            commands::ollama::get_ollama_base_url,
+            commands::ollama::set_ollama_base_url,
             commands::ollama::list_ollama_models,
             // API agent sessions
             commands::api_agent::start_api_agent_session,

@@ -6,6 +6,7 @@ import {
   readPtyTranscript,
 } from "@/lib/tauri";
 import { parseJsonFromResponse, generateId } from "@/lib/storage";
+import { getMemorySettings } from "@/stores/memorySettingsStore";
 import type {
   MemoryEvent,
   MemoryEventType,
@@ -15,13 +16,6 @@ import type {
   FlightCompletedPayload,
 } from "@/types/memory";
 import type { loadPersistedState } from "@/lib/tauri";
-
-const MAX_EVENTS = 200;
-const PATTERN_REFRESH_THRESHOLD = 3;
-const MAX_PATTERNS = 20;
-const CONTEXT_MAX_PATTERNS = 10;
-const CONTEXT_MAX_SESSIONS = 5;
-const CONTEXT_MAX_LESSONS = 5;
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").toLowerCase();
@@ -52,6 +46,7 @@ interface MemoryStore {
   // Cleanup
   deleteEvent: (id: string) => void;
   deletePattern: (id: string) => void;
+  applyRetentionPolicy: () => void;
   /** F3: edit a learned pattern's text or category. Resets confidence to
    * 1.0 since a hand-edit is implicitly authoritative. */
   updatePattern: (
@@ -83,8 +78,24 @@ function createEvent<T extends MemoryEventType>(
 }
 
 function capEvents(events: MemoryEvent[]): MemoryEvent[] {
-  if (events.length <= MAX_EVENTS) return events;
-  return events.slice(events.length - MAX_EVENTS);
+  const settings = getMemorySettings();
+  const retained =
+    settings.retentionDays === null
+      ? events
+      : events.filter((event) => {
+          const cutoff = Date.now() - settings.retentionDays! * 24 * 60 * 60 * 1000;
+          return event.timestamp >= cutoff;
+        });
+  if (retained.length <= settings.maxEvents) return retained;
+  return retained.slice(retained.length - settings.maxEvents);
+}
+
+function capPatterns(patterns: LearnedPattern[]): LearnedPattern[] {
+  const maxPatterns = getMemorySettings().maxPatterns;
+  if (patterns.length <= maxPatterns) return patterns;
+  return [...patterns]
+    .sort((a, b) => b.confidence - a.confidence || b.extractedAt - a.extractedAt)
+    .slice(0, maxPatterns);
 }
 
 async function persistState(events: MemoryEvent[], patterns?: LearnedPattern[]) {
@@ -104,12 +115,18 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   learningStatus: null,
 
   hydrateFromBackend: (persisted) => {
-    const events = (persisted.memoryEvents ?? []) as MemoryEvent[];
-    const patterns = (persisted.memoryPatterns ?? []) as LearnedPattern[];
+    const rawEvents = (persisted.memoryEvents ?? []) as MemoryEvent[];
+    const rawPatterns = (persisted.memoryPatterns ?? []) as LearnedPattern[];
+    const events = capEvents(rawEvents);
+    const patterns = capPatterns(rawPatterns);
     set({ events, patterns });
+    if (events.length !== rawEvents.length || patterns.length !== rawPatterns.length) {
+      void persistState(events, patterns);
+    }
   },
 
   captureSessionCompleted: (payload, projectPath) => {
+    if (!getMemorySettings().captureSessions) return;
     const event = createEvent("session_completed", projectPath, payload);
     const events = capEvents([...get().events, event]);
     set({ events });
@@ -117,6 +134,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   },
 
   captureTaskCompleted: (payload, projectPath) => {
+    if (!getMemorySettings().captureTasks) return;
     const event = createEvent("task_completed", projectPath, payload);
     const events = capEvents([...get().events, event]);
     set({ events });
@@ -124,6 +142,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   },
 
   captureFlightCompleted: (payload, projectPath) => {
+    if (!getMemorySettings().captureMissions) return;
     const event = createEvent("flight_completed", projectPath, payload);
     const events = capEvents([...get().events, event]);
     set({ events });
@@ -131,6 +150,8 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   },
 
   learnFromSession: async (sessionId, agentId, projectPath, durationMs) => {
+    const settings = getMemorySettings();
+    if (!settings.captureSessions || !settings.summarizeSessions) return;
     if (get().isLearning) return; // don't stack concurrent learning calls
 
     set({ isLearning: true, learningStatus: "Reading session transcript..." });
@@ -177,7 +198,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       set({ events, summariesSinceLastRefresh: count });
 
       // 4. Auto-extract patterns if threshold met
-      if (count >= PATTERN_REFRESH_THRESHOLD) {
+      if (settings.extractPatterns && count >= settings.patternRefreshThreshold) {
         set({ learningStatus: "Extracting patterns..." });
         await get().refreshPatterns(projectPath);
       }
@@ -220,7 +241,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
 
       const newPatterns: LearnedPattern[] = parsed
         .filter((p) => p.pattern && p.confidence >= 0.5)
-        .slice(0, MAX_PATTERNS)
+        .slice(0, getMemorySettings().maxPatterns)
         .map((p) => ({
           id: generateId("pat"),
           pattern: p.pattern,
@@ -229,12 +250,13 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
           extractedAt: Date.now(),
         }));
 
+      const patterns = capPatterns(newPatterns);
       set({
-        patterns: newPatterns,
+        patterns,
         lastPatternRefreshAt: Date.now(),
         summariesSinceLastRefresh: 0,
       });
-      void persistState(get().events, newPatterns);
+      void persistState(get().events, patterns);
     } catch (e) {
       console.warn("Pattern extraction failed:", e);
     }
@@ -250,6 +272,13 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const patterns = get().patterns.filter((p) => p.id !== id);
     set({ patterns });
     void persistState(get().events, patterns);
+  },
+
+  applyRetentionPolicy: () => {
+    const events = capEvents(get().events);
+    const patterns = capPatterns(get().patterns);
+    set({ events, patterns });
+    void persistState(events, patterns);
   },
 
   updatePattern: (id, updates) => {
@@ -284,6 +313,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
 
     const normalizedCurrent = normalizePath(currentProjectPath);
     const { events, patterns } = get();
+    const settings = getMemorySettings();
 
     const lines: string[] = [];
 
@@ -291,7 +321,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const relevantPatterns = patterns
       .filter((p) => p.confidence >= 0.6)
       .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, CONTEXT_MAX_PATTERNS);
+      .slice(0, settings.contextMaxPatterns);
 
     if (relevantPatterns.length > 0) {
       lines.push("## Learned Patterns");
@@ -311,10 +341,10 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
           e.timestamp > cutoff,
       )
       .flatMap((e) => e.payload.lessonsLearned)
-      .slice(0, CONTEXT_MAX_LESSONS);
+      .slice(0, settings.contextMaxLessons);
 
     if (lessons.length > 0) {
-      lines.push("## Lessons from Previous Flights");
+      lines.push("## Lessons from Previous Missions");
       lessons.forEach((l) => lines.push(`- ${l}`));
       lines.push("");
     }
@@ -329,7 +359,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
           e.timestamp > sessionCutoff &&
           e.payload.summary !== null,
       )
-      .slice(-CONTEXT_MAX_SESSIONS);
+      .slice(-settings.contextMaxSessions);
 
     if (sessions.length > 0) {
       lines.push("## Recent Session Context");
