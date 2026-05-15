@@ -24,4 +24,12 @@ export interface Workspace {
   effortOverrides?: Record<string, string | null>;
   serverId?: string;
   remoteProjectPath?: string;
+  /**
+   * v0.8-15: auto-bound GitHub repo, derived from `git remote get-url
+   * origin` at workspace-creation time. Absent for workspaces whose
+   * project path is not a GitHub-backed git repo. Used by the
+   * `WorkspaceSidebar` badge and (eventually) the GitHub pane's
+   * repo-context picker.
+   */
+  githubRepo?: { owner: string; repo: string };
 }

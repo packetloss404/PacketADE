@@ -4,6 +4,7 @@ import {
   summarizeSession,
   extractPatterns,
   readPtyTranscript,
+  togglePinnedPattern as togglePinnedPatternBackend,
 } from "@/lib/tauri";
 import { parseJsonFromResponse, generateId } from "@/lib/storage";
 import { getMemorySettings } from "@/stores/memorySettingsStore";
@@ -14,11 +15,25 @@ import type {
   SessionCompletedPayload,
   TaskCompletedPayload,
   FlightCompletedPayload,
+  ManualNotePayload,
 } from "@/types/memory";
 import type { loadPersistedState } from "@/lib/tauri";
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").toLowerCase();
+}
+
+/** v0.8-H: kind discriminator for the structured context preview. */
+export type ContextItemKind = "pattern" | "lesson" | "session";
+
+/** v0.8-H: a single row in the AgentInputArea context chevron. */
+export interface ContextItem {
+  id: string;
+  kind: ContextItemKind;
+  title: string;
+  timestamp: number;
+  /** Human-readable explanation surfaced in the "Why this?" tooltip. */
+  reason: string;
 }
 
 interface MemoryStore {
@@ -36,6 +51,19 @@ interface MemoryStore {
   captureSessionCompleted: (payload: SessionCompletedPayload, projectPath: string) => void;
   captureTaskCompleted: (payload: TaskCompletedPayload, projectPath: string) => void;
   captureFlightCompleted: (payload: FlightCompletedPayload, projectPath: string) => void;
+  /**
+   * v0.8-D — manual capture from any UI surface (initial caller is GitHub
+   * "Save as memory"). Bypasses the per-type capture toggles in
+   * memorySettings: if a human explicitly clicked Save, we save. Tags
+   * default to `[source]` so the event is filterable later.
+   */
+  captureManually: (input: {
+    projectPath: string;
+    source: string;
+    summary: string;
+    body: string;
+    tags?: string[];
+  }) => MemoryEvent;
 
   // Auto-learning: summarize a session transcript and store the result
   learnFromSession: (sessionId: string, agentId: string, projectPath: string, durationMs: number) => Promise<void>;
@@ -53,10 +81,24 @@ interface MemoryStore {
     id: string,
     updates: { pattern?: string; category?: LearnedPattern["category"] },
   ) => void;
+  /** v0.8-H: flip the `pinned` flag on a pattern. Pinned patterns sort
+   * first in injected context and are exempt from eviction. */
+  togglePinPattern: (id: string) => void;
   clearMemory: () => void;
 
-  // Context injection (live, not snapshot)
-  getContextForSession: (currentProjectPath: string) => string;
+  /** Context injection (live, not snapshot). Accepts either a project-path
+   * string (legacy single-arg form) or an options object so callers can
+   * pass a sessionId without breaking back-compat. */
+  getContextForSession: (
+    input: string | { sessionId?: string; projectPath: string },
+  ) => string;
+  /** v0.8-H: structured form of `getContextForSession` used by the
+   * AgentInputArea context-preview chevron. Returns the same items that
+   * would compose the injected string, broken into rows the UI can
+   * render with relative time + reason tooltips. */
+  getContextItemsForSession: (
+    input: string | { sessionId?: string; projectPath: string },
+  ) => ContextItem[];
 }
 
 function createEvent<T extends MemoryEventType>(
@@ -66,7 +108,9 @@ function createEvent<T extends MemoryEventType>(
     ? SessionCompletedPayload
     : T extends "task_completed"
       ? TaskCompletedPayload
-      : FlightCompletedPayload,
+      : T extends "flight_completed"
+        ? FlightCompletedPayload
+        : ManualNotePayload,
 ): MemoryEvent {
   return {
     id: generateId("mem"),
@@ -92,10 +136,29 @@ function capEvents(events: MemoryEvent[]): MemoryEvent[] {
 
 function capPatterns(patterns: LearnedPattern[]): LearnedPattern[] {
   const maxPatterns = getMemorySettings().maxPatterns;
-  if (patterns.length <= maxPatterns) return patterns;
-  return [...patterns]
-    .sort((a, b) => b.confidence - a.confidence || b.extractedAt - a.extractedAt)
-    .slice(0, maxPatterns);
+  // v0.8-H — pinned patterns are exempt from eviction. We always keep all
+  // pinned entries even if it pushes us over `maxPatterns`. The remaining
+  // (unpinned) entries are sorted by confidence then recency and trimmed
+  // to fill whatever headroom is left.
+  const pinned = patterns.filter((p) => p.pinned);
+  const unpinned = patterns.filter((p) => !p.pinned);
+  const headroom = Math.max(0, maxPatterns - pinned.length);
+  const keptUnpinned =
+    unpinned.length <= headroom
+      ? unpinned
+      : [...unpinned]
+          .sort(
+            (a, b) =>
+              b.confidence - a.confidence || b.extractedAt - a.extractedAt,
+          )
+          .slice(0, headroom);
+  const survivors = new Set<string>([
+    ...pinned.map((p) => p.id),
+    ...keptUnpinned.map((p) => p.id),
+  ]);
+  // Preserve original ordering so the rest of the store doesn't see
+  // patterns shuffle on every persist.
+  return patterns.filter((p) => survivors.has(p.id));
 }
 
 async function persistState(events: MemoryEvent[], patterns?: LearnedPattern[]) {
@@ -147,6 +210,22 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const events = capEvents([...get().events, event]);
     set({ events });
     void persistState(events, get().patterns);
+  },
+
+  captureManually: ({ projectPath, source, summary, body, tags }) => {
+    // v0.8-D — bypass the per-type capture toggles: this is an explicit
+    // human action ("Save as memory"), not a passive auto-capture.
+    const payload: ManualNotePayload = {
+      source,
+      summary,
+      body,
+      tags: tags && tags.length > 0 ? tags : [source],
+    };
+    const event = createEvent("manual_note", projectPath, payload);
+    const events = capEvents([...get().events, event]);
+    set({ events });
+    void persistState(events, get().patterns);
+    return event;
   },
 
   learnFromSession: async (sessionId, agentId, projectPath, durationMs) => {
@@ -248,9 +327,18 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
           category: (p.category as LearnedPattern["category"]) ?? "convention",
           confidence: p.confidence,
           extractedAt: Date.now(),
+          // v0.8-H — stamp the project so patterns no longer leak across
+          // workspaces. Source events were already filtered by
+          // `normalizedPath` above so this is the right project to attribute.
+          projectPath,
+          pinned: false,
         }));
 
-      const patterns = capPatterns(newPatterns);
+      // v0.8-H — preserve pinned patterns from the previous extraction
+      // (they're authoritative and shouldn't disappear when we re-extract).
+      const existing = get().patterns;
+      const pinnedFromBefore = existing.filter((p) => p.pinned);
+      const patterns = capPatterns([...pinnedFromBefore, ...newPatterns]);
       set({
         patterns,
         lastPatternRefreshAt: Date.now(),
@@ -298,6 +386,41 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     void persistState(get().events, patterns);
   },
 
+  togglePinPattern: (id) => {
+    // Optimistic flip — the in-memory state updates immediately so the UI
+    // feels instant; the backend toggle is atomic and authoritative, so
+    // on success we leave state alone, and on failure we revert.
+    const before = get().patterns;
+    const next = before.map((p) =>
+      p.id === id ? { ...p, pinned: !p.pinned } : p,
+    );
+    set({ patterns: next });
+    void togglePinnedPatternBackend(id)
+      .then((result) => {
+        if (result === null) {
+          // Pattern not found on the backend — likely deleted on another
+          // tab. Drop the stale entry locally.
+          set({ patterns: get().patterns.filter((p) => p.id !== id) });
+          return;
+        }
+        // Reconcile if the backend disagrees with our optimistic flip
+        // (e.g. two clicks raced and the persisted record settled on a
+        // different value than what we predicted).
+        const stored = get().patterns.find((p) => p.id === id);
+        if (stored && stored.pinned !== result) {
+          set({
+            patterns: get().patterns.map((p) =>
+              p.id === id ? { ...p, pinned: result } : p,
+            ),
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn("togglePinnedPattern backend call failed:", err);
+        set({ patterns: before });
+      });
+  },
+
   clearMemory: () => {
     set({
       events: [],
@@ -308,48 +431,107 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     void persistState([], []);
   },
 
-  getContextForSession: (currentProjectPath: string) => {
-    if (!currentProjectPath) return "";
+  getContextForSession: (input) => {
+    const projectPath = typeof input === "string" ? input : input.projectPath;
+    if (!projectPath) return "";
 
-    const normalizedCurrent = normalizePath(currentProjectPath);
-    const { events, patterns } = get();
-    const settings = getMemorySettings();
+    const items = get().getContextItemsForSession({ projectPath });
+    if (items.length === 0) return "";
 
     const lines: string[] = [];
 
-    // 1. Learned patterns (highest value — these are distilled knowledge)
+    const patternItems = items.filter((i) => i.kind === "pattern");
+    if (patternItems.length > 0) {
+      lines.push("## Learned Patterns");
+      for (const it of patternItems) lines.push(`- ${it.title}`);
+      lines.push("");
+    }
+
+    const lessonItems = items.filter((i) => i.kind === "lesson");
+    if (lessonItems.length > 0) {
+      lines.push("## Lessons from Previous Missions");
+      for (const it of lessonItems) lines.push(`- ${it.title}`);
+      lines.push("");
+    }
+
+    const sessionItems = items.filter((i) => i.kind === "session");
+    if (sessionItems.length > 0) {
+      lines.push("## Recent Session Context");
+      for (const it of sessionItems) lines.push(`- ${it.title}`);
+      lines.push("");
+    }
+
+    return lines.join("\n");
+  },
+
+  getContextItemsForSession: (input) => {
+    const projectPath =
+      typeof input === "string" ? input : input.projectPath;
+    if (!projectPath) return [];
+
+    const normalizedCurrent = normalizePath(projectPath);
+    const { events, patterns } = get();
+    const settings = getMemorySettings();
+    const out: ContextItem[] = [];
+
+    // 1. Learned patterns. Pinned patterns sort first and are exempt
+    //    from the confidence cutoff (the user pinned them, so we trust
+    //    their judgment over a 0.6 numerical threshold). Patterns
+    //    without a `projectPath` are legacy/global — they always match.
+    //    Patterns with a `projectPath` only match the current project.
     const relevantPatterns = patterns
-      .filter((p) => p.confidence >= 0.6)
-      .sort((a, b) => b.confidence - a.confidence)
+      .filter((p) => {
+        if (p.projectPath && normalizePath(p.projectPath) !== normalizedCurrent) {
+          return false;
+        }
+        return p.pinned || p.confidence >= 0.6;
+      })
+      .sort((a, b) => {
+        if ((a.pinned ? 1 : 0) !== (b.pinned ? 1 : 0)) {
+          return a.pinned ? -1 : 1;
+        }
+        if (a.confidence !== b.confidence) return b.confidence - a.confidence;
+        return b.extractedAt - a.extractedAt;
+      })
       .slice(0, settings.contextMaxPatterns);
 
-    if (relevantPatterns.length > 0) {
-      lines.push("## Learned Patterns");
-      relevantPatterns.forEach((p) =>
-        lines.push(`- [${p.category}] ${p.pattern}`),
-      );
-      lines.push("");
+    for (const p of relevantPatterns) {
+      const scope = p.projectPath ? "this project" : "all projects";
+      out.push({
+        id: p.id,
+        kind: "pattern",
+        title: `[${p.category}] ${p.pattern}`,
+        timestamp: p.extractedAt,
+        reason: p.pinned
+          ? `Pinned · ${scope} · confidence ${(p.confidence * 100).toFixed(0)}%`
+          : `Top pattern · ${scope} · confidence ${(p.confidence * 100).toFixed(0)}%`,
+      });
     }
 
-    // 2. Lessons from flight retrospectives
-    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000; // last 7 days
-    const lessons = events
-      .filter(
-        (e): e is Extract<MemoryEvent, { type: "flight_completed" }> =>
-          e.type === "flight_completed" &&
-          normalizePath(e.projectPath) === normalizedCurrent &&
-          e.timestamp > cutoff,
-      )
-      .flatMap((e) => e.payload.lessonsLearned)
-      .slice(0, settings.contextMaxLessons);
-
-    if (lessons.length > 0) {
-      lines.push("## Lessons from Previous Missions");
-      lessons.forEach((l) => lines.push(`- ${l}`));
-      lines.push("");
+    // 2. Lessons from flight retrospectives (last 7 days, current project)
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const flightEvents = events.filter(
+      (e): e is Extract<MemoryEvent, { type: "flight_completed" }> =>
+        e.type === "flight_completed" &&
+        normalizePath(e.projectPath) === normalizedCurrent &&
+        e.timestamp > cutoff,
+    );
+    let pushed = 0;
+    outer: for (const e of flightEvents) {
+      for (const l of e.payload.lessonsLearned) {
+        if (pushed >= settings.contextMaxLessons) break outer;
+        out.push({
+          id: `${e.id}:lesson:${pushed}`,
+          kind: "lesson",
+          title: l,
+          timestamp: e.timestamp,
+          reason: "Lesson from mission retrospective (last 7 days)",
+        });
+        pushed += 1;
+      }
     }
 
-    // 3. Recent session summaries (last 48h, this project only)
+    // 3. Recent session summaries (last 48h, current project only)
     const sessionCutoff = Date.now() - 48 * 60 * 60 * 1000;
     const sessions = events
       .filter(
@@ -361,12 +543,16 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       )
       .slice(-settings.contextMaxSessions);
 
-    if (sessions.length > 0) {
-      lines.push("## Recent Session Context");
-      sessions.forEach((e) => lines.push(`- ${e.payload.summary}`));
-      lines.push("");
+    for (const e of sessions) {
+      out.push({
+        id: e.id,
+        kind: "session",
+        title: e.payload.summary ?? "",
+        timestamp: e.timestamp,
+        reason: "Recent session summary (last 48 hours)",
+      });
     }
 
-    return lines.join("\n");
+    return out;
   },
 }));

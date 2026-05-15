@@ -116,6 +116,16 @@ export async function saveMemorySlice(memoryEvents: MemoryEvent[], memoryPattern
   return invoke("save_memory_slice", { memoryEvents, memoryPatterns: memoryPatterns ?? [] });
 }
 
+/**
+ * v0.8-H — atomically flip the `pinned` flag on a single learned pattern.
+ * Returns the new pinned state, or `null` if no pattern matched the id
+ * (e.g. it was deleted on a different tab between the click and the call).
+ * The memory store also mirrors the change in-memory so the UI is snappy.
+ */
+export async function togglePinnedPattern(patternId: string): Promise<boolean | null> {
+  return invoke<boolean | null>("toggle_pinned_pattern", { patternId });
+}
+
 export async function summarizeSession(projectPath: string, sessionLog: string): Promise<string> {
   return invoke<string>("summarize_session", { projectPath, sessionLog });
 }
@@ -246,6 +256,17 @@ export async function gitCreateBranch(
   checkout: boolean
 ): Promise<string> {
   return invoke<string>("git_create_branch", { projectPath, branchName, checkout });
+}
+
+/**
+ * v0.8-15: read `git remote get-url origin` for a project path. Returns
+ * the remote URL when configured, `null` when the repo has no `origin`
+ * remote, and throws when the path is not a git repo or git fails to
+ * spawn. Used by `WorkspaceCreationModal` to auto-bind the new
+ * workspace to its GitHub repo.
+ */
+export async function gitGetOriginUrl(projectPath: string): Promise<string | null> {
+  return invoke<string | null>("git_get_origin_url", { projectPath });
 }
 
 /**
@@ -841,6 +862,7 @@ function fromDtoAttempt(a: PersistedStateDto["flights"][number]["attempts"][numb
     cost: a.cost,
     tokens: a.tokens,
     errorMessage: a.errorMessage,
+    draftPrNumber: a.draftPrNumber,
   };
 }
 
@@ -861,6 +883,7 @@ function toDtoAttempt(a: Attempt): PersistedStateDto["flights"][number]["attempt
     cost: a.cost,
     tokens: a.tokens,
     errorMessage: a.errorMessage,
+    draftPrNumber: a.draftPrNumber,
   };
 }
 
@@ -893,6 +916,7 @@ function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
     totalTokens: flight.totalTokens,
     prompt: flight.prompt,
     attempts: (flight.attempts ?? []).map(fromDtoAttempt),
+    publishAttemptsAsPrs: flight.publishAttemptsAsPrs ?? false,
   };
 }
 
@@ -924,6 +948,7 @@ function toDtoFlight(flight: Flight): PersistedStateDto["flights"][number] {
     totalTokens: flight.totalTokens,
     prompt: flight.prompt,
     attempts: (flight.attempts ?? []).map(toDtoAttempt),
+    publishAttemptsAsPrs: flight.publishAttemptsAsPrs ?? false,
   };
 }
 
@@ -1264,15 +1289,30 @@ export async function githubListIssues(
   return invoke<string>("github_list_issues", { owner, repo });
 }
 
+/**
+ * v0.8-G: extended with optional `draft` flag. When omitted, GitHub
+ * defaults to a normal (ready-for-review) PR. When `true`, GitHub opens
+ * the PR in draft state — used by the "Publish attempts as draft PRs"
+ * Flight option to surface each attempt's branch as a reviewable draft.
+ */
 export async function githubCreatePr(
   owner: string,
   repo: string,
   title: string,
   body: string,
   head: string,
-  base: string
+  base: string,
+  draft?: boolean,
 ): Promise<string> {
-  return invoke<string>("github_create_pr", { owner, repo, title, body, head, base });
+  return invoke<string>("github_create_pr", {
+    owner,
+    repo,
+    title,
+    body,
+    head,
+    base,
+    draft: draft ?? null,
+  });
 }
 
 export async function githubListPrs(
@@ -1290,6 +1330,84 @@ export async function githubGetPrDiff(
   return invoke<string>("github_get_pr_diff", { owner, repo, prNumber });
 }
 
+// === v0.8-A: PR actions =====================================================
+//
+// PR lifecycle controls. Backend commands live in
+// `src-tauri/src/commands/github.rs`; see `PRActionBar.tsx` for the UI.
+
+export type GitHubMergeMethod = "merge" | "squash" | "rebase";
+
+export interface GitHubMergeResult {
+  sha: string;
+  merged: boolean;
+  message: string;
+}
+
+/** PUT /repos/{owner}/{repo}/pulls/{number}/merge */
+export async function githubMergePr(
+  owner: string,
+  repo: string,
+  number: number,
+  mergeMethod: GitHubMergeMethod,
+): Promise<GitHubMergeResult> {
+  return invoke<GitHubMergeResult>("github_merge_pr", {
+    owner,
+    repo,
+    number,
+    mergeMethod,
+  });
+}
+
+/** PATCH /repos/{owner}/{repo}/pulls/{number} state=closed */
+export async function githubClosePr(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<string> {
+  return invoke<string>("github_close_pr", { owner, repo, number });
+}
+
+/** PATCH /repos/{owner}/{repo}/pulls/{number} state=open */
+export async function githubReopenPr(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<string> {
+  return invoke<string>("github_reopen_pr", { owner, repo, number });
+}
+
+/** GraphQL convertPullRequestToDraft / markPullRequestReadyForReview. */
+export async function githubSetPrDraftState(
+  owner: string,
+  repo: string,
+  number: number,
+  draft: boolean,
+): Promise<boolean> {
+  return invoke<boolean>("github_convert_pr_to_draft", {
+    owner,
+    repo,
+    number,
+    draft,
+  });
+}
+
+// === v0.8-B: CI / check-run status =========================================
+
+import type { GitHubPrChecks as _GitHubPrChecks } from "@/types/github";
+
+/** Aggregate of Checks API + legacy combined-status for a PR's head SHA. */
+export async function githubGetPrChecks(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<_GitHubPrChecks> {
+  return invoke<_GitHubPrChecks>("github_get_pr_checks", {
+    owner,
+    repo,
+    prNumber,
+  });
+}
+
 export async function githubInvestigateIssue(
   projectPath: string,
   owner: string,
@@ -1301,6 +1419,345 @@ export async function githubInvestigateIssue(
     owner,
     repo,
     issueNumber,
+  });
+}
+
+// === v0.8-F: AI catch-me-up digest + AI issue triage ======================
+//
+// Backend lives in `src-tauri/src/commands/github.rs`. The digest streams
+// over the standard `api-agent:chunk:<sessionId>` / `api-agent:done:...`
+// channel so the same listener wiring used by the Agents pane can hydrate
+// the digest panel. Triage is one-shot — it returns the parsed
+// suggestions inline.
+
+/**
+ * Fire-and-forget. The frontend generates a fresh sessionId, subscribes
+ * to `api-agent:chunk:<sessionId>` / `api-agent:done:<sessionId>` /
+ * `api-agent:error:<sessionId>` before calling, and tears down the
+ * listeners on done/error.
+ */
+export async function githubAiCatchUp(
+  sessionId: string,
+  owner: string,
+  repo: string,
+  sinceIso8601: string | null,
+): Promise<void> {
+  return invoke("github_ai_catch_up", {
+    sessionId,
+    owner,
+    repo,
+    sinceIso8601,
+  });
+}
+
+export async function githubAiTriage(
+  owner: string,
+  repo: string,
+  issueNumbers: number[],
+): Promise<import("@/types/github").TriageSuggestion[]> {
+  return invoke<import("@/types/github").TriageSuggestion[]>(
+    "github_ai_triage",
+    { owner, repo, issueNumbers },
+  );
+}
+
+// === v0.8-E: AI PR description + AI pre-flight code review =================
+//
+// Both commands kick off a one-shot `claude-oauth` sidecar session in the
+// backend and return the freshly minted `sessionId`. The caller subscribes
+// to the existing `api-agent:chunk:<sessionId>` / `api-agent:done:<sessionId>`
+// / `api-agent:error:<sessionId>` events to receive streamed chunks and
+// detect completion. See `PRDescriptionButton.tsx` and `PRReviewPanel.tsx`
+// for the canonical consumer pattern.
+
+/**
+ * Start a one-shot AI PR-description generation session. Returns the
+ * `sessionId` to subscribe to; the call itself does not wait for the
+ * assistant turn to finish.
+ */
+export async function githubAiPrDescription(
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+  draftTitle?: string,
+  linkedIssueNumbers?: number[],
+  // v0.8 race-fix: callers SHOULD pre-allocate the session id (e.g.
+  // `crypto.randomUUID()` with a "gh-pr-desc-" prefix) and attach the
+  // `api-agent:chunk|done|error:<sid>` listeners BEFORE invoking, so the
+  // sidecar can't emit chunks before subscription. When omitted the
+  // backend mints a UUID (legacy callers).
+  sessionIdOverride?: string,
+): Promise<string> {
+  return invoke<string>("github_ai_pr_description", {
+    owner,
+    repo,
+    base,
+    head,
+    draftTitle: draftTitle ?? null,
+    linkedIssueNumbers: linkedIssueNumbers ?? null,
+    sessionIdOverride: sessionIdOverride ?? null,
+  });
+}
+
+/**
+ * Start a one-shot AI PR-review session for an existing pull request.
+ * Returns the `sessionId` to subscribe to.
+ */
+export async function githubAiPrReview(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  // v0.8 race-fix: see `githubAiPrDescription::sessionIdOverride`.
+  sessionIdOverride?: string,
+): Promise<string> {
+  return invoke<string>("github_ai_pr_review", {
+    owner,
+    repo,
+    prNumber,
+    sessionIdOverride: sessionIdOverride ?? null,
+  });
+}
+
+// === v0.8-C: issue interactivity bindings ==================================
+//
+// Comment list/post, state toggles, assignee/label/milestone mutators, repo
+// metadata pickers, and paginated list variants.
+
+import type { GitHubIssueComment } from "@/types/github";
+
+export async function githubListIssueComments(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<GitHubIssueComment[]> {
+  return invoke<GitHubIssueComment[]>("github_list_issue_comments", {
+    owner,
+    repo,
+    number,
+  });
+}
+
+export async function githubPostIssueComment(
+  owner: string,
+  repo: string,
+  number: number,
+  body: string,
+): Promise<GitHubIssueComment> {
+  return invoke<GitHubIssueComment>("github_post_issue_comment", {
+    owner,
+    repo,
+    number,
+    body,
+  });
+}
+
+export async function githubCloseIssue(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<string> {
+  return invoke<string>("github_close_issue", { owner, repo, number });
+}
+
+export async function githubReopenIssue(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<string> {
+  return invoke<string>("github_reopen_issue", { owner, repo, number });
+}
+
+export async function githubSetIssueAssignees(
+  owner: string,
+  repo: string,
+  number: number,
+  assignees: string[],
+): Promise<string> {
+  return invoke<string>("github_set_issue_assignees", {
+    owner,
+    repo,
+    number,
+    assignees,
+  });
+}
+
+export async function githubSetIssueLabels(
+  owner: string,
+  repo: string,
+  number: number,
+  labels: string[],
+): Promise<string> {
+  return invoke<string>("github_set_issue_labels", {
+    owner,
+    repo,
+    number,
+    labels,
+  });
+}
+
+export async function githubSetIssueMilestone(
+  owner: string,
+  repo: string,
+  number: number,
+  milestone: number | null,
+): Promise<string> {
+  return invoke<string>("github_set_issue_milestone", {
+    owner,
+    repo,
+    number,
+    milestone,
+  });
+}
+
+export async function githubListRepoLabels(
+  owner: string,
+  repo: string,
+): Promise<string> {
+  return invoke<string>("github_list_repo_labels", { owner, repo });
+}
+
+export async function githubListRepoMilestones(
+  owner: string,
+  repo: string,
+): Promise<string> {
+  return invoke<string>("github_list_repo_milestones", { owner, repo });
+}
+
+export async function githubListRepoAssignableUsers(
+  owner: string,
+  repo: string,
+): Promise<string> {
+  return invoke<string>("github_list_repo_assignable_users", { owner, repo });
+}
+
+export async function githubListIssuesPage(
+  owner: string,
+  repo: string,
+  state: "open" | "closed" | "all",
+  page: number,
+): Promise<string> {
+  return invoke<string>("github_list_issues_page", { owner, repo, state, page });
+}
+
+export async function githubListPrsPage(
+  owner: string,
+  repo: string,
+  state: "open" | "closed" | "all",
+  page: number,
+): Promise<string> {
+  return invoke<string>("github_list_prs_page", { owner, repo, state, page });
+}
+
+export async function githubListReposPage(page: number): Promise<string> {
+  return invoke<string>("github_list_repos_page", { page });
+}
+
+// === v0.8-G: PR modal upgrades ============================================
+//
+// Backs the upgraded `PRModal` (branch autocomplete + reviewer/label/
+// milestone pickers) and the "Publish attempts as draft PRs" Flight
+// option. The reviewer/label/milestone calls run AFTER `githubCreatePr`
+// returns the new PR number, so the modal applies them in a single
+// progress-tracked sequence.
+
+export interface GitHubBranchInfo {
+  name: string;
+  sha: string;
+  isProtected: boolean;
+}
+
+/** List a repository's branches (up to 100). */
+export async function githubListBranches(
+  owner: string,
+  repo: string,
+): Promise<GitHubBranchInfo[]> {
+  return invoke<GitHubBranchInfo[]>("github_list_branches", { owner, repo });
+}
+
+/** Request review on an existing PR. Empty `reviewers` is a no-op. */
+export async function githubSetPrReviewers(
+  owner: string,
+  repo: string,
+  number: number,
+  reviewers: string[],
+): Promise<string> {
+  return invoke<string>("github_set_pr_reviewers", {
+    owner,
+    repo,
+    number,
+    reviewers,
+  });
+}
+
+/** Replace the full label set on a PR. Passing `[]` clears all labels. */
+export async function githubSetPrLabels(
+  owner: string,
+  repo: string,
+  number: number,
+  labels: string[],
+): Promise<string> {
+  return invoke<string>("github_set_pr_labels", {
+    owner,
+    repo,
+    number,
+    labels,
+  });
+}
+
+/** Set or clear the milestone on a PR. `null` clears. */
+export async function githubSetPrMilestone(
+  owner: string,
+  repo: string,
+  number: number,
+  milestone: number | null,
+): Promise<string> {
+  return invoke<string>("github_set_pr_milestone", {
+    owner,
+    repo,
+    number,
+    milestone,
+  });
+}
+
+/**
+ * v0.8-G: push a specific local branch to `origin` (sets upstream
+ * tracking on first push). Used by the post-attempt publish pipeline to
+ * push the attempt's worktree branch before opening a draft PR.
+ */
+export async function gitPushBranch(
+  projectPath: string,
+  branchName: string,
+  force: boolean = false,
+): Promise<string> {
+  return invoke<string>("git_push_branch", {
+    projectPath,
+    branchName,
+    force,
+  });
+}
+
+/** v0.8-G: record the draft PR number on an attempt after publishing. */
+export async function setAttemptDraftPr(
+  flightId: string,
+  attemptId: string,
+  prNumber: number,
+): Promise<void> {
+  return invoke("set_attempt_draft_pr", {
+    flightId,
+    attemptId,
+    prNumber,
+  });
+}
+
+/** v0.8-G: persist the Flight `publishAttemptsAsPrs` toggle. */
+export async function setFlightPublishAttemptsAsPrs(
+  flightId: string,
+  enabled: boolean,
+): Promise<void> {
+  return invoke("set_flight_publish_attempts_as_prs", {
+    flightId,
+    enabled,
   });
 }
 

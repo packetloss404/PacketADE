@@ -37,6 +37,7 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import { FileMentionPopover } from "./FileMentionPopover";
+import { ContextPreviewChevron } from "./ContextPreviewChevron";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import type { ServerConfig } from "@/types/server";
 import {
@@ -862,6 +863,16 @@ export function AgentInputArea({
             </div>
           )}
         </div>
+
+        {/* v0.8-H — collapsible preview of the memory snippets that will be
+            injected into the next user turn. Hidden for SSH targets since
+            memory is project-path-keyed and remote project paths aren't a
+            stable key here. */}
+        {selectedRepo && !isSshUri(selectedRepo) && (
+          <div className="mb-2">
+            <ContextPreviewChevron projectPath={selectedRepo} />
+          </div>
+        )}
 
         {/* Input box */}
         <div

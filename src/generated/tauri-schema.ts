@@ -72,7 +72,13 @@ export type AttemptStatusDto = "queued" | "provisioning" | "running" | "reviewin
 
 export type AttemptTargetDto = { "kind": "local", basePath: string, worktreePath: string, } | { "kind": "ssh", targetId: string, basePath: string, worktreePath: string, };
 
-export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDto, agentConfigId: string, model: string, provider: string, branch: string, baseBranch: string, sessionId: string, status: AttemptStatusDto, startedAt?: number, completedAt?: number, cost: number, tokens: number, errorMessage?: string, };
+export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDto, agentConfigId: string, model: string, provider: string, branch: string, baseBranch: string, sessionId: string, status: AttemptStatusDto, startedAt?: number, completedAt?: number, cost: number, tokens: number, errorMessage?: string, 
+/**
+ * v0.8-G: when the parent Flight publishes attempts as draft PRs, the
+ * resulting PR number is round-tripped here. Optional everywhere
+ * because most attempts will not have a draft PR.
+ */
+draftPrNumber?: number, };
 
 export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, prompt?: string, attempts: Array<AttemptDto>, 
 /**
@@ -102,7 +108,13 @@ plannerTokens?: number,
  * StatGrid chip renders these differently because subscription usage
  * doesn't burn API credit.
  */
-plannerProvider?: string, };
+plannerProvider?: string, 
+/**
+ * v0.8-G: when true on an async-mode Flight, the executor pipeline
+ * pushes each attempt's branch and opens a draft PR after the attempt
+ * reaches a terminal state. Persisted so the toggle round-trips.
+ */
+publishAttemptsAsPrs: boolean, };
 
 export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: any[], memoryPatterns: any[], servers: Array<ServerConfigDto>, };
 

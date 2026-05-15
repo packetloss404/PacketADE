@@ -65,47 +65,67 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn append_attempt(flight_id: &str, attempt: &Attempt) -> Result<(), String> {
-    let mut state = storage::load_state();
-    let flight = state
-        .flights
-        .iter_mut()
-        .find(|f| f.id == flight_id)
-        .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
-    flight.attempts.push(attempt.clone());
-    flight.updated_at = now_ms();
-    storage::save_state(&state)
+async fn append_attempt(flight_id: &str, attempt: &Attempt) -> Result<(), String> {
+    // v0.8 race-fix: use `with_state_lock` so concurrent async writers
+    // (e.g. multiple `launch_flight_async` invocations or interleaving with
+    // `mark_attempt_status`) can't lose each other's mutations via the old
+    // naked load → mutate → save.
+    let flight_id = flight_id.to_string();
+    let attempt = attempt.clone();
+    storage::with_state_lock(move |state| {
+        let result: Result<(), String> = (|| {
+            let flight = state
+                .flights
+                .iter_mut()
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+            flight.attempts.push(attempt);
+            flight.updated_at = now_ms();
+            Ok(())
+        })();
+        std::future::ready(result)
+    })
+    .await
 }
 
-fn update_attempt_status(
+async fn update_attempt_status(
     flight_id: &str,
     attempt_id: &str,
     status: AttemptStatus,
     error: Option<String>,
 ) -> Result<(), String> {
-    let mut state = storage::load_state();
-    let flight = state
-        .flights
-        .iter_mut()
-        .find(|f| f.id == flight_id)
-        .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
-    let attempt = flight
-        .attempts
-        .iter_mut()
-        .find(|a| a.id == attempt_id)
-        .ok_or_else(|| format!("Attempt '{}' not found", attempt_id))?;
-    attempt.status = status;
-    if matches!(
-        status,
-        AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Cancelled
-    ) {
-        attempt.completed_at = Some(now_ms());
-    }
-    if let Some(msg) = error {
-        attempt.error_message = Some(msg);
-    }
-    flight.updated_at = now_ms();
-    storage::save_state(&state)
+    // v0.8 race-fix: see `append_attempt` rationale. Concurrent writers
+    // through the old naked load/save could drop each other's status flips.
+    let flight_id = flight_id.to_string();
+    let attempt_id = attempt_id.to_string();
+    storage::with_state_lock(move |state| {
+        let result: Result<(), String> = (|| {
+            let flight = state
+                .flights
+                .iter_mut()
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+            let attempt = flight
+                .attempts
+                .iter_mut()
+                .find(|a| a.id == attempt_id)
+                .ok_or_else(|| format!("Attempt '{}' not found", attempt_id))?;
+            attempt.status = status;
+            if matches!(
+                status,
+                AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Cancelled
+            ) {
+                attempt.completed_at = Some(now_ms());
+            }
+            if let Some(msg) = error {
+                attempt.error_message = Some(msg);
+            }
+            flight.updated_at = now_ms();
+            Ok(())
+        })();
+        std::future::ready(result)
+    })
+    .await
 }
 
 fn build_ssh_config_from_spec(spec: &AttemptTargetSpec) -> Option<SshConfig> {
@@ -240,9 +260,10 @@ pub async fn launch_flight_async(
             cost: 0.0,
             tokens: 0,
             error_message: None,
+            draft_pr_number: None,
         };
 
-        if let Err(e) = append_attempt(&flight_id, &attempt) {
+        if let Err(e) = append_attempt(&flight_id, &attempt).await {
             warn!(error = %e, "Failed to persist Attempt; aborting");
             return Err(e);
         }
@@ -275,7 +296,8 @@ pub async fn launch_flight_async(
         {
             Ok(()) => {
                 let _ =
-                    update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Running, None);
+                    update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Running, None)
+                        .await;
             }
             Err(e) => {
                 let _ = update_attempt_status(
@@ -283,7 +305,8 @@ pub async fn launch_flight_async(
                     &attempt_id,
                     AttemptStatus::Failed,
                     Some(format!("Session start failed: {}", e)),
-                );
+                )
+                .await;
             }
         }
 
@@ -321,7 +344,7 @@ pub async fn cancel_flight_attempt(
     let _ = close_api_agent_session(state, sidecar, attempt.session_id.clone()).await;
 
     // 3. Mark cancelled before worktree removal so the UI flips quickly.
-    let _ = update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Cancelled, None);
+    let _ = update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Cancelled, None).await;
 
     // 4. Remove the worktree.
     match &attempt.target {
@@ -376,6 +399,66 @@ pub async fn cleanup_attempt_worktree_ssh(
     worktree::remove_remote_worktree(&cfg, &base_path, &attempt_id).await
 }
 
+/// v0.8-G: record the draft PR number published for an attempt. Called
+/// after the frontend successfully pushes the attempt branch and opens a
+/// draft PR via `github_create_pr`. The number is later surfaced in the
+/// Flight detail UI as a "Draft PR #N" link.
+#[tauri::command]
+pub async fn set_attempt_draft_pr(
+    flight_id: String,
+    attempt_id: String,
+    pr_number: u32,
+) -> Result<(), String> {
+    // v0.8 race-fix: hold the async state lock across load → mutate → save
+    // so a concurrent `set_attempt_draft_pr` (e.g. retry path or duplicate
+    // publish guard race) can't clobber the first writer's PR number.
+    storage::with_state_lock(move |state| {
+        let result: Result<(), String> = (|| {
+            let flight = state
+                .flights
+                .iter_mut()
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+            let attempt = flight
+                .attempts
+                .iter_mut()
+                .find(|a| a.id == attempt_id)
+                .ok_or_else(|| format!("Attempt '{}' not found", attempt_id))?;
+            attempt.draft_pr_number = Some(pr_number);
+            flight.updated_at = now_ms();
+            Ok(())
+        })();
+        std::future::ready(result)
+    })
+    .await
+}
+
+/// v0.8-G: persist the Flight's `publish_attempts_as_prs` boolean. Lets
+/// the frontend toggle flow through to storage without a full Flight
+/// upsert — keeps the asyncFlightStore path lean.
+#[tauri::command]
+pub async fn set_flight_publish_attempts_as_prs(
+    flight_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    // v0.8 race-fix: serialize against other planner-tool / attempt writers
+    // via `with_state_lock` so concurrent saves can't drop the toggle flip.
+    storage::with_state_lock(move |state| {
+        let result: Result<(), String> = (|| {
+            let flight = state
+                .flights
+                .iter_mut()
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+            flight.publish_attempts_as_prs = enabled;
+            flight.updated_at = now_ms();
+            Ok(())
+        })();
+        std::future::ready(result)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn mark_attempt_status(
     state: tauri::State<'_, Arc<ApiAgentState>>,
@@ -408,7 +491,7 @@ pub async fn mark_attempt_status(
         None
     };
 
-    update_attempt_status(&flight_id, &attempt_id, new_status, None)?;
+    update_attempt_status(&flight_id, &attempt_id, new_status, None).await?;
 
     if let Some(attempt) = attempt_snapshot {
         // Close the API agent session bound to this attempt (best-effort —

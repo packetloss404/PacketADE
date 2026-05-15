@@ -3581,6 +3581,7 @@ mod e6_integration {
             planner_cost: None,
             planner_tokens: None,
             planner_provider: None,
+            publish_attempts_as_prs: false,
         }
     }
 
@@ -4025,6 +4026,7 @@ mod e8_accum {
                 planner_cost: planner_cost_seed,
                 planner_tokens: planner_tokens_seed,
                 planner_provider: None,
+                publish_attempts_as_prs: false,
             });
             std::future::ready(Ok(()))
         })
@@ -4178,6 +4180,7 @@ mod e8_accum {
                 planner_cost: None,
                 planner_tokens: None,
                 planner_provider: None,
+                publish_attempts_as_prs: false,
             });
             std::future::ready(Ok(()))
         })

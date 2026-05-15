@@ -86,6 +86,9 @@ export const mockTauriInitScript = `
     save_agents_slice: () => null,
     save_flights_slice: () => null,
     save_memory_slice: () => null,
+    // v0.8-H — memory inline surfaces: pin-toggle endpoint. Mock returns
+    // null for "not found" so tests don't depend on a real backing store.
+    toggle_pinned_pattern: () => null,
     save_persisted_state: () => null,
     save_servers_slice: () => null,
     save_settings_slice: () => null,

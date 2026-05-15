@@ -68,6 +68,81 @@ pub fn get_toplevel(cwd: &str) -> Result<String, String> {
     git_command_result(&["rev-parse", "--show-toplevel"], cwd)
 }
 
+/// v0.8-15: read the `origin` remote URL for `cwd`. Returns `Ok(None)`
+/// when the repo has no `origin` remote (so the caller can fall back to
+/// a manual GitHub repo selector). Returns `Err` only when `cwd` is not
+/// a git repository or git itself fails.
+pub fn get_origin_url(cwd: &str) -> Result<Option<String>, String> {
+    let output = git_command(&["remote", "get-url", "origin"], cwd)?;
+    if output.status.success() {
+        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if url.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(url))
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        // Git returns exit 2 with "No such remote 'origin'" when origin
+        // isn't configured — treat that as Ok(None) so workspaces created
+        // from non-GitHub repos don't error out.
+        if stderr.contains("No such remote") || stderr.contains("no such remote") {
+            return Ok(None);
+        }
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// v0.8-15: parse a GitHub remote URL into `(owner, repo)`. Accepts the
+/// three forms git typically emits:
+///   - `git@github.com:owner/repo.git`
+///   - `https://github.com/owner/repo.git`
+///   - `https://github.com/owner/repo`
+/// Trailing `.git` is stripped. Anything that does not match a GitHub
+/// host or lacks the `owner/repo` shape returns `None` so the caller
+/// (workspace creation) silently skips auto-binding.
+pub fn parse_github_remote(url: &str) -> Option<(String, String)> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Locate the `host:path` boundary. SSH-style URLs use `:` as the
+    // separator (`git@github.com:owner/repo.git`); HTTPS-style URLs use
+    // `/` after the host.
+    let after_host: &str = if let Some(rest) = trimmed.strip_prefix("git@github.com:") {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("ssh://git@github.com/") {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("https://github.com/") {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("http://github.com/") {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("git://github.com/") {
+        rest
+    } else {
+        return None;
+    };
+
+    // Strip an optional `.git` suffix and any trailing slash.
+    let stripped = after_host
+        .trim_end_matches('/')
+        .strip_suffix(".git")
+        .unwrap_or_else(|| after_host.trim_end_matches('/'));
+
+    let mut parts = stripped.splitn(2, '/');
+    let owner = parts.next()?.trim();
+    let repo = parts.next()?.trim();
+    if owner.is_empty() || repo.is_empty() {
+        return None;
+    }
+    // Reject anything with further path segments (e.g. tree URLs).
+    if repo.contains('/') {
+        return None;
+    }
+    Some((owner.to_string(), repo.to_string()))
+}
+
 pub fn get_branch(project_path: &str) -> Result<String, String> {
     git_command_result(&["rev-parse", "--abbrev-ref", "HEAD"], project_path)
         .map_err(|_| "Not a git repository or git not found".to_string())
@@ -159,6 +234,30 @@ pub fn create_branch(
     } else {
         git_command_result(&["branch", "--", branch_name], project_path)
     }
+}
+
+/// v0.8-G: explicit-branch push for "Publish attempts as draft PRs". Unlike
+/// `push`, this targets a specific branch by name (the attempt's worktree
+/// branch), sets upstream tracking on first push, and intentionally
+/// bypasses the main/master guard since attempt branches always live under
+/// the `att_<uuid>` namespace. It still refuses if the worktree at
+/// `project_path` is dirty — caller is expected to commit before publish.
+pub fn push_branch(project_path: &str, branch_name: &str, force: bool) -> Result<String, String> {
+    validate_branch_name(branch_name)?;
+    if !worktree_is_clean(project_path)? {
+        return Err(
+            "Cannot push with local changes present. Commit or stash them first.".to_string(),
+        );
+    }
+    let mut args: Vec<&str> = Vec::with_capacity(6);
+    args.push("push");
+    if force {
+        args.push("--force-with-lease");
+    }
+    args.push("-u");
+    args.push("origin");
+    args.push(branch_name);
+    git_command_result(&args, project_path)
 }
 
 fn validate_branch_name(name: &str) -> Result<(), String> {
@@ -295,5 +394,55 @@ mod tests {
         assert!(validate_branch_name("fix-123").is_ok());
         assert!(validate_branch_name("release/v1.0.0").is_ok());
         assert!(validate_branch_name("my_branch").is_ok());
+    }
+
+    // v0.8-15 — workspace auto-bind helpers
+    #[test]
+    fn parse_github_remote_ssh_form() {
+        assert_eq!(
+            parse_github_remote("git@github.com:packetloss404/PacketADE.git"),
+            Some(("packetloss404".to_string(), "PacketADE".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_github_remote_https_with_git_suffix() {
+        assert_eq!(
+            parse_github_remote("https://github.com/foo/bar.git"),
+            Some(("foo".to_string(), "bar".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_github_remote_https_without_git_suffix() {
+        assert_eq!(
+            parse_github_remote("https://github.com/foo/bar"),
+            Some(("foo".to_string(), "bar".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_github_remote_trailing_slash() {
+        assert_eq!(
+            parse_github_remote("https://github.com/foo/bar/"),
+            Some(("foo".to_string(), "bar".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_github_remote_rejects_non_github_host() {
+        assert_eq!(parse_github_remote("https://gitlab.com/foo/bar.git"), None);
+        assert_eq!(parse_github_remote("git@gitlab.com:foo/bar.git"), None);
+    }
+
+    #[test]
+    fn parse_github_remote_rejects_malformed() {
+        assert_eq!(parse_github_remote(""), None);
+        assert_eq!(parse_github_remote("not a url"), None);
+        assert_eq!(parse_github_remote("https://github.com/just-owner"), None);
+        assert_eq!(
+            parse_github_remote("https://github.com/owner/repo/tree/main"),
+            None
+        );
     }
 }

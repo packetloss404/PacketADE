@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   summarizeSession: vi.fn(),
   extractPatterns: vi.fn(),
   readPtyTranscript: vi.fn(),
+  togglePinnedPattern: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
@@ -14,6 +15,7 @@ vi.mock("@/lib/tauri", () => ({
   summarizeSession: (...args: unknown[]) => mocks.summarizeSession(...args),
   extractPatterns: (...args: unknown[]) => mocks.extractPatterns(...args),
   readPtyTranscript: (...args: unknown[]) => mocks.readPtyTranscript(...args),
+  togglePinnedPattern: (...args: unknown[]) => mocks.togglePinnedPattern(...args),
 }));
 
 async function loadStores() {
@@ -162,5 +164,101 @@ describe("memoryStore settings integration", () => {
 
     expect(mocks.readPtyTranscript).not.toHaveBeenCalled();
     expect(useMemoryStore.getState().events).toEqual([]);
+  });
+
+  // === v0.8-H: pin / project-scope / context-items ===
+
+  it("filters patterns by projectPath, treating legacy patterns as global", async () => {
+    const { useMemoryStore } = await loadStores();
+    useMemoryStore.setState({
+      events: [],
+      patterns: [
+        {
+          id: "p-legacy",
+          pattern: "legacy global",
+          category: "convention",
+          confidence: 0.9,
+          extractedAt: Date.now(),
+          // no projectPath = legacy/global
+        },
+        {
+          id: "p-this",
+          pattern: "scoped to project A",
+          category: "architecture",
+          confidence: 0.9,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/A",
+        },
+        {
+          id: "p-other",
+          pattern: "scoped to project B",
+          category: "architecture",
+          confidence: 0.9,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/B",
+        },
+      ],
+    });
+
+    const items = useMemoryStore
+      .getState()
+      .getContextItemsForSession({ projectPath: "D:/projects/A" });
+    const ids = items.map((i) => i.id);
+    expect(ids).toContain("p-legacy"); // global matches every project
+    expect(ids).toContain("p-this"); // exact match
+    expect(ids).not.toContain("p-other"); // different project excluded
+  });
+
+  it("sorts pinned patterns first and exempts them from confidence cutoff", async () => {
+    const { useMemoryStore } = await loadStores();
+    useMemoryStore.setState({
+      events: [],
+      patterns: [
+        {
+          id: "p-high",
+          pattern: "high confidence",
+          category: "convention",
+          confidence: 0.95,
+          extractedAt: 1,
+          projectPath: "D:/projects/A",
+        },
+        {
+          id: "p-low-pinned",
+          pattern: "low confidence pinned",
+          category: "preference",
+          confidence: 0.3, // below 0.6 cutoff
+          extractedAt: 2,
+          projectPath: "D:/projects/A",
+          pinned: true,
+        },
+      ],
+    });
+
+    const items = useMemoryStore
+      .getState()
+      .getContextItemsForSession({ projectPath: "D:/projects/A" });
+    expect(items.map((i) => i.id)).toEqual(["p-low-pinned", "p-high"]);
+  });
+
+  it("togglePinPattern flips the in-memory flag immediately (optimistic)", async () => {
+    mocks.togglePinnedPattern.mockResolvedValue(true);
+    const { useMemoryStore } = await loadStores();
+    useMemoryStore.setState({
+      events: [],
+      patterns: [
+        {
+          id: "p-1",
+          pattern: "X",
+          category: "convention",
+          confidence: 0.9,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/A",
+        },
+      ],
+    });
+
+    useMemoryStore.getState().togglePinPattern("p-1");
+    // Optimistic: state changes before the backend resolves.
+    expect(useMemoryStore.getState().patterns[0].pinned).toBe(true);
   });
 });

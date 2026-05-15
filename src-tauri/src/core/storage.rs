@@ -315,6 +315,40 @@ pub fn save_memory(
     save_state_inner(&state)
 }
 
+/// v0.8-H: atomically flip the `pinned` flag on a single LearnedPattern by id.
+/// Returns the new `pinned` value (or `None` if the pattern was not found).
+/// Storing as `serde_json::Value` lets us mutate the field in-place rather
+/// than round-tripping the whole slice — robust across schema additions.
+pub fn toggle_pinned_pattern(pattern_id: &str) -> Result<Option<bool>, String> {
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut state = load_state();
+    let mut found: Option<bool> = None;
+    for entry in state.memory_patterns.iter_mut() {
+        let Some(obj) = entry.as_object_mut() else {
+            continue;
+        };
+        let Some(id_val) = obj.get("id") else { continue };
+        if id_val.as_str() != Some(pattern_id) {
+            continue;
+        }
+        let current = obj
+            .get("pinned")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let next = !current;
+        obj.insert("pinned".to_string(), serde_json::Value::Bool(next));
+        found = Some(next);
+        break;
+    }
+    if found.is_some() {
+        state.version += 1;
+        save_state_inner(&state)?;
+    }
+    Ok(found)
+}
+
 fn provider_settings_path() -> PathBuf {
     data_dir().join(PROVIDER_SETTINGS_FILENAME)
 }

@@ -72,6 +72,39 @@ pub async fn git_create_branch(
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// v0.8-G: push a specific branch to `origin` with upstream tracking. Used
+/// by the "Publish attempts as draft PRs" Flight option to push each
+/// attempt's branch from inside its worktree before opening the draft PR.
+/// `force=true` translates to `--force-with-lease` (safe force).
+#[tauri::command]
+pub async fn git_push_branch(
+    project_path: String,
+    branch_name: String,
+    force: bool,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        git::push_branch(&project_path, &branch_name, force)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// v0.8-15: read `git remote get-url origin` so a new workspace can
+/// auto-bind to its GitHub repo. Returns `Ok(None)` when the repo has
+/// no `origin` remote configured (caller falls back to the manual
+/// picker); `Err` only when the path is not a git repo or git itself
+/// fails to spawn.
+#[tauri::command]
+pub async fn git_get_origin_url(project_path: String) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        git::get_origin_url(&project_path)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 #[tauri::command]
 pub async fn git_safety_check(project_path: String) -> Result<git::GitSafetyReport, String> {
     tokio::task::spawn_blocking(move || {

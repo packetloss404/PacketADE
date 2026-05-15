@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import { Rocket, Sparkles } from "lucide-react";
+import { GitPullRequest, Rocket, Sparkles } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { MultiTargetPicker, type PickedTarget } from "./MultiTargetPicker";
-import type { AttemptTargetSpec } from "@/lib/tauri";
+import { type AttemptTargetSpec } from "@/lib/tauri";
 import type { FlightPriority } from "@/types/flight";
 
 interface LaunchAsyncFlightModalProps {
@@ -60,6 +60,10 @@ export function LaunchAsyncFlightModal({
   const [picked, setPicked] = useState<PickedTarget[]>([]);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // v0.8-G: per-attempt draft-PR publish toggle. When enabled, the
+  // asyncFlightStore pipeline pushes each attempt's branch and opens a
+  // draft GitHub PR once it reaches a terminal state.
+  const [publishAsPrs, setPublishAsPrs] = useState(false);
 
   const promptShort = useMemo(
     () => (prompt.length > 60 ? prompt.slice(0, 57) + "…" : prompt),
@@ -81,7 +85,16 @@ export function LaunchAsyncFlightModal({
         projectPath: activeWorkspace?.projectPath || projectPath || "",
         workspaceId: activeWorkspace?.id ?? null,
         issueIds: [],
+        publishAttemptsAsPrs: publishAsPrs,
       });
+
+      // v0.8 race-fix: `addFlight` already carries `publishAttemptsAsPrs`
+      // through to backend persistence via `saveFlightsSlice`, so a
+      // separate `setFlightPublishAttemptsAsPrs` call here was both
+      // redundant and racy — its `await` could resolve before the
+      // fire-and-forget `syncFlightsToBackend` queued by `addFlight` had
+      // written the flight, surfacing as "Flight not found" warnings that
+      // were silently swallowed.
 
       const targets = picked.map(pickedToSpec);
       await launchAsync(flight.id, prompt.trim(), targets);
@@ -167,6 +180,26 @@ export function LaunchAsyncFlightModal({
 
         {/* Targets */}
         <MultiTargetPicker picked={picked} onChange={setPicked} />
+
+        {/* v0.8-G: publish attempts as draft PRs */}
+        <label className="flex items-start gap-2 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={publishAsPrs}
+            onChange={(e) => setPublishAsPrs(e.target.checked)}
+            className="mt-0.5 accent-accent-green"
+          />
+          <div className="flex flex-col gap-0.5">
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary group-hover:text-text-primary">
+              <GitPullRequest size={11} className="text-accent-purple" />
+              Publish attempts as draft PRs
+            </span>
+            <span className="text-[10px] text-text-muted leading-snug">
+              After each attempt, push the branch and open a draft PR on GitHub.
+              Lets you review attempts via your normal PR flow.
+            </span>
+          </div>
+        </label>
 
         {error && (
           <div className="text-[11px] text-accent-red bg-accent-red/10 border border-accent-red/30 rounded px-3 py-2">

@@ -12,6 +12,11 @@ export interface WorkspaceSessionConfig {
   bypassPermissions?: boolean;
   serverId?: string;
   remoteProjectPath?: string;
+  /**
+   * v0.8-15: auto-bound GitHub repo, derived from `git remote get-url
+   * origin` at workspace-creation time. Stamped onto `Workspace.githubRepo`.
+   */
+  githubRepo?: { owner: string; repo: string };
 }
 
 interface WorkspaceStore {
@@ -155,6 +160,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       effortOverrides: sessionConfig?.effortOverrides,
       serverId,
       remoteProjectPath,
+      githubRepo: sessionConfig?.githubRepo,
     };
     set(commitWorkspaces((s) => {
       const workspaces = [...s.workspaces, workspace];

@@ -5,6 +5,7 @@ import {
   Plane,
   Trash2,
   Clock,
+  StickyNote,
 } from "lucide-react";
 import { relativeTime } from "@/lib/time";
 import type { MemoryEvent } from "@/types/memory";
@@ -29,6 +30,7 @@ export function MemoryEventCard({ event, onDelete }: MemoryEventCardProps) {
         {event.type === "session_completed" && <SessionCard event={event} />}
         {event.type === "task_completed" && <TaskCard event={event} />}
         {event.type === "flight_completed" && <FlightCard event={event} />}
+        {event.type === "manual_note" && <ManualNoteCard event={event} />}
       </div>
       <div className="flex items-center justify-between px-3 py-1 bg-bg-primary border-t border-bg-border text-[9.5px] text-text-faint">
         <span className="inline-flex items-center gap-1">
@@ -198,6 +200,45 @@ function TaskCard({
         </div>
       )}
       <FilesRow files={p.filesChanged} />
+    </>
+  );
+}
+
+function ManualNoteCard({
+  event,
+}: {
+  event: Extract<MemoryEvent, { type: "manual_note" }>;
+}) {
+  const p = event.payload;
+  return (
+    <>
+      <div className="flex items-center gap-2 mb-1">
+        <StickyNote size={11} className="text-accent-amber flex-shrink-0" />
+        <span className="text-[11px] font-semibold text-text-primary truncate">
+          {p.summary}
+        </span>
+        <div className="flex-1" />
+        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-accent-amber/15 text-accent-amber">
+          {p.source}
+        </span>
+      </div>
+      {p.body && (
+        <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-6 whitespace-pre-wrap">
+          {p.body}
+        </p>
+      )}
+      {p.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {p.tags.map((t, i) => (
+            <span
+              key={i}
+              className="text-[9px] px-1.5 py-0.5 rounded-full bg-bg-elevated text-text-faint"
+            >
+              #{t}
+            </span>
+          ))}
+        </div>
+      )}
     </>
   );
 }

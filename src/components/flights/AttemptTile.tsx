@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Folder,
+  GitPullRequest,
   Server,
   Square,
   Check,
@@ -15,6 +16,7 @@ import {
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
+import { useGitHubStore } from "@/stores/githubStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { notifyAttemptCompleted, notifyAttemptFailed } from "@/lib/notifications";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
@@ -156,6 +158,8 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
         <span className="truncate text-text-muted">
           {attempt.model.split("-").slice(0, 2).join("-")}
         </span>
+        {/* v0.8-G: draft PR link, shown when the attempt was published */}
+        {attempt.draftPrNumber && <DraftPrLink prNumber={attempt.draftPrNumber} />}
         <span className="ml-auto text-text-muted">
           {attempt.tokens > 0 ? `${(attempt.tokens / 1000).toFixed(1)}k` : ""}
         </span>
@@ -318,3 +322,39 @@ function ToolCallChip({
 
 // Need to import React for React.createElement above
 import React from "react";
+
+/**
+ * v0.8-G: small "Draft PR #N" pill rendered next to an attempt's status
+ * header once its branch has been published. Clicking opens the PR on
+ * GitHub in the user's default browser via the standard anchor target.
+ */
+function DraftPrLink({ prNumber }: { prNumber: number }) {
+  const selectedRepo = useGitHubStore((s) => s.config.selectedRepo);
+  const href = selectedRepo
+    ? `https://github.com/${selectedRepo.owner}/${selectedRepo.repo}/pull/${prNumber}`
+    : undefined;
+  const inner = (
+    <>
+      <GitPullRequest size={10} className="text-accent-purple" />
+      <span className="font-medium">Draft PR #{prNumber}</span>
+    </>
+  );
+  if (!href) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded border border-accent-purple/30 bg-accent-purple/10 px-1.5 py-0.5 text-[10px] text-accent-purple">
+        {inner}
+      </span>
+    );
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 rounded border border-accent-purple/30 bg-accent-purple/10 px-1.5 py-0.5 text-[10px] text-accent-purple hover:bg-accent-purple/20"
+      title={`Open PR #${prNumber} on GitHub`}
+    >
+      {inner}
+    </a>
+  );
+}

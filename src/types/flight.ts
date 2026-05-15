@@ -199,6 +199,13 @@ export interface Attempt {
   cost: number;
   tokens: number;
   errorMessage?: string;
+  /**
+   * v0.8-G: PR number of the draft PR opened for this attempt's branch
+   * when the parent Flight has `publishAttemptsAsPrs == true`. Undefined
+   * when publishing is disabled, the publish step hasn't run yet, or the
+   * publish failed (errors are stored in `errorMessage`).
+   */
+  draftPrNumber?: number;
 }
 
 // === Flight ===
@@ -255,4 +262,12 @@ export interface Flight {
    * created before E8-ACCUM landed don't carry the field.
    */
   plannerProvider?: string;
+  /**
+   * v0.8-G: when true on an async-mode Flight, the executor pipeline
+   * pushes each attempt's branch to origin and opens a draft GitHub PR
+   * after the attempt reaches a terminal state. The resulting PR number
+   * is written back to `Attempt.draftPrNumber`. Defaults to false for
+   * back-compat with previously-persisted Flights.
+   */
+  publishAttemptsAsPrs?: boolean;
 }

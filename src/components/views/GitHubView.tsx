@@ -14,18 +14,63 @@ import {
   RefreshCw,
   Search,
   Send,
+  StickyNote,
   X,
 } from "lucide-react";
 import { useGitHubStore } from "@/stores/githubStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useAppStore } from "@/stores/appStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useFlightStore } from "@/stores/flightStore";
+import { useMissionPlannerStore } from "@/stores/missionPlannerStore";
+import { useMemoryStore } from "@/stores/memoryStore";
+import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
+import { gitCreateBranch } from "@/lib/tauri";
+import type { AttemptTargetSpec } from "@/lib/tauri";
 import { PRModal } from "@/components/views/PRModal";
 import { DiffViewer } from "@/components/views/DiffViewer";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { IssueBody } from "@/components/views/github/IssueBody";
+import { IssueActionBar } from "@/components/views/github/IssueActionBar";
+import { IssueCommentList } from "@/components/views/github/IssueCommentList";
+import { IssueCommentComposer } from "@/components/views/github/IssueCommentComposer";
+import { PRReviewPanel } from "@/components/views/github/PRReviewPanel";
+// v0.8-13: read-only pr reviews + line comments viewer
+import { PullRequestReviewsPanel } from "@/components/views/github/PullRequestReviewsPanel";
+import { PRActionBar } from "@/components/views/github/PRActionBar";
+// v0.8-B: pr check pill + checks tab (re-shipped)
+import { PrCheckPill } from "@/components/views/github/PrCheckPill";
+import { PRChecksTab } from "@/components/views/github/PRChecksTab";
 import { RepoSelector } from "@/components/views/github/RepoSelector";
+import { AICatchUpButton } from "@/components/views/github/AICatchUpButton";
+import { AITriageDrawer } from "@/components/views/github/AITriageDrawer";
+import { Sparkles } from "lucide-react";
 import type { GitHubIssue, GitHubPr } from "@/types/github";
 import { relativeTime } from "@/lib/time";
+
+// v0.8-D — inline feedback descriptor surfaced by the issue / investigation
+// action rows when a CTA finishes. `tone` drives color; optional `linkLabel`
+// + `onLinkClick` render a small affordance (e.g. "View") that takes the
+// user to wherever the action's downstream artefact lives.
+type CtaFeedback = {
+  tone: "success" | "error" | "info";
+  message: string;
+  linkLabel?: string;
+  onLinkClick?: () => void;
+} | null;
+
+// v0.8-D — turn an issue title into a git-branch-safe slug. Lowercase,
+// non-alphanumerics collapsed to `-`, trimmed to 40 chars after dropping
+// leading/trailing dashes.
+function slugifyIssueTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+}
 
 type TabKey = "issues" | "prs" | "activity";
 
@@ -76,6 +121,19 @@ export function GitHubView() {
     getPrDiff,
     clearError,
     clearInvestigation,
+    // v0.8-C: state filters + pagination
+    issueStateFilter,
+    prStateFilter,
+    setIssueStateFilter,
+    setPrStateFilter,
+    issuesHasMore,
+    prsHasMore,
+    isLoadingMoreIssues,
+    isLoadingMorePrs,
+    loadMoreIssues,
+    loadMorePrs,
+    // v0.8-F: needed to apply labels emitted by AITriageDrawer
+    setIssueLabels,
   } = useGitHubStore();
 
   const addIssue = useIssueStore((s) => s.addIssue);
@@ -87,6 +145,12 @@ export function GitHubView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showPRModal, setShowPRModal] = useState(false);
   const [selectedPrNumber, setSelectedPrNumber] = useState<number | null>(null);
+  // v0.8-B: which tab is active in the PR detail panel.
+  const [prDetailTab, setPrDetailTab] = useState<"overview" | "checks">(
+    "overview",
+  );
+  // v0.8-F: triage drawer open state
+  const [triageOpen, setTriageOpen] = useState(false);
 
   useEffect(() => {
     initializeAuth();
@@ -129,6 +193,44 @@ export function GitHubView() {
         i.title.toLowerCase().includes(q) || String(i.number).includes(q)
     );
   }, [issues, searchQuery]);
+
+  // v0.8-F: issues currently in the list with no labels — these are the
+  // default selection for the triage drawer. We pull from the unfiltered
+  // `issues` so the drawer's view doesn't accidentally shrink when the
+  // user has a text filter applied.
+  const untriagedIssues = useMemo(
+    () => issues.filter((i) => i.labels.length === 0),
+    [issues],
+  );
+
+  // v0.8-F: wire AITriageDrawer.onApply into the existing store action.
+  // Falls back to the raw tauri command when the store doesn't expose
+  // `setIssueLabels` (back-compat for installs that pre-date v0.8-C).
+  async function handleTriageApply(
+    labelsByIssue: Record<number, string[]>,
+  ): Promise<void> {
+    const entries = Object.entries(labelsByIssue);
+    for (const [numStr, labels] of entries) {
+      const num = Number(numStr);
+      const issue = issues.find((i) => i.number === num);
+      if (!issue) continue;
+      if (typeof setIssueLabels === "function") {
+        // v0.8-C store path: takes {name, color}[]. We don't know the
+        // color, so use a neutral placeholder; the next `fetchIssues`
+        // overwrites with GitHub's authoritative color.
+        await setIssueLabels(
+          { number: num },
+          labels.map((name) => ({ name, color: "888888" })),
+        );
+      } else {
+        // Fallback: raw tauri command.
+        const { githubSetIssueLabels } = await import("@/lib/tauri");
+        const repoInfo = config.selectedRepo;
+        if (!repoInfo) continue;
+        await githubSetIssueLabels(repoInfo.owner, repoInfo.repo, num, labels);
+      }
+    }
+  }
 
   async function handleConnect() {
     if (tokenInput.trim()) {
@@ -265,6 +367,14 @@ export function GitHubView() {
             }}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            stateFilter={issueStateFilter}
+            onStateFilterChange={setIssueStateFilter}
+            hasMore={issuesHasMore}
+            isLoadingMore={isLoadingMoreIssues}
+            onLoadMore={loadMoreIssues}
+            totalLoaded={issues.length}
+            onOpenTriage={() => setTriageOpen(true)}
+            untriagedCount={untriagedIssues.length}
           />
           <IssueDetail
             issue={selectedIssue}
@@ -272,6 +382,7 @@ export function GitHubView() {
             isInvestigating={isInvestigating}
             onImport={handleImportIssue}
             onInvestigate={(num) => investigateIssue(projectPath, num)}
+            onRefetch={() => fetchIssues()}
           />
         </div>
       ) : tab === "prs" ? (
@@ -284,6 +395,11 @@ export function GitHubView() {
               setSelectedPrNumber(num);
               getPrDiff(num);
             }}
+            stateFilter={prStateFilter}
+            onStateFilterChange={setPrStateFilter}
+            hasMore={prsHasMore}
+            isLoadingMore={isLoadingMorePrs}
+            onLoadMore={loadMorePrs}
           />
           {selectedPrNumber != null && (
             <div className="w-[480px] border-l border-bg-border bg-bg-primary overflow-y-auto">
@@ -300,29 +416,100 @@ export function GitHubView() {
                   <X size={12} />
                 </button>
               </div>
-              <div className="p-3">
-                {isPrLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2
-                      size={16}
-                      className="animate-spin text-text-muted"
-                    />
-                  </div>
-                ) : prDiff ? (
-                  <div className="border border-bg-border rounded-lg overflow-hidden">
-                    <DiffViewer diff={prDiff} />
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-text-muted">
-                    No diff available.
-                  </p>
-                )}
+              {/* v0.8-A: PR action bar */}
+              {(() => {
+                const pr = prs.find((p) => p.number === selectedPrNumber);
+                if (!pr) return null;
+                return (
+                  <PRActionBar
+                    pr={pr}
+                    onAction={() => {
+                      void fetchPrs();
+                    }}
+                  />
+                );
+              })()}
+              {/* v0.8-B: pr checks tab — simple horizontal switcher between
+                  the existing diff/review surface and the dedicated checks
+                  list. Sits below the action bar so PRActionBar stays
+                  reachable on every tab. */}
+              <div className="flex items-center gap-0 px-3.5 border-b border-bg-border bg-bg-secondary">
+                {(
+                  [
+                    { key: "overview", label: "Overview" },
+                    { key: "checks", label: "Checks" },
+                  ] as { key: "overview" | "checks"; label: string }[]
+                ).map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setPrDetailTab(t.key)}
+                    className={`px-2.5 py-1.5 text-[11px] font-medium border-b-2 transition-colors ${
+                      prDetailTab === t.key
+                        ? "border-accent-purple text-text-primary"
+                        : "border-transparent text-text-muted hover:text-text-primary"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
+              {prDetailTab === "overview" ? (
+                <>
+                  <div className="p-3">
+                    {isPrLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <Loader2
+                          size={16}
+                          className="animate-spin text-text-muted"
+                        />
+                      </div>
+                    ) : prDiff ? (
+                      <div className="border border-bg-border rounded-lg overflow-hidden">
+                        <DiffViewer diff={prDiff} />
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-text-muted">
+                        No diff available.
+                      </p>
+                    )}
+                  </div>
+                  {/* v0.8-E: AI pre-flight code review. Lives below the diff so
+                      it reads naturally as "here's the change, here's what the
+                      AI thinks of it". */}
+                  {(() => {
+                    const pr = prs.find((p) => p.number === selectedPrNumber);
+                    if (!pr) return null;
+                    return <PRReviewPanel pr={pr} />;
+                  })()}
+                  {/* v0.8-13: pr reviews panel — read-only viewer for
+                      existing GitHub formal reviews + per-line comment
+                      threads. Sits below the AI review so the user sees
+                      AI feedback then human feedback in order. */}
+                  {(() => {
+                    const pr = prs.find((p) => p.number === selectedPrNumber);
+                    if (!pr) return null;
+                    return <PullRequestReviewsPanel pr={pr} />;
+                  })()}
+                </>
+              ) : (
+                /* v0.8-B: pr checks tab */
+                (() => {
+                  const pr = prs.find((p) => p.number === selectedPrNumber);
+                  if (!pr) return null;
+                  return <PRChecksTab pr={pr} />;
+                })()
+              )}
             </div>
           )}
         </div>
       ) : (
-        <ActivityFeed issues={issues} prs={prs} />
+        <ActivityFeed
+          issues={issues}
+          prs={prs}
+          owner={config.selectedRepo?.owner ?? ""}
+          repo={config.selectedRepo?.repo ?? ""}
+        />
       )}
 
       {showPRModal && (
@@ -330,6 +517,23 @@ export function GitHubView() {
           onClose={() => setShowPRModal(false)}
           onSubmit={createPR}
           isLoading={isLoading}
+          /* v0.8 spec: when a user opens the PR modal while focused on an
+             issue, seed the "Closes #N" picker with that issue so the
+             linkage is the default rather than an extra click. */
+          initialLinkedIssues={
+            selectedIssueNum != null ? [selectedIssueNum] : []
+          }
+        />
+      )}
+
+      {/* v0.8-F: triage drawer */}
+      {triageOpen && config.selectedRepo && (
+        <AITriageDrawer
+          owner={config.selectedRepo.owner}
+          repo={config.selectedRepo.repo}
+          untriagedIssues={untriagedIssues}
+          onClose={() => setTriageOpen(false)}
+          onApply={handleTriageApply}
         />
       )}
     </div>
@@ -516,6 +720,16 @@ interface IssueListProps {
   onSelect: (num: number) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  // v0.8-C
+  stateFilter: "open" | "closed" | "all";
+  onStateFilterChange: (state: "open" | "closed" | "all") => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
+  totalLoaded: number;
+  // v0.8-F: triage drawer launch
+  onOpenTriage: () => void;
+  untriagedCount: number;
 }
 
 function IssueList({
@@ -526,6 +740,14 @@ function IssueList({
   onSelect,
   searchQuery,
   onSearchChange,
+  stateFilter,
+  onStateFilterChange,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
+  totalLoaded,
+  onOpenTriage,
+  untriagedCount,
 }: IssueListProps) {
   return (
     <div className="border-r border-bg-border flex flex-col min-w-0 bg-bg-secondary overflow-hidden">
@@ -535,15 +757,56 @@ function IssueList({
           <input
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="is:open is:issue"
+            placeholder="filter issues..."
             className="flex-1 bg-transparent text-[10.5px] text-text-primary placeholder:text-text-muted focus:outline-none"
           />
         </div>
+        {/* v0.8-F: triage drawer */}
+        <button
+          type="button"
+          onClick={onOpenTriage}
+          disabled={untriagedCount === 0}
+          title={
+            untriagedCount === 0
+              ? "No untriaged issues to triage"
+              : `Run AI triage on ${untriagedCount} untriaged issue(s)`
+          }
+          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-accent-blue/15 text-accent-blue border border-accent-blue/30 rounded hover:bg-accent-blue/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Sparkles size={10} />
+          Triage
+          {untriagedCount > 0 && (
+            <span className="text-[9px] px-1 rounded-full bg-accent-blue/20">
+              {untriagedCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      <div className="flex items-center gap-1 px-2.5 py-1.5 border-b border-bg-border flex-shrink-0 text-[10px] text-text-muted">
-        <span className="text-text-secondary">{totalIssues} open</span>
-        <span className="text-line-strong">·</span>
+      {/* v0.8-C: state filter */}
+      <div className="flex items-center gap-1 px-2.5 py-1.5 border-b border-bg-border flex-shrink-0">
+        <StateFilterChip
+          label="Open"
+          active={stateFilter === "open"}
+          onClick={() => onStateFilterChange("open")}
+        />
+        <StateFilterChip
+          label="Closed"
+          active={stateFilter === "closed"}
+          onClick={() => onStateFilterChange("closed")}
+        />
+        <StateFilterChip
+          label="All"
+          active={stateFilter === "all"}
+          onClick={() => onStateFilterChange("all")}
+        />
+        <div className="flex-1" />
+        <span className="text-[9.5px] text-text-muted font-mono">
+          {totalIssues} {stateFilter}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-1 px-2.5 py-1 border-b border-bg-border flex-shrink-0 text-[10px] text-text-muted">
         <span>filtered: {issues.length}</span>
         <div className="flex-1" />
         <span className="font-mono text-text-muted">by: newest</span>
@@ -556,68 +819,117 @@ function IssueList({
           </div>
         ) : issues.length === 0 ? (
           <div className="text-center py-12 text-[11px] text-text-muted">
-            No open issues found
+            No {stateFilter === "all" ? "" : stateFilter} issues found
           </div>
         ) : (
-          issues.map((iss) => {
-            const active = selectedNum === iss.number;
-            return (
-              <button
-                type="button"
-                key={iss.number}
-                onClick={() => onSelect(iss.number)}
-                className={`w-full text-left px-3 py-2.5 border-b border-bg-border flex gap-2 items-start transition-colors ${
-                  active
-                    ? "bg-bg-tertiary border-l-2 border-l-accent-green"
-                    : "border-l-2 border-l-transparent hover:bg-bg-tertiary/50"
-                }`}
-              >
-                <AlertCircle
-                  size={11}
-                  className="text-accent-green mt-0.5 flex-shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-[10px] text-text-muted tabular-nums">
-                      #{iss.number}
-                    </span>
-                    <span
-                      className="text-[11px] text-text-primary leading-snug flex-1 overflow-hidden"
-                      style={{
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                      }}
-                    >
-                      {iss.title}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-                    {iss.labels.slice(0, 3).map((l) => (
+          <>
+            {issues.map((iss) => {
+              const active = selectedNum === iss.number;
+              const isClosed = iss.state === "closed";
+              return (
+                <button
+                  type="button"
+                  key={iss.number}
+                  onClick={() => onSelect(iss.number)}
+                  className={`w-full text-left px-3 py-2.5 border-b border-bg-border flex gap-2 items-start transition-colors ${
+                    active
+                      ? "bg-bg-tertiary border-l-2 border-l-accent-green"
+                      : "border-l-2 border-l-transparent hover:bg-bg-tertiary/50"
+                  }`}
+                >
+                  <AlertCircle
+                    size={11}
+                    className={`${
+                      isClosed ? "text-accent-purple" : "text-accent-green"
+                    } mt-0.5 flex-shrink-0`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-[10px] text-text-muted tabular-nums">
+                        #{iss.number}
+                      </span>
                       <span
-                        key={l.name}
-                        className="text-[9px] px-1.5 py-0.5 rounded-full border"
+                        className="text-[11px] text-text-primary leading-snug flex-1 overflow-hidden"
                         style={{
-                          backgroundColor: `#${l.color}22`,
-                          color: `#${l.color}`,
-                          borderColor: `#${l.color}44`,
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
                         }}
                       >
-                        {l.name}
+                        {iss.title}
                       </span>
-                    ))}
-                    <div className="flex-1" />
-                    <span className="text-[9.5px] text-text-muted">
-                      {iss.user.login}
-                    </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                      {iss.labels.slice(0, 3).map((l) => (
+                        <span
+                          key={l.name}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full border"
+                          style={{
+                            backgroundColor: `#${l.color}22`,
+                            color: `#${l.color}`,
+                            borderColor: `#${l.color}44`,
+                          }}
+                        >
+                          {l.name}
+                        </span>
+                      ))}
+                      <div className="flex-1" />
+                      <span className="text-[9.5px] text-text-muted">
+                        {iss.user.login}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </button>
-            );
-          })
+                </button>
+              );
+            })}
+            {/* v0.8-C: pagination */}
+            {hasMore && (
+              <div className="flex items-center justify-center gap-2 px-3 py-3 border-t border-bg-border">
+                <span className="text-[10px] text-text-muted">
+                  Showing {totalLoaded}
+                </span>
+                <button
+                  type="button"
+                  onClick={onLoadMore}
+                  disabled={isLoadingMore}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-primary border border-bg-border rounded hover:border-line-strong disabled:opacity-60"
+                >
+                  {isLoadingMore && (
+                    <Loader2 size={10} className="animate-spin" />
+                  )}
+                  Load more
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+// v0.8-C: state filter chip used by IssueList and PRList.
+function StateFilterChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
+        active
+          ? "bg-accent-green/15 text-accent-green border-accent-green/30"
+          : "bg-bg-tertiary text-text-muted border-bg-border hover:text-text-primary"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -627,6 +939,8 @@ interface IssueDetailProps {
   isInvestigating: boolean;
   onImport: (issue: GitHubIssue) => void;
   onInvestigate: (issueNumber: number) => void;
+  // v0.8-C
+  onRefetch?: () => void;
 }
 
 function IssueDetail({
@@ -635,7 +949,33 @@ function IssueDetail({
   isInvestigating,
   onImport,
   onInvestigate,
+  onRefetch,
 }: IssueDetailProps) {
+  // v0.8-D — store hooks for Plan flight + Branch from issue. Hooks must
+  // run in stable order on every render, so they're called BEFORE the
+  // `!issue` early-return below.
+  const setActiveView = useAppStore((s) => s.setActiveView);
+  const addFlight = useFlightStore((s) => s.addFlight);
+  const updateFlight = useFlightStore((s) => s.updateFlight);
+  const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
+  const startPlanner = useMissionPlannerStore((s) => s.startPlanner);
+  const injectTurn = useMissionPlannerStore((s) => s.injectTurn);
+  const projectPathFromLayout = useLayoutStore((s) => s.projectPath);
+  const activeWorkspace = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId),
+  );
+
+  const [actionBusy, setActionBusy] = useState<null | "plan" | "branch">(null);
+  const [feedback, setFeedback] = useState<CtaFeedback>(null);
+
+  const issueNum = issue?.number;
+  useEffect(() => {
+    // Clear stale feedback when the selected issue changes — a "Created
+    // branch issue-42-…" line for a different issue would be misleading.
+    setFeedback(null);
+    setActionBusy(null);
+  }, [issueNum]);
+
   if (!issue) {
     return (
       <div className="flex items-center justify-center h-full text-[11px] text-text-muted bg-bg-primary">
@@ -644,15 +984,98 @@ function IssueDetail({
     );
   }
 
+  const resolvedProjectPath =
+    activeWorkspace?.projectPath || projectPathFromLayout || "";
+
+  async function handlePlanFlight() {
+    if (!issue || actionBusy) return;
+    setActionBusy("plan");
+    setFeedback(null);
+    try {
+      // Stage the mission: title from issue, spec-mode entry. Mirrors
+      // MissionsView::handleStartMission's add/update/setActive/start
+      // sequence so the planner runtime is alive before the view switch.
+      const flight = addFlight({
+        title: issue.title,
+        objective: `Linked to GitHub issue #${issue.number}: ${issue.title}`,
+        priority: "medium",
+        projectPath: resolvedProjectPath,
+        workspaceId: activeWorkspace?.id ?? null,
+        issueIds: [],
+      });
+      updateFlight(flight.id, { status: "spec" });
+      setActiveFlight(flight.id);
+
+      // Start the planner BEFORE switching view — otherwise the
+      // MissionSpecPane mounts before the runtime exists. `startPlanner`
+      // installs api-agent listeners then spawns the sidecar.
+      await startPlanner(flight.id, resolvedProjectPath);
+
+      // Seed the planner with the issue context so the user lands on a
+      // spec-mode chat that already knows what to build.
+      const opener =
+        `From GitHub issue #${issue.number}: ${issue.title}\n\n` +
+        (issue.body?.trim() || "(no description)");
+      await injectTurn(flight.id, opener, "user");
+
+      setActiveView("missions");
+      setFeedback({
+        tone: "success",
+        message: `Staged mission for #${issue.number}`,
+        linkLabel: "Open",
+        onLinkClick: () => setActiveView("missions"),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFeedback({ tone: "error", message: `Plan flight failed: ${msg}` });
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function handleBranchFromIssue() {
+    if (!issue || actionBusy) return;
+    if (!resolvedProjectPath) {
+      setFeedback({
+        tone: "error",
+        message: "No active workspace — open one to create branches.",
+      });
+      return;
+    }
+    setActionBusy("branch");
+    setFeedback(null);
+    try {
+      const slug = slugifyIssueTitle(issue.title) || "untitled";
+      const branchName = `issue-${issue.number}-${slug}`;
+      await gitCreateBranch(resolvedProjectPath, branchName, true);
+      setFeedback({
+        tone: "success",
+        message: `Created branch \`${branchName}\``,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFeedback({ tone: "error", message: `Branch failed: ${msg}` });
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  const issueIsOpen = issue.state !== "closed";
   return (
     <div className="overflow-y-auto flex flex-col min-h-0 bg-bg-primary">
       <div className="px-4 py-3.5 border-b border-bg-border">
         <div className="flex items-start gap-2.5">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent-green/15 text-accent-green border border-accent-green/30">
-                <AlertCircle size={9} /> Open
-              </span>
+              {issueIsOpen ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent-green/15 text-accent-green border border-accent-green/30">
+                  <AlertCircle size={9} /> Open
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent-purple/15 text-accent-purple border border-accent-purple/30">
+                  <Check size={9} /> Closed
+                </span>
+              )}
               <span className="text-[10px] text-text-muted">
                 <span className="text-text-secondary">{issue.user.login}</span>{" "}
                 opened {timeAgo(issue.created_at)} ago
@@ -693,6 +1116,9 @@ function IssueDetail({
         </div>
       </div>
 
+      {/* v0.8-C: issue actions / comments */}
+      <IssueActionBar issue={issue} onChange={() => onRefetch?.()} />
+
       <div className="flex items-center gap-1.5 px-4 py-2 border-b border-bg-border bg-bg-secondary flex-shrink-0 flex-wrap">
         <button
           type="button"
@@ -714,31 +1140,66 @@ function IssueDetail({
           )}
           Investigate with AI
         </button>
+        {/* v0.8-D — Plan flight: stage a mission in spec mode and seed the
+            planner with the issue body. */}
         <button
           type="button"
-          disabled
-          title="Coming soon"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-soft text-accent-green border border-accent-line rounded opacity-60 cursor-not-allowed"
+          onClick={() => void handlePlanFlight()}
+          disabled={actionBusy === "plan"}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-soft text-accent-green border border-accent-line rounded hover:bg-accent-green/15 transition-colors disabled:opacity-50"
         >
-          <Plane size={10} /> Plan flight
+          {actionBusy === "plan" ? (
+            <Loader2 size={10} className="animate-spin" />
+          ) : (
+            <Plane size={10} />
+          )}{" "}
+          Plan flight
         </button>
         <div className="flex-1" />
+        {/* v0.8-D — Branch from issue: create `issue-{N}-{slug}` in the
+            active workspace cwd and check it out. */}
         <button
           type="button"
-          disabled
-          title="Coming soon"
-          className="inline-flex items-center gap-1.5 text-[10.5px] text-text-muted px-2 py-1 opacity-60 cursor-not-allowed"
+          onClick={() => void handleBranchFromIssue()}
+          disabled={actionBusy === "branch"}
+          className="inline-flex items-center gap-1.5 text-[10.5px] text-text-secondary hover:text-text-primary px-2 py-1 disabled:opacity-50"
         >
-          <GitBranch size={10} /> Branch from issue
+          {actionBusy === "branch" ? (
+            <Loader2 size={10} className="animate-spin" />
+          ) : (
+            <GitBranch size={10} />
+          )}{" "}
+          Branch from issue
         </button>
       </div>
+
+      {/* v0.8-D — inline feedback under the action row. Reflects the last
+          CTA invocation; cleared on issue change or by the user. */}
+      {feedback && (
+        <CtaFeedbackRow
+          feedback={feedback}
+          onDismiss={() => setFeedback(null)}
+        />
+      )}
 
       <div className="px-4 py-3.5 border-b border-bg-border">
         <IssueBody body={issue.body} />
       </div>
 
+      {/* v0.8-C: issue actions / comments */}
+      <div className="px-4 py-3 border-b border-bg-border">
+        <IssueCommentList issue={issue} />
+      </div>
+      <div className="px-4 py-3 border-b border-bg-border">
+        <IssueCommentComposer
+          issue={issue}
+          onPosted={() => onRefetch?.()}
+        />
+      </div>
+
       <div className="px-4 py-3.5 flex-1 min-h-0">
         <InvestigationPanel
+          issue={issue}
           investigation={investigation}
           isInvestigating={isInvestigating}
           onRun={() => onInvestigate(issue.number)}
@@ -748,17 +1209,203 @@ function IssueDetail({
   );
 }
 
+// v0.8-D — slim inline status strip rendered under issue/investigation
+// action bars when a CTA completes. Color follows `tone`; the optional
+// `linkLabel`/`onLinkClick` render a small View affordance.
+function CtaFeedbackRow({
+  feedback,
+  onDismiss,
+}: {
+  feedback: NonNullable<CtaFeedback>;
+  onDismiss: () => void;
+}) {
+  const toneCls =
+    feedback.tone === "success"
+      ? "bg-accent-green/10 border-accent-green/20 text-accent-green"
+      : feedback.tone === "error"
+        ? "bg-accent-red/10 border-accent-red/20 text-accent-red"
+        : "bg-accent-blue/10 border-accent-blue/20 text-accent-blue";
+  return (
+    <div
+      className={`flex items-center gap-2 px-4 py-1.5 border-b text-[10.5px] ${toneCls}`}
+    >
+      <span className="flex-1 truncate font-mono">{feedback.message}</span>
+      {feedback.linkLabel && feedback.onLinkClick && (
+        <button
+          type="button"
+          onClick={feedback.onLinkClick}
+          className="underline hover:opacity-80 px-1 font-medium"
+        >
+          {feedback.linkLabel}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="opacity-60 hover:opacity-100"
+        title="Dismiss"
+      >
+        <X size={11} />
+      </button>
+    </div>
+  );
+}
+
 interface InvestigationPanelProps {
+  issue: GitHubIssue;
   investigation: string | null;
   isInvestigating: boolean;
   onRun: () => void;
 }
 
 function InvestigationPanel({
+  issue,
   investigation,
   isInvestigating,
   onRun,
 }: InvestigationPanelProps) {
+  // v0.8-D — wire Hand off to Claude / Draft patch / Save as memory.
+  const setActiveView = useAppStore((s) => s.setActiveView);
+  const addPane = useLayoutStore((s) => s.addPane);
+  const layoutProjectPath = useLayoutStore((s) => s.projectPath);
+  const activeWorkspace = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId),
+  );
+  const addFlight = useFlightStore((s) => s.addFlight);
+  const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
+  const launchAsync = useAsyncFlightStore((s) => s.launchAsync);
+  const captureManually = useMemoryStore((s) => s.captureManually);
+
+  const [busy, setBusy] = useState<null | "handoff" | "draft" | "memory">(null);
+  const [feedback, setFeedback] = useState<CtaFeedback>(null);
+
+  // Clear stale feedback when the underlying investigation or issue
+  // changes; what was "Saved to project memory" for issue #41 is no
+  // longer relevant when the user clicks over to #42.
+  const issueNumber = issue.number;
+  useEffect(() => {
+    setFeedback(null);
+    setBusy(null);
+  }, [issueNumber, investigation]);
+
+  const resolvedProjectPath =
+    activeWorkspace?.projectPath || layoutProjectPath || "";
+
+  const downstreamReady = Boolean(investigation && !isInvestigating);
+
+  async function handleHandoffToClaude() {
+    if (!investigation || busy) return;
+    setBusy("handoff");
+    setFeedback(null);
+    try {
+      // Spawn a PTY pane running the `claude` CLI (Claude Code). The
+      // useTerminalSession hook auto-sends `initialPrompt` after the PTY
+      // signals ready, so we hand off the wrapped investigation as the
+      // very first input.
+      const initialPrompt =
+        `--- GitHub Investigation for #${issue.number} (${issue.title}) ---\n\n` +
+        `${investigation}\n\n` +
+        `--- end of context ---\n\n` +
+        `Please continue from here.`;
+      addPane({
+        cliCommand: "claude",
+        initialPrompt,
+        projectPath: resolvedProjectPath || undefined,
+        issueId: String(issue.number),
+      });
+      // Switch to the Claude view so the new pane is immediately visible.
+      setActiveView("claude");
+      setFeedback({
+        tone: "success",
+        message: `Opened Claude with #${issue.number} context`,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFeedback({ tone: "error", message: `Hand off failed: ${msg}` });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleDraftPatch() {
+    if (!investigation || busy) return;
+    if (!resolvedProjectPath) {
+      setFeedback({
+        tone: "error",
+        message: "No active workspace — open one to draft a patch.",
+      });
+      return;
+    }
+    setBusy("draft");
+    setFeedback(null);
+    try {
+      // Seed a single-attempt async Flight using the investigation as the
+      // brief. Executor model = claude-sonnet-4-6 over the OAuth sidecar
+      // (api-claude-oauth) per the v0.8-D spec.
+      const brief =
+        `GitHub issue #${issue.number}: ${issue.title}\n\n` +
+        `Issue description:\n${issue.body?.trim() || "(no description)"}\n\n` +
+        `AI Investigation:\n${investigation}\n\n` +
+        `Apply the change. Keep the diff focused on what the investigation calls out.`;
+      const flight = addFlight({
+        title: `Fix #${issue.number}: ${issue.title}`,
+        objective: brief.slice(0, 200),
+        priority: "medium",
+        projectPath: resolvedProjectPath,
+        workspaceId: activeWorkspace?.id ?? null,
+        issueIds: [],
+      });
+      const target: AttemptTargetSpec = {
+        kind: "local",
+        basePath: resolvedProjectPath,
+        baseBranch: "main",
+        agentConfigId: "api-claude-oauth",
+        provider: "claude-oauth",
+        model: "claude-sonnet-4-6",
+      };
+      await launchAsync(flight.id, brief, [target]);
+      setActiveFlight(flight.id);
+      setActiveView("missions");
+      setFeedback({
+        tone: "success",
+        message: `Launched draft patch for #${issue.number}`,
+        linkLabel: "Open",
+        onLinkClick: () => setActiveView("missions"),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFeedback({ tone: "error", message: `Draft patch failed: ${msg}` });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function handleSaveAsMemory() {
+    if (!investigation || busy) return;
+    setBusy("memory");
+    setFeedback(null);
+    try {
+      captureManually({
+        projectPath: resolvedProjectPath,
+        source: "github-investigation",
+        summary: `Investigation for #${issue.number}: ${issue.title}`,
+        body: investigation,
+        tags: ["github-investigation", `gh-${issue.number}`],
+      });
+      setFeedback({
+        tone: "success",
+        message: "Saved to project memory",
+        linkLabel: "View",
+        onLinkClick: () => setActiveView("memory"),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFeedback({ tone: "error", message: `Save failed: ${msg}` });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!investigation && !isInvestigating) {
     return (
       <div className="bg-bg-secondary border border-accent-blue/30 rounded-lg overflow-hidden">
@@ -820,32 +1467,62 @@ function InvestigationPanel({
           />
         ) : null}
 
-        <div className="flex gap-1.5 mt-3 pt-2.5 border-t border-dashed border-bg-border">
+        <div className="flex gap-1.5 mt-3 pt-2.5 border-t border-dashed border-bg-border flex-wrap items-center">
+          {/* v0.8-D — Hand off to Claude: spawn `claude` PTY with the
+              investigation piped in as the first user turn. */}
           <button
             type="button"
-            disabled
-            title="Coming soon"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-soft text-accent-green border border-accent-line rounded opacity-60 cursor-not-allowed"
+            onClick={() => void handleHandoffToClaude()}
+            disabled={!downstreamReady || busy === "handoff"}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-soft text-accent-green border border-accent-line rounded hover:bg-accent-green/15 transition-colors disabled:opacity-50"
           >
-            <Plane size={10} /> Hand off to Claude
+            {busy === "handoff" ? (
+              <Loader2 size={10} className="animate-spin" />
+            ) : (
+              <Plane size={10} />
+            )}{" "}
+            Hand off to Claude
           </button>
+          {/* v0.8-D — Draft patch: single-attempt async flight using the
+              OAuth Claude sidecar (claude-sonnet-4-6) as executor. */}
           <button
             type="button"
-            disabled
-            title="Coming soon"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-primary border border-bg-border rounded opacity-60 cursor-not-allowed"
+            onClick={() => void handleDraftPatch()}
+            disabled={!downstreamReady || busy === "draft"}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-primary border border-bg-border rounded hover:bg-bg-elevated transition-colors disabled:opacity-50"
           >
-            <GitBranch size={10} /> Draft patch
+            {busy === "draft" ? (
+              <Loader2 size={10} className="animate-spin" />
+            ) : (
+              <GitBranch size={10} />
+            )}{" "}
+            Draft patch
           </button>
+          {/* v0.8-D — Save as memory: write the investigation as a manual
+              MemoryEvent so it's available to future sessions. */}
           <button
             type="button"
-            disabled
-            title="Coming soon"
-            className="text-[10.5px] text-text-muted px-2 py-1 opacity-60 cursor-not-allowed"
+            onClick={handleSaveAsMemory}
+            disabled={!downstreamReady || busy === "memory"}
+            className="inline-flex items-center gap-1.5 text-[10.5px] text-text-secondary hover:text-text-primary px-2 py-1 disabled:opacity-50"
           >
+            {busy === "memory" ? (
+              <Loader2 size={10} className="animate-spin" />
+            ) : (
+              <StickyNote size={10} />
+            )}{" "}
             Save as memory
           </button>
         </div>
+
+        {feedback && (
+          <div className="mt-2">
+            <CtaFeedbackRow
+              feedback={feedback}
+              onDismiss={() => setFeedback(null)}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -856,95 +1533,160 @@ interface PRListProps {
   isLoading: boolean;
   selectedNum: number | null;
   onSelect: (num: number) => void;
+  // v0.8-C
+  stateFilter: "open" | "closed" | "all";
+  onStateFilterChange: (state: "open" | "closed" | "all") => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
 }
 
-function PRList({ prs, isLoading, selectedNum, onSelect }: PRListProps) {
-  if (isLoading && prs.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-12 text-text-muted">
-        <Loader2 size={16} className="animate-spin" />
-      </div>
-    );
-  }
-  if (prs.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-12 text-[11px] text-text-muted">
-        No open pull requests
-      </div>
-    );
-  }
+function PRList({
+  prs,
+  isLoading,
+  selectedNum,
+  onSelect,
+  stateFilter,
+  onStateFilterChange,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
+}: PRListProps) {
   // NOTE: GitHub's `/pulls` LIST endpoint does NOT return
   // `additions`/`deletions`/`changed_files`/`requested_reviewers` — those
   // require a per-PR GET. Rendering them from the list response produced
   // zeros for every PR (v0.7 FIX 3). Removed until per-PR fetch lands.
   // `draft` IS on the list response and is retained.
   return (
-    <div className="overflow-y-auto px-4 py-3 flex flex-col gap-2">
-      {prs.map((pr) => {
-        const draft = !!pr.draft;
-        const active = selectedNum === pr.number;
-        return (
-          <button
-            type="button"
-            key={pr.number}
-            onClick={() => onSelect(pr.number)}
-            className={`w-full text-left bg-bg-secondary border rounded-lg px-3.5 py-2.5 transition-colors ${
-              active
-                ? "border-accent-purple/50"
-                : "border-bg-border hover:border-line-strong"
-            }`}
-          >
-            <div className="flex items-start gap-2.5">
-              <GitBranch
-                size={13}
-                className={`mt-0.5 flex-shrink-0 ${
-                  draft ? "text-text-muted" : "text-accent-purple"
-                }`}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="text-[10px] text-text-muted tabular-nums">
-                    #{pr.number}
-                  </span>
-                  <span className="text-xs font-medium text-text-primary">
-                    {pr.title}
-                  </span>
-                  {draft && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-bg-tertiary text-text-muted border border-bg-border">
-                      draft
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2.5 text-[10px] text-text-muted flex-wrap">
-                  <span>
-                    <span className="text-text-secondary">
-                      {pr.user?.login ?? "unknown"}
-                    </span>{" "}
-                    wants to merge
-                  </span>
-                  <span className="font-mono text-text-secondary">
-                    {pr.head?.ref ?? ""}
-                  </span>
-                  <ChevronRight size={9} />
-                  <span className="font-mono text-text-secondary">
-                    {pr.base?.ref ?? ""}
-                  </span>
-                  <span className="text-line-strong">·</span>
-                  <span className="text-text-muted">
-                    opened {timeAgo(pr.created_at)} ago
-                  </span>
-                </div>
-              </div>
-              <div className="flex flex-col gap-1 items-end flex-shrink-0">
-                <span className="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5 rounded-full font-medium bg-accent-green/15 text-accent-green">
-                  <Check size={9} />
-                  {pr.state ?? "open"}
+    <div className="flex flex-col min-h-0 overflow-hidden">
+      {/* v0.8-C: state filter */}
+      <div className="flex items-center gap-1 px-3 py-2 border-b border-bg-border flex-shrink-0">
+        <StateFilterChip
+          label="Open"
+          active={stateFilter === "open"}
+          onClick={() => onStateFilterChange("open")}
+        />
+        <StateFilterChip
+          label="Closed"
+          active={stateFilter === "closed"}
+          onClick={() => onStateFilterChange("closed")}
+        />
+        <StateFilterChip
+          label="All"
+          active={stateFilter === "all"}
+          onClick={() => onStateFilterChange("all")}
+        />
+        <div className="flex-1" />
+        <span className="text-[9.5px] text-text-muted font-mono">
+          {prs.length} loaded
+        </span>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+        {isLoading && prs.length === 0 ? (
+          <div className="flex items-center justify-center py-12 text-text-muted">
+            <Loader2 size={16} className="animate-spin" />
+          </div>
+        ) : prs.length === 0 ? (
+          <div className="flex items-center justify-center py-12 text-[11px] text-text-muted">
+            No {stateFilter === "all" ? "" : stateFilter} pull requests
+          </div>
+        ) : (
+          <>
+            {prs.map((pr) => {
+              const draft = !!pr.draft;
+              const active = selectedNum === pr.number;
+              return (
+                <button
+                  type="button"
+                  key={pr.number}
+                  onClick={() => onSelect(pr.number)}
+                  className={`w-full text-left bg-bg-secondary border rounded-lg px-3.5 py-2.5 transition-colors ${
+                    active
+                      ? "border-accent-purple/50"
+                      : "border-bg-border hover:border-line-strong"
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <GitBranch
+                      size={13}
+                      className={`mt-0.5 flex-shrink-0 ${
+                        draft ? "text-text-muted" : "text-accent-purple"
+                      }`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-[10px] text-text-muted tabular-nums">
+                          #{pr.number}
+                        </span>
+                        <span className="text-xs font-medium text-text-primary">
+                          {pr.title}
+                        </span>
+                        {draft && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-bg-tertiary text-text-muted border border-bg-border">
+                            draft
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2.5 text-[10px] text-text-muted flex-wrap">
+                        <span>
+                          <span className="text-text-secondary">
+                            {pr.user?.login ?? "unknown"}
+                          </span>{" "}
+                          wants to merge
+                        </span>
+                        <span className="font-mono text-text-secondary">
+                          {pr.head?.ref ?? ""}
+                        </span>
+                        <ChevronRight size={9} />
+                        <span className="font-mono text-text-secondary">
+                          {pr.base?.ref ?? ""}
+                        </span>
+                        <span className="text-line-strong">·</span>
+                        <span className="text-text-muted">
+                          opened {timeAgo(pr.created_at)} ago
+                        </span>
+                        {/* v0.8-B: pr check pill */}
+                        <PrCheckPill pr={pr} />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 items-end flex-shrink-0">
+                      <span
+                        className={`inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5 rounded-full font-medium ${
+                          pr.state === "closed"
+                            ? "bg-accent-purple/15 text-accent-purple"
+                            : "bg-accent-green/15 text-accent-green"
+                        }`}
+                      >
+                        <Check size={9} />
+                        {pr.state ?? "open"}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+            {/* v0.8-C: pagination */}
+            {hasMore && (
+              <div className="flex items-center justify-center gap-2 px-3 py-3">
+                <span className="text-[10px] text-text-muted">
+                  Showing {prs.length}
                 </span>
+                <button
+                  type="button"
+                  onClick={onLoadMore}
+                  disabled={isLoadingMore}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-primary border border-bg-border rounded hover:border-line-strong disabled:opacity-60"
+                >
+                  {isLoadingMore && (
+                    <Loader2 size={10} className="animate-spin" />
+                  )}
+                  Load more
+                </button>
               </div>
-            </div>
-          </button>
-        );
-      })}
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -966,9 +1708,13 @@ interface ActivityItem {
 function ActivityFeed({
   issues,
   prs,
+  owner,
+  repo,
 }: {
   issues: GitHubIssue[];
   prs: GitHubPr[];
+  owner: string;
+  repo: string;
 }) {
   const items = useMemo<ActivityItem[]>(() => {
     const out: ActivityItem[] = [];
@@ -996,17 +1742,24 @@ function ActivityFeed({
       .slice(0, 30);
   }, [issues, prs]);
 
-  if (items.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
-        No recent activity yet.
-      </div>
-    );
-  }
-
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3.5">
-      <div className="flex flex-col border-l border-dashed border-bg-border ml-1.5 pl-3.5">
+    <div className="flex-1 flex flex-col min-h-0 relative">
+      {/* v0.8-F: catch me up */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-bg-border bg-bg-secondary flex-shrink-0 relative">
+        <Clock size={11} className="text-text-muted" />
+        <span className="text-[11px] font-semibold text-text-primary">
+          Recent activity
+        </span>
+        <div className="flex-1" />
+        {owner && repo && <AICatchUpButton owner={owner} repo={repo} />}
+      </div>
+      {items.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
+          No recent activity yet.
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-4 py-3.5">
+          <div className="flex flex-col border-l border-dashed border-bg-border ml-1.5 pl-3.5">
         {items.map((a, i) => {
           const meta = activityMeta(a.kind);
           return (
@@ -1037,7 +1790,9 @@ function ActivityFeed({
             </div>
           );
         })}
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

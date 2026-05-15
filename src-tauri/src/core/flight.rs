@@ -356,6 +356,15 @@ pub struct Attempt {
     pub tokens: u64,
     #[serde(default)]
     pub error_message: Option<String>,
+    /// v0.8-G: when the parent Flight has `publish_attempts_as_prs == true`,
+    /// the post-attempt pipeline pushes this attempt's branch to `origin`
+    /// and opens a GitHub draft PR. The resulting PR number is recorded
+    /// here so the Flight Detail UI can surface a "Draft PR #N" link.
+    /// `None` if publishing is disabled or the publish step failed
+    /// (errors are logged to the attempt's error_message; the attempt
+    /// itself stays in whatever terminal state it earned naturally).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_pr_number: Option<u32>,
 }
 
 // === Flight ===
@@ -412,6 +421,14 @@ pub struct Flight {
     /// `None` for missions that never used the planner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner_provider: Option<String>,
+    /// v0.8-G: when set on an async-mode Flight, the executor pipeline
+    /// pushes each attempt's branch to `origin` and opens a draft GitHub
+    /// PR after the attempt reaches a terminal `completed`/`reviewing`
+    /// state. The resulting PR number is written back to
+    /// `Attempt.draft_pr_number`. Defaults to `false` for back-compat with
+    /// previously-persisted Flights.
+    #[serde(default)]
+    pub publish_attempts_as_prs: bool,
 }
 
 impl Flight {
@@ -568,6 +585,7 @@ mod tests {
             planner_cost: None,
             planner_tokens: None,
             planner_provider: None,
+            publish_attempts_as_prs: false,
         }
     }
 
