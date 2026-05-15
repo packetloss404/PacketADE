@@ -348,24 +348,63 @@ Deferred items called out in `dev/multi-platform-build.md` and
   unrelated to mission planner work and have been excluded from
   every mission-planner commit. Land them in their own
   chore/cleanup commit when convenient.
-- **P3 — Memory inline surfaces.** Memory was demoted from the LeftRail
-  to a Settings tab. The pane is still reachable via Settings → "Manage
-  memory →". Follow-ups for fuller integration:
-  - AgentInputArea: "context preview" chevron showing patterns being
-    injected into the next message (lift the existing `injectedPreview`
-    block from MemoryView.tsx).
-  - MissionsView: small memory chip on completed missions showing
-    "N patterns extracted" with hover-preview.
-  - WorkspaceSidebar: "recent learnings" mini-feed for the active
-    project.
-- **P3 — `LearnedPattern.projectPath` missing.** Patterns leak across
-  projects because the type has no projectPath field. Add the field +
-  migration so patterns extracted in project A don't surface in
-  project B's injected context.
-- **P3 — Wire the disabled Pin button on PatternRow.** Star icon at
-  ~line 580 in MemoryView.tsx is permanently `disabled`. Either wire
-  it (add `pinned: boolean` to LearnedPattern; pinned patterns survive
-  `capPatterns` eviction) or hide it.
+## GitHub pane v0.9+ (from v0.8 deferrals)
+
+- **P2 — Authored PR line comments + reply threads.** v0.8 shipped read-only
+  viewing of existing review comments via `PullRequestReviewsPanel`. Adding
+  new threads requires `POST /repos/{o}/{r}/pulls/{n}/comments` + reply
+  support + the in-diff composer UI. Right place: extend `DiffViewer` with
+  per-line gutter affordances; backend command pair
+  `github_post_pr_review_comment` + `github_reply_to_pr_review_comment`.
+- **P2 — Notifications inbox.** `GET /notifications` integration with a
+  dedicated tab listing unread items, with mark-as-read and link-back to the
+  source issue / PR. Significant work — own state, polling cadence, and
+  badge wiring across the app.
+- **P3 — Issue → Mission auto-mirroring (bidirectional).** v0.8 has one-way
+  Plane / Mission spec handoff. A "mirror this mission to GitHub issues"
+  toggle would create + update issues automatically. Two-way sync is risky
+  (collision, conflict resolution); requires a dedicated design pass.
+- **P3 — Releases / gists / Actions runs view.** Out of scope for v0.8;
+  worth picking up if the pane grows into a fuller GitHub client.
+- **P3 — Native `gh` CLI device-flow auth.** Token paste still works in
+  v0.8; OAuth device-flow would smooth onboarding.
+- **P3 — Windows hook shim.** v0.8's `prepare-commit-msg` hook is a POSIX
+  shell script that relies on Git for Windows' bundled MSYS sh. If a user
+  runs vanilla Windows OpenSSH with no sh on PATH, the hook silently
+  no-ops. Add a `prepare-commit-msg.cmd` shim or detect and warn.
+- **P3 — SSH attempt draft-PR publishing.** v0.8's "Publish attempts as
+  draft PRs" Flight option skips SSH attempts (logged as `errorMessage`).
+  Add support for running git push from the remote worktree host.
+
+## Memory v0.9+ (from v0.8 deferrals)
+
+- **P2 — Embedding / RAG over memory.** Today's pattern retrieval is
+  keyword/recency-based. An embedding layer (sqlite-vss or LanceDB)
+  would enable semantic context injection for the Mission Planner
+  decomposition phase and the executor brief.
+- **P2 — Pre-execution memory brief for executor sessions.** When an
+  attempt launches, compose a short "what we know about this codebase"
+  brief from project-scoped patterns and inject it into the first
+  user turn.
+- **P3 — Recurring-error detector.** Pattern-extraction pipeline could
+  watch for repeated failure modes and surface a "this looks familiar"
+  hint at the next agent launch.
+- **P3 — "Ask your project" memory chat tab.** A chat surface that
+  queries memory directly (with the RAG layer above this is trivial;
+  without it, fall back to keyword search).
+- **P3 — Confidence auto-rerating on outcome.** When a pattern is
+  referenced and the resulting attempt succeeds/fails, bump or decay
+  the pattern's confidence score.
+- **P3 — Manual capture "+ Add to memory" button** in more surfaces
+  beyond the GitHub investigation. Anywhere the user encounters
+  insight (mission journal, agent transcript, code review thread)
+  should have a single-click capture affordance.
+- **P3 — Project-scoped filter chips in TimelineTab.**
+- **P3 — Provenance linking on event cards** (clickable
+  `sessionId`/`taskId`/`flightId` jumps to the originating surface).
+- **P3 — Export / import memory** as JSON+Markdown.
+- **P3 — Date-range scope chips.**
+- **P3 — 30-day memory digest.**
 
 ## Product tracks (from `dev/README.md`)
 
