@@ -9,14 +9,17 @@ import {
   Check,
   CheckCircle2,
   Sparkles,
-  ListTree,
   Target,
 } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
 import { useGoalStore } from "@/stores/goalStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useMissionPlannerStore } from "@/stores/missionPlannerStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
+import { MissionSpecPane } from "@/components/missions/MissionSpecPane";
 import { PlannerApprovalGate } from "@/components/missions/PlannerApprovalGate";
 import { relativeTime } from "@/lib/time";
 import {
@@ -181,13 +184,39 @@ export function MissionsView() {
   const flights = useFlightStore((s) => s.flights);
   const activeFlightId = useFlightStore((s) => s.activeFlightId);
   const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
+  const addFlight = useFlightStore((s) => s.addFlight);
+  const updateFlight = useFlightStore((s) => s.updateFlight);
   const computeFlightStatus = useFlightStore((s) => s.computeFlightStatus);
   const pauseFlight = useOrchestrationStore((s) => s.pauseFlight);
   const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
+  const startPlanner = useMissionPlannerStore((s) => s.startPlanner);
+  const activeWorkspace = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId),
+  );
+  const projectPath = useLayoutStore((s) => s.projectPath);
 
   const [modal, setModal] = useState<ModalKind>(null);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+
+  function handleStartMission() {
+    const resolvedPath = activeWorkspace?.projectPath || projectPath || "";
+    const flight = addFlight({
+      title: "Untitled mission",
+      objective: "",
+      priority: "medium",
+      projectPath: resolvedPath,
+      workspaceId: activeWorkspace?.id ?? null,
+      issueIds: [],
+    });
+    // `addFlight` hardcodes status: "draft"; flip it to spec mode so the
+    // detail pane mounts the MissionSpecPane and the sidebar groups this
+    // mission under "Drafting".
+    updateFlight(flight.id, { status: "spec" });
+    setActiveFlight(flight.id);
+    // Fire-and-forget — MissionSpecPane handles streaming state once mounted.
+    void startPlanner(flight.id, resolvedPath);
+  }
 
   const selectedId = useMemo(() => {
     if (activeFlightId && flights.some((f) => f.id === activeFlightId)) {
@@ -237,23 +266,23 @@ export function MissionsView() {
             No missions yet
           </span>
           <span className="text-xs max-w-md text-center">
-            A Flight launches one or more agents in parallel — each in its own
-            git worktree, on local or remote SSH targets.
+            Start a conversation with the planner. Describe what you want to
+            build, and the planner will help scope it, decompose it into
+            milestones, and run it in parallel.
           </span>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex flex-col items-center gap-2 mt-2">
             <button
-              onClick={() => setModal("async")}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-accent-green border border-accent-line bg-accent-soft rounded hover:bg-accent-green/15 transition-colors"
+              onClick={handleStartMission}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-accent-green border border-accent-line bg-accent-soft rounded hover:bg-accent-green/15 transition-colors"
             >
-              <Sparkles size={12} />
-              Launch agents
+              <Sparkles size={14} />
+              Start a mission
             </button>
             <button
-              onClick={() => setModal("multitask")}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+              onClick={() => setModal("async")}
+              className="text-[11px] text-text-muted hover:text-text-secondary transition-colors mt-1"
             >
-              <ListTree size={12} />
-              Multi-task plan
+              Or &rarr; Quick async launch (existing flow)
             </button>
           </div>
         </div>
@@ -530,9 +559,10 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   const dot = STATUS_DOT[status];
   const tasks = flightTasks(flight);
   const sessions = flight.linkedSessionIds.length;
-  const canPause = status === "active";
-  const canResume = status === "paused" || status === "review";
-  const showApprove = status === "review" || tasks.approvals > 0;
+  const isSpec = status === "spec";
+  const canPause = !isSpec && status === "active";
+  const canResume = !isSpec && (status === "paused" || status === "review");
+  const showApprove = !isSpec && (status === "review" || tasks.approvals > 0);
 
   return (
     <div className="flex-1 overflow-y-auto bg-bg-primary">
@@ -597,17 +627,23 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
 
         <PlannerApprovalGate missionId={flight.id} />
 
-        <StatGrid
-          flight={flight}
-          tasks={tasks}
-          sessions={sessions}
-          dot={dot}
-        />
+        {isSpec ? (
+          <MissionSpecPane missionId={flight.id} />
+        ) : (
+          <>
+            <StatGrid
+              flight={flight}
+              tasks={tasks}
+              sessions={sessions}
+              dot={dot}
+            />
 
-        <div className="grid grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr] flex-1 min-h-[260px]">
-          <MilestonesCard flight={flight} tasks={tasks} />
-          <TimelineCard flight={flight} />
-        </div>
+            <div className="grid grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr] flex-1 min-h-[260px]">
+              <MilestonesCard flight={flight} tasks={tasks} />
+              <TimelineCard flight={flight} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

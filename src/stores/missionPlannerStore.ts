@@ -9,6 +9,7 @@ import {
   missionPlannerApprovalResolvedEvent,
 } from "@/lib/events";
 import {
+  getMissionApprovals as invokeGetMissionApprovals,
   injectPlannerTurn as invokeInjectPlannerTurn,
   pauseMissionPlanner as invokePauseMissionPlanner,
   resolveMissionApproval as invokeResolveMissionApproval,
@@ -16,6 +17,7 @@ import {
   startMissionPlanner as invokeStartMissionPlanner,
   stopMissionPlanner as invokeStopMissionPlanner,
 } from "@/lib/tauri";
+import { useFlightStore } from "@/stores/flightStore";
 
 // E1 — frontend runtime for Mission Planner sessions. Ephemeral by design:
 // no localStorage persistence (cold-start spec flips active planners to
@@ -48,6 +50,19 @@ export interface PlannerSessionRuntime {
   isStreaming: boolean;
   transcript: PlannerTranscriptEntry[];
   lastToolCall: PlannerToolCall | null;
+  /**
+   * E3-LAUNCH — armed to `true` by `launchMission` (after the `spec ->
+   * planning` flip, before the [LAUNCH] turn is injected) and consumed
+   * by the very next `api-agent:tool-start` event, which flips the
+   * flight from `planning` to `active`.
+   *
+   * Initialized `false` at `startPlanner` so spec-mode tool calls (e.g.
+   * `request_user_approval` during pre-launch chat) don't burn the flag.
+   * The kickoff is armed only between `launchMission` and the first
+   * post-launch tool-start, matching the user-facing semantics
+   * "Launch -> first planner tool means we're active".
+   */
+  awaitingLaunchKickoff: boolean;
 }
 
 /**
@@ -86,6 +101,13 @@ interface MissionPlannerStore {
     content: string,
     source: "user" | "wake_trigger",
   ): Promise<void>;
+  /**
+   * E3-LAUNCH — transition a mission from `spec` to `planning`, then poke
+   * the planner with the `[LAUNCH]` sentinel so it begins decomposition.
+   * The flight auto-transitions to `active` when the first
+   * `create_milestone` / `create_task` tool-start event lands.
+   */
+  launchMission(missionId: string): Promise<void>;
   getPlanner(missionId: string): PlannerSessionRuntime | undefined;
   isPlannerRunning(missionId: string): boolean;
   /**
@@ -196,18 +218,43 @@ async function installListeners(
       const ts = Date.now();
       const toolName = event.payload.name;
       const args = event.payload.input ?? null;
+      // E3-LAUNCH — only consume the kickoff flag if it was armed by
+      // `launchMission`. Tool calls during spec-mode chat (e.g.
+      // `request_user_approval`) MUST NOT burn it. Capture inside the
+      // set() updater so the read+clear is atomic against any other
+      // listener mutating the same runtime concurrently.
+      let shouldFlipToActive = false;
       set((s) => {
-        const next = patchRuntime(s.runtimes, missionId, {
+        const current = s.runtimes.get(missionId);
+        if (!current) return {};
+        const wasAwaitingKickoff = current.awaitingLaunchKickoff;
+        if (wasAwaitingKickoff) {
+          shouldFlipToActive = true;
+        }
+        const runtimes = new Map(s.runtimes);
+        runtimes.set(missionId, {
+          ...current,
           lastToolCall: { tool: toolName, args, ts },
+          awaitingLaunchKickoff: wasAwaitingKickoff
+            ? false
+            : current.awaitingLaunchKickoff,
+          transcript: [
+            ...current.transcript,
+            { role: "system", content: `tool: ${toolName}`, ts },
+          ],
         });
-        return {
-          runtimes: appendTranscript(next, missionId, {
-            role: "system",
-            content: `tool: ${toolName}`,
-            ts,
-          }),
-        };
+        return { runtimes };
       });
+      if (shouldFlipToActive) {
+        // Kickoff tool landed after Launch -> flip the flight to `active`
+        // if it's still in the `planning` state. Guarded on flight status
+        // so we don't clobber `paused`/`failed`/etc. transitions.
+        const flightStore = useFlightStore.getState();
+        const flight = flightStore.flights.find((f) => f.id === missionId);
+        if (flight?.status === "planning") {
+          flightStore.updateFlight(missionId, { status: "active" });
+        }
+      }
     },
   );
 
@@ -274,6 +321,50 @@ async function installListeners(
     },
   );
 
+  // E3-FIX1 — refresh `flightStore` whenever the Rust planner tool
+  // handlers mutate persisted flight state. Without these, the planner
+  // populates PersistedState on disk but `MilestonesCard` / `TimelineCard`
+  // stay empty until app reload, breaking the headline acceptance test.
+  //
+  // All 8 events are scoped to `missionId` and the Rust side emits them
+  // unconditionally on success (see `commands/mission_planner_tools/*.rs`,
+  // search for `format!("mission-planner:`). We call the existing
+  // `hydrateFromBackend` on each fire — it re-reads the whole
+  // PersistedState, which is the right hammer for v1. A targeted
+  // "refresh-this-flight-only" would be more efficient but isn't needed
+  // for correctness (P3 follow-up).
+  const flightEventKinds = [
+    "milestone-created",
+    "task-created",
+    "task-started",
+    "task-launch-failed",
+    "task-updated",
+    "task-blocked",
+    "task-replan-acknowledged",
+    "mission-completed",
+  ] as const;
+  const flightEventUnlistens: UnlistenFn[] = [];
+  for (const kind of flightEventKinds) {
+    const unlisten = await listen(
+      `mission-planner:${kind}:${missionId}`,
+      () => {
+        // Best-effort re-read; surface failures to the console so we can
+        // diagnose schema-drift issues without crashing the planner UI.
+        void useFlightStore
+          .getState()
+          .hydrateFromBackend()
+          .catch((err) => {
+            console.warn(
+              `Failed to hydrate flightStore after mission-planner:${kind}`,
+              missionId,
+              err,
+            );
+          });
+      },
+    );
+    flightEventUnlistens.push(unlisten);
+  }
+
   listenerCleanup.set(missionId, () => {
     chunkUnlisten();
     doneUnlisten();
@@ -281,6 +372,9 @@ async function installListeners(
     errorUnlisten();
     approvalRequestUnlisten();
     approvalResolvedUnlisten();
+    for (const unlisten of flightEventUnlistens) {
+      unlisten();
+    }
   });
 }
 
@@ -308,6 +402,7 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
         isStreaming: false,
         transcript: [],
         lastToolCall: null,
+        awaitingLaunchKickoff: false,
       });
       return { runtimes };
     });
@@ -347,6 +442,36 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
       }));
       await installListeners(missionId, plannerSessionId, set);
     }
+
+    // E3-LAUNCH / E3-HYD coordination — hydrate any pending approval
+    // requests that were persisted by the Rust side. Live events will catch
+    // new approvals; this only matters on app restart or view re-mount
+    // while a planner is mid-flight. Non-fatal on error.
+    try {
+      const existing = await invokeGetMissionApprovals(missionId);
+      if (existing.length > 0) {
+        // Merge by id rather than replace: a live `approval-request`
+        // event may have landed in the ~1ms gap between `installListeners`
+        // resolving and this hydration call returning, and replacing the
+        // map outright would drop those entries on the floor.
+        set((s) => {
+          const updated = new Map(s.pendingApprovals);
+          const current = updated.get(missionId) ?? [];
+          const currentNotInExisting = current.filter(
+            (c) => !existing.some((e) => e.id === c.id),
+          );
+          updated.set(missionId, [...existing, ...currentNotInExisting]);
+          return { pendingApprovals: updated };
+        });
+      }
+    } catch (err) {
+      console.warn(
+        "Failed to hydrate pending approvals for mission",
+        missionId,
+        err,
+      );
+    }
+
     return plannerSessionId;
   },
 
@@ -402,6 +527,70 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
     set((s) => ({
       runtimes: patchRuntime(s.runtimes, missionId, { isStreaming: true }),
     }));
+  },
+
+  launchMission: async (missionId) => {
+    const runtime = get().runtimes.get(missionId);
+    if (!runtime) {
+      throw new Error(
+        `launchMission: planner not started for mission ${missionId}. ` +
+          "Call startPlanner first (spec-mode chat must be live).",
+      );
+    }
+
+    // Optimistic system line so the user has visual feedback before the
+    // planner's first stream chunk arrives.
+    set((s) => ({
+      runtimes: appendTranscript(s.runtimes, missionId, {
+        role: "system",
+        content: "Launching mission…",
+        ts: Date.now(),
+      }),
+    }));
+
+    // Flip `spec` -> `planning`. The detail pane (E3-MOUNT) listens on the
+    // flight status to swap MissionSpecPane back to the milestones/timeline
+    // view, so the user sees create_milestone / create_task calls land
+    // live.
+    useFlightStore.getState().updateFlight(missionId, { status: "planning" });
+
+    // Arm the kickoff flag. The next `api-agent:tool-start` for this
+    // planner consumes the flag and flips `planning -> active`. Done
+    // AFTER the status flip and BEFORE the inject so a hypothetical
+    // racing pre-launch tool can't accidentally trip the flip.
+    set((s) => ({
+      runtimes: patchRuntime(s.runtimes, missionId, {
+        awaitingLaunchKickoff: true,
+      }),
+    }));
+
+    // Wake the planner with the [LAUNCH] sentinel via the `wake_trigger`
+    // injection path. The sidecar wraps wake_trigger content in
+    // `<wake_trigger source="wake_trigger" kind="...">…</wake_trigger>`
+    // so the planner sees this as a system re-entry signal, not a user
+    // message. The optimistic transcript push uses role="system" (see
+    // `injectTurn`), keeping the [LAUNCH] sentinel out of the user
+    // bubble column in the chat UI.
+    const LAUNCH_PROMPT =
+      "[LAUNCH] User has approved the spec. Begin decomposition now: " +
+      "call create_milestone and create_task as needed to fully realize " +
+      "the mission. Aim for 2-4 milestones and 4-10 tasks total. When " +
+      "the plan is in place, your turn ends — the executor takes over.";
+    try {
+      await get().injectTurn(missionId, LAUNCH_PROMPT, "wake_trigger");
+    } catch (err) {
+      // If the inject failed, roll back the flight status + disarm the
+      // kickoff flag so the user can retry. The optimistic "Launching
+      // mission…" line stays in the transcript as a breadcrumb (the
+      // error event listener may also append an `error:` line).
+      useFlightStore.getState().updateFlight(missionId, { status: "spec" });
+      set((s) => ({
+        runtimes: patchRuntime(s.runtimes, missionId, {
+          awaitingLaunchKickoff: false,
+        }),
+      }));
+      throw err;
+    }
   },
 
   getPlanner: (missionId) => get().runtimes.get(missionId),

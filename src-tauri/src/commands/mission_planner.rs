@@ -961,6 +961,33 @@ pub async fn resolve_mission_approval(
     Ok(())
 }
 
+/// Cold-start hydration query for the frontend's pending-approval state.
+///
+/// `missionPlannerStore` populates its `pendingApprovals` map exclusively via
+/// `mission-planner:approval-request:<missionId>` event listeners that are
+/// installed in `startPlanner`. If a mission already has pending approvals on
+/// disk before those listeners attach — e.g. resuming a paused mission, a
+/// page reload, or a cold app start — the events have already fired and the
+/// store starts empty. The frontend calls this command after installing
+/// listeners (but before mounting the spec pane) to backfill any unresolved
+/// approvals so the UI is consistent with persisted state.
+///
+/// Returns only **unresolved** approvals — resolved entries are historical
+/// and don't need to surface. Read-only; no state lock required.
+#[tauri::command]
+pub async fn get_mission_approvals(
+    mission_id: String,
+) -> Result<Vec<crate::api::MissionApprovalRequestDto>, String> {
+    let state = storage::load_state();
+    let approvals: Vec<crate::api::MissionApprovalRequestDto> = state
+        .mission_approvals
+        .into_iter()
+        .filter(|a| a.mission_id == mission_id && !a.resolved)
+        .map(Into::into)
+        .collect();
+    Ok(approvals)
+}
+
 // ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------

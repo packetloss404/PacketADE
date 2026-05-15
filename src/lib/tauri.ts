@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AgentConfigDto,
+  MissionApprovalRequestDto,
   OrchestratorSnapshotDto,
   PersistedStateDto,
   PersistedUiStateDto,
@@ -1781,5 +1782,16 @@ export async function resolveMissionApproval(
   choice: string,
 ): Promise<void> {
   return invoke("resolve_mission_approval", { approvalId, choice });
+}
+
+// Cold-start hydration for `missionPlannerStore.pendingApprovals`. Event
+// listeners installed in `startPlanner` only see approvals filed AFTER they
+// attach; this binding backfills any unresolved approvals already on disk
+// (paused mission resume, page reload, cold app start). Returns only
+// unresolved entries — resolved approvals are historical.
+export async function getMissionApprovals(
+  missionId: string,
+): Promise<MissionApprovalRequestDto[]> {
+  return invoke<MissionApprovalRequestDto[]>("get_mission_approvals", { missionId });
 }
 
