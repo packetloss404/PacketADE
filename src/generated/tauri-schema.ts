@@ -56,7 +56,15 @@ export type TaskResultDto = { exitCode: number | null, summary: string, filesCha
 
 export type ReviewPacketDto = { id: string, taskId: string, flightId: string, milestoneId: string, requestedAt: number, reviewType: ReviewTypeDto, summary: string, diff?: string, command?: string, filePaths: Array<string>, agentId?: string, sessionId?: string, };
 
-export type TaskDto = { id: string, milestoneId: string, flightId: string, title: string, description: string, order: number, status: TaskStatusDto, type: TaskTypeDto, agentConfigId: string, agentArgs?: Array<string>, model?: string, dependsOn: Array<string>, sessionId: string | null, result?: TaskResultDto, reviewPacket?: ReviewPacketDto, createdAt: number, startedAt?: number, completedAt?: number, cost: number, tokens: number, };
+export type TaskDto = { id: string, milestoneId: string, flightId: string, title: string, description: string, order: number, status: TaskStatusDto, type: TaskTypeDto, agentConfigId: string, agentArgs?: Array<string>, model?: string, dependsOn: Array<string>, sessionId: string | null, result?: TaskResultDto, reviewPacket?: ReviewPacketDto, createdAt: number, startedAt?: number, completedAt?: number, cost: number, tokens: number, 
+/**
+ * Mission Planner: number of `replan_after_failure` calls this task
+ * has triggered (excluding RateLimit/Network exemptions). Mirrored
+ * from `MissionPlannerSession.replans_per_task` by
+ * `MissionPlannerRegistry::bump_replan_count`. Read by
+ * `render_task_failed` for the budget header (`replanCount / 3`).
+ */
+replanCount: number, };
 
 export type MilestoneDto = { id: string, flightId: string, title: string, description: string, order: number, status: MilestoneStatusDto, tasks: Array<TaskDto>, validationCriteria: Array<string>, };
 

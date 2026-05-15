@@ -517,6 +517,7 @@ mod tests {
             completed_at: None,
             cost: 0.0,
             tokens: 0,
+            replan_count: 0,
         }
     }
 

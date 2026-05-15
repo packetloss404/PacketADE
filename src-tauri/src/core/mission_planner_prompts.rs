@@ -438,19 +438,25 @@ fn render_task_failed(task_id: &str, journal_tail: &str, snapshot: &Value) -> St
         .and_then(|r| r.get("exitCode").or_else(|| r.get("exit_code")))
         .map(|v| v.to_string())
         .unwrap_or_else(|| "(unknown)".to_string());
-    let errors = task
+    // Collect up to 3 error strings as a Vec for both the joined display and
+    // the category classifier.
+    let error_strings: Vec<String> = task
         .and_then(|t| t.get("result"))
         .and_then(|r| r.get("errors"))
         .and_then(|v| v.as_array())
-        .filter(|a| !a.is_empty())
         .map(|a| {
             a.iter()
                 .take(3)
                 .filter_map(|v| v.as_str())
-                .collect::<Vec<_>>()
-                .join("; ")
+                .map(|s| s.to_string())
+                .collect()
         })
-        .unwrap_or_else(|| "(none captured)".to_string());
+        .unwrap_or_default();
+    let errors = if error_strings.is_empty() {
+        "(none captured)".to_string()
+    } else {
+        error_strings.join("; ")
+    };
     let description = task
         .and_then(|t| t.get("description"))
         .and_then(|v| v.as_str())
@@ -471,6 +477,53 @@ fn render_task_failed(task_id: &str, journal_tail: &str, snapshot: &Value) -> St
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
+    // Classify the failure. Prefer a pre-classified field on the snapshot
+    // (e.g. `errorCategory` written by the wake dispatcher) so the source of
+    // truth stays in one place; fall back to a renderer-local heuristic
+    // otherwise.
+    let category = task
+        .and_then(|t| t.get("errorCategory").or_else(|| t.get("error_category")))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| quick_classify(&error_strings).to_string());
+    // Prefer the snapshot's explicit `replanExempt` boolean when the wake
+    // dispatcher pre-classified the failure — that field is computed via
+    // `core::error_classifier::is_replan_exempt`, which is the same function
+    // `replan_after_failure.rs` consults when deciding whether to bump the
+    // counter. Falling back to a string match keeps the renderer working
+    // for un-pre-classified paths (e.g. when the snapshot was assembled
+    // outside the wake dispatcher).
+    //
+    // The string-match fallback accepts both `"network"` (the local
+    // `quick_classify` heuristic's label) and `"timeout"` (the snake_case
+    // serialization of `AiErrorCategory::Timeout`, which IS the canonical
+    // "network bucket" per `core/error_classifier.rs` — see the comment on
+    // `is_replan_exempt`). Both represent network-class transient
+    // failures; the replan-cap exemption applies to both. Without the
+    // `"timeout"` arm, a pre-classified `Timeout` failure would render
+    // "WILL count" while the dispatcher actually treats it as free,
+    // confusing the planner.
+    let exempt = task
+        .and_then(|t| t.get("replanExempt").or_else(|| t.get("replan_exempt")))
+        .and_then(|v| v.as_bool())
+        .unwrap_or_else(|| {
+            matches!(category.as_str(), "rate_limit" | "network" | "timeout")
+        });
+
+    let category_block = if exempt {
+        format!(
+            "Error category: **{category}** (does NOT count against your\n\
+             replan budget — this is treated as a transient failure handled\n\
+             by the runtime). Calling replan_after_failure on this task is\n\
+             FREE and will not increment the counter."
+        )
+    } else {
+        format!(
+            "Error category: **{category}** (this WILL count against your\n\
+             replan budget — currently {replan_count}/3 used)."
+        )
+    };
+
     format!(
         "Task {task_id} failed.\n\
          \n\
@@ -478,6 +531,8 @@ fn render_task_failed(task_id: &str, journal_tail: &str, snapshot: &Value) -> St
          Agent: {agent}\n\
          Exit code: {exit_code}\n\
          Errors: {errors}\n\
+         \n\
+         {category_block}\n\
          \n\
          Last 30 lines of session log:\n\
          {log_block}\n\
@@ -496,9 +551,49 @@ fn render_task_failed(task_id: &str, journal_tail: &str, snapshot: &Value) -> St
          - If the failure is ambiguous or you need user input, call\n\
            request_user_approval (it returns IMMEDIATELY — keep working).\n\
          \n\
-         Replan budget for this task: {replan_count}/3 used. After the cap\n\
-         you MUST escalate via request_user_approval."
+         Replan budget: {replan_count}/3 used (cap = 3). RateLimit and\n\
+         Network errors are exempt and don't increment this counter; only\n\
+         'other' failures do. {replan_count} failures have counted toward\n\
+         the cap on this task. After the cap you MUST escalate via\n\
+         request_user_approval."
     )
+}
+
+/// Renderer-local heuristic classifier for the last-error string(s).
+///
+/// Returns one of `"rate_limit" | "network" | "other"`. This is intentionally
+/// a renderer-local heuristic (and not a call into
+/// `core/error_classifier.rs`) so the renderer doesn't have to reconstruct a
+/// `Task` from the JSON snapshot. The real classifier owned by sibling
+/// E5-CLASSIFIER may also pre-write `errorCategory` onto the snapshot, in
+/// which case `render_task_failed` prefers that and skips this function.
+fn quick_classify(errors: &[String]) -> &'static str {
+    let combined = errors
+        .iter()
+        .map(|s| s.to_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if combined.contains("rate limit")
+        || combined.contains("rate_limit")
+        || combined.contains("ratelimit")
+        || combined.contains("429")
+        || combined.contains("too many requests")
+        || combined.contains("quota")
+    {
+        "rate_limit"
+    } else if combined.contains("timeout")
+        || combined.contains("timed out")
+        || combined.contains("network")
+        || combined.contains("connection")
+        || combined.contains("dns")
+        || combined.contains("socket")
+        || combined.contains("econnreset")
+        || combined.contains("etimedout")
+    {
+        "network"
+    } else {
+        "other"
+    }
 }
 
 fn render_approval_gate(reason: &str, snapshot: &Value) -> String {
@@ -861,6 +956,324 @@ mod tests {
         assert!(
             msg.contains("/3"),
             "should mention replan cap of 3"
+        );
+    }
+
+    #[test]
+    fn render_task_failed_surfaces_rate_limit_category() {
+        let snapshot = json!({
+            "milestones": [
+                {
+                    "id": "m1",
+                    "tasks": [
+                        {
+                            "id": "task-rl",
+                            "title": "Call upstream API",
+                            "agentConfigId": "claude-code",
+                            "description": "Hit the rate-limited endpoint.",
+                            "replanCount": 1,
+                            "result": {
+                                "exitCode": 1,
+                                "errors": ["HTTP 429 Too Many Requests"]
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+        let msg = wake_user_message(
+            &WakeTrigger::TaskFailed("task-rl".to_string()),
+            "log line\nanother",
+            &snapshot,
+        );
+        let lower = msg.to_lowercase();
+        assert!(
+            lower.contains("rate_limit"),
+            "body should classify as rate_limit; got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("does NOT count"),
+            "rate_limit body should say the failure does NOT count against the budget; got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("FREE") || msg.contains("free"),
+            "rate_limit body should explain replan is free; got: {}",
+            msg
+        );
+        // The cap line is still printed and reflects the snapshot value.
+        assert!(
+            msg.contains("1/3"),
+            "should reflect the snapshot's replanCount=1; got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn render_task_failed_surfaces_network_category() {
+        let snapshot = json!({
+            "milestones": [
+                {
+                    "id": "m1",
+                    "tasks": [
+                        {
+                            "id": "task-net",
+                            "title": "Pull dependency",
+                            "agentConfigId": "claude-code",
+                            "description": "Fetch the upstream tarball.",
+                            "replanCount": 0,
+                            "result": {
+                                "exitCode": 1,
+                                "errors": ["connection reset by peer"]
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+        let msg = wake_user_message(
+            &WakeTrigger::TaskFailed("task-net".to_string()),
+            "",
+            &snapshot,
+        );
+        let lower = msg.to_lowercase();
+        assert!(
+            lower.contains("network"),
+            "body should classify as network; got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("does NOT count"),
+            "network body should say the failure does NOT count against the budget; got: {}",
+            msg
+        );
+        assert!(
+            !msg.contains("WILL count"),
+            "network body should NOT say the failure WILL count; got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn render_task_failed_surfaces_other_category_and_count() {
+        let snapshot = json!({
+            "milestones": [
+                {
+                    "id": "m1",
+                    "tasks": [
+                        {
+                            "id": "task-oops",
+                            "title": "Run the migration",
+                            "agentConfigId": "claude-code",
+                            "description": "Migrate the schema.",
+                            "replanCount": 2,
+                            "result": {
+                                "exitCode": 101,
+                                "errors": ["panicked: index out of bounds"]
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+        let msg = wake_user_message(
+            &WakeTrigger::TaskFailed("task-oops".to_string()),
+            "",
+            &snapshot,
+        );
+        let lower = msg.to_lowercase();
+        assert!(
+            lower.contains("other"),
+            "body should classify as other; got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("2/3"),
+            "should reflect replanCount=2 against the cap of 3; got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("WILL count"),
+            "other-category body should warn that it WILL count against the budget; got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn render_task_failed_prefers_snapshot_error_category() {
+        // If the snapshot pre-classifies the failure (e.g. the wake
+        // dispatcher already ran the real classifier), the renderer should
+        // honor that and skip the local heuristic.
+        let snapshot = json!({
+            "milestones": [
+                {
+                    "id": "m1",
+                    "tasks": [
+                        {
+                            "id": "task-pre",
+                            "title": "Pre-classified failure",
+                            "agentConfigId": "claude-code",
+                            "description": "Whatever.",
+                            "replanCount": 0,
+                            "errorCategory": "rate_limit",
+                            "result": {
+                                "exitCode": 1,
+                                // Note: error text would heuristically
+                                // classify as 'other'; the explicit field
+                                // should win.
+                                "errors": ["weird internal failure"]
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+        let msg = wake_user_message(
+            &WakeTrigger::TaskFailed("task-pre".to_string()),
+            "",
+            &snapshot,
+        );
+        let lower = msg.to_lowercase();
+        assert!(
+            lower.contains("rate_limit"),
+            "should honor the snapshot's errorCategory over the heuristic; got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("does NOT count"),
+            "rate_limit override should still mark the failure as exempt; got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn render_task_failed_uses_snapshot_replan_exempt_field_when_present() {
+        // When the wake dispatcher pre-classifies via
+        // `core::error_classifier`, it writes BOTH `errorCategory` and
+        // `replanExempt` onto the task. The renderer should honor the
+        // explicit boolean rather than re-deriving exemption from the
+        // category string — this is the contract that keeps the prompt
+        // wording aligned with `replan_after_failure.rs`'s counter
+        // behavior.
+        let snapshot = json!({
+            "task": {
+                "id": "task-pre-exempt",
+                "title": "Pre-classified exempt failure",
+                "agentConfigId": "claude-code",
+                "description": "Whatever.",
+                "replanCount": 0,
+                // Category that the renderer's quick_classify would
+                // otherwise call "other" (and therefore NOT exempt).
+                "errorCategory": "timeout",
+                // Explicit boolean wins.
+                "replanExempt": true,
+                "result": {
+                    "exitCode": 1,
+                    "errors": ["weird internal failure"]
+                }
+            }
+        });
+        let msg = wake_user_message(
+            &WakeTrigger::TaskFailed("task-pre-exempt".to_string()),
+            "",
+            &snapshot,
+        );
+        assert!(
+            msg.contains("does NOT count"),
+            "explicit replanExempt=true should mark the failure as exempt; got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("FREE") || msg.contains("free"),
+            "exempt body should explain replan is free; got: {}",
+            msg
+        );
+        assert!(
+            !msg.contains("WILL count"),
+            "exempt body should NOT say WILL count; got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn render_task_failed_treats_timeout_as_exempt() {
+        // `"timeout"` is the snake_case serialization of
+        // `AiErrorCategory::Timeout`, which the canonical classifier
+        // (`is_replan_exempt`) treats as exempt. The renderer must agree
+        // even when the snapshot only carries the category string and no
+        // explicit `replanExempt` boolean.
+        let snapshot = json!({
+            "task": {
+                "id": "task-timeout",
+                "title": "Timed-out task",
+                "agentConfigId": "claude-code",
+                "description": "Pull dependency.",
+                "replanCount": 0,
+                "errorCategory": "timeout",
+                "result": {
+                    "exitCode": 1,
+                    "errors": ["request timed out after 30s"]
+                }
+            }
+        });
+        let msg = wake_user_message(
+            &WakeTrigger::TaskFailed("task-timeout".to_string()),
+            "",
+            &snapshot,
+        );
+        assert!(
+            msg.contains("does NOT count"),
+            "timeout category should be treated as exempt; got: {}",
+            msg
+        );
+        assert!(
+            !msg.contains("WILL count"),
+            "timeout category should not say WILL count; got: {}",
+            msg
+        );
+        let lower = msg.to_lowercase();
+        assert!(
+            lower.contains("timeout"),
+            "body should surface the timeout category; got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn render_task_failed_falls_back_to_quick_classify_when_snapshot_missing_category() {
+        // When the snapshot has NO `errorCategory` field, the renderer
+        // falls back to its `quick_classify` heuristic over the error
+        // strings. A 429 string should map to `"rate_limit"`, which is
+        // exempt under the string-match fallback.
+        let snapshot = json!({
+            "task": {
+                "id": "task-fallback",
+                "title": "No pre-classification",
+                "agentConfigId": "claude-code",
+                "description": "Hit the upstream endpoint.",
+                "replanCount": 0,
+                "result": {
+                    "exitCode": 1,
+                    "errors": ["HTTP 429 Too Many Requests"]
+                }
+            }
+        });
+        let msg = wake_user_message(
+            &WakeTrigger::TaskFailed("task-fallback".to_string()),
+            "",
+            &snapshot,
+        );
+        let lower = msg.to_lowercase();
+        assert!(
+            lower.contains("rate_limit"),
+            "quick_classify should pick rate_limit from a 429 error; got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("does NOT count"),
+            "rate_limit fallback should still mark the failure as exempt; got: {}",
+            msg
         );
     }
 

@@ -322,22 +322,96 @@ impl MissionPlannerRegistry {
     /// return the **new** count. Returns `None` if no planner is registered
     /// for the mission (caller should treat that as an error).
     ///
-    /// E2 uses this to enforce the flat ≤ 3 cap. E5 will gate the call
-    /// with error-category exemption logic so RateLimit / Network failures
-    /// don't increment the counter.
+    /// After bumping the in-memory counter, this also mirrors the new
+    /// count onto the Task DTO at `PersistedState.flights[..].milestones[..]
+    /// .tasks[..].replan_count` so the planner's failure-wake body
+    /// (`render_task_failed` in E5) can read the budget directly off the
+    /// Flight snapshot rather than reaching back into the registry. The
+    /// mirror is best-effort — if it fails (state lock contention, task
+    /// not found, etc.) we log a warning and still return the bumped
+    /// count to the caller so cap enforcement stays authoritative on the
+    /// registry side.
+    ///
+    /// E2 uses this to enforce the flat ≤ 3 cap. E5 gates the call with
+    /// error-category exemption logic so RateLimit / Network failures
+    /// don't increment the counter — that path uses [`read_replan_count`]
+    /// instead.
     pub async fn bump_replan_count(
         &self,
         mission_id: &str,
         task_id: &str,
     ) -> Option<u32> {
-        let mut guard = self.sessions.lock().await;
-        let session = guard.get_mut(mission_id)?;
-        let entry = session
-            .replans_per_task
-            .entry(task_id.to_string())
-            .or_insert(0);
-        *entry += 1;
-        Some(*entry)
+        // Phase 1: bump the in-memory counter and capture the new value.
+        // Scoped so the sessions mutex is released BEFORE we acquire the
+        // PersistedState lock — never hold two locks at once.
+        let new_count = {
+            let mut guard = self.sessions.lock().await;
+            let session = guard.get_mut(mission_id)?;
+            let entry = session
+                .replans_per_task
+                .entry(task_id.to_string())
+                .or_insert(0);
+            *entry += 1;
+            *entry
+        };
+
+        // Phase 2: mirror the new count onto the persisted Task DTO. The
+        // in-memory counter remains authoritative for cap enforcement; the
+        // DTO mirror exists so wake-body renderers can read the value from
+        // the Flight snapshot without touching the registry.
+        let mission_id_owned = mission_id.to_string();
+        let task_id_owned = task_id.to_string();
+        let mirror_result = storage::with_state_lock(move |state| {
+            let mission_id = mission_id_owned.clone();
+            let task_id = task_id_owned.clone();
+            let result: Result<(), String> = (|| {
+                let flight = state
+                    .flights
+                    .iter_mut()
+                    .find(|f| f.id == mission_id)
+                    .ok_or_else(|| format!("mission '{}' not found", mission_id))?;
+                for milestone in flight.milestones.iter_mut() {
+                    if let Some(task) =
+                        milestone.tasks.iter_mut().find(|t| t.id == task_id)
+                    {
+                        task.replan_count = new_count;
+                        return Ok(());
+                    }
+                }
+                Err(format!(
+                    "task '{}' not found in mission '{}'",
+                    task_id, mission_id
+                ))
+            })();
+            std::future::ready(result)
+        })
+        .await;
+        if let Err(e) = mirror_result {
+            warn!(
+                mission_id = %mission_id,
+                task_id = %task_id,
+                error = %e,
+                "bump_replan_count: failed to mirror replan_count onto Task DTO; in-memory counter remains authoritative",
+            );
+        }
+
+        Some(new_count)
+    }
+
+    /// Read the per-task replan counter **without** mutating it. Returns
+    /// `Some(0)` for a known mission with no recorded replans for the task,
+    /// and `None` only when no planner session exists for the mission.
+    ///
+    /// E5-REPLAN uses this on the exempt path (RateLimit / Network failures)
+    /// to surface the unchanged count back to the planner without bumping.
+    pub async fn read_replan_count(
+        &self,
+        mission_id: &str,
+        task_id: &str,
+    ) -> Option<u32> {
+        let guard = self.sessions.lock().await;
+        let session = guard.get(mission_id)?;
+        Some(session.replans_per_task.get(task_id).copied().unwrap_or(0))
     }
 
     /// Remove a planner session from the registry. Public sibling of the
@@ -626,7 +700,7 @@ fn build_wake_payload(
     let state = storage::load_state();
     let flight = state.flights.iter().find(|f| f.id == mission_id);
 
-    let snapshot = match flight {
+    let mut snapshot = match flight {
         Some(flight) => {
             let task_count: usize = flight.milestones.iter().map(|m| m.tasks.len()).sum();
             let pending_tasks: usize = flight
@@ -659,6 +733,71 @@ fn build_wake_payload(
             "triggerPayload": trigger_payload,
         }),
     };
+
+    // For TaskFailed triggers, surface the failed task onto the snapshot
+    // as a top-level `task` object and pre-classify the failure via the
+    // canonical `core::error_classifier`. The prompt renderer's
+    // `find_task_by_id` falls back to `snapshot["task"]` when no
+    // `milestones` array is present, so this is the channel through which
+    // the renderer reads `errorCategory` / `replanExempt`.
+    //
+    // We do this here rather than letting the renderer's local
+    // `quick_classify` heuristic run because the two classifiers (the
+    // canonical `classify_cli_error` and the renderer's heuristic) can
+    // disagree on real-world error strings — and the renderer's
+    // "WILL count / does NOT count" wording must match what
+    // `replan_after_failure` actually does at the dispatcher. By
+    // pre-classifying with the same function the dispatcher uses
+    // (`classify_task_last_error` + `is_replan_exempt`), the body the
+    // planner reads cannot lie relative to the counter behavior.
+    if let (WakeTrigger::TaskFailed(task_id), Some(flight)) = (trigger, flight) {
+        if let Some(task) = flight
+            .milestones
+            .iter()
+            .flat_map(|m| m.tasks.iter())
+            .find(|t| t.id == *task_id)
+        {
+            // Serialize the full Task via serde — this gives the renderer
+            // the same camelCase shape it already reads (title, agent,
+            // description, result.errors, replanCount, …).
+            if let Ok(mut task_value) = serde_json::to_value(task) {
+                if let Some(obj) = task_value.as_object_mut() {
+                    if let Some(category) =
+                        crate::core::error_classifier::classify_task_last_error(task)
+                    {
+                        // Snake-case wire form — must match the renderer's
+                        // expected `"rate_limit" | "timeout" | …` strings
+                        // and the shape `replan_after_failure.rs` returns
+                        // in its tool response. Both serialize the same
+                        // `AiErrorCategory` via its
+                        // `#[serde(rename_all = "snake_case")]` derive.
+                        let category_str = serde_json::to_value(category)
+                            .ok()
+                            .and_then(|v| v.as_str().map(str::to_string))
+                            .unwrap_or_else(|| format!("{:?}", category).to_ascii_lowercase());
+                        let exempt =
+                            crate::core::error_classifier::is_replan_exempt(&category);
+                        obj.insert(
+                            "errorCategory".to_string(),
+                            serde_json::Value::String(category_str),
+                        );
+                        obj.insert(
+                            "replanExempt".to_string(),
+                            serde_json::Value::Bool(exempt),
+                        );
+                    }
+                    // If classification returned None (task has no
+                    // errors recorded), we deliberately leave the fields
+                    // off so the renderer falls back to its
+                    // `quick_classify` heuristic over whatever it can
+                    // find on the snapshot.
+                }
+                if let Some(obj) = snapshot.as_object_mut() {
+                    obj.insert("task".to_string(), task_value);
+                }
+            }
+        }
+    }
 
     let journal_tail = match trigger {
         WakeTrigger::TaskFailed(task_id) => flight

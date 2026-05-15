@@ -116,6 +116,7 @@ describe("TS/Rust contract tests", () => {
       createdAt: 0,
       cost: 0,
       tokens: 0,
+      replanCount: 0,
     };
 
     expect(task.type).toBe("implementation");

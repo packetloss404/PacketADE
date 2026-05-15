@@ -272,6 +272,17 @@ pub struct Task {
     pub completed_at: Option<u64>,
     pub cost: f64,
     pub tokens: u64,
+    /// Number of times the planner has called `replan_after_failure` for
+    /// this task. RateLimit/Network failures (per E5) do NOT increment.
+    /// Mirrored from `MissionPlannerSession.replans_per_task` whenever
+    /// `bump_replan_count` runs. Read by `render_task_failed` to surface
+    /// budget to the planner.
+    ///
+    /// `#[serde(default)]` is critical for backwards-compat with existing
+    /// persisted state — without it, old state files written before this
+    /// field existed would fail to deserialize.
+    #[serde(default)]
+    pub replan_count: u32,
 }
 
 // === Approval Decision ===
@@ -495,6 +506,7 @@ mod tests {
             completed_at: None,
             cost: 0.0,
             tokens: 0,
+            replan_count: 0,
         }
     }
 
@@ -584,5 +596,39 @@ mod tests {
         assert!(!TaskStatus::Running.is_terminal());
         assert!(!TaskStatus::Pending.is_terminal());
         assert!(!TaskStatus::ApprovalNeeded.is_terminal());
+    }
+
+    #[test]
+    fn task_replan_count_defaults_to_zero_on_deserialize() {
+        // Old persisted state (pre-E5) won't have `replanCount` on Task.
+        // The `#[serde(default)]` attribute must let it round-trip into a
+        // zero-initialized field rather than failing deserialization.
+        let json = r#"{
+            "id": "t1",
+            "milestone_id": "m1",
+            "flight_id": "f1",
+            "title": "x",
+            "description": "y",
+            "order": 0,
+            "status": "queued",
+            "task_type": "implementation",
+            "agent_config_id": "claude-code",
+            "depends_on": [],
+            "session_id": null,
+            "created_at": 0,
+            "cost": 0.0,
+            "tokens": 0
+        }"#;
+        let task: Task = serde_json::from_str(json).expect("legacy task json should parse");
+        assert_eq!(task.replan_count, 0);
+    }
+
+    #[test]
+    fn task_replan_count_round_trips() {
+        let mut task = make_task(TaskStatus::Failed);
+        task.replan_count = 2;
+        let json = serde_json::to_string(&task).unwrap();
+        let back: Task = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.replan_count, 2);
     }
 }

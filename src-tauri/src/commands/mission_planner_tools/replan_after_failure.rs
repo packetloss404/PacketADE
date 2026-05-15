@@ -1,6 +1,9 @@
 //! `replan_after_failure` tool handler.
 //!
-//! Owned by **E2-REPL-COMP** (paired with `complete_mission`).
+//! Owned by **E2-REPL-COMP** (paired with `complete_mission`). The E5-REPLAN
+//! slice layered the error-category exemption on top: RateLimit / Network
+//! failures (per [`AiErrorCategory`]) do **not** count against the per-task
+//! replan cap (`MAX_REPLANS_PER_TASK = 3`).
 //!
 //! Args shape:
 //! ```json
@@ -9,10 +12,15 @@
 //!
 //! Acknowledges a failed task and signals the planner that it should add a
 //! new task subtree under the same milestone. The handler:
-//!   * Bumps `replans_per_task[task_id]` on the live planner session.
-//!   * Returns `Err("max_replans_reached: …")` once the per-task counter
-//!     exceeds 3 (flat cap; per the locked spec the RateLimit / Network
-//!     exemption is **E5's** job and wraps this handler from above).
+//!   * Classifies the failed task's last recorded error via
+//!     [`error_classifier::classify_task_last_error`].
+//!   * If the category is **replan-exempt** (RateLimit / Timeout — the
+//!     "Network" bucket from the locked design), skips both the counter
+//!     bump and the cap check entirely; the failed task is still cancelled
+//!     so the planner replaces it.
+//!   * Otherwise bumps `replans_per_task[task_id]` on the live planner
+//!     session and returns `Err("max_replans_reached: …")` once the new
+//!     count exceeds 3.
 //!   * Marks the failed task `TaskStatus::Cancelled` so it stops haunting
 //!     the milestone-progress rollup.
 //!   * Reports the parent milestone id so the planner knows where to add
@@ -23,7 +31,9 @@
 //! {
 //!   "ready_for_new_tasks": true,
 //!   "parent_milestone_id": string,
-//!   "replan_count": number
+//!   "replan_count": number,
+//!   "exempt": boolean,
+//!   "error_category": string | null
 //! }
 //! ```
 
@@ -32,17 +42,35 @@ use tauri::{AppHandle, Emitter, Manager};
 use tracing::{info, warn};
 
 use crate::commands::mission_planner::MissionPlannerRegistry;
+use crate::core::error_classifier::{
+    self, AiErrorCategory,
+};
 use crate::core::flight::TaskStatus;
 use crate::core::storage;
 
-/// Flat per-task replan ceiling. Matches the locked design. E5 wraps this
-/// handler with an error-category check that exempts RateLimit / Network
-/// failures — that exemption is *not* this slice's responsibility.
+/// Flat per-task replan ceiling. Matches the locked design. The E5-REPLAN
+/// slice wraps the bump in an error-category exemption check so RateLimit /
+/// Network failures don't tick against this cap.
 const MAX_REPLANS_PER_TASK: u32 = 3;
 
 #[derive(Debug, Deserialize)]
 struct ReplanAfterFailureArgs {
     task_id: String,
+}
+
+/// Format an [`AiErrorCategory`] as a stable snake_case string for the
+/// tool response. We piggyback on the serde derivation
+/// (`#[serde(rename_all = "snake_case")]`) so the wire shape here is
+/// guaranteed to match the rest of the codebase if/when other consumers
+/// serialize the same enum.
+fn category_to_string(cat: AiErrorCategory) -> String {
+    serde_json::to_value(cat)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        // Fallback should be unreachable because all variants serialize
+        // to a string, but keep a deterministic last-resort form rather
+        // than panicking if serde_json ever surprises us.
+        .unwrap_or_else(|| format!("{:?}", cat).to_ascii_lowercase())
 }
 
 pub async fn handle(
@@ -72,31 +100,73 @@ pub async fn handle(
             )
         })?;
 
-    // 3. Bump the per-task replan counter on the planner session.
-    //    `bump_replan_count` mutates `MissionPlannerSession.replans_per_task`
-    //    in place under the registry's async Mutex and returns the new count.
-    let new_count = registry
-        .bump_replan_count(&mission_id, task_id)
-        .await
-        .ok_or_else(|| {
-            format!(
-                "planner session for mission '{}' disappeared between resolve and replan",
-                mission_id
-            )
-        })?;
+    // 3. Classify the failed task's last error so we can decide whether
+    //    this replan is exempt from the per-task cap. We do this off a
+    //    read-only snapshot of PersistedState — no lock needed; the
+    //    subsequent state-cancel step takes its own `with_state_lock`. If
+    //    the task isn't found here, we surface that error early; the cancel
+    //    step would surface the same error anyway, but eagerly checking
+    //    avoids bumping the counter for a task that doesn't exist.
+    let error_category: Option<AiErrorCategory> = {
+        let state = storage::load_state();
+        let flight = state
+            .flights
+            .iter()
+            .find(|f| f.id == mission_id)
+            .ok_or_else(|| format!("flight not found for mission '{}'", mission_id))?;
+        let task = flight
+            .milestones
+            .iter()
+            .flat_map(|m| m.tasks.iter())
+            .find(|t| t.id == task_id)
+            .ok_or_else(|| {
+                format!("task '{}' not found in mission '{}'", task_id, mission_id)
+            })?;
+        error_classifier::classify_task_last_error(task)
+    };
 
-    // 4. Enforce the flat cap.
-    if new_count > MAX_REPLANS_PER_TASK {
-        return Err(format!(
-            "max_replans_reached: task {} has been replanned {} times. Use request_user_approval to escalate to the user.",
-            task_id, MAX_REPLANS_PER_TASK
-        ));
-    }
+    // 4. Decide exempt vs. counted. Per the locked spec
+    //    (`dev/mission-planner-plan.md`):
+    //      "Replans per task: 3 — RateLimit / Network errors do NOT count"
+    let was_exempt = error_category
+        .map(|c| error_classifier::is_replan_exempt(&c))
+        .unwrap_or(false);
 
-    // 5. Mark the failed task Cancelled and capture its parent milestone id.
-    //    Registry mutations (step 3) already happened OUTSIDE the lock — they
-    //    use the registry's own Mutex, not the PersistedState lock. Only the
-    //    state-mutating step belongs inside `with_state_lock`.
+    // 5. Drive the counter according to exemption status.
+    //    Exempt path: read the current count without mutating.
+    //    Counted path: bump and enforce the flat cap.
+    let replan_count = if was_exempt {
+        registry
+            .read_replan_count(&mission_id, task_id)
+            .await
+            .ok_or_else(|| {
+                format!(
+                    "planner session for mission '{}' disappeared between resolve and replan",
+                    mission_id
+                )
+            })?
+    } else {
+        let new_count = registry
+            .bump_replan_count(&mission_id, task_id)
+            .await
+            .ok_or_else(|| {
+                format!(
+                    "planner session for mission '{}' disappeared between resolve and replan",
+                    mission_id
+                )
+            })?;
+        if new_count > MAX_REPLANS_PER_TASK {
+            return Err(format!(
+                "max_replans_reached: task {} has been replanned {} times. Use request_user_approval to escalate to the user.",
+                task_id, MAX_REPLANS_PER_TASK
+            ));
+        }
+        new_count
+    };
+
+    // 6. Mark the failed task Cancelled and capture its parent milestone id.
+    //    Even exempt failures get cancelled — the planner is going to
+    //    replace the task either way; the exemption only governs the cap.
     //    Synchronous inner closure + `std::future::ready` avoids the HRTB
     //    lifetime issue the helper's signature can't express. Event emit
     //    happens OUTSIDE the lock.
@@ -132,13 +202,18 @@ pub async fn handle(
     .await
     .map_err(|e| format!("failed to persist task cancellation: {}", e))?;
 
-    // 6. Coordination event so the UI can light up "planner is replanning"
+    // 7. Coordination event so the UI can light up "planner is replanning"
     //    state. Mirrors the `mission-planner:*:<missionId>` convention used
-    //    by the milestone/approval paths.
+    //    by the milestone/approval paths. Includes the exempt flag + the
+    //    classified error category so the UI can label exempt replans
+    //    distinctly ("retried after rate limit") from cap-eating ones.
+    let error_category_str: Option<String> = error_category.map(category_to_string);
     info!(
         mission_id = %mission_id,
         task_id = %task_id,
-        replan_count = new_count,
+        replan_count = replan_count,
+        exempt = was_exempt,
+        error_category = ?error_category_str,
         parent_milestone_id = %parent_milestone_id,
         "mission planner acknowledged task replan"
     );
@@ -149,18 +224,22 @@ pub async fn handle(
             "missionId": mission_id,
             "taskId": task_id,
             "parentMilestoneId": parent_milestone_id,
-            "replanCount": new_count,
+            "replanCount": replan_count,
+            "exempt": was_exempt,
+            "errorCategory": error_category_str,
             "acknowledgedAt": now,
         }),
     ) {
         warn!(error = %e, event = %event_name, "failed to emit replan-acknowledged event");
     }
 
-    // 7. Return.
+    // 8. Return.
     Ok(serde_json::json!({
         "ready_for_new_tasks": true,
         "parent_milestone_id": parent_milestone_id,
-        "replan_count": new_count,
+        "replan_count": replan_count,
+        "exempt": was_exempt,
+        "error_category": error_category_str,
     }))
 }
 
@@ -192,5 +271,70 @@ mod tests {
     #[test]
     fn cap_is_three() {
         assert_eq!(MAX_REPLANS_PER_TASK, 3);
+    }
+
+    /// The response/event payload exposes the classified error category as a
+    /// stable snake_case string. Verify each variant round-trips through
+    /// [`category_to_string`] to the form callers (and the planner system
+    /// prompt) expect — the sidecar journal renders this verbatim, so a
+    /// stray `Debug`-style "RateLimit" would leak Rust internals into the
+    /// model context.
+    #[test]
+    fn category_to_string_uses_snake_case_for_every_variant() {
+        assert_eq!(category_to_string(AiErrorCategory::Auth), "auth");
+        assert_eq!(category_to_string(AiErrorCategory::Billing), "billing");
+        assert_eq!(category_to_string(AiErrorCategory::RateLimit), "rate_limit");
+        assert_eq!(
+            category_to_string(AiErrorCategory::ContextOverflow),
+            "context_overflow"
+        );
+        assert_eq!(category_to_string(AiErrorCategory::Timeout), "timeout");
+        assert_eq!(
+            category_to_string(AiErrorCategory::ServerError),
+            "server_error"
+        );
+        assert_eq!(
+            category_to_string(AiErrorCategory::NotInstalled),
+            "not_installed"
+        );
+        assert_eq!(category_to_string(AiErrorCategory::Unknown), "unknown");
+    }
+
+    /// The handler's response shape must serialize/deserialize cleanly so
+    /// the sidecar's `planner_tool_result` envelope (which is just opaque
+    /// JSON to the Rust side, but is parsed and surfaced into the model
+    /// context by the planner) sees the new fields. We can't easily
+    /// exercise `handle()` without an AppHandle stub, but we can guarantee
+    /// the JSON we'd return is well-formed.
+    #[test]
+    fn response_shape_round_trips_through_serde() {
+        // Mimic the exempt path's return.
+        let exempt_resp = serde_json::json!({
+            "ready_for_new_tasks": true,
+            "parent_milestone_id": "ms_1",
+            "replan_count": 0u32,
+            "exempt": true,
+            "error_category": "rate_limit",
+        });
+        let s = serde_json::to_string(&exempt_resp).unwrap();
+        let back: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(back["exempt"], true);
+        assert_eq!(back["error_category"], "rate_limit");
+        assert_eq!(back["replan_count"], 0);
+
+        // Mimic the counted path's return — no classified category (e.g.
+        // task.result was None) is encoded as JSON null.
+        let counted_resp = serde_json::json!({
+            "ready_for_new_tasks": true,
+            "parent_milestone_id": "ms_2",
+            "replan_count": 2u32,
+            "exempt": false,
+            "error_category": serde_json::Value::Null,
+        });
+        let s = serde_json::to_string(&counted_resp).unwrap();
+        let back: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(back["exempt"], false);
+        assert!(back["error_category"].is_null());
+        assert_eq!(back["replan_count"], 2);
     }
 }

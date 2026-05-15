@@ -126,6 +126,19 @@ export interface Task {
   completedAt?: number;
   cost: number;
   tokens: number;
+  /**
+   * Mission Planner: number of `replan_after_failure` calls this task has
+   * triggered (excluding RateLimit/Network exemptions). Mirrored from
+   * `MissionPlannerSession.replans_per_task` by
+   * `MissionPlannerRegistry::bump_replan_count`. Read by the planner's
+   * failure-wake body renderer to surface budget headroom (`N / 3`).
+   *
+   * Optional on the frontend Task because legacy Task constructors and
+   * helper factories may not set it; the Rust DTO carries it as a
+   * required `replanCount: number` (with `#[serde(default)]` for
+   * back-compat with old persisted state).
+   */
+  replanCount?: number;
 }
 
 // === Coordination Events ===
