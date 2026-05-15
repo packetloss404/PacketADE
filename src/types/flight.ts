@@ -243,4 +243,16 @@ export interface Flight {
   plannerStatus?: "idle" | "awake" | "paused" | "quota_paused" | "completed" | "failed";
   plannerCost?: number;
   plannerTokens?: number;
+  /**
+   * Identifies which planner backend provider was used for cost/token
+   * accounting on this Flight. E1 populates this when the planner session
+   * starts; today the values are `"claude-oauth"` (Anthropic OAuth via the
+   * sidecar / Agent SDK) or `"api-claude"` (Anthropic API via the in-process
+   * LlmProvider). The StatGrid uses this to decide whether the planner
+   * dollar value is best-effort (OAuth: no public quota endpoint, surface
+   * cumulative tokens as the authoritative measure) or fully reliable (API:
+   * priced per-token by us). Optional because legacy persisted Flights
+   * created before E8-ACCUM landed don't carry the field.
+   */
+  plannerProvider?: string;
 }

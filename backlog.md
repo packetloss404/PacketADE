@@ -124,8 +124,12 @@ Deferred items called out in `dev/multi-platform-build.md` and
   ever exposes the `anthropic-ratelimit-*` response headers, switch to
   predictive — pause *before* the cap.
 - **P3 — Subscription-% display for OAuth planner cost.** Currently no
-  public Anthropic endpoint surfaces Claude.ai subscription usage. v1
-  shows cumulative tokens only. Revisit if an endpoint appears.
+  public Anthropic endpoint surfaces Claude.ai subscription usage. E8
+  partially addresses this by surfacing the cumulative planner token
+  count on the StatGrid Planner cell (sub-line `≈Nk tokens` when
+  `plannerProvider === "claude-oauth"`), but there is still no
+  percentage-of-quota readout. Revisit if/when Anthropic exposes an
+  endpoint.
 - **P3 — Crash-resilient planner sessions.** v1 planner sessions are
   ephemeral; on app restart, `active` missions flip to `paused` and
   require a user click to resume. Persist `lastResumeToken` and
@@ -256,6 +260,46 @@ Deferred items called out in `dev/multi-platform-build.md` and
   currently emits a `SystemNote`. Could be `ApprovalRequest` updated
   in-place, or a dedicated `ApprovalResolution` kind. For v1 the
   SystemNote is fine; for v1.1 consider promoting.
+- **P3 — Cost-split implicit invariant (`totalCost ≥ plannerCost`).**
+  After E8 the StatGrid derives `executorCost = totalCost - plannerCost`
+  and clamps to zero via `Math.max(0, …)`. The clamp protects the UI
+  but hides a backend bug if the invariant ever inverts. Two options:
+  (a) explicitly store `executorCost` on the Flight DTO so subtraction
+  isn't load-bearing, or (b) add a debug-assert / log when the
+  invariant breaks. Today neither side enforces it.
+- **P3 — Cost dashboard planner/executor split.** The `CostDashboardView`
+  aggregates cost across missions but does not distinguish planner spend
+  vs executor spend. Post-E8 the data is present on every Flight
+  (`plannerCost` + derived `executorCost`); surface the split in the
+  dashboard so a user can see how much of the bill is the planner.
+- **P3 — Export `StatGrid` from `MissionsView` for direct unit tests.**
+  E8-TESTS currently mounts `MissionsView` end-to-end (mocking six
+  stores and five child components) to assert the cost-split cells.
+  Exporting `StatGrid` would let those tests drop most of the mock
+  surface and render the helper directly. Same applies to
+  `FlightDetailPane` if more cell-level tests appear.
+- **P3 — Executor cost accumulator error-spam.** E8 fix #1 lands an
+  executor turn_summary hook that calls `accumulate_executor_cost`.
+  Like the planner accumulator, it errors on missing flight, and the
+  caller downgrades to warn-log. After a mission delete while
+  executor sessions are still running, every turn produces a warn —
+  potentially many per minute. Either silently no-op like
+  `persist_planner_state_on_flight` does, OR ensure mission-delete
+  reliably kills associated sessions first.
+- **P3 — Cost-update event verbosity.** Both planner and executor
+  `turn_summary` events trigger `mission-planner:cost-updated:<id>`,
+  which fires `flightStore.hydrateFromBackend()` in the frontend.
+  During decomposition with 10-20 turns/min, that's 10-20 full
+  hydrations/min. Patch just the affected flight (read its persisted
+  state, replace the entry in the in-memory store) instead of full
+  re-read.
+- **P3 — Token-vs-cost drift on planner-session race.** If
+  `stop_mission_planner` removes the registry entry between
+  `mission_id_for_sidecar_session` (step 2) and `get_by_mission`
+  (step 3) in the sidecar `turn_summary` async-spawn, `model` falls
+  back to `""` and `calculate_cost` returns 0. The handler still
+  bumps `planner_tokens` but not `planner_cost`. Mild drift; bounded
+  by how often a planner is mid-turn at stop time.
 
 ## Product tracks (from `dev/README.md`)
 

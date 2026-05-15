@@ -551,6 +551,9 @@ mod tests {
             attempts: Vec::new(),
             planner_session_id: None,
             planner_status: None,
+            planner_cost: None,
+            planner_tokens: None,
+            planner_provider: None,
         }
     }
 
@@ -669,6 +672,9 @@ mod tests {
             attempts: Vec::new(),
             planner_session_id: None,
             planner_status: None,
+            planner_cost: None,
+            planner_tokens: None,
+            planner_provider: None,
         }
     }
 
@@ -778,6 +784,9 @@ mod tests {
             attempts: Vec::new(),
             planner_session_id: None,
             planner_status: None,
+            planner_cost: None,
+            planner_tokens: None,
+            planner_provider: None,
         };
 
         // Launch, tick, spawn, complete task-1

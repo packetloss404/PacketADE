@@ -395,6 +395,11 @@ async function installListeners(
     "task-blocked",
     "task-replan-acknowledged",
     "mission-completed",
+    // E8-UI — sibling E8-ACCUM emits `mission-planner:cost-updated:<missionId>`
+    // when the planner accumulates new tokens/cost. Same handling as the
+    // other planner-side mutations: re-hydrate flightStore so StatGrid's
+    // Planner / Exec cells reflect the latest numbers.
+    "cost-updated",
   ] as const;
   const flightEventUnlistens: UnlistenFn[] = [];
   for (const kind of flightEventKinds) {

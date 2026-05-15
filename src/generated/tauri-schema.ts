@@ -84,7 +84,25 @@ plannerSessionId?: string,
  * Mission Planner: last-known status of the planner agent for this
  * mission.
  */
-plannerStatus?: PlannerStatusDto, };
+plannerStatus?: PlannerStatusDto, 
+/**
+ * Mission Planner (E8): cumulative USD cost attributed to the planner's
+ * own turns. Distinct from `total_cost` which rolls up executor task
+ * spend. Absent until the planner closes its first turn.
+ */
+plannerCost?: number, 
+/**
+ * Mission Planner (E8): cumulative input+output tokens used by the
+ * planner session. Absent until the planner closes its first turn.
+ */
+plannerTokens?: number, 
+/**
+ * Mission Planner (E8): provider string the planner runs on (e.g.
+ * `"claude-oauth"` for subscription, `"api-claude"` for API-key). The
+ * StatGrid chip renders these differently because subscription usage
+ * doesn't burn API credit.
+ */
+plannerProvider?: string, };
 
 export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: any[], memoryPatterns: any[], servers: Array<ServerConfigDto>, };
 

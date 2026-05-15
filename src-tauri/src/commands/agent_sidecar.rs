@@ -1570,6 +1570,141 @@ impl SidecarManager {
                         address,
                     },
                 );
+
+                // E8-ACCUM — accumulate this turn's token + cost spend onto
+                // the owning Flight DTO. Two cases, both async-dispatched so
+                // we never block the sidecar event loop on the
+                // `with_state_lock` mutex:
+                //
+                //   1. Planner sidecar session → roll up onto
+                //      `flight.planner_tokens` / `planner_cost` (the dedicated
+                //      planner chip fields). Lookup via the in-memory
+                //      `MissionPlannerRegistry`.
+                //   2. Executor sidecar session linked to a flight via
+                //      `attempt.session_id` or `task.session_id` → roll up
+                //      onto `flight.total_tokens` / `total_cost`. Lookup via
+                //      the on-disk PersistedState (the executor path doesn't
+                //      maintain an in-memory registry of its own). The
+                //      StatGrid chip in the frontend derives the "Exec" cost
+                //      as `totalCost - plannerCost`; pre-E8 the chip always
+                //      showed zero because nothing wrote `total_cost`.
+                //
+                // Both lookups short-circuit cleanly for sidecar sessions
+                // that own neither role (e.g. a standalone API-agent chat
+                // not linked to any flight) — no-op fallthrough.
+                let session_for_async = session_id.clone();
+                let app_for_async = self.app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let registry_opt = app_for_async
+                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>();
+                    if let Some(registry) = registry_opt {
+                        if let Some(mission_id) = registry
+                            .mission_id_for_sidecar_session(&session_for_async)
+                            .await
+                        {
+                            let model = registry
+                                .get_by_mission(&mission_id)
+                                .await
+                                .map(|s| s.model)
+                                .unwrap_or_default();
+                            let cost_usd = crate::commands::pricing::calculate_cost(
+                                &model,
+                                input_tokens,
+                                output_tokens,
+                                cache_read_input_tokens,
+                                cache_creation_input_tokens,
+                            );
+                            // E8 FIX 2: include cache-read + cache-create
+                            // tokens in the `planner_tokens` chip sum so it
+                            // matches the token categories `cost_usd` already
+                            // prices. Pre-fix this only summed input +
+                            // output, which under-reported tokens for every
+                            // cache-heavy turn (effectively every turn after
+                            // the first on long-running planner sessions).
+                            let planner_total_tokens = input_tokens
+                                .saturating_add(output_tokens)
+                                .saturating_add(cache_read_input_tokens)
+                                .saturating_add(cache_creation_input_tokens);
+                            if let Err(e) =
+                                crate::commands::mission_planner::accumulate_planner_cost(
+                                    &mission_id,
+                                    planner_total_tokens,
+                                    cost_usd,
+                                )
+                                .await
+                            {
+                                warn!(
+                                    mission_id = %mission_id,
+                                    error = %e,
+                                    "E8-ACCUM: failed to accumulate planner cost"
+                                );
+                            } else {
+                                let _ = app_for_async.emit(
+                                    &format!("mission-planner:cost-updated:{}", mission_id),
+                                    serde_json::json!({
+                                        "missionId": mission_id,
+                                        "inputTokens": input_tokens,
+                                        "outputTokens": output_tokens,
+                                        "cacheReadInputTokens": cache_read_input_tokens,
+                                        "cacheCreationInputTokens": cache_creation_input_tokens,
+                                        "totalTokens": planner_total_tokens,
+                                        "costUsd": cost_usd,
+                                        "source": "planner",
+                                    }),
+                                );
+                            }
+                            return;
+                        }
+                    }
+                    // Not a planner session — try the executor (flight-attempt
+                    // / flight-task) linkage instead.
+                    let state_snap = crate::core::storage::load_state();
+                    let owner = match crate::commands::mission_planner::
+                        flight_for_executor_session(&state_snap, &session_for_async)
+                    {
+                        Some(o) => o,
+                        None => return,
+                    };
+                    let exec_total_tokens = input_tokens
+                        .saturating_add(output_tokens)
+                        .saturating_add(cache_read_input_tokens)
+                        .saturating_add(cache_creation_input_tokens);
+                    let exec_cost_usd = crate::commands::pricing::calculate_cost(
+                        &owner.model,
+                        input_tokens,
+                        output_tokens,
+                        cache_read_input_tokens,
+                        cache_creation_input_tokens,
+                    );
+                    if let Err(e) =
+                        crate::commands::mission_planner::accumulate_executor_cost(
+                            &owner.flight_id,
+                            exec_total_tokens,
+                            exec_cost_usd,
+                        )
+                        .await
+                    {
+                        warn!(
+                            mission_id = %owner.flight_id,
+                            error = %e,
+                            "E8-ACCUM: failed to accumulate executor cost"
+                        );
+                    } else {
+                        let _ = app_for_async.emit(
+                            &format!("mission-planner:cost-updated:{}", owner.flight_id),
+                            serde_json::json!({
+                                "missionId": owner.flight_id,
+                                "inputTokens": input_tokens,
+                                "outputTokens": output_tokens,
+                                "cacheReadInputTokens": cache_read_input_tokens,
+                                "cacheCreationInputTokens": cache_creation_input_tokens,
+                                "totalTokens": exec_total_tokens,
+                                "costUsd": exec_cost_usd,
+                                "source": "executor",
+                            }),
+                        );
+                    }
+                });
             }
             "error" => {
                 let message = value

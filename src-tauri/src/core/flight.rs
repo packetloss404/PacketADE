@@ -391,6 +391,27 @@ pub struct Flight {
     /// mission. `None` for missions that never used the planner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner_status: Option<PlannerStatus>,
+    /// Mission Planner (E8): cumulative USD cost attributed to the planner's
+    /// own `turn_summary` events (NOT executor sessions — those roll up into
+    /// `total_cost` separately). Accumulated from the sidecar's pricing
+    /// calculation on every planner-owned turn. `None` until the first turn
+    /// closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_cost: Option<f64>,
+    /// Mission Planner (E8): cumulative input+output tokens used by the
+    /// planner session. `None` until the first turn closes. Stored as a
+    /// single sum because the StatGrid chip displays a single token total;
+    /// per-direction breakdown lives on `MissionPlannerSession` in the
+    /// registry for the few callers that need it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_tokens: Option<u64>,
+    /// Mission Planner (E8): which provider the planner session is running
+    /// against. `"claude-oauth"` (subscription, the v1 default) vs
+    /// `"api-claude"` (pay-per-token) — the StatGrid chip renders these
+    /// differently because subscription usage doesn't burn API credit.
+    /// `None` for missions that never used the planner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_provider: Option<String>,
 }
 
 impl Flight {
@@ -544,6 +565,9 @@ mod tests {
             attempts: Vec::new(),
             planner_session_id: None,
             planner_status: None,
+            planner_cost: None,
+            planner_tokens: None,
+            planner_provider: None,
         }
     }
 

@@ -957,6 +957,75 @@ pub async fn close_api_agent_session(
 }
 
 /// The core agentic loop: call LLM → execute tools → repeat.
+/// E8 — async-dispatched rollup of an in-process executor session's
+/// turn totals onto the owning Flight DTO. Mirrors the sidecar-side hook
+/// in `agent_sidecar::handle_event`'s `turn_summary` arm but lives here
+/// for the LlmProvider-trait path (api-claude / api-openai / api-minimax
+/// / api-openrouter / api-ollama). No-op when the session isn't linked
+/// to any flight (the common standalone-chat case).
+///
+/// Called from every `run_agent_loop` exit point that finalizes the
+/// session-cumulative token totals (cancel-early, mid-stream-cancel,
+/// done-no-tool-calls, hit-max-iterations) right after the matching
+/// `UsageEntry` write so the cost numbers line up with the usage log.
+fn spawn_executor_cost_rollup(
+    app_handle: &tauri::AppHandle,
+    session_id: &str,
+    model: &str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read: u64,
+    cache_write: u64,
+    cost_usd: f64,
+) {
+    let app = app_handle.clone();
+    let session_id = session_id.to_string();
+    let model = model.to_string();
+    tauri::async_runtime::spawn(async move {
+        let state_snap = crate::core::storage::load_state();
+        let owner = match crate::commands::mission_planner::flight_for_executor_session(
+            &state_snap,
+            &session_id,
+        ) {
+            Some(o) => o,
+            None => return,
+        };
+        let total_tokens = input_tokens
+            .saturating_add(output_tokens)
+            .saturating_add(cache_read)
+            .saturating_add(cache_write);
+        if let Err(e) = crate::commands::mission_planner::accumulate_executor_cost(
+            &owner.flight_id,
+            total_tokens,
+            cost_usd,
+        )
+        .await
+        {
+            warn!(
+                mission_id = %owner.flight_id,
+                session_id = %session_id,
+                error = %e,
+                "E8-ACCUM: failed to accumulate in-process executor cost"
+            );
+            return;
+        }
+        let _ = app.emit(
+            &format!("mission-planner:cost-updated:{}", owner.flight_id),
+            serde_json::json!({
+                "missionId": owner.flight_id,
+                "inputTokens": input_tokens,
+                "outputTokens": output_tokens,
+                "cacheReadInputTokens": cache_read,
+                "cacheCreationInputTokens": cache_write,
+                "totalTokens": total_tokens,
+                "costUsd": cost_usd,
+                "source": "executor",
+                "model": model,
+            }),
+        );
+    });
+}
+
 async fn run_agent_loop(
     app_handle: &tauri::AppHandle,
     state: &Arc<ApiAgentState>,
@@ -1062,6 +1131,16 @@ async fn run_agent_loop(
                 cost_usd: cost,
             };
             let _ = crate::commands::usage::append_usage_entry(&entry);
+            spawn_executor_cost_rollup(
+                app_handle,
+                session_id,
+                &model,
+                total_input_tokens,
+                total_output_tokens,
+                total_cache_read,
+                total_cache_write,
+                cost,
+            );
             fire_session_end_hooks(&all_hooks, session_id).await;
             return Ok(());
         }
@@ -1148,6 +1227,16 @@ async fn run_agent_loop(
                         cost_usd: cost,
                     };
                     let _ = crate::commands::usage::append_usage_entry(&entry);
+                    spawn_executor_cost_rollup(
+                        app_handle,
+                        session_id,
+                        &model,
+                        total_input_tokens,
+                        total_output_tokens,
+                        total_cache_read,
+                        total_cache_write,
+                        cost,
+                    );
                     fire_session_end_hooks(&all_hooks, session_id).await;
                     return Ok(());
                 }
@@ -1282,6 +1371,16 @@ async fn run_agent_loop(
                 cost_usd: cost,
             };
             let _ = crate::commands::usage::append_usage_entry(&entry);
+            spawn_executor_cost_rollup(
+                app_handle,
+                session_id,
+                &model,
+                total_input_tokens,
+                total_output_tokens,
+                total_cache_read,
+                total_cache_write,
+                cost,
+            );
             fire_session_end_hooks(&all_hooks, session_id).await;
             return Ok(());
         }
@@ -1782,6 +1881,16 @@ async fn run_agent_loop(
         cost_usd: cost,
     };
     let _ = crate::commands::usage::append_usage_entry(&entry);
+    spawn_executor_cost_rollup(
+        app_handle,
+        session_id,
+        &model,
+        total_input_tokens,
+        total_output_tokens,
+        total_cache_read,
+        total_cache_write,
+        cost,
+    );
     fire_session_end_hooks(&all_hooks, session_id).await;
     Ok(())
 }

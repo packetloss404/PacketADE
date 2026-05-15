@@ -795,8 +795,49 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
   const approvalsValueClass =
     tasks.approvals > 0 ? "text-accent-amber" : "text-text-primary";
 
-  const cells: { label: string; value: string; valueClass?: string }[] = [
-    { label: "Cost", value: formatCost(flight.totalCost) },
+  // E8-UI — split the single "Cost" cell into Planner + Exec. The executor
+  // cost is derived as `totalCost - plannerCost` so we don't need a new
+  // backend field. The Planner cell carries a sub-line: on OAuth
+  // subscriptions the dollar value is best-effort (no public quota
+  // endpoint), so we surface the cumulative token count as the
+  // authoritative measure; on API providers we just note "(API)".
+  //
+  // `plannerProvider` is now a first-class optional field on the Flight
+  // interface (added alongside E8-ACCUM in `src/types/flight.ts`), so we
+  // can read it directly without a narrowing cast.
+  const plannerCost = flight.plannerCost ?? 0;
+  const plannerTokens = flight.plannerTokens ?? 0;
+  const executorCost = Math.max(0, (flight.totalCost ?? 0) - plannerCost);
+  const plannerProvider = flight.plannerProvider;
+  const isOAuth = plannerProvider === "claude-oauth";
+  const plannerTitle =
+    "Cumulative tokens spent by the planner session. On OAuth " +
+    "subscriptions the dollar cost is best-effort (no public quota " +
+    "endpoint); use the token count as the authoritative measure.";
+
+  const cells: {
+    label: string;
+    value: string;
+    sub?: string;
+    valueClass?: string;
+    title?: string;
+  }[] = [
+    {
+      label: "Planner",
+      value: formatCost(plannerCost),
+      // On OAuth the dollar amount is best-effort, so the sub-line surfaces
+      // the cumulative token count as the authoritative measure. When the
+      // counter is still 0 (e.g. immediately after `start_mission_planner`
+      // before any turn has settled) "≈0 tokens" reads weirdly, so fall
+      // back to a plain provider label instead.
+      sub: isOAuth
+        ? plannerTokens > 0
+          ? `≈${formatTokens(plannerTokens)} tokens`
+          : "(OAuth)"
+        : "(API)",
+      title: plannerTitle,
+    },
+    { label: "Exec", value: formatCost(executorCost) },
     { label: "Tokens", value: formatTokens(flight.totalTokens) },
     {
       label: "Tasks",
@@ -813,10 +854,11 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
       {cells.map((c) => (
         <div
           key={c.label}
+          title={c.title}
           className="flex flex-col gap-0.5 px-2.5 py-2 bg-bg-secondary border border-bg-border rounded"
         >
           <span className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
@@ -829,6 +871,11 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
           >
             {c.value}
           </span>
+          {c.sub && (
+            <span className="text-[9px] text-text-muted font-mono">
+              {c.sub}
+            </span>
+          )}
         </div>
       ))}
     </div>
