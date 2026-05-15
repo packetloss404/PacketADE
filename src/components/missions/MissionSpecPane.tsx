@@ -29,6 +29,17 @@ const POST_LAUNCH_BLURB =
 const TOOL_CHIP_FRESHNESS_MS = 5000;
 const AUTOSCROLL_THRESHOLD_PX = 100;
 
+// Starter-prompt suggestions surfaced in the empty-state. Clicking a pill
+// populates the composer with the prompt so users can edit before sending.
+// The pills only appear when the transcript is empty, so they vanish as
+// soon as the user has typed anything (the pill content BECOMES the typed
+// content, which then triggers `isEmpty === false`).
+const STARTER_PROMPTS = [
+  "Add a dark-mode toggle",
+  "Refactor the workspace sidebar for readability",
+  "Add e2e tests for the spec-mode flow",
+];
+
 /**
  * Full-pane spec-mode chat for a Mission. Renders when the parent
  * (FlightDetailPane) detects `flight.status === "spec"`. Binds to
@@ -435,6 +446,21 @@ function EmptyState(props: EmptyStateProps) {
         <p className="text-[11px] text-text-secondary text-center leading-relaxed">
           {EMPTY_BLURB}
         </p>
+        <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+          <span className="text-[10px] text-text-muted uppercase tracking-[0.08em]">
+            Try
+          </span>
+          {STARTER_PROMPTS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => props.onChange(p)}
+              className="px-2.5 py-1 text-[11px] text-text-secondary border border-bg-border bg-bg-secondary rounded hover:bg-bg-hover hover:text-text-primary transition-colors"
+            >
+              {p}
+            </button>
+          ))}
+        </div>
         <div className="w-full mt-2 bg-bg-secondary border border-bg-border rounded p-3">
           <Composer {...props} />
         </div>

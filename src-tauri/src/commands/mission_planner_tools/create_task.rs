@@ -138,6 +138,27 @@ pub async fn handle(
     session_id: &str,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    // 1a. Guard against "(not set)" placeholder values leaking through the
+    //     target_spec (or any other arg field). The wake-message renderer
+    //     in `core::mission_planner_prompts` falls back to that literal
+    //     when the mission snapshot has no projectPath, and a careless
+    //     planner copy could echo it into `target_spec.basePath` — which
+    //     would then silently misroute `launch_flight_async`. Reject the
+    //     call so the planner has to resolve the missing field (typically
+    //     basePath / projectPath) before retrying, or escalate via
+    //     `request_user_approval`.
+    //
+    //     `AttemptTargetSpec` is Deserialize-only (no Serialize impl), so
+    //     we inspect the raw args JSON before deserialization rather than
+    //     round-tripping through the typed struct.
+    if args_contains_placeholder(&args) {
+        return Err(
+            "invalid target_spec: contains placeholder value '(not set)'. \
+             Resolve the missing field (likely basePath / projectPath) before calling create_task."
+                .to_string(),
+        );
+    }
+
     // 1. Parse args.
     let parsed: CreateTaskArgs = serde_json::from_value(args)
         .map_err(|e| format!("invalid args: {}", e))?;
@@ -489,4 +510,136 @@ async fn mark_task_failed_and_emit(
             "failedAt": now_ms(),
         }),
     );
+}
+
+/// Recursively walk a JSON value looking for any string equal to the
+/// `(not set)` placeholder the wake-message renderer falls back to when a
+/// snapshot field is missing. Used by the create_task handler to reject
+/// tool calls that echo the placeholder back into a `target_spec` field
+/// (most commonly `basePath`), since `launch_flight_async` would otherwise
+/// silently misroute the attempt.
+///
+/// We walk recursively rather than string-matching the serialized form so
+/// we don't false-positive on (a) a legitimate user-supplied string that
+/// happens to *contain* the substring `(not set)` and (b) the
+/// `Deserialize`-only `AttemptTargetSpec` type, which can't be re-
+/// serialized for a containment check.
+fn args_contains_placeholder(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::String(s) => s == "(not set)",
+        serde_json::Value::Array(arr) => arr.iter().any(args_contains_placeholder),
+        serde_json::Value::Object(map) => {
+            map.values().any(args_contains_placeholder)
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The placeholder guard runs on the raw `serde_json::Value` before
+    /// deserialization, so it can be exercised without the Tauri runtime.
+    /// We hand it a `target_spec` that mirrors what a careless planner
+    /// would emit after copying `"(not set)"` out of the decomposition
+    /// wake message and assert the helper flags it.
+    #[test]
+    fn create_task_rejects_placeholder_basepath() {
+        let args = serde_json::json!({
+            "milestone_id": "ms_1",
+            "title": "Do something",
+            "prompt": "Implement the thing.",
+            "agent_id": "claude-code",
+            "target_spec": {
+                "kind": "local",
+                "basePath": "(not set)",
+                "baseBranch": "main",
+                "agentConfigId": "claude-code",
+                "provider": "claude-oauth",
+                "model": "claude-sonnet-4-6"
+            }
+        });
+        assert!(
+            args_contains_placeholder(&args),
+            "guard should reject target_spec.basePath == \"(not set)\""
+        );
+    }
+
+    /// Negative case: a real path must not trip the placeholder guard.
+    #[test]
+    fn create_task_accepts_concrete_basepath() {
+        let args = serde_json::json!({
+            "milestone_id": "ms_1",
+            "title": "Do something",
+            "prompt": "Implement the thing.",
+            "agent_id": "claude-code",
+            "target_spec": {
+                "kind": "local",
+                "basePath": "/projects/PacketADE",
+                "baseBranch": "main",
+                "agentConfigId": "claude-code",
+                "provider": "claude-oauth",
+                "model": "claude-sonnet-4-6"
+            }
+        });
+        assert!(
+            !args_contains_placeholder(&args),
+            "concrete basePath must not trip the placeholder guard"
+        );
+    }
+
+    /// Substring matches inside larger strings should NOT trip the guard —
+    /// only the exact literal `(not set)` is rejected. Otherwise a user's
+    /// prompt mentioning "(not set)" verbatim would be unfair.
+    #[test]
+    fn create_task_guard_requires_exact_placeholder_match() {
+        let args = serde_json::json!({
+            "milestone_id": "ms_1",
+            "title": "Some task",
+            "prompt": "When the value is (not set), fall back to default.",
+            "agent_id": "claude-code",
+            "target_spec": {
+                "kind": "local",
+                "basePath": "/projects/PacketADE",
+                "baseBranch": "main",
+                "agentConfigId": "claude-code",
+                "provider": "claude-oauth",
+                "model": "claude-sonnet-4-6"
+            }
+        });
+        assert!(
+            !args_contains_placeholder(&args),
+            "guard must require exact \"(not set)\" string equality, not substring"
+        );
+    }
+
+    /// Nested placement: a placeholder inside an SSH-shaped target_spec
+    /// should still trip the guard. Walks the recursion path the helper
+    /// uses for objects nested under `target_spec`.
+    #[test]
+    fn create_task_guard_walks_nested_objects() {
+        let args = serde_json::json!({
+            "milestone_id": "ms_1",
+            "title": "Some task",
+            "prompt": "Do work.",
+            "agent_id": "claude-code",
+            "target_spec": {
+                "kind": "ssh",
+                "target_id": "srv_1",
+                "host": "example.com",
+                "port": 22,
+                "user": "deploy",
+                "base_path": "(not set)",
+                "base_branch": "main",
+                "agent_config_id": "claude-code",
+                "provider": "claude-oauth",
+                "model": "claude-sonnet-4-6"
+            }
+        });
+        assert!(
+            args_contains_placeholder(&args),
+            "guard should walk into ssh target_spec and flag the placeholder"
+        );
+    }
 }

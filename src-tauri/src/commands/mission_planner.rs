@@ -141,9 +141,17 @@ pub enum WakeTrigger {
 
 impl WakeTrigger {
     /// Stable snake_case string for the `<wake_trigger kind="…">` attribute.
+    ///
+    /// These exact strings are taught to the planner via the system prompt
+    /// (`core::mission_planner_prompts`), so each variant maps to the
+    /// model-facing kind verbatim. Note in particular that `Decomposition`
+    /// — the kickoff trigger fired when the user clicks Launch — maps to
+    /// `"launch"` rather than `"decomposition"`: the planner system prompt
+    /// references "launch" because that's what the user clicked, and we
+    /// keep the wire shape aligned with the prompt vocabulary.
     pub fn kind_str(&self) -> &'static str {
         match self {
-            Self::Decomposition => "decomposition",
+            Self::Decomposition => "launch",
             Self::TaskCompleted(_) => "task_completed",
             Self::TaskFailed(_) => "task_failed",
             Self::ApprovalGateReached(_) => "approval_gate_reached",
@@ -533,14 +541,13 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         }
     };
 
-    // Gather a mission snapshot for the wake-message builder. E1 ships
-    // a minimal pass — just the trigger payload + a near-empty snapshot
-    // — and E4/E5 enrich this with milestones, task statuses, etc.
-    let mission_snapshot = serde_json::json!({
-        "missionId": event.mission_id,
-        "triggerPayload": event.payload,
-    });
-    let journal_tail = String::new(); // E7 populates the journal.
+    // Gather a mission snapshot for the wake-message builder. We pull a
+    // read-only view of the Flight DTO via `storage::load_state` (no lock —
+    // we're not mutating). E7 will replace `journal_tail` with the proper
+    // journal feed; for now we surface the failed-task conversation tail on
+    // `TaskFailed` so the planner has concrete evidence to react to.
+    let (mission_snapshot, journal_tail) =
+        build_wake_payload(&event.mission_id, &event.trigger, &event.payload);
 
     let content = wake_user_message(&event.trigger, &journal_tail, &mission_snapshot);
     let trigger_kind = event.trigger.kind_str();
@@ -586,6 +593,124 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         Some(&session.sidecar_session_id),
         Some(PlannerStatus::Awake),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Wake payload enrichment — mission snapshot + journal tail
+// ---------------------------------------------------------------------------
+
+/// Build the `(mission_snapshot, journal_tail)` pair fed into
+/// [`wake_user_message`] for a wake event.
+///
+/// `mission_snapshot` is a structured JSON view of the current Flight DTO:
+/// title, objective, project path, workspace id, milestone/task counters,
+/// and the count of tasks currently `Queued` or `Running`. The planner uses
+/// this to ground its reasoning in the current state of the mission rather
+/// than relying on chat history alone.
+///
+/// `journal_tail` is best-effort recent context. E7 will replace this with
+/// a proper journal feed; for now the only kind that populates it is
+/// [`WakeTrigger::TaskFailed`] — we look up the failed task's
+/// `session_id` and pull the last ~30 lines of the persisted conversation
+/// file (`<DATA_DIR>/conversations/<session_id>.json`). If the conversation
+/// file doesn't exist or fails to parse, we return an empty string — the
+/// prompt builder handles that case.
+///
+/// Read-only: uses `storage::load_state` (no lock) and a plain file read.
+/// Safe to call from inside the wake consumer without holding any mutex.
+fn build_wake_payload(
+    mission_id: &str,
+    trigger: &WakeTrigger,
+    trigger_payload: &serde_json::Value,
+) -> (serde_json::Value, String) {
+    let state = storage::load_state();
+    let flight = state.flights.iter().find(|f| f.id == mission_id);
+
+    let snapshot = match flight {
+        Some(flight) => {
+            let task_count: usize = flight.milestones.iter().map(|m| m.tasks.len()).sum();
+            let pending_tasks: usize = flight
+                .milestones
+                .iter()
+                .flat_map(|m| m.tasks.iter())
+                .filter(|t| {
+                    matches!(
+                        t.status,
+                        crate::core::flight::TaskStatus::Queued
+                            | crate::core::flight::TaskStatus::Running
+                    )
+                })
+                .count();
+            serde_json::json!({
+                "missionId": mission_id,
+                "title": flight.title,
+                "objective": flight.objective,
+                "projectPath": flight.project_path,
+                "workspaceId": flight.workspace_id,
+                "status": flight.status,
+                "milestoneCount": flight.milestones.len(),
+                "taskCount": task_count,
+                "pendingTasks": pending_tasks,
+                "triggerPayload": trigger_payload,
+            })
+        }
+        None => serde_json::json!({
+            "missionId": mission_id,
+            "triggerPayload": trigger_payload,
+        }),
+    };
+
+    let journal_tail = match trigger {
+        WakeTrigger::TaskFailed(task_id) => flight
+            .and_then(|f| {
+                f.milestones
+                    .iter()
+                    .flat_map(|m| m.tasks.iter())
+                    .find(|t| t.id == *task_id)
+                    .and_then(|t| t.session_id.clone())
+            })
+            .map(|sid| read_conversation_tail(&sid, 30))
+            .unwrap_or_default(),
+        _ => String::new(),
+    };
+
+    (snapshot, journal_tail)
+}
+
+/// Read the last `max_lines` lines of the persisted conversation file for
+/// `session_id`. Returns an empty string if the file is missing or
+/// unreadable — callers must handle the empty case (the prompt builder
+/// already does).
+///
+/// File path mirrors `commands::conversations`:
+/// `<home>/<DATA_DIR_NAME>/conversations/<session_id>.json`. We don't try to
+/// parse the JSON — the wake message is going to a model that handles
+/// noisy context fine, and parsing here would couple the planner to the
+/// frontend conversation schema. We treat it as opaque text and slice the
+/// tail.
+fn read_conversation_tail(session_id: &str, max_lines: usize) -> String {
+    if session_id.is_empty()
+        || session_id.contains('/')
+        || session_id.contains('\\')
+        || session_id.contains("..")
+    {
+        return String::new();
+    }
+    let home = match crate::commands::shared::home_dir() {
+        Some(h) => h,
+        None => return String::new(),
+    };
+    let path = std::path::PathBuf::from(home)
+        .join(crate::core::brand::DATA_DIR_NAME)
+        .join("conversations")
+        .join(format!("{}.json", session_id));
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return String::new(),
+    };
+    let lines: Vec<&str> = content.lines().collect();
+    let start = lines.len().saturating_sub(max_lines);
+    lines[start..].join("\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -846,6 +971,61 @@ pub async fn inject_planner_turn(
     Ok(())
 }
 
+/// Fire a `WakeTrigger::Decomposition` event for `mission_id` onto the
+/// wake bus.
+///
+/// This is the architecturally-clean path for the user-clicks-Launch
+/// transition: instead of the frontend hand-crafting a `[LAUNCH]` user
+/// message and pushing it through [`inject_planner_turn`] (which would
+/// tag the wake as `kind="user_message_in_journal"` — wrong), Launch
+/// fires the real `Decomposition` wake. The existing wake consumer
+/// ([`spawn_wake_consumer`] / [`dispatch_wake`]) then:
+///   * pulls a fresh mission snapshot via [`build_wake_payload`],
+///   * formats the body via [`wake_user_message`]
+///     (→ `render_decomposition`), and
+///   * injects with `kind_str() = "launch"` (see
+///     [`WakeTrigger::kind_str`]), which is the kind the planner's
+///     system prompt is trained to recognize as the kickoff trigger.
+///
+/// Errors if no planner is registered for the mission — the frontend's
+/// `launchMission` always calls `startPlanner` first, so a missing
+/// planner here is a bug worth surfacing.
+#[tauri::command]
+pub async fn trigger_planner_decomposition(
+    app_handle: AppHandle,
+    mission_id: String,
+) -> Result<(), String> {
+    let registry = app_handle
+        .try_state::<MissionPlannerRegistry>()
+        .ok_or_else(|| "mission planner registry not managed".to_string())?;
+
+    if registry.get_by_mission(&mission_id).await.is_none() {
+        return Err(format!(
+            "no active planner for mission '{}'; call start_mission_planner first",
+            mission_id
+        ));
+    }
+
+    // `payload` intentionally empty — `build_wake_payload` reads the
+    // current Flight DTO from PersistedState and constructs the real
+    // snapshot at dispatch time, which is what `render_decomposition`
+    // wants. We don't need to pass per-trigger payload data for the
+    // Decomposition variant.
+    registry
+        .send_wake(PlannerWakeEvent {
+            mission_id: mission_id.clone(),
+            trigger: WakeTrigger::Decomposition,
+            payload: serde_json::json!({}),
+        })
+        .await;
+
+    info!(
+        mission_id = %mission_id,
+        "queued decomposition wake for mission planner"
+    );
+    Ok(())
+}
+
 /// Resolve a pending Mission Planner approval gate (E2).
 ///
 /// Flips the matching `MissionApprovalRequest` on `PersistedState` to
@@ -1005,7 +1185,11 @@ mod tests {
 
     #[test]
     fn wake_trigger_kind_str_matches_locked_design() {
-        assert_eq!(WakeTrigger::Decomposition.kind_str(), "decomposition");
+        // `Decomposition` maps to `"launch"` (not `"decomposition"`) because
+        // the kickoff trigger fires when the user clicks Launch — the
+        // planner system prompt teaches the model to recognize "launch" as
+        // the kickoff kind, so the wire shape must agree.
+        assert_eq!(WakeTrigger::Decomposition.kind_str(), "launch");
         assert_eq!(
             WakeTrigger::TaskCompleted("t1".into()).kind_str(),
             "task_completed"
@@ -1024,6 +1208,65 @@ mod tests {
             "user_message_in_journal"
         );
         assert_eq!(WakeTrigger::QuotaExhausted.kind_str(), "quota_exhausted");
+    }
+
+    #[test]
+    fn build_wake_payload_falls_back_when_flight_missing() {
+        // No flight registered under this id — snapshot should still echo
+        // the trigger payload so downstream prompt builders have something
+        // to render. Journal tail must be empty in this case (no flight =
+        // no task = no session id to look up).
+        let (snapshot, tail) = build_wake_payload(
+            "mission-that-does-not-exist",
+            &WakeTrigger::TaskCompleted("t-1".into()),
+            &serde_json::json!({"taskId": "t-1"}),
+        );
+        assert_eq!(snapshot["missionId"], "mission-that-does-not-exist");
+        assert!(snapshot.get("triggerPayload").is_some());
+        // Title et al. should be absent when the flight isn't found.
+        assert!(snapshot.get("title").is_none());
+        assert_eq!(tail, "");
+    }
+
+    #[test]
+    fn read_conversation_tail_returns_empty_for_missing_file() {
+        // Random uuid → no file → empty string (not an error). Also
+        // exercises the path-escape guard for the `..` case.
+        let id = uuid::Uuid::new_v4().to_string();
+        assert_eq!(read_conversation_tail(&id, 30), "");
+        assert_eq!(read_conversation_tail("..", 30), "");
+        assert_eq!(read_conversation_tail("a/b", 30), "");
+        assert_eq!(read_conversation_tail("", 30), "");
+    }
+
+    #[test]
+    fn read_conversation_tail_slices_last_n_lines() {
+        // Write a temp conversation file under a process-unique id, then
+        // verify the tail slice matches the last `max_lines` lines.
+        let home = match crate::commands::shared::home_dir() {
+            Some(h) => h,
+            None => return, // CI without HOME — skip
+        };
+        let dir = std::path::PathBuf::from(&home)
+            .join(crate::core::brand::DATA_DIR_NAME)
+            .join("conversations");
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let id = format!("test-mission-planner-{}", uuid::Uuid::new_v4());
+        let path = dir.join(format!("{}.json", id));
+        let body: String = (0..50)
+            .map(|i| format!("line-{}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if std::fs::write(&path, &body).is_err() {
+            return;
+        }
+        let tail = read_conversation_tail(&id, 5);
+        let _ = std::fs::remove_file(&path);
+        assert!(tail.ends_with("line-49"));
+        assert!(tail.contains("line-45"));
+        assert!(!tail.contains("line-44"));
     }
 
     #[test]
@@ -1048,5 +1291,39 @@ mod tests {
                 _ => panic!("PlannerStatus → FlightPlannerStatus mismatch for {:?}", s),
             }
         }
+    }
+
+    /// E4-LAUNCH — verify the registry's wake bus delivers a
+    /// `WakeTrigger::Decomposition` event end-to-end. The Tauri command
+    /// `trigger_planner_decomposition` is a thin wrapper around
+    /// `registry.send_wake(PlannerWakeEvent { trigger: Decomposition, … })`
+    /// so this exercises the same code path the command takes after its
+    /// session-presence check. Full-stack command testing requires a real
+    /// AppHandle, which is non-trivial here; this gives us confidence the
+    /// wire shape is right.
+    #[tokio::test]
+    async fn registry_wake_bus_carries_decomposition_event_with_launch_kind() {
+        let registry = MissionPlannerRegistry::default();
+        let (tx, mut rx) = mpsc::unbounded_channel::<PlannerWakeEvent>();
+        registry.install_wake_sender(tx).await;
+
+        registry
+            .send_wake(PlannerWakeEvent {
+                mission_id: "mission-test-decomp".to_string(),
+                trigger: WakeTrigger::Decomposition,
+                payload: serde_json::json!({}),
+            })
+            .await;
+
+        let received = rx
+            .recv()
+            .await
+            .expect("decomposition wake should be delivered");
+        assert_eq!(received.mission_id, "mission-test-decomp");
+        assert!(matches!(received.trigger, WakeTrigger::Decomposition));
+        // The kind the wake consumer will pass through to
+        // `forward_inject_user_turn` — this is the load-bearing assertion
+        // that the bug fix actually fires `kind="launch"`.
+        assert_eq!(received.trigger.kind_str(), "launch");
     }
 }
