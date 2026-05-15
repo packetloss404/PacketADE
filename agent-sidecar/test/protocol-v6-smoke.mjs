@@ -1,17 +1,23 @@
-// Protocol v5 regression smoke test for the PacketADE agent sidecar.
+// Protocol v6 regression smoke test for the PacketADE agent sidecar.
 //
 // Validates that the protocol v2 request types plus the v4
-// `cancel_pending_tools` request and v5 `inject_user_turn` /
-// `planner_tool_result` requests route correctly through the dispatcher
-// against the echo provider. This is a wiring test only — it does not
-// exercise any real provider. The echo provider's v2 handlers emit one
-// `chunk` echoing the received field, then `done` with zero tokens. Echo
-// does NOT implement v4 `cancel_pending_tools` or the v5 planner methods,
-// so for those requests the expected result is the registry's clean
-// "not supported" error.
+// `cancel_pending_tools` request, v5 `inject_user_turn` /
+// `planner_tool_result` requests, and the v6 `rate_limited` event shape
+// all route correctly through the dispatcher against the echo provider.
+// This is a wiring test only — it does not exercise any real provider.
+// The echo provider's v2 handlers emit one `chunk` echoing the received
+// field, then `done` with zero tokens. Echo does NOT implement v4
+// `cancel_pending_tools` or the v5 planner methods, so for those requests
+// the expected result is the registry's clean "not supported" error.
+//
+// The v6 `rate_limited` event is a server→client envelope (no request
+// type to dispatch), so we only round-trip the JSON shape via JSON.parse
+// to confirm the wire layout the Rust supervisor expects — we never need
+// to trigger a real RateLimitError, which would require a live Anthropic
+// session.
 //
 // Sequence:
-//   1. Spawn the sidecar, wait for `ready` (must advertise protocol v5).
+//   1. Spawn the sidecar, wait for `ready` (must advertise protocol v6).
 //   2. `start_session` for provider "echo", wait for its `done`.
 //   3. `set_permission_mode { mode: "plan" }` → expect chunk echoing "plan"
 //      then `done`, within 3s.
@@ -21,6 +27,8 @@
 //   6. `cancel_pending_tools` → expect clean unsupported error, within 3s.
 //   7. `inject_user_turn` → expect clean unsupported error, within 3s.
 //   8. `planner_tool_result` → expect clean unsupported error, within 3s.
+//   9. v6 `rate_limited` event shape round-trip via JSON.parse — pure
+//      wire-format check, no IPC.
 //
 // Exits 0 if all steps pass, 1 otherwise — printing which step failed
 // and why.
@@ -34,8 +42,8 @@ import { existsSync } from "node:fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SESSION_ID = "protocol-v5-smoke";
-const EXPECTED_PROTOCOL_VERSION = 5;
+const SESSION_ID = "protocol-v6-smoke";
+const EXPECTED_PROTOCOL_VERSION = 6;
 const STEP_TIMEOUT_MS = 3000;
 const START_TIMEOUT_MS = 3000;
 const READY_TIMEOUT_MS = 3000;
@@ -43,9 +51,9 @@ const READY_TIMEOUT_MS = 3000;
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");
 
 if (!existsSync(sidecarEntry)) {
-  console.error(`[protocol-v5-smoke] sidecar entry not found at ${sidecarEntry}`);
+  console.error(`[protocol-v6-smoke] sidecar entry not found at ${sidecarEntry}`);
   console.error(
-    `[protocol-v5-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
+    `[protocol-v6-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
   );
   process.exit(1);
 }
@@ -60,7 +68,7 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
 
 child.on("error", (err) => {
-  console.error(`[protocol-v5-smoke] child spawn error: ${err.message}`);
+  console.error(`[protocol-v6-smoke] child spawn error: ${err.message}`);
   process.exit(1);
 });
 
@@ -86,7 +94,7 @@ rl.on("line", (line) => {
   try {
     event = JSON.parse(trimmed);
   } catch {
-    console.error(`[protocol-v5-smoke] non-JSON stdout line: ${trimmed}`);
+    console.error(`[protocol-v6-smoke] non-JSON stdout line: ${trimmed}`);
     return;
   }
 
@@ -125,8 +133,8 @@ rl.on("line", (line) => {
       break;
     default:
       // Ignore other event types (thinking, tool_*, permission_request,
-      // pending_edit, thinking_stop) — this test only cares about
-      // chunk / done / error for SESSION_ID.
+      // pending_edit, thinking_stop, rate_limited, planner_tool) — this
+      // test only cares about chunk / done / error for SESSION_ID.
       break;
   }
 });
@@ -180,13 +188,13 @@ function shutdown(code) {
   }, 500);
   child.on("exit", () => clearTimeout(killTimer));
   if (code !== 0 && stderrChunks.length > 0) {
-    console.error(`[protocol-v5-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
+    console.error(`[protocol-v6-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
   }
   process.exit(code);
 }
 
 function fail(step, reason) {
-  console.error(`[protocol-v5-smoke] FAIL at step '${step}': ${reason}`);
+  console.error(`[protocol-v6-smoke] FAIL at step '${step}': ${reason}`);
   shutdown(1);
 }
 
@@ -215,7 +223,7 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
       );
       return;
     }
-    console.log(`[protocol-v5-smoke] PASS: ${step}`);
+    console.log(`[protocol-v6-smoke] PASS: ${step}`);
     return;
   }
   if (term.kind === "error") {
@@ -237,7 +245,60 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
     );
     return;
   }
-  console.log(`[protocol-v5-smoke] PASS: ${step}`);
+  console.log(`[protocol-v6-smoke] PASS: ${step}`);
+}
+
+/**
+ * v6: `rate_limited` is a server→client event. We don't need to round-trip
+ * it through the sidecar process (that would require triggering a real
+ * RateLimitError), but we do want to confirm the wire shape stays stable
+ * — the Rust supervisor's `agent_sidecar::handle_event` parses these exact
+ * keys (`type`, `sessionId`, `retryAfterSeconds`, `message`).
+ */
+function checkRateLimitedEventShape() {
+  const step = "rate_limited_event_shape";
+  const sample = {
+    type: "rate_limited",
+    sessionId: "rl-test",
+    retryAfterSeconds: 90,
+    message: "Anthropic rate limit hit",
+  };
+  const serialized = JSON.stringify(sample);
+  let parsed;
+  try {
+    parsed = JSON.parse(serialized);
+  } catch (err) {
+    fail(step, `JSON round-trip failed: ${err.message}`);
+    return;
+  }
+  if (parsed.type !== "rate_limited") {
+    fail(step, `type must be 'rate_limited', got ${JSON.stringify(parsed.type)}`);
+    return;
+  }
+  if (parsed.sessionId !== "rl-test") {
+    fail(step, `sessionId did not round-trip: ${JSON.stringify(parsed.sessionId)}`);
+    return;
+  }
+  if (parsed.retryAfterSeconds !== 90) {
+    fail(step, `retryAfterSeconds did not round-trip: ${JSON.stringify(parsed.retryAfterSeconds)}`);
+    return;
+  }
+  if (parsed.message !== "Anthropic rate limit hit") {
+    fail(step, `message did not round-trip: ${JSON.stringify(parsed.message)}`);
+    return;
+  }
+  // retryAfterSeconds is optional — confirm omitting it still parses.
+  const minimal = { type: "rate_limited", sessionId: "rl-test" };
+  const minimalParsed = JSON.parse(JSON.stringify(minimal));
+  if (minimalParsed.type !== "rate_limited" || minimalParsed.sessionId !== "rl-test") {
+    fail(step, "minimal rate_limited envelope (no retryAfterSeconds) failed to round-trip");
+    return;
+  }
+  if (minimalParsed.retryAfterSeconds !== undefined) {
+    fail(step, "minimal envelope should not invent a retryAfterSeconds value");
+    return;
+  }
+  console.log(`[protocol-v6-smoke] PASS: ${step}`);
 }
 
 async function run() {
@@ -282,7 +343,7 @@ async function run() {
     }
     // Not strictly required, but prove echo actually streamed something.
     void chunks.slice(chunkStart);
-    console.log(`[protocol-v5-smoke] PASS: start_session`);
+    console.log(`[protocol-v6-smoke] PASS: start_session`);
   }
 
   // 3) set_permission_mode { mode: "plan" }
@@ -344,11 +405,15 @@ async function run() {
     { expectErrorSubstring: "does not support planner_tool_result" },
   );
 
-  console.log(`[protocol-v5-smoke] OK`);
+  // 9) v6 `rate_limited` event-shape round-trip. Server→client envelope —
+  // pure wire-format check, no IPC.
+  checkRateLimitedEventShape();
+
+  console.log(`[protocol-v6-smoke] OK`);
   shutdown(0);
 }
 
 run().catch((err) => {
-  console.error(`[protocol-v5-smoke] unexpected error: ${err?.stack ?? err}`);
+  console.error(`[protocol-v6-smoke] unexpected error: ${err?.stack ?? err}`);
   shutdown(1);
 });

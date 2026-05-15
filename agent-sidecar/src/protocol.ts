@@ -35,7 +35,17 @@
 //     `dev/mission-planner-plan.md` and `dev/mission-planner-spike-retro.md`.
 //   - E1 scaffolds the planner request/event types and ships a single stub
 //     tool (`noop`); the eight real planner tools land in E2.
-export const PROTOCOL_VERSION = 5;
+//
+// v6 (Mission Planner E6 — rate-limit handler): adds the `rate_limited`
+// sidecar event. The Anthropic provider catches `RateLimitError` from the
+// Claude Agent SDK's message iterator, parses the `retry-after` header
+// when present, and emits this typed event alongside its existing `error`
+// emit. The Rust supervisor routes the event into
+// `MissionPlannerRegistry::on_rate_limited`, which flips the owning
+// planner's status to `QuotaPaused`, schedules an auto-resume timer
+// (clamped to 60-600s), and emits a per-mission Tauri event the frontend
+// turns into an OS-level desktop notification.
+export const PROTOCOL_VERSION = 6;
 
 /** Image content a model can interpret natively. base64-encoded bytes. */
 export type ImageAttachment = {
@@ -173,6 +183,13 @@ export type InjectUserTurnRequest = {
    * `<wake_trigger>` envelope's `kind` attribute. Ignored when
    * `source === "user"`. */
   trigger?: { kind: string; payload?: unknown };
+  /** E6-CAPS: per-mode output `max_tokens` budget the Mission Planner wants
+   * the provider to honor for this turn. The Claude Agent SDK (0.2.116) does
+   * not expose a per-turn `max_tokens` setter, so the anthropic provider
+   * currently logs a warning and falls back to the SDK's defaults. The
+   * field is still threaded through so future SDK versions can pick it up
+   * without another protocol change. */
+  maxOutputTokens?: number;
 };
 
 /** v5: result envelope for an in-process planner MCP tool call. The
@@ -300,10 +317,31 @@ export type SidecarEvent =
       tool: string;
       args: unknown;
       callId: string;
+    }
+  // v6 additions ----------------------------------------------------------
+  /** Mission Planner E6: the underlying provider returned a rate-limit
+   * error (HTTP 429 in Anthropic's case). Emitted IN ADDITION to the
+   * regular `error` event so legacy listeners still react. The Rust
+   * supervisor consumes this in `agent_sidecar::handle_event` and
+   * delegates to `MissionPlannerRegistry::on_rate_limited`, which arms
+   * the QuotaPaused backoff window. `retryAfterSeconds` is parsed from
+   * the SDK error's `retry-after` header when present (Anthropic returns
+   * a number-of-seconds value); the field is omitted when the header is
+   * absent so the Rust side can fall back to a default window. */
+  | {
+      type: "rate_limited";
+      sessionId: string;
+      retryAfterSeconds?: number;
+      message?: string;
     };
 
 /** Wire shape for `planner_tool` (typed so call sites in E2 can import a
  * single name rather than re-spelling the inline union arm). */
 export type PlannerToolCallEvent = Extract<SidecarEvent, { type: "planner_tool" }>;
+
+/** Wire shape for `rate_limited` (typed so the Anthropic provider and the
+ * Rust supervisor can import a single name rather than re-spelling the
+ * inline union arm). v6. */
+export type RateLimitedEvent = Extract<SidecarEvent, { type: "rate_limited" }>;
 
 export type Emit = (event: SidecarEvent) => void;

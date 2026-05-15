@@ -18,6 +18,7 @@ import {
   stopMissionPlanner as invokeStopMissionPlanner,
   triggerPlannerDecomposition as invokeTriggerPlannerDecomposition,
 } from "@/lib/tauri";
+import { notifyMissionPlannerRateLimited } from "@/lib/notifications";
 import { useFlightStore } from "@/stores/flightStore";
 
 // E1 — frontend runtime for Mission Planner sessions. Ephemeral by design:
@@ -322,6 +323,57 @@ async function installListeners(
     },
   );
 
+  // E6-CEILING-RATELIMIT — desktop notification + status flip when the
+  // Anthropic provider returns a rate-limit error. The Rust supervisor's
+  // `MissionPlannerRegistry::on_rate_limited` flips the planner into
+  // `QuotaPaused` and emits this per-mission event with the effective
+  // wait-seconds; we mirror that into the runtime so the UI's PlannerStatusChip
+  // surfaces the right state without waiting for a wake round-trip,
+  // and fire a desktop notification so the user knows the mission
+  // isn't frozen.
+  const rateLimitedUnlisten = await listen<{
+    missionId: string;
+    retryAfterSeconds: number;
+  }>(`mission-planner:rate-limited:${missionId}`, (event) => {
+    const waitSeconds = event.payload?.retryAfterSeconds ?? 60;
+    set((s) => ({
+      runtimes: patchRuntime(s.runtimes, missionId, {
+        status: "quota_paused",
+        isStreaming: false,
+      }),
+    }));
+    const flight = useFlightStore
+      .getState()
+      .flights.find((f) => f.id === missionId);
+    const missionTitle = flight?.title ?? "Mission";
+    void notifyMissionPlannerRateLimited(
+      missionId,
+      missionTitle,
+      waitSeconds,
+    );
+  });
+
+  // FIX 3 — generic status-changed event emitted by
+  // `MissionPlannerRegistry::set_status_and_emit` from the Rust side
+  // (manual pause / resume, kill-switch, and any future call site that
+  // wants UI propagation). Pattern matches the rate-limited listener
+  // above but accepts any PlannerStatus.
+  //
+  // The Rust payload is `{ missionId, status }` where status serializes
+  // via PlannerStatus's `serde(rename_all = "snake_case")` derive into
+  // one of: idle / awake / paused / quota_paused / completed / failed —
+  // exactly the union shape of the local `PlannerStatus` TS type.
+  const statusChangedUnlisten = await listen<{
+    missionId: string;
+    status: PlannerStatus;
+  }>(`mission-planner:status-changed:${missionId}`, (event) => {
+    const nextStatus = event.payload?.status;
+    if (!nextStatus) return;
+    set((s) => ({
+      runtimes: patchRuntime(s.runtimes, missionId, { status: nextStatus }),
+    }));
+  });
+
   // E3-FIX1 — refresh `flightStore` whenever the Rust planner tool
   // handlers mutate persisted flight state. Without these, the planner
   // populates PersistedState on disk but `MilestonesCard` / `TimelineCard`
@@ -373,6 +425,8 @@ async function installListeners(
     errorUnlisten();
     approvalRequestUnlisten();
     approvalResolvedUnlisten();
+    rateLimitedUnlisten();
+    statusChangedUnlisten();
     for (const unlisten of flightEventUnlistens) {
       unlisten();
     }

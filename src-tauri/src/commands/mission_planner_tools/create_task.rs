@@ -70,6 +70,38 @@ use crate::core::storage;
 /// frontend so behavior is consistent across launch surfaces.
 const FALLBACK_AGENT_ID: &str = "claude-code";
 
+/// E6-CEILING-RATELIMIT — task ceiling per mission.
+///
+/// Per locked-design §Caps (`dev/mission-planner-plan.md`), a single mission
+/// is capped at **60 tasks** across all milestones. When the planner tries
+/// to call `create_task` for the 61st, the handler returns a structured
+/// error string that the planner's system prompt and the dispatcher teach
+/// the model to handle by escalating via `request_user_approval` instead
+/// of pounding on `create_task`.
+const TASK_CEILING: usize = 60;
+
+/// Count all tasks across every milestone in a flight. Pulled out for use
+/// in both the ceiling guard (inside [`handle`]'s `with_state_lock` closure)
+/// and the unit test.
+fn total_tasks_for_flight(flight: &crate::core::flight::Flight) -> usize {
+    flight.milestones.iter().map(|m| m.tasks.len()).sum()
+}
+
+/// Build the canonical "task ceiling reached" error string. The exact
+/// wording is part of the planner's UX contract: the system prompt
+/// (`core::mission_planner_prompts::spec_mode_system_prompt`) teaches the
+/// model that, on this error, it must call `request_user_approval` with
+/// the documented options before retrying. Keeping the construction in a
+/// single helper means the test and the runtime path can't drift.
+fn task_ceiling_error_message(total_tasks: usize) -> String {
+    format!(
+        "task_ceiling_reached: mission has {} tasks (cap {}). Call \
+         request_user_approval to ask the user whether to continue past the \
+         ceiling before creating any more tasks.",
+        total_tasks, TASK_CEILING
+    )
+}
+
 #[derive(Debug, Deserialize)]
 struct CreateTaskArgs {
     milestone_id: String,
@@ -231,6 +263,24 @@ pub async fn handle(
                 .iter_mut()
                 .find(|f| f.id == mission_id_for_persist)
                 .ok_or_else(|| format!("mission '{}' not found", mission_id_for_persist))?;
+
+            // E6-CEILING-RATELIMIT — reject if the mission already has
+            // [`TASK_CEILING`] tasks across all milestones. The error
+            // string is structured so the planner's system prompt and
+            // dispatcher together teach the model to call
+            // `request_user_approval` instead of retrying `create_task`.
+            //
+            // We perform this check inside the same `with_state_lock`
+            // closure that commits the new task so concurrent planner
+            // tool calls can't race past the ceiling — between checking
+            // the count and pushing the new task, no other writer can
+            // squeeze in another task because we hold `ASYNC_STATE_LOCK`
+            // for the duration.
+            let total_tasks = total_tasks_for_flight(flight);
+            if total_tasks >= TASK_CEILING {
+                return Err(task_ceiling_error_message(total_tasks));
+            }
+
             let milestone = flight
                 .milestones
                 .iter_mut()
@@ -644,6 +694,168 @@ mod tests {
         assert!(
             args_contains_placeholder(&args),
             "guard should walk into ssh target_spec and flag the placeholder"
+        );
+    }
+
+    // ----------------------------------------------------------------
+    // E6-CEILING-RATELIMIT — task ceiling regression tests
+    // ----------------------------------------------------------------
+
+    use crate::core::flight::{
+        Flight, FlightPriority, FlightStatus, Milestone, MilestoneStatus, Task as FlightTask,
+        TaskStatus as FlightTaskStatus, TaskType as FlightTaskType,
+    };
+
+    /// Build a Task fixture with default fields. Mirrors the shape
+    /// `core::flight::tests::make_task` uses so the test stays robust to
+    /// non-load-bearing schema additions.
+    fn fixture_task(id: &str, flight_id: &str, milestone_id: &str) -> FlightTask {
+        FlightTask {
+            id: id.to_string(),
+            milestone_id: milestone_id.to_string(),
+            flight_id: flight_id.to_string(),
+            title: "Test task".to_string(),
+            description: String::new(),
+            order: 0,
+            status: FlightTaskStatus::Queued,
+            task_type: FlightTaskType::Implementation,
+            agent_config_id: "claude-code".to_string(),
+            agent_args: None,
+            model: None,
+            depends_on: Vec::new(),
+            session_id: None,
+            result: None,
+            review_packet: None,
+            created_at: 0,
+            started_at: None,
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+            replan_count: 0,
+        }
+    }
+
+    /// Build a Flight with `task_count` tasks spread across a single
+    /// milestone. Convenient for ceiling-boundary tests.
+    fn fixture_flight_with_tasks(task_count: usize) -> Flight {
+        let flight_id = "f_ceil";
+        let milestone_id = "m_ceil";
+        let tasks: Vec<FlightTask> = (0..task_count)
+            .map(|i| fixture_task(&format!("t_{}", i), flight_id, milestone_id))
+            .collect();
+        let milestone = Milestone {
+            id: milestone_id.to_string(),
+            flight_id: flight_id.to_string(),
+            title: "M1".to_string(),
+            description: String::new(),
+            order: 0,
+            status: MilestoneStatus::Active,
+            tasks,
+            validation_criteria: Vec::new(),
+        };
+        Flight {
+            id: flight_id.to_string(),
+            title: "Ceiling test".to_string(),
+            objective: String::new(),
+            status: FlightStatus::Active,
+            priority: FlightPriority::Medium,
+            project_path: "/tmp/test".to_string(),
+            workspace_id: None,
+            git_branch: None,
+            milestones: vec![milestone],
+            linked_session_ids: Vec::new(),
+            created_at: 0,
+            updated_at: 0,
+            completed_at: None,
+            total_cost: 0.0,
+            total_tokens: 0,
+            prompt: None,
+            attempts: Vec::new(),
+            planner_session_id: None,
+            planner_status: None,
+        }
+    }
+
+    /// `TASK_CEILING` is the locked-design cap of 60 tasks per mission.
+    /// If a future agent bumps this without coordinating, the error-string
+    /// contract documented in the planner's system prompt and dispatcher
+    /// guidance breaks. Guard the constant itself.
+    #[test]
+    fn task_ceiling_constant_is_60() {
+        assert_eq!(
+            TASK_CEILING, 60,
+            "TASK_CEILING is part of the planner's UX contract — coordinate any bump with the system prompt and dispatcher"
+        );
+    }
+
+    /// `total_tasks_for_flight` must sum tasks across **every** milestone,
+    /// not just the first. The ceiling check would otherwise miss flights
+    /// that fan out across multiple milestones.
+    #[test]
+    fn total_tasks_counts_across_milestones() {
+        let mut flight = fixture_flight_with_tasks(5);
+        // Add a second milestone with 7 tasks of its own.
+        let extra = Milestone {
+            id: "m_extra".to_string(),
+            flight_id: flight.id.clone(),
+            title: "M2".to_string(),
+            description: String::new(),
+            order: 1,
+            status: MilestoneStatus::Active,
+            tasks: (0..7)
+                .map(|i| fixture_task(&format!("t_extra_{}", i), &flight.id, "m_extra"))
+                .collect(),
+            validation_criteria: Vec::new(),
+        };
+        flight.milestones.push(extra);
+        assert_eq!(total_tasks_for_flight(&flight), 12);
+    }
+
+    /// Ceiling rejection: a mission already at 60 tasks must trip the
+    /// guard before any new task is appended. Exercises the exact
+    /// comparison the runtime closure performs (`total_tasks >= TASK_CEILING`).
+    #[test]
+    fn create_task_rejects_at_task_ceiling_60() {
+        let flight = fixture_flight_with_tasks(TASK_CEILING);
+        let total = total_tasks_for_flight(&flight);
+        assert_eq!(
+            total, 60,
+            "fixture should produce exactly TASK_CEILING tasks"
+        );
+        // The guard's condition is `total_tasks >= TASK_CEILING`.
+        assert!(
+            total >= TASK_CEILING,
+            "60 tasks must hit the ceiling guard"
+        );
+        let err = task_ceiling_error_message(total);
+        assert!(
+            err.starts_with("task_ceiling_reached:"),
+            "error string must start with the structured prefix the planner is taught to recognize: {}",
+            err
+        );
+        assert!(
+            err.contains("60"),
+            "error string must surface the actual count for the planner: {}",
+            err
+        );
+        assert!(
+            err.contains("request_user_approval"),
+            "error string must instruct the planner to call request_user_approval: {}",
+            err
+        );
+    }
+
+    /// Boundary check: 59 tasks must NOT trip the guard. The 60th task
+    /// (the one being added) is what brings the mission to the cap; once
+    /// it lands, the 61st call hits the ceiling.
+    #[test]
+    fn create_task_accepts_below_task_ceiling() {
+        let flight = fixture_flight_with_tasks(TASK_CEILING - 1);
+        let total = total_tasks_for_flight(&flight);
+        assert_eq!(total, 59);
+        assert!(
+            total < TASK_CEILING,
+            "59 tasks must be under the ceiling guard so the 60th create_task succeeds"
         );
     }
 }
