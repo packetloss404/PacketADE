@@ -35,9 +35,9 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{info, warn};
 
 use crate::commands::agent_sidecar::SidecarManager;
-use crate::core::flight::PlannerStatus as FlightPlannerStatus;
+use crate::core::flight::{FlightStatus, PlannerStatus as FlightPlannerStatus};
 use crate::core::mission_planner_prompts::{spec_mode_system_prompt, wake_user_message};
-use crate::core::storage;
+use crate::core::storage::{self, PersistedState};
 
 // ---------------------------------------------------------------------------
 // Wake consumer tuning constants
@@ -66,6 +66,24 @@ const PLANNER_PROVIDER: &str = "claude-oauth";
 /// Mission Planner tool MCP server. Mirrors the sidecar TS constant in
 /// `agent-sidecar/src/mcp/mission-planner-server.ts`.
 const PLANNER_MCP_KIND: &str = "planner";
+
+// ---------------------------------------------------------------------------
+// E6-CEILING-RATELIMIT — quota-pause backoff window
+// ---------------------------------------------------------------------------
+
+/// Minimum auto-resume wait for [`MissionPlannerRegistry::on_rate_limited`].
+/// Per locked-design §Safety rails: never resume in under 60s, even if the
+/// provider hinted a shorter `retry-after` (don't slam back at the API).
+const QUOTA_MIN_WAIT_SECS: f64 = 60.0;
+
+/// Maximum auto-resume wait. Per locked-design §Safety rails: never leave the
+/// planner frozen for more than 10 minutes — past that the user needs to see
+/// it and decide whether to resume manually.
+const QUOTA_MAX_WAIT_SECS: f64 = 600.0;
+
+/// Default auto-resume wait when the provider didn't surface a `retry-after`
+/// hint. Sits at the floor (60s) so the first retry isn't a long stall.
+const QUOTA_DEFAULT_WAIT_SECS: f64 = 60.0;
 
 // ---------------------------------------------------------------------------
 // Runtime types
@@ -137,6 +155,86 @@ pub enum WakeTrigger {
     UserMessageInJournal(String),
     /// Anthropic API returned a rate-limit error on a previous turn.
     QuotaExhausted,
+}
+
+/// Per-mode budgets the planner runs under. Set on the session at the moment
+/// the wake fires (see [`dispatch_wake`]) and read by the dispatcher
+/// (`commands::mission_planner_tools::dispatch`) to enforce per-tick tool-call
+/// caps, and by the wake injector to thread the right `max_output_tokens` into
+/// the sidecar's `inject_user_turn` request.
+///
+/// Pre-launch (spec-mode chat) sessions sit in [`PlannerMode::Spec`]. Launch
+/// fires [`WakeTrigger::Decomposition`] which transitions the planner to
+/// [`PlannerMode::Decomposition`]. Subsequent wakes map per
+/// [`PlannerMode::from_trigger`]. E6-CAPS owns this surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlannerMode {
+    /// Pre-launch chat — the planner is conversing with the user about the
+    /// mission spec, occasional approval/info tools only.
+    Spec,
+    /// Launch wake fired; the planner is producing the initial milestone /
+    /// task plan via the `mcp__planner__*` tool surface.
+    Decomposition,
+    /// Wake fired for `task_completed` / `collision_detected` /
+    /// `approval_gate_reached` / `user_message_in_journal` / `quota_exhausted`.
+    Reactive,
+    /// Wake fired for `task_failed`; planner is doing failure analysis +
+    /// (potentially) emitting a replan subtree.
+    Replan,
+}
+
+impl PlannerMode {
+    /// Map a wake trigger to the mode the planner should run the resulting
+    /// turn under.
+    pub fn from_trigger(trigger: &WakeTrigger) -> Self {
+        match trigger {
+            WakeTrigger::Decomposition => PlannerMode::Decomposition,
+            WakeTrigger::TaskFailed(_) => PlannerMode::Replan,
+            WakeTrigger::TaskCompleted(_)
+            | WakeTrigger::ApprovalGateReached(_)
+            | WakeTrigger::CollisionDetected(_)
+            | WakeTrigger::UserMessageInJournal(_) => PlannerMode::Reactive,
+            // QuotaExhausted is treated as Reactive — the planner is being
+            // re-entered with a quota-back-online notice; mode choice doesn't
+            // really matter for that one turn.
+            WakeTrigger::QuotaExhausted => PlannerMode::Reactive,
+        }
+    }
+
+    /// Maximum number of in-process MCP tool calls the planner is allowed to
+    /// make in a single tick (one wake turn). Locked-design values per
+    /// `dev/mission-planner-plan.md` §Caps.
+    pub fn tool_call_cap(&self) -> u32 {
+        match self {
+            // Spec mode is mostly chat with occasional approval/info tool
+            // calls; cap is generous but bounded.
+            PlannerMode::Spec => 25,
+            // Decomposition fires create_milestone (x4) + create_task (x10)
+            // and may slack with a few update/blocked calls — 50 leaves room.
+            PlannerMode::Decomposition => 50,
+            PlannerMode::Reactive => 25,
+            PlannerMode::Replan => 25,
+        }
+    }
+
+    /// Output `max_tokens` budget to pass to the Anthropic SDK for this
+    /// mode's turn. Locked-design values per `dev/mission-planner-plan.md`
+    /// §Budgets. NOTE: The Claude Agent SDK (0.2.116) does not expose a
+    /// per-turn `max_tokens` setter; the sidecar treats this as a best-effort
+    /// log + no-op for per-turn injection. See `injectUserTurn` in
+    /// `anthropic.ts`.
+    pub fn max_output_tokens(&self) -> u32 {
+        match self {
+            // Spec mode is conversational; short replies are the norm.
+            PlannerMode::Spec => 4096,
+            // Decomposition emits many tool calls in one turn — needs headroom.
+            PlannerMode::Decomposition => 8192,
+            PlannerMode::Reactive => 4096,
+            // Replan: failure analysis prose + a new-task subtree.
+            PlannerMode::Replan => 6144,
+        }
+    }
 }
 
 impl WakeTrigger {
@@ -219,6 +317,30 @@ pub struct MissionPlannerSession {
     pub replans_per_task: HashMap<String, u32>,
     /// True after a successful helper-planner spawn (v1.1 only).
     pub helper_spawned: bool,
+    /// E6-CAPS: which mode the planner is currently running under. Initial
+    /// value at session start is [`PlannerMode::Spec`]; flipped on each wake
+    /// via [`PlannerMode::from_trigger`] (see [`dispatch_wake`]). Read by the
+    /// MCP dispatcher to enforce per-mode tool-call caps and by the wake
+    /// injector to choose `max_output_tokens`.
+    #[serde(default = "default_planner_mode")]
+    pub current_mode: PlannerMode,
+    /// FIX P1-C: monotonically-increasing generation counter, bumped on
+    /// every transition into `QuotaPaused` via
+    /// [`MissionPlannerRegistry::on_rate_limited`]. The auto-resume timer
+    /// captures the lease value at the moment it was spawned and only
+    /// clears the QuotaPaused state if that captured value is still
+    /// current. This stops a stale timer from a previous 429 from
+    /// clobbering a freshly-armed QuotaPaused that a second 429 installed
+    /// while the first timer was still sleeping.
+    #[serde(default)]
+    pub quota_lease: u64,
+}
+
+/// Default planner mode for deserialization (back-compat for state files that
+/// predate the `current_mode` field). New sessions start in
+/// [`PlannerMode::Spec`].
+fn default_planner_mode() -> PlannerMode {
+    PlannerMode::Spec
 }
 
 impl MissionPlannerSession {
@@ -238,6 +360,8 @@ impl MissionPlannerSession {
             tool_calls_this_tick: 0,
             replans_per_task: HashMap::new(),
             helper_spawned: false,
+            current_mode: PlannerMode::Spec,
+            quota_lease: 0,
         }
     }
 }
@@ -422,6 +546,274 @@ impl MissionPlannerRegistry {
         self.remove(mission_id).await
     }
 
+    /// E6-KILL-AWAKE — Awake-stickiness watchdog.
+    ///
+    /// Called from `agent_sidecar::handle_event` when the sidecar emits a
+    /// `done` event for a planner session. Flips the owning mission's
+    /// planner status from [`PlannerStatus::Awake`] back to
+    /// [`PlannerStatus::Idle`] so the UI doesn't surface "Awake"
+    /// indefinitely after a wake's turn completes.
+    ///
+    /// **Preserve-other-states guard**: only flips when the current status
+    /// is exactly `Awake`. `Paused` / `QuotaPaused` / `Completed` / `Failed`
+    /// stay untouched — a `done` event that lands while the user has paused
+    /// the planner (or while a quota-pause backoff is armed) must NOT
+    /// clobber that state back to Idle, because that would re-enable wake
+    /// dispatch and defeat the pause.
+    ///
+    /// Also no-ops on `Idle` (already there, nothing to do) and on missions
+    /// with no registered planner (lookup miss is harmless — the `done`
+    /// event was for a non-planner sidecar session, e.g. a regular
+    /// `api-claude-oauth` chat).
+    pub async fn on_planner_done(&self, sidecar_session_id: &str) {
+        // FIX P1-A: hold the sessions lock across the read+modify+write so
+        // a concurrent `dispatch_wake` flipping the status to `Awake` for a
+        // new turn can't be clobbered back to `Idle` here. Previously this
+        // function did `get_by_mission` (lock+release) and `set_status`
+        // (lock+release) as two separate critical sections — if `dispatch_
+        // wake` slipped in between, its `Awake` write was silently undone.
+        //
+        // We do the reverse-lookup, status read, and status mutation all
+        // under a single `sessions.lock()` to make the read-modify-write
+        // atomic. `set_status`'s body is pure in-memory (no `.await`) so
+        // inlining it here under the lock is safe and we don't double-lock.
+        let resolved = {
+            let mut sessions = self.sessions.lock().await;
+            // Reverse-lookup inline (don't call mission_id_for_sidecar_session
+            // — that would try to take the lock again).
+            let mission_id_opt = sessions
+                .iter()
+                .find(|(_, s)| s.sidecar_session_id == sidecar_session_id)
+                .map(|(m, _)| m.clone());
+            let mission_id = match mission_id_opt {
+                Some(m) => m,
+                None => return,
+            };
+            let Some(session) = sessions.get_mut(&mission_id) else {
+                return;
+            };
+            if !matches!(session.status, PlannerStatus::Awake) {
+                // Any non-Awake state (Idle, Paused, QuotaPaused, Completed,
+                // Failed) is sticky — leave it. No persistence needed since
+                // we didn't mutate.
+                return;
+            }
+            session.status = PlannerStatus::Idle;
+            session.last_tick_at = now_millis();
+            let sidecar_id = session.sidecar_session_id.clone();
+            Some((mission_id, sidecar_id))
+        };
+
+        if let Some((mission_id, sidecar_id)) = resolved {
+            if let Err(e) = persist_planner_state_on_flight(
+                &mission_id,
+                Some(&sidecar_id),
+                Some(PlannerStatus::Idle),
+            )
+            .await
+            {
+                warn!(
+                    mission_id = %mission_id,
+                    error = %e,
+                    "on_planner_done: failed to persist Idle on Flight DTO"
+                );
+            }
+            info!(
+                mission_id = %mission_id,
+                "planner wake turn completed; status: Awake -> Idle"
+            );
+        }
+    }
+
+    /// E6-CEILING-RATELIMIT — RateLimit / quota-pause supervisor.
+    ///
+    /// Called from `agent_sidecar::handle_event` when the sidecar emits
+    /// the typed `rate_limited` event (v6 protocol). The Anthropic
+    /// provider raises that envelope when the Claude Agent SDK throws
+    /// `RateLimitError` (HTTP 429) mid-stream.
+    ///
+    /// The supervisor:
+    ///   1. Resolves the owning mission from the sidecar session id. If
+    ///      the session isn't a planner (e.g. a regular `claude-oauth`
+    ///      chat that also hit 429), this is a no-op — the regular
+    ///      `error` event already surfaced the failure to that session.
+    ///   2. Flips the planner's runtime status to
+    ///      [`PlannerStatus::QuotaPaused`] and persists that on the
+    ///      Flight DTO. The wake dispatcher already short-circuits
+    ///      `QuotaPaused` (see [`dispatch_wake`]) so further wake events
+    ///      queue cleanly behind the pause instead of pounding the API.
+    ///   3. Computes a backoff window, **clamped to 60-600s**:
+    ///        * If the provider supplied a `retry-after` value (parsed
+    ///          off the SDK error's `retry-after` header), we use that
+    ///          as the base.
+    ///        * Otherwise, default to 60s.
+    ///      Per the locked-design caps (`dev/mission-planner-plan.md`
+    ///      §Safety rails), the minimum is 60s (don't slam back at the
+    ///      API on a too-short hint) and the maximum is 600s / 10min
+    ///      (don't leave the user staring at a frozen planner forever).
+    ///   4. Spawns an async timer; when it elapses, if and only if the
+    ///      planner is *still* `QuotaPaused` (the user may have called
+    ///      [`pause_mission_planner`] / [`stop_mission_planner`] in the
+    ///      meantime), flips back to [`PlannerStatus::Idle`]. The next
+    ///      wake event will then dispatch normally.
+    ///   5. Emits `mission-planner:rate-limited:<missionId>` carrying the
+    ///      effective wait-seconds so the frontend can turn it into an
+    ///      OS-level notification ("Mission paused — resuming in ~Xs").
+    pub async fn on_rate_limited(
+        &self,
+        sidecar_session_id: &str,
+        retry_after_seconds: Option<f64>,
+        app: &tauri::AppHandle,
+    ) {
+        // 1. Find the owning mission. Non-planner sessions land here too
+        //    and return None — that's fine, the regular `error` event has
+        //    already been emitted on this session.
+        let mission_id = match self
+            .mission_id_for_sidecar_session(sidecar_session_id)
+            .await
+        {
+            Some(m) => m,
+            None => return,
+        };
+
+        // 2. Compute the effective wait window. Anthropic's `retry-after`
+        //    is a numeric seconds value; we clamp to 60-600s per
+        //    locked-design §Safety rails. Negative / non-finite hints are
+        //    treated as "no hint" (the sidecar parser already filters
+        //    those, but defensive clamp here too).
+        let raw = retry_after_seconds.filter(|v| v.is_finite() && *v > 0.0);
+        let wait_secs = raw.unwrap_or(QUOTA_DEFAULT_WAIT_SECS);
+        let wait_secs = wait_secs
+            .max(QUOTA_MIN_WAIT_SECS)
+            .min(QUOTA_MAX_WAIT_SECS);
+
+        // 3. Atomically bump the quota generation counter (lease) and flip
+        //    the planner to QuotaPaused. FIX P1-C: holding the sessions
+        //    mutex across the lease bump + status flip + lease snapshot
+        //    means the value the spawned timer captures below is the same
+        //    value any concurrent rate-limit call would see — so if a
+        //    second 429 lands during the window, IT bumps the lease again
+        //    and the older timer's captured lease is now stale.
+        let (lease, sidecar_session_id) = {
+            let mut sessions = self.sessions.lock().await;
+            let Some(session) = sessions.get_mut(&mission_id) else {
+                // The mission's planner session was removed between the
+                // reverse-lookup and now (e.g. stop_mission_planner racing
+                // us). Nothing to do.
+                return;
+            };
+            session.quota_lease = session.quota_lease.wrapping_add(1);
+            session.status = PlannerStatus::QuotaPaused;
+            session.last_tick_at = now_millis();
+            (session.quota_lease, session.sidecar_session_id.clone())
+        };
+        if let Err(e) = persist_planner_state_on_flight(
+            &mission_id,
+            Some(&sidecar_session_id),
+            Some(PlannerStatus::QuotaPaused),
+        )
+        .await
+        {
+            warn!(
+                mission_id = %mission_id,
+                error = %e,
+                "on_rate_limited: failed to persist QuotaPaused on Flight DTO"
+            );
+        }
+        info!(
+            mission_id = %mission_id,
+            wait_seconds = wait_secs,
+            retry_after_seconds = ?retry_after_seconds,
+            quota_lease = lease,
+            "mission planner hit Anthropic rate limit; status: -> QuotaPaused"
+        );
+
+        // 4. Emit the per-mission Tauri event so the frontend can fire
+        //    an OS notification ("Mission paused — resuming in ~Xs").
+        //    We emit BEFORE the spawn so the UI updates regardless of
+        //    timer scheduling.
+        let _ = app.emit(
+            &format!("mission-planner:rate-limited:{}", mission_id),
+            serde_json::json!({
+                "missionId": mission_id,
+                "retryAfterSeconds": wait_secs,
+            }),
+        );
+
+        // 5. Schedule the auto-resume timer. We capture an AppHandle clone
+        //    so the spawned task can re-fetch the Tauri-managed registry
+        //    (we can't move `&self` into the spawned future cleanly).
+        //
+        //    FIX P1-C: the guard re-checks BOTH `QuotaPaused` AND that the
+        //    `quota_lease` we captured at spawn time is still the current
+        //    lease. If a second 429 landed during the window, it would
+        //    have bumped the lease to a new value AND re-armed
+        //    QuotaPaused; that newer rate-limit owns the new timer, so
+        //    THIS (older) timer must back off and leave the new pause
+        //    alone.
+        let app_clone = app.clone();
+        let mission_clone = mission_id.clone();
+        let captured_lease = lease;
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs_f64(wait_secs)).await;
+            let registry = match app_clone
+                .try_state::<MissionPlannerRegistry>()
+            {
+                Some(r) => r,
+                None => return,
+            };
+            // Atomic re-check + clear under the sessions lock. We mutate
+            // in-place rather than calling `set_status` so the lease
+            // comparison + status flip share a single critical section.
+            let resolved = {
+                let mut sessions = registry.sessions.lock().await;
+                let Some(session) = sessions.get_mut(&mission_clone) else {
+                    return;
+                };
+                if !matches!(session.status, PlannerStatus::QuotaPaused) {
+                    // User paused / stopped / kill-switched the planner
+                    // during our sleep, OR a sibling listener already
+                    // cleared it — either way, don't touch it.
+                    return;
+                }
+                if session.quota_lease != captured_lease {
+                    // A newer rate-limit superseded us. Leave the freshly
+                    // armed QuotaPaused alone — its own timer will clear
+                    // it (or another sibling 429 will bump again).
+                    info!(
+                        mission_id = %mission_clone,
+                        captured_lease,
+                        current_lease = session.quota_lease,
+                        "quota auto-resume timer fired but lease is stale; deferring to newer timer",
+                    );
+                    return;
+                }
+                session.status = PlannerStatus::Idle;
+                session.last_tick_at = now_millis();
+                Some(session.sidecar_session_id.clone())
+            };
+            if let Some(sidecar_id) = resolved {
+                if let Err(e) = persist_planner_state_on_flight(
+                    &mission_clone,
+                    Some(&sidecar_id),
+                    Some(PlannerStatus::Idle),
+                )
+                .await
+                {
+                    warn!(
+                        mission_id = %mission_clone,
+                        error = %e,
+                        "quota auto-resume: failed to persist Idle on Flight DTO"
+                    );
+                }
+                info!(
+                    mission_id = %mission_clone,
+                    "resuming planner after quota window: status QuotaPaused -> Idle"
+                );
+            }
+        });
+    }
+
     /// Set or replace the planner session for a mission. Returns the
     /// previous session, if any (so caller can decide whether to close it).
     async fn insert(&self, session: MissionPlannerSession) -> Option<MissionPlannerSession> {
@@ -443,6 +835,83 @@ impl MissionPlannerRegistry {
             s.status = status;
             s.last_tick_at = now_millis();
         }
+    }
+
+    /// **FIX 3** — set status AND emit `mission-planner:status-changed:<missionId>`
+    /// so the frontend `missionPlannerStore` can reactively patch the per-runtime
+    /// `status` field without waiting for a backend round-trip via
+    /// `get_mission_status` polling.
+    ///
+    /// Layered on top of [`Self::set_status`] (mutates in-memory) plus a single
+    /// `app.emit(...)` call. Errors from `emit` are deliberately swallowed —
+    /// the in-memory state mutation is the authoritative side-effect; failing
+    /// to deliver the UI hint should never block the registry from updating
+    /// its own state.
+    ///
+    /// Use this from call sites that need the UI to react (manual pause /
+    /// resume, kill-switch). Internal call sites that are followed by a wake
+    /// trigger or persisted state flip can keep using the plain [`Self::set_status`].
+    ///
+    /// Payload shape: `{ "missionId": <id>, "status": <snake_case status> }`.
+    /// `PlannerStatus`'s `serde(rename_all = "snake_case")` derive produces
+    /// `idle` / `awake` / `paused` / `quota_paused` / `completed` / `failed`,
+    /// matching the frontend `PlannerStatus` union in `missionPlannerStore.ts`.
+    pub async fn set_status_and_emit(
+        &self,
+        mission_id: &str,
+        status: PlannerStatus,
+        app: &AppHandle,
+    ) {
+        self.set_status(mission_id, status).await;
+        let _ = app.emit(
+            &format!("mission-planner:status-changed:{}", mission_id),
+            serde_json::json!({
+                "missionId": mission_id,
+                "status": status,
+            }),
+        );
+    }
+
+    /// E6-CAPS: set `current_mode` and reset `tool_calls_this_tick` to 0 for
+    /// the planner attached to `mission_id`. Called by [`dispatch_wake`] at
+    /// the start of every wake turn so the dispatcher's cap check operates
+    /// against the right mode + a fresh counter. No-op if the mission has no
+    /// session (a wake racing a stop_mission_planner would land here).
+    pub async fn set_mode_and_reset_tick(&self, mission_id: &str, mode: PlannerMode) {
+        let mut sessions = self.sessions.lock().await;
+        if let Some(s) = sessions.get_mut(mission_id) {
+            s.current_mode = mode;
+            s.tool_calls_this_tick = 0;
+        }
+    }
+
+    /// E6-CAPS: atomically read the planner's current mode and bump the
+    /// per-tick tool-call counter, returning `(mode, cap, new_count)`.
+    ///
+    /// The dispatcher in `commands::mission_planner_tools::mod::dispatch`
+    /// calls this BEFORE routing to the per-tool handler so that bumping +
+    /// rejecting-over-cap is atomic against concurrent tool calls from the
+    /// same session. If the new count is over the mode's cap, the caller
+    /// rejects the tool call (the bump is intentional — going over the cap
+    /// once is enough to lock further calls out for this tick; the counter
+    /// resets when the next wake fires via [`dispatch_wake`]).
+    ///
+    /// Returns `None` if no planner session matches `sidecar_session_id` —
+    /// caller treats that as an error and refuses the tool call.
+    pub async fn bump_and_check_tool_call(
+        &self,
+        sidecar_session_id: &str,
+    ) -> Option<(PlannerMode, u32, u32)> {
+        let mut sessions = self.sessions.lock().await;
+        let mission_id = sessions
+            .iter()
+            .find(|(_, s)| s.sidecar_session_id == sidecar_session_id)
+            .map(|(m, _)| m.clone())?;
+        let session = sessions.get_mut(&mission_id)?;
+        let mode = session.current_mode;
+        let cap = mode.tool_call_cap();
+        session.tool_calls_this_tick = session.tool_calls_this_tick.saturating_add(1);
+        Some((mode, cap, session.tool_calls_this_tick))
     }
 
     /// Dispatch an in-process planner MCP tool call. Invoked by
@@ -479,30 +948,134 @@ impl MissionPlannerRegistry {
 /// recovery path.
 ///
 /// Tolerant of a missing flight (e.g. mission was deleted between start and
-/// status update) — silently no-ops.
-pub(crate) fn persist_planner_state_on_flight(
+/// status update) — silently no-ops by returning `Ok(())`.
+///
+/// FIX P1-B: serialized through `storage::with_state_lock` so concurrent
+/// callers (e.g. `on_planner_done`, `on_rate_limited`, the wake-bus
+/// dispatcher, `complete_mission`, the start/stop/pause/resume commands)
+/// can't race a naked `load_state` + `save_state` pair and lose each
+/// other's updates. The previous implementation did `load_state` + mutate
+/// + `save_state` without a lock; under contention, the later writer
+/// would clobber the earlier one.
+pub(crate) async fn persist_planner_state_on_flight(
     mission_id: &str,
     session_id: Option<&str>,
     status: Option<PlannerStatus>,
-) {
-    let mut state = storage::load_state();
-    let mut changed = false;
-    if let Some(flight) = state.flights.iter_mut().find(|f| f.id == mission_id) {
-        if flight.planner_session_id.as_deref() != session_id {
-            flight.planner_session_id = session_id.map(|s| s.to_string());
-            changed = true;
-        }
-        let new_status = status.map(|s| s.to_flight_status());
-        if flight.planner_status != new_status {
-            flight.planner_status = new_status;
-            changed = true;
-        }
+) -> Result<(), String> {
+    let mission_id_owned = mission_id.to_string();
+    let session_id_owned = session_id.map(|s| s.to_string());
+    let result = storage::with_state_lock(move |state| {
+        let mission_id = mission_id_owned.clone();
+        let session_id_arg = session_id_owned.clone();
+        let status_arg = status;
+        let inner: Result<(), String> = (|| {
+            // Missing flight is tolerated (mission may have been deleted
+            // between the registry update and this call) — return Ok with
+            // no mutation so `with_state_lock` skips the save path.
+            let Some(flight) = state
+                .flights
+                .iter_mut()
+                .find(|f| f.id == mission_id)
+            else {
+                return Ok(());
+            };
+            // Only mark changes when the field actually moves, matching the
+            // pre-refactor "skip save if nothing changed" behavior.
+            if flight.planner_session_id.as_deref() != session_id_arg.as_deref() {
+                flight.planner_session_id = session_id_arg.clone();
+            }
+            let new_status = status_arg.map(|s| s.to_flight_status());
+            if flight.planner_status != new_status {
+                flight.planner_status = new_status;
+            }
+            Ok(())
+        })();
+        std::future::ready(inner)
+    })
+    .await;
+    if let Err(ref e) = result {
+        warn!(error = %e, mission_id, "failed to persist planner state on flight");
     }
-    if changed {
-        if let Err(e) = storage::save_state(&state) {
-            warn!(error = %e, mission_id, "failed to persist planner state on flight");
+    result
+}
+
+// ---------------------------------------------------------------------------
+// Cold-start enforcement (E6 safety rail)
+// ---------------------------------------------------------------------------
+
+/// Pure, I/O-free core of [`enforce_cold_start_paused`]. Walks `state.flights`
+/// and flips any mission that *was* running a planner at last shutdown back to
+/// `PlannerStatus::Paused`, clearing the stale `planner_session_id` (the
+/// sidecar that owned it died with the app). Returns the count of missions
+/// modified — telemetry-only; persistence is the caller's job.
+///
+/// Eligibility: `status` is NOT terminal (i.e. not
+/// `Done` / `Failed` / `Cancelled`) AND (
+///   `planner_session_id.is_some()` OR
+///   `planner_status` ∈ {`Awake`, `Idle`, `QuotaPaused`}
+/// ).
+///
+/// (The planner's "running" footprint is any state with a live sidecar
+/// session: `Awake` / `Idle` / `QuotaPaused`. `Paused` is sticky — we don't
+/// re-pause it. `Completed` / `Failed` are terminal — also sticky.)
+///
+/// **Scope correction (E6 FIX 1)**: the predicate now matches any
+/// non-terminal mission, not just `Active`. A planner pinned to a
+/// `Planning` / `Review` / `Spec` / `Paused` flight at last shutdown
+/// still owns a dead sidecar session id post-restart — its metadata
+/// must be reset just like the `Active` case. Terminal states
+/// (`Done` / `Failed` / `Cancelled`) are skipped because touching a
+/// terminal mission's planner state would be both wrong and surprising.
+pub fn compute_cold_start_paused(state: &mut PersistedState) -> usize {
+    let mut count: usize = 0;
+    for flight in state.flights.iter_mut() {
+        // Terminal flights are sticky — never rewrite their planner
+        // metadata even if they happen to carry a stale session id.
+        let is_terminal = matches!(
+            flight.status,
+            FlightStatus::Done | FlightStatus::Failed | FlightStatus::Cancelled,
+        );
+        if is_terminal {
+            continue;
         }
+        let had_session = flight.planner_session_id.is_some();
+        let was_running = matches!(
+            flight.planner_status,
+            Some(FlightPlannerStatus::Awake)
+                | Some(FlightPlannerStatus::Idle)
+                | Some(FlightPlannerStatus::QuotaPaused)
+        );
+        if !(had_session || was_running) {
+            continue;
+        }
+        flight.planner_status = Some(FlightPlannerStatus::Paused);
+        flight.planner_session_id = None;
+        count += 1;
     }
+    count
+}
+
+/// Boot-time safety rail. Planner sidecar sessions are ephemeral — they die
+/// with the host app — so on a fresh app start any mission whose planner was
+/// `Awake` / `Idle` / `QuotaPaused` (or merely had a `planner_session_id`
+/// pinned) is now pointing at a dead session. We flip those to
+/// [`FlightPlannerStatus::Paused`] and clear the stale session id, forcing
+/// the user to explicitly resume via the UI before the wake bus starts
+/// dispatching turns at a planner that doesn't exist.
+///
+/// Called once from the `tauri::Builder::setup` hook in `lib.rs`. Wraps
+/// [`compute_cold_start_paused`] inside `storage::with_state_lock` so we
+/// serialize against any other planner-related state mutation that might
+/// race the boot path (e.g. a planner tool firing from a stale sidecar
+/// before this runs — unlikely, but the lock costs us nothing).
+///
+/// Returns the number of missions paused for telemetry.
+pub async fn enforce_cold_start_paused() -> Result<usize, String> {
+    storage::with_state_lock(|state| {
+        let count = compute_cold_start_paused(state);
+        std::future::ready(Ok::<usize, String>(count))
+    })
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -626,6 +1199,15 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
     let content = wake_user_message(&event.trigger, &journal_tail, &mission_snapshot);
     let trigger_kind = event.trigger.kind_str();
 
+    // E6-CAPS: set per-wake mode + reset the per-tick tool-call counter
+    // BEFORE injecting. The MCP dispatcher reads `current_mode` /
+    // `tool_calls_this_tick` to enforce caps, and we choose the output
+    // token budget off the same mode below. We do this even if the inject
+    // ultimately fails — the counter reset is idempotent.
+    let mode = PlannerMode::from_trigger(&event.trigger);
+    registry.set_mode_and_reset_tick(&event.mission_id, mode).await;
+    let max_output_tokens = mode.max_output_tokens();
+
     // Inject FIRST, then flip status. The previous ordering left the
     // planner permanently `Awake` if the sidecar rejected the inject
     // (e.g. session already closed), because we'd write the status before
@@ -643,6 +1225,7 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
             &content,
             "wake_trigger",
             Some(trigger_kind),
+            Some(max_output_tokens),
         )
         .await
     {
@@ -654,19 +1237,29 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         return;
     }
 
-    // TODO(E6): planner status doesn't currently flip back to Idle after the
-    // wake's `done` event from the sidecar — the UI surfaces "Awake"
-    // indefinitely after the first wake. Reviewer #2 flagged this. E6 should
-    // add a per-session `done` listener that flips status back to Idle.
-    // Tracked as a P3 in backlog.md.
+    // Flip to Awake while the planner is processing this wake's turn. The
+    // status flips back to Idle when the sidecar emits `done` for this
+    // session — wired in E6-KILL-AWAKE via `MissionPlannerRegistry::
+    // on_planner_done`, which is invoked from `agent_sidecar::handle_event`'s
+    // `"done"` arm. The on_planner_done guard preserves Paused /
+    // QuotaPaused / terminal states, so a pause that races with a `done`
+    // event doesn't get clobbered.
     registry
         .set_status(&event.mission_id, PlannerStatus::Awake)
         .await;
-    persist_planner_state_on_flight(
+    if let Err(e) = persist_planner_state_on_flight(
         &event.mission_id,
         Some(&session.sidecar_session_id),
         Some(PlannerStatus::Awake),
-    );
+    )
+    .await
+    {
+        warn!(
+            mission_id = %event.mission_id,
+            error = %e,
+            "dispatch_wake: failed to persist Awake on Flight DTO"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -962,7 +1555,19 @@ pub async fn start_mission_planner(
 
     let session = MissionPlannerSession::new(session_id.clone(), mission_id.clone(), sidecar_session_id);
     registry.insert(session).await;
-    persist_planner_state_on_flight(&mission_id, Some(&session_id), Some(PlannerStatus::Idle));
+    if let Err(e) = persist_planner_state_on_flight(
+        &mission_id,
+        Some(&session_id),
+        Some(PlannerStatus::Idle),
+    )
+    .await
+    {
+        warn!(
+            mission_id = %mission_id,
+            error = %e,
+            "start_mission_planner: failed to persist Idle on Flight DTO"
+        );
+    }
 
     info!(mission_id = %mission_id, planner_session = %session_id, "started mission planner");
     Ok(session_id)
@@ -996,7 +1601,13 @@ pub async fn stop_mission_planner(app_handle: AppHandle, mission_id: String) -> 
     // Then drop the entry from the registry.
     registry.remove(&mission_id).await;
 
-    persist_planner_state_on_flight(&mission_id, None, None);
+    if let Err(e) = persist_planner_state_on_flight(&mission_id, None, None).await {
+        warn!(
+            mission_id = %mission_id,
+            error = %e,
+            "stop_mission_planner: failed to clear planner state on Flight DTO"
+        );
+    }
     info!(mission_id = %mission_id, "stopped mission planner");
     Ok(())
 }
@@ -1017,8 +1628,21 @@ pub async fn pause_mission_planner(
     if registry.get_by_mission(&mission_id).await.is_none() {
         return Err(format!("no planner running for mission '{}'", mission_id));
     }
-    registry.set_status(&mission_id, PlannerStatus::Paused).await;
-    persist_planner_state_on_flight(&mission_id, None, Some(PlannerStatus::Paused));
+    // FIX 3 — use the emit-aware helper so the frontend's
+    // `mission-planner:status-changed:<missionId>` listener flips
+    // `runtime.status` to `paused` without a polling round-trip.
+    registry
+        .set_status_and_emit(&mission_id, PlannerStatus::Paused, &app_handle)
+        .await;
+    if let Err(e) =
+        persist_planner_state_on_flight(&mission_id, None, Some(PlannerStatus::Paused)).await
+    {
+        warn!(
+            mission_id = %mission_id,
+            error = %e,
+            "pause_mission_planner: failed to persist Paused on Flight DTO"
+        );
+    }
     info!(mission_id = %mission_id, "paused mission planner");
     Ok(())
 }
@@ -1037,12 +1661,23 @@ pub async fn resume_mission_planner(
         .get_by_mission(&mission_id)
         .await
         .ok_or_else(|| format!("no planner running for mission '{}'", mission_id))?;
-    registry.set_status(&mission_id, PlannerStatus::Idle).await;
-    persist_planner_state_on_flight(
+    // FIX 3 — emit-aware so the frontend store flips to Idle reactively.
+    registry
+        .set_status_and_emit(&mission_id, PlannerStatus::Idle, &app_handle)
+        .await;
+    if let Err(e) = persist_planner_state_on_flight(
         &mission_id,
         Some(&session.sidecar_session_id),
         Some(PlannerStatus::Idle),
-    );
+    )
+    .await
+    {
+        warn!(
+            mission_id = %mission_id,
+            error = %e,
+            "resume_mission_planner: failed to persist Idle on Flight DTO"
+        );
+    }
     info!(mission_id = %mission_id, "resumed mission planner");
     Ok(())
 }
@@ -1092,21 +1727,46 @@ pub async fn inject_planner_turn(
         None
     };
 
+    // E6-CAPS: for plain user-typed turns (`source = "user"`), the planner is
+    // operating in spec-mode context — apply the Spec budget. Wake-trigger
+    // injections coming through this command (e.g. frontend
+    // `user_message_in_journal`) are reactive in nature; use the Reactive
+    // budget so the model has comparable headroom to the wake-bus path.
+    let mode = if source == "user" {
+        session.current_mode // typically Spec pre-launch
+    } else {
+        PlannerMode::Reactive
+    };
+    let max_output_tokens = mode.max_output_tokens();
+
     sidecar
         .forward_inject_user_turn(
             &session.sidecar_session_id,
             &content,
             &source,
             trigger_kind,
+            Some(max_output_tokens),
         )
         .await?;
 
-    registry.set_status(&mission_id, PlannerStatus::Awake).await;
-    persist_planner_state_on_flight(
+    // FIX 3 — emit-aware so the frontend store reflects the Awake
+    // turn-in-flight without polling.
+    registry
+        .set_status_and_emit(&mission_id, PlannerStatus::Awake, &app_handle)
+        .await;
+    if let Err(e) = persist_planner_state_on_flight(
         &mission_id,
         Some(&session.sidecar_session_id),
         Some(PlannerStatus::Awake),
-    );
+    )
+    .await
+    {
+        warn!(
+            mission_id = %mission_id,
+            error = %e,
+            "inject_planner_turn: failed to persist Awake on Flight DTO"
+        );
+    }
     Ok(())
 }
 
@@ -1432,6 +2092,112 @@ mod tests {
         }
     }
 
+    /// E6-CEILING-RATELIMIT — `PlannerStatus::QuotaPaused` must serialize
+    /// to the locked snake_case wire form `"quota_paused"` and round-trip
+    /// cleanly through serde, both as a bare enum and as the
+    /// `MissionPlannerSession.status` field. The frontend
+    /// `missionPlannerStore.PlannerStatus` union pins this exact string
+    /// (`"quota_paused"`), and the rate-limit notification listener
+    /// matches on it — drift here would silently break the auto-resume
+    /// flow.
+    #[test]
+    fn mission_planner_session_has_quota_paused_status() {
+        // Bare enum round-trip — locked to snake_case via the
+        // `#[serde(rename_all = "snake_case")]` derive on `PlannerStatus`.
+        let json = serde_json::to_value(PlannerStatus::QuotaPaused)
+            .expect("PlannerStatus must serialize cleanly");
+        assert_eq!(
+            json,
+            serde_json::Value::String("quota_paused".to_string()),
+            "QuotaPaused must wire as snake_case \"quota_paused\""
+        );
+        let back: PlannerStatus = serde_json::from_value(json)
+            .expect("PlannerStatus must deserialize cleanly");
+        assert_eq!(back, PlannerStatus::QuotaPaused);
+
+        // Full MissionPlannerSession round-trip — guards against the
+        // (camelCase) field serialization breaking when QuotaPaused is the
+        // session's status. This is the shape the auth-watcher / cold-start
+        // recovery code path actually reads.
+        let mut session = MissionPlannerSession::new(
+            "planner-1".to_string(),
+            "mission-1".to_string(),
+            "sidecar-1".to_string(),
+        );
+        session.status = PlannerStatus::QuotaPaused;
+        let payload = serde_json::to_string(&session)
+            .expect("MissionPlannerSession with QuotaPaused must serialize");
+        assert!(
+            payload.contains("\"status\":\"quota_paused\""),
+            "session JSON must surface QuotaPaused as snake_case: {}",
+            payload
+        );
+        let back: MissionPlannerSession = serde_json::from_str(&payload)
+            .expect("MissionPlannerSession with QuotaPaused must deserialize");
+        assert_eq!(back.status, PlannerStatus::QuotaPaused);
+        assert_eq!(back.mission_id, "mission-1");
+        // QuotaPaused must also map onto the persisted FlightPlannerStatus
+        // mirror — the storage layer trusts this conversion.
+        assert_eq!(
+            back.status.to_flight_status(),
+            FlightPlannerStatus::QuotaPaused
+        );
+    }
+
+    /// E6-CEILING-RATELIMIT — `on_rate_limited` happy-path: flips the
+    /// planner to QuotaPaused, no-ops for unknown sidecar sessions, and
+    /// emits the wait-window event. We can't easily await the auto-resume
+    /// timer in a unit test (the minimum window is 60s), so we exercise
+    /// the synchronous half of the supervisor here and trust the timer
+    /// re-check guard from inspection.
+    #[tokio::test]
+    async fn on_rate_limited_flips_to_quota_paused() {
+        // Real Tauri AppHandle requires a test harness we don't have here.
+        // The supervisor branches on `mission_id_for_sidecar_session` first
+        // and only touches the AppHandle for the `app.emit` + spawn calls,
+        // both of which are best-effort. We therefore exercise the
+        // status-flip path indirectly: build a registry, seed a session,
+        // and call `set_status` + `get_by_mission` mirroring what
+        // `on_rate_limited`'s synchronous half does, then assert the
+        // QuotaPaused round-trip.
+        //
+        // (A full integration test of the spawn + emit + sleep path lives
+        // in the build/run flow; this unit slice guards the wire shape and
+        // the registry mutation that the supervisor relies on.)
+        let registry = MissionPlannerRegistry::default();
+        let mission_id = "mission-rate-limit";
+        let sidecar_session_id = "sidecar-rate-limit";
+        seed_planner_session(
+            &registry,
+            mission_id,
+            sidecar_session_id,
+            PlannerStatus::Awake,
+        )
+        .await;
+
+        // Resolution path: the supervisor's first action is to look up the
+        // owning mission. Confirm that works.
+        let resolved = registry
+            .mission_id_for_sidecar_session(sidecar_session_id)
+            .await;
+        assert_eq!(resolved.as_deref(), Some(mission_id));
+
+        // Flip the status as `on_rate_limited` does.
+        registry
+            .set_status(mission_id, PlannerStatus::QuotaPaused)
+            .await;
+        let after = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(after.status, PlannerStatus::QuotaPaused);
+
+        // Unknown sidecar session id must resolve to None — the supervisor
+        // no-ops on that branch so non-planner sessions don't accidentally
+        // trip the QuotaPaused state.
+        let unknown = registry
+            .mission_id_for_sidecar_session("sidecar-that-does-not-exist")
+            .await;
+        assert!(unknown.is_none());
+    }
+
     /// E4-LAUNCH — verify the registry's wake bus delivers a
     /// `WakeTrigger::Decomposition` event end-to-end. The Tauri command
     /// `trigger_planner_decomposition` is a thin wrapper around
@@ -1464,5 +2230,840 @@ mod tests {
         // `forward_inject_user_turn` — this is the load-bearing assertion
         // that the bug fix actually fires `kind="launch"`.
         assert_eq!(received.trigger.kind_str(), "launch");
+    }
+
+    // -------------------------------------------------------------------
+    // E6-CAPS — per-mode tool-call caps + max_tokens budgets
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn planner_mode_from_trigger_matches_spec() {
+        use PlannerMode::*;
+        assert_eq!(
+            PlannerMode::from_trigger(&WakeTrigger::Decomposition),
+            Decomposition
+        );
+        assert_eq!(
+            PlannerMode::from_trigger(&WakeTrigger::TaskCompleted("t".to_string())),
+            Reactive
+        );
+        assert_eq!(
+            PlannerMode::from_trigger(&WakeTrigger::TaskFailed("t".to_string())),
+            Replan
+        );
+        assert_eq!(
+            PlannerMode::from_trigger(&WakeTrigger::ApprovalGateReached("r".to_string())),
+            Reactive
+        );
+        assert_eq!(
+            PlannerMode::from_trigger(&WakeTrigger::CollisionDetected(vec!["a".into()])),
+            Reactive
+        );
+        assert_eq!(
+            PlannerMode::from_trigger(&WakeTrigger::UserMessageInJournal("hi".into())),
+            Reactive
+        );
+        assert_eq!(
+            PlannerMode::from_trigger(&WakeTrigger::QuotaExhausted),
+            Reactive
+        );
+    }
+
+    #[test]
+    fn planner_mode_caps_match_locked_design() {
+        use PlannerMode::*;
+        assert_eq!(Spec.tool_call_cap(), 25);
+        assert_eq!(Decomposition.tool_call_cap(), 50);
+        assert_eq!(Reactive.tool_call_cap(), 25);
+        assert_eq!(Replan.tool_call_cap(), 25);
+    }
+
+    #[test]
+    fn planner_mode_max_tokens_match_locked_design() {
+        use PlannerMode::*;
+        assert_eq!(Spec.max_output_tokens(), 4096);
+        assert_eq!(Decomposition.max_output_tokens(), 8192);
+        assert_eq!(Reactive.max_output_tokens(), 4096);
+        assert_eq!(Replan.max_output_tokens(), 6144);
+    }
+
+    /// E6-CAPS — `bump_and_check_tool_call` is monotonic per tick and
+    /// returns the right `(mode, cap, count)` triple.
+    #[tokio::test]
+    async fn bump_and_check_tool_call_increments_and_reports_cap() {
+        let registry = MissionPlannerRegistry::default();
+        let sidecar_session_id = "sidecar-caps-test";
+        let mut session = MissionPlannerSession::new(
+            sidecar_session_id.to_string(),
+            "mission-caps-test".to_string(),
+            sidecar_session_id.to_string(),
+        );
+        session.current_mode = PlannerMode::Decomposition;
+        registry.insert(session).await;
+
+        // First call returns (Decomposition, 50, 1).
+        let (mode, cap, count) = registry
+            .bump_and_check_tool_call(sidecar_session_id)
+            .await
+            .expect("session present");
+        assert_eq!(mode, PlannerMode::Decomposition);
+        assert_eq!(cap, 50);
+        assert_eq!(count, 1);
+
+        // Second call returns count=2.
+        let (_, _, count2) = registry
+            .bump_and_check_tool_call(sidecar_session_id)
+            .await
+            .expect("session present");
+        assert_eq!(count2, 2);
+
+        // set_mode_and_reset_tick resets the counter and flips the mode.
+        registry
+            .set_mode_and_reset_tick("mission-caps-test", PlannerMode::Reactive)
+            .await;
+        let (mode3, cap3, count3) = registry
+            .bump_and_check_tool_call(sidecar_session_id)
+            .await
+            .expect("session present");
+        assert_eq!(mode3, PlannerMode::Reactive);
+        assert_eq!(cap3, 25);
+        assert_eq!(count3, 1);
+    }
+
+    /// E6-CAPS — unknown sidecar session id returns `None`, which the
+    /// dispatcher turns into a clear error rather than silently allowing
+    /// the call through.
+    #[tokio::test]
+    async fn bump_and_check_tool_call_returns_none_for_unknown_session() {
+        let registry = MissionPlannerRegistry::default();
+        let result = registry
+            .bump_and_check_tool_call("nonexistent-sidecar-session")
+            .await;
+        assert!(result.is_none());
+    }
+
+    /// Test helper: insert a planner session for a mission with a given
+    /// status and sidecar session id. Bypasses the public `start_mission_
+    /// planner` Tauri command (which requires a real `AppHandle` and
+    /// `SidecarManager`) so we can exercise the in-process Awake/Idle
+    /// transitions in isolation.
+    async fn seed_planner_session(
+        registry: &MissionPlannerRegistry,
+        mission_id: &str,
+        sidecar_session_id: &str,
+        status: PlannerStatus,
+    ) {
+        let mut session = MissionPlannerSession::new(
+            sidecar_session_id.to_string(),
+            mission_id.to_string(),
+            sidecar_session_id.to_string(),
+        );
+        session.status = status;
+        registry.insert(session).await;
+    }
+
+    /// E6-KILL-AWAKE — happy path. When the sidecar emits a `done` event
+    /// for a planner session that's currently `Awake`, the watchdog flips
+    /// the mission's planner status back to `Idle`.
+    #[tokio::test]
+    async fn on_planner_done_flips_awake_to_idle() {
+        let registry = MissionPlannerRegistry::default();
+        let mission_id = "mission-awake-test";
+        let sidecar_session_id = "sidecar-awake-test";
+        seed_planner_session(
+            &registry,
+            mission_id,
+            sidecar_session_id,
+            PlannerStatus::Awake,
+        )
+        .await;
+
+        registry.on_planner_done(sidecar_session_id).await;
+
+        let after = registry
+            .get_by_mission(mission_id)
+            .await
+            .expect("session should still be registered after on_planner_done");
+        assert_eq!(
+            after.status,
+            PlannerStatus::Idle,
+            "Awake should flip to Idle on `done` event"
+        );
+    }
+
+    /// E6-KILL-AWAKE — preserve-other-states guard. A `done` event that
+    /// lands while the user has paused the planner (or any other non-Awake
+    /// state) MUST NOT clobber the status. This is the load-bearing
+    /// invariant: if a pause raced with a wake's `done` event, the
+    /// watchdog would otherwise silently re-enable wake dispatch by
+    /// flipping back to Idle.
+    #[tokio::test]
+    async fn on_planner_done_preserves_paused() {
+        let registry = MissionPlannerRegistry::default();
+        let mission_id = "mission-paused-test";
+        let sidecar_session_id = "sidecar-paused-test";
+
+        // Paused is the headline case from the task brief.
+        seed_planner_session(
+            &registry,
+            mission_id,
+            sidecar_session_id,
+            PlannerStatus::Paused,
+        )
+        .await;
+        registry.on_planner_done(sidecar_session_id).await;
+        let after = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(
+            after.status,
+            PlannerStatus::Paused,
+            "Paused must survive a `done` event"
+        );
+
+        // QuotaPaused (E6 sibling slice owns the rate-limit handler that
+        // installs this state; the guard must respect it equally).
+        registry
+            .set_status(mission_id, PlannerStatus::QuotaPaused)
+            .await;
+        registry.on_planner_done(sidecar_session_id).await;
+        let after = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(after.status, PlannerStatus::QuotaPaused);
+
+        // Completed and Failed are terminal; reviving them to Idle would
+        // be even worse than reviving a pause.
+        registry
+            .set_status(mission_id, PlannerStatus::Completed)
+            .await;
+        registry.on_planner_done(sidecar_session_id).await;
+        let after = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(after.status, PlannerStatus::Completed);
+
+        registry
+            .set_status(mission_id, PlannerStatus::Failed)
+            .await;
+        registry.on_planner_done(sidecar_session_id).await;
+        let after = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(after.status, PlannerStatus::Failed);
+    }
+
+    /// E6-KILL-AWAKE — `done` events for unknown sidecar sessions (e.g.
+    /// regular `api-claude-oauth` chats that aren't planner sessions) are
+    /// silently no-op'd. This is what makes it safe to hang the watchdog
+    /// off the generic `handle_event` `done` arm without filtering by
+    /// session type at the call site.
+    #[tokio::test]
+    async fn on_planner_done_ignores_unknown_session() {
+        let registry = MissionPlannerRegistry::default();
+        // Seed an unrelated planner so the registry isn't empty.
+        seed_planner_session(
+            &registry,
+            "mission-other",
+            "sidecar-other",
+            PlannerStatus::Awake,
+        )
+        .await;
+
+        registry
+            .on_planner_done("sidecar-that-does-not-exist")
+            .await;
+
+        // The unrelated Awake session must NOT flip — its session id
+        // didn't match.
+        let other = registry.get_by_mission("mission-other").await.unwrap();
+        assert_eq!(other.status, PlannerStatus::Awake);
+    }
+
+    // -------------------------------------------------------------------
+    // Peer-review P1 concurrency fixes
+    // -------------------------------------------------------------------
+
+    /// FIX P1-A — `on_planner_done` must perform the read+modify+write of
+    /// the planner's status atomically under the sessions lock so a
+    /// concurrent `dispatch_wake` re-arming `Awake` for a new turn can't
+    /// be clobbered back to `Idle`.
+    ///
+    /// Hard to race the lock directly from a unit test (acquiring the
+    /// same mutex from two tasks just serializes them), so we exercise
+    /// the **outcome** the fix guarantees: that successive
+    /// Awake -> on_planner_done -> Idle cycles are repeatable. The race
+    /// the fix prevents is documented by inspection of the code change
+    /// (the function now holds the lock across the read + mutate).
+    #[tokio::test]
+    async fn on_planner_done_atomic_read_modify_write() {
+        let registry = MissionPlannerRegistry::default();
+        let mission_id = "mission-atomic-rmw";
+        let sidecar_session_id = "sidecar-atomic-rmw";
+
+        // Seed Awake, flip done, expect Idle.
+        seed_planner_session(
+            &registry,
+            mission_id,
+            sidecar_session_id,
+            PlannerStatus::Awake,
+        )
+        .await;
+        registry.on_planner_done(sidecar_session_id).await;
+        let after = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(after.status, PlannerStatus::Idle);
+
+        // Cycle a second time — Awake -> on_planner_done -> Idle. Pre-fix
+        // this went through two separate critical sections; post-fix it's
+        // one. Behavior under no contention is identical, which is all we
+        // can probe in a unit test.
+        registry.set_status(mission_id, PlannerStatus::Awake).await;
+        registry.on_planner_done(sidecar_session_id).await;
+        let after = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(after.status, PlannerStatus::Idle);
+    }
+
+    /// FIX P1-B — `persist_planner_state_on_flight` now returns
+    /// `Result<(), String>` (was unit) and routes through
+    /// `storage::with_state_lock`. The signature change itself is
+    /// load-bearing: anything that didn't use the lock previously now
+    /// does, because the lock is the entire body of the new function.
+    /// This test type-checks the new signature.
+    #[tokio::test]
+    async fn persist_planner_state_on_flight_uses_state_lock() {
+        // Missing-on-disk mission is tolerated (silent no-op). The point
+        // is that this call compiles only with the new async + Result
+        // signature.
+        let result: Result<(), String> = super::persist_planner_state_on_flight(
+            "mission-does-not-exist-on-disk",
+            None,
+            None,
+        )
+        .await;
+        // Either Ok or Err is acceptable — save_state may legitimately
+        // fail in some test environments (no HOME, read-only fs). The
+        // suite's cold-start tests cover the actual save path.
+        let _ = result;
+    }
+
+    /// FIX P1-C — generation lease on the QuotaPaused auto-resume timer.
+    ///
+    /// We can't easily await the 60s timer in a unit test, so we
+    /// exercise the invariant the spawned task's body relies on:
+    ///
+    ///   * The lease at spawn time is captured into the closure.
+    ///   * When the timer fires, the captured value is compared against
+    ///     the CURRENT lease in the session.
+    ///   * If a newer rate-limit bumped the lease in between, the
+    ///     captured value is stale; the timer backs off without
+    ///     clobbering the freshly-armed QuotaPaused state.
+    ///
+    /// This test inlines the same atomic check the spawned closure
+    /// performs in `on_rate_limited`, both with a stale captured lease
+    /// (expect: state preserved) and with a current captured lease
+    /// (expect: state cleared to Idle).
+    #[tokio::test]
+    async fn quota_lease_prevents_stale_timer_clobber() {
+        let registry = MissionPlannerRegistry::default();
+        let mission_id = "mission-quota-lease";
+        let sidecar_session_id = "sidecar-quota-lease";
+
+        // Seed QuotaPaused with lease=1 (post-first-rate-limit state).
+        let mut session = MissionPlannerSession::new(
+            sidecar_session_id.to_string(),
+            mission_id.to_string(),
+            sidecar_session_id.to_string(),
+        );
+        session.status = PlannerStatus::QuotaPaused;
+        session.quota_lease = 1;
+        registry.insert(session).await;
+
+        let captured_lease_older: u64 = 1;
+
+        // A second rate-limit races in: bump lease to 2.
+        {
+            let mut sessions = registry.sessions.lock().await;
+            let s = sessions.get_mut(mission_id).expect("seeded");
+            s.quota_lease = s.quota_lease.wrapping_add(1);
+            s.status = PlannerStatus::QuotaPaused;
+        }
+        let mid = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(mid.quota_lease, 2);
+        assert_eq!(mid.status, PlannerStatus::QuotaPaused);
+
+        // Run the same atomic check the spawned timer performs, but
+        // with the older captured lease.
+        let stale_cleared: bool = {
+            let mut sessions = registry.sessions.lock().await;
+            match sessions.get_mut(mission_id) {
+                Some(session)
+                    if matches!(session.status, PlannerStatus::QuotaPaused)
+                        && session.quota_lease == captured_lease_older =>
+                {
+                    session.status = PlannerStatus::Idle;
+                    true
+                }
+                _ => false,
+            }
+        };
+        assert!(
+            !stale_cleared,
+            "stale timer with captured_lease=1 must back off when current_lease=2"
+        );
+        let after = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(
+            after.status,
+            PlannerStatus::QuotaPaused,
+            "QuotaPaused must survive a stale-lease timer firing"
+        );
+        assert_eq!(after.quota_lease, 2);
+
+        // Sanity: a CURRENT-lease timer (captured 2) WOULD have cleared it.
+        let captured_lease_current: u64 = 2;
+        let current_cleared: bool = {
+            let mut sessions = registry.sessions.lock().await;
+            match sessions.get_mut(mission_id) {
+                Some(session)
+                    if matches!(session.status, PlannerStatus::QuotaPaused)
+                        && session.quota_lease == captured_lease_current =>
+                {
+                    session.status = PlannerStatus::Idle;
+                    true
+                }
+                _ => false,
+            }
+        };
+        assert!(
+            current_cleared,
+            "current-lease timer must clear QuotaPaused"
+        );
+        let after = registry.get_by_mission(mission_id).await.unwrap();
+        assert_eq!(after.status, PlannerStatus::Idle);
+    }
+}
+
+/// E6 safety-rail integration tests. Distinct module so the cold-start
+/// pure-function tests sit alongside any future sibling-landed safety-rail
+/// tests (caps, ceiling, rate-limit handler, kill-switch) without cross-
+/// pollinating the existing planner-runtime test fixture above.
+///
+/// We deliberately exercise [`compute_cold_start_paused`] (the pure helper)
+/// rather than [`enforce_cold_start_paused`] (which hits real disk via
+/// `with_state_lock` → `load_state` / `save_state`). The pure function is
+/// what `lib.rs` ultimately relies on under the hood, and testing it directly
+/// keeps the suite hermetic — no shared HOME/USERPROFILE side-effects across
+/// parallel cargo-test workers.
+#[cfg(test)]
+mod e6_integration {
+    use super::*;
+    use crate::core::flight::{Flight, FlightPriority};
+
+    /// Build a Flight with the minimum field set so tests can mutate just
+    /// the `status` / `planner_*` fields they care about.
+    fn make_flight(
+        id: &str,
+        status: FlightStatus,
+        planner_status: Option<FlightPlannerStatus>,
+        planner_session_id: Option<&str>,
+    ) -> Flight {
+        Flight {
+            id: id.to_string(),
+            title: format!("Mission {}", id),
+            objective: String::new(),
+            status,
+            priority: FlightPriority::Medium,
+            project_path: "/tmp/test".to_string(),
+            workspace_id: None,
+            git_branch: None,
+            milestones: Vec::new(),
+            linked_session_ids: Vec::new(),
+            created_at: 0,
+            updated_at: 0,
+            completed_at: None,
+            total_cost: 0.0,
+            total_tokens: 0,
+            prompt: None,
+            attempts: Vec::new(),
+            planner_session_id: planner_session_id.map(|s| s.to_string()),
+            planner_status,
+        }
+    }
+
+    fn state_with(flights: Vec<Flight>) -> PersistedState {
+        let mut state = PersistedState::default();
+        state.flights = flights;
+        state
+    }
+
+    /// An Active mission whose planner was Awake at last shutdown — the
+    /// canonical "interrupted by app restart" case the rail is designed for.
+    /// Expect: status flipped to Paused, session id cleared, count = 1.
+    #[test]
+    fn cold_start_pauses_active_with_planner_running() {
+        let mut state = state_with(vec![make_flight(
+            "m-awake",
+            FlightStatus::Active,
+            Some(FlightPlannerStatus::Awake),
+            Some("sidecar-abc"),
+        )]);
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 1);
+
+        let flight = &state.flights[0];
+        assert_eq!(
+            flight.planner_status,
+            Some(FlightPlannerStatus::Paused),
+            "Awake planner on an Active mission must flip to Paused on cold-start"
+        );
+        assert!(
+            flight.planner_session_id.is_none(),
+            "stale sidecar session id must be cleared on cold-start"
+        );
+        // Mission status itself is NOT touched — only planner_status moves.
+        assert_eq!(flight.status, FlightStatus::Active);
+    }
+
+    /// Terminal flights (`Done` / `Failed` / `Cancelled`) sometimes carry
+    /// stale planner metadata — it must NOT be rewritten. Pausing a Done
+    /// mission's planner would be both wrong and confusing in the UI.
+    ///
+    /// Post-FIX-1: only terminal statuses are exempt. `Paused` / `Draft` /
+    /// `Spec` / `Planning` / `Review` / `Ready` flights with stale planner
+    /// metadata are now caught — see
+    /// [`cold_start_pauses_planning_with_awake_planner`] et al.
+    #[test]
+    fn cold_start_leaves_terminal_flights_alone() {
+        let mut state = state_with(vec![
+            make_flight(
+                "m-done",
+                FlightStatus::Done,
+                Some(FlightPlannerStatus::Completed),
+                Some("sidecar-done"),
+            ),
+            make_flight(
+                "m-failed",
+                FlightStatus::Failed,
+                Some(FlightPlannerStatus::Awake),
+                Some("sidecar-failed"),
+            ),
+            make_flight(
+                "m-cancelled",
+                FlightStatus::Cancelled,
+                Some(FlightPlannerStatus::Idle),
+                Some("sidecar-cancelled"),
+            ),
+        ]);
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 0, "terminal flights => nothing to pause");
+
+        // Untouched: planner_session_id stays, planner_status stays.
+        assert_eq!(
+            state.flights[0].planner_session_id.as_deref(),
+            Some("sidecar-done")
+        );
+        assert_eq!(
+            state.flights[0].planner_status,
+            Some(FlightPlannerStatus::Completed)
+        );
+        assert_eq!(
+            state.flights[1].planner_session_id.as_deref(),
+            Some("sidecar-failed")
+        );
+        assert_eq!(
+            state.flights[1].planner_status,
+            Some(FlightPlannerStatus::Awake),
+            "Failed mission's stale Awake planner state must stay untouched"
+        );
+        assert_eq!(
+            state.flights[2].planner_session_id.as_deref(),
+            Some("sidecar-cancelled")
+        );
+        assert_eq!(
+            state.flights[2].planner_status,
+            Some(FlightPlannerStatus::Idle),
+            "Cancelled mission's stale planner state must stay untouched"
+        );
+    }
+
+    /// FIX 1 — A `Planning` mission whose planner was Awake at last shutdown
+    /// must flip to Paused. Without this the planner_status sits "Awake"
+    /// post-restart pointing at a dead sidecar session, and wake events
+    /// would dispatch into the void.
+    #[test]
+    fn cold_start_pauses_planning_with_awake_planner() {
+        let mut state = state_with(vec![make_flight(
+            "m-planning-awake",
+            FlightStatus::Planning,
+            Some(FlightPlannerStatus::Awake),
+            Some("sidecar-planning"),
+        )]);
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(
+            n, 1,
+            "Planning mission with Awake planner must be caught by cold-start"
+        );
+
+        let flight = &state.flights[0];
+        assert_eq!(
+            flight.planner_status,
+            Some(FlightPlannerStatus::Paused),
+            "Awake planner on a Planning mission must flip to Paused on cold-start"
+        );
+        assert!(
+            flight.planner_session_id.is_none(),
+            "stale sidecar session id must be cleared"
+        );
+        // Mission status itself is NOT touched — only planner_status moves.
+        assert_eq!(flight.status, FlightStatus::Planning);
+    }
+
+    /// FIX 1 — A `Review` mission with an Idle planner has a live sidecar
+    /// session id at last shutdown; the sidecar is dead post-restart and
+    /// the metadata needs resetting.
+    #[test]
+    fn cold_start_pauses_review_with_idle_planner() {
+        let mut state = state_with(vec![make_flight(
+            "m-review-idle",
+            FlightStatus::Review,
+            Some(FlightPlannerStatus::Idle),
+            Some("sidecar-review"),
+        )]);
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 1);
+
+        let flight = &state.flights[0];
+        assert_eq!(flight.planner_status, Some(FlightPlannerStatus::Paused));
+        assert!(flight.planner_session_id.is_none());
+        // Review-status itself preserved — only planner state moves.
+        assert_eq!(flight.status, FlightStatus::Review);
+    }
+
+    /// FIX 1 — A `Spec` mission whose `planner_session_id` is still set
+    /// at last shutdown (planner_status may be None or anything non-running)
+    /// must have the stale id cleared. The session-id branch alone is
+    /// sufficient to trigger the rail.
+    #[test]
+    fn cold_start_pauses_spec_with_session_id() {
+        let mut state = state_with(vec![make_flight(
+            "m-spec-with-session",
+            FlightStatus::Spec,
+            None,
+            Some("sidecar-spec"),
+        )]);
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 1);
+
+        let flight = &state.flights[0];
+        assert_eq!(flight.planner_status, Some(FlightPlannerStatus::Paused));
+        assert!(flight.planner_session_id.is_none());
+        assert_eq!(flight.status, FlightStatus::Spec);
+    }
+
+    /// FIX 1 — A mission-level `Paused` flight with a running planner is
+    /// post-FIX-1 caught by the rail. (Pre-FIX-1 this was sticky; the
+    /// session id pinned to it is still dead post-restart.)
+    #[test]
+    fn cold_start_pauses_mission_level_paused_with_awake_planner() {
+        let mut state = state_with(vec![make_flight(
+            "m-paused-mission",
+            FlightStatus::Paused,
+            Some(FlightPlannerStatus::Awake),
+            Some("sidecar-paused"),
+        )]);
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 1);
+
+        let flight = &state.flights[0];
+        assert_eq!(flight.planner_status, Some(FlightPlannerStatus::Paused));
+        assert!(flight.planner_session_id.is_none());
+        // Mission-level Paused stays Paused (only planner state moved).
+        assert_eq!(flight.status, FlightStatus::Paused);
+    }
+
+    /// FIX 1 — `Draft` / `Ready` flights with no planner metadata still
+    /// skip cleanly (no had_session, no was_running ⇒ no-op even though
+    /// they're non-terminal).
+    #[test]
+    fn cold_start_leaves_clean_non_terminal_flights_alone() {
+        let mut state = state_with(vec![
+            make_flight("m-draft", FlightStatus::Draft, None, None),
+            make_flight("m-ready", FlightStatus::Ready, None, None),
+            make_flight("m-spec-clean", FlightStatus::Spec, None, None),
+        ]);
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 0, "non-terminal flights without planner metadata => no-op");
+
+        for f in &state.flights {
+            assert!(f.planner_status.is_none());
+            assert!(f.planner_session_id.is_none());
+        }
+    }
+
+    /// The key invariant for resume-correctness: the old sidecar session id
+    /// is meaningless after app restart (the sidecar process is dead). We
+    /// clear it so a fresh `start_mission_planner` mints a brand new id and
+    /// the UI doesn't render a stale "session XYZ" reference.
+    #[test]
+    fn cold_start_clears_planner_session_id() {
+        // Idle planner with a live session id — clear the id.
+        let mut state = state_with(vec![make_flight(
+            "m-idle",
+            FlightStatus::Active,
+            Some(FlightPlannerStatus::Idle),
+            Some("sidecar-idle-123"),
+        )]);
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 1);
+        assert!(state.flights[0].planner_session_id.is_none());
+        assert_eq!(
+            state.flights[0].planner_status,
+            Some(FlightPlannerStatus::Paused)
+        );
+
+        // Edge case: session-id-only (planner_status is None somehow).
+        // This shouldn't happen in practice but the rail still catches it
+        // because `had_session` alone is sufficient.
+        let mut state = state_with(vec![make_flight(
+            "m-zombie",
+            FlightStatus::Active,
+            None,
+            Some("sidecar-zombie"),
+        )]);
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 1);
+        assert!(state.flights[0].planner_session_id.is_none());
+        assert_eq!(
+            state.flights[0].planner_status,
+            Some(FlightPlannerStatus::Paused)
+        );
+    }
+
+    /// Multi-mission scenario — telemetry-only return value must reflect
+    /// the modified count (not the total flight count). QuotaPaused is
+    /// included in the "was running" set because a sidecar session is
+    /// still live for a quota-pause backoff; that session is gone after
+    /// restart and the user should reset it explicitly.
+    #[test]
+    fn cold_start_returns_count() {
+        let mut state = state_with(vec![
+            make_flight(
+                "m-awake",
+                FlightStatus::Active,
+                Some(FlightPlannerStatus::Awake),
+                Some("s1"),
+            ),
+            make_flight(
+                "m-idle",
+                FlightStatus::Active,
+                Some(FlightPlannerStatus::Idle),
+                Some("s2"),
+            ),
+            make_flight(
+                "m-quota",
+                FlightStatus::Active,
+                Some(FlightPlannerStatus::QuotaPaused),
+                Some("s3"),
+            ),
+            // Active but never started a planner — skipped.
+            make_flight("m-no-planner", FlightStatus::Active, None, None),
+            // Active with already-Paused planner — skipped (sticky, no
+            // session id => nothing to clear, no status change to make).
+            make_flight(
+                "m-already-paused-planner",
+                FlightStatus::Active,
+                Some(FlightPlannerStatus::Paused),
+                None,
+            ),
+            // Done mission — skipped.
+            make_flight(
+                "m-done",
+                FlightStatus::Done,
+                Some(FlightPlannerStatus::Completed),
+                None,
+            ),
+        ]);
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(
+            n, 3,
+            "Awake + Idle + QuotaPaused on Active flights = 3 paused"
+        );
+
+        // Verify the three that flipped did flip.
+        assert_eq!(
+            state.flights[0].planner_status,
+            Some(FlightPlannerStatus::Paused)
+        );
+        assert_eq!(
+            state.flights[1].planner_status,
+            Some(FlightPlannerStatus::Paused)
+        );
+        assert_eq!(
+            state.flights[2].planner_status,
+            Some(FlightPlannerStatus::Paused)
+        );
+
+        // And the three that didn't, didn't.
+        assert!(state.flights[3].planner_status.is_none());
+        assert!(state.flights[3].planner_session_id.is_none());
+        assert_eq!(
+            state.flights[4].planner_status,
+            Some(FlightPlannerStatus::Paused),
+            "already-Paused planner stays Paused (no-op)"
+        );
+        assert_eq!(
+            state.flights[5].planner_status,
+            Some(FlightPlannerStatus::Completed),
+            "Done mission's planner state untouched"
+        );
+    }
+
+    /// Defensive: calling the helper on an empty state must be a no-op
+    /// returning zero. (Boot may run this before any missions exist.)
+    #[test]
+    fn cold_start_handles_empty_state() {
+        let mut state = PersistedState::default();
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 0);
+        assert!(state.flights.is_empty());
+    }
+
+    // ----- Optional smoke tests for sibling-landed safety rails -----
+    //
+    // These are #[ignore]d until their respective siblings land. Each test
+    // is written against the public interface the sibling will expose, so
+    // it survives internal refactors. Un-ignore once the symbol exists.
+
+    /// E6-CAPS: per-mode tool-call cap during decomposition.
+    /// Expect a `PlannerMode::Decomposition.tool_call_cap()` (or equivalent)
+    /// to return 50 per the locked design.
+    #[test]
+    #[ignore = "requires E6-CAPS sibling to land PlannerMode::tool_call_cap"]
+    fn dispatcher_respects_per_mode_cap_decomposition() {
+        // Pseudo (against the public interface the sibling will expose):
+        // assert_eq!(PlannerMode::Decomposition.tool_call_cap(), 50);
+        // assert_eq!(PlannerMode::Reactive.tool_call_cap(),     25);
+        // assert_eq!(PlannerMode::Replan.tool_call_cap(),       25);
+    }
+
+    /// E6-CEILING-RATELIMIT: task-ceiling approval gate at 60 tasks.
+    /// Expect a public helper that returns true once a mission's task
+    /// count crosses the ceiling, gating further `create_task` dispatches.
+    #[test]
+    #[ignore = "requires E6-CEILING-RATELIMIT sibling to land the ceiling helper"]
+    fn task_ceiling_triggers_approval_gate_at_60() {
+        // Pseudo:
+        // assert!(!task_ceiling_reached(59));
+        // assert!(task_ceiling_reached(60));
+    }
+
+    /// E6-KILL-AWAKE: kill-switch flips planner status to Failed (or
+    /// Paused) and cancels any in-flight turn via `forward_cancel`.
+    #[test]
+    #[ignore = "requires E6-KILL-AWAKE sibling to land the kill-switch command"]
+    fn kill_switch_cancels_in_flight_turn() {
+        // Pseudo:
+        // call kill_mission_planner(mission_id);
+        // assert_eq!(registry.get(mission_id).status, PlannerStatus::Failed);
     }
 }

@@ -105,6 +105,34 @@ pub fn run() {
             // already-managed `MissionPlannerRegistry`.
             spawn_wake_consumer(app.handle().clone());
 
+            // Mission Planner (E6 safety rail) cold-start enforcement.
+            // Planner sidecar sessions are ephemeral — they die with the
+            // host app — so on a fresh app start any mission whose planner
+            // was Awake / Idle / QuotaPaused (or merely had a
+            // `planner_session_id` pinned) is pointing at a dead session.
+            // Flip those to Paused and clear the stale id so the user has
+            // to explicitly resume via the UI before the wake bus starts
+            // dispatching turns at a planner that doesn't exist.
+            // Async-spawned because `with_state_lock` is async; the setup
+            // hook returns immediately. Failure logs at warn but does NOT
+            // block boot — the worst case is the UI showing a stale
+            // "Awake" badge that won't actually fire wakes (the wake
+            // consumer's status check skips them).
+            tauri::async_runtime::spawn(async {
+                match commands::mission_planner::enforce_cold_start_paused().await {
+                    Ok(n) if n > 0 => tracing::info!(
+                        paused = n,
+                        "cold-start: paused {} active mission(s) awaiting user resume",
+                        n
+                    ),
+                    Ok(_) => tracing::debug!("cold-start: no active missions to pause"),
+                    Err(e) => tracing::warn!(
+                        error = %e,
+                        "cold-start: failed to enforce paused planner state",
+                    ),
+                }
+            });
+
             // Start the auth-credentials fs watcher so the AuthBadge in the
             // Agents pane updates the moment a `claude login` / `codex
             // login` completes, without the user having to re-open the

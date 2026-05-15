@@ -329,6 +329,72 @@ async function readBefore(path: string): Promise<string> {
 }
 
 /**
+ * v6 (E6-CEILING-RATELIMIT): detect whether an SDK error is a rate-limit
+ * (HTTP 429) error. The Claude Agent SDK wraps the underlying Anthropic SDK
+ * `RateLimitError`, but its packaging changes across versions — we cannot
+ * rely on `instanceof` against a stable import. Match by:
+ *
+ *   1. `error.name === "RateLimitError"` (the most stable signal), OR
+ *   2. `error.status === 429` (the underlying APIError's HTTP status), OR
+ *   3. error type tag `"rate_limit_error"` from the API response body.
+ *
+ * Any of those means we should emit a typed `rate_limited` event in
+ * addition to the regular `error` event.
+ */
+function isLikelyRateLimitError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { name?: unknown; status?: unknown; type?: unknown };
+  if (typeof e.name === "string" && e.name === "RateLimitError") return true;
+  if (typeof e.status === "number" && e.status === 429) return true;
+  if (typeof e.type === "string" && e.type === "rate_limit_error") return true;
+  return false;
+}
+
+/**
+ * v6 (E6-CEILING-RATELIMIT): pull the `retry-after` header value (in
+ * seconds) out of an Anthropic SDK error. Anthropic returns a numeric
+ * seconds value for this header on 429 responses. Returns `undefined` if
+ * the header is missing, unparseable, or the SDK didn't surface it on
+ * this error object (the supervisor falls back to a default window in
+ * that case).
+ *
+ * The header object can be either a Web `Headers` instance (the SDK's
+ * v0.x.x runtime exposes one) or a plain `Record<string, string>` (older
+ * shapes / mocks); we support both.
+ */
+function parseRetryAfterSeconds(err: unknown): number | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const headers = (err as { headers?: unknown }).headers;
+  if (!headers) return undefined;
+  let raw: string | null | undefined;
+  // Web Headers instance (case-insensitive `.get`).
+  if (
+    typeof (headers as { get?: unknown }).get === "function" &&
+    typeof headers === "object"
+  ) {
+    try {
+      raw = (headers as { get: (k: string) => string | null }).get(
+        "retry-after",
+      );
+    } catch {
+      raw = undefined;
+    }
+  } else if (typeof headers === "object") {
+    // Plain object: try canonical casings.
+    const rec = headers as Record<string, unknown>;
+    const value =
+      (rec["retry-after"] as unknown) ??
+      (rec["Retry-After"] as unknown) ??
+      (rec["RETRY-AFTER"] as unknown);
+    raw = typeof value === "string" ? value : undefined;
+  }
+  if (!raw) return undefined;
+  const parsed = parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return undefined;
+  return parsed;
+}
+
+/**
  * Apply an `Edit` tool's `old_string` → `new_string` replacement to `before`
  * exactly the way the SDK's Edit tool would, so the diff we preview matches
  * what the tool will actually produce if approved.
@@ -610,6 +676,25 @@ export class AnthropicProvider implements ProviderHandler {
       // treat named AbortError as a cancellation, everything else as error.
       const message = err instanceof Error ? err.message : String(err);
       const name = err instanceof Error ? err.name : "";
+      // v6 (E6-CEILING-RATELIMIT): if the SDK threw `RateLimitError`
+      // (HTTP 429), emit a typed `rate_limited` event so the Rust
+      // supervisor can transition the owning Mission Planner session into
+      // `QuotaPaused` and arm the auto-resume timer. We duck-type on the
+      // constructor `name` (and on a 429 `status` fallback) so we don't
+      // have to import the SDK's error class — its packaging changes
+      // across versions and the `@anthropic-ai/claude-agent-sdk` package
+      // does not re-export it from a stable surface. The regular `error`
+      // emit below is preserved so non-planner sessions still surface
+      // the failure as they did pre-v6.
+      if (isLikelyRateLimitError(err)) {
+        const retryAfterSeconds = parseRetryAfterSeconds(err);
+        emit({
+          type: "rate_limited",
+          sessionId,
+          retryAfterSeconds,
+          message,
+        });
+      }
       if (name === "AbortError" || this.abort?.signal.aborted) {
         emit({ type: "done", sessionId, inputTokens: 0, outputTokens: 0 });
       } else {
@@ -854,6 +939,22 @@ export class AnthropicProvider implements ProviderHandler {
       content = `<wake_trigger source="wake_trigger" kind="${safeKind}">${req.content}</wake_trigger>`;
     } else {
       content = req.content;
+    }
+    // E6-CAPS: honor the requested per-turn `maxOutputTokens` if the SDK
+    // exposes a setter. As of Claude Agent SDK 0.2.116, `Query` only exposes
+    // `setMaxThinkingTokens` (deprecated) and `applyFlagSettings` (which
+    // doesn't carry an output-tokens field). There is no per-turn
+    // `max_tokens` knob — output token budget is set at session start via
+    // `Options.taskBudget` and can't be changed mid-session. We log the
+    // request once so the planner-side intent is visible in stderr, then
+    // proceed with the SDK's defaults. If a future SDK version exposes a
+    // setter, this is the hook point.
+    if (typeof req.maxOutputTokens === "number" && req.maxOutputTokens > 0) {
+      logStderr(
+        `injectUserTurn: maxOutputTokens=${req.maxOutputTokens} requested but ` +
+          `SDK 0.2.116 has no per-turn max_tokens setter; honoring session-start ` +
+          `defaults (sessionId=${req.sessionId})`,
+      );
     }
     this.prompt.push({
       type: "user",

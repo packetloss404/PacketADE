@@ -58,7 +58,14 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "openai
 /// `start_session` so the sidecar can construct in-process MCP servers
 /// (e.g. the Mission Planner tool surface) locally without those live
 /// JS instances having to cross the wire.
-const EXPECTED_PROTOCOL_VERSION: u32 = 5;
+///
+/// v6 (Mission Planner E6 — rate-limit handler): added the `rate_limited`
+/// event. The Anthropic provider catches `RateLimitError` (HTTP 429) and
+/// emits it alongside the regular `error` emit; this supervisor routes it
+/// into [`crate::commands::mission_planner::MissionPlannerRegistry::on_rate_limited`]
+/// which flips the owning planner's status to `QuotaPaused` and arms an
+/// auto-resume timer.
+const EXPECTED_PROTOCOL_VERSION: u32 = 6;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.
@@ -508,12 +515,22 @@ impl SidecarManager {
     /// `trigger_kind` is the specific wake-trigger kind for the
     /// `<wake_trigger kind="…">` attribute. `None` is fine for plain user
     /// turns; required (effectively) for `source == "wake_trigger"`.
+    ///
+    /// E6-CAPS: `max_output_tokens` is the per-mode output budget the
+    /// Mission Planner wants the sidecar to honor for this turn. Threaded
+    /// onto the wire as `maxOutputTokens` (camelCase to match the rest of
+    /// the protocol). NOTE: the Claude Agent SDK (0.2.116) does not expose
+    /// a per-turn `max_tokens` setter — the sidecar's anthropic provider
+    /// logs a warning and leaves the SDK's defaults in place. The field is
+    /// still threaded through so future SDK versions can pick it up
+    /// without another protocol change.
     pub async fn forward_inject_user_turn(
         &self,
         session_id: &str,
         content: &str,
         source: &str,
         trigger_kind: Option<&str>,
+        max_output_tokens: Option<u32>,
     ) -> Result<(), String> {
         let trigger = trigger_kind.map(|kind| json!({ "kind": kind }));
         let req = json!({
@@ -522,6 +539,7 @@ impl SidecarManager {
             "content": content,
             "source": source,
             "trigger": trigger,
+            "maxOutputTokens": max_output_tokens,
         });
         self.send_json(req).await
     }
@@ -1379,6 +1397,23 @@ impl SidecarManager {
                 // A `done` event marks the current turn complete, not the
                 // lifetime of the sidecar conversation. Keep ownership so the
                 // next send/cancel/model change still routes to the sidecar.
+
+                // E6-KILL-AWAKE: tell the Mission Planner registry that this
+                // turn finished so it can flip the owning planner's status
+                // from `Awake` back to `Idle`. The registry no-ops on
+                // non-planner sidecar sessions (lookup miss) and on every
+                // status other than `Awake`, so this is safe to fire
+                // unconditionally. Spawn off-thread to avoid holding any
+                // borrow tied to `try_state` across an await.
+                let session_for_async = session_id.clone();
+                let app_for_async = self.app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(registry) = app_for_async
+                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
+                    {
+                        registry.on_planner_done(&session_for_async).await;
+                    }
+                });
             }
             "plan_block" => {
                 let items: Vec<PlanItemPayload> = value
@@ -1585,6 +1620,61 @@ impl SidecarManager {
                         "planner_tool event but SidecarManager not managed"
                     );
                 }
+            }
+            "rate_limited" => {
+                // v6 (E6-CEILING-RATELIMIT): the Anthropic provider caught
+                // a `RateLimitError` (HTTP 429) from the SDK and surfaced
+                // it as a typed event alongside its regular `error` emit.
+                // Route it into the Mission Planner registry — the
+                // planner-bound branch flips the owning mission's status
+                // to `QuotaPaused`, arms an auto-resume timer, and fires
+                // a `mission-planner:rate-limited:<missionId>` event so
+                // the frontend can fan out an OS-level notification.
+                //
+                // Non-planner sidecar sessions land here too (any
+                // `api-claude-oauth` session that hits 429), but the
+                // registry's `mission_id_for_sidecar_session` lookup
+                // returns `None` for them and `on_rate_limited` no-ops.
+                // The regular `error` event has already been emitted, so
+                // those sessions still surface the failure to the user.
+                let retry_after_seconds = value
+                    .get("retryAfterSeconds")
+                    .and_then(|v| v.as_f64());
+                let message = value
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                tracing::info!(
+                    session_id = %session_id,
+                    retry_after_seconds = ?retry_after_seconds,
+                    message = ?message,
+                    "sidecar reported rate-limit error"
+                );
+                // The registry is Tauri-managed for the app lifetime, so we
+                // simply spawn an async task that re-fetches `try_state`
+                // inside the future — that keeps the (non-`'static`) borrow
+                // returned by `try_state` here scoped to this match arm,
+                // while still letting the supervisor's status flip + emit +
+                // sleep timer happen off the event-handler thread.
+                let session_for_async = session_id.clone();
+                let app_for_async = self.app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(registry) = app_for_async
+                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
+                    {
+                        registry
+                            .on_rate_limited(
+                                &session_for_async,
+                                retry_after_seconds,
+                                &app_for_async,
+                            )
+                            .await;
+                    } else {
+                        warn!(
+                            "rate_limited event but MissionPlannerRegistry not managed; cannot pause planner"
+                        );
+                    }
+                });
             }
             other => {
                 warn!(

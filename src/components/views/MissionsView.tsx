@@ -6,6 +6,7 @@ import {
   Users,
   Pause,
   Play,
+  Square,
   Check,
   CheckCircle2,
   Sparkles,
@@ -563,6 +564,28 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   const canPause = !isSpec && status === "active";
   const canResume = !isSpec && (status === "paused" || status === "review");
   const showApprove = !isSpec && (status === "review" || tasks.approvals > 0);
+  // E6-KILL-AWAKE: subscribe to planner runtime so the Stop button reactively
+  // appears/disappears when the planner starts/stops. We watch the runtime
+  // status itself (not just `isPlannerRunning(...)`) so Zustand's referential
+  // selector triggers a re-render when status flips.
+  const plannerStatus = useMissionPlannerStore(
+    (s) => s.runtimes.get(flight.id)?.status,
+  );
+  // FIX 4 — include `quota_paused` so the user can manually stop a planner
+  // stuck on auto-resume backoff without waiting for the timer to fire.
+  // (The runtime status itself is preserved across the stop; the planner's
+  // session is the thing that gets torn down.)
+  const plannerRunning =
+    plannerStatus === "awake" ||
+    plannerStatus === "idle" ||
+    plannerStatus === "quota_paused";
+  const showStopPlanner =
+    plannerRunning &&
+    (status === "spec" ||
+      status === "planning" ||
+      status === "active" ||
+      status === "review" ||
+      status === "paused");
 
   return (
     <div className="flex-1 overflow-y-auto bg-bg-primary">
@@ -602,6 +625,25 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
               >
                 <Pause size={11} />
                 Pause
+              </button>
+            )}
+            {showStopPlanner && (
+              <button
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Stop the autonomous planner for this mission? The mission stays alive — milestones, tasks, and in-flight executor work continue. You can restart the planner manually later.",
+                    )
+                  ) {
+                    void useMissionPlannerStore
+                      .getState()
+                      .stopPlanner(flight.id);
+                  }
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-accent-red bg-bg-secondary border border-accent-red/30 rounded hover:bg-accent-red/10 transition-colors"
+              >
+                <Square size={11} />
+                Stop planner
               </button>
             )}
             {canResume && (

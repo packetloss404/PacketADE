@@ -130,9 +130,6 @@ Deferred items called out in `dev/multi-platform-build.md` and
   ephemeral; on app restart, `active` missions flip to `paused` and
   require a user click to resume. Persist `lastResumeToken` and
   rehydrate on cold start.
-- **P3 — Cold-start "active → paused" enforcement.** The DTO now
-  persists `plannerStatus`, but nothing inspects it at boot. Belongs
-  in E6 (safety rails); flag if E6 doesn't cover it.
 - **P3 — Rollback optimistic transcript on `injectTurn` failure.**
   `missionPlannerStore.injectTurn` optimistically appends a user
   transcript entry before the backend call. If the invoke errors, the
@@ -150,10 +147,6 @@ Deferred items called out in `dev/multi-platform-build.md` and
   the envelope. Non-exploitable today (frontend path uses
   `source="user"` which doesn't wrap), but harden when the path
   exists.
-- **P3 — Planner status sticks at Awake after wake done.** `dispatch_wake`
-  flips `PlannerStatus` to `Awake` but nothing flips it back to `Idle` after
-  the sidecar emits `done` for the wake turn. UI may surface "Awake"
-  indefinitely. Add a per-session `done` listener (E6 watchdog candidate).
 - **P3 — `now_millis()` duplicated across 6 tool files.** Hoist to a shared
   helper in `commands::mission_planner_tools::mod.rs` or reuse the one in
   `mission_planner.rs`.
@@ -208,6 +201,31 @@ Deferred items called out in `dev/multi-platform-build.md` and
   wake builder reads from the snapshot. Plumbing the count explicitly
   through `PlannerWakeEvent.payload` would decouple the renderer from
   DTO mirroring assumptions.
+- **P3 — Rate-limit auto-resume doesn't re-fire the dropped wake.**
+  When a `rate_limited` event arrives mid-wake, the wake content is
+  dropped on the floor and the auto-resume timer only flips status to
+  Idle. The planner sits Idle until another orchestration event fires.
+  For "rate-limited mid-decomposition" the mission stays half-planned.
+  Re-emit the most recent dropped wake on resume.
+- **P3 — 529 Overloaded not detected as rate-limit.**
+  `isLikelyRateLimitError` matches 429 / `rate_limit_error` / name=
+  `RateLimitError`. Anthropic's 529 Overloaded passes through as a
+  generic error — planner sees error + no QuotaPaused. Worth handling
+  in v1.1; acceptable v1.
+- **P3 — `on_planner_done` + `on_rate_limited` auto-resume don't emit
+  `mission-planner:status-changed` events.** E6 Fix 3 added
+  `set_status_and_emit` helper but only opted-in `pause_mission_planner`,
+  `resume_mission_planner`, and `inject_planner_turn`. The Awake→Idle
+  transition (watchdog) and Idle-after-quota-resume mutate
+  `session.status` directly inside the sessions mutex without firing
+  the Tauri event, so the frontend `runtime.status` lags those flips
+  until another emission triggers a refresh. Swap those two call sites
+  to also emit. (Note: the watchdog mutation runs INSIDE the mutex —
+  factor the emit so it fires AFTER the lock is released.)
+- **P3 — Tool-call cap counter message ergonomics.**
+  After breaching, every subsequent rejected call increments the
+  counter, so the planner sees `count={n}` growing. Either clamp to
+  `count=cap+1` in the rejection message or stop bumping on rejection.
 
 ## Product tracks (from `dev/README.md`)
 
