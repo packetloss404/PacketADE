@@ -65,6 +65,17 @@ export interface PlannerSessionRuntime {
    * "Launch -> first planner tool means we're active".
    */
   awaitingLaunchKickoff: boolean;
+  /**
+   * E10 — transient flag set when the Rust planner crosses the
+   * 150K-token compaction threshold and is summarizing the conversation
+   * to swap in a fresh session. Flips `true` on
+   * `mission-planner:compaction-triggered:<missionId>` and `false` on
+   * `mission-planner:compaction-completed:<missionId>`. The detail pane
+   * surfaces this as a small "Compacting" pill in the header so the
+   * user understands why the planner may be unresponsive for a few
+   * seconds. Not persisted — purely UI feedback.
+   */
+  isCompacting: boolean;
 }
 
 /**
@@ -423,6 +434,42 @@ async function installListeners(
     flightEventUnlistens.push(unlisten);
   }
 
+  // E10 — context compaction events. The Rust planner fires
+  // `compaction-triggered` when the 150K-token threshold is crossed and
+  // it kicks off a Sonnet summarization pass; `compaction-completed`
+  // when the new session has been swapped in and the priming summary is
+  // live. We flip a transient `isCompacting` flag so the detail pane
+  // can surface a "Compacting" pill, and on completion we re-hydrate
+  // flightStore so any new journal entry / cost bump from the
+  // summarization itself shows up immediately.
+  const compactionTriggeredUnlisten = await listen(
+    `mission-planner:compaction-triggered:${missionId}`,
+    () => {
+      set((s) => ({
+        runtimes: patchRuntime(s.runtimes, missionId, { isCompacting: true }),
+      }));
+    },
+  );
+
+  const compactionCompletedUnlisten = await listen(
+    `mission-planner:compaction-completed:${missionId}`,
+    () => {
+      set((s) => ({
+        runtimes: patchRuntime(s.runtimes, missionId, { isCompacting: false }),
+      }));
+      void useFlightStore
+        .getState()
+        .hydrateFromBackend()
+        .catch((err) => {
+          console.warn(
+            "Failed to hydrate flightStore after mission-planner:compaction-completed",
+            missionId,
+            err,
+          );
+        });
+    },
+  );
+
   listenerCleanup.set(missionId, () => {
     chunkUnlisten();
     doneUnlisten();
@@ -432,6 +479,8 @@ async function installListeners(
     approvalResolvedUnlisten();
     rateLimitedUnlisten();
     statusChangedUnlisten();
+    compactionTriggeredUnlisten();
+    compactionCompletedUnlisten();
     for (const unlisten of flightEventUnlistens) {
       unlisten();
     }
@@ -463,6 +512,7 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
         transcript: [],
         lastToolCall: null,
         awaitingLaunchKickoff: false,
+        isCompacting: false,
       });
       return { runtimes };
     });

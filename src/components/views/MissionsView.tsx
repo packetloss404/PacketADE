@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Sparkles,
   Target,
+  RefreshCw,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useFlightStore } from "@/stores/flightStore";
@@ -624,6 +625,12 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   const plannerStatus = useMissionPlannerStore(
     (s) => s.runtimes.get(flight.id)?.status,
   );
+  // E10 — surface context-compaction state next to the status pill so
+  // the user understands why the planner is briefly unresponsive while
+  // the conversation gets summarized + the session is swapped.
+  const isCompacting = useMissionPlannerStore(
+    (s) => s.runtimes.get(flight.id)?.isCompacting === true,
+  );
   // FIX 4 — include `quota_paused` so the user can manually stop a planner
   // stuck on auto-resume backoff without waiting for the timer to fire.
   // (The runtime status itself is preserved across the stop; the planner's
@@ -660,6 +667,15 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
               >
                 {PRIORITY_LABEL[flight.priority]}
               </span>
+              {isCompacting && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] text-accent-amber bg-accent-amber/10 border border-accent-amber/30 rounded"
+                  title="Planner context compaction in progress — summarizing the conversation and restarting the session to stay under the 200K context limit."
+                >
+                  <RefreshCw size={9} className="animate-spin" />
+                  Compacting
+                </span>
+              )}
             </div>
             <h2 className="text-[18px] font-semibold tracking-tight text-text-primary leading-tight">
               {flight.title || "Untitled mission"}

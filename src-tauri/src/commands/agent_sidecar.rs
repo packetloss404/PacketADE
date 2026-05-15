@@ -11,7 +11,7 @@
 //! in `api_agent.rs`) calls the `forward_*` methods exposed here; no Tauri
 //! commands are registered from this module.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdin, Command};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::{error, info, warn};
 
 use super::shared::hide_window_async;
@@ -366,6 +366,28 @@ impl SidecarStatusInner {
 // of sidecar-owned sessions.
 // ---------------------------------------------------------------------------
 
+/// Per-session waiter state for [`SidecarManager::wait_for_oneshot`].
+///
+/// Mission Planner E10-SUMMARIZE uses this to await a single-turn sidecar
+/// session's completion from Rust code. The waiter accumulates `chunk` text
+/// into `buffer` and gets resolved on the first terminal event (`done` →
+/// `Ok(buffer)` / `error` → `Err(message)`).
+///
+/// Held inside `SidecarManager::oneshot_waiters` keyed by session id. The
+/// entry is removed when the terminal event fires (or when the awaiter
+/// times out / is dropped — best-effort cleanup happens on the next
+/// terminal event for the same id).
+struct OneshotWaiter {
+    /// Accumulated `chunk` text for this session. Drained when the
+    /// terminal event resolves the waiter.
+    buffer: String,
+    /// One-shot completion channel. `Some(_)` while the awaiter is still
+    /// waiting; `None` after the terminal event has fired (guards against
+    /// double-resolution if both `done` and `error` race in pathological
+    /// cases).
+    sender: Option<oneshot::Sender<Result<String, String>>>,
+}
+
 pub struct SidecarManager {
     app_handle: AppHandle,
     /// Absolute path to the sidecar's `dist/index.js` entrypoint.
@@ -378,6 +400,16 @@ pub struct SidecarManager {
     owned_sessions: Arc<Mutex<HashSet<String>>>,
     /// Lifecycle status surfaced to the frontend (see `SidecarStatus`).
     status: Mutex<SidecarStatusInner>,
+    /// E10-SUMMARIZE — per-session one-shot completion waiters. A caller
+    /// that needs the full assistant response as a `String` (rather than
+    /// the streamed-event firehose) registers a waiter via
+    /// [`SidecarManager::wait_for_oneshot`] before `forward_start`, then
+    /// awaits the returned `Result`. The chunk/done/error branches of
+    /// `handle_event` resolve outstanding waiters.
+    ///
+    /// Sessions with no registered waiter incur a single hash-map lookup
+    /// per event — zero behavioural change for the streaming path.
+    oneshot_waiters: Arc<Mutex<HashMap<String, OneshotWaiter>>>,
 }
 
 impl SidecarManager {
@@ -396,6 +428,7 @@ impl SidecarManager {
             writer_tx: Mutex::new(None),
             owned_sessions: Arc::new(Mutex::new(HashSet::new())),
             status: Mutex::new(inner),
+            oneshot_waiters: Arc::new(Mutex::new(HashMap::new())),
         });
 
         // Spawn the child + reader/writer tasks in the background. If the
@@ -431,6 +464,39 @@ impl SidecarManager {
     async fn forget_owned_session(&self, session_id: &str) {
         let mut sessions = self.owned_sessions.lock().await;
         sessions.remove(session_id);
+    }
+
+    /// E10-SUMMARIZE — register a one-shot completion waiter for
+    /// `session_id` and return a future that resolves with the
+    /// concatenated assistant text on `done`, or `Err(message)` on `error`.
+    ///
+    /// Intended for sessions whose entire conversation is a single
+    /// request/response round-trip (e.g. mission-journal summarization).
+    /// The caller is responsible for:
+    ///   * Calling this **before** `forward_start` so the waiter is in
+    ///     place before any chunks arrive (the registration is cheap and
+    ///     synchronous-looking — just a `HashMap::insert`).
+    ///   * Closing the session via `forward_close` after the future
+    ///     resolves. The waiter does **not** close the session itself; it
+    ///     only collects text.
+    ///
+    /// If a waiter for `session_id` already exists, the previous one is
+    /// dropped (sender goes out of scope → previous awaiter sees
+    /// `RecvError`). In practice each one-shot session id is a fresh UUID,
+    /// so this never happens.
+    #[allow(dead_code)]
+    pub async fn wait_for_oneshot(
+        self: &Arc<Self>,
+        session_id: &str,
+    ) -> oneshot::Receiver<Result<String, String>> {
+        let (tx, rx) = oneshot::channel();
+        let waiter = OneshotWaiter {
+            buffer: String::new(),
+            sender: Some(tx),
+        };
+        let mut guard = self.oneshot_waiters.lock().await;
+        guard.insert(session_id.to_string(), waiter);
+        rx
     }
 
     /// Forward a start_session request to the sidecar.
@@ -1226,6 +1292,17 @@ impl SidecarManager {
                     .to_string();
                 let _ = self.app_handle.emit(&chunk_event(&session_id), text.clone());
 
+                // E10-SUMMARIZE — if a one-shot waiter exists for this
+                // session, append the chunk to its buffer. Cheap lookup;
+                // no-op for the vast majority of sessions that never
+                // registered a waiter.
+                if !text.is_empty() {
+                    let mut waiters = self.oneshot_waiters.lock().await;
+                    if let Some(waiter) = waiters.get_mut(&session_id) {
+                        waiter.buffer.push_str(&text);
+                    }
+                }
+
                 // E7-HOOKS site 6 (Option A) — aggregate planner chunks into
                 // a per-session buffer that we drain on `done` to emit a
                 // single `PlannerMessage` journal entry. Non-planner sidecar
@@ -1412,6 +1489,22 @@ impl SidecarManager {
                         resume_token,
                     },
                 );
+
+                // E10-SUMMARIZE — resolve any one-shot waiter for this
+                // session with the accumulated buffer. Remove the entry
+                // so subsequent terminal events (in pathological races)
+                // don't try to re-send. `send` ignores the result because
+                // a dropped receiver (caller-side timeout / cancel) is
+                // not an error from the supervisor's perspective.
+                {
+                    let mut waiters = self.oneshot_waiters.lock().await;
+                    if let Some(mut waiter) = waiters.remove(&session_id) {
+                        if let Some(sender) = waiter.sender.take() {
+                            let _ = sender.send(Ok(std::mem::take(&mut waiter.buffer)));
+                        }
+                    }
+                }
+
                 // A `done` event marks the current turn complete, not the
                 // lifetime of the sidecar conversation. Keep ownership so the
                 // next send/cancel/model change still routes to the sidecar.
@@ -1621,14 +1714,65 @@ impl SidecarManager {
                             // output, which under-reported tokens for every
                             // cache-heavy turn (effectively every turn after
                             // the first on long-running planner sessions).
-                            let planner_total_tokens = input_tokens
-                                .saturating_add(output_tokens)
+                            //
+                            // E10-DETECT: feed input + cache directions into
+                            // a single "input-direction" total for the
+                            // compaction threshold counter (these are the
+                            // pieces that grow with conversation length).
+                            // Output tokens flow into the chip's
+                            // displayed total but NOT into the compaction
+                            // counter — output is small per turn.
+                            let planner_input_direction = input_tokens
                                 .saturating_add(cache_read_input_tokens)
                                 .saturating_add(cache_creation_input_tokens);
+                            let planner_total_tokens = planner_input_direction
+                                .saturating_add(output_tokens);
+
+                            // E10-DETECT + E10 FIX P1-E — bump the planner's
+                            // cumulative-input counter and emit the
+                            // compaction-triggered event when the threshold
+                            // is crossed for the first time. The registry's
+                            // atomic flip in `bump_cumulative_input_and_check`
+                            // ensures only ONE event fires per crossing;
+                            // E10-SWAP listens for the event and is
+                            // responsible for `reset_cumulative_input` /
+                            // `swap_sidecar_session_after_compaction` once
+                            // the swap completes.
+                            //
+                            // FIX P1-E: this bump used to sit INSIDE the
+                            // `else` arm of the `accumulate_planner_cost`
+                            // call below — a transient `with_state_lock`
+                            // error would silently skip the bump, causing
+                            // the cumulative counter to under-report and
+                            // delaying (or missing) compaction triggers.
+                            // The two operations are independent (cost goes
+                            // to the DTO; cumulative tokens are in-memory on
+                            // the registry), so the bump now runs first and
+                            // unconditionally.
+                            let crossed = registry
+                                .bump_cumulative_input_and_check(
+                                    &mission_id,
+                                    planner_input_direction,
+                                )
+                                .await;
+                            if crossed {
+                                let _ = app_for_async.emit(
+                                    &format!(
+                                        "mission-planner:compaction-triggered:{}",
+                                        mission_id
+                                    ),
+                                    serde_json::json!({
+                                        "missionId": mission_id,
+                                        "threshold": crate::commands::mission_planner::COMPACTION_THRESHOLD_TOKENS,
+                                    }),
+                                );
+                            }
+
                             if let Err(e) =
                                 crate::commands::mission_planner::accumulate_planner_cost(
                                     &mission_id,
-                                    planner_total_tokens,
+                                    planner_input_direction,
+                                    output_tokens,
                                     cost_usd,
                                 )
                                 .await
@@ -1719,6 +1863,20 @@ impl SidecarManager {
                     },
                 );
                 self.forget_owned_session(&session_id).await;
+
+                // E10-SUMMARIZE — resolve any one-shot waiter for this
+                // session with the error. The compaction summarizer treats
+                // `Err` as a hard fail and degrades gracefully (no compaction
+                // this cycle), so we propagate the SDK / sidecar message
+                // verbatim.
+                {
+                    let mut waiters = self.oneshot_waiters.lock().await;
+                    if let Some(mut waiter) = waiters.remove(&session_id) {
+                        if let Some(sender) = waiter.sender.take() {
+                            let _ = sender.send(Err(message.clone()));
+                        }
+                    }
+                }
                 // Record the most-recent per-session error so the chip's
                 // tooltip has something meaningful if the supervisor later
                 // transitions to `down`. Does not change `state`.
@@ -1977,6 +2135,20 @@ impl SidecarManager {
         }
         let mut guard = self.owned_sessions.lock().await;
         guard.clear();
+
+        // E10-SUMMARIZE — also resolve any outstanding one-shot waiters
+        // with the crash error so awaiters don't hang forever after a
+        // hard sidecar failure.
+        let mut waiters = self.oneshot_waiters.lock().await;
+        let drained: Vec<(String, OneshotWaiter)> = waiters.drain().collect();
+        drop(waiters);
+        for (_sid, mut waiter) in drained {
+            if let Some(sender) = waiter.sender.take() {
+                let _ = sender.send(Err(
+                    "Sidecar crashed and could not restart".to_string(),
+                ));
+            }
+        }
     }
 }
 
