@@ -1770,3 +1770,16 @@ export async function injectPlannerTurn(
   return invoke("inject_planner_turn", { missionId, content, source });
 }
 
+// E2 — async-return approval gate. The planner's `request_user_approval`
+// tool files an approval and keeps working; the frontend surfaces it via the
+// `mission-planner:approval-request:<missionId>` event and resolves it back
+// to the planner with this binding. `choice` is one of the option labels the
+// planner offered, the user's free-text answer, `"acknowledged"`, or
+// `"dismissed"`.
+export async function resolveMissionApproval(
+  approvalId: string,
+  choice: string,
+): Promise<void> {
+  return invoke("resolve_mission_approval", { approvalId, choice });
+}
+

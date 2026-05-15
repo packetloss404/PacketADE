@@ -5,10 +5,13 @@ import {
   apiAgentDoneEvent,
   apiAgentErrorEvent,
   apiAgentToolStartEvent,
+  missionPlannerApprovalRequestEvent,
+  missionPlannerApprovalResolvedEvent,
 } from "@/lib/events";
 import {
   injectPlannerTurn as invokeInjectPlannerTurn,
   pauseMissionPlanner as invokePauseMissionPlanner,
+  resolveMissionApproval as invokeResolveMissionApproval,
   resumeMissionPlanner as invokeResumeMissionPlanner,
   startMissionPlanner as invokeStartMissionPlanner,
   stopMissionPlanner as invokeStopMissionPlanner,
@@ -47,8 +50,33 @@ export interface PlannerSessionRuntime {
   lastToolCall: PlannerToolCall | null;
 }
 
+/**
+ * E2 — async approval gate. Mirrors the Rust `MissionApprovalRequestDto`
+ * shape emitted on `mission-planner:approval-request:<missionId>`. The
+ * planner's `request_user_approval` tool files an approval and keeps
+ * working; the UI surfaces it inline in the detail pane and routes the
+ * user's answer back via `resolveMissionApproval`.
+ *
+ * Imported locally (rather than from `@/generated/tauri-schema`) because
+ * the E2-DISP Rust slice may not have regenerated the schema yet when
+ * this file compiles. Field names match the Rust serde `camelCase`
+ * convention.
+ */
+export interface MissionApprovalRequest {
+  /** Unique approval id — used as the argument to `resolveMissionApproval`. */
+  id: string;
+  missionId: string;
+  question: string;
+  /** Options the planner offered. Empty array = free-text / acknowledge only. */
+  options: string[];
+  /** Epoch ms when the planner filed the approval. */
+  awaitingSince: number;
+}
+
 interface MissionPlannerStore {
   runtimes: Map<string, PlannerSessionRuntime>;
+  /** E2 — per-mission queue of unresolved approval requests, oldest first. */
+  pendingApprovals: Map<string, MissionApprovalRequest[]>;
   startPlanner(missionId: string, projectPath: string): Promise<string>;
   stopPlanner(missionId: string): Promise<void>;
   pausePlanner(missionId: string): Promise<void>;
@@ -60,6 +88,18 @@ interface MissionPlannerStore {
   ): Promise<void>;
   getPlanner(missionId: string): PlannerSessionRuntime | undefined;
   isPlannerRunning(missionId: string): boolean;
+  /**
+   * E2 — resolve an approval gate. Calls the Rust binding then drops the
+   * approval from local state on success. On failure the approval stays
+   * pending so the user can retry; the error is rethrown.
+   */
+  resolveApproval(
+    missionId: string,
+    approvalId: string,
+    choice: string,
+  ): Promise<void>;
+  /** Returns pending approvals for `missionId`, sorted oldest-first. */
+  getPendingApprovals(missionId: string): MissionApprovalRequest[];
 }
 
 type UnlistenFn = () => void;
@@ -191,16 +231,62 @@ async function installListeners(
     },
   );
 
+  // E2 — async approval gate. Append to the per-mission queue so the
+  // detail pane's PlannerApprovalGate can surface the oldest one first.
+  const approvalRequestUnlisten = await listen<MissionApprovalRequest>(
+    missionPlannerApprovalRequestEvent(missionId),
+    (event) => {
+      const approval = event.payload;
+      if (!approval || !approval.id) return;
+      set((s) => {
+        const pending = new Map(s.pendingApprovals);
+        const list = pending.get(missionId) ?? [];
+        // De-dupe: ignore duplicate request events for the same approval id.
+        if (list.some((a) => a.id === approval.id)) return {};
+        pending.set(missionId, [...list, approval]);
+        return { pendingApprovals: pending };
+      });
+    },
+  );
+
+  // E2 — resolution events from the Rust side (e.g. another window, or
+  // a planner-driven auto-resolve). Mirror the local state. The resolve
+  // action itself also clears state for fast UI feedback, so this is
+  // mostly belt-and-braces for cross-tab/cross-window sync.
+  const approvalResolvedUnlisten = await listen<{ id?: string }>(
+    missionPlannerApprovalResolvedEvent(missionId),
+    (event) => {
+      const approvalId = event.payload?.id;
+      if (!approvalId) return;
+      set((s) => {
+        const list = s.pendingApprovals.get(missionId);
+        if (!list || list.length === 0) return {};
+        const filtered = list.filter((a) => a.id !== approvalId);
+        if (filtered.length === list.length) return {};
+        const pending = new Map(s.pendingApprovals);
+        if (filtered.length === 0) {
+          pending.delete(missionId);
+        } else {
+          pending.set(missionId, filtered);
+        }
+        return { pendingApprovals: pending };
+      });
+    },
+  );
+
   listenerCleanup.set(missionId, () => {
     chunkUnlisten();
     doneUnlisten();
     toolStartUnlisten();
     errorUnlisten();
+    approvalRequestUnlisten();
+    approvalResolvedUnlisten();
   });
 }
 
 export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => ({
   runtimes: new Map(),
+  pendingApprovals: new Map(),
 
   startPlanner: async (missionId, projectPath) => {
     const existing = get().runtimes.get(missionId);
@@ -271,10 +357,12 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
       listenerCleanup.delete(missionId);
     }
     set((s) => {
-      if (!s.runtimes.has(missionId)) return {};
       const runtimes = new Map(s.runtimes);
-      runtimes.delete(missionId);
-      return { runtimes };
+      const pendingApprovals = new Map(s.pendingApprovals);
+      const hadRuntime = runtimes.delete(missionId);
+      const hadApprovals = pendingApprovals.delete(missionId);
+      if (!hadRuntime && !hadApprovals) return {};
+      return { runtimes, pendingApprovals };
     });
     try {
       await invokeStopMissionPlanner(missionId);
@@ -322,5 +410,49 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
     const runtime = get().runtimes.get(missionId);
     if (!runtime) return false;
     return runtime.status === "awake" || runtime.status === "idle";
+  },
+
+  resolveApproval: async (missionId, approvalId, choice) => {
+    // Optimistically drop the approval from local state so the UI hides
+    // immediately. If the backend call fails we restore it.
+    let snapshot: MissionApprovalRequest[] | null = null;
+    set((s) => {
+      const list = s.pendingApprovals.get(missionId);
+      if (!list || list.length === 0) return {};
+      snapshot = list;
+      const filtered = list.filter((a) => a.id !== approvalId);
+      if (filtered.length === list.length) {
+        snapshot = null;
+        return {};
+      }
+      const pending = new Map(s.pendingApprovals);
+      if (filtered.length === 0) {
+        pending.delete(missionId);
+      } else {
+        pending.set(missionId, filtered);
+      }
+      return { pendingApprovals: pending };
+    });
+
+    try {
+      await invokeResolveMissionApproval(approvalId, choice);
+    } catch (err) {
+      // Restore the snapshot so the user can retry.
+      if (snapshot) {
+        set((s) => {
+          const pending = new Map(s.pendingApprovals);
+          pending.set(missionId, snapshot as MissionApprovalRequest[]);
+          return { pendingApprovals: pending };
+        });
+      }
+      throw err;
+    }
+  },
+
+  getPendingApprovals: (missionId) => {
+    const list = get().pendingApprovals.get(missionId);
+    if (!list || list.length === 0) return [];
+    // Oldest-first.
+    return [...list].sort((a, b) => a.awaitingSince - b.awaitingSince);
   },
 }));

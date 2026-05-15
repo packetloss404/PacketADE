@@ -1547,6 +1547,7 @@ impl SidecarManager {
                             Some(registry) => {
                                 registry
                                     .handle_tool_call(
+                                        &app_handle,
                                         &session_for_reply,
                                         &tool_for_reply,
                                         args,

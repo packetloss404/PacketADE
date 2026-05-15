@@ -32,6 +32,8 @@ export type FlightStatusDto = "draft" | "spec" | "planning" | "ready" | "active"
 
 export type PlannerStatusDto = "idle" | "awake" | "paused" | "quota_paused" | "completed" | "failed";
 
+export type MissionApprovalRequestDto = { id: string, missionId: string, question: string, options: Array<string>, awaitingSince: number, resolved: boolean, resolution?: string, resolvedAt?: number, };
+
 export type FlightPriorityDto = "low" | "medium" | "high" | "critical";
 
 export type MilestoneStatusDto = "pending" | "active" | "done" | "failed";

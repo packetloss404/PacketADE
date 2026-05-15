@@ -1,12 +1,14 @@
 use serde::Serialize;
 use std::fs;
+use std::future::Future;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::{info, warn};
 
 use super::agent_config::AgentConfig;
-use super::flight::{Flight, Issue};
+use super::flight::{Flight, Issue, MissionApprovalRequest};
 use super::orchestrator::OrchestratorSettings;
 use super::shared::home_dir;
 use super::workspace::Workspace;
@@ -68,6 +70,22 @@ pub const DEFAULT_OLLAMA_ROOT_BASE_URL: &str = "http://localhost:11434";
 static STATE_LOCK: Mutex<()> = Mutex::new(());
 static PROVIDER_SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 
+/// Async-safe critical-section mutex for `with_state_lock` callers. Held
+/// across the **entire** load → mutate → save sequence so concurrent async
+/// writers can't lose each other's mutations. Distinct from `STATE_LOCK`
+/// (which is a sync mutex that only protects the write itself and would
+/// be illegal to hold across an `.await`).
+///
+/// Migration note: callers that take `&mut PersistedState` and only need
+/// to be serialized against other planner-tool callers should use
+/// [`with_state_lock`]. The orchestrator's existing sync helper
+/// (`commands::orchestration::with_orchestrator_and_flights`) is **not**
+/// gated on this mutex — it holds the sync `Orchestrator` mutex across
+/// its load-mutate-save, which serializes its own writers but can still
+/// theoretically race against the async path. Tightening that bridge is
+/// tracked in the backlog (see "Mission Planner v1.1" P3 entries).
+static ASYNC_STATE_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
+
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
 struct ProviderRuntimeSettings {
     #[serde(default)]
@@ -100,6 +118,11 @@ pub struct PersistedState {
     pub memory_patterns: Vec<serde_json::Value>,
     #[serde(default)]
     pub servers: Vec<ServerConfig>,
+    /// Mission Planner: pending / resolved `request_user_approval`
+    /// records. Filed async-style by the planner via the MCP tool
+    /// surface (E2) and drained by `resolve_mission_approval`.
+    #[serde(default)]
+    pub mission_approvals: Vec<MissionApprovalRequest>,
 }
 
 impl Default for PersistedState {
@@ -116,6 +139,7 @@ impl Default for PersistedState {
             memory_events: Vec::new(),
             memory_patterns: Vec::new(),
             servers: Vec::new(),
+            mission_approvals: Vec::new(),
         }
     }
 }
@@ -171,6 +195,40 @@ pub fn save_state(state: &PersistedState) -> Result<(), String> {
     let mut state = state.clone();
     state.version += 1;
     save_state_inner(&state)
+}
+
+/// Run an async closure with an exclusive load → mutate → save critical
+/// section over `PersistedState`. Solves the lost-update race that
+/// `load_state(); mutate; save_state()` exposes when called from
+/// concurrent async contexts (e.g. multiple Mission Planner MCP tool
+/// handlers firing in parallel within a single planner turn).
+///
+/// Contract:
+///   * The closure receives a `&mut PersistedState` already loaded under
+///     the mutex.
+///   * If the closure returns `Ok(R)`, the state is persisted under the
+///     same lock and `R` is returned to the caller.
+///   * If the closure returns `Err`, the state is **not** persisted — the
+///     mutex is released and the error is propagated unchanged.
+///   * The mutex is held across the closure's `.await` points, so callers
+///     MUST NOT re-enter `with_state_lock` from within their closure
+///     (doing so will deadlock).
+///   * Tokio `Mutex` is fair-ish and not cancellation-safe at the lock
+///     acquire site — callers that need to abort should drop the future
+///     *before* it acquires the lock.
+///
+/// Anything currently using `save_state` directly is left alone — only the
+/// load-mutate-save composite (where the race exists) needs this helper.
+pub async fn with_state_lock<F, Fut, R>(action: F) -> Result<R, String>
+where
+    F: FnOnce(&mut PersistedState) -> Fut,
+    Fut: Future<Output = Result<R, String>>,
+{
+    let _guard = ASYNC_STATE_LOCK.lock().await;
+    let mut state = load_state();
+    let result = action(&mut state).await?;
+    save_state(&state)?;
+    Ok(result)
 }
 
 pub fn save_flights(flights: Vec<Flight>) -> Result<(), String> {

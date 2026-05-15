@@ -85,3 +85,15 @@ export function apiAgentToolOutputExtendedEvent(sessionId: string): string {
 export function apiAgentTurnSummaryEvent(sessionId: string): string {
   return `api-agent:turn-summary:${sessionId}`;
 }
+
+// Mission planner — async approval gate (E2). Fired by the Rust dispatcher
+// when the planner's `request_user_approval` tool files a question, and
+// again (resolved variant) when the Rust side processes a
+// `resolve_mission_approval` invocation.
+export function missionPlannerApprovalRequestEvent(missionId: string): string {
+  return `mission-planner:approval-request:${missionId}`;
+}
+
+export function missionPlannerApprovalResolvedEvent(missionId: string): string {
+  return `mission-planner:approval-resolved:${missionId}`;
+}
