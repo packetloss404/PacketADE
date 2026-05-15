@@ -3,6 +3,140 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.8.0] - 2026-05-15
+
+### Added — GitHub pane overhaul + Memory inline surfaces
+
+A wide-coverage v0.8 drop turning the GitHub pane from a read-only viewer
+into a real daily-loop surface, plus the deferred memory inline-integration
+work from the v0.7 backlog.
+
+#### GitHub — parity layer
+- **PR lifecycle actions.** Merge (merge / squash / rebase), close, reopen,
+  convert-to-draft / mark-ready-for-review on every PR detail. State-aware
+  buttons surface only what's valid for the current PR state.
+- **CI / check-run status.** A live status pill on every PR card (combined
+  state with passing / failing / pending breakdown in the tooltip) plus a
+  dedicated Checks tab in the PR detail listing per-workflow status, app,
+  duration, and html link.
+- **Issue interactivity.** Comment composer with Ctrl+Enter submit, threaded
+  comment list rendering markdown bodies, close / reopen, multi-select
+  assignee / label pickers and a single-select milestone picker. Open /
+  Closed / All state filters and paginated lists on issues, PRs, and repos.
+- **5 previously-stubbed CTAs wired end-to-end:**
+  - **Plan flight** → opens the issue body as the first user turn of a new
+    Mission Planner spec session.
+  - **Branch from issue** → `git checkout -b issue-{n}-{slug}` in the active
+    workspace.
+  - **Hand off to Claude** → opens a PTY session running `claude` with the
+    AI investigation result piped in as the first user input.
+  - **Draft patch** → seeds a single-attempt async Flight (claude-oauth +
+    sonnet-4.6) with the investigation as the brief.
+  - **Save as memory** → captures the investigation as a `manual_note`
+    MemoryEvent against the active project.
+
+#### GitHub — AI features
+- **PR description generator.** One-shot Claude call inside the PR creation
+  modal generates a structured description from diff + commits + linked
+  issues. User can edit before submitting.
+- **Pre-flight AI code review.** Streaming review on the PR detail with
+  structured Blocking / Asks / Nits output keyed by `file:line`. Cached per
+  PR so re-opening doesn't re-burn the call.
+- **"Catch me up" repo digest.** Activity-tab button with 24h / 7d / 30d
+  scope chips that streams a markdown summary across the four sections
+  Shipped / In progress / Needs attention / Quiet.
+- **Issue triage drawer.** Bulk-suggest labels, priority (P0–P3), rationale
+  and duplicate-of links across selected untriaged issues. Batches of 20
+  per call. User picks what to apply.
+
+#### GitHub — flow polish
+- **PR creation modal upgrades.** Branch picker autocompletion (with the
+  default branch + recent branches sorted first), draft toggle, "Closes #N"
+  autofill seeded from the active issue, reviewer / label / milestone
+  pickers with post-create progress per setting.
+- **Diff viewer file tree.** Left-side navigator listing every changed file
+  grouped by directory with +/-/M status icons; clicking scrolls the diff
+  to that file. Header summary: `N files changed · +X / -Y`.
+- **Read-only PR review surface.** New panel under the PR diff renders
+  existing review submissions (Approved / Changes Requested / Commented
+  pills) and line-comment threads grouped by file.
+
+#### Mission Planner ↔ GitHub
+- **"Publish attempts as draft PRs" Flight option.** When toggled on, every
+  attempt that completes successfully pushes its worktree branch to origin
+  and opens a draft PR titled `[Flight {title}] Attempt {id}` with the
+  Flight objective as the body. Per-attempt link surfaces on the attempt
+  tile. Failures fall through to `errorMessage` so the user sees why.
+- **Workspace auto-bind to GitHub repo.** New workspaces run
+  `git remote get-url origin` and stamp `{owner, repo}` onto the workspace
+  record. A small linked-repo badge surfaces in the sidebar.
+- **Auto-trailers on agent commits.** A `prepare-commit-msg` hook installed
+  per worktree appends
+  `Run-By: PacketADE mission F-<flightId> attempt A-<attemptId>` to every
+  commit made inside that worktree, idempotently (existing trailer is left
+  alone).
+
+#### Memory inline surfaces
+- **AgentInputArea context-preview chevron.** A small collapsible above the
+  input that lists the memories about to be injected into the next user
+  turn. Live-reactive to the memory store.
+- **MissionsView memory chip.** Completed missions show "Brain N" with the
+  count of extracted lessons; clicking deep-links into MemoryView filtered
+  to that mission.
+- **WorkspaceSidebar "Recent learnings" feed.** The last 5 memory events
+  for the active project, with a "View all →" link.
+- **`LearnedPattern.projectPath` migration.** Patterns are now
+  project-scoped on extraction; legacy patterns without `projectPath`
+  remain global (match every project) for back-compat.
+- **Pin button wired.** Pinned patterns sort first in
+  `getContextForSession` and are exempt from the `capPatterns` eviction
+  limit. Star icon lights up when pinned.
+- **New `manual_note` MemoryEvent variant** for human-captured knowledge
+  (used by the GitHub Save-as-memory CTA and any future capture surfaces).
+
+### Fixed (in-flight during this drop)
+
+- **`flight_attempts.rs` lost-update races.** Four functions
+  (`append_attempt`, `update_attempt_status`, `set_attempt_draft_pr`,
+  `set_flight_publish_attempts_as_prs`) converted from naked
+  load-mutate-save to `storage::with_state_lock`. Eliminates the silent
+  write-loss window between concurrent attempts.
+- **Double-publish race in `setAttemptStatus`.** A `publishingAttempts` set
+  guards against re-entry, preventing duplicate draft PRs from concurrent
+  status-completion calls.
+- **AI streaming listener race.** `PRDescriptionButton` and
+  `PRReviewPanel` now pre-allocate the session id frontend-side and attach
+  all listeners BEFORE invoking the backend, so the first streamed chunks
+  can't be dropped.
+- **`api-agent:chunk:<sid>` contract alignment.** Every emitter (sidecar,
+  api_agent, github catch-up) now publishes a raw `String` payload — no
+  more mixed object-vs-string shape on the same event channel.
+- **`setAttemptDraftPr` rollback.** Optimistic write to `draftPrNumber` is
+  reverted on backend failure with an `errorMessage` surfacing the failure
+  on the attempt tile.
+- **`IssueActionBar` swallowed errors.** Each apply path now catches errors
+  and renders inline; popovers stay open with a visible message instead of
+  half-closing.
+
+### Architecture
+- 29 new files, 27 modified. ~10.9K LOC delta.
+- Design + scope locked in [`dev/v0.8-github-and-memory.md`](./dev/v0.8-github-and-memory.md).
+- Built by 8 parallel implementation agents → 2-agent peer-review pass
+  (spec/UX + correctness/race) → 5 fix-up agents addressing P0s
+  (PR actions and CI check-runs had to be re-shipped after silent revert
+  during the parallel ramp), then commit.
+
+### Deferred to v0.9 / v1.1
+- **Authored** PR line comments + threads (read-only viewing shipped now;
+  composing new threads remains).
+- **Notifications inbox** (`/notifications` integration).
+- **Issue → Mission auto-mirroring back to GitHub issue tree** (one-way
+  hand-off shipped, bidirectional sync still risk-prone).
+- **Embedding / RAG over memory** (needs a vector layer; substantial
+  infra).
+- **"Ask your project" memory chat tab.**
+- **30-day memory digest.**
+
 ## [0.7.0] - 2026-05-15
 
 ### Added — Mission Planner v1
