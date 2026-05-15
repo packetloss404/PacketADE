@@ -12,6 +12,7 @@ import {
   Sparkles,
   Target,
   RefreshCw,
+  Brain,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useFlightStore } from "@/stores/flightStore";
@@ -20,6 +21,8 @@ import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { useMissionPlannerStore } from "@/stores/missionPlannerStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useMemoryStore } from "@/stores/memoryStore";
+import { useAppStore } from "@/stores/appStore";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
 import { MissionSpecPane } from "@/components/missions/MissionSpecPane";
@@ -492,6 +495,30 @@ function FlightRow({
     (s) => s.getGoalsForMission(flight.id).length,
   );
 
+  // v0.8-H — "N patterns extracted" chip on completed missions. We
+  // count every `flight_completed` / `task_completed` event tied to
+  // this mission (by flightId) and the lessonsLearned bullets they
+  // emitted, which are the closest analog to "patterns" in our current
+  // schema.
+  const memoryHits = useMemoryStore((s) => {
+    if (status !== "done") return 0;
+    let lessons = 0;
+    let flightEvents = 0;
+    for (const e of s.events) {
+      if (e.type === "flight_completed" && e.payload.flightId === flight.id) {
+        flightEvents += 1;
+        lessons += e.payload.lessonsLearned.length;
+      } else if (
+        e.type === "task_completed" &&
+        e.payload.flightId === flight.id
+      ) {
+        flightEvents += 1;
+      }
+    }
+    return flightEvents > 0 ? lessons + flightEvents : 0;
+  });
+  const openMemoryView = useAppStore((s) => s.openMemoryView);
+
   return (
     <button
       onClick={onSelect}
@@ -541,6 +568,28 @@ function FlightRow({
           >
             <Target size={9} />
             <span>{goalCount}</span>
+          </span>
+        )}
+        {memoryHits > 0 && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              openMemoryView({ missionId: flight.id });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                openMemoryView({ missionId: flight.id });
+              }
+            }}
+            className="inline-flex items-center gap-1 text-accent-green hover:text-accent-green/80 cursor-pointer rounded px-1 -mx-1 hover:bg-accent-green/10 transition-colors"
+            title={`${memoryHits} memory entr${memoryHits === 1 ? "y" : "ies"} extracted from this mission. Click to view in Memory.`}
+          >
+            <Brain size={9} />
+            <span>{memoryHits}</span>
           </span>
         )}
         <span className="font-mono">{cost}</span>

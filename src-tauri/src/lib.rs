@@ -185,6 +185,11 @@ pub fn run() {
             commands::git::git_push,
             commands::git::git_pull,
             commands::git::git_create_branch,
+            // v0.8-G pr modal upgrades — push a specific branch for
+            // "Publish attempts as draft PRs"
+            commands::git::git_push_branch,
+            // v0.8-15 workspace github bind
+            commands::git::git_get_origin_url,
             commands::git::git_safety_check,
             commands::git::create_conversation_worktree,
             commands::git::remove_conversation_worktree,
@@ -208,6 +213,9 @@ pub fn run() {
             commands::flight_attempts::cancel_flight_attempt,
             commands::flight_attempts::cleanup_attempt_worktree_ssh,
             commands::flight_attempts::mark_attempt_status,
+            // v0.8-G pr modal upgrades — async-Flight draft-PR publish
+            commands::flight_attempts::set_attempt_draft_pr,
+            commands::flight_attempts::set_flight_publish_attempts_as_prs,
             commands::orchestration::launch_flight,
             commands::orchestration::pause_flight,
             commands::orchestration::resume_flight,
@@ -228,6 +236,8 @@ pub fn run() {
             commands::state::save_issues_slice,
             commands::state::save_workspaces_slice,
             commands::state::save_memory_slice,
+            // v0.8-H memory inline
+            commands::memory::toggle_pinned_pattern,
             commands::state::save_servers_slice,
             // Agent detection
             commands::agent::detect_agent,
@@ -260,6 +270,41 @@ pub fn run() {
             commands::github::github_list_prs,
             commands::github::github_get_pr_diff,
             commands::github::github_investigate_issue,
+            // v0.8-C issues interactive
+            commands::github::github_list_issue_comments,
+            commands::github::github_post_issue_comment,
+            commands::github::github_close_issue,
+            commands::github::github_reopen_issue,
+            commands::github::github_set_issue_assignees,
+            commands::github::github_set_issue_labels,
+            commands::github::github_set_issue_milestone,
+            commands::github::github_list_repo_labels,
+            commands::github::github_list_repo_milestones,
+            commands::github::github_list_repo_assignable_users,
+            commands::github::github_list_issues_page,
+            commands::github::github_list_prs_page,
+            commands::github::github_list_repos_page,
+            // v0.8-G pr modal upgrades
+            commands::github::github_list_branches,
+            commands::github::github_set_pr_reviewers,
+            commands::github::github_set_pr_labels,
+            commands::github::github_set_pr_milestone,
+            // v0.8-E ai pr
+            commands::github::github_ai_pr_description,
+            commands::github::github_ai_pr_review,
+            // v0.8-F ai digest
+            commands::github::github_ai_catch_up,
+            commands::github::github_ai_triage,
+            // v0.8-A pr actions (re-shipped)
+            commands::github::github_merge_pr,
+            commands::github::github_close_pr,
+            commands::github::github_reopen_pr,
+            commands::github::github_convert_pr_to_draft,
+            // v0.8-B ci checks (re-shipped)
+            commands::github::github_get_pr_checks,
+            // v0.8-13 pr review viewer
+            commands::github::github_list_pr_reviews,
+            commands::github::github_list_pr_review_comments,
             // Memory layer
             commands::memory::scan_codebase_memory,
             commands::memory::summarize_session,

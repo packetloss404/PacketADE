@@ -11,7 +11,8 @@ import { useAppStore } from "@/stores/appStore";
 import { computeGridLayout } from "@/lib/gridLayout";
 import { INSTALL_HINTS } from "@/lib/agent-install-hints";
 import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS, PACKETCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
-import { sshCheckRemotePath, type RemotePathCheck } from "@/lib/tauri";
+import { sshCheckRemotePath, gitGetOriginUrl, type RemotePathCheck } from "@/lib/tauri";
+import { parseGithubRemote } from "@/lib/git";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
 
 type LocationMode = "local" | "remote";
@@ -83,6 +84,15 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
   // Local project path (only used when locationMode === "local").
   const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath);
+
+  // v0.8-15: auto-bind to GitHub repo via `git remote get-url origin`.
+  // Probe runs against the local project path whenever it changes. We
+  // stamp the parsed `{owner, repo}` onto the workspace at save time so
+  // the GitHub pane (and the WorkspaceSidebar badge) can render
+  // repo-aware affordances without the user picking a repo manually.
+  // Remote workspaces are skipped — the git binary lives on the host
+  // and we'd need an SSH round-trip we haven't wired here yet.
+  const [detectedGithubRepo, setDetectedGithubRepo] = useState<{ owner: string; repo: string } | null>(null);
 
   const agents = useAgentStore((s) => s.agents);
   const detecting = useAgentStore((s) => s.detecting);
@@ -202,6 +212,38 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
     };
   }, [locationMode, server, remoteProjectPath]);
 
+  // v0.8-15: probe `git remote get-url origin` whenever the local
+  // project path changes. Failures (non-git dir, no `origin`) are
+  // silent — auto-bind is a best-effort polish, never blocking.
+  useEffect(() => {
+    if (locationMode !== "local") {
+      setDetectedGithubRepo(null);
+      return;
+    }
+    const path = selectedProjectPath?.trim();
+    if (!path) {
+      setDetectedGithubRepo(null);
+      return;
+    }
+    let cancelled = false;
+    gitGetOriginUrl(path)
+      .then((url) => {
+        if (cancelled) return;
+        if (!url) {
+          setDetectedGithubRepo(null);
+          return;
+        }
+        setDetectedGithubRepo(parseGithubRemote(url));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDetectedGithubRepo(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [locationMode, selectedProjectPath]);
+
   const preview = useMemo(() => {
     if (selected.size === 0) return null;
     return computeGridLayout(selected.size);
@@ -276,6 +318,10 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
       bypassPermissions,
       serverId: locationMode === "remote" ? serverId : undefined,
       remoteProjectPath: locationMode === "remote" ? remoteProjectPath.trim() : undefined,
+      // v0.8-15: stamp the auto-detected GitHub repo onto the workspace
+      // so downstream surfaces (sidebar badge, GitHub pane) can render
+      // the binding without re-probing.
+      githubRepo: locationMode === "local" ? detectedGithubRepo ?? undefined : undefined,
     });
 
     useAppStore.getState().setActiveView("workspace");

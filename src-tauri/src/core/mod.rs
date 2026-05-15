@@ -8,6 +8,9 @@ pub mod error_classifier;
 pub mod execution;
 pub mod flight;
 pub mod git;
+// v0.8-E / v0.8-F: shared home for hand-authored GitHub AI prompts.
+// Registered here in case the v0.8-E slice hasn't landed yet.
+pub mod github_ai_prompts;
 pub mod hooks;
 pub mod llm_anthropic;
 pub mod llm_minimax;

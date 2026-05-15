@@ -105,7 +105,7 @@ interface FlightStore {
   // Flight CRUD
   addFlight: (
     flight: Pick<Flight, "title" | "objective" | "priority" | "projectPath"> &
-      Partial<Pick<Flight, "gitBranch" | "issueIds" | "workspaceId">>,
+      Partial<Pick<Flight, "gitBranch" | "issueIds" | "workspaceId" | "publishAttemptsAsPrs">>,
   ) => Flight;
   updateFlight: (id: string, updates: Partial<Flight>) => void;
   deleteFlight: (id: string) => void;
@@ -185,6 +185,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       updatedAt: Date.now(),
       totalCost: 0,
       totalTokens: 0,
+      publishAttemptsAsPrs: input.publishAttemptsAsPrs ?? false,
     };
     const newState: FlightState = {
       flights: [...state.flights, newFlight],

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Brain,
   Search,
@@ -15,8 +15,10 @@ import {
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
+import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
 import type {
+  MemoryEvent,
   MemoryEventType,
   PatternCategory,
   LearnedPattern,
@@ -31,6 +33,7 @@ const FILTERS: { key: FilterType; label: string }[] = [
   { key: "session_completed", label: "Sessions" },
   { key: "task_completed", label: "Tasks" },
   { key: "flight_completed", label: "Missions" },
+  { key: "manual_note", label: "Notes" },
 ];
 
 const CATEGORY_ORDER: PatternCategory[] = [
@@ -89,6 +92,7 @@ export function MemoryView() {
   const deleteEvent = useMemoryStore((s) => s.deleteEvent);
   const deletePattern = useMemoryStore((s) => s.deletePattern);
   const updatePattern = useMemoryStore((s) => s.updatePattern);
+  const togglePinPattern = useMemoryStore((s) => s.togglePinPattern);
   const refreshPatterns = useMemoryStore((s) => s.refreshPatterns);
   const clearMemory = useMemoryStore((s) => s.clearMemory);
   const getContextForSession = useMemoryStore((s) => s.getContextForSession);
@@ -96,9 +100,37 @@ export function MemoryView() {
   const captureTasks = useMemorySettingsStore((s) => s.captureTasks);
   const captureMissions = useMemorySettingsStore((s) => s.captureMissions);
 
+  // v0.8-H — deep-link filter (e.g. from MissionsView's "N patterns
+  // extracted" chip). Snapshot it on mount so subsequent re-renders
+  // don't re-apply, and clear from the store so a back-and-forth
+  // navigation resets cleanly.
+  const incomingFilter = useAppStore((s) => s.memoryViewFilter);
+  const clearMemoryViewFilter = useAppStore((s) => s.clearMemoryViewFilter);
+  const [missionFilter, setMissionFilter] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<Tab>("patterns");
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    if (incomingFilter?.missionId) {
+      setMissionFilter(incomingFilter.missionId);
+      setActiveTab("timeline");
+      clearMemoryViewFilter();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingFilter]);
+
+  /** Predicate: does this event belong to the active mission filter? Only
+   * `flight_completed` and `task_completed` carry a `flightId` payload. */
+  const matchesMissionFilter = useMemo(() => {
+    if (!missionFilter) return null;
+    return (e: MemoryEvent): boolean => {
+      if (e.type === "flight_completed") return e.payload.flightId === missionFilter;
+      if (e.type === "task_completed") return e.payload.flightId === missionFilter;
+      return false;
+    };
+  }, [missionFilter]);
 
   const summarizedCount = useMemo(
     () =>
@@ -114,6 +146,7 @@ export function MemoryView() {
       session_completed: 0,
       task_completed: 0,
       flight_completed: 0,
+      manual_note: 0,
     };
     for (const e of events) counts[e.type]++;
     return counts;
@@ -121,6 +154,7 @@ export function MemoryView() {
 
   const filtered = useMemo(() => {
     let result = [...events].reverse();
+    if (matchesMissionFilter) result = result.filter(matchesMissionFilter);
     if (filter !== "all") result = result.filter((e) => e.type === filter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -129,7 +163,7 @@ export function MemoryView() {
       );
     }
     return result;
-  }, [events, filter, searchQuery]);
+  }, [events, filter, searchQuery, matchesMissionFilter]);
 
   const groupedPatterns = useMemo(() => {
     const groups: Partial<Record<PatternCategory, LearnedPattern[]>> = {};
@@ -268,6 +302,25 @@ export function MemoryView() {
         </span>
       </div>
 
+      {missionFilter && (
+        <div className="flex items-center gap-1.5 px-3.5 py-1.5 bg-accent-soft border-b border-accent-line text-[10.5px] text-accent-green flex-shrink-0">
+          <Sparkles size={10} />
+          <span>
+            Filtered to mission{" "}
+            <span className="font-mono">{missionFilter.slice(-6)}</span>
+          </span>
+          <span className="flex-1" />
+          <button
+            onClick={() => setMissionFilter(null)}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-accent-green/10 transition-colors"
+            title="Clear mission filter"
+          >
+            <X size={9} />
+            Clear
+          </button>
+        </div>
+      )}
+
       {activeTab === "patterns" && (
         <PatternsTab
           groupedPatterns={groupedPatterns}
@@ -278,6 +331,7 @@ export function MemoryView() {
           tokenEstimate={tokenEstimate}
           onDeletePattern={deletePattern}
           onUpdatePattern={updatePattern}
+          onTogglePinPattern={togglePinPattern}
         />
       )}
 
@@ -348,6 +402,7 @@ interface PatternsTabProps {
     id: string,
     updates: { pattern?: string; category?: PatternCategory },
   ) => void;
+  onTogglePinPattern: (id: string) => void;
 }
 
 function PatternsTab({
@@ -359,6 +414,7 @@ function PatternsTab({
   tokenEstimate,
   onDeletePattern,
   onUpdatePattern,
+  onTogglePinPattern,
 }: PatternsTabProps) {
   return (
     <div className="flex-1 grid grid-cols-[1fr_280px] min-h-0 overflow-hidden">
@@ -397,6 +453,7 @@ function PatternsTab({
                         meta={meta}
                         onDelete={() => onDeletePattern(p.id)}
                         onUpdate={(updates) => onUpdatePattern(p.id, updates)}
+                        onTogglePin={() => onTogglePinPattern(p.id)}
                       />
                     ))}
                   </div>
@@ -465,9 +522,10 @@ interface PatternRowProps {
   meta: (typeof CATEGORY_META)[PatternCategory];
   onDelete: () => void;
   onUpdate: (updates: { pattern?: string; category?: PatternCategory }) => void;
+  onTogglePin: () => void;
 }
 
-function PatternRow({ pattern, meta, onDelete, onUpdate }: PatternRowProps) {
+function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternRowProps) {
   const pct = Math.round(pattern.confidence * 100);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(pattern.pattern);
@@ -552,12 +610,26 @@ function PatternRow({ pattern, meta, onDelete, onUpdate }: PatternRowProps) {
     );
   }
 
+  const isPinned = pattern.pinned === true;
   return (
-    <div className="group flex items-stretch gap-2.5 p-2.5 bg-bg-secondary border border-bg-border rounded-md hover:border-line-strong transition-colors">
+    <div
+      className={`group flex items-stretch gap-2.5 p-2.5 bg-bg-secondary border rounded-md transition-colors ${
+        isPinned
+          ? "border-accent-green/40 hover:border-accent-green/60"
+          : "border-bg-border hover:border-line-strong"
+      }`}
+    >
       <div className={`w-1 self-stretch rounded-full ${meta.bar}`} />
       <div className="flex-1 min-w-0">
-        <div className="text-[11.5px] text-text-primary leading-snug">
-          {pattern.pattern}
+        <div className="text-[11.5px] text-text-primary leading-snug flex items-start gap-1.5">
+          {isPinned && (
+            <Star
+              size={10}
+              className="text-accent-green fill-accent-green flex-shrink-0 mt-0.5"
+              aria-label="Pinned"
+            />
+          )}
+          <span>{pattern.pattern}</span>
         </div>
         <div className="flex items-center gap-2.5 mt-1.5 flex-wrap">
           <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -574,15 +646,35 @@ function PatternRow({ pattern, meta, onDelete, onUpdate }: PatternRowProps) {
           <span className="text-[10px] text-text-faint">
             extracted {relativeTime(pattern.extractedAt)}
           </span>
+          {pattern.projectPath && (
+            <span
+              className="text-[10px] text-text-faint truncate max-w-[160px]"
+              title={pattern.projectPath}
+            >
+              · {pattern.projectPath.split(/[/\\]/).pop() || pattern.projectPath}
+            </span>
+          )}
         </div>
       </div>
-      <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div
+        className={`flex items-center gap-0.5 flex-shrink-0 transition-opacity ${
+          isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        }`}
+      >
         <button
-          className="p-1 text-text-faint hover:text-accent-green rounded"
-          title="Pin to top"
-          disabled
+          onClick={onTogglePin}
+          className={`p-1 rounded transition-colors ${
+            isPinned
+              ? "text-accent-green hover:bg-accent-green/10"
+              : "text-text-faint hover:text-accent-green"
+          }`}
+          title={isPinned ? "Unpin (currently survives eviction)" : "Pin to top"}
+          aria-pressed={isPinned}
         >
-          <Star size={10} />
+          <Star
+            size={10}
+            className={isPinned ? "fill-accent-green" : ""}
+          />
         </button>
         <button
           onClick={startEdit}

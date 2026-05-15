@@ -478,6 +478,13 @@ pub struct AttemptDto {
     #[serde(default)]
     #[ts(optional)]
     pub error_message: Option<String>,
+    /// v0.8-G: when the parent Flight publishes attempts as draft PRs, the
+    /// resulting PR number is round-tripped here. Optional everywhere
+    /// because most attempts will not have a draft PR.
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub draft_pr_number: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -542,6 +549,11 @@ pub struct FlightDto {
     #[serde(default)]
     #[ts(optional)]
     pub planner_provider: Option<String>,
+    /// v0.8-G: when true on an async-mode Flight, the executor pipeline
+    /// pushes each attempt's branch and opens a draft PR after the attempt
+    /// reaches a terminal state. Persisted so the toggle round-trips.
+    #[serde(default)]
+    pub publish_attempts_as_prs: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1352,6 +1364,7 @@ impl From<core_flight::Attempt> for AttemptDto {
             cost: a.cost,
             tokens: a.tokens,
             error_message: a.error_message,
+            draft_pr_number: a.draft_pr_number,
         }
     }
 }
@@ -1374,6 +1387,7 @@ impl From<AttemptDto> for core_flight::Attempt {
             cost: a.cost,
             tokens: a.tokens,
             error_message: a.error_message,
+            draft_pr_number: a.draft_pr_number,
         }
     }
 }
@@ -1404,6 +1418,7 @@ impl From<core_flight::Flight> for FlightDto {
             planner_cost: value.planner_cost,
             planner_tokens: value.planner_tokens,
             planner_provider: value.planner_provider,
+            publish_attempts_as_prs: value.publish_attempts_as_prs,
         }
     }
 }
@@ -1433,6 +1448,7 @@ impl From<FlightDto> for core_flight::Flight {
             planner_cost: value.planner_cost,
             planner_tokens: value.planner_tokens,
             planner_provider: value.planner_provider,
+            publish_attempts_as_prs: value.publish_attempts_as_prs,
         }
     }
 }
@@ -1675,6 +1691,7 @@ mod tests {
                 planner_cost: None,
                 planner_tokens: None,
                 planner_provider: None,
+                publish_attempts_as_prs: false,
             }],
             agents: Vec::new(),
             settings: OrchestratorSettingsDto {

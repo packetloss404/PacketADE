@@ -1,4 +1,5 @@
 use crate::claude::binary::run_claude;
+use crate::core::storage;
 use serde::Deserialize;
 use tracing::info;
 
@@ -102,4 +103,16 @@ Output format:
     );
 
     run_claude(&prompt, Some(&project_path)).await
+}
+
+// === v0.8-H: memory inline surfaces — atomic pin/unpin endpoint ===
+
+/// Toggle the `pinned` flag on a single learned pattern. Returns the new
+/// pinned state, or `None` if no pattern with that id exists. The frontend
+/// store also tracks its own `pinned` state in-memory for snappy UI; this
+/// command keeps the persisted record authoritative across restarts.
+#[tauri::command]
+pub fn toggle_pinned_pattern(pattern_id: String) -> Result<Option<bool>, String> {
+    info!(pattern_id = %pattern_id, "Toggling pinned flag on pattern");
+    storage::toggle_pinned_pattern(&pattern_id)
 }

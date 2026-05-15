@@ -60,6 +60,12 @@ async fn run_local_git(cwd: &str, args: &[&str]) -> Result<(String, String, i32)
 /// Create a local git worktree at `<base>/.pkt-worktrees/<attempt_id>` checked
 /// out to a new branch `pkt/<attempt_id>` based on `base_branch`. Idempotent —
 /// if the worktree already exists, returns its path without erroring.
+///
+/// v0.8-16: also installs a `prepare-commit-msg` hook inside the
+/// worktree's `.git/hooks` directory so every commit made inside the
+/// worktree gets a `Run-By: PacketADE mission F-<flight> attempt
+/// A-<attempt>` trailer. The flight id is derived from the worktree's
+/// parent path; if it isn't recoverable we fall back to `unknown`.
 pub async fn create_local_worktree(
     base: &str,
     attempt_id: &str,
@@ -70,6 +76,11 @@ pub async fn create_local_worktree(
 
     if std::path::Path::new(&path).exists() {
         info!(path = %path, "Worktree already exists, reusing");
+        // Idempotently re-install the hook so older worktrees pick it up
+        // on next launch.
+        if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id).await {
+            warn!(path = %path, error = %e, "Failed to install prepare-commit-msg hook on existing worktree (non-fatal)");
+        }
         return Ok(path);
     }
 
@@ -86,7 +97,117 @@ pub async fn create_local_worktree(
         ));
     }
     info!(path = %path, branch = %branch, "Created local worktree");
+
+    // v0.8-16: auto-trailer hook. Non-fatal if it fails — the worktree
+    // is still usable, the commit just won't carry the trailer.
+    if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id).await {
+        warn!(path = %path, error = %e, "Failed to install prepare-commit-msg hook (non-fatal)");
+    }
+
     Ok(path)
+}
+
+/// v0.8-16: write a `prepare-commit-msg` hook inside the worktree's git
+/// directory that appends a `Run-By: PacketADE mission F-... attempt
+/// A-...` trailer to every commit message that does not already carry
+/// one.
+///
+/// Cross-platform notes:
+/// - On POSIX, `chmod +x` is required for git to invoke the hook.
+/// - On Windows with Git for Windows, the bundled MSYS shell honours
+///   the `#!/bin/sh` shebang for hooks named `prepare-commit-msg`
+///   (no extension), so the same script file works as-is. We make the
+///   file executable on POSIX only.
+///
+/// The hook lives at `<worktree>/.git/hooks/prepare-commit-msg`.
+/// Worktrees have a `.git` *file* (not directory) pointing at the main
+/// repo's `worktrees/<id>` dir; we resolve it via `rev-parse
+/// --git-path hooks` so both styles work.
+async fn install_prepare_commit_msg_hook(
+    worktree_path: &str,
+    attempt_id: &str,
+) -> Result<(), String> {
+    // Resolve the hooks dir for this worktree. `git rev-parse --git-path
+    // hooks` returns the worktree-scoped hooks directory if it exists,
+    // falling back to `.git/hooks`.
+    let (stdout, _, code) = run_local_git(worktree_path, &["rev-parse", "--git-path", "hooks"]).await?;
+    if code != 0 {
+        return Err(format!("git rev-parse --git-path hooks failed (exit {})", code));
+    }
+    let rel = stdout.trim();
+    if rel.is_empty() {
+        return Err("git rev-parse returned empty hooks path".to_string());
+    }
+    // `rel` is relative to the worktree CWD. Join manually rather than
+    // depending on `std::path::PathBuf::is_absolute` behaviour across
+    // platforms.
+    let hooks_dir = if std::path::Path::new(rel).is_absolute() {
+        std::path::PathBuf::from(rel)
+    } else {
+        std::path::PathBuf::from(worktree_path).join(rel)
+    };
+
+    if let Err(e) = std::fs::create_dir_all(&hooks_dir) {
+        return Err(format!("create_dir_all({:?}) failed: {}", hooks_dir, e));
+    }
+
+    let hook_path = hooks_dir.join("prepare-commit-msg");
+
+    // Derive the flight id from the worktree base directory. The
+    // worktree path is `<flight-base>/.pkt-worktrees/<attempt_id>`; the
+    // grandparent's name is the flight directory name. Mission planner
+    // flights are identified by their `Flight.id` which the frontend
+    // passes as the worktree `base`. We fall back to `unknown` when the
+    // path can't be parsed.
+    let flight_id = std::path::Path::new(worktree_path)
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Hook script. POSIX-sh; Git for Windows runs MSYS sh against the
+    // shebang. Use a `case` rather than `grep -q` to keep the script
+    // dependency-free.
+    let script = format!(
+        "#!/bin/sh\n\
+         # PacketADE auto-trailer — appended to commits made inside this worktree.\n\
+         # v0.8-16: installed by core/worktree.rs::install_prepare_commit_msg_hook.\n\
+         FILE=\"$1\"\n\
+         MSG=$(cat \"$FILE\")\n\
+         case \"$MSG\" in\n\
+           *\"Run-By: PacketADE\"*) exit 0 ;;\n\
+         esac\n\
+         printf \"\\nRun-By: PacketADE mission F-{flight} attempt A-{attempt}\\n\" >> \"$FILE\"\n",
+        flight = flight_id,
+        attempt = attempt_id,
+    );
+
+    if let Err(e) = std::fs::write(&hook_path, script) {
+        return Err(format!("write {:?} failed: {}", hook_path, e));
+    }
+
+    // POSIX: make executable. Windows: git's MSYS shell honours the
+    // shebang directly, so the missing +x bit is fine.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&hook_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            if let Err(e) = std::fs::set_permissions(&hook_path, perms) {
+                warn!(path = ?hook_path, error = %e, "chmod +x on hook failed (non-fatal)");
+            }
+        }
+    }
+    // TODO(v0.8-16): consider also dropping a
+    // `prepare-commit-msg.cmd` shim for environments where the MSYS sh
+    // shim is missing from PATH. The native Git for Windows install
+    // always ships it, so this is a low-priority follow-up.
+
+    info!(path = ?hook_path, flight = %flight_id, attempt = %attempt_id, "Installed prepare-commit-msg auto-trailer hook");
+    Ok(())
 }
 
 /// Remove a local git worktree. Idempotent — missing worktree is not an error.

@@ -83,6 +83,7 @@ mod tests {
                 planner_cost: None,
                 planner_tokens: None,
                 planner_provider: None,
+                publish_attempts_as_prs: false,
             }],
             agents: vec![],
             settings: OrchestratorSettings::default(),
