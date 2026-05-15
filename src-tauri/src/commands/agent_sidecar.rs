@@ -1224,7 +1224,25 @@ impl SidecarManager {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let _ = self.app_handle.emit(&chunk_event(&session_id), text);
+                let _ = self.app_handle.emit(&chunk_event(&session_id), text.clone());
+
+                // E7-HOOKS site 6 (Option A) — aggregate planner chunks into
+                // a per-session buffer that we drain on `done` to emit a
+                // single `PlannerMessage` journal entry. Non-planner sidecar
+                // sessions are a no-op inside `append_chunk` (reverse-lookup
+                // miss). Spawned off-thread so the chunk event-loop never
+                // waits on the registry lock.
+                if !text.is_empty() {
+                    let session_for_async = session_id.clone();
+                    let app_for_async = self.app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Some(registry) = app_for_async
+                            .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
+                        {
+                            registry.append_chunk(&session_for_async, &text).await;
+                        }
+                    });
+                }
             }
             "thinking" => {
                 let text = value
@@ -1405,13 +1423,48 @@ impl SidecarManager {
                 // status other than `Awake`, so this is safe to fire
                 // unconditionally. Spawn off-thread to avoid holding any
                 // borrow tied to `try_state` across an await.
+                //
+                // E7-HOOKS site 6 (Option A) — after on_planner_done runs,
+                // drain the per-session chunk buffer and write a single
+                // aggregated `PlannerMessage` journal entry. The drain
+                // method returns `None` for non-planner sidecar sessions
+                // (no buffer was ever written) so no extra guard is needed.
                 let session_for_async = session_id.clone();
                 let app_for_async = self.app_handle.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(registry) = app_for_async
                         .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
                     {
+                        // Resolve mission_id BEFORE on_planner_done — that
+                        // call never removes sessions (it only flips status),
+                        // but resolving up front keeps the two registry
+                        // operations independent and easier to reason about
+                        // under contention.
+                        let mission_id_opt = registry
+                            .mission_id_for_sidecar_session(&session_for_async)
+                            .await;
                         registry.on_planner_done(&session_for_async).await;
+                        if let Some(mission_id) = mission_id_opt {
+                            if let Some(buffer) = registry
+                                .drain_chunk_buffer(&session_for_async)
+                                .await
+                            {
+                                let trimmed = buffer.trim();
+                                if !trimmed.is_empty() {
+                                    let entry = crate::commands::mission_planner::journal_entry(
+                                        mission_id,
+                                        crate::core::mission_journal::JournalKind::PlannerMessage,
+                                        trimmed.to_string(),
+                                        None,
+                                    );
+                                    crate::commands::mission_planner::write_journal_and_emit(
+                                        &app_for_async,
+                                        entry,
+                                    )
+                                    .await;
+                                }
+                            }
+                        }
                     }
                 });
             }
@@ -1535,9 +1588,57 @@ impl SidecarManager {
                 // tooltip has something meaningful if the supervisor later
                 // transitions to `down`. Does not change `state`.
                 self.update_status(|s| {
-                    s.last_error = Some(message);
+                    s.last_error = Some(message.clone());
                 })
                 .await;
+
+                // E7-HOOKS — `error` is a turn-terminal event for planner
+                // sessions (no `done` will follow). Drain any partial
+                // streamed text so the next turn's chunks don't bleed into
+                // the abandoned buffer, and journal the partial as a
+                // `PlannerMessage` so the timeline reflects what the
+                // planner had said up to the failure point.
+                let session_for_async = session_id.clone();
+                let app_for_async = self.app_handle.clone();
+                let error_for_async = message.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(registry) = app_for_async
+                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
+                    {
+                        let mission_id_opt = registry
+                            .mission_id_for_sidecar_session(&session_for_async)
+                            .await;
+                        if let Some(mission_id) = mission_id_opt {
+                            if let Some(buffer) = registry
+                                .drain_chunk_buffer(&session_for_async)
+                                .await
+                            {
+                                let trimmed = buffer.trim();
+                                if !trimmed.is_empty() {
+                                    let body = format!(
+                                        "{}\n\n*(partial — error: {})*",
+                                        trimmed, error_for_async
+                                    );
+                                    let entry = crate::commands::mission_planner::journal_entry(
+                                        mission_id,
+                                        crate::core::mission_journal::JournalKind::PlannerMessage,
+                                        body,
+                                        Some(serde_json::json!({
+                                            "partial": true,
+                                            "reason": "error",
+                                            "error": error_for_async,
+                                        })),
+                                    );
+                                    crate::commands::mission_planner::write_journal_and_emit(
+                                        &app_for_async,
+                                        entry,
+                                    )
+                                    .await;
+                                }
+                            }
+                        }
+                    }
+                });
             }
             "planner_tool" => {
                 // v5: the sidecar's in-process planner MCP server invoked
@@ -1669,6 +1770,45 @@ impl SidecarManager {
                                 &app_for_async,
                             )
                             .await;
+
+                        // E7-HOOKS — `rate_limited` is a turn-terminal
+                        // event for planner sessions (the SDK throws
+                        // `RateLimitError` and exits without firing
+                        // `done`). Drain any partial streamed text so the
+                        // next turn's chunks don't bleed into the
+                        // abandoned buffer, and journal the partial so the
+                        // timeline shows what the planner had said up to
+                        // the throttle point.
+                        let mission_id_opt = registry
+                            .mission_id_for_sidecar_session(&session_for_async)
+                            .await;
+                        if let Some(mission_id) = mission_id_opt {
+                            if let Some(buffer) = registry
+                                .drain_chunk_buffer(&session_for_async)
+                                .await
+                            {
+                                let trimmed = buffer.trim();
+                                if !trimmed.is_empty() {
+                                    let entry = crate::commands::mission_planner::journal_entry(
+                                        mission_id,
+                                        crate::core::mission_journal::JournalKind::PlannerMessage,
+                                        format!(
+                                            "{}\n\n*(partial — rate-limited mid-stream)*",
+                                            trimmed
+                                        ),
+                                        Some(serde_json::json!({
+                                            "partial": true,
+                                            "reason": "rate_limited",
+                                        })),
+                                    );
+                                    crate::commands::mission_planner::write_journal_and_emit(
+                                        &app_for_async,
+                                        entry,
+                                    )
+                                    .await;
+                                }
+                            }
+                        }
                     } else {
                         warn!(
                             "rate_limited event but MissionPlannerRegistry not managed; cannot pause planner"

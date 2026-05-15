@@ -226,6 +226,36 @@ Deferred items called out in `dev/multi-platform-build.md` and
   After breaching, every subsequent rejected call increments the
   counter, so the planner sees `count={n}` growing. Either clamp to
   `count=cap+1` in the rejection message or stop bumping on rejection.
+- **P3 — Journal entry incremental fetch.** Today every `journal-appended`
+  event causes `JournalTab` to refetch the whole file. On a chatty planner
+  turn (~5-20 events), that's 5-20 full reads. Add a `read_journal_after(
+  mission_id, last_entry_id) -> Vec<JournalEntry>` Tauri command that
+  parses the HTML-comment headers to find the cut point. Use it in
+  JournalTab to append-only the new content.
+- **P3 — Journal file size cap.** `read_journal` loads the whole file
+  into memory each fetch. Pair with the incremental-fetch follow-up to
+  add a max-bytes safeguard or pagination so very long missions don't
+  pin megabytes in RAM.
+- **P3 — Journal path-convention drift.** `mission_journal::journal_path`
+  produces `F-<shortId>_<mission_id>.md`; locked spec says `<shortId>.md`.
+  The drift was for collision-resistance (4-char shortId has 65k slots).
+  Confirm with owner whether to trim to spec or amend the spec doc.
+- **P3 — `format_timestamp` could format in Rust.** Today journal headers
+  emit raw unix-millis and JournalTab post-processes via JS Date(). If
+  another consumer (CLI viewer, external markdown processor) opens the
+  file directly, they see raw millis. Adding `chrono` (~10 lines) or
+  hand-rolling YYYY-MM-DD HH:MM:SS in Rust would make the file readable
+  in any markdown viewer.
+- **P3 — Markdown injection from tool args.** Tool-call entries serialize
+  `args` as JSON inside markdown blocks. If a tool arg contains
+  `<!-- entry id:fake -->`, a future structured parser of the journal file
+  could be confused. `MarkdownRenderer` doesn't enable raw HTML so the
+  UI is safe, but the on-disk parser invariant is fragile. Escape
+  HTML-comment-looking content inside body strings.
+- **P3 — Approval-resolution journal entry.** `resolve_mission_approval`
+  currently emits a `SystemNote`. Could be `ApprovalRequest` updated
+  in-place, or a dedicated `ApprovalResolution` kind. For v1 the
+  SystemNote is fine; for v1.1 consider promoting.
 
 ## Product tracks (from `dev/README.md`)
 

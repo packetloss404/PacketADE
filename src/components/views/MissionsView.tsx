@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plane,
   Search,
@@ -12,6 +12,7 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { useFlightStore } from "@/stores/flightStore";
 import { useGoalStore } from "@/stores/goalStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
@@ -21,6 +22,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
 import { MissionSpecPane } from "@/components/missions/MissionSpecPane";
+import { JournalTab } from "@/components/missions/JournalTab";
 import { PlannerApprovalGate } from "@/components/missions/PlannerApprovalGate";
 import { relativeTime } from "@/lib/time";
 import {
@@ -561,6 +563,57 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   const tasks = flightTasks(flight);
   const sessions = flight.linkedSessionIds.length;
   const isSpec = status === "spec";
+  // E7-INTEGRATE — tab strip state. "overview" renders the existing
+  // detail body (or MissionSpecPane in spec status); "journal" renders
+  // the markdown journal for this mission.
+  const [activeTab, setActiveTab] = useState<"overview" | "journal">(
+    "overview",
+  );
+  const [unreadJournal, setUnreadJournal] = useState(false);
+
+  // Reset tab + unread dot when switching between missions so a new
+  // mission doesn't inherit stale UI state.
+  useEffect(() => {
+    setActiveTab("overview");
+    setUnreadJournal(false);
+  }, [flight.id]);
+
+  // FIX 3 (E7 polish) — keep the latest `activeTab` reachable from inside
+  // the journal-listener effect without naming it as a dep. Listing
+  // `activeTab` as a dependency below tore down + re-subscribed the Tauri
+  // listener on every tab flip (cheap but a real source of churn during
+  // rapid Overview/Journal toggles). A ref reads the freshest value at
+  // event time and the effect only runs when the mission identity changes.
+  const activeTabRef = useRef<"overview" | "journal">("overview");
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  // Subscribe to journal-append events for this mission. If the user is
+  // already viewing the Journal tab, we don't need to flag anything; the
+  // JournalTab itself will refresh. Otherwise show a small dot.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    listen(`mission-planner:journal-appended:${flight.id}`, () => {
+      if (cancelled) return;
+      // Read `activeTab` off the ref so this effect doesn't need to
+      // resubscribe when the tab changes.
+      if (activeTabRef.current !== "journal") {
+        setUnreadJournal(true);
+      }
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [flight.id]);
   const canPause = !isSpec && status === "active";
   const canResume = !isSpec && (status === "paused" || status === "review");
   const showApprove = !isSpec && (status === "review" || tasks.approvals > 0);
@@ -669,22 +722,59 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
 
         <PlannerApprovalGate missionId={flight.id} />
 
-        {isSpec ? (
-          <MissionSpecPane missionId={flight.id} />
-        ) : (
-          <>
-            <StatGrid
-              flight={flight}
-              tasks={tasks}
-              sessions={sessions}
-              dot={dot}
-            />
+        {/* E7-INTEGRATE — tab strip: Overview / Journal */}
+        <div className="flex items-center gap-0 border-b border-line-soft -mx-3.5 px-3.5">
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={`px-3 py-2 text-[11px] border-b-2 transition-colors ${
+              activeTab === "overview"
+                ? "text-text-primary border-accent-green"
+                : "text-text-muted border-transparent hover:text-text-secondary"
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("journal");
+              setUnreadJournal(false);
+            }}
+            className={`inline-flex items-center gap-1 px-3 py-2 text-[11px] border-b-2 transition-colors ${
+              activeTab === "journal"
+                ? "text-text-primary border-accent-green"
+                : "text-text-muted border-transparent hover:text-text-secondary"
+            }`}
+          >
+            Journal
+            {unreadJournal && (
+              <span
+                className="ml-0.5 w-1.5 h-1.5 rounded-full bg-accent-green inline-block"
+                aria-label="New journal entry"
+              />
+            )}
+          </button>
+        </div>
 
-            <div className="grid grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr] flex-1 min-h-[260px]">
-              <MilestonesCard flight={flight} tasks={tasks} />
-              <TimelineCard flight={flight} />
-            </div>
-          </>
+        {activeTab === "overview" ? (
+          isSpec ? (
+            <MissionSpecPane missionId={flight.id} />
+          ) : (
+            <>
+              <StatGrid
+                flight={flight}
+                tasks={tasks}
+                sessions={sessions}
+                dot={dot}
+              />
+
+              <div className="grid grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr] flex-1 min-h-[260px]">
+                <MilestonesCard flight={flight} tasks={tasks} />
+                <TimelineCard flight={flight} />
+              </div>
+            </>
+          )
+        ) : (
+          <JournalTab missionId={flight.id} />
         )}
       </div>
     </div>

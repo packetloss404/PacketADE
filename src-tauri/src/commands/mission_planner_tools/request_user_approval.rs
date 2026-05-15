@@ -142,6 +142,33 @@ pub async fn handle(
     //    emits a `WakeTrigger::UserMessageInJournal` via
     //    `resolve_mission_approval`.
 
+    // E7-HOOKS site 5 — also append a dedicated `ApprovalRequest` journal
+    // entry so the UI can render the request interactively (the matching
+    // ToolCall entry the dispatcher writes is rendered as a generic tool
+    // invocation). The two entries reference the same approval_id; the UI
+    // is free to dedupe by id if it prefers.
+    let options_text = if emitted_approval.options.is_empty() {
+        "(free text)".to_string()
+    } else {
+        emitted_approval.options.join(", ")
+    };
+    let body = format!(
+        "**question**: {}\n**options**: {}",
+        emitted_approval.question, options_text
+    );
+    let metadata = serde_json::json!({
+        "approvalId": approval_id,
+        "question": emitted_approval.question,
+        "options": emitted_approval.options,
+    });
+    let entry = crate::commands::mission_planner::journal_entry(
+        mission_id.clone(),
+        crate::core::mission_journal::JournalKind::ApprovalRequest,
+        body,
+        Some(metadata),
+    );
+    crate::commands::mission_planner::write_journal_and_emit(app, entry).await;
+
     // 7. Return the async-return sentinel IMMEDIATELY.
     Ok(serde_json::json!({
         "status": "pending_approval",
