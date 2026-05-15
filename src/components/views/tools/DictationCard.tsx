@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { Mic, Download, Check, X, Plus, ExternalLink, Keyboard, Key } from "lucide-react";
+import { Mic, Download, Check, X, Plus, ExternalLink, Keyboard, Key, ArrowRight } from "lucide-react";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useAppStore } from "@/stores/appStore";
-import { deleteApiKey, getApiKeyExists, listAudioDevices, setApiKey } from "@/lib/tauri";
+import { getApiKeyExists, listAudioDevices, setApiKey } from "@/lib/tauri";
 import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import type { AudioDevice } from "@/types/dictation";
 
@@ -21,10 +21,7 @@ export function DictationCard() {
 
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [newWord, setNewWord] = useState("");
-  const [geminiKey, setGeminiKey] = useState("");
   const [geminiKeySaved, setGeminiKeySaved] = useState(false);
-  const [geminiKeySaving, setGeminiKeySaving] = useState(false);
-  const [geminiKeyError, setGeminiKeyError] = useState<string | null>(null);
 
   useEffect(() => {
     loadModels();
@@ -91,38 +88,6 @@ export function DictationCard() {
       ...settings,
       customDictionary: (settings.customDictionary ?? []).filter((w) => w !== word),
     });
-  };
-
-  const handleSaveGeminiKey = async () => {
-    if (!geminiKey.trim()) return;
-    setGeminiKeySaving(true);
-    setGeminiKeyError(null);
-    try {
-      await setApiKey(GEMINI_PROVIDER, geminiKey.trim());
-      localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
-      localStorage.removeItem(LEGACY_GEMINI_API_KEY_STORAGE_KEY);
-      setGeminiKeySaved(true);
-      setGeminiKey("");
-    } catch (error) {
-      setGeminiKeyError(error instanceof Error ? error.message : "Failed to save API key");
-    } finally {
-      setGeminiKeySaving(false);
-    }
-  };
-
-  const handleClearGeminiKey = async () => {
-    setGeminiKeySaving(true);
-    setGeminiKeyError(null);
-    try {
-      await deleteApiKey(GEMINI_PROVIDER);
-      localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
-      localStorage.removeItem(LEGACY_GEMINI_API_KEY_STORAGE_KEY);
-      setGeminiKeySaved(false);
-    } catch (error) {
-      setGeminiKeyError(error instanceof Error ? error.message : "Failed to clear API key");
-    } finally {
-      setGeminiKeySaving(false);
-    }
   };
 
   return (
@@ -266,7 +231,7 @@ export function DictationCard() {
         </p>
       </div>
 
-      {/* Gemini API Settings card */}
+      {/* Gemini API (Enhanced Transcription) — managed in Settings > API Keys */}
       <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
         <h3 className="text-xs font-semibold text-text-primary flex items-center gap-2 mb-3">
           <Key size={12} className="text-accent-amber" />
@@ -277,42 +242,22 @@ export function DictationCard() {
           with code terms, formatting, and punctuation.
         </p>
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full shrink-0 ${geminiKeySaved ? "bg-accent-green" : "bg-text-muted/30"}`} />
+          <div
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              geminiKeySaved ? "bg-accent-green" : "bg-text-muted/30"
+            }`}
+          />
           <span className="text-[11px] text-text-secondary flex-1">
-            {geminiKeySaved ? "API key configured" : "No API key set"}
+            {geminiKeySaved ? "Configured" : "Not configured"}
           </span>
-          {geminiKeySaved ? (
-            <button
-              onClick={handleClearGeminiKey}
-              disabled={geminiKeySaving}
-              className="px-2 py-1 text-[10px] text-text-muted hover:text-accent-red transition-colors"
-            >
-              Clear
-            </button>
-          ) : null}
+          <button
+            onClick={() => setActiveView("tools")}
+            className="flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+          >
+            Manage in Settings &gt; API Keys
+            <ArrowRight size={10} />
+          </button>
         </div>
-        {!geminiKeySaved && (
-          <div className="flex items-center gap-1.5 mt-2">
-            <input
-              type="password"
-              value={geminiKey}
-              onChange={(e) => setGeminiKey(e.target.value)}
-              placeholder="AIza..."
-              className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleSaveGeminiKey();
-              }}
-            />
-            <button
-              onClick={handleSaveGeminiKey}
-              disabled={!geminiKey.trim() || geminiKeySaving}
-              className="px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors disabled:opacity-50"
-            >
-              Save
-            </button>
-          </div>
-        )}
-        {geminiKeyError ? <p className="text-[10px] text-accent-red mt-2">{geminiKeyError}</p> : null}
       </div>
     </div>
   );

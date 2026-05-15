@@ -1039,59 +1039,65 @@ export function AgentInputArea({
                   mental model and reserves the affordance. */}
               {selectedRepo && !isSshUri(selectedRepo) && (
                 <div
-                  className="inline-flex rounded border border-bg-border overflow-hidden"
+                  className="inline-flex flex-col"
                   title="Where this conversation runs"
                 >
-                  {(
-                    [
-                      {
-                        mode: "local" as const,
-                        icon: Folder,
-                        label: "Local",
-                        title: "Local — edits land in the project tree",
-                      },
-                      {
-                        mode: "worktree" as const,
-                        icon: GitBranch,
-                        label: "Worktree",
-                        title:
-                          "Worktree — conversation runs on a fresh branch in .pkt-worktrees/",
-                      },
-                      {
-                        mode: "cloud" as const,
-                        icon: Cloud,
-                        label: "Cloud",
-                        title:
-                          "Coming soon — cloud delegation not yet wired",
-                        disabled: true,
-                      },
-                    ] as const
-                  ).map((opt) => {
-                    const Icon = opt.icon;
-                    const isActive = composerMode === opt.mode;
-                    const isDisabled = "disabled" in opt && opt.disabled;
-                    return (
-                      <button
-                        key={opt.mode}
-                        type="button"
-                        disabled={isDisabled}
-                        onClick={() =>
-                          !isDisabled && onComposerModeChange?.(opt.mode)
-                        }
-                        title={opt.title}
-                        className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] transition-colors ${
-                          isDisabled
-                            ? "text-text-faint opacity-50 cursor-not-allowed"
-                            : isActive
-                              ? "bg-accent-purple/10 text-accent-purple"
-                              : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
-                        }`}
-                      >
-                        <Icon size={10} />
-                        {opt.label}
-                      </button>
-                    );
-                  })}
+                  <div className="inline-flex rounded border border-bg-border overflow-hidden">
+                    {(
+                      [
+                        {
+                          mode: "local" as const,
+                          icon: Folder,
+                          label: "Local",
+                          title:
+                            "Switch to Local — edits land in the project tree (also updates the global default)",
+                        },
+                        {
+                          mode: "worktree" as const,
+                          icon: GitBranch,
+                          label: "Worktree",
+                          title:
+                            "Switch to Worktree — conversation runs on a fresh branch in .pkt-worktrees/ (also updates the global default)",
+                        },
+                        {
+                          mode: "cloud" as const,
+                          icon: Cloud,
+                          label: "Cloud",
+                          title:
+                            "Switch to Cloud — coming soon, cloud delegation not yet wired (also updates the global default)",
+                          disabled: true,
+                        },
+                      ] as const
+                    ).map((opt) => {
+                      const Icon = opt.icon;
+                      const isActive = composerMode === opt.mode;
+                      const isDisabled = "disabled" in opt && opt.disabled;
+                      return (
+                        <button
+                          key={opt.mode}
+                          type="button"
+                          disabled={isDisabled}
+                          onClick={() =>
+                            !isDisabled && onComposerModeChange?.(opt.mode)
+                          }
+                          title={opt.title}
+                          className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] transition-colors ${
+                            isDisabled
+                              ? "text-text-faint opacity-50 cursor-not-allowed"
+                              : isActive
+                                ? "bg-accent-purple/10 text-accent-purple"
+                                : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
+                          }`}
+                        >
+                          <Icon size={10} />
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <span className="text-[9px] text-text-muted mt-0.5 leading-tight">
+                    Persists as default for new conversations.
+                  </span>
                 </div>
               )}
 
