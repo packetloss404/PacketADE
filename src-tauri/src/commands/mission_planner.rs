@@ -87,6 +87,29 @@ const QUOTA_MAX_WAIT_SECS: f64 = 600.0;
 const QUOTA_DEFAULT_WAIT_SECS: f64 = 60.0;
 
 // ---------------------------------------------------------------------------
+// E10 — context compaction threshold
+// ---------------------------------------------------------------------------
+
+/// Threshold at which the planner's session is compacted. Set to 75%
+/// of Sonnet 4.6's 200K window so we have headroom for the in-flight
+/// turn's input + output. Tuned to fire BEFORE the next turn would
+/// risk a context-window error.
+pub const COMPACTION_THRESHOLD_TOKENS: u64 = 150_000;
+
+/// **E10 FIX P1-A** — backoff window (seconds) after a compaction
+/// failure before [`MissionPlannerRegistry::bump_cumulative_input_and_check`]
+/// will allow another threshold-trigger to fire. 5 minutes is short
+/// enough that the user doesn't notice in the common transient-rate-limit
+/// case, but long enough that a hard failure (quota exhausted, sidecar
+/// dead) doesn't burn through quota on every subsequent turn.
+pub const COMPACTION_FAILURE_BACKOFF_SECS: u64 = 300;
+
+/// **E10 FIX P1-A** — after this many consecutive compaction failures the
+/// orchestrator writes a `SystemNote` journal entry advising the user
+/// that manual intervention may be required. Reset on success.
+pub const COMPACTION_FAILURE_ESCALATION_COUNT: u32 = 3;
+
+// ---------------------------------------------------------------------------
 // Runtime types
 // ---------------------------------------------------------------------------
 
@@ -335,6 +358,57 @@ pub struct MissionPlannerSession {
     /// while the first timer was still sleeping.
     #[serde(default)]
     pub quota_lease: u64,
+
+    /// Cumulative input tokens billed against the planner's 200K Sonnet
+    /// 4.6 context window. Includes cache reads. When this crosses
+    /// [`COMPACTION_THRESHOLD_TOKENS`] the registry emits a
+    /// `mission-planner:compaction-triggered:<missionId>` event for the
+    /// compaction orchestrator (E10-SWAP) to handle the session restart.
+    #[serde(default)]
+    pub cumulative_input_tokens: u64,
+
+    /// True if a compaction is currently in flight. Prevents duplicate
+    /// triggers while the swap is running.
+    #[serde(default)]
+    pub compaction_in_progress: bool,
+
+    /// E10 FIX P0 — Tauri listener registration for the
+    /// `mission-planner:compaction-triggered:<mission_id>` event. Stored on
+    /// the session so `stop_mission_planner` / `complete_mission` can
+    /// `app.unlisten(id)` before tearing the session down. Without this,
+    /// every start→stop cycle accumulates a fresh listener — after N
+    /// cycles a single triggered event spawns N parallel
+    /// `perform_compaction` tasks (N Sonnet quota burns + N orphan sidecar
+    /// sessions).
+    ///
+    /// `tauri::EventId` is a `u32` and is NOT serializable here; we
+    /// deliberately skip it on (de)serialize so cold-start hydration
+    /// starts with `None` (the listener will be re-installed by
+    /// `start_mission_planner` after hydration). The field is `Option` so
+    /// a session built via `MissionPlannerSession::new` (which has no
+    /// listener yet) can be inserted into the registry, and the caller
+    /// fills the slot in once `app.listen(...)` returns.
+    #[serde(skip)]
+    pub compaction_listener: Option<tauri::EventId>,
+
+    /// E10 FIX P1-A — wall-clock seconds (epoch) of the last compaction
+    /// failure. Used to gate `bump_cumulative_input_and_check` so a
+    /// persistent failure (e.g. summarizer Sonnet quota exhausted) doesn't
+    /// re-fire compaction on every subsequent `turn_summary` while
+    /// `cumulative_input_tokens` is still over threshold.
+    ///
+    /// Cleared by `swap_sidecar_session_after_compaction` on success.
+    /// Set by both the in-orchestrator failure paths (P1-B / P1-C) and
+    /// the summarizer-failure path in `perform_compaction`.
+    #[serde(default)]
+    pub last_compaction_failure_at: Option<u64>,
+
+    /// E10 FIX P1-A — count of consecutive compaction failures. Reset to
+    /// 0 on `swap_sidecar_session_after_compaction` (success). On every
+    /// failure, incremented; when it crosses 3 the orchestrator writes a
+    /// `SystemNote` journal entry escalating the issue to the user.
+    #[serde(default)]
+    pub consecutive_compaction_failures: u32,
 }
 
 /// Default planner mode for deserialization (back-compat for state files that
@@ -345,7 +419,7 @@ fn default_planner_mode() -> PlannerMode {
 }
 
 impl MissionPlannerSession {
-    fn new(id: String, mission_id: String, sidecar_session_id: String) -> Self {
+    pub(crate) fn new(id: String, mission_id: String, sidecar_session_id: String) -> Self {
         let now = now_millis();
         Self {
             id,
@@ -363,6 +437,11 @@ impl MissionPlannerSession {
             helper_spawned: false,
             current_mode: PlannerMode::Spec,
             quota_lease: 0,
+            cumulative_input_tokens: 0,
+            compaction_in_progress: false,
+            compaction_listener: None,
+            last_compaction_failure_at: None,
+            consecutive_compaction_failures: 0,
         }
     }
 }
@@ -918,6 +997,56 @@ impl MissionPlannerRegistry {
         guard.insert(session.mission_id.clone(), session)
     }
 
+    /// E10 FIX P0 — store the Tauri `EventId` returned from
+    /// `install_compaction_listener` on the session record so a later
+    /// `stop_mission_planner` / `complete_mission` can call
+    /// `app.unlisten(id)` and prevent listener accumulation across start /
+    /// stop cycles.
+    ///
+    /// Best-effort: if the mission has no session in the registry (e.g. it
+    /// was just removed by a concurrent stop), this is a silent no-op —
+    /// the caller will not be able to unlisten via this registry, but the
+    /// listener-leak window in that race is a single stop cycle's worth.
+    pub async fn set_compaction_listener(
+        &self,
+        mission_id: &str,
+        event_id: tauri::EventId,
+    ) {
+        let mut guard = self.sessions.lock().await;
+        if let Some(session) = guard.get_mut(mission_id) {
+            session.compaction_listener = Some(event_id);
+        }
+    }
+
+    /// E10 FIX P0 — read and clear the stored compaction listener
+    /// `EventId` for a mission. Used by the terminal paths
+    /// (`stop_mission_planner`, `complete_mission`'s `remove_session`)
+    /// just before tearing the session down so the caller can call
+    /// `app.unlisten(id)`.
+    ///
+    /// Returns `None` when the mission has no planner session OR when no
+    /// listener was ever installed (cold-start before re-install, etc.).
+    pub async fn take_compaction_listener(
+        &self,
+        mission_id: &str,
+    ) -> Option<tauri::EventId> {
+        let mut guard = self.sessions.lock().await;
+        guard.get_mut(mission_id)?.compaction_listener.take()
+    }
+
+    /// Test-only mirror of [`Self::insert`] that's visible to sibling
+    /// modules' `#[cfg(test)]` blocks (specifically
+    /// `mission_planner_compaction::tests`). Production callers must go
+    /// through `start_mission_planner` so the sidecar / journal /
+    /// persistence side-effects are correctly applied — direct insertion
+    /// bypasses all of that and is only safe in unit tests that build
+    /// fixture sessions by hand.
+    #[cfg(test)]
+    pub async fn insert_for_test(&self, session: MissionPlannerSession) {
+        let mut guard = self.sessions.lock().await;
+        guard.insert(session.mission_id.clone(), session);
+    }
+
     /// Drop a session by mission id.
     async fn remove(&self, mission_id: &str) -> Option<MissionPlannerSession> {
         let mut guard = self.sessions.lock().await;
@@ -1009,6 +1138,154 @@ impl MissionPlannerRegistry {
         let cap = mode.tool_call_cap();
         session.tool_calls_this_tick = session.tool_calls_this_tick.saturating_add(1);
         Some((mode, cap, session.tool_calls_this_tick))
+    }
+
+    /// E10-DETECT — increment a planner's cumulative input-token counter.
+    /// If this crosses [`COMPACTION_THRESHOLD_TOKENS`] **and**
+    /// `compaction_in_progress` is currently false, atomically flip
+    /// `compaction_in_progress` to true and return `true` (caller should
+    /// emit the `mission-planner:compaction-triggered:<missionId>`
+    /// event). Otherwise return `false`.
+    ///
+    /// The atomic flip ensures only ONE event fires per threshold
+    /// crossing — subsequent turns above threshold are no-ops until
+    /// E10-SWAP calls [`Self::swap_sidecar_session_after_compaction`] on
+    /// successful compaction (or [`Self::reset_compaction_in_progress`] on
+    /// summarizer failure) to clear the flag.
+    ///
+    /// **E10 FIX P1-A — persistent-failure backoff.** If a compaction
+    /// recently failed (the orchestrator records the failure timestamp on
+    /// the session via `last_compaction_failure_at`), this returns
+    /// `false` for [`COMPACTION_FAILURE_BACKOFF_SECS`] after the failure
+    /// even if the threshold is crossed. Without this gate, a failed
+    /// compaction leaves `cumulative_input_tokens` over threshold, so the
+    /// very next `turn_summary` immediately re-fires the trigger, retries
+    /// summarization, fails again, and the loop hammers Sonnet quota.
+    ///
+    /// No-op (returns false) if no planner session matches `mission_id`.
+    pub async fn bump_cumulative_input_and_check(
+        &self,
+        mission_id: &str,
+        input_tokens: u64,
+    ) -> bool {
+        let mut sessions = self.sessions.lock().await;
+        let Some(session) = sessions.get_mut(mission_id) else {
+            return false;
+        };
+        session.cumulative_input_tokens = session
+            .cumulative_input_tokens
+            .saturating_add(input_tokens);
+        if session.compaction_in_progress {
+            return false;
+        }
+        // E10 FIX P1-A — back off after a recent compaction failure so a
+        // stuck summarizer doesn't loop on every subsequent turn.
+        if let Some(last_fail_secs) = session.last_compaction_failure_at {
+            let now_secs = now_millis() / 1000;
+            if now_secs < last_fail_secs.saturating_add(COMPACTION_FAILURE_BACKOFF_SECS) {
+                return false;
+            }
+        }
+        if session.cumulative_input_tokens >= COMPACTION_THRESHOLD_TOKENS {
+            session.compaction_in_progress = true;
+            return true;
+        }
+        false
+    }
+
+    /// E10-DETECT — read the cumulative-input-token counter for a
+    /// planner session. Returns `None` if no planner is registered for
+    /// `mission_id`. Used by UI / telemetry surfaces that want to show
+    /// "X / 150K tokens to compaction" without bumping the counter.
+    #[allow(dead_code)]
+    pub async fn read_cumulative_input(&self, mission_id: &str) -> Option<u64> {
+        let sessions = self.sessions.lock().await;
+        sessions.get(mission_id).map(|s| s.cumulative_input_tokens)
+    }
+
+    /// E10-SWAP — clear the `compaction_in_progress` flag without touching
+    /// the cumulative-token counter.
+    ///
+    /// Used by [`crate::commands::mission_planner_compaction::perform_compaction`]
+    /// on the summarization-failure path: we want a *future* threshold cross
+    /// to re-arm the trigger (so a transient summarizer error doesn't
+    /// permanently disable compaction), but we don't want to zero the token
+    /// counter — the token count is still real, and zeroing it would make
+    /// the planner cross the threshold a second time before the underlying
+    /// context has actually been compacted.
+    ///
+    /// No-op (returns silently) if no planner is registered for `mission_id`.
+    ///
+    /// E10 FIX P1-A — superseded by `record_compaction_failure` in
+    /// `perform_compaction`'s failure paths (which also sets the
+    /// backoff timestamp + bumps the failure counter). Retained for the
+    /// existing unit-test coverage and as a fallback for any future
+    /// failure path that genuinely wants to clear the flag without
+    /// arming the backoff (e.g. a benign cancellation).
+    #[allow(dead_code)]
+    pub async fn reset_compaction_in_progress(&self, mission_id: &str) {
+        let mut sessions = self.sessions.lock().await;
+        if let Some(session) = sessions.get_mut(mission_id) {
+            session.compaction_in_progress = false;
+        }
+    }
+
+    /// E10 FIX P1-A — record a compaction failure on the session. Clears
+    /// `compaction_in_progress`, sets `last_compaction_failure_at` (seconds
+    /// since epoch), and increments `consecutive_compaction_failures`.
+    /// Returns the new failure count so the caller can decide whether to
+    /// escalate (write a `SystemNote` journal entry) at the
+    /// [`COMPACTION_FAILURE_ESCALATION_COUNT`] threshold.
+    ///
+    /// Returns `0` if no planner is registered for `mission_id` (treat as
+    /// no-op — no escalation needed).
+    pub async fn record_compaction_failure(&self, mission_id: &str) -> u32 {
+        let mut sessions = self.sessions.lock().await;
+        let Some(session) = sessions.get_mut(mission_id) else {
+            return 0;
+        };
+        session.compaction_in_progress = false;
+        session.last_compaction_failure_at = Some(now_millis() / 1000);
+        session.consecutive_compaction_failures =
+            session.consecutive_compaction_failures.saturating_add(1);
+        session.consecutive_compaction_failures
+    }
+
+    /// E10-SWAP — atomic post-compaction state swap.
+    ///
+    /// Called by `perform_compaction` after a successful summarize → spawn →
+    /// inject sequence. Replaces the session's `sidecar_session_id` with the
+    /// freshly-spawned one, zeroes the cumulative-input-token counter, and
+    /// clears `compaction_in_progress` — all under a single lock acquire so
+    /// the three fields can't observe each other partway through the swap.
+    ///
+    /// **E10 FIX P1-A** — also clears `last_compaction_failure_at` and
+    /// `consecutive_compaction_failures` because the swap means the most
+    /// recent attempt SUCCEEDED, so the backoff gate must release and the
+    /// escalation counter must reset.
+    ///
+    /// **E10 FIX P1-D** — returns `bool`: `true` if the swap happened,
+    /// `false` if the planner was stopped mid-compaction (no session in
+    /// the registry). The caller checks the return value and closes the
+    /// freshly-spawned sidecar session as an orphan when the swap failed,
+    /// so we don't leak sidecar sessions when the user clicks Stop during
+    /// a long summarizer round-trip.
+    pub async fn swap_sidecar_session_after_compaction(
+        &self,
+        mission_id: &str,
+        new_sidecar_session_id: &str,
+    ) -> bool {
+        let mut sessions = self.sessions.lock().await;
+        let Some(session) = sessions.get_mut(mission_id) else {
+            return false;
+        };
+        session.sidecar_session_id = new_sidecar_session_id.to_string();
+        session.cumulative_input_tokens = 0;
+        session.compaction_in_progress = false;
+        session.last_compaction_failure_at = None;
+        session.consecutive_compaction_failures = 0;
+        session.last_tick_at = now_millis();
+        true
     }
 
     /// Dispatch an in-process planner MCP tool call. Invoked by
@@ -1152,17 +1429,14 @@ pub(crate) async fn persist_planner_provider_on_flight(
 /// registry) flow into the unrelated `total_cost` rollup elsewhere.
 ///
 /// Semantics:
-///   * `planner_tokens` accumulates `total_tokens` — the caller is
-///     responsible for summing all token directions it wants counted
-///     (input + output + cache-read + cache-create). This used to take
-///     `(input, output)` and silently drop cache tokens from the chip
-///     even though `cost_usd` was already including them — E8 FIX 2
-///     hoisted that sum to the call site so the math stays aligned with
-///     whatever pricing components the sidecar/provider quoted.
-///     Stored as a single sum because the StatGrid chip displays one
-///     token total. Per-direction breakdown lives on
-///     `MissionPlannerSession` in the live registry for callers that need
-///     it (e.g. compaction trigger thresholds in E10).
+///   * `planner_tokens` accumulates `input_tokens + output_tokens` — the
+///     full per-turn token roll-up the StatGrid chip displays. E10
+///     split this from a single `total_tokens` arg into separate
+///     `input_tokens` / `output_tokens` arguments so the registry's
+///     compaction-trigger counter can track INPUT tokens specifically
+///     (the part that grows monotonically with conversation length;
+///     output is small per turn). The on-disk chip still gets the sum,
+///     so the displayed total is unchanged.
 ///   * `planner_cost` accumulates `cost_usd`. Zero deltas (e.g. for
 ///     locally-pricing-unaware models) are still applied — the addition
 ///     is a no-op cost-wise but `updated_at` still bumps so the UI
@@ -1177,10 +1451,12 @@ pub(crate) async fn persist_planner_provider_on_flight(
 /// other persisted-state writers (e.g. `persist_planner_state_on_flight`).
 pub async fn accumulate_planner_cost(
     mission_id: &str,
-    total_tokens: u64,
+    input_tokens: u64,
+    output_tokens: u64,
     cost_usd: f64,
 ) -> Result<(), String> {
     let mission_id_owned = mission_id.to_string();
+    let total_tokens = input_tokens.saturating_add(output_tokens);
     let result = storage::with_state_lock(move |state| {
         let mission_id = mission_id_owned.clone();
         let inner: Result<(), String> = (|| {
@@ -1926,6 +2202,26 @@ pub async fn start_mission_planner(
         );
     }
 
+    // E10-SWAP — install the per-mission compaction-trigger listener. When
+    // E10-DETECT's `bump_cumulative_input_and_check` crosses the threshold
+    // and emits `mission-planner:compaction-triggered:<missionId>`, the
+    // listener routes the event into `perform_compaction`, which restarts
+    // the planner session with a summarized priming context.
+    //
+    // E10 FIX P0 — capture the returned `EventId` and store it on the
+    // session record so `stop_mission_planner` / `complete_mission` can
+    // `app.unlisten` before the session is removed. Without this,
+    // start→stop cycles accumulate listeners and one event fires N tasks.
+    //
+    // Installed exactly once per planner lifecycle — the early-return
+    // branches above (existing planner for the same mission) skip this so
+    // we don't double-register a listener for the same mission id.
+    let event_id = crate::commands::mission_planner_compaction::install_compaction_listener(
+        &app_handle,
+        &mission_id,
+    );
+    registry.set_compaction_listener(&mission_id, event_id).await;
+
     info!(mission_id = %mission_id, planner_session = %session_id, "started mission planner");
     Ok(session_id)
 }
@@ -1953,6 +2249,20 @@ pub async fn stop_mission_planner(app_handle: AppHandle, mission_id: String) -> 
         if let Err(e) = sidecar.forward_close(sidecar_session_id.clone()).await {
             warn!(error = %e, "stop_mission_planner: forward_close failed");
         }
+    }
+
+    // E10 FIX P0 — unlisten the compaction-trigger event handler BEFORE
+    // removing the session from the registry. The EventId was captured in
+    // `start_mission_planner` and stored on the session; without
+    // unlistening here, every start→stop cycle leaks a listener.
+    if let Some(event_id) = registry.take_compaction_listener(&mission_id).await {
+        use tauri::Listener as _;
+        app_handle.unlisten(event_id);
+        tracing::debug!(
+            mission_id = %mission_id,
+            event_id,
+            "stop_mission_planner: unlistened compaction-trigger"
+        );
     }
 
     // Then drop the entry from the registry.
@@ -2834,6 +3144,104 @@ mod tests {
         assert!(result.is_none());
     }
 
+    // -------------------------------------------------------------------
+    // E10-DETECT — cumulative-input counter + compaction trigger flip
+    // -------------------------------------------------------------------
+
+    /// E10-DETECT — the first bump that crosses
+    /// [`COMPACTION_THRESHOLD_TOKENS`] must return `true` and atomically
+    /// flip `compaction_in_progress` to `true`. The session's
+    /// `cumulative_input_tokens` must reflect the bumped total.
+    #[tokio::test]
+    async fn bump_cumulative_input_fires_trigger_on_threshold() {
+        let registry = MissionPlannerRegistry::default();
+        let mission_id = "mission-compact-fires";
+        let sidecar_session_id = "sidecar-compact-fires";
+
+        // Seed a session sitting JUST below the threshold so the next
+        // bump crosses it. Use 1_000 as the bump delta so the test is
+        // robust to the exact threshold value.
+        let mut session = MissionPlannerSession::new(
+            sidecar_session_id.to_string(),
+            mission_id.to_string(),
+            sidecar_session_id.to_string(),
+        );
+        session.cumulative_input_tokens = COMPACTION_THRESHOLD_TOKENS - 1_000;
+        registry.insert(session).await;
+
+        let crossed = registry
+            .bump_cumulative_input_and_check(mission_id, 1_500)
+            .await;
+        assert!(
+            crossed,
+            "bump that crosses threshold must return true so caller emits the trigger event"
+        );
+
+        let after = registry
+            .get_by_mission(mission_id)
+            .await
+            .expect("session still registered");
+        assert_eq!(
+            after.cumulative_input_tokens,
+            COMPACTION_THRESHOLD_TOKENS - 1_000 + 1_500,
+            "cumulative counter must reflect the bumped total"
+        );
+        assert!(
+            after.compaction_in_progress,
+            "compaction_in_progress flag must be set to true on threshold crossing"
+        );
+    }
+
+    /// E10-DETECT — once `compaction_in_progress` is true, subsequent
+    /// bumps over the threshold must return `false` (no duplicate event
+    /// fires while the swap is running). The counter still accumulates
+    /// — E10-SWAP resets it on completion.
+    #[tokio::test]
+    async fn bump_cumulative_input_no_double_fire_during_compaction() {
+        let registry = MissionPlannerRegistry::default();
+        let mission_id = "mission-compact-nodupe";
+        let sidecar_session_id = "sidecar-compact-nodupe";
+
+        let mut session = MissionPlannerSession::new(
+            sidecar_session_id.to_string(),
+            mission_id.to_string(),
+            sidecar_session_id.to_string(),
+        );
+        session.cumulative_input_tokens = COMPACTION_THRESHOLD_TOKENS - 100;
+        registry.insert(session).await;
+
+        // First crossing — fires.
+        let first = registry
+            .bump_cumulative_input_and_check(mission_id, 500)
+            .await;
+        assert!(first, "first threshold crossing must fire");
+
+        // Second bump (still above threshold; compaction is now in
+        // flight) — must NOT fire again.
+        let second = registry
+            .bump_cumulative_input_and_check(mission_id, 5_000)
+            .await;
+        assert!(
+            !second,
+            "subsequent bumps during compaction must NOT fire a second trigger"
+        );
+
+        // Counter still accumulates so telemetry stays accurate.
+        let after = registry
+            .get_by_mission(mission_id)
+            .await
+            .expect("session still registered");
+        assert_eq!(
+            after.cumulative_input_tokens,
+            COMPACTION_THRESHOLD_TOKENS - 100 + 500 + 5_000,
+            "counter must keep accumulating during in-progress compaction"
+        );
+        assert!(
+            after.compaction_in_progress,
+            "compaction_in_progress must remain true until swap_sidecar_session_after_compaction clears it"
+        );
+    }
+
     /// Test helper: insert a planner session for a mission with a given
     /// status and sidecar session id. Bypasses the public `start_mission_
     /// planner` Tauri command (which requires a real `AppHandle` and
@@ -3655,7 +4063,9 @@ mod e8_accum {
         );
         seed_flight(&mid, Some(1.5), Some(100)).await.unwrap();
 
-        super::accumulate_planner_cost(&mid, 300, 0.5)
+        // E10: signature is now (input_tokens, output_tokens, cost_usd).
+        // 100 + 200 = 300 total, matching the pre-E10 single-arg case.
+        super::accumulate_planner_cost(&mid, 100, 200, 0.5)
             .await
             .expect("accumulate must succeed for a seeded flight");
 
@@ -3682,7 +4092,8 @@ mod e8_accum {
         );
         seed_flight(&mid, None, None).await.unwrap();
 
-        super::accumulate_planner_cost(&mid, 125, 0.5)
+        // E10: split (input=50, output=75, cost=0.5); 50+75=125 total.
+        super::accumulate_planner_cost(&mid, 50, 75, 0.5)
             .await
             .expect("accumulate must succeed for a seeded flight");
 
@@ -3713,7 +4124,8 @@ mod e8_accum {
         // Defensive: ensure nothing with this id exists.
         unseed_flight(&mid).await;
 
-        let result = super::accumulate_planner_cost(&mid, 30, 0.1).await;
+        // E10: signature is (input_tokens, output_tokens, cost_usd).
+        let result = super::accumulate_planner_cost(&mid, 10, 20, 0.1).await;
         assert!(result.is_err(), "missing flight must return Err");
         let err = result.unwrap_err();
         assert!(

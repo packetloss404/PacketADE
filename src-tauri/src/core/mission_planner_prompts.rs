@@ -206,6 +206,11 @@ The possible kinds:
 - **`collision_detected`** — Two or more tasks want to write to the same files at the same time. Body contains the colliding task ids. Re-route by editing prompts (via `update_task`) or by cancelling one and scheduling it as a dependency of the other.
 - **`user_message_in_journal`** — The user sent a follow-up message after Launch. This is also how `request_user_approval` answers come back. Read it, react accordingly.
 - **`quota_exhausted`** — The Anthropic rate limit hit. Stop work. Do not retry — the runtime will resume you automatically when the window resets. End the turn without calling tools.
+- **`compaction_resume`** — your prior conversation has been summarized
+  to stay under the 200K context window. The envelope body contains
+  the summary text. End your turn quietly — the next real event will
+  arrive on the following wake. Do NOT call tools in response to this
+  trigger.
 
 **Read every envelope all the way through before acting.** The body may include the recent journal tail and a mission snapshot (current milestones, task statuses, attempt outcomes) — that's how you know what state the mission is in across wake events. You do not need to remember everything across turns; the snapshot is your ground truth.
 
@@ -1581,6 +1586,7 @@ mod e4_content_tests {
             "collision_detected",
             "user_message_in_journal",
             "quota_exhausted",
+            "compaction_resume", // E10: new wake-kind
         ] {
             assert!(
                 p.contains(kind),

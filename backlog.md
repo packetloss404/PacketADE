@@ -300,6 +300,61 @@ Deferred items called out in `dev/multi-platform-build.md` and
   back to `""` and `calculate_cost` returns 0. The handler still
   bumps `planner_tokens` but not `planner_cost`. Mild drift; bounded
   by how often a planner is mid-turn at stop time.
+- **P3 — Compaction summarization burns OAuth quota.** Each compaction
+  fires a one-shot Sonnet call (~80K input chars truncated, ~2K output)
+  against the user's Claude subscription. On long-running missions this
+  could happen multiple times per day. Consider caching previous
+  summaries and only re-summarizing the delta since the last
+  compaction. Also consider exposing a user-configurable threshold
+  (today hardcoded at 150K tokens).
+- **P3 — Compaction does not preserve in-flight tool calls.** If the
+  planner is mid-turn (awaiting a tool result) when the threshold
+  crosses, the session swap drops the in-flight tool. v1 acceptable
+  — the planner re-decides on next wake. Worth a code comment.
+- **P3 — Compaction summary not surfaced in the journal-as-context
+  feedback loop.** After compaction, the new planner session has the
+  summary as priming context, but subsequent wake messages don't
+  reference it. If the planner needs to recall something pre-
+  compaction (e.g., "did I already create milestone X?"), it has to
+  rely entirely on the priming summary's completeness. Mitigation:
+  the wake-message builder could include the latest summary verbatim
+  in every wake until the next compaction. Worth considering for
+  v1.1 quality.
+- **P3 — Compaction event UX is minimal.** Today the indicator is a
+  small "Compacting" pill. A more informative inline message in the
+  Journal tab ("Session compacted at <timestamp>; <N> entries
+  summarized into <M> chars") would help users understand the
+  intervention.
+- **P3 — App-shutdown mid-compaction edge case.** If the user quits
+  between `swap_sidecar_session_after_compaction` (registry swap)
+  and `persist_planner_state_on_flight` (DTO write), the registry
+  has the new id but the DTO has the old. Cold-start enforce flips
+  active missions to Paused on reboot, so the user resumes manually
+  — but they'll see "Paused" instead of the live planner state.
+  Acceptable v1; consider write-DTO-first in v1.1.
+- **P3 — `OneshotWaiter` GC for hung sessions.** If a sidecar session
+  emits chunks then goes silent, the `OneshotWaiter` entry stays in
+  `SidecarManager::oneshot_waiters` forever. Crash fan-out covers
+  the hard-crash case; `done`/`error` covers the normal completion
+  case. The "hang" case needs a periodic sweep — every minute, drop
+  entries where the receiver was already dropped by the caller's
+  timeout.
+- **P3 — `wait_for_oneshot` HashMap insert silently drops prior
+  sender.** Defensive: replace `HashMap::insert` with `entry().or_insert_with(...)`
+  + log warning if a duplicate session_id is registered.
+- **P3 — Compaction summary not surfaced in subsequent wake context.**
+  After compaction, the new planner session has the summary as
+  priming but no later wake message references it. If the planner
+  needs to recall pre-compaction state for a subsequent decision,
+  it has to rely on the priming summary's completeness. Mitigation:
+  the wake-message builder could include the latest summary verbatim
+  in every wake until the next compaction.
+- **P3 — Move src/agents/* cleanup out of E10 commit.** The
+  pre-existing modifications to `src/agents/claude-code.ts` and
+  `src/agents/index.ts` (removing `createClaudeCodeAdapter`) are
+  unrelated to mission planner work and have been excluded from
+  every mission-planner commit. Land them in their own
+  chore/cleanup commit when convenient.
 
 ## Product tracks (from `dev/README.md`)
 

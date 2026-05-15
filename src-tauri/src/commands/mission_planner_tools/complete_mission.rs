@@ -91,7 +91,25 @@ pub async fn handle(
         warn!("complete_mission: SidecarManager not managed; skipping forward_close");
     }
 
-    // 5. Remove from registry so the wake consumer's `get_by_mission`
+    // 5. E10 FIX P0 — unlisten the compaction-trigger event handler BEFORE
+    //    removing the session from the registry. The EventId was captured
+    //    in `start_mission_planner` and stored on the session record;
+    //    without unlistening here, every planner that ends via
+    //    `complete_mission` would leak its compaction listener. (The
+    //    leaked listener would still fire on stray events, but its
+    //    `perform_compaction` body would no-op on the "planner session not
+    //    found" branch — wasteful, not catastrophic. Still: clean up.)
+    if let Some(event_id) = registry.take_compaction_listener(&mission_id).await {
+        use tauri::Listener as _;
+        app.unlisten(event_id);
+        tracing::debug!(
+            mission_id = %mission_id,
+            event_id,
+            "complete_mission: unlistened compaction-trigger"
+        );
+    }
+
+    // 6. Remove from registry so the wake consumer's `get_by_mission`
     //    lookup returns None and dispatch_wake no-ops for any further wake
     //    events queued for this mission.
     //
@@ -100,7 +118,7 @@ pub async fn handle(
     //    `PlannerMessage` rather than being silently dropped.
     let _removed = registry.remove_session(&mission_id, Some(app)).await;
 
-    // 6. Flip the Flight to Done + mirror planner_status onto the DTO so
+    // 7. Flip the Flight to Done + mirror planner_status onto the DTO so
     //    the frontend sees a consistent view after refresh. Both mutations
     //    go inside `with_state_lock` so a concurrent tool handler can't
     //    interleave a save between them.
@@ -131,7 +149,7 @@ pub async fn handle(
     .await
     .map_err(|e| format!("failed to persist mission completion: {}", e))?;
 
-    // 7. Coordination event (outside lock). E7 will hang the summary on the
+    // 8. Coordination event (outside lock). E7 will hang the summary on the
     //    persisted journal; for now the payload is the journal entry.
     info!(
         mission_id = %mission_id,
