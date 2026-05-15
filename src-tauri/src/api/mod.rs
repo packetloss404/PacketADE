@@ -396,6 +396,13 @@ pub struct TaskDto {
     pub cost: f64,
     #[ts(type = "number")]
     pub tokens: u64,
+    /// Mission Planner: number of `replan_after_failure` calls this task
+    /// has triggered (excluding RateLimit/Network exemptions). Mirrored
+    /// from `MissionPlannerSession.replans_per_task` by
+    /// `MissionPlannerRegistry::bump_replan_count`. Read by
+    /// `render_task_failed` for the budget header (`replanCount / 3`).
+    #[serde(default)]
+    pub replan_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1171,6 +1178,7 @@ impl From<core_flight::Task> for TaskDto {
             completed_at: value.completed_at,
             cost: value.cost,
             tokens: value.tokens,
+            replan_count: value.replan_count,
         }
     }
 }
@@ -1198,6 +1206,7 @@ impl From<TaskDto> for core_flight::Task {
             completed_at: value.completed_at,
             cost: value.cost,
             tokens: value.tokens,
+            replan_count: value.replan_count,
         }
     }
 }
@@ -1623,6 +1632,7 @@ mod tests {
                         completed_at: None,
                         cost: 0.0,
                         tokens: 0,
+                        replan_count: 0,
                     }],
                     validation_criteria: Vec::new(),
                 }],
@@ -1673,5 +1683,70 @@ mod tests {
             .get("filesChanged")
             .is_some());
         assert_eq!(value["ui"]["theme"], "dark");
+    }
+
+    #[test]
+    fn task_dto_replan_count_round_trips_through_core_and_camel_case() {
+        // Core Task → TaskDto → Core Task should preserve replan_count.
+        let mut task = core_flight::Task {
+            id: "t1".into(),
+            milestone_id: "m1".into(),
+            flight_id: "f1".into(),
+            title: "x".into(),
+            description: String::new(),
+            order: 0,
+            status: core_flight::TaskStatus::Failed,
+            task_type: core_flight::TaskType::Implementation,
+            agent_config_id: "claude-code".into(),
+            agent_args: None,
+            model: None,
+            depends_on: Vec::new(),
+            session_id: None,
+            result: None,
+            review_packet: None,
+            created_at: 0,
+            started_at: None,
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+            replan_count: 0,
+        };
+        task.replan_count = 2;
+
+        let dto: TaskDto = task.into();
+        assert_eq!(dto.replan_count, 2);
+
+        // Wire shape: camelCase `replanCount` is what the frontend reads.
+        let value = serde_json::to_value(&dto).unwrap();
+        assert_eq!(value["replanCount"], 2);
+
+        // Round-trip back through core_flight::Task.
+        let back: core_flight::Task = dto.into();
+        assert_eq!(back.replan_count, 2);
+    }
+
+    #[test]
+    fn task_dto_replan_count_defaults_when_missing_in_camel_case_json() {
+        // Frontend / legacy persisted state may emit a TaskDto JSON without
+        // `replanCount` — `#[serde(default)]` on the DTO must let us
+        // deserialize cleanly with the field set to 0.
+        let json = r#"{
+            "id": "t1",
+            "milestoneId": "m1",
+            "flightId": "f1",
+            "title": "x",
+            "description": "",
+            "order": 0,
+            "status": "queued",
+            "type": "implementation",
+            "agentConfigId": "claude-code",
+            "dependsOn": [],
+            "sessionId": null,
+            "createdAt": 0,
+            "cost": 0.0,
+            "tokens": 0
+        }"#;
+        let dto: TaskDto = serde_json::from_str(json).expect("legacy task dto should parse");
+        assert_eq!(dto.replan_count, 0);
     }
 }

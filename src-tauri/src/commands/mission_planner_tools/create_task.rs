@@ -263,6 +263,10 @@ pub async fn handle(
                 completed_at: None,
                 cost: 0.0,
                 tokens: 0,
+                // E5: new tasks start at 0 replans. `replan_after_failure`
+                // will bump this when (and only when) the error is not
+                // exempt per `is_replan_exempt`.
+                replan_count: 0,
             };
             milestone.tasks.push(new_task);
             flight.updated_at = now_ms();

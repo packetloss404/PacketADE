@@ -775,6 +775,9 @@ function fromDtoTask(task: PersistedStateDto["flights"][number]["milestones"][nu
     completedAt: task.completedAt,
     cost: task.cost,
     tokens: task.tokens,
+    // Mission Planner replan counter — surfaced from the DTO so renderers
+    // can show `N / 3` budget headroom in the failure-wake body.
+    replanCount: task.replanCount,
   };
 }
 
@@ -815,6 +818,9 @@ function toDtoTask(task: Task): PersistedStateDto["flights"][number]["milestones
     completedAt: task.completedAt,
     cost: task.cost,
     tokens: task.tokens,
+    // Mission Planner replan counter — mirrored from the registry on each
+    // `bump_replan_count`. Default to 0 for legacy tasks that predate E5.
+    replanCount: task.replanCount ?? 0,
   };
 }
 

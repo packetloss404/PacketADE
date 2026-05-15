@@ -68,7 +68,8 @@
               "started_at": 2000,
               "completed_at": null,
               "cost": 0.5,
-              "tokens": 1000
+              "tokens": 1000,
+              "replan_count": 0
             }
           ],
           "validation_criteria": [
