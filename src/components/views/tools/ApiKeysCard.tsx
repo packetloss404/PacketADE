@@ -14,6 +14,12 @@ const PROVIDERS: ProviderEntry[] = [
   { id: "openai", name: "OpenAI", description: "GPT-5.5, GPT-4o, o3", needsKey: true },
   { id: "minimax", name: "MiniMax", description: "M2.7", needsKey: true },
   { id: "openrouter", name: "OpenRouter", description: "100+ models, one key", needsKey: true },
+  {
+    id: "gemini",
+    name: "Google Gemini",
+    description: "Used for dictation post-processing and other Gemini-powered features.",
+    needsKey: true,
+  },
   { id: "ollama", name: "Ollama", description: "Local models, no key needed", needsKey: false },
 ];
 

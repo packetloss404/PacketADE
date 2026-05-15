@@ -68,7 +68,7 @@ export function AgentSettingsCard() {
       <div className="space-y-4">
         <div>
           <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5">
-            Launch default
+            Default launch location
           </div>
           <div className="inline-flex rounded-md border border-bg-border overflow-hidden">
             {COMPOSER_OPTIONS.map((option) => {
@@ -93,6 +93,11 @@ export function AgentSettingsCard() {
               );
             })}
           </div>
+          <p className="text-[10px] text-text-muted leading-snug mt-1.5">
+            Used as the default for new conversations. Overrideable via the
+            chip in any conversation&apos;s input bar (which also updates this
+            default).
+          </p>
         </div>
 
         <div className="space-y-2">

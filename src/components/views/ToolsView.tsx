@@ -11,6 +11,7 @@ import { TagListCard } from "./tools/TagListCard";
 import { ProviderRoutingCard } from "./tools/ProviderRoutingCard";
 import { ModulesCard } from "./tools/ModulesCard";
 import { NotificationSettingsCard } from "./tools/NotificationSettingsCard";
+import { ThemeSettingsCard } from "./tools/ThemeSettingsCard";
 import { CrashViewerCard } from "./tools/CrashViewerCard";
 import { McpServersCard } from "./tools/McpServersCard";
 import { McpProviderCard } from "./tools/McpProviderCard";
@@ -96,6 +97,7 @@ export function ToolsView() {
           <div className="grid grid-cols-2 gap-4 max-w-2xl">
             <ProjectInfoCard projectPath={projectPath} gitBranch={gitBranch} />
             <WorkspaceSettingsCard />
+            <ThemeSettingsCard />
             <NotificationSettingsCard />
             <CrashViewerCard />
           </div>
