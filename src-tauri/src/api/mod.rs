@@ -523,6 +523,25 @@ pub struct FlightDto {
     #[serde(default)]
     #[ts(optional)]
     pub planner_status: Option<PlannerStatusDto>,
+    /// Mission Planner (E8): cumulative USD cost attributed to the planner's
+    /// own turns. Distinct from `total_cost` which rolls up executor task
+    /// spend. Absent until the planner closes its first turn.
+    #[serde(default)]
+    #[ts(optional)]
+    pub planner_cost: Option<f64>,
+    /// Mission Planner (E8): cumulative input+output tokens used by the
+    /// planner session. Absent until the planner closes its first turn.
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub planner_tokens: Option<u64>,
+    /// Mission Planner (E8): provider string the planner runs on (e.g.
+    /// `"claude-oauth"` for subscription, `"api-claude"` for API-key). The
+    /// StatGrid chip renders these differently because subscription usage
+    /// doesn't burn API credit.
+    #[serde(default)]
+    #[ts(optional)]
+    pub planner_provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1382,6 +1401,9 @@ impl From<core_flight::Flight> for FlightDto {
             attempts: value.attempts.into_iter().map(Into::into).collect(),
             planner_session_id: value.planner_session_id,
             planner_status: value.planner_status.map(Into::into),
+            planner_cost: value.planner_cost,
+            planner_tokens: value.planner_tokens,
+            planner_provider: value.planner_provider,
         }
     }
 }
@@ -1408,6 +1430,9 @@ impl From<FlightDto> for core_flight::Flight {
             attempts: value.attempts.into_iter().map(Into::into).collect(),
             planner_session_id: value.planner_session_id,
             planner_status: value.planner_status.map(Into::into),
+            planner_cost: value.planner_cost,
+            planner_tokens: value.planner_tokens,
+            planner_provider: value.planner_provider,
         }
     }
 }
@@ -1647,6 +1672,9 @@ mod tests {
                 attempts: vec![],
                 planner_session_id: None,
                 planner_status: None,
+                planner_cost: None,
+                planner_tokens: None,
+                planner_provider: None,
             }],
             agents: Vec::new(),
             settings: OrchestratorSettingsDto {
