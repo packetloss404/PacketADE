@@ -253,6 +253,7 @@ pub fn run() {
             commands::github::github_clear_token,
             commands::github::github_has_token,
             commands::github::github_list_repos,
+            commands::github::github_get_authenticated_user,
             commands::github::github_list_issues,
             commands::github::github_get_issue,
             commands::github::github_create_pr,

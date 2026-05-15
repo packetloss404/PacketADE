@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   githubClearToken,
   githubCreatePr,
+  githubGetAuthenticatedUser,
   githubHasToken,
   githubInvestigateIssue,
   githubListIssues,
@@ -44,10 +45,16 @@ function isTokenError(message: string): boolean {
   return message.toLowerCase().includes("token not set");
 }
 
+interface AuthenticatedUser {
+  login: string;
+  avatarUrl: string;
+}
+
 interface GitHubStore {
   config: GitHubConfig;
   isConnected: boolean;
   isInitializing: boolean;
+  authenticatedUser: AuthenticatedUser | null;
   repos: GitHubRepo[];
   issues: GitHubIssue[];
   isLoading: boolean;
@@ -57,6 +64,8 @@ interface GitHubStore {
   prs: GitHubPr[];
   prDiff: string | null;
   isPrLoading: boolean;
+  /** Unix millis of the last successful repos/issues/PRs fetch. */
+  lastSyncAt: number | null;
 
   initializeAuth: () => Promise<void>;
   connect: (token: string) => Promise<void>;
@@ -84,6 +93,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   config: loaded.config,
   isConnected: false,
   isInitializing: false,
+  authenticatedUser: null,
   repos: [],
   issues: [],
   isLoading: false,
@@ -93,6 +103,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   prs: [],
   prDiff: null,
   isPrLoading: false,
+  lastSyncAt: null,
 
   initializeAuth: async () => {
     if (get().isInitializing) return;
@@ -110,14 +121,26 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         saveConfig(get().config);
       }
 
+      let authenticatedUser: AuthenticatedUser | null = null;
+      if (hasToken) {
+        try {
+          authenticatedUser = await githubGetAuthenticatedUser();
+        } catch {
+          // Token may be stale/invalid — leave user null; badge falls back to
+          // "user" and the next API call will surface a clearer error.
+        }
+      }
+
       set({
         isConnected: hasToken,
         isInitializing: false,
+        authenticatedUser,
       });
     } catch (e) {
       set({
         isConnected: false,
         isInitializing: false,
+        authenticatedUser: null,
         error: String(e),
       });
     }
@@ -130,9 +153,17 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     try {
       await githubSetToken(trimmed);
       pendingLegacyToken = null;
+      let authenticatedUser: AuthenticatedUser | null = null;
+      try {
+        authenticatedUser = await githubGetAuthenticatedUser();
+      } catch {
+        // Don't fail connect on the probe; the badge will show "user" until
+        // the next refresh.
+      }
       set({
         isConnected: true,
         isLoading: false,
+        authenticatedUser,
         repos: [],
         issues: [],
       });
@@ -140,6 +171,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       set({
         isConnected: false,
         isLoading: false,
+        authenticatedUser: null,
         error: String(e),
       });
     }
@@ -152,8 +184,10 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       set({
         isConnected: false,
         isLoading: false,
+        authenticatedUser: null,
         repos: [],
         issues: [],
+        lastSyncAt: null,
       });
     } catch (e) {
       set({
@@ -169,7 +203,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     try {
       const json = await githubListRepos();
       const repos: GitHubRepo[] = JSON.parse(json);
-      set({ repos, isLoading: false });
+      set({ repos, isLoading: false, lastSyncAt: Date.now() });
     } catch (e) {
       const message = String(e);
       set({
@@ -195,8 +229,13 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         config.selectedRepo.owner,
         config.selectedRepo.repo
       );
-      const issues: GitHubIssue[] = JSON.parse(json);
-      set({ issues, isLoading: false });
+      // GitHub's /issues endpoint returns BOTH issues and PRs; PRs carry a
+      // `pull_request` field. The Rust side already filters these out, but
+      // we defensively drop any that slip through (e.g. older sidecar/Rust
+      // build) so the Issues tab never shows PRs.
+      const raw = JSON.parse(json) as Array<GitHubIssue & { pull_request?: unknown }>;
+      const issues: GitHubIssue[] = raw.filter((item) => !item.pull_request);
+      set({ issues, isLoading: false, lastSyncAt: Date.now() });
     } catch (e) {
       const message = String(e);
       set({
@@ -267,7 +306,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         config.selectedRepo.repo
       );
       const prs = JSON.parse(json);
-      set({ prs, isPrLoading: false });
+      set({ prs, isPrLoading: false, lastSyncAt: Date.now() });
     } catch (e) {
       set({ error: String(e), isPrLoading: false });
     }

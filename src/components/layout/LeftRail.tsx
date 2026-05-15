@@ -1,4 +1,4 @@
-import { Sparkles, Terminal, Plane, KanbanSquare, Github, Brain, Settings } from "lucide-react";
+import { Sparkles, Terminal, Plane, KanbanSquare, Github, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAppStore, type AppView } from "@/stores/appStore";
 
@@ -15,7 +15,6 @@ const ITEMS: RailItem[] = [
   { id: "missions", icon: Plane, label: "Flight Deck" },
   { id: "issues", icon: KanbanSquare, label: "Issues" },
   { id: "github", icon: Github, label: "GitHub" },
-  { id: "memory", icon: Brain, label: "Memory" },
 ];
 
 export function LeftRail() {
