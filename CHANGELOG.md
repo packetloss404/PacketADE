@@ -3,6 +3,71 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.7.0] - 2026-05-15
+
+### Added — Mission Planner v1
+
+The headline feature: an autonomous AI Mission Planner that owns a
+mission from a spec conversation through completion. One Claude
+session per mission, callable tool surface, journal, safety rails,
+context compaction.
+
+#### Highlights
+- **Spec-mode chat.** Click "Start a mission" → talk to a Sonnet 4.6
+  planner about what you want to build. Hit Launch when ready.
+- **Autonomous decomposition.** The planner breaks your spec into
+  2–4 milestones + 4–10 tasks, each spawned as an executor agent in
+  its own worktree. Milestones and tasks populate live on the
+  mission detail pane.
+- **Self-driving lifecycle.** The planner reacts to task
+  completions/failures, replans on retryable errors (with
+  RateLimit/Network exempted from the replan cap), and asks the
+  user for input via the async approval gate when it genuinely
+  needs to escalate.
+- **Mission journal.** Every planner action is recorded in
+  append-only markdown at
+  `~/.packetade/missions/<shortId>_<id>.md`. A new Journal tab on
+  the mission detail pane renders it live.
+- **Cost split.** StatGrid shows Planner vs Executor spend
+  separately, with a cumulative-token chip for OAuth subscriptions.
+- **Safety rails.** Per-mode tool-call caps (50 / 25 / 25), task
+  ceiling 60, rate-limit detection + auto-resume, kill-switch
+  button, Awake-stickiness watchdog, cold-start enforcement (active
+  missions flip to Paused on app restart).
+- **Context compaction.** At 150K cumulative input tokens the
+  planner's conversation is summarized and the session is reset
+  with the summary as priming context, so multi-day missions don't
+  hit the context wall.
+
+#### Architecture
+- 10 epics shipped (E1–E8 + E10) over ~14K LOC across the Rust
+  backend, agent-sidecar (Node), and React frontend.
+- Sidecar protocol bumped 4 → 6 (typed `inject_user_turn` +
+  `planner_tool` round-trip + `rate_limited` events +
+  `maxOutputTokens`).
+- In-process MCP server inside the agent-sidecar exposes 7 planner
+  tools to Claude (validated by spike — see
+  `dev/mission-planner-spike-retro.md`).
+- 9 commits, ~70 new tests (Rust unit + vitest + sidecar smokes).
+
+#### Deferred to v1.1
+See [`backlog.md`](./backlog.md) for the full list. Headlines:
+- Helper planner (one-shot Opus 4.7 spawn for huge scopes).
+- Back-port milestone-gating + collision-detection to the
+  async-attempts execution path.
+- Predictive quota awareness via response headers (if the SDK ever
+  exposes them).
+- Subscription-% display (no public Anthropic endpoint today).
+- Crash-resilient planner sessions across app restarts.
+
+#### Documentation
+- `dev/mission-planner-plan.md` — locked design spec.
+- `dev/mission-planner-spike-retro.md` — spike findings.
+- `dev/mission-planner-v1-acceptance-runbook.md` — manual
+  validation procedure.
+
+---
+
 ## [0.6.0] - 2026-05-12
 
 ### Added — SSH hardening & remote workspaces (Phases 1–3)

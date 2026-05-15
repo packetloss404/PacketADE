@@ -342,13 +342,6 @@ Deferred items called out in `dev/multi-platform-build.md` and
 - **P3 — `wait_for_oneshot` HashMap insert silently drops prior
   sender.** Defensive: replace `HashMap::insert` with `entry().or_insert_with(...)`
   + log warning if a duplicate session_id is registered.
-- **P3 — Compaction summary not surfaced in subsequent wake context.**
-  After compaction, the new planner session has the summary as
-  priming but no later wake message references it. If the planner
-  needs to recall pre-compaction state for a subsequent decision,
-  it has to rely on the priming summary's completeness. Mitigation:
-  the wake-message builder could include the latest summary verbatim
-  in every wake until the next compaction.
 - **P3 — Move src/agents/* cleanup out of E10 commit.** The
   pre-existing modifications to `src/agents/claude-code.ts` and
   `src/agents/index.ts` (removing `createClaudeCodeAdapter`) are
