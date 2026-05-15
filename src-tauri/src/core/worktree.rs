@@ -57,19 +57,44 @@ async fn run_local_git(cwd: &str, args: &[&str]) -> Result<(String, String, i32)
     ))
 }
 
+/// v0.8: optional mission context the worktree provisioner forwards to the
+/// auto-trailer hook installer. When `None`, the trailer format's
+/// `{flightId}` / `{flightTitle}` placeholders are filled with `"unknown"`
+/// and `""` respectively. Used by callers that aren't mission-tied (e.g.
+/// agents-pane conversation worktrees in `commands/git.rs`).
+#[derive(Debug, Clone, Default)]
+pub struct WorktreeMission {
+    pub flight_id: Option<String>,
+    pub flight_title: Option<String>,
+}
+
 /// Create a local git worktree at `<base>/.pkt-worktrees/<attempt_id>` checked
 /// out to a new branch `pkt/<attempt_id>` based on `base_branch`. Idempotent —
 /// if the worktree already exists, returns its path without erroring.
 ///
-/// v0.8-16: also installs a `prepare-commit-msg` hook inside the
-/// worktree's `.git/hooks` directory so every commit made inside the
-/// worktree gets a `Run-By: PacketADE mission F-<flight> attempt
-/// A-<attempt>` trailer. The flight id is derived from the worktree's
-/// parent path; if it isn't recoverable we fall back to `unknown`.
+/// v0.8-16 (revised): conditionally installs a `prepare-commit-msg` hook
+/// inside the worktree's `.git/hooks` directory so every commit made
+/// inside the worktree gets a configurable trailer. The hook installer
+/// reads `OrchestratorSettings.auto_commit_trailer_*` from the
+/// persisted state and skips installation entirely when the user has
+/// turned the feature off.
 pub async fn create_local_worktree(
     base: &str,
     attempt_id: &str,
     base_branch: &str,
+) -> Result<String, String> {
+    create_local_worktree_with_mission(base, attempt_id, base_branch, WorktreeMission::default())
+        .await
+}
+
+/// v0.8: like `create_local_worktree` but accepts mission metadata so the
+/// auto-trailer hook can substitute real values for `{flightId}` and
+/// `{flightTitle}` placeholders.
+pub async fn create_local_worktree_with_mission(
+    base: &str,
+    attempt_id: &str,
+    base_branch: &str,
+    mission: WorktreeMission,
 ) -> Result<String, String> {
     let path = worktree_path(base, attempt_id);
     let branch = branch_name(attempt_id);
@@ -78,7 +103,7 @@ pub async fn create_local_worktree(
         info!(path = %path, "Worktree already exists, reusing");
         // Idempotently re-install the hook so older worktrees pick it up
         // on next launch.
-        if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id).await {
+        if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id, &mission).await {
             warn!(path = %path, error = %e, "Failed to install prepare-commit-msg hook on existing worktree (non-fatal)");
         }
         return Ok(path);
@@ -100,17 +125,59 @@ pub async fn create_local_worktree(
 
     // v0.8-16: auto-trailer hook. Non-fatal if it fails — the worktree
     // is still usable, the commit just won't carry the trailer.
-    if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id).await {
+    if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id, &mission).await {
         warn!(path = %path, error = %e, "Failed to install prepare-commit-msg hook (non-fatal)");
     }
 
     Ok(path)
 }
 
-/// v0.8-16: write a `prepare-commit-msg` hook inside the worktree's git
-/// directory that appends a `Run-By: PacketADE mission F-... attempt
-/// A-...` trailer to every commit message that does not already carry
-/// one.
+/// v0.8: render the user-supplied trailer format with the live mission
+/// values. Recognised placeholders: `{flightId}`, `{attemptId}`,
+/// `{flightTitle}`. Anything else is passed through unchanged so users
+/// can keep literal braces if they need to.
+pub(crate) fn render_trailer_format(
+    format: &str,
+    flight_id: &str,
+    attempt_id: &str,
+    flight_title: &str,
+) -> String {
+    format
+        .replace("{flightId}", flight_id)
+        .replace("{attemptId}", attempt_id)
+        .replace("{flightTitle}", flight_title)
+}
+
+/// v0.8: strip shell-meaningful characters out of trailer values before
+/// they hit the hook script. The script writes them via a single-quoted
+/// `printf` literal so quotes are the only real escape hazard, but we
+/// also drop control characters / newlines so a malicious flight title
+/// can't smuggle extra trailers in.
+fn sanitize_trailer_value(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_control() || c == '\'' {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// v0.8-16 (revised): write a `prepare-commit-msg` hook inside the
+/// worktree's git directory that appends the user-configured trailer to
+/// every commit message that does not already carry one.
+///
+/// Behaviour driven by `OrchestratorSettings`:
+/// - `auto_commit_trailer_enabled = false` → no hook is written; any
+///   pre-existing hook from earlier runs is left alone.
+/// - `auto_commit_trailer_format` → format string; placeholders
+///   `{flightId}`, `{attemptId}`, `{flightTitle}` are substituted from
+///   the supplied `mission` context. Unspecified placeholders fall back
+///   to `"unknown"` / `""`.
 ///
 /// Cross-platform notes:
 /// - On POSIX, `chmod +x` is required for git to invoke the hook.
@@ -126,7 +193,22 @@ pub async fn create_local_worktree(
 async fn install_prepare_commit_msg_hook(
     worktree_path: &str,
     attempt_id: &str,
+    mission: &WorktreeMission,
 ) -> Result<(), String> {
+    // v0.8: consult the persisted orchestration settings. `load_state`
+    // is sync; running it on a worker thread keeps us off the tokio
+    // executor for the file I/O. Failures degrade to defaults — we'd
+    // rather install the hook with the canonical format than skip
+    // installation because a settings read hiccuped.
+    let settings = tokio::task::spawn_blocking(|| crate::core::storage::load_state().settings)
+        .await
+        .map_err(|e| format!("settings load join error: {}", e))?;
+
+    if !settings.auto_commit_trailer_enabled {
+        info!(path = %worktree_path, "Auto-trailer disabled in settings; skipping hook install");
+        return Ok(());
+    }
+
     // Resolve the hooks dir for this worktree. `git rev-parse --git-path
     // hooks` returns the worktree-scoped hooks directory if it exists,
     // falling back to `.git/hooks`.
@@ -153,35 +235,52 @@ async fn install_prepare_commit_msg_hook(
 
     let hook_path = hooks_dir.join("prepare-commit-msg");
 
-    // Derive the flight id from the worktree base directory. The
-    // worktree path is `<flight-base>/.pkt-worktrees/<attempt_id>`; the
-    // grandparent's name is the flight directory name. Mission planner
-    // flights are identified by their `Flight.id` which the frontend
-    // passes as the worktree `base`. We fall back to `unknown` when the
-    // path can't be parsed.
-    let flight_id = std::path::Path::new(worktree_path)
-        .parent()
-        .and_then(|p| p.parent())
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
+    // Mission metadata: prefer explicit values from the caller, fall
+    // back to the legacy worktree-grandparent-name heuristic for the
+    // flight id, and finally to `"unknown"`. Title defaults to empty.
+    let flight_id = mission
+        .flight_id
+        .as_deref()
         .map(|s| s.to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .unwrap_or_else(|| {
+            std::path::Path::new(worktree_path)
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        });
+    let flight_title = mission.flight_title.as_deref().unwrap_or("");
+
+    let flight_id_safe = sanitize_trailer_value(&flight_id);
+    let attempt_id_safe = sanitize_trailer_value(attempt_id);
+    let flight_title_safe = sanitize_trailer_value(flight_title);
+
+    let trailer_line = render_trailer_format(
+        &settings.auto_commit_trailer_format,
+        &flight_id_safe,
+        &attempt_id_safe,
+        &flight_title_safe,
+    );
 
     // Hook script. POSIX-sh; Git for Windows runs MSYS sh against the
     // shebang. Use a `case` rather than `grep -q` to keep the script
-    // dependency-free.
+    // dependency-free. The trailer is injected into a single-quoted
+    // `printf` arg so `$VAR` / backticks inside the trailer are
+    // literal. We strip quotes from the trailer up front so the
+    // single-quoted literal can't be broken out of.
     let script = format!(
         "#!/bin/sh\n\
          # PacketADE auto-trailer — appended to commits made inside this worktree.\n\
-         # v0.8-16: installed by core/worktree.rs::install_prepare_commit_msg_hook.\n\
+         # v0.8: installed by core/worktree.rs::install_prepare_commit_msg_hook.\n\
          FILE=\"$1\"\n\
          MSG=$(cat \"$FILE\")\n\
          case \"$MSG\" in\n\
            *\"Run-By: PacketADE\"*) exit 0 ;;\n\
          esac\n\
-         printf \"\\nRun-By: PacketADE mission F-{flight} attempt A-{attempt}\\n\" >> \"$FILE\"\n",
-        flight = flight_id,
-        attempt = attempt_id,
+         printf '\\n%s\\n' '{trailer}' >> \"$FILE\"\n",
+        trailer = trailer_line,
     );
 
     if let Err(e) = std::fs::write(&hook_path, script) {
@@ -206,7 +305,12 @@ async fn install_prepare_commit_msg_hook(
     // shim is missing from PATH. The native Git for Windows install
     // always ships it, so this is a low-priority follow-up.
 
-    info!(path = ?hook_path, flight = %flight_id, attempt = %attempt_id, "Installed prepare-commit-msg auto-trailer hook");
+    info!(
+        path = ?hook_path,
+        flight = %flight_id_safe,
+        attempt = %attempt_id_safe,
+        "Installed prepare-commit-msg auto-trailer hook",
+    );
     Ok(())
 }
 
@@ -670,5 +774,44 @@ mod tests {
     fn validate_clone_repo_url_rejects_shell_meta() {
         assert!(validate_clone_repo_url("https://x.git'; rm -rf /;'").is_err());
         assert!(validate_clone_repo_url("https://x.git`evil`").is_err());
+    }
+
+    // --- v0.8 auto-trailer format ---
+
+    #[test]
+    fn render_trailer_format_substitutes_known_placeholders() {
+        assert_eq!(
+            render_trailer_format(
+                "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}",
+                "abc",
+                "att1",
+                "Title",
+            ),
+            "Run-By: PacketADE mission F-abc attempt A-att1"
+        );
+    }
+
+    #[test]
+    fn render_trailer_format_substitutes_flight_title() {
+        assert_eq!(
+            render_trailer_format("[{flightTitle}] F-{flightId}", "abc", "att1", "Hello World"),
+            "[Hello World] F-abc"
+        );
+    }
+
+    #[test]
+    fn render_trailer_format_passes_unknown_placeholders_through() {
+        // Users keeping literal braces (e.g. for templating) should be
+        // unaffected by the substitution pass.
+        assert_eq!(
+            render_trailer_format("custom {other} {flightId}", "abc", "att1", ""),
+            "custom {other} abc"
+        );
+    }
+
+    #[test]
+    fn sanitize_trailer_value_strips_quotes_and_newlines() {
+        assert_eq!(sanitize_trailer_value("foo'bar\nbaz"), "foo bar baz");
+        assert_eq!(sanitize_trailer_value("  trimmed  "), "trimmed");
     }
 }

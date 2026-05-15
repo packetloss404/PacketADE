@@ -11,6 +11,14 @@ pub struct DictationConfig {
     pub device_index: Option<u32>,
     pub custom_dictionary: Vec<String>,
     pub auto_paste: bool,
+    /// OS-global accelerator string for push-to-talk (hold). See
+    /// `useDictationGlobalShortcuts.ts` for accelerator syntax. `None` =
+    /// fall back to the hardcoded default in the hook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push_to_talk_shortcut: Option<String>,
+    /// OS-global accelerator for toggle-recording.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toggle_shortcut: Option<String>,
 }
 
 impl Default for DictationConfig {
@@ -20,6 +28,8 @@ impl Default for DictationConfig {
             device_index: None,
             custom_dictionary: Vec::new(),
             auto_paste: false,
+            push_to_talk_shortcut: None,
+            toggle_shortcut: None,
         }
     }
 }

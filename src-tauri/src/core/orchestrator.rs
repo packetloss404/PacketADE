@@ -15,12 +15,39 @@ pub struct RunningTask {
     pub started_at: u64,
 }
 
+/// Default `auto_commit_trailer_format` used when the user hasn't customised
+/// one. Placeholders rendered by `core::worktree::install_prepare_commit_msg_hook`:
+///   `{flightId}`    — Mission Flight id (e.g. `F-A1B2`), or `unknown` when
+///                     unavailable (e.g. agents-pane conversation worktrees).
+///   `{attemptId}`   — Attempt id (e.g. `A-X1Y2`).
+///   `{flightTitle}` — Free-form mission title; sanitised for shell context.
+pub const DEFAULT_AUTO_COMMIT_TRAILER_FORMAT: &str =
+    "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}";
+
 /// Settings for the orchestrator
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OrchestratorSettings {
     pub max_parallel_sessions: usize,
     pub milestone_gating: bool,
     pub project_path: String,
+    /// v0.8 setting: when true, the worktree provisioner installs a
+    /// `prepare-commit-msg` hook that appends an auto-trailer to every
+    /// commit. Off → no hook is installed at all (existing hooks are
+    /// untouched). Persisted via `save_settings`.
+    #[serde(default = "default_auto_commit_trailer_enabled")]
+    pub auto_commit_trailer_enabled: bool,
+    /// v0.8 setting: format string used by the auto-trailer hook. Supports
+    /// `{flightId}`, `{attemptId}`, and `{flightTitle}` placeholders.
+    #[serde(default = "default_auto_commit_trailer_format")]
+    pub auto_commit_trailer_format: String,
+}
+
+fn default_auto_commit_trailer_enabled() -> bool {
+    true
+}
+
+fn default_auto_commit_trailer_format() -> String {
+    DEFAULT_AUTO_COMMIT_TRAILER_FORMAT.to_string()
 }
 
 impl Default for OrchestratorSettings {
@@ -32,6 +59,8 @@ impl Default for OrchestratorSettings {
                 .ok()
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_else(|| ".".to_string()),
+            auto_commit_trailer_enabled: true,
+            auto_commit_trailer_format: DEFAULT_AUTO_COMMIT_TRAILER_FORMAT.to_string(),
         }
     }
 }

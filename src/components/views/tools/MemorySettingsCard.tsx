@@ -4,6 +4,7 @@ import {
   Database,
   GitBranch,
   ListChecks,
+  Pin,
   RotateCcw,
   Sparkles,
   Terminal,
@@ -13,6 +14,7 @@ import {
   DEFAULT_MEMORY_MAX_PATTERNS,
   DEFAULT_MEMORY_PATTERN_REFRESH_THRESHOLD,
   DEFAULT_MEMORY_RETENTION_DAYS,
+  type MemoryProjectPathMatching,
   useMemorySettingsStore,
 } from "@/stores/memorySettingsStore";
 import { useMemoryStore } from "@/stores/memoryStore";
@@ -36,6 +38,8 @@ export function MemorySettingsCard() {
   const contextMaxPatterns = useMemorySettingsStore((s) => s.contextMaxPatterns);
   const contextMaxSessions = useMemorySettingsStore((s) => s.contextMaxSessions);
   const contextMaxLessons = useMemorySettingsStore((s) => s.contextMaxLessons);
+  const projectPathMatching = useMemorySettingsStore((s) => s.projectPathMatching);
+  const pinnedExemptFromCap = useMemorySettingsStore((s) => s.pinnedExemptFromCap);
 
   const setCaptureSessions = useMemorySettingsStore((s) => s.setCaptureSessions);
   const setCaptureTasks = useMemorySettingsStore((s) => s.setCaptureTasks);
@@ -56,6 +60,12 @@ export function MemorySettingsCard() {
   );
   const setContextMaxLessons = useMemorySettingsStore(
     (s) => s.setContextMaxLessons,
+  );
+  const setProjectPathMatching = useMemorySettingsStore(
+    (s) => s.setProjectPathMatching,
+  );
+  const setPinnedExemptFromCap = useMemorySettingsStore(
+    (s) => s.setPinnedExemptFromCap,
   );
   const resetMemorySettings = useMemorySettingsStore((s) => s.resetMemorySettings);
 
@@ -193,6 +203,19 @@ export function MemorySettingsCard() {
           />
         </Section>
 
+        <Section title="Project scope">
+          <ProjectPathMatchingRadio
+            value={projectPathMatching}
+            onChange={setProjectPathMatching}
+          />
+          <Toggle
+            icon={Pin}
+            label="Pinned patterns survive cap eviction"
+            checked={pinnedExemptFromCap}
+            onChange={setPinnedExemptFromCap}
+          />
+        </Section>
+
         <div className="flex items-center gap-2 text-[10px] text-text-muted bg-bg-primary border border-bg-border rounded px-3 py-2">
           <Database size={11} className="text-accent-blue flex-shrink-0" />
           <span>
@@ -266,6 +289,78 @@ function Toggle({
         />
       </button>
     </label>
+  );
+}
+
+interface MatchingOption {
+  value: MemoryProjectPathMatching;
+  label: string;
+  description: string;
+}
+
+const MATCHING_OPTIONS: MatchingOption[] = [
+  {
+    value: "exact",
+    label: "Exact",
+    description: "Only memory recorded on this exact project path applies.",
+  },
+  {
+    value: "parent",
+    label: "Parent directory",
+    description: "Inherit memory from a parent project (works for sub-workspaces).",
+  },
+  {
+    value: "global",
+    label: "Global",
+    description: "Project-scoped memory becomes available everywhere.",
+  },
+];
+
+function ProjectPathMatchingRadio({
+  value,
+  onChange,
+}: {
+  value: MemoryProjectPathMatching;
+  onChange: (mode: MemoryProjectPathMatching) => void;
+}) {
+  return (
+    <fieldset className="space-y-1.5">
+      <legend className="text-[11px] text-text-secondary mb-1">
+        Match memory by project path
+      </legend>
+      {MATCHING_OPTIONS.map((opt) => {
+        const selected = value === opt.value;
+        return (
+          <label
+            key={opt.value}
+            className={`flex items-start gap-2 cursor-pointer rounded border px-2 py-1.5 transition-colors ${
+              selected
+                ? "border-accent-green/40 bg-accent-green/5"
+                : "border-bg-border hover:border-text-muted/30"
+            }`}
+          >
+            <input
+              type="radio"
+              name="memory-project-path-matching"
+              value={opt.value}
+              checked={selected}
+              onChange={() => onChange(opt.value)}
+              className="mt-0.5 accent-accent-green"
+            />
+            <div className="min-w-0">
+              <div
+                className={`text-[11px] ${selected ? "text-accent-green" : "text-text-secondary"}`}
+              >
+                {opt.label}
+              </div>
+              <div className="text-[10px] text-text-muted leading-snug">
+                {opt.description}
+              </div>
+            </div>
+          </label>
+        );
+      })}
+    </fieldset>
   );
 }
 

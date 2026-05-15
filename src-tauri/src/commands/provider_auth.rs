@@ -365,6 +365,46 @@ pub struct ProviderAuthStatus {
     pub hint: String,
 }
 
+/// Sign out of a subscription OAuth provider by deleting its credential
+/// file(s). The auth watcher will pick up the change and emit
+/// `provider-auth:changed` so the UI badges update without a refresh.
+///
+/// Supported providers: `claude-oauth`, `openai-codex`. Any other value is
+/// an error — API-key providers use `delete_api_key` instead.
+///
+/// Missing files are treated as success (already signed out). Returns the
+/// number of files actually removed.
+#[tauri::command]
+pub async fn sign_out_provider(provider: String) -> Result<u32, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Could not resolve home directory".to_string())?;
+    let candidates: Vec<std::path::PathBuf> = match provider.as_str() {
+        "claude-oauth" => vec![
+            home.join(".claude").join("credentials"),
+            home.join(".claude").join(".credentials.json"),
+        ],
+        "openai-codex" => vec![
+            home.join(".codex").join("auth.json"),
+            home.join(".codex").join("credentials"),
+        ],
+        other => return Err(format!("sign_out_provider does not support '{}'", other)),
+    };
+    let mut removed: u32 = 0;
+    for path in &candidates {
+        match std::fs::remove_file(path) {
+            Ok(_) => removed += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(format!(
+                    "Failed to remove {}: {}",
+                    path.display(),
+                    e
+                ));
+            }
+        }
+    }
+    Ok(removed)
+}
+
 #[tauri::command]
 pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthStatus, String> {
     match provider.as_str() {

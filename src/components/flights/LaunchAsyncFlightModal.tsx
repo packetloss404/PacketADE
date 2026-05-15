@@ -3,6 +3,7 @@ import { GitPullRequest, Rocket, Sparkles } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
+import { useGitHubStore } from "@/stores/githubStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { MultiTargetPicker, type PickedTarget } from "./MultiTargetPicker";
@@ -54,6 +55,11 @@ export function LaunchAsyncFlightModal({
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
   );
   const projectPath = useLayoutStore((s) => s.projectPath);
+  // v0.8: pre-check the publish toggle if the user opted into that default
+  // via Settings → GitHub.
+  const defaultPublishAttemptsAsPrs = useGitHubStore(
+    (s) => s.defaultPublishAttemptsAsPrs,
+  );
 
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
@@ -63,7 +69,9 @@ export function LaunchAsyncFlightModal({
   // v0.8-G: per-attempt draft-PR publish toggle. When enabled, the
   // asyncFlightStore pipeline pushes each attempt's branch and opens a
   // draft GitHub PR once it reaches a terminal state.
-  const [publishAsPrs, setPublishAsPrs] = useState(false);
+  const [publishAsPrs, setPublishAsPrs] = useState(
+    defaultPublishAttemptsAsPrs,
+  );
 
   const promptShort = useMemo(
     () => (prompt.length > 60 ? prompt.slice(0, 57) + "…" : prompt),

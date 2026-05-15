@@ -52,7 +52,26 @@ interface OrchestrationState {
   milestoneGating: boolean;
   /** Flights paused at a milestone boundary */
   pausedAtMilestone: Map<string, string>; // flightId -> milestoneId
+  /**
+   * v0.8: when true, the Rust worktree provisioner installs a
+   * `prepare-commit-msg` hook that appends an auto-trailer to every
+   * commit. Persisted through `OrchestratorSettings`.
+   */
+  autoCommitTrailerEnabled: boolean;
+  /**
+   * v0.8: format string for the auto-trailer hook. Recognised
+   * placeholders: `{flightId}`, `{attemptId}`, `{flightTitle}`.
+   */
+  autoCommitTrailerFormat: string;
 }
+
+/**
+ * v0.8: must match `core/orchestrator.rs::DEFAULT_AUTO_COMMIT_TRAILER_FORMAT`.
+ * The Rust side is the source of truth; this constant lets the UI render
+ * the same default in the absence of backend data.
+ */
+export const DEFAULT_AUTO_COMMIT_TRAILER_FORMAT =
+  "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}";
 
 interface OrchestrationStore extends OrchestrationState {
   // Flight lifecycle
@@ -75,6 +94,8 @@ interface OrchestrationStore extends OrchestrationState {
   // Settings
   setMaxParallelSessions: (max: number) => void;
   setMilestoneGating: (enabled: boolean) => void;
+  setAutoCommitTrailerEnabled: (enabled: boolean) => void;
+  setAutoCommitTrailerFormat: (format: string) => void;
 
   // Queries
   isFlightActive: (flightId: string) => boolean;
@@ -120,6 +141,8 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
   loopRunning: false,
   milestoneGating: true,
   pausedAtMilestone: new Map(),
+  autoCommitTrailerEnabled: true,
+  autoCommitTrailerFormat: DEFAULT_AUTO_COMMIT_TRAILER_FORMAT,
 
   launchFlight: async (flightId) => {
     // Validate agent availability before launching
@@ -459,6 +482,14 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
     set({ milestoneGating: enabled });
     void patchPersistedSettings({ milestoneGating: enabled });
   },
+  setAutoCommitTrailerEnabled: (enabled) => {
+    set({ autoCommitTrailerEnabled: enabled });
+    void patchPersistedSettings({ autoCommitTrailerEnabled: enabled });
+  },
+  setAutoCommitTrailerFormat: (format) => {
+    set({ autoCommitTrailerFormat: format });
+    void patchPersistedSettings({ autoCommitTrailerFormat: format });
+  },
 
   isFlightActive: (flightId) => get().activeFlightIds.has(flightId),
 
@@ -506,6 +537,11 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
       set({
         maxParallelSessions: clampParallelSessions(state.settings.maxParallelSessions),
         milestoneGating: state.settings.milestoneGating,
+        autoCommitTrailerEnabled:
+          state.settings.autoCommitTrailerEnabled ?? true,
+        autoCommitTrailerFormat:
+          state.settings.autoCommitTrailerFormat ??
+          DEFAULT_AUTO_COMMIT_TRAILER_FORMAT,
       });
     } catch {
       // Keep defaults when backend is unavailable.

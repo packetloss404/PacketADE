@@ -170,12 +170,36 @@ pub async fn launch_flight_async(
         return Err("At least one target is required".to_string());
     }
 
+    // v0.8: capture the mission title so the worktree's auto-trailer
+    // hook can substitute `{flightTitle}` into the rendered trailer.
+    // Read once up front rather than per-attempt so we don't pay the
+    // disk hit N times. Missing flight → empty title (the auto-trailer
+    // still works, just with the placeholder elided).
+    let flight_title = {
+        let flight_id = flight_id.clone();
+        tokio::task::spawn_blocking(move || {
+            storage::load_state()
+                .flights
+                .into_iter()
+                .find(|f| f.id == flight_id)
+                .map(|f| f.title)
+                .unwrap_or_default()
+        })
+        .await
+        .map_err(|e| format!("flight title lookup join error: {}", e))?
+    };
+
     let mut launched: Vec<Attempt> = Vec::new();
 
     for spec in targets {
         let attempt_id = format!("att_{}", Uuid::new_v4().simple());
         let session_id = attempt_id.clone();
         let branch = worktree::branch_name(&attempt_id);
+
+        let mission = worktree::WorktreeMission {
+            flight_id: Some(flight_id.clone()),
+            flight_title: Some(flight_title.clone()),
+        };
 
         let (target, ssh_config_for_session, agent_config_id, provider, model, base_branch) =
             match &spec {
@@ -186,9 +210,14 @@ pub async fn launch_flight_async(
                     provider,
                     model,
                 } => {
-                    let path = worktree::create_local_worktree(base_path, &attempt_id, base_branch)
-                        .await
-                        .map_err(|e| format!("Local worktree provision failed: {}", e))?;
+                    let path = worktree::create_local_worktree_with_mission(
+                        base_path,
+                        &attempt_id,
+                        base_branch,
+                        mission.clone(),
+                    )
+                    .await
+                    .map_err(|e| format!("Local worktree provision failed: {}", e))?;
                     (
                         AttemptTarget::Local {
                             base_path: base_path.clone(),

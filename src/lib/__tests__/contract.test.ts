@@ -137,6 +137,9 @@ describe("TS/Rust contract tests", () => {
         maxParallelSessions: 3,
         milestoneGating: true,
         projectPath: "/project",
+        autoCommitTrailerEnabled: true,
+        autoCommitTrailerFormat:
+          "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}",
       },
       ui: {
         selectedFlightId: "f1",

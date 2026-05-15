@@ -135,11 +135,26 @@ function capEvents(events: MemoryEvent[]): MemoryEvent[] {
 }
 
 function capPatterns(patterns: LearnedPattern[]): LearnedPattern[] {
-  const maxPatterns = getMemorySettings().maxPatterns;
-  // v0.8-H — pinned patterns are exempt from eviction. We always keep all
-  // pinned entries even if it pushes us over `maxPatterns`. The remaining
-  // (unpinned) entries are sorted by confidence then recency and trimmed
-  // to fill whatever headroom is left.
+  const settings = getMemorySettings();
+  const maxPatterns = settings.maxPatterns;
+  // v0.8-H — pinned patterns are exempt from eviction by default. We
+  // keep all pinned entries even if it pushes us over `maxPatterns`,
+  // and the remaining (unpinned) entries are sorted by confidence then
+  // recency and trimmed to fill whatever headroom is left.
+  //
+  // v0.8 setting `pinnedExemptFromCap = false`: pinned patterns are
+  // demoted to the same LRU as everything else — useful for users who
+  // want a hard ceiling regardless of how many things they have
+  // pinned.
+  if (!settings.pinnedExemptFromCap) {
+    if (patterns.length <= maxPatterns) return patterns;
+    const sorted = [...patterns].sort(
+      (a, b) =>
+        b.confidence - a.confidence || b.extractedAt - a.extractedAt,
+    );
+    const survivors = new Set<string>(sorted.slice(0, maxPatterns).map((p) => p.id));
+    return patterns.filter((p) => survivors.has(p.id));
+  }
   const pinned = patterns.filter((p) => p.pinned);
   const unpinned = patterns.filter((p) => !p.pinned);
   const headroom = Math.max(0, maxPatterns - pinned.length);
@@ -474,16 +489,37 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const settings = getMemorySettings();
     const out: ContextItem[] = [];
 
+    // v0.8: `projectPathMatching` setting controls strictness.
+    //   exact  — historical behaviour: normalized path equality
+    //   parent — match when either side is a prefix of the other, so
+    //            sub-workspaces inherit memory from a parent project
+    //   global — every project-scoped item is considered a match
+    //
+    // Items with no `projectPath` (legacy / global) always match.
+    const projectPathsMatch = (recorded: string | undefined | null): boolean => {
+      if (!recorded) return true; // legacy/global item — always relevant
+      if (settings.projectPathMatching === "global") return true;
+      const recordedN = normalizePath(recorded);
+      if (recordedN === normalizedCurrent) return true;
+      if (settings.projectPathMatching === "parent") {
+        const a = recordedN.endsWith("/") ? recordedN : recordedN + "/";
+        const b = normalizedCurrent.endsWith("/")
+          ? normalizedCurrent
+          : normalizedCurrent + "/";
+        return a.startsWith(b) || b.startsWith(a);
+      }
+      return false;
+    };
+
     // 1. Learned patterns. Pinned patterns sort first and are exempt
     //    from the confidence cutoff (the user pinned them, so we trust
     //    their judgment over a 0.6 numerical threshold). Patterns
     //    without a `projectPath` are legacy/global — they always match.
-    //    Patterns with a `projectPath` only match the current project.
+    //    Patterns with a `projectPath` are filtered through
+    //    `projectPathsMatch` so the v0.8 matching mode is honoured.
     const relevantPatterns = patterns
       .filter((p) => {
-        if (p.projectPath && normalizePath(p.projectPath) !== normalizedCurrent) {
-          return false;
-        }
+        if (!projectPathsMatch(p.projectPath)) return false;
         return p.pinned || p.confidence >= 0.6;
       })
       .sort((a, b) => {
@@ -513,7 +549,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const flightEvents = events.filter(
       (e): e is Extract<MemoryEvent, { type: "flight_completed" }> =>
         e.type === "flight_completed" &&
-        normalizePath(e.projectPath) === normalizedCurrent &&
+        projectPathsMatch(e.projectPath) &&
         e.timestamp > cutoff,
     );
     let pushed = 0;
@@ -537,7 +573,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       .filter(
         (e): e is Extract<MemoryEvent, { type: "session_completed" }> =>
           e.type === "session_completed" &&
-          normalizePath(e.projectPath) === normalizedCurrent &&
+          projectPathsMatch(e.projectPath) &&
           e.timestamp > sessionCutoff &&
           e.payload.summary !== null,
       )
