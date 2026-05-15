@@ -1,6 +1,7 @@
 import { useState, lazy, Suspense } from "react";
 import { Wrench, FolderOpen, Ticket, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower, Mic, Key, Server, User, GitBranch, Terminal, Bot, Brain } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useAppStore } from "@/stores/appStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { useIssueStore } from "@/stores/issueStore";
 import { usePromptStore } from "@/stores/promptStore";
@@ -176,7 +177,23 @@ export function ToolsView() {
         )}
 
         {activeSection === "memory" && (
-          <div className="max-w-2xl">
+          <div className="max-w-2xl space-y-3">
+            <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-1.5">
+                <Brain size={12} className="text-accent-green" />
+                <h3 className="text-xs font-semibold text-text-primary">Memory pane</h3>
+              </div>
+              <p className="text-[11px] text-text-muted leading-relaxed">
+                Browse, edit, and prune captured patterns and events.
+              </p>
+              <button
+                onClick={() => useAppStore.getState().setActiveView("memory")}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs text-accent-green border border-accent-green/30 bg-accent-green/10 rounded hover:bg-accent-green/15 transition-colors mt-3"
+              >
+                <Brain size={12} />
+                Manage memory
+              </button>
+            </div>
             <MemorySettingsCard />
           </div>
         )}

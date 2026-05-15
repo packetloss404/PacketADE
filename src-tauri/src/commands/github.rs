@@ -295,6 +295,39 @@ pub async fn github_list_repos(auth: State<'_, GitHubAuthState>) -> Result<Strin
     github_response_text(resp).await
 }
 
+#[derive(serde::Serialize)]
+pub struct GhUser {
+    pub login: String,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: String,
+}
+
+/// Fetch the authenticated user (`GET /user`). Used to render the correct
+/// "Connected · {username}" badge regardless of which org's repo is selected.
+#[tauri::command]
+pub async fn github_get_authenticated_user(
+    auth: State<'_, GitHubAuthState>,
+) -> Result<GhUser, String> {
+    let client = github_client_from_state(auth.inner()).await?;
+    let resp = client
+        .get("https://api.github.com/user")
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let body = github_response_text(resp).await?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse user: {}", e))?;
+    let login = parsed["login"]
+        .as_str()
+        .ok_or_else(|| "GitHub /user response missing 'login'".to_string())?
+        .to_string();
+    let avatar_url = parsed["avatar_url"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    Ok(GhUser { login, avatar_url })
+}
+
 #[tauri::command]
 pub async fn github_list_issues(
     auth: State<'_, GitHubAuthState>,
@@ -313,7 +346,24 @@ pub async fn github_list_issues(
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    github_response_text(resp).await
+    let body = github_response_text(resp).await?;
+    // GitHub's /issues endpoint returns BOTH issues and PRs; PRs carry a
+    // `pull_request` object on each item. Strip them server-side so the
+    // Issues tab badge and list show only real issues.
+    match serde_json::from_str::<Vec<serde_json::Value>>(&body) {
+        Ok(items) => {
+            let filtered: Vec<serde_json::Value> = items
+                .into_iter()
+                .filter(|item| item.get("pull_request").is_none())
+                .collect();
+            serde_json::to_string(&filtered)
+                .map_err(|e| format!("Failed to serialize issues: {}", e))
+        }
+        // If the response is not an array (e.g. error envelope leaked through),
+        // pass it through unchanged so the frontend can surface the original
+        // error text.
+        Err(_) => Ok(body),
+    }
 }
 
 #[tauri::command]

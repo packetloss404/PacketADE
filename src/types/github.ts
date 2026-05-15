@@ -29,6 +29,14 @@ export interface GitHubPr {
   html_url: string;
   state: string;
   created_at: string;
+  /**
+   * Present on GitHub's `/pulls` LIST endpoint. Other size/review fields
+   * (additions, deletions, changed_files, requested_reviewers) are NOT
+   * returned by the list endpoint — they require a per-PR fetch and are
+   * intentionally omitted from this type to prevent fake-zero rendering
+   * in the PR list (see GitHubView FIX 3 in v0.7).
+   */
+  draft?: boolean;
 }
 
 export interface GitHubConfig {

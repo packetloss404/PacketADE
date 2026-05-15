@@ -25,6 +25,7 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { IssueBody } from "@/components/views/github/IssueBody";
 import { RepoSelector } from "@/components/views/github/RepoSelector";
 import type { GitHubIssue, GitHubPr } from "@/types/github";
+import { relativeTime } from "@/lib/time";
 
 type TabKey = "issues" | "prs" | "activity";
 
@@ -52,6 +53,7 @@ export function GitHubView() {
     config,
     isConnected,
     isInitializing,
+    authenticatedUser,
     repos,
     issues,
     isLoading,
@@ -61,6 +63,7 @@ export function GitHubView() {
     prs,
     prDiff,
     isPrLoading,
+    lastSyncAt,
     initializeAuth,
     connect,
     disconnect,
@@ -207,10 +210,7 @@ export function GitHubView() {
     );
   }
 
-  const username =
-    repos[0]?.owner?.login && config.selectedRepo
-      ? config.selectedRepo.owner
-      : repos[0]?.owner?.login ?? "user";
+  const username = authenticatedUser?.login ?? "user";
 
   const openCount = issues.length;
 
@@ -232,6 +232,7 @@ export function GitHubView() {
         onTab={setTab}
         issueCount={openCount}
         prCount={prs.length}
+        lastSyncAt={lastSyncAt}
       />
 
       {error && (
@@ -408,9 +409,10 @@ interface SubTabsProps {
   onTab: (t: TabKey) => void;
   issueCount: number;
   prCount: number;
+  lastSyncAt: number | null;
 }
 
-function SubTabs({ tab, onTab, issueCount, prCount }: SubTabsProps) {
+function SubTabs({ tab, onTab, issueCount, prCount, lastSyncAt }: SubTabsProps) {
   return (
     <div className="flex items-center px-2.5 bg-bg-secondary border-b border-bg-border flex-shrink-0">
       <GhTab
@@ -438,8 +440,16 @@ function SubTabs({ tab, onTab, issueCount, prCount }: SubTabsProps) {
       />
       <div className="flex-1" />
       <span className="text-[10px] text-text-muted px-1.5">
-        synced{" "}
-        <span className="font-mono text-text-secondary">just now</span>
+        {lastSyncAt ? (
+          <>
+            synced{" "}
+            <span className="font-mono text-text-secondary">
+              {relativeTime(lastSyncAt)}
+            </span>
+          </>
+        ) : (
+          <span className="font-mono text-text-secondary">not synced yet</span>
+        )}
       </span>
     </div>
   );
@@ -706,14 +716,18 @@ function IssueDetail({
         </button>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-soft text-accent-green border border-accent-line rounded hover:bg-accent-green/20 transition-colors"
+          disabled
+          title="Coming soon"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-soft text-accent-green border border-accent-line rounded opacity-60 cursor-not-allowed"
         >
           <Plane size={10} /> Plan flight
         </button>
         <div className="flex-1" />
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 text-[10.5px] text-text-muted hover:text-text-primary px-2 py-1 transition-colors"
+          disabled
+          title="Coming soon"
+          className="inline-flex items-center gap-1.5 text-[10.5px] text-text-muted px-2 py-1 opacity-60 cursor-not-allowed"
         >
           <GitBranch size={10} /> Branch from issue
         </button>
@@ -809,19 +823,25 @@ function InvestigationPanel({
         <div className="flex gap-1.5 mt-3 pt-2.5 border-t border-dashed border-bg-border">
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-soft text-accent-green border border-accent-line rounded hover:bg-accent-green/20 transition-colors"
+            disabled
+            title="Coming soon"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-accent-soft text-accent-green border border-accent-line rounded opacity-60 cursor-not-allowed"
           >
             <Plane size={10} /> Hand off to Claude
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-primary border border-bg-border rounded hover:bg-bg-elevated transition-colors"
+            disabled
+            title="Coming soon"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-medium bg-bg-tertiary text-text-primary border border-bg-border rounded opacity-60 cursor-not-allowed"
           >
             <GitBranch size={10} /> Draft patch
           </button>
           <button
             type="button"
-            className="text-[10.5px] text-text-muted hover:text-text-primary px-2 py-1 transition-colors"
+            disabled
+            title="Coming soon"
+            className="text-[10.5px] text-text-muted px-2 py-1 opacity-60 cursor-not-allowed"
           >
             Save as memory
           </button>
@@ -836,14 +856,6 @@ interface PRListProps {
   isLoading: boolean;
   selectedNum: number | null;
   onSelect: (num: number) => void;
-}
-
-interface PrExtended extends GitHubPr {
-  draft?: boolean;
-  additions?: number;
-  deletions?: number;
-  changed_files?: number;
-  requested_reviewers?: unknown[];
 }
 
 function PRList({ prs, isLoading, selectedNum, onSelect }: PRListProps) {
@@ -861,16 +873,14 @@ function PRList({ prs, isLoading, selectedNum, onSelect }: PRListProps) {
       </div>
     );
   }
+  // NOTE: GitHub's `/pulls` LIST endpoint does NOT return
+  // `additions`/`deletions`/`changed_files`/`requested_reviewers` — those
+  // require a per-PR GET. Rendering them from the list response produced
+  // zeros for every PR (v0.7 FIX 3). Removed until per-PR fetch lands.
+  // `draft` IS on the list response and is retained.
   return (
     <div className="overflow-y-auto px-4 py-3 flex flex-col gap-2">
-      {prs.map((raw) => {
-        const pr = raw as PrExtended;
-        const additions = pr.additions ?? 0;
-        const deletions = pr.deletions ?? 0;
-        const files = pr.changed_files ?? 0;
-        const reviews = Array.isArray(pr.requested_reviewers)
-          ? pr.requested_reviewers.length
-          : 0;
+      {prs.map((pr) => {
         const draft = !!pr.draft;
         const active = selectedNum === pr.number;
         return (
@@ -919,20 +929,10 @@ function PRList({ prs, isLoading, selectedNum, onSelect }: PRListProps) {
                   <span className="font-mono text-text-secondary">
                     {pr.base?.ref ?? ""}
                   </span>
-                  {files > 0 && (
-                    <>
-                      <span className="text-line-strong">·</span>
-                      <span className="text-text-secondary">
-                        {files} file{files === 1 ? "" : "s"}
-                      </span>
-                    </>
-                  )}
-                  {(additions > 0 || deletions > 0) && (
-                    <>
-                      <span className="text-accent-green">+{additions}</span>
-                      <span className="text-accent-red">−{deletions}</span>
-                    </>
-                  )}
+                  <span className="text-line-strong">·</span>
+                  <span className="text-text-muted">
+                    opened {timeAgo(pr.created_at)} ago
+                  </span>
                 </div>
               </div>
               <div className="flex flex-col gap-1 items-end flex-shrink-0">
@@ -940,26 +940,8 @@ function PRList({ prs, isLoading, selectedNum, onSelect }: PRListProps) {
                   <Check size={9} />
                   {pr.state ?? "open"}
                 </span>
-                {reviews > 0 && (
-                  <span className="text-[9.5px] text-text-muted">
-                    {reviews} review{reviews === 1 ? "" : "s"}
-                  </span>
-                )}
               </div>
             </div>
-
-            {(additions > 0 || deletions > 0) && (
-              <div className="flex gap-0.5 mt-2 h-1 rounded-full overflow-hidden bg-bg-tertiary">
-                <div
-                  className="bg-accent-green"
-                  style={{ flex: additions || 0.0001 }}
-                />
-                <div
-                  className="bg-accent-red"
-                  style={{ flex: deletions || 0.0001 }}
-                />
-              </div>
-            )}
           </button>
         );
       })}

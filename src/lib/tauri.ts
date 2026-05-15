@@ -1248,6 +1248,15 @@ export async function githubListRepos(): Promise<string> {
   return invoke<string>("github_list_repos");
 }
 
+export async function githubGetAuthenticatedUser(): Promise<{
+  login: string;
+  avatarUrl: string;
+}> {
+  return invoke<{ login: string; avatarUrl: string }>(
+    "github_get_authenticated_user",
+  );
+}
+
 export async function githubListIssues(
   owner: string,
   repo: string

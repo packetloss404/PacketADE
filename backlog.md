@@ -348,6 +348,24 @@ Deferred items called out in `dev/multi-platform-build.md` and
   unrelated to mission planner work and have been excluded from
   every mission-planner commit. Land them in their own
   chore/cleanup commit when convenient.
+- **P3 — Memory inline surfaces.** Memory was demoted from the LeftRail
+  to a Settings tab. The pane is still reachable via Settings → "Manage
+  memory →". Follow-ups for fuller integration:
+  - AgentInputArea: "context preview" chevron showing patterns being
+    injected into the next message (lift the existing `injectedPreview`
+    block from MemoryView.tsx).
+  - MissionsView: small memory chip on completed missions showing
+    "N patterns extracted" with hover-preview.
+  - WorkspaceSidebar: "recent learnings" mini-feed for the active
+    project.
+- **P3 — `LearnedPattern.projectPath` missing.** Patterns leak across
+  projects because the type has no projectPath field. Add the field +
+  migration so patterns extracted in project A don't surface in
+  project B's injected context.
+- **P3 — Wire the disabled Pin button on PatternRow.** Star icon at
+  ~line 580 in MemoryView.tsx is permanently `disabled`. Either wire
+  it (add `pinned: boolean` to LearnedPattern; pinned patterns survive
+  `capPatterns` eviction) or hide it.
 
 ## Product tracks (from `dev/README.md`)
 
