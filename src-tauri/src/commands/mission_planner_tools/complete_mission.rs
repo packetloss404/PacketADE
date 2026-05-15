@@ -94,7 +94,11 @@ pub async fn handle(
     // 5. Remove from registry so the wake consumer's `get_by_mission`
     //    lookup returns None and dispatch_wake no-ops for any further wake
     //    events queued for this mission.
-    let _removed = registry.remove_session(&mission_id).await;
+    //
+    //    E7-PARTIAL-DRAIN: pass `Some(app)` so any in-progress streamed
+    //    thought from this turn is drained and journaled as a partial
+    //    `PlannerMessage` rather than being silently dropped.
+    let _removed = registry.remove_session(&mission_id, Some(app)).await;
 
     // 6. Flip the Flight to Done + mirror planner_status onto the DTO so
     //    the frontend sees a consistent view after refresh. Both mutations

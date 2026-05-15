@@ -21,6 +21,7 @@ pub mod llm_types;
 pub mod mcp_bridge;
 pub mod mcp_client;
 pub mod migration;
+pub mod mission_journal;
 pub mod mission_planner_prompts;
 pub mod orchestrator;
 pub mod pty;

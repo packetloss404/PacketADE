@@ -1814,3 +1814,21 @@ export async function getMissionApprovals(
   return invoke<MissionApprovalRequestDto[]>("get_mission_approvals", { missionId });
 }
 
+// E7 — mission journal read access. `getMissionJournal` returns the raw
+// markdown source for the mission's append-only journal (or an empty
+// string if no activity has been recorded yet). `getMissionJournalPath`
+// returns the absolute path of the journal file on disk — used by the
+// JournalTab's Export button so the user can locate the file in any
+// markdown viewer.
+//
+// The JournalTab re-fetches on `mission-planner:journal-appended:<missionId>`
+// events from the E7-HOOKS slice; this binding doesn't subscribe — the
+// component owns its own listener.
+export async function getMissionJournal(missionId: string): Promise<string> {
+  return invoke<string>("get_mission_journal", { missionId });
+}
+
+export async function getMissionJournalPath(missionId: string): Promise<string> {
+  return invoke<string>("get_mission_journal_path", { missionId });
+}
+

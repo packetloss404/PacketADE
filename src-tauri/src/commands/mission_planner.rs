@@ -36,6 +36,7 @@ use tracing::{info, warn};
 
 use crate::commands::agent_sidecar::SidecarManager;
 use crate::core::flight::{FlightStatus, PlannerStatus as FlightPlannerStatus};
+use crate::core::mission_journal::{append_journal, JournalEntry, JournalKind};
 use crate::core::mission_planner_prompts::{spec_mode_system_prompt, wake_user_message};
 use crate::core::storage::{self, PersistedState};
 
@@ -379,6 +380,16 @@ impl MissionPlannerSession {
 pub struct MissionPlannerRegistry {
     sessions: Mutex<HashMap<String, MissionPlannerSession>>,
     wake_tx: Mutex<Option<mpsc::UnboundedSender<PlannerWakeEvent>>>,
+    /// E7-HOOKS: per-sidecar-session chunk buffer used to aggregate the
+    /// planner's streamed text into a single `PlannerMessage` journal entry
+    /// when the turn finishes. Keyed by sidecar session id; appended on
+    /// every `api-agent:chunk:<sid>` event for a sidecar session owned by
+    /// the planner, drained-and-cleared on the matching `done` event.
+    ///
+    /// Buffers for non-planner sidecar sessions never get written because
+    /// the chunk-handler short-circuits before insertion when the
+    /// reverse-lookup misses.
+    session_chunks: Mutex<HashMap<String, String>>,
 }
 
 impl MissionPlannerRegistry {
@@ -427,6 +438,44 @@ impl MissionPlannerRegistry {
             .values()
             .find(|s| s.sidecar_session_id == sidecar_session_id)
             .map(|s| s.mission_id.clone())
+    }
+
+    /// E7-HOOKS — Option A planner-message aggregation.
+    ///
+    /// Append a chunk of streamed text to the per-sidecar-session buffer.
+    /// Called from `agent_sidecar::handle_event` on every `chunk` event.
+    /// No-op (silently returns) if the sidecar session isn't owned by a
+    /// planner — non-planner sessions never grow a buffer entry.
+    pub async fn append_chunk(&self, sidecar_session_id: &str, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        // Cheap reverse-lookup to avoid retaining buffers for non-planner
+        // sessions. We hold sessions and chunks locks in strict order
+        // (sessions → chunks) and release sessions before chunks insert to
+        // keep contention minimal.
+        let is_planner = {
+            let guard = self.sessions.lock().await;
+            guard
+                .values()
+                .any(|s| s.sidecar_session_id == sidecar_session_id)
+        };
+        if !is_planner {
+            return;
+        }
+        let mut chunks = self.session_chunks.lock().await;
+        chunks
+            .entry(sidecar_session_id.to_string())
+            .or_default()
+            .push_str(text);
+    }
+
+    /// E7-HOOKS — Drain the buffered text for a sidecar session.
+    /// Returns `None` if there is no buffer (non-planner session or no
+    /// chunks recorded this turn). Clears the entry on drain.
+    pub async fn drain_chunk_buffer(&self, sidecar_session_id: &str) -> Option<String> {
+        let mut chunks = self.session_chunks.lock().await;
+        chunks.remove(sidecar_session_id)
     }
 
     /// Look up the sidecar session id for a mission, if any. Synchronous-
@@ -542,7 +591,55 @@ impl MissionPlannerRegistry {
     /// internal [`Self::remove`] used by terminal-state tool handlers
     /// (e.g. `complete_mission`) that need to take the session out of
     /// the wake-dispatch path before closing its sidecar.
-    pub async fn remove_session(&self, mission_id: &str) -> Option<MissionPlannerSession> {
+    ///
+    /// **E7-PARTIAL-DRAIN**: also drains the per-sidecar-session chunk
+    /// buffer so a planner's last in-progress streamed thought doesn't
+    /// linger in memory after the session is gone. When `app` is provided
+    /// and the drained text is non-trivial, the partial is journaled as a
+    /// `PlannerMessage` entry suffixed with a `(partial — session closed)`
+    /// marker so it remains visible in the timeline. When `app` is `None`
+    /// or the drained text is empty, the partial is discarded (the buffer
+    /// is always cleared either way).
+    pub async fn remove_session(
+        &self,
+        mission_id: &str,
+        app: Option<&AppHandle>,
+    ) -> Option<MissionPlannerSession> {
+        // Resolve the sidecar session id BEFORE removal so we can drain
+        // the matching chunk buffer. We deliberately don't hold the
+        // sessions lock across the buffer drain — `drain_chunk_buffer`
+        // takes its own lock and we want the lock order narrow.
+        let sidecar_sid_opt = {
+            let sessions = self.sessions.lock().await;
+            sessions
+                .get(mission_id)
+                .map(|s| s.sidecar_session_id.clone())
+        };
+        if let Some(sid) = sidecar_sid_opt {
+            if let Some(partial) = self.drain_chunk_buffer(&sid).await {
+                let trimmed = partial.trim();
+                if !trimmed.is_empty() {
+                    tracing::info!(
+                        mission_id,
+                        partial_len = partial.len(),
+                        "draining partial chunk buffer on planner session removal"
+                    );
+                    if let Some(app) = app {
+                        let body = format!(
+                            "{}\n\n*(partial — session closed)*",
+                            trimmed
+                        );
+                        let entry = journal_entry(
+                            mission_id.to_string(),
+                            JournalKind::PlannerMessage,
+                            body,
+                            Some(serde_json::json!({ "partial": true, "reason": "session_closed" })),
+                        );
+                        write_journal_and_emit(app, entry).await;
+                    }
+                }
+            }
+        }
         self.remove(mission_id).await
     }
 
@@ -1237,6 +1334,30 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         return;
     }
 
+    // E7-HOOKS site 1 — journal the wake trigger. We do this AFTER the
+    // inject succeeds so the journal reflects events the planner actually
+    // saw. Payload is the full trigger event for future analyses; the
+    // markdown body is a 1-2 line human-readable summary.
+    let payload_summary = serde_json::to_string(&event.payload)
+        .unwrap_or_else(|_| "{}".to_string());
+    let body = format!(
+        "**kind**: `{}`\n**payload**: {}",
+        trigger_kind,
+        truncate_for_journal(&payload_summary, 240),
+    );
+    let metadata = serde_json::json!({
+        "trigger": event.trigger,
+        "payload": event.payload,
+        "mode": format!("{:?}", mode),
+    });
+    let entry = journal_entry(
+        event.mission_id.clone(),
+        JournalKind::WakeTrigger,
+        body,
+        Some(metadata),
+    );
+    write_journal_and_emit(app_handle, entry).await;
+
     // Flip to Awake while the planner is processing this wake's turn. The
     // status flips back to Idle when the sidecar emits `done` for this
     // session — wired in E6-KILL-AWAKE via `MissionPlannerRegistry::
@@ -1599,7 +1720,12 @@ pub async fn stop_mission_planner(app_handle: AppHandle, mission_id: String) -> 
     }
 
     // Then drop the entry from the registry.
-    registry.remove(&mission_id).await;
+    //
+    // E7-PARTIAL-DRAIN: route through `remove_session` (not the inner
+    // `remove`) so any pending streamed chunks from a turn that was in
+    // flight when the user pressed Stop are drained and journaled as a
+    // partial `PlannerMessage` rather than silently dropped.
+    registry.remove_session(&mission_id, Some(&app_handle)).await;
 
     if let Err(e) = persist_planner_state_on_flight(&mission_id, None, None).await {
         warn!(
@@ -1748,6 +1874,19 @@ pub async fn inject_planner_turn(
             Some(max_output_tokens),
         )
         .await?;
+
+    // E7-HOOKS site 2 — journal user-typed turns. Wake-trigger injections
+    // coming through this command are journaled by site 1 (the wake bus
+    // dispatcher), so we skip them here to avoid double-recording.
+    if source == "user" {
+        let entry = journal_entry(
+            mission_id.clone(),
+            JournalKind::UserMessage,
+            content.clone(),
+            Some(serde_json::json!({ "source": "user" })),
+        );
+        write_journal_and_emit(&app_handle, entry).await;
+    }
 
     // FIX 3 — emit-aware so the frontend store reflects the Awake
     // turn-in-flight without polling.
@@ -1904,6 +2043,25 @@ pub async fn resolve_mission_approval(
         }),
     );
 
+    // E7-HOOKS site 4 — journal the resolution as a SystemNote so the
+    // timeline shows who chose what. We do this AFTER the state lock is
+    // released (file IO must not happen under the mutex).
+    let body = format!(
+        "Approval `{}` resolved: **{}**",
+        approval_id, choice
+    );
+    let metadata = serde_json::json!({
+        "approvalId": approval_id,
+        "choice": choice,
+    });
+    let entry = journal_entry(
+        mission_id.clone(),
+        JournalKind::SystemNote,
+        body,
+        Some(metadata),
+    );
+    write_journal_and_emit(&app_handle, entry).await;
+
     // Look up the planner for the owning mission and emit a wake.
     // The wake consumer (spawn_wake_consumer) reads `mission_approvals`
     // at dispatch time when formatting the user-message turn — we just
@@ -1968,6 +2126,43 @@ pub async fn get_mission_approvals(
 }
 
 // ---------------------------------------------------------------------------
+// E7 — mission journal read access
+// ---------------------------------------------------------------------------
+//
+// `get_mission_journal` returns the raw markdown text of a mission's
+// append-only journal. The JournalTab renders it verbatim via
+// `MarkdownRenderer`. On a mission with no recorded activity the file
+// doesn't exist yet — `read_journal` returns `Ok("")` in that case so
+// the UI can render its own empty state.
+//
+// `get_mission_journal_path` resolves the on-disk path so the Export
+// button can show the user where the file lives (and a future
+// "Reveal in Finder" command can call straight into the OS shell).
+
+#[tauri::command]
+pub async fn get_mission_journal(mission_id: String) -> Result<String, String> {
+    crate::core::mission_journal::read_journal(&mission_id)
+}
+
+#[tauri::command]
+pub async fn get_mission_journal_path(mission_id: String) -> Result<String, String> {
+    // Defensive path-traversal guard at the Tauri command boundary (the
+    // explicit "untrusted input" point). `journal_path` itself also rejects
+    // these, but returning an error here gives the frontend a clean failure
+    // instead of a bogus sentinel path.
+    if mission_id.is_empty()
+        || mission_id.contains('/')
+        || mission_id.contains('\\')
+        || mission_id.contains("..")
+        || mission_id.contains('\0')
+    {
+        return Err("invalid mission_id".to_string());
+    }
+    let path = crate::core::mission_journal::journal_path(&mission_id);
+    Ok(path.to_string_lossy().into_owned())
+}
+
+// ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------
 
@@ -1976,6 +2171,67 @@ fn now_millis() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
+// E7-HOOKS — journal entry construction + best-effort append/emit
+// ---------------------------------------------------------------------------
+
+/// Build a [`JournalEntry`] with a fresh uuid + current timestamp. Generic
+/// constructor used by every E7 hook site so they don't all hand-roll uuid
+/// generation and field plumbing.
+pub(crate) fn journal_entry(
+    mission_id: impl Into<String>,
+    kind: JournalKind,
+    content_md: impl Into<String>,
+    metadata: Option<serde_json::Value>,
+) -> JournalEntry {
+    JournalEntry {
+        id: uuid::Uuid::new_v4().to_string(),
+        mission_id: mission_id.into(),
+        timestamp: now_millis(),
+        kind,
+        content_md: content_md.into(),
+        metadata,
+    }
+}
+
+/// Append `entry` to the mission journal and (on success) emit
+/// `mission-planner:journal-appended:<missionId>` so the frontend can pick
+/// up the new entry without polling.
+///
+/// Append failures are non-fatal — the journal is auxiliary. A warning is
+/// logged and the function returns silently so callers don't have to thread
+/// `Result`s through their hot paths.
+pub(crate) async fn write_journal_and_emit(app: &AppHandle, entry: JournalEntry) {
+    let mission_id = entry.mission_id.clone();
+    let entry_id = entry.id.clone();
+    if let Err(e) = append_journal(&entry).await {
+        warn!(
+            error = %e,
+            mission_id = %mission_id,
+            "failed to append to mission journal"
+        );
+        return;
+    }
+    let _ = app.emit(
+        &format!("mission-planner:journal-appended:{}", mission_id),
+        serde_json::json!({
+            "missionId": mission_id,
+            "entryId": entry_id,
+        }),
+    );
+}
+
+/// Truncate a string to at most `max` chars, appending an ellipsis hint when
+/// truncation occurred. Used for journal body summaries.
+fn truncate_for_journal(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max).collect();
+    out.push_str("\n…(truncated)");
+    out
 }
 
 #[cfg(test)]
