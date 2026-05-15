@@ -103,6 +103,54 @@ Deferred items called out in `dev/multi-platform-build.md` and
   Not supported by the current setup — use native runners. Track as a
   "won't-fix until release matrix demands it" item.
 
+## Mission Planner v1.1 (deferred from `dev/mission-planner-plan.md`)
+
+- **P2 — Helper planner escalation.** Primary planner can call
+  `spawn_helper_planner(scope, reason)` to delegate heavy decomposition
+  to a one-shot Opus 4.7 session. Cap: 1 successful spawn per mission;
+  failed-to-start doesn't count. Helper output ingested back into the
+  primary's next turn as `<helper_output>…</helper_output>`. Stub in v1
+  returns `"deferred to v1.1"`; full implementation belongs to v1.1
+  alongside any "scope too big" missions that surface the need.
+- **P3 — Back-port milestone-gating + file-collision detection to the
+  async-attempts path.** v1 routes planner-emitted tasks through
+  `asyncFlightStore.launchAsync` (worktrees + `claude-oauth` API-agent
+  sessions). The PTY orchestrator's pause-between-milestones and
+  collision-block features in `src-tauri/src/core/orchestrator.rs`
+  don't exist on the async path; bring them across so planner-owned
+  flights get the same coordination safety.
+- **P3 — Predictive quota awareness.** v1 quota safety is reactive:
+  catches `RateLimitError` and pauses. If `@anthropic-ai/claude-agent-sdk`
+  ever exposes the `anthropic-ratelimit-*` response headers, switch to
+  predictive — pause *before* the cap.
+- **P3 — Subscription-% display for OAuth planner cost.** Currently no
+  public Anthropic endpoint surfaces Claude.ai subscription usage. v1
+  shows cumulative tokens only. Revisit if an endpoint appears.
+- **P3 — Crash-resilient planner sessions.** v1 planner sessions are
+  ephemeral; on app restart, `active` missions flip to `paused` and
+  require a user click to resume. Persist `lastResumeToken` and
+  rehydrate on cold start.
+- **P3 — Cold-start "active → paused" enforcement.** The DTO now
+  persists `plannerStatus`, but nothing inspects it at boot. Belongs
+  in E6 (safety rails); flag if E6 doesn't cover it.
+- **P3 — Rollback optimistic transcript on `injectTurn` failure.**
+  `missionPlannerStore.injectTurn` optimistically appends a user
+  transcript entry before the backend call. If the invoke errors, the
+  phantom message stays on screen. Add a rollback on rejection.
+- **P3 — Replace `try_sidecar_session_for` async lock.** Currently
+  uses `try_lock` and returns `None` silently on contention. Cheap
+  E2 footgun. Switch to the async lock or remove until needed.
+- **P3 — Cap wake-debounce total drain time.** `WAKE_DEBOUNCE_MS` is
+  a per-burst window; a steady drip can keep the window open
+  indefinitely. E6 should add a hard ceiling on total drain time so
+  the planner can't be starved by adversarial event cadence.
+- **P3 — Escape `</wake_trigger>` literal in content body.** Sidecar
+  sanitizes the `kind` attribute but not the wrapped content; a user
+  typing literal `</wake_trigger>` in a journal message could break
+  the envelope. Non-exploitable today (frontend path uses
+  `source="user"` which doesn't wrap), but harden when the path
+  exists.
+
 ## Product tracks (from `dev/README.md`)
 
 - **P2 — Cost dashboard alerts** (`dev/moat/cost-dashboard-plan.md`).
