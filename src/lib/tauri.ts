@@ -1015,6 +1015,7 @@ function toDtoServer(s: ServerConfig): PersistedStateDto["servers"][number] {
     authMethod: s.authMethod,
     keyPath: s.keyPath ?? null,
     remotePath: s.remotePath ?? null,
+    hostFingerprint: s.hostFingerprint ?? null,
     lastConnectedAt: s.lastConnectedAt != null ? BigInt(s.lastConnectedAt) : null,
     installedAgents: s.installedAgents,
   };
@@ -1728,5 +1729,44 @@ export type ProviderLaunchStats = {
 
 export async function getProviderLaunchStats(): Promise<ProviderLaunchStats> {
   return invoke<ProviderLaunchStats>("get_provider_launch_stats");
+}
+
+// === Mission Planner (E1) =================================================
+//
+// Autonomous planner sessions bound to a Mission. The planner is a long-lived
+// `api-claude-oauth` sidecar session — it emits the standard
+// `api-agent:*:<sessionId>` event stream, so consumers attach to those events
+// via `apiAgent*Event` helpers using the returned plannerSessionId.
+
+export async function startMissionPlanner(
+  missionId: string,
+  projectPath: string,
+  provisionalSessionId?: string,
+): Promise<string> {
+  return invoke<string>("start_mission_planner", {
+    missionId,
+    projectPath,
+    provisionalSessionId,
+  });
+}
+
+export async function stopMissionPlanner(missionId: string): Promise<void> {
+  return invoke("stop_mission_planner", { missionId });
+}
+
+export async function pauseMissionPlanner(missionId: string): Promise<void> {
+  return invoke("pause_mission_planner", { missionId });
+}
+
+export async function resumeMissionPlanner(missionId: string): Promise<void> {
+  return invoke("resume_mission_planner", { missionId });
+}
+
+export async function injectPlannerTurn(
+  missionId: string,
+  content: string,
+  source: "user" | "wake_trigger",
+): Promise<void> {
+  return invoke("inject_planner_turn", { missionId, content, source });
 }
 

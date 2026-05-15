@@ -28,7 +28,7 @@
     "sidecar:prune": "node scripts/prune-sidecar.js",
     "sidecar:smoke": "node agent-sidecar/test/echo-smoke.mjs",
     "sidecar:registry-smoke": "node agent-sidecar/test/registry-smoke.mjs",
-    "sidecar:protocol-smoke": "node agent-sidecar/test/protocol-v4-smoke.mjs",
+    "sidecar:protocol-smoke": "node agent-sidecar/test/protocol-v5-smoke.mjs",
     "prebundle": "pnpm run fetch-node && pnpm run sidecar:install && pnpm run sidecar:build && pnpm run sidecar:prune",
     "preflight": "pnpm run format:check && pnpm run lint:src && pnpm test && pnpm run build",
     "postinstall": "node scripts/run-pnpm-no-deprecation.mjs -C agent-sidecar install",

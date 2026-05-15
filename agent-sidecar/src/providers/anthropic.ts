@@ -16,8 +16,10 @@ import type {
   EditResponseRequest,
   Emit,
   ImageAttachment,
+  InjectUserTurnRequest,
   PermissionResponseRequest,
   PlanItem,
+  PlannerToolResultRequest,
   ResumeMessage,
   RetryRequest,
   SendMessageRequest,
@@ -26,6 +28,10 @@ import type {
   StartSessionRequest,
 } from "../protocol.js";
 import type { ProviderHandler } from "./base.js";
+import {
+  createMissionPlannerMcpServer,
+  PLANNER_MCP_KEY,
+} from "../mcp/mission-planner-server.js";
 import {
   query,
   type CanUseTool,
@@ -366,6 +372,19 @@ export class AnthropicProvider implements ProviderHandler {
    */
   private lastUserMessage: string | null = null;
   private approveWrites = false;
+  /**
+   * Mission Planner (v5): when a planner MCP tool fires, the in-sidecar
+   * handler emits a `planner_tool` event and parks a resolver here keyed by
+   * `callId`. The Rust supervisor replies with `planner_tool_result`, which
+   * `resolvePlannerTool` looks up and either resolves (success) or rejects
+   * (failure). The handler then maps the resolved value into the SDK's
+   * tool-result content. Only populated for sessions started with
+   * `mcpKind === "planner"`.
+   */
+  private pendingPlannerCalls = new Map<
+    string,
+    { resolve: (value: unknown) => void; reject: (err: Error) => void }
+  >();
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.emitCurrent = emit;
@@ -484,13 +503,30 @@ export class AnthropicProvider implements ProviderHandler {
       });
     };
 
+    // v5: when the supervisor asks for `mcpKind: "planner"`, construct the
+    // in-sidecar Mission Planner MCP server locally and merge it under the
+    // pinned `PLANNER_MCP_KEY` so the SDK exposes its tools as
+    // `mcp__planner__*`. Live `McpServer` instances cannot cross the stdio
+    // wire, so this is the only place planner tools come into existence.
+    const wireMcp = toMcpServers(req.mcpServers ?? {});
+    let mcpServers: NonNullable<Options["mcpServers"]> | undefined = wireMcp;
+    if (req.mcpKind === "planner") {
+      const plannerServer = createMissionPlannerMcpServer(
+        req.sessionId,
+        (event) => this.dispatchPlannerTool(event, emit),
+      );
+      mcpServers = { ...(wireMcp ?? {}), [PLANNER_MCP_KEY]: plannerServer };
+    } else if (req.mcpKind && req.mcpKind.length > 0) {
+      logStderr(`unknown mcpKind=${req.mcpKind}; ignoring`);
+    }
+
     const options: Options = {
       abortController: this.abort,
       cwd: req.projectPath || undefined,
       model: req.model || undefined,
       systemPrompt: req.systemPrompt && req.systemPrompt.length > 0 ? req.systemPrompt : undefined,
       allowedTools: req.allowedTools && req.allowedTools.length > 0 ? req.allowedTools : undefined,
-      mcpServers: toMcpServers(req.mcpServers ?? {}),
+      mcpServers,
       permissionMode: choosePermissionMode(req),
       resume: req.resume,
       canUseTool,
@@ -508,17 +544,28 @@ export class AnthropicProvider implements ProviderHandler {
     // Push the initial user message onto the pump, then start the query.
     // v3: when attachments are present, build a content array with image
     // blocks alongside the text so the model can read screenshots / images.
+    //
+    // Mission-planner sessions start with no human turn (empty
+    // `initialMessage`) — the model waits for the user's first spec-mode
+    // chat message via `inject_user_turn`. Anthropic's API rejects user
+    // blocks with empty content (HTTP 400), so we must NOT push an empty
+    // initial turn. Attachments are only meaningful alongside text, so an
+    // empty text + no attachments means "no opening turn at all".
     const initialMessage = req.resume
       ? req.initialMessage
       : buildResumeFallbackPrompt(req.resumeMessages, req.initialMessage);
-    prompt.push({
-      type: "user",
-      message: {
-        role: "user",
-        content: buildUserContent(initialMessage, req.attachments) as never,
-      },
-      parent_tool_use_id: null,
-    });
+    const hasInitialMessage =
+      typeof initialMessage === "string" && initialMessage.length > 0;
+    if (hasInitialMessage) {
+      prompt.push({
+        type: "user",
+        message: {
+          role: "user",
+          content: buildUserContent(initialMessage, req.attachments) as never,
+        },
+        parent_tool_use_id: null,
+      });
+    }
     this.lastUserMessage = req.initialMessage;
 
     try {
@@ -546,14 +593,17 @@ export class AnthropicProvider implements ProviderHandler {
 
   private async pumpMessages(sessionId: string, emit: Emit): Promise<void> {
     if (!this.q) return;
-    let sawResult = false;
+    // The Claude Agent SDK's `Query` is `AsyncGenerator<SDKMessage, void>` —
+    // it stays open across every turn of the conversation. `handleMessage`
+    // already emits `done` per `result` message, so we MUST NOT break out
+    // here: the prompt iterable is shared across turns, and breaking on the
+    // first `result` would silently kill any second-turn `sendMessage` /
+    // `injectUserTurn` (mission-planner spike retro #2). Iterate until the
+    // prompt iterable closes naturally (via `close_session` calling
+    // `this.prompt.end()`) or the abort controller fires.
     try {
       for await (const msg of this.q as AsyncIterable<SDKMessage>) {
         this.handleMessage(sessionId, msg, emit);
-        if (msg.type === "result") {
-          sawResult = true;
-          break;
-        }
       }
     } catch (err) {
       // Abort from cancel() surfaces as an exception in some SDK versions;
@@ -567,9 +617,8 @@ export class AnthropicProvider implements ProviderHandler {
       }
       return;
     }
-    if (!sawResult) {
-      emit({ type: "done", sessionId, inputTokens: 0, outputTokens: 0 });
-    }
+    // Iterator naturally completed (close_session). No extra `done` here —
+    // each turn's `result` already emitted its own `done` via handleMessage.
   }
 
   private handleMessage(sessionId: string, msg: SDKMessage, emit: Emit): void {
@@ -772,6 +821,93 @@ export class AnthropicProvider implements ProviderHandler {
     this.lastUserMessage = req.content;
   }
 
+  /**
+   * v5: inject a new user turn into the long-lived session. Two source kinds:
+   *
+   *  - `"user"`: pushed verbatim. Lets the spec-mode chat path reuse the same
+   *    dispatcher as wake triggers without forcing a synthetic envelope.
+   *  - `"wake_trigger"`: wrapped in
+   *    `<wake_trigger source="wake_trigger" kind="<kind>">…</wake_trigger>`
+   *    so the planner system prompt can distinguish re-entry from a human
+   *    turn (mission-planner spec §Transport).
+   *
+   * Same underlying push as `sendMessage` — the shared `PushableAsyncIterable`
+   * serializes bursty injects cleanly, and the SDK iterates the prompt
+   * iterable strictly serially (spike retro #2).
+   */
+  async injectUserTurn(req: InjectUserTurnRequest, emit: Emit): Promise<void> {
+    this.emitCurrent = emit;
+    if (!this.prompt) {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message: "injectUserTurn before start",
+      });
+      return;
+    }
+    let content: string;
+    if (req.source === "wake_trigger") {
+      const kind = req.trigger?.kind ?? "user";
+      // Attributes are quoted; we strip quote characters from the kind to
+      // keep the envelope well-formed. Source label is fixed by the brief.
+      const safeKind = kind.replace(/["<>]/g, "");
+      content = `<wake_trigger source="wake_trigger" kind="${safeKind}">${req.content}</wake_trigger>`;
+    } else {
+      content = req.content;
+    }
+    this.prompt.push({
+      type: "user",
+      message: { role: "user", content },
+      parent_tool_use_id: null,
+    });
+    this.lastUserMessage = content;
+  }
+
+  /**
+   * v5: resolve (or reject) an outstanding planner MCP tool call. Called by
+   * the registry when the Rust supervisor returns a `planner_tool_result`.
+   * No-op if the callId is unknown (e.g. arrived after a cancel).
+   */
+  async respondPlannerTool(
+    req: PlannerToolResultRequest,
+    _emit: Emit,
+  ): Promise<void> {
+    const pending = this.pendingPlannerCalls.get(req.callId);
+    if (!pending) {
+      logStderr(
+        `respondPlannerTool: unknown callId=${req.callId} (session=${req.sessionId})`,
+      );
+      return;
+    }
+    this.pendingPlannerCalls.delete(req.callId);
+    if (req.success) {
+      pending.resolve(req.result);
+    } else {
+      pending.reject(new Error(req.error ?? "planner tool failed"));
+    }
+  }
+
+  /**
+   * Internal: emit a `planner_tool` envelope and park a resolver. The
+   * planner MCP server in `mission-planner-server.ts` awaits this promise
+   * inside the tool's handler, so the SDK's `tool_use → tool_result` round
+   * trip stays well-formed.
+   */
+  private dispatchPlannerTool(
+    event: import("../protocol.js").PlannerToolCallEvent,
+    emit: Emit,
+  ): Promise<unknown> {
+    return new Promise<unknown>((resolve, reject) => {
+      this.pendingPlannerCalls.set(event.callId, { resolve, reject });
+      try {
+        emit(event);
+      } catch (err) {
+        this.pendingPlannerCalls.delete(event.callId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
   async respondPermission(req: PermissionResponseRequest, _emit: Emit): Promise<void> {
     const resolver = this.pendingPermissions.get(req.toolUseId);
     if (!resolver) {
@@ -889,6 +1025,12 @@ export class AnthropicProvider implements ProviderHandler {
       this.pendingEdits.delete(id);
       meta.resolver({ continue: false, stopReason: "cancelled" });
     }
+    // v5: drain parked planner tool calls so the SDK tool handlers don't
+    // hang waiting for a result that will never come.
+    for (const [id, pending] of this.pendingPlannerCalls.entries()) {
+      this.pendingPlannerCalls.delete(id);
+      pending.reject(new Error("cancelled"));
+    }
     // done/error is emitted by the pump when the iterator unwinds.
   }
 
@@ -1002,6 +1144,10 @@ export class AnthropicProvider implements ProviderHandler {
     for (const [id, meta] of this.pendingEdits.entries()) {
       this.pendingEdits.delete(id);
       meta.resolver({ continue: false, stopReason: "closed" });
+    }
+    for (const [id, pending] of this.pendingPlannerCalls.entries()) {
+      this.pendingPlannerCalls.delete(id);
+      pending.reject(new Error("closed"));
     }
     if (this.runPromise) {
       await this.runPromise.catch(() => undefined);

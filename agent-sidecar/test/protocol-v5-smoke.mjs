@@ -1,15 +1,17 @@
-// Protocol v4 regression smoke test for the PacketADE agent sidecar.
+// Protocol v5 regression smoke test for the PacketADE agent sidecar.
 //
 // Validates that the protocol v2 request types plus the v4
-// `cancel_pending_tools` request route correctly through the dispatcher
+// `cancel_pending_tools` request and v5 `inject_user_turn` /
+// `planner_tool_result` requests route correctly through the dispatcher
 // against the echo provider. This is a wiring test only — it does not
 // exercise any real provider. The echo provider's v2 handlers emit one
-// `chunk` echoing the received field, then `done` with zero tokens. Echo does
-// not implement v4 cancel_pending_tools, so the expected result for that
-// request is the registry's clean "not supported" error.
+// `chunk` echoing the received field, then `done` with zero tokens. Echo
+// does NOT implement v4 `cancel_pending_tools` or the v5 planner methods,
+// so for those requests the expected result is the registry's clean
+// "not supported" error.
 //
 // Sequence:
-//   1. Spawn the sidecar, wait for `ready`.
+//   1. Spawn the sidecar, wait for `ready` (must advertise protocol v5).
 //   2. `start_session` for provider "echo", wait for its `done`.
 //   3. `set_permission_mode { mode: "plan" }` → expect chunk echoing "plan"
 //      then `done`, within 3s.
@@ -17,6 +19,8 @@
 //      "test-model" then `done`, within 3s.
 //   5. `retry` → expect chunk containing "retry" then `done`, within 3s.
 //   6. `cancel_pending_tools` → expect clean unsupported error, within 3s.
+//   7. `inject_user_turn` → expect clean unsupported error, within 3s.
+//   8. `planner_tool_result` → expect clean unsupported error, within 3s.
 //
 // Exits 0 if all steps pass, 1 otherwise — printing which step failed
 // and why.
@@ -30,8 +34,8 @@ import { existsSync } from "node:fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SESSION_ID = "protocol-v4-smoke";
-const EXPECTED_PROTOCOL_VERSION = 4;
+const SESSION_ID = "protocol-v5-smoke";
+const EXPECTED_PROTOCOL_VERSION = 5;
 const STEP_TIMEOUT_MS = 3000;
 const START_TIMEOUT_MS = 3000;
 const READY_TIMEOUT_MS = 3000;
@@ -39,9 +43,9 @@ const READY_TIMEOUT_MS = 3000;
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");
 
 if (!existsSync(sidecarEntry)) {
-  console.error(`[protocol-v4-smoke] sidecar entry not found at ${sidecarEntry}`);
+  console.error(`[protocol-v5-smoke] sidecar entry not found at ${sidecarEntry}`);
   console.error(
-    `[protocol-v4-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
+    `[protocol-v5-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
   );
   process.exit(1);
 }
@@ -56,7 +60,7 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
 
 child.on("error", (err) => {
-  console.error(`[protocol-v4-smoke] child spawn error: ${err.message}`);
+  console.error(`[protocol-v5-smoke] child spawn error: ${err.message}`);
   process.exit(1);
 });
 
@@ -82,7 +86,7 @@ rl.on("line", (line) => {
   try {
     event = JSON.parse(trimmed);
   } catch {
-    console.error(`[protocol-v4-smoke] non-JSON stdout line: ${trimmed}`);
+    console.error(`[protocol-v5-smoke] non-JSON stdout line: ${trimmed}`);
     return;
   }
 
@@ -176,13 +180,13 @@ function shutdown(code) {
   }, 500);
   child.on("exit", () => clearTimeout(killTimer));
   if (code !== 0 && stderrChunks.length > 0) {
-    console.error(`[protocol-v4-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
+    console.error(`[protocol-v5-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
   }
   process.exit(code);
 }
 
 function fail(step, reason) {
-  console.error(`[protocol-v4-smoke] FAIL at step '${step}': ${reason}`);
+  console.error(`[protocol-v5-smoke] FAIL at step '${step}': ${reason}`);
   shutdown(1);
 }
 
@@ -211,7 +215,7 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
       );
       return;
     }
-    console.log(`[protocol-v4-smoke] PASS: ${step}`);
+    console.log(`[protocol-v5-smoke] PASS: ${step}`);
     return;
   }
   if (term.kind === "error") {
@@ -233,7 +237,7 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
     );
     return;
   }
-  console.log(`[protocol-v4-smoke] PASS: ${step}`);
+  console.log(`[protocol-v5-smoke] PASS: ${step}`);
 }
 
 async function run() {
@@ -278,7 +282,7 @@ async function run() {
     }
     // Not strictly required, but prove echo actually streamed something.
     void chunks.slice(chunkStart);
-    console.log(`[protocol-v4-smoke] PASS: start_session`);
+    console.log(`[protocol-v5-smoke] PASS: start_session`);
   }
 
   // 3) set_permission_mode { mode: "plan" }
@@ -311,11 +315,40 @@ async function run() {
     { expectErrorSubstring: "does not support cancel_pending_tools" },
   );
 
-  console.log(`[protocol-v4-smoke] OK`);
+  // 7) inject_user_turn. v5 wake-trigger / spec-mode chat path. Echo does
+  // not implement it; we want the registry's "not supported" error rather
+  // than the parser's "unknown request type" log line (which would mean
+  // index.ts dropped it without dispatching).
+  await runStep(
+    "inject_user_turn",
+    {
+      type: "inject_user_turn",
+      sessionId: SESSION_ID,
+      content: "ping",
+      source: "user",
+    },
+    { expectErrorSubstring: "does not support inject_user_turn" },
+  );
+
+  // 8) planner_tool_result. v5 in-process MCP correlation reply. Same
+  // not-supported expectation as #7.
+  await runStep(
+    "planner_tool_result",
+    {
+      type: "planner_tool_result",
+      sessionId: SESSION_ID,
+      callId: "pl-test-0",
+      success: true,
+      result: null,
+    },
+    { expectErrorSubstring: "does not support planner_tool_result" },
+  );
+
+  console.log(`[protocol-v5-smoke] OK`);
   shutdown(0);
 }
 
 run().catch((err) => {
-  console.error(`[protocol-v4-smoke] unexpected error: ${err?.stack ?? err}`);
+  console.error(`[protocol-v5-smoke] unexpected error: ${err?.stack ?? err}`);
   shutdown(1);
 });

@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum FlightStatus {
     Draft,
+    /// Mission Planner spec-mode conversation — planner is the chat partner,
+    /// no decomposition has happened yet. Transitions to `Planning`/`Active`
+    /// when the user hits Launch.
+    Spec,
     Planning,
     Ready,
     Active,
@@ -20,6 +24,7 @@ impl FlightStatus {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Draft => "Draft",
+            Self::Spec => "Spec",
             Self::Planning => "Planning",
             Self::Ready => "Ready",
             Self::Active => "Active",
@@ -28,6 +33,37 @@ impl FlightStatus {
             Self::Done => "Done",
             Self::Failed => "Failed",
             Self::Cancelled => "Cancelled",
+        }
+    }
+}
+
+// === Mission Planner status (mirrors `commands::mission_planner::PlannerStatus`) ===
+//
+// This is the persisted form serialized into the Flight DTO. Kept in this
+// module so the `Flight` struct's `planner_status` field doesn't need to
+// import from `commands`. The runtime registry holds its own copy; this enum
+// is just the wire/persistence shape.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlannerStatus {
+    Idle,
+    Awake,
+    Paused,
+    QuotaPaused,
+    Completed,
+    Failed,
+}
+
+impl PlannerStatus {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Idle => "Idle",
+            Self::Awake => "Awake",
+            Self::Paused => "Paused",
+            Self::QuotaPaused => "Quota Paused",
+            Self::Completed => "Completed",
+            Self::Failed => "Failed",
         }
     }
 }
@@ -335,6 +371,15 @@ pub struct Flight {
     pub prompt: Option<String>,
     #[serde(default)]
     pub attempts: Vec<Attempt>,
+    /// Mission Planner: the long-lived `api-claude-oauth` sidecar session
+    /// that owns this mission's planning/replan loop. `None` until the user
+    /// starts the planner from spec mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_session_id: Option<String>,
+    /// Mission Planner: last-known status of the planner agent for this
+    /// mission. `None` for missions that never used the planner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_status: Option<PlannerStatus>,
 }
 
 impl Flight {
@@ -453,6 +498,8 @@ mod tests {
             total_tokens: 0,
             prompt: None,
             attempts: Vec::new(),
+            planner_session_id: None,
+            planner_status: None,
         }
     }
 
