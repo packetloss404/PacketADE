@@ -585,6 +585,13 @@ type PersistedSettings = {
   maxParallelSessions: number;
   milestoneGating: boolean;
   projectPath: string;
+  /** v0.8: when true, the worktree provisioner installs a
+   * prepare-commit-msg hook with the configured trailer. Optional in
+   * the TS surface so older persisted states round-trip cleanly. */
+  autoCommitTrailerEnabled?: boolean;
+  /** v0.8: format string for the auto-trailer (placeholders:
+   * `{flightId}`, `{attemptId}`, `{flightTitle}`). */
+  autoCommitTrailerFormat?: string;
 };
 
 type PersistedUi = {
@@ -1009,6 +1016,8 @@ function fromDtoPersistedState(state: PersistedStateDto): PersistedState {
       maxParallelSessions: state.settings.maxParallelSessions,
       milestoneGating: state.settings.milestoneGating,
       projectPath: state.settings.projectPath,
+      autoCommitTrailerEnabled: state.settings.autoCommitTrailerEnabled,
+      autoCommitTrailerFormat: state.settings.autoCommitTrailerFormat,
     },
     ui: {
       selectedFlightId: state.ui.selectedFlightId ?? null,
@@ -1062,6 +1071,10 @@ function toDtoPersistedState(state: PersistedState): PersistedStateDto {
       maxParallelSessions: state.settings.maxParallelSessions,
       milestoneGating: state.settings.milestoneGating,
       projectPath: state.settings.projectPath,
+      autoCommitTrailerEnabled: state.settings.autoCommitTrailerEnabled ?? true,
+      autoCommitTrailerFormat:
+        state.settings.autoCommitTrailerFormat ??
+        "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}",
     },
     ui: {
       selectedFlightId: toOptional(state.ui.selectedFlightId),
@@ -1885,6 +1898,15 @@ export type ProviderAuthStatus = {
 
 export async function getProviderAuthStatus(provider: string): Promise<ProviderAuthStatus> {
   return invoke("get_provider_auth_status", { provider });
+}
+
+/**
+ * Sign out of a subscription OAuth provider by deleting its credential
+ * file(s). Supported providers: `claude-oauth`, `openai-codex`. Returns
+ * the number of files removed (0 if already signed out).
+ */
+export async function signOutProvider(provider: string): Promise<number> {
+  return invoke<number>("sign_out_provider", { provider });
 }
 
 // Ollama local model discovery — queries the Ollama daemon's /api/tags

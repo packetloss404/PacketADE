@@ -16,7 +16,7 @@ export type ServerConfigDto = { id: string, name: string, host: string, port: nu
 
 export type PersistedUiStateDto = { selectedFlightId?: string, selectedView?: string, theme?: ThemeDto, };
 
-export type OrchestratorSettingsDto = { maxParallelSessions: number, milestoneGating: boolean, projectPath: string, };
+export type OrchestratorSettingsDto = { maxParallelSessions: number, milestoneGating: boolean, projectPath: string, autoCommitTrailerEnabled: boolean, autoCommitTrailerFormat: string, };
 
 export type AgentCapabilityDto = "code_edit" | "code_review" | "testing" | "research" | "shell" | "refactor";
 

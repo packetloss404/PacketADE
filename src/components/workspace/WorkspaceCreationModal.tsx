@@ -66,7 +66,12 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});
   const [effortOverrides, setEffortOverrides] = useState<Record<string, EffortLevel | null>>({ "claude-code": "medium" });
-  const [bypassPermissions, setBypassPermissions] = useState(false);
+  // v0.8: seed from the user's "default bypass for new workspaces" setting.
+  // Read once at mount via the store snapshot so toggling the setting later
+  // doesn't yank the checkbox out from under the user mid-edit.
+  const [bypassPermissions, setBypassPermissions] = useState(
+    () => useWorkspaceStore.getState().defaultBypassPermissions,
+  );
   const [prompt, setPrompt] = useState("");
   const projectPath = useLayoutStore((s) => s.projectPath);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
@@ -215,8 +220,17 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   // v0.8-15: probe `git remote get-url origin` whenever the local
   // project path changes. Failures (non-git dir, no `origin`) are
   // silent — auto-bind is a best-effort polish, never blocking.
+  //
+  // v0.8 setting: gated on `useWorkspaceStore.autoBindGithubRepo`. When the
+  // user has disabled the auto-bind, we skip the probe entirely so we
+  // never run `git remote get-url origin` against their local path. They
+  // can still bind manually later from the GitHub pane.
   useEffect(() => {
     if (locationMode !== "local") {
+      setDetectedGithubRepo(null);
+      return;
+    }
+    if (!useWorkspaceStore.getState().autoBindGithubRepo) {
       setDetectedGithubRepo(null);
       return;
     }

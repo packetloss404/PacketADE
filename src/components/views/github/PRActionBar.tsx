@@ -57,8 +57,19 @@ function isMerged(pr: GitHubPr): boolean {
 
 export function PRActionBar({ pr, onAction }: Props) {
   const { config, updatePrState } = useGitHubStore();
+  // v0.8: pre-seed the merge dropdown with the user's persisted default. We
+  // pull from the store snapshot (not a live subscription) so the local
+  // dropdown choice can drift from the global default within a session
+  // without thrashing on Settings tweaks.
+  const defaultMergeStrategy = useGitHubStore(
+    (s) => s.defaultMergeStrategy,
+  );
+  const requireMergeConfirmation = useGitHubStore(
+    (s) => s.requireMergeConfirmation,
+  );
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const [mergeMethod, setMergeMethod] = useState<GitHubMergeMethod>("squash");
+  const [mergeMethod, setMergeMethod] =
+    useState<GitHubMergeMethod>(defaultMergeStrategy);
   const [showMergeMenu, setShowMergeMenu] = useState(false);
 
   const merged = isMerged(pr);
@@ -142,6 +153,14 @@ export function PRActionBar({ pr, onAction }: Props) {
   function startConfirm(action: ActionKind, method?: GitHubMergeMethod) {
     setShowMergeMenu(false);
     if (method) setMergeMethod(method);
+    // v0.8: Settings → GitHub lets power-users opt out of the inline
+    // confirm step for merge/close/convert-to-draft. "reopen" and "ready"
+    // are non-destructive but we route them through the same guard for
+    // consistency — they're cheap if the user happened to mis-click.
+    if (!requireMergeConfirmation) {
+      void run(action, method);
+      return;
+    }
     setStatus({ kind: "confirming", action, mergeMethod: method });
   }
 

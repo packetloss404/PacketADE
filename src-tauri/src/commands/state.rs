@@ -95,11 +95,16 @@ mod tests {
                 max_parallel_sessions: 3,
                 milestone_gating: true,
                 project_path: "D:/old".to_string(),
+                auto_commit_trailer_enabled: true,
+                auto_commit_trailer_format:
+                    crate::core::orchestrator::DEFAULT_AUTO_COMMIT_TRAILER_FORMAT.to_string(),
             })));
         let next = OrchestratorSettings {
             max_parallel_sessions: 8,
             milestone_gating: false,
             project_path: "D:/new".to_string(),
+            auto_commit_trailer_enabled: false,
+            auto_commit_trailer_format: "Custom: F-{flightId}/{attemptId}".to_string(),
         };
 
         apply_orchestrator_settings(&orchestrator, next.clone()).unwrap();

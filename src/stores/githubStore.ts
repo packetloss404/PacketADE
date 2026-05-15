@@ -33,6 +33,27 @@ import type {
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 
 const STORAGE_KEY = "packetade:github";
+const SETTINGS_STORAGE_KEY = "packetade:github:settings";
+
+/** v0.8: persisted GitHub-side defaults the user can tweak in Settings → GitHub. */
+export type GitHubMergeStrategy = "merge" | "squash" | "rebase";
+
+export interface GitHubSettings {
+  defaultMergeStrategy: GitHubMergeStrategy;
+  /** Show inline confirm step before merge/close/convert-to-draft. */
+  requireMergeConfirmation: boolean;
+  /** Pre-check the "Open as draft" box in the New PR modal. */
+  defaultDraftPrs: boolean;
+  /** Pre-check "Publish attempts as draft PRs" in the async Mission launcher. */
+  defaultPublishAttemptsAsPrs: boolean;
+}
+
+const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
+  defaultMergeStrategy: "squash",
+  requireMergeConfirmation: true,
+  defaultDraftPrs: false,
+  defaultPublishAttemptsAsPrs: false,
+};
 
 interface LoadedConfig {
   config: GitHubConfig;
@@ -57,6 +78,38 @@ function loadConfig(): LoadedConfig {
 
 function saveConfig(config: GitHubConfig) {
   saveToStorage(STORAGE_KEY, { selectedRepo: config.selectedRepo });
+}
+
+function loadSettings(): GitHubSettings {
+  const parsed = loadFromStorage<Partial<GitHubSettings>>(
+    SETTINGS_STORAGE_KEY,
+    {},
+  );
+  const strategy: GitHubMergeStrategy =
+    parsed.defaultMergeStrategy === "merge" ||
+    parsed.defaultMergeStrategy === "squash" ||
+    parsed.defaultMergeStrategy === "rebase"
+      ? parsed.defaultMergeStrategy
+      : DEFAULT_GITHUB_SETTINGS.defaultMergeStrategy;
+  return {
+    defaultMergeStrategy: strategy,
+    requireMergeConfirmation:
+      typeof parsed.requireMergeConfirmation === "boolean"
+        ? parsed.requireMergeConfirmation
+        : DEFAULT_GITHUB_SETTINGS.requireMergeConfirmation,
+    defaultDraftPrs:
+      typeof parsed.defaultDraftPrs === "boolean"
+        ? parsed.defaultDraftPrs
+        : DEFAULT_GITHUB_SETTINGS.defaultDraftPrs,
+    defaultPublishAttemptsAsPrs:
+      typeof parsed.defaultPublishAttemptsAsPrs === "boolean"
+        ? parsed.defaultPublishAttemptsAsPrs
+        : DEFAULT_GITHUB_SETTINGS.defaultPublishAttemptsAsPrs,
+  };
+}
+
+function saveSettings(settings: GitHubSettings) {
+  saveToStorage(SETTINGS_STORAGE_KEY, settings);
 }
 
 function isTokenError(message: string): boolean {
@@ -170,6 +223,16 @@ interface GitHubStore {
   setPrAiReview: (pr: { number: number }, markdown: string) => void;
   clearPrAiReview: (pr: { number: number }) => void;
 
+  // v0.8: persisted GitHub-related preferences (Settings → GitHub card).
+  defaultMergeStrategy: GitHubMergeStrategy;
+  requireMergeConfirmation: boolean;
+  defaultDraftPrs: boolean;
+  defaultPublishAttemptsAsPrs: boolean;
+  setDefaultMergeStrategy: (strategy: GitHubMergeStrategy) => void;
+  setRequireMergeConfirmation: (require: boolean) => void;
+  setDefaultDraftPrs: (draft: boolean) => void;
+  setDefaultPublishAttemptsAsPrs: (publish: boolean) => void;
+
   clearError: () => void;
   clearInvestigation: () => void;
 }
@@ -195,6 +258,7 @@ function issueCommentsKey(
 }
 
 const loaded = loadConfig();
+const loadedSettings = loadSettings();
 let pendingLegacyToken = loaded.legacyToken;
 
 export const useGitHubStore = create<GitHubStore>((set, get) => ({
@@ -930,6 +994,49 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     } catch (e) {
       set({ error: String(e), isLoadingMoreRepos: false });
     }
+  },
+
+  // v0.8: persisted GitHub settings (Settings → GitHub).
+  defaultMergeStrategy: loadedSettings.defaultMergeStrategy,
+  requireMergeConfirmation: loadedSettings.requireMergeConfirmation,
+  defaultDraftPrs: loadedSettings.defaultDraftPrs,
+  defaultPublishAttemptsAsPrs: loadedSettings.defaultPublishAttemptsAsPrs,
+
+  setDefaultMergeStrategy: (strategy) => {
+    set({ defaultMergeStrategy: strategy });
+    saveSettings({
+      defaultMergeStrategy: strategy,
+      requireMergeConfirmation: get().requireMergeConfirmation,
+      defaultDraftPrs: get().defaultDraftPrs,
+      defaultPublishAttemptsAsPrs: get().defaultPublishAttemptsAsPrs,
+    });
+  },
+  setRequireMergeConfirmation: (require) => {
+    set({ requireMergeConfirmation: require });
+    saveSettings({
+      defaultMergeStrategy: get().defaultMergeStrategy,
+      requireMergeConfirmation: require,
+      defaultDraftPrs: get().defaultDraftPrs,
+      defaultPublishAttemptsAsPrs: get().defaultPublishAttemptsAsPrs,
+    });
+  },
+  setDefaultDraftPrs: (draft) => {
+    set({ defaultDraftPrs: draft });
+    saveSettings({
+      defaultMergeStrategy: get().defaultMergeStrategy,
+      requireMergeConfirmation: get().requireMergeConfirmation,
+      defaultDraftPrs: draft,
+      defaultPublishAttemptsAsPrs: get().defaultPublishAttemptsAsPrs,
+    });
+  },
+  setDefaultPublishAttemptsAsPrs: (publish) => {
+    set({ defaultPublishAttemptsAsPrs: publish });
+    saveSettings({
+      defaultMergeStrategy: get().defaultMergeStrategy,
+      requireMergeConfirmation: get().requireMergeConfirmation,
+      defaultDraftPrs: get().defaultDraftPrs,
+      defaultPublishAttemptsAsPrs: publish,
+    });
   },
 
   // v0.8-E: AI PR-review cache (see interface comment for shape).

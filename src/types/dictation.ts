@@ -30,7 +30,18 @@ export interface DictationSettings {
   deviceIndex: number | null;
   customDictionary: string[];
   autoPaste: boolean;
+  /** OS-global accelerator for push-to-talk (hold). Optional — falls back to
+   *  the hardcoded default in `useDictationGlobalShortcuts` when omitted. */
+  pushToTalkShortcut?: string;
+  /** OS-global accelerator for toggle recording. */
+  toggleShortcut?: string;
 }
+
+/** Default accelerator strings — kept in one place so the store, the
+ *  capture UI, and the global-shortcut hook agree. Format follows
+ *  `@tauri-apps/plugin-global-shortcut` accelerator syntax. */
+export const DEFAULT_PUSH_TO_TALK_SHORTCUT = "CommandOrControl+Shift+V";
+export const DEFAULT_TOGGLE_SHORTCUT = "CommandOrControl+Shift+R";
 
 export interface WhisperModel {
   size: string;

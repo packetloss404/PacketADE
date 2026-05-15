@@ -76,12 +76,15 @@ export function PRModal({
   // aren't all populated so we don't kick off a doomed compare round-trip.
   const selectedRepo = useGitHubStore((s) => s.config.selectedRepo);
   const issues = useGitHubStore((s) => s.issues);
+  // v0.8: seed the "Open as draft" checkbox with the user's persisted
+  // default from Settings → GitHub.
+  const defaultDraftPrs = useGitHubStore((s) => s.defaultDraftPrs);
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [head, setHead] = useState("");
   const [base, setBase] = useState("main");
-  const [draft, setDraft] = useState(false);
+  const [draft, setDraft] = useState(defaultDraftPrs);
 
   const [linkedIssues, setLinkedIssues] = useState<number[]>(
     initialLinkedIssues ?? [],

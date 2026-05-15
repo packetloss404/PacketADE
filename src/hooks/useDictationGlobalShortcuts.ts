@@ -7,10 +7,12 @@ import {
 } from "@tauri-apps/plugin-global-shortcut";
 import { useDictationStore } from "@/stores/dictationStore";
 import { useAppStore } from "@/stores/appStore";
+import {
+  DEFAULT_PUSH_TO_TALK_SHORTCUT,
+  DEFAULT_TOGGLE_SHORTCUT,
+} from "@/types/dictation";
 
-const SHORTCUT_PTT = "CommandOrControl+Shift+V"; // push-to-talk (hold)
-const SHORTCUT_TOGGLE = "CommandOrControl+Shift+R"; // toggle recording
-const SHORTCUT_OPEN = "CommandOrControl+Shift+D"; // open Dictation view
+const SHORTCUT_OPEN = "CommandOrControl+Shift+D"; // open Dictation view (not user-rebindable)
 
 type Handler = (event: ShortcutEvent) => void;
 
@@ -29,9 +31,22 @@ async function safeRegister(shortcut: string, handler: Handler) {
   }
 }
 
+async function safeUnregister(shortcut: string) {
+  try {
+    if (await isRegistered(shortcut)) await unregister(shortcut);
+  } catch (err) {
+    console.warn(`[dictation] global shortcut ${shortcut} not unregistered:`, err);
+  }
+}
+
 /**
  * Registers OS-level global shortcuts for dictation so the hotkeys fire even
  * when PacketADE is not the focused application. Mount once at the App root.
+ *
+ * The push-to-talk and toggle accelerators are user-rebindable via the
+ * Dictation settings card; they are read from the persisted DictationSettings
+ * (falling back to the hardcoded defaults) and re-registered whenever those
+ * values change. The "open Dictation" accelerator stays fixed.
  *
  * Double-fire safety: the in-window keyboard handler in App.tsx may also fire
  * for these same key combinations when PacketADE is focused. The dictation
@@ -39,6 +54,13 @@ async function safeRegister(shortcut: string, handler: Handler) {
  * triggers collapse to a single action.
  */
 export function useDictationGlobalShortcuts() {
+  const pttShortcut = useDictationStore(
+    (s) => s.settings?.pushToTalkShortcut ?? DEFAULT_PUSH_TO_TALK_SHORTCUT,
+  );
+  const toggleShortcut = useDictationStore(
+    (s) => s.settings?.toggleShortcut ?? DEFAULT_TOGGLE_SHORTCUT,
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -64,9 +86,9 @@ export function useDictationGlobalShortcuts() {
     };
 
     void (async () => {
-      const ok1 = await safeRegister(SHORTCUT_PTT, pttHandler);
+      const ok1 = await safeRegister(pttShortcut, pttHandler);
       if (cancelled) return;
-      const ok2 = await safeRegister(SHORTCUT_TOGGLE, toggleHandler);
+      const ok2 = await safeRegister(toggleShortcut, toggleHandler);
       if (cancelled) return;
       const ok3 = await safeRegister(SHORTCUT_OPEN, openHandler);
       if (cancelled) return;
@@ -78,9 +100,9 @@ export function useDictationGlobalShortcuts() {
     return () => {
       cancelled = true;
       // Best-effort cleanup; failures are non-fatal
-      void unregister(SHORTCUT_PTT).catch(() => {});
-      void unregister(SHORTCUT_TOGGLE).catch(() => {});
-      void unregister(SHORTCUT_OPEN).catch(() => {});
+      void safeUnregister(pttShortcut);
+      void safeUnregister(toggleShortcut);
+      void safeUnregister(SHORTCUT_OPEN);
     };
-  }, []);
+  }, [pttShortcut, toggleShortcut]);
 }

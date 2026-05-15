@@ -346,6 +346,7 @@ pub fn run() {
             commands::api_keys::delete_api_key,
             // Provider auth status probe
             commands::provider_auth::get_provider_auth_status,
+            commands::provider_auth::sign_out_provider,
             // Local-only per-provider launch counter (Tier 4 slice B)
             commands::provider_stats::get_provider_launch_stats,
             // Ollama local model discovery

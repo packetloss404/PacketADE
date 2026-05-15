@@ -99,6 +99,23 @@ pub struct OrchestratorSettingsDto {
     pub max_parallel_sessions: usize,
     pub milestone_gating: bool,
     pub project_path: String,
+    /// v0.8: enable the prepare-commit-msg trailer hook in mission
+    /// worktrees. Defaults to `true` for back-compat with v0.8-16
+    /// (which always installed the hook).
+    #[serde(default = "crate::api::default_auto_commit_trailer_enabled_dto")]
+    pub auto_commit_trailer_enabled: bool,
+    /// v0.8: format string for the auto-trailer. Supports `{flightId}`,
+    /// `{attemptId}`, and `{flightTitle}` placeholders.
+    #[serde(default = "crate::api::default_auto_commit_trailer_format_dto")]
+    pub auto_commit_trailer_format: String,
+}
+
+pub(crate) fn default_auto_commit_trailer_enabled_dto() -> bool {
+    true
+}
+
+pub(crate) fn default_auto_commit_trailer_format_dto() -> String {
+    core_orchestrator::DEFAULT_AUTO_COMMIT_TRAILER_FORMAT.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -827,6 +844,8 @@ impl From<core_orchestrator::OrchestratorSettings> for OrchestratorSettingsDto {
             max_parallel_sessions: value.max_parallel_sessions,
             milestone_gating: value.milestone_gating,
             project_path: value.project_path,
+            auto_commit_trailer_enabled: value.auto_commit_trailer_enabled,
+            auto_commit_trailer_format: value.auto_commit_trailer_format,
         }
     }
 }
@@ -837,6 +856,8 @@ impl From<OrchestratorSettingsDto> for core_orchestrator::OrchestratorSettings {
             max_parallel_sessions: value.max_parallel_sessions,
             milestone_gating: value.milestone_gating,
             project_path: value.project_path,
+            auto_commit_trailer_enabled: value.auto_commit_trailer_enabled,
+            auto_commit_trailer_format: value.auto_commit_trailer_format,
         }
     }
 }
@@ -1698,6 +1719,9 @@ mod tests {
                 max_parallel_sessions: 3,
                 milestone_gating: true,
                 project_path: "/test".into(),
+                auto_commit_trailer_enabled: true,
+                auto_commit_trailer_format:
+                    core_orchestrator::DEFAULT_AUTO_COMMIT_TRAILER_FORMAT.into(),
             },
             ui: PersistedUiStateDto {
                 selected_flight_id: None,

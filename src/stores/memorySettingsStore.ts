@@ -11,6 +11,21 @@ export const DEFAULT_MEMORY_RETENTION_DAYS = 30;
 
 const STORAGE_KEY = storageKey("memory-settings");
 
+/**
+ * v0.8 setting: how the memory store decides whether a project-scoped
+ * pattern or event matches the current session's project path.
+ *
+ * - `exact` (default): normalized path equality — the historical
+ *   behaviour. Subdirectories of a workspace see nothing the workspace
+ *   recorded at the root.
+ * - `parent`: match when either side is a path prefix of the other.
+ *   Lets sub-workspaces inherit a parent project's memory while still
+ *   isolating sibling projects.
+ * - `global`: ignore the project path entirely — every project-scoped
+ *   pattern becomes effectively global.
+ */
+export type MemoryProjectPathMatching = "exact" | "parent" | "global";
+
 export interface MemorySettingsValues {
   captureSessions: boolean;
   captureTasks: boolean;
@@ -24,6 +39,14 @@ export interface MemorySettingsValues {
   contextMaxPatterns: number;
   contextMaxSessions: number;
   contextMaxLessons: number;
+  /** v0.8: how to match `projectPath` for memory context lookups. */
+  projectPathMatching: MemoryProjectPathMatching;
+  /**
+   * v0.8: when true (default), pinned patterns are kept even if the
+   * pattern cap would otherwise evict them. When false, pinned
+   * patterns are treated like any other entry in the LRU.
+   */
+  pinnedExemptFromCap: boolean;
 }
 
 interface MemorySettingsStore extends MemorySettingsValues {
@@ -39,6 +62,8 @@ interface MemorySettingsStore extends MemorySettingsValues {
   setContextMaxPatterns: (count: number) => void;
   setContextMaxSessions: (count: number) => void;
   setContextMaxLessons: (count: number) => void;
+  setProjectPathMatching: (mode: MemoryProjectPathMatching) => void;
+  setPinnedExemptFromCap: (enabled: boolean) => void;
   resetMemorySettings: () => void;
   hydrateFromStorage: () => void;
 }
@@ -56,7 +81,13 @@ const DEFAULTS: MemorySettingsValues = {
   contextMaxPatterns: DEFAULT_MEMORY_CONTEXT_MAX_PATTERNS,
   contextMaxSessions: DEFAULT_MEMORY_CONTEXT_MAX_SESSIONS,
   contextMaxLessons: DEFAULT_MEMORY_CONTEXT_MAX_LESSONS,
+  projectPathMatching: "exact",
+  pinnedExemptFromCap: true,
 };
+
+function normalizeProjectPathMatching(value: unknown): MemoryProjectPathMatching {
+  return value === "parent" || value === "global" ? value : "exact";
+}
 
 function clampInteger(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
@@ -107,6 +138,11 @@ function normalize(raw: Partial<MemorySettingsValues> | null | undefined): Memor
       0,
       50,
     ),
+    projectPathMatching: normalizeProjectPathMatching(source.projectPathMatching),
+    pinnedExemptFromCap:
+      typeof source.pinnedExemptFromCap === "boolean"
+        ? source.pinnedExemptFromCap
+        : DEFAULTS.pinnedExemptFromCap,
   };
 }
 
@@ -154,6 +190,8 @@ export const useMemorySettingsStore = create<MemorySettingsStore>((set, get) => 
     setContextMaxPatterns: (contextMaxPatterns) => update({ contextMaxPatterns }),
     setContextMaxSessions: (contextMaxSessions) => update({ contextMaxSessions }),
     setContextMaxLessons: (contextMaxLessons) => update({ contextMaxLessons }),
+    setProjectPathMatching: (projectPathMatching) => update({ projectPathMatching }),
+    setPinnedExemptFromCap: (pinnedExemptFromCap) => update({ pinnedExemptFromCap }),
     resetMemorySettings: () => update(DEFAULTS),
     hydrateFromStorage: () => {
       const next = loadSettings();
@@ -178,5 +216,7 @@ export function getMemorySettings(): MemorySettingsValues {
     contextMaxPatterns: state.contextMaxPatterns,
     contextMaxSessions: state.contextMaxSessions,
     contextMaxLessons: state.contextMaxLessons,
+    projectPathMatching: state.projectPathMatching,
+    pinnedExemptFromCap: state.pinnedExemptFromCap,
   });
 }

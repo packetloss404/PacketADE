@@ -23,6 +23,21 @@ interface WorkspaceStore {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   keepTerminalsAlive: boolean;
+  /**
+   * v0.8 setting: when true, the New Workspace modal pre-checks the
+   * "Bypass permission prompts" toggle. Per-workspace state is still
+   * stored on the Workspace itself; this only affects the initial
+   * value at creation time.
+   */
+  defaultBypassPermissions: boolean;
+  /**
+   * v0.8 setting: when true (default), workspace creation runs
+   * `git remote get-url origin` against the local project path and
+   * stamps the parsed `{owner, repo}` onto the workspace as
+   * `githubRepo`. Disable to skip the probe entirely (the user can
+   * still bind manually later).
+   */
+  autoBindGithubRepo: boolean;
   zoomedPaneId: string | null;
 
   createWorkspace: (name: string, agents: WorkspaceAgentSlot[], projectPath: string, sessionConfig?: WorkspaceSessionConfig) => string;
@@ -39,11 +54,31 @@ interface WorkspaceStore {
   addPane: (workspaceId: string, agentId: WorkspaceAgentSlot) => string | null;
   removePane: (workspaceId: string, paneId: string) => void;
   setKeepTerminalsAlive: (keep: boolean) => void;
+  setDefaultBypassPermissions: (value: boolean) => void;
+  setAutoBindGithubRepo: (value: boolean) => void;
   setZoomedPane: (paneId: string | null) => void;
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
 
 const KEEP_ALIVE_KEY = "packetade:workspace-keep-alive";
+const DEFAULT_BYPASS_KEY = "packetade:workspace-default-bypass";
+const AUTO_BIND_GITHUB_KEY = "packetade:workspace-auto-bind-github";
+
+function readBooleanFlag(key: string, fallback: boolean): boolean {
+  if (typeof localStorage === "undefined") return fallback;
+  const raw = localStorage.getItem(key);
+  if (raw === null) return fallback;
+  return raw === "true";
+}
+
+function writeBooleanFlag(key: string, value: boolean) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // Best-effort — runtime state still updates.
+  }
+}
 
 const PANE_COLORS = ["accent-green", "accent-blue", "accent-amber", "accent-purple", "accent-red", "accent-cyan"];
 
@@ -107,6 +142,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaces: loadCachedWorkspaces(),
   activeWorkspaceId: null,
   keepTerminalsAlive: typeof localStorage !== "undefined" && localStorage.getItem(KEEP_ALIVE_KEY) === "true",
+  defaultBypassPermissions: readBooleanFlag(DEFAULT_BYPASS_KEY, false),
+  autoBindGithubRepo: readBooleanFlag(AUTO_BIND_GITHUB_KEY, true),
   zoomedPaneId: null,
 
   setKeepTerminalsAlive: (keep) => {
@@ -114,6 +151,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       localStorage.setItem(KEEP_ALIVE_KEY, String(keep));
     }
     set({ keepTerminalsAlive: keep });
+  },
+
+  setDefaultBypassPermissions: (value) => {
+    writeBooleanFlag(DEFAULT_BYPASS_KEY, value);
+    set({ defaultBypassPermissions: value });
+  },
+
+  setAutoBindGithubRepo: (value) => {
+    writeBooleanFlag(AUTO_BIND_GITHUB_KEY, value);
+    set({ autoBindGithubRepo: value });
   },
 
   createWorkspace: (name, agents, projectPath, sessionConfig) => {

@@ -3,6 +3,80 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.8.1] - 2026-05-15
+
+### Added — Settings panel cleanup + missing v0.8 controls
+
+A focused follow-up to v0.8.0 after an audit pass through the Settings panel.
+Fixes three real labeling / placement bugs, surfaces the controls the v0.8
+work merited but never got, and regroups Settings from 18 flat sections into
+15 sensibly-stacked tabs.
+
+#### Bug fixes
+- **Composer-mode label clarified.** Settings > Agents > "Launch default"
+  silently shared its backing store with the per-conversation chip in the
+  agent input bar — flipping the chip permanently changed the global
+  default with no signal. Relabeled to "Default launch location", added
+  description copy, per-chip tooltips, and a caption that documents the
+  override semantics. Behavior unchanged; vocabulary now matches reality.
+- **Gemini API key hoisted.** Previously hidden inside the Dictation card.
+  Moved to the unified Settings > AI Providers > API Keys list alongside
+  Anthropic / OpenAI / MiniMax / OpenRouter / Ollama. DictationCard now
+  shows a status badge + jump link.
+- **Theme toggle added to Settings.** `useAppStore.theme` was an orphan
+  store value mutated only from the Toolbar Sun/Moon button. Added
+  `ThemeSettingsCard` under Settings > General with a Dark/Light segmented
+  control. Toolbar toggle preserved as the high-frequency action.
+
+#### Missing v0.8 settings shipped
+- **GitHub tab (new).** Token status / Rotate / Disconnect, default merge
+  strategy (merge/squash/rebase), require-confirmation toggle for
+  destructive PR actions, "default new PRs to draft", and "publish Mission
+  attempts as draft PRs by default" — all in one place. `PRActionBar`,
+  `PRModal`, and `LaunchAsyncFlightModal` now read their defaults from
+  these settings.
+- **Workspace defaults.** "Default new workspaces to bypass permission
+  prompts" + "Auto-detect GitHub repo on workspace creation"
+  (opt-out). The auto-bind probe in `WorkspaceCreationModal` is now gated
+  on the toggle.
+- **Memory project scope.** Radio for "Match memory by project path"
+  (Exact / Parent directory / Global) and a "Pinned patterns survive cap
+  eviction" toggle. `getContextItemsForSession` and `capPatterns` honor
+  both.
+- **Mission auto-trailer.** Toggle + format input with placeholder help
+  (`{flightId}` / `{attemptId}` / `{flightTitle}`) and a live preview.
+  Backed by `OrchestratorSettings` on the Rust side; the worktree
+  `prepare-commit-msg` hook now reads the live settings and only installs
+  when enabled.
+- **Editable dictation hotkeys.** Push-to-talk and toggle accelerators are
+  now user-rebindable via in-place capture (Esc to cancel, modifier
+  required for validity). `useDictationGlobalShortcuts` re-registers on
+  change.
+- **Subscriptions card.** Settings > AI Providers > Subscriptions surfaces
+  Claude OAuth + Codex OAuth status (Ready / Login required / Expired)
+  with Sign-in (opens the existing PTY login flow) and Sign-out (new
+  `sign_out_provider` backend command that removes the credential file).
+
+#### Settings IA reorganization
+- 18 flat sections → 15 grouped tabs: **General** (Theme, Notifications),
+  **Workspace**, **Agents** (CLI + Settings + Profiles stacked),
+  **AI Providers** (API Keys + Subscriptions + Endpoints stacked),
+  **AI Routing**, **Memory**, **Missions** (with auto-trailer),
+  **GitHub** (new), **Issues**, **Servers**, **MCP** (Servers + Provider
+  stacked), **Project Rules**, **Modules**, **Dictation**, **Advanced**
+  (Crash Reports + History link + Cost Dashboard link + Prompt Templates
+  editor moved out of prime real estate).
+- Every prior setting reachable; no functional regressions.
+
+### Architecture
+- 2 commits (`936990a` fix + this one). Built by 6 parallel agents
+  (3 round-1 fix + 3 round-2 controls/IA) with explicit file ownership.
+- Frontend-only changes for most controls; Rust side touched for the
+  auto-trailer config plumb (`core/orchestrator.rs`,
+  `core/worktree.rs::install_prepare_commit_msg_hook`,
+  `commands/flight_attempts.rs::launch_flight_async`) and the
+  Subscriptions sign-out command (`commands/provider_auth.rs`).
+
 ## [0.8.0] - 2026-05-15
 
 ### Added — GitHub pane overhaul + Memory inline surfaces

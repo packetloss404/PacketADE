@@ -1,5 +1,27 @@
 import { useState, lazy, Suspense } from "react";
-import { Wrench, FolderOpen, Ticket, Puzzle, FileText, Plus, Trash2, Route, Plug, Clock, DollarSign, RadioTower, Mic, Key, Server, User, GitBranch, Terminal, Bot, Brain } from "lucide-react";
+import {
+  Wrench,
+  FolderOpen,
+  Ticket,
+  Puzzle,
+  FileText,
+  Plus,
+  Trash2,
+  Route,
+  Plug,
+  Clock,
+  DollarSign,
+  Mic,
+  Key,
+  Server,
+  GitBranch,
+  Bot,
+  Brain,
+  Github,
+  Settings2,
+  Palette,
+  ChevronRight,
+} from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
 import { useGitInfo } from "@/hooks/useGitInfo";
@@ -27,31 +49,63 @@ import { OrchestrationSettingsCard } from "./tools/OrchestrationSettingsCard";
 import { ProviderEndpointsCard } from "./tools/ProviderEndpointsCard";
 import { WorkspaceSettingsCard } from "./tools/WorkspaceSettingsCard";
 import { MemorySettingsCard } from "./tools/MemorySettingsCard";
+import { GitHubSettingsCard } from "./tools/GitHubSettingsCard";
+import { SubscriptionsCard } from "./tools/SubscriptionsCard";
 import type { PromptTemplate } from "@/types/prompt";
 
-const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })));
+const HistoryView = lazy(() =>
+  import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })),
+);
 
-type SettingsSection = "project" | "project-rules" | "issues" | "missions" | "routing" | "api-keys" | "servers" | "cli-agents" | "mcp" | "mcp-provider" | "agents" | "profiles" | "memory" | "modules" | "templates" | "history" | "cost" | "dictation";
+/**
+ * v0.8.1 IA reorganisation.
+ *
+ * The flat 18-tab Settings sidebar was collapsed into a smaller set of
+ * grouped sections that match how users actually think about the app:
+ *
+ *  - "General" merges Theme + Notifications + Project info
+ *  - "Workspace" surfaces workspace-pane-only knobs
+ *  - "Agents" stacks CLI Agents, API-mode Agents, and Profiles
+ *  - "AI Providers" stacks API Keys + Subscriptions + Provider Endpoints
+ *  - "MCP" stacks Servers + Provider in one tab
+ *  - "GitHub" mounts the new card from v0.8.1
+ *  - "Advanced" is the parking lot for crash logs and jump links to the
+ *    full-page views that used to be shoehorned into Settings (History,
+ *    Cost Dashboard, Prompt Library).
+ */
+type SettingsSection =
+  | "general"
+  | "workspace"
+  | "agents"
+  | "providers"
+  | "routing"
+  | "memory"
+  | "missions"
+  | "github"
+  | "issues"
+  | "servers"
+  | "mcp"
+  | "project-rules"
+  | "modules"
+  | "dictation"
+  | "advanced";
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] = [
-  { key: "project", label: "Project", icon: FolderOpen },
-  { key: "project-rules", label: "Project Rules", icon: FileText },
-  { key: "issues", label: "Issues", icon: Ticket },
-  { key: "missions", label: "Missions", icon: GitBranch },
-  { key: "routing", label: "AI Routing", icon: Route },
-  { key: "api-keys", label: "API Keys", icon: Key },
-  { key: "servers", label: "Servers", icon: Server },
-  { key: "cli-agents", label: "CLI Agents", icon: Terminal },
-  { key: "mcp", label: "MCP Servers", icon: Plug },
-  { key: "mcp-provider", label: "MCP Provider", icon: RadioTower },
+  { key: "general", label: "General", icon: Palette },
+  { key: "workspace", label: "Workspace", icon: FolderOpen },
   { key: "agents", label: "Agents", icon: Bot },
-  { key: "profiles", label: "Agent Profiles", icon: User },
+  { key: "providers", label: "AI Providers", icon: Key },
+  { key: "routing", label: "AI Routing", icon: Route },
   { key: "memory", label: "Memory", icon: Brain },
+  { key: "missions", label: "Missions", icon: GitBranch },
+  { key: "github", label: "GitHub", icon: Github },
+  { key: "issues", label: "Issues", icon: Ticket },
+  { key: "servers", label: "Servers", icon: Server },
+  { key: "mcp", label: "MCP", icon: Plug },
+  { key: "project-rules", label: "Project Rules", icon: FileText },
   { key: "modules", label: "Modules", icon: Puzzle },
-  { key: "templates", label: "Templates", icon: FileText },
-  { key: "history", label: "History", icon: Clock },
-  { key: "cost", label: "Cost", icon: DollarSign },
   { key: "dictation", label: "Dictation", icon: Mic },
+  { key: "advanced", label: "Advanced", icon: Settings2 },
 ];
 
 export function ToolsView() {
@@ -63,7 +117,8 @@ export function ToolsView() {
   const addLabel = useIssueStore((s) => s.addLabel);
   const epics = useIssueStore((s) => s.epics);
   const labels = useIssueStore((s) => s.labels);
-  const [activeSection, setActiveSection] = useState<SettingsSection>("project");
+  const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+  const setActiveView = useAppStore((s) => s.setActiveView);
 
   return (
     <div className="flex h-full bg-bg-primary overflow-hidden">
@@ -73,7 +128,7 @@ export function ToolsView() {
           <Wrench size={14} className="text-accent-amber" />
           <h2 className="text-xs font-semibold text-text-primary">Settings</h2>
         </div>
-        <div className="flex flex-col p-2 gap-0.5">
+        <div className="flex flex-col p-2 gap-0.5 overflow-y-auto">
           {SECTIONS.map((section) => (
             <button
               key={section.key}
@@ -93,13 +148,73 @@ export function ToolsView() {
 
       {/* Content area */}
       <div className="flex-1 overflow-y-auto p-4">
-        {activeSection === "project" && (
+        {activeSection === "general" && (
           <div className="grid grid-cols-2 gap-4 max-w-2xl">
             <ProjectInfoCard projectPath={projectPath} gitBranch={gitBranch} />
-            <WorkspaceSettingsCard />
             <ThemeSettingsCard />
             <NotificationSettingsCard />
-            <CrashViewerCard />
+          </div>
+        )}
+
+        {activeSection === "workspace" && (
+          <div className="max-w-2xl">
+            <WorkspaceSettingsCard />
+          </div>
+        )}
+
+        {activeSection === "agents" && (
+          <div className="max-w-3xl space-y-4">
+            <CliAgentsCard />
+            <AgentSettingsCard />
+            <AgentProfilesCard />
+          </div>
+        )}
+
+        {activeSection === "providers" && (
+          <div className="grid grid-cols-1 gap-4 max-w-3xl">
+            <ApiKeysCard />
+            <SubscriptionsCard />
+            <ProviderEndpointsCard />
+          </div>
+        )}
+
+        {activeSection === "routing" && (
+          <div className="max-w-2xl">
+            <ProviderRoutingCard />
+          </div>
+        )}
+
+        {activeSection === "memory" && (
+          <div className="max-w-2xl space-y-3">
+            <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-1.5">
+                <Brain size={12} className="text-accent-green" />
+                <h3 className="text-xs font-semibold text-text-primary">Memory pane</h3>
+              </div>
+              <p className="text-[11px] text-text-muted leading-relaxed">
+                Browse, edit, and prune captured patterns and events.
+              </p>
+              <button
+                onClick={() => setActiveView("memory")}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs text-accent-green border border-accent-green/30 bg-accent-green/10 rounded hover:bg-accent-green/15 transition-colors mt-3"
+              >
+                <Brain size={12} />
+                Manage memory
+              </button>
+            </div>
+            <MemorySettingsCard />
+          </div>
+        )}
+
+        {activeSection === "missions" && (
+          <div className="max-w-2xl">
+            <OrchestrationSettingsCard />
+          </div>
+        )}
+
+        {activeSection === "github" && (
+          <div className="max-w-2xl">
+            <GitHubSettingsCard />
           </div>
         )}
 
@@ -123,80 +238,16 @@ export function ToolsView() {
           </div>
         )}
 
-        {activeSection === "routing" && (
-          <div className="max-w-2xl">
-            <ProviderRoutingCard />
-          </div>
-        )}
-
-        {activeSection === "missions" && (
-          <div className="max-w-2xl">
-            <OrchestrationSettingsCard />
-          </div>
-        )}
-
-        {activeSection === "api-keys" && (
-          <div className="grid grid-cols-2 gap-4 max-w-4xl">
-            <ApiKeysCard />
-            <ProviderEndpointsCard />
-          </div>
-        )}
-
         {activeSection === "servers" && (
           <div className="max-w-2xl">
             <ServersSettingsCard />
           </div>
         )}
 
-        {activeSection === "cli-agents" && (
-          <div className="max-w-3xl">
-            <CliAgentsCard />
-          </div>
-        )}
-
         {activeSection === "mcp" && (
-          <div className="max-w-2xl">
+          <div className="grid grid-cols-1 gap-4 max-w-2xl">
             <McpServersCard />
-          </div>
-        )}
-
-        {activeSection === "mcp-provider" && (
-          <div className="max-w-2xl">
             <McpProviderCard />
-          </div>
-        )}
-
-        {activeSection === "agents" && (
-          <div className="max-w-2xl">
-            <AgentSettingsCard />
-          </div>
-        )}
-
-        {activeSection === "profiles" && (
-          <div className="max-w-3xl">
-            <AgentProfilesCard />
-          </div>
-        )}
-
-        {activeSection === "memory" && (
-          <div className="max-w-2xl space-y-3">
-            <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-1.5">
-                <Brain size={12} className="text-accent-green" />
-                <h3 className="text-xs font-semibold text-text-primary">Memory pane</h3>
-              </div>
-              <p className="text-[11px] text-text-muted leading-relaxed">
-                Browse, edit, and prune captured patterns and events.
-              </p>
-              <button
-                onClick={() => useAppStore.getState().setActiveView("memory")}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs text-accent-green border border-accent-green/30 bg-accent-green/10 rounded hover:bg-accent-green/15 transition-colors mt-3"
-              >
-                <Brain size={12} />
-                Manage memory
-              </button>
-            </div>
-            <MemorySettingsCard />
           </div>
         )}
 
@@ -212,38 +263,156 @@ export function ToolsView() {
           </div>
         )}
 
-        {activeSection === "templates" && (
-          <div className="max-w-2xl">
-            <PromptTemplatesCard />
-          </div>
-        )}
-
-        {activeSection === "history" && (
-          <div className="max-w-4xl h-full">
-            <Suspense fallback={<div className="text-xs text-text-muted p-4">Loading...</div>}>
-              <HistoryView />
-            </Suspense>
-          </div>
-        )}
-
-        {activeSection === "cost" && (
-          <div className="grid grid-cols-2 gap-4 max-w-2xl">
-            <CostCard />
-          </div>
-        )}
-
         {activeSection === "dictation" && (
           <div className="max-w-2xl">
             <DictationCard />
           </div>
         )}
-      </div>
 
+        {activeSection === "advanced" && (
+          <AdvancedSection
+            onOpenHistory={() => setActiveView("history")}
+            onOpenCost={() => setActiveView("cost_dashboard")}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
-const CATEGORIES: PromptTemplate["category"][] = ["general", "debugging", "review", "feature", "custom"];
+/**
+ * Advanced / Diagnostics tab — the "everything else" parking lot. Houses
+ * Crash Reports (operational debugging) and jump-links to the full-page
+ * views that used to be embedded directly in Settings (History,
+ * Cost Dashboard, Prompt Library).
+ *
+ * Each jump-link gracefully falls back to inline mounting when the target
+ * top-level view isn't registered (so existing setActiveView("tools")
+ * deep-links keep working in case a view key changes).
+ */
+function AdvancedSection({
+  onOpenHistory,
+  onOpenCost,
+}: {
+  onOpenHistory: () => void;
+  onOpenCost: () => void;
+}) {
+  const [inlineView, setInlineView] = useState<
+    null | "history" | "cost" | "prompts"
+  >(null);
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <CrashViewerCard />
+
+      <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
+        <h3 className="text-xs font-semibold text-text-primary mb-3 flex items-center gap-2">
+          <Settings2 size={12} className="text-accent-blue" />
+          Open in dedicated view
+        </h3>
+        <p className="text-[10px] text-text-muted mb-3 leading-relaxed">
+          These surfaces used to live as their own Settings tabs; they have
+          dedicated full-page views in the toolbar. Use the jump links below
+          to switch, or expand inline if you only need a quick look.
+        </p>
+        <div className="space-y-1.5">
+          <JumpLink
+            label="History"
+            icon={Clock}
+            description="Past terminal sessions and API agent conversations"
+            onJump={onOpenHistory}
+            onInline={() => setInlineView((v) => (v === "history" ? null : "history"))}
+            inlineOpen={inlineView === "history"}
+          />
+          <JumpLink
+            label="Cost Dashboard"
+            icon={DollarSign}
+            description="Per-provider spend and analytics (also in the toolbar)"
+            onJump={onOpenCost}
+            onInline={() => setInlineView((v) => (v === "cost" ? null : "cost"))}
+            inlineOpen={inlineView === "cost"}
+          />
+          <JumpLink
+            label="Prompt Templates"
+            icon={FileText}
+            description="Authoring and editing prompt templates (toolbar has the modal)"
+            onJump={null}
+            onInline={() => setInlineView((v) => (v === "prompts" ? null : "prompts"))}
+            inlineOpen={inlineView === "prompts"}
+          />
+        </div>
+      </div>
+
+      {inlineView === "history" && (
+        <div className="h-[60vh]">
+          <Suspense fallback={<div className="text-xs text-text-muted p-4">Loading...</div>}>
+            <HistoryView />
+          </Suspense>
+        </div>
+      )}
+      {inlineView === "cost" && (
+        <div className="grid grid-cols-2 gap-4">
+          <CostCard />
+        </div>
+      )}
+      {inlineView === "prompts" && <PromptTemplatesCard />}
+    </div>
+  );
+}
+
+function JumpLink({
+  label,
+  icon: Icon,
+  description,
+  onJump,
+  onInline,
+  inlineOpen,
+}: {
+  label: string;
+  icon: typeof Clock;
+  description: string;
+  /** When null, the row is inline-only (no dedicated top-level view to jump to). */
+  onJump: (() => void) | null;
+  onInline: () => void;
+  inlineOpen: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 bg-bg-primary border border-bg-border rounded-lg px-3 py-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <Icon size={12} className="text-text-muted shrink-0" />
+        <div className="min-w-0">
+          <div className="text-[11px] text-text-primary">{label}</div>
+          <div className="text-[10px] text-text-muted truncate">{description}</div>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={onInline}
+          className="px-2 py-1 text-[10px] text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+        >
+          {inlineOpen ? "Hide" : onJump ? "Preview" : "Edit"}
+        </button>
+        {onJump && (
+          <button
+            onClick={onJump}
+            className="flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+          >
+            Open
+            <ChevronRight size={11} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const CATEGORIES: PromptTemplate["category"][] = [
+  "general",
+  "debugging",
+  "review",
+  "feature",
+  "custom",
+];
 
 function PromptTemplatesCard() {
   const templates = usePromptStore((s) => s.templates);
@@ -295,7 +464,9 @@ function PromptTemplatesCard() {
             className="bg-bg-secondary border border-bg-border rounded px-2 py-1.5 text-[11px] text-text-secondary focus:outline-none focus:border-accent-green"
           >
             {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+              <option key={c} value={c}>
+                {c.charAt(0).toUpperCase() + c.slice(1)}
+              </option>
             ))}
           </select>
           <textarea
@@ -342,9 +513,7 @@ function PromptTemplatesCard() {
                     {t.category}
                   </span>
                 </div>
-                <p className="text-[10px] text-text-muted line-clamp-2">
-                  {t.content}
-                </p>
+                <p className="text-[10px] text-text-muted line-clamp-2">{t.content}</p>
               </div>
               <button
                 onClick={() => deleteTemplate(t.id)}

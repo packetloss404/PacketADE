@@ -4,6 +4,10 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 export function WorkspaceSettingsCard() {
   const keepTerminalsAlive = useWorkspaceStore((s) => s.keepTerminalsAlive);
   const setKeepTerminalsAlive = useWorkspaceStore((s) => s.setKeepTerminalsAlive);
+  const defaultBypassPermissions = useWorkspaceStore((s) => s.defaultBypassPermissions);
+  const setDefaultBypassPermissions = useWorkspaceStore((s) => s.setDefaultBypassPermissions);
+  const autoBindGithubRepo = useWorkspaceStore((s) => s.autoBindGithubRepo);
+  const setAutoBindGithubRepo = useWorkspaceStore((s) => s.setAutoBindGithubRepo);
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
@@ -17,15 +21,50 @@ export function WorkspaceSettingsCard() {
         groups or resumes conversations.
       </p>
 
-      <div className="flex items-center justify-between gap-4 bg-bg-primary border border-bg-border rounded-lg px-3 py-2">
-        <div className="min-w-0">
-          <div className="text-[11px] text-text-secondary">Keep terminals alive</div>
-          <p className="mt-1 text-[10px] text-text-muted leading-snug">
-            Keep Workspace pane terminal sessions running when switching away from that pane.
-          </p>
-        </div>
-        <Toggle checked={keepTerminalsAlive} onChange={setKeepTerminalsAlive} />
+      <div className="space-y-2">
+        <Row
+          title="Keep terminals alive"
+          description="Keep Workspace pane terminal sessions running when switching away from that pane."
+          checked={keepTerminalsAlive}
+          onChange={setKeepTerminalsAlive}
+        />
+
+        <Row
+          title="Default new workspaces to bypass permission prompts"
+          description="When you create a new workspace, pre-check the 'Bypass permission prompts' option. Existing workspaces are unaffected."
+          checked={defaultBypassPermissions}
+          onChange={setDefaultBypassPermissions}
+        />
+
+        <Row
+          title="Auto-detect GitHub repo on workspace creation"
+          description="Run `git remote get-url origin` when creating a workspace and link it to the detected GitHub repo. Disable if you don't want PacketADE making that call."
+          checked={autoBindGithubRepo}
+          onChange={setAutoBindGithubRepo}
+        />
       </div>
+    </div>
+  );
+}
+
+function Row({
+  title,
+  description,
+  checked,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 bg-bg-primary border border-bg-border rounded-lg px-3 py-2">
+      <div className="min-w-0">
+        <div className="text-[11px] text-text-secondary">{title}</div>
+        <p className="mt-1 text-[10px] text-text-muted leading-snug">{description}</p>
+      </div>
+      <Toggle checked={checked} onChange={onChange} />
     </div>
   );
 }
@@ -45,7 +84,6 @@ function Toggle({
         checked ? "bg-accent-green" : "bg-bg-elevated"
       }`}
       aria-pressed={checked}
-      title={checked ? "Disable keep-alive" : "Enable keep-alive"}
     >
       <span
         className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white transition-transform ${
