@@ -409,6 +409,38 @@ impl Flight {
     }
 }
 
+// === Mission Approval Request ===
+//
+// Persisted record of a pending `request_user_approval` tool call from the
+// Mission Planner. The planner files this synchronously (async-return per
+// the locked design) and keeps working; the user resolves it later via
+// `resolve_mission_approval`, which flips `resolved=true`, records the
+// chosen option, and fires a `WakeTrigger::UserMessageInJournal` so the
+// planner sees the answer on its next turn.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MissionApprovalRequest {
+    /// `approval_id` — the value returned to the planner in the
+    /// `pending_approval:<id>` sentinel.
+    pub id: String,
+    pub mission_id: String,
+    pub question: String,
+    /// Optional multiple-choice options. Empty vec = free-form text answer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+    /// Unix millis when the planner filed the approval.
+    pub awaiting_since: u64,
+    pub resolved: bool,
+    /// The option the user picked, or `"dismissed"` for a dismissed
+    /// approval. `None` while `resolved == false`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<String>,
+    /// Unix millis when the user resolved the approval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<u64>,
+}
+
 // === Issue ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

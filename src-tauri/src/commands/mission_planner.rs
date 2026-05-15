@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{info, warn};
 
@@ -284,6 +284,19 @@ impl MissionPlannerRegistry {
         guard.get(mission_id).cloned()
     }
 
+    /// Reverse-lookup the owning mission id for a given sidecar session id.
+    /// Used by the E2 in-process MCP tool handlers, which receive the
+    /// sidecar session id as their `session_id` argument (because that's
+    /// what the sidecar tags `planner_tool` envelopes with) and need to
+    /// resolve which mission's state to mutate.
+    pub async fn mission_id_for_sidecar_session(&self, sidecar_session_id: &str) -> Option<String> {
+        let guard = self.sessions.lock().await;
+        guard
+            .values()
+            .find(|s| s.sidecar_session_id == sidecar_session_id)
+            .map(|s| s.mission_id.clone())
+    }
+
     /// Look up the sidecar session id for a mission, if any. Synchronous-
     /// looking helper for orchestration hook sites that just need to know
     /// "is there an active planner for this mission?". Used by future
@@ -295,6 +308,36 @@ impl MissionPlannerRegistry {
             .try_lock()
             .ok()
             .and_then(|g| g.get(mission_id).map(|s| s.sidecar_session_id.clone()))
+    }
+
+    /// Increment the per-task replan counter on the planner session and
+    /// return the **new** count. Returns `None` if no planner is registered
+    /// for the mission (caller should treat that as an error).
+    ///
+    /// E2 uses this to enforce the flat ≤ 3 cap. E5 will gate the call
+    /// with error-category exemption logic so RateLimit / Network failures
+    /// don't increment the counter.
+    pub async fn bump_replan_count(
+        &self,
+        mission_id: &str,
+        task_id: &str,
+    ) -> Option<u32> {
+        let mut guard = self.sessions.lock().await;
+        let session = guard.get_mut(mission_id)?;
+        let entry = session
+            .replans_per_task
+            .entry(task_id.to_string())
+            .or_insert(0);
+        *entry += 1;
+        Some(*entry)
+    }
+
+    /// Remove a planner session from the registry. Public sibling of the
+    /// internal [`Self::remove`] used by terminal-state tool handlers
+    /// (e.g. `complete_mission`) that need to take the session out of
+    /// the wake-dispatch path before closing its sidecar.
+    pub async fn remove_session(&self, mission_id: &str) -> Option<MissionPlannerSession> {
+        self.remove(mission_id).await
     }
 
     /// Set or replace the planner session for a mission. Returns the
@@ -325,37 +368,22 @@ impl MissionPlannerRegistry {
     /// the returned `Result` becomes the `planner_tool_result` reply that
     /// resolves the parked SDK tool handler in the sidecar.
     ///
-    /// E1 scope is intentionally minimal: only the `mcp__planner__noop` /
-    /// `noop` stub is supported, returning the `message` field from `args`
-    /// untouched. E2 will replace this body with the real
-    /// `create_milestone` / `create_task` / `update_task` /
-    /// `mark_task_blocked` / `replan_after_failure` / `request_user_approval`
-    /// / `complete_mission` dispatch.
+    /// E2: delegates to per-tool handlers under
+    /// `commands::mission_planner_tools`. Caps + the task-ceiling
+    /// approval gate come in E6 (they wrap this call, not replace it).
     ///
     /// `session_id` is the sidecar session id (NOT the planner / mission
-    /// id) — E2 may need it to look up the owning mission via the registry;
-    /// E1 ignores it.
+    /// id) — handlers use it to find the owning mission via the registry.
+    /// `app` is the Tauri handle so handlers can `storage::load_state` /
+    /// `save_state` and emit Tauri events for the UI.
     pub async fn handle_tool_call(
         &self,
-        _session_id: &str,
+        app: &tauri::AppHandle,
+        session_id: &str,
         tool: &str,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        // The sidecar's `mcpServers["planner"]` key produces tool names with
-        // the `mcp__planner__` prefix. Accept the bare name too so the
-        // dispatcher is reusable from a non-MCP context (e.g. direct
-        // command-line drive of the registry in tests).
-        let bare = tool.strip_prefix("mcp__planner__").unwrap_or(tool);
-        match bare {
-            "noop" => Ok(serde_json::json!({
-                "ok": true,
-                "message": args.get("message").cloned().unwrap_or_default(),
-            })),
-            other => Err(format!(
-                "E2: tool '{}' not yet implemented",
-                other
-            )),
-        }
+        crate::commands::mission_planner_tools::dispatch(app, session_id, tool, args).await
     }
 }
 
@@ -370,7 +398,7 @@ impl MissionPlannerRegistry {
 ///
 /// Tolerant of a missing flight (e.g. mission was deleted between start and
 /// status update) — silently no-ops.
-fn persist_planner_state_on_flight(
+pub(crate) fn persist_planner_state_on_flight(
     mission_id: &str,
     session_id: Option<&str>,
     status: Option<PlannerStatus>,
@@ -545,6 +573,11 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         return;
     }
 
+    // TODO(E6): planner status doesn't currently flip back to Idle after the
+    // wake's `done` event from the sidecar — the UI surfaces "Awake"
+    // indefinitely after the first wake. Reviewer #2 flagged this. E6 should
+    // add a per-session `done` listener that flips status back to Idle.
+    // Tracked as a P3 in backlog.md.
     registry
         .set_status(&event.mission_id, PlannerStatus::Awake)
         .await;
@@ -623,12 +656,22 @@ pub async fn start_mission_planner(
             PLANNER_PROVIDER.to_string(),
             PLANNER_MODEL.to_string(),
             spec_mode_system_prompt(),
-            // allowedTools: only the E1 stub tool. Per the Claude Agent SDK,
-            // an empty list means no tools are callable, which would make
-            // the planner's `mcp__planner__noop` stub unreachable and block
-            // the protocol-v5 in-process MCP round-trip smoke. E2 extends
-            // this list with the 7 real planner tool names.
-            vec!["mcp__planner__noop".to_string()],
+            // allowedTools: the E2 full planner tool surface. `noop` is
+            // kept so the protocol-v5 in-process MCP smoke stays passing.
+            // `spawn_helper_planner` is intentionally absent — it is
+            // deferred to v1.1; the dispatcher still errors cleanly if
+            // the model tries to call it. Caps + ceiling enforcement
+            // (E6) wraps the dispatch path rather than this allowlist.
+            vec![
+                "mcp__planner__noop".to_string(),
+                "mcp__planner__create_milestone".to_string(),
+                "mcp__planner__create_task".to_string(),
+                "mcp__planner__update_task".to_string(),
+                "mcp__planner__mark_task_blocked".to_string(),
+                "mcp__planner__replan_after_failure".to_string(),
+                "mcp__planner__request_user_approval".to_string(),
+                "mcp__planner__complete_mission".to_string(),
+            ],
             // mcpServers: null. The sidecar's `mcpKind: "planner"` flag
             // tells it to construct the planner tool surface locally; the
             // raw `mcpServers` channel still carries user-defined stdio
@@ -668,18 +711,27 @@ pub async fn stop_mission_planner(app_handle: AppHandle, mission_id: String) -> 
     let registry = app_handle
         .try_state::<MissionPlannerRegistry>()
         .ok_or_else(|| "mission planner registry not managed".to_string())?;
-    let session = match registry.remove(&mission_id).await {
-        Some(s) => s,
+
+    // Peek the sidecar session id without removing from the registry yet.
+    // Per peer-review FIX 3: shutdown order must be close-sidecar FIRST,
+    // then registry-remove. If we removed first and `forward_close`
+    // failed (broken pipe, dead sidecar), the sidecar-side conversation
+    // would be orphaned with no way for the registry to reach it again.
+    let sidecar_session_id = match registry.get_by_mission(&mission_id).await {
+        Some(s) => s.sidecar_session_id,
         None => return Ok(()), // nothing to stop is success
     };
 
+    // Close the sidecar session FIRST (best-effort — log on failure).
     if let Some(sidecar) = app_handle.try_state::<Arc<SidecarManager>>() {
-        // forward_close emits its own warnings; we tolerate failure here
-        // because the session entry is already gone from the registry.
-        if let Err(e) = sidecar.forward_close(session.sidecar_session_id.clone()).await {
+        if let Err(e) = sidecar.forward_close(sidecar_session_id.clone()).await {
             warn!(error = %e, "stop_mission_planner: forward_close failed");
         }
     }
+
+    // Then drop the entry from the registry.
+    registry.remove(&mission_id).await;
+
     persist_planner_state_on_flight(&mission_id, None, None);
     info!(mission_id = %mission_id, "stopped mission planner");
     Ok(())
@@ -790,6 +842,121 @@ pub async fn inject_planner_turn(
         &mission_id,
         Some(&session.sidecar_session_id),
         Some(PlannerStatus::Awake),
+    );
+    Ok(())
+}
+
+/// Resolve a pending Mission Planner approval gate (E2).
+///
+/// Flips the matching `MissionApprovalRequest` on `PersistedState` to
+/// `resolved=true`, records the chosen option + timestamp, persists, and
+/// fans a `WakeTrigger::UserMessageInJournal` event onto the wake bus so
+/// the planner sees the user's answer on its next turn (the wake consumer
+/// formats it into a `<wake_trigger kind="user_message_in_journal">` block
+/// that includes the `approval_id` and `choice`).
+///
+/// Idempotent for already-resolved approvals: returns Ok without emitting
+/// a second wake. Returns an error if no approval matches the id.
+#[tauri::command]
+pub async fn resolve_mission_approval(
+    app_handle: AppHandle,
+    approval_id: String,
+    choice: String,
+) -> Result<(), String> {
+    // Per peer-review FIX 1: wrap the load → mutate → save composite in
+    // `with_state_lock` so concurrent planner approvals (e.g. two MCP
+    // tools resolving in parallel, or a user click racing a wake-driven
+    // re-resolution) can't lose updates. The closure performs the
+    // mutation synchronously and returns a `Ready` future so the
+    // resulting `Fut` type doesn't capture a borrow of `state` (which
+    // the helper's `FnOnce(&mut PersistedState) -> Fut` signature can't
+    // express with HRTBs today). Tauri event emits MUST happen outside
+    // this block so we don't hold the mutex across IO.
+    let approval_id_for_closure = approval_id.clone();
+    let choice_for_closure = choice.clone();
+    let (mission_id, was_already_resolved) = storage::with_state_lock(move |state| {
+        let approval_id = approval_id_for_closure;
+        let choice = choice_for_closure;
+        let result: Result<(String, bool), String> = (|| {
+            let approval = state
+                .mission_approvals
+                .iter_mut()
+                .find(|a| a.id == approval_id)
+                .ok_or_else(|| {
+                    format!("no mission approval found for id '{}'", approval_id)
+                })?;
+            let mission_id = approval.mission_id.clone();
+            // Idempotency: if the approval was already resolved, short-
+            // circuit so the caller can still emit a "we already handled
+            // this" downstream event (or just no-op). We do NOT mutate
+            // state in this branch — return the existing mission_id so
+            // the outer code can decide.
+            if approval.resolved {
+                return Ok((mission_id, true));
+            }
+            approval.resolved = true;
+            approval.resolution = Some(choice);
+            approval.resolved_at = Some(now_millis());
+            Ok((mission_id, false))
+        })();
+        std::future::ready(result)
+    })
+    .await?;
+
+    if was_already_resolved {
+        info!(
+            approval_id = %approval_id,
+            "resolve_mission_approval called on already-resolved approval; no-op"
+        );
+        return Ok(());
+    }
+
+    // FIX 2: emit `mission-planner:approval-resolved:<missionId>` so the
+    // frontend `missionPlannerStore` can clear its pending-approval state
+    // without waiting for a wake round-trip. camelCase field names match
+    // the frontend `MissionApprovalRequest` interface. Emits happen
+    // outside the state lock to avoid holding the mutex across IO.
+    let _ = app_handle.emit(
+        &format!("mission-planner:approval-resolved:{}", mission_id),
+        serde_json::json!({
+            "id": approval_id,
+            "missionId": mission_id,
+            "choice": choice,
+        }),
+    );
+
+    // Look up the planner for the owning mission and emit a wake.
+    // The wake consumer (spawn_wake_consumer) reads `mission_approvals`
+    // at dispatch time when formatting the user-message turn — we just
+    // need to nudge the consumer with the right trigger discriminant
+    // and a payload carrying the approval id + choice so the prompt
+    // builder doesn't have to re-scan state.
+    let registry = app_handle
+        .try_state::<MissionPlannerRegistry>()
+        .ok_or_else(|| "mission planner registry not managed".to_string())?;
+
+    // If there's no active planner for this mission, the resolution is
+    // still persisted — the planner will pick it up if/when it resumes.
+    if registry.get_by_mission(&mission_id).await.is_some() {
+        registry
+            .send_wake(PlannerWakeEvent {
+                mission_id: mission_id.clone(),
+                trigger: WakeTrigger::UserMessageInJournal(format!(
+                    "Approval {} resolved: {}",
+                    approval_id, choice
+                )),
+                payload: serde_json::json!({
+                    "approvalId": approval_id,
+                    "choice": choice,
+                }),
+            })
+            .await;
+    }
+
+    info!(
+        mission_id = %mission_id,
+        approval_id = %approval_id,
+        "resolved mission approval"
     );
     Ok(())
 }

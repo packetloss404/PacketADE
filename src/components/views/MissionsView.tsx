@@ -17,6 +17,7 @@ import { useGoalStore } from "@/stores/goalStore";
 import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
+import { PlannerApprovalGate } from "@/components/missions/PlannerApprovalGate";
 import { relativeTime } from "@/lib/time";
 import {
   FLIGHT_STATUS_CONFIG,
@@ -593,6 +594,8 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
             )}
           </div>
         </div>
+
+        <PlannerApprovalGate missionId={flight.id} />
 
         <StatGrid
           flight={flight}

@@ -184,6 +184,60 @@ pub enum PlannerStatusDto {
     Failed,
 }
 
+/// Mission Planner: persisted approval-gate record mirror of
+/// `core_flight::MissionApprovalRequest`. Filed by the planner via the
+/// `request_user_approval` MCP tool (E2) and drained by the
+/// `resolve_mission_approval` Tauri command.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MissionApprovalRequestDto {
+    pub id: String,
+    pub mission_id: String,
+    pub question: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+    #[ts(type = "number")]
+    pub awaiting_since: u64,
+    pub resolved: bool,
+    #[serde(default)]
+    #[ts(optional)]
+    pub resolution: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub resolved_at: Option<u64>,
+}
+
+impl From<core_flight::MissionApprovalRequest> for MissionApprovalRequestDto {
+    fn from(value: core_flight::MissionApprovalRequest) -> Self {
+        Self {
+            id: value.id,
+            mission_id: value.mission_id,
+            question: value.question,
+            options: value.options,
+            awaiting_since: value.awaiting_since,
+            resolved: value.resolved,
+            resolution: value.resolution,
+            resolved_at: value.resolved_at,
+        }
+    }
+}
+
+impl From<MissionApprovalRequestDto> for core_flight::MissionApprovalRequest {
+    fn from(value: MissionApprovalRequestDto) -> Self {
+        Self {
+            id: value.id,
+            mission_id: value.mission_id,
+            question: value.question,
+            options: value.options,
+            awaiting_since: value.awaiting_since,
+            resolved: value.resolved,
+            resolution: value.resolution,
+            resolved_at: value.resolved_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum FlightPriorityDto {
@@ -1379,6 +1433,12 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
             memory_events: value.memory_events,
             memory_patterns: value.memory_patterns,
             servers: value.servers.into_iter().map(Into::into).collect(),
+            // Mission approvals only travel as part of the planner state
+            // surface; the legacy DTO→core round-trip used by the
+            // settings save path does not carry them, so we drop them
+            // here. (The frontend reads approvals through a dedicated
+            // mission-planner query, not through PersistedStateDto.)
+            mission_approvals: Vec::new(),
         }
     }
 }
@@ -1472,6 +1532,7 @@ fn generated_typescript_schema() -> String {
     push_decl!(AgentConfigDto);
     push_decl!(FlightStatusDto);
     push_decl!(PlannerStatusDto);
+    push_decl!(MissionApprovalRequestDto);
     push_decl!(FlightPriorityDto);
     push_decl!(MilestoneStatusDto);
     push_decl!(TaskStatusDto);

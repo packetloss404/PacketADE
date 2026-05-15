@@ -24,6 +24,7 @@ pub mod insights;
 pub mod mcp;
 pub mod memory;
 pub mod mission_planner;
+pub mod mission_planner_tools;
 pub mod ollama;
 pub mod orchestration;
 pub mod pricing;

@@ -1,4 +1,4 @@
-// Mission Planner — in-process MCP server (E1 scaffold).
+// Mission Planner — in-process MCP server (E2).
 //
 // Constructed inside the sidecar (live `McpServer` instances cannot cross
 // the stdio wire) and merged into the Claude Agent SDK's `mcpServers` map
@@ -6,12 +6,27 @@
 // tool as `mcp__planner__<toolName>`, matching the `allowedTools` list the
 // Rust supervisor pins for planner sessions.
 //
-// E1 ships a single stub tool — `noop` — whose only job is to round-trip
-// a `planner_tool` event up to the Rust supervisor, prove the await/correlate
-// pipeline works end-to-end, and unblock E2 (which lands the eight real
-// planner tools: `create_milestone`, `create_task`, `update_task`,
-// `mark_task_blocked`, `replan_after_failure`, `request_user_approval`,
-// `spawn_helper_planner`, `complete_mission`).
+// E1 shipped a single stub tool (`noop`) that proved the wire round-trip.
+// E2 layers the seven real Mission Planner tools on top:
+//
+//   1. create_milestone         — phase-level work bucket
+//   2. create_task              — executable unit inside a milestone
+//   3. update_task              — mutate task fields (status guarded)
+//   4. mark_task_blocked        — soft-stop a task with a reason
+//   5. replan_after_failure     — ack a failure and request retry budget
+//   6. request_user_approval    — async question (returns pending sentinel)
+//   7. complete_mission         — final summary, stops wake-triggers
+//
+// `noop` is kept for back-compat with the existing E1 smoke harness.
+// `spawn_helper_planner` is intentionally NOT exposed in v1 — it is
+// deferred to v1.1 per the locked plan.
+//
+// Every tool body has the SAME shape: emit a `planner_tool` envelope up
+// to the Rust supervisor (via the `emit` callback wired in by
+// `providers/anthropic.ts`), await the typed `planner_tool_result`, and
+// forward the resolved value back to the SDK as a single `text` content
+// block. The supervisor is the single source of truth for actual state
+// mutation; the sidecar does NOT interpret tool args or results.
 //
 // See:
 //   - dev/mission-planner-plan.md
@@ -38,7 +53,8 @@ export const PLANNER_MCP_KEY = "planner";
  * SDK before reaching the handler); the resolved value becomes the tool's
  * `content` array. A rejection surfaces as a tool error to the model.
  *
- * E2 will widen the handlers; the contract stays the same.
+ * Wired up by `providers/anthropic.ts::dispatchPlannerTool`. The sidecar
+ * has no opinion on what `result` looks like beyond "JSON-serializable".
  */
 export type PlannerToolEmit = (event: PlannerToolCallEvent) => Promise<unknown>;
 
@@ -74,6 +90,62 @@ function makeCallId(sessionId: string): string {
   return `pl-${sessionId}-${t}-${rand}`;
 }
 
+// ---------------------------------------------------------------------------
+// Zod schemas for the 7 real planner tools (+ noop). The Rust dispatcher
+// re-validates anything it cares about strictly (e.g. status enum, target
+// spec shape); these schemas are the first line of defence and what Claude
+// sees when picking arguments.
+// ---------------------------------------------------------------------------
+
+const createMilestoneSchema = z.object({
+  title: z.string().min(1).max(120),
+  goal: z.string().min(1).max(1000),
+  dependencies: z.array(z.string()).optional(),
+});
+
+const createTaskSchema = z.object({
+  milestone_id: z.string(),
+  title: z.string().min(1).max(160),
+  prompt: z.string().min(1),
+  agent_id: z.string(),
+  // AttemptTargetSpec is a tagged union (local worktree vs SSH host) with
+  // nested optional fields — too sprawling for a tight zod schema without
+  // duplicating the Rust DTO. The Rust dispatcher validates it strictly;
+  // we let unknown through and surface the parse error as a tool failure
+  // if the model gets it wrong.
+  target_spec: z.unknown(),
+});
+
+const updateTaskSchema = z.object({
+  task_id: z.string(),
+  // Zod 4: z.record requires both key and value schemas. Patch keys are
+  // model-supplied field names (string), values are arbitrary — the Rust
+  // dispatcher validates each accepted key strictly.
+  patch: z.record(z.string(), z.unknown()),
+});
+
+const markTaskBlockedSchema = z.object({
+  task_id: z.string(),
+  reason: z.string().min(1).max(500),
+});
+
+const replanAfterFailureSchema = z.object({
+  task_id: z.string(),
+});
+
+const requestUserApprovalSchema = z.object({
+  question: z.string().min(1).max(500),
+  options: z.array(z.string()).max(6).optional(),
+});
+
+const completeMissionSchema = z.object({
+  summary: z.string().min(1).max(2000),
+});
+
+const noopSchema = z.object({
+  message: z.string().describe("Free-form text echoed via the host."),
+});
+
 /**
  * Build the in-process Mission Planner MCP server. Returns a config object
  * shaped for the SDK's `mcpServers` map; the caller plugs it in under
@@ -87,31 +159,145 @@ export function createMissionPlannerMcpServer(
   sessionId: string,
   emit: PlannerToolEmit,
 ): McpSdkServerConfigWithInstance {
-  // E1: one stub tool. Just enough to verify the wire round-trip.
+  // Every handler below is intentionally identical in shape: build a
+  // correlation id, emit the envelope, await the supervisor's typed reply,
+  // bridge the result into an SDK content block. The Rust side owns all
+  // semantics — status transitions, dependency validation, budget caps,
+  // approval id generation, etc.
+  async function dispatch(
+    toolName: PlannerToolCallEvent["tool"],
+    args: unknown,
+  ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
+    const callId = makeCallId(sessionId);
+    const result = await emit({
+      type: "planner_tool",
+      sessionId,
+      tool: toolName,
+      args,
+      callId,
+    });
+    return bridgeResult(result);
+  }
+
+  const createMilestone = tool(
+    "create_milestone",
+    [
+      "Create a new milestone on this mission. Use one milestone per coherent",
+      "phase of work (for example: 'Schema migration', 'Frontend rewrite',",
+      "'Wire e2e tests'). `dependencies` are other milestoneIds that must",
+      "complete before tasks in this milestone are eligible to run.",
+      "Returns the created milestoneId for use in subsequent create_task calls.",
+    ].join(" "),
+    createMilestoneSchema.shape,
+    async (args) => dispatch("create_milestone", args),
+  );
+
+  const createTask = tool(
+    "create_task",
+    [
+      "Create a task within a milestone. The prompt is the verbatim",
+      "instruction the executor agent will receive — write it as if you were",
+      "the human handing the work off. `agent_id` is one of the installed",
+      "agent ids (for example `claude-code`, `claude-oauth`).",
+      "`target_spec` describes where the agent runs (local worktree or SSH",
+      "host) — pass the AttemptTargetSpec shape the user-configured executors",
+      "expect. Returns the created taskId.",
+    ].join(" "),
+    createTaskSchema.shape,
+    async (args) => dispatch("create_task", args),
+  );
+
+  const updateTask = tool(
+    "update_task",
+    [
+      "Update fields on an existing task. Patch keys may include: title,",
+      "prompt, agent_id, target_spec, status (only set to 'cancelled' or",
+      "'queued' — other status transitions are owned by the executor). To",
+      "mark a task blocked use mark_task_blocked instead. Unknown patch",
+      "keys are rejected by the dispatcher.",
+    ].join(" "),
+    updateTaskSchema.shape,
+    async (args) => dispatch("update_task", args),
+  );
+
+  const markTaskBlocked = tool(
+    "mark_task_blocked",
+    [
+      "Block a task that cannot proceed. The reason is shown to the user",
+      "and stored on the task. Blocked tasks do NOT consume an executor",
+      "slot, so prefer this over leaving a task spinning. Use",
+      "replan_after_failure instead when you intend to retry with a new",
+      "approach.",
+    ].join(" "),
+    markTaskBlockedSchema.shape,
+    async (args) => dispatch("mark_task_blocked", args),
+  );
+
+  const replanAfterFailure = tool(
+    "replan_after_failure",
+    [
+      "Acknowledge a failed task and signal that you'll create replacement",
+      "tasks. Returns a parent_milestone_id you should pass to subsequent",
+      "create_task calls in the same turn. Replans per task are capped",
+      "(see E6 safety rails); RateLimit and Network errors do NOT count",
+      "against the cap.",
+    ].join(" "),
+    replanAfterFailureSchema.shape,
+    async (args) => dispatch("replan_after_failure", args),
+  );
+
+  const requestUserApproval = tool(
+    "request_user_approval",
+    [
+      "Ask the user for a decision when the planner needs human input.",
+      "Returns IMMEDIATELY with a `pending_approval:<id>` sentinel — do NOT",
+      "wait or assume an answer in this turn. Continue working on parallel",
+      "tasks; the user's answer arrives later as a fresh wake-trigger.",
+      "Provide `options` when the answer is multiple-choice (max 6).",
+    ].join(" "),
+    requestUserApprovalSchema.shape,
+    async (args) => dispatch("request_user_approval", args),
+  );
+
+  const completeMission = tool(
+    "complete_mission",
+    [
+      "Mark the mission complete. Use only when all milestones are done and",
+      "no further work is planned. Writes a final summary to the journal",
+      "and stops further wake-triggers for this mission. Irreversible from",
+      "the planner side — the user can reopen via the UI if needed.",
+    ].join(" "),
+    completeMissionSchema.shape,
+    async (args) => dispatch("complete_mission", args),
+  );
+
+  // Back-compat smoke tool. Kept so the E1 mcp-inproc-smoke.mjs harness
+  // keeps passing across Wave 2 and beyond. The planner system prompt
+  // should NOT advertise this tool — the description tells the model not
+  // to call it during real work.
   const noop = tool(
     "noop",
     [
-      "Stub planner tool used during E1 scaffolding. Calls the host with",
-      "the supplied message and returns whatever the host produces. Real",
-      "planner tools (create_milestone, create_task, etc.) ship in E2.",
+      "Internal smoke-test tool. Echoes the message argument back via the",
+      "host. You should NOT call this during normal mission work — use the",
+      "real planner tools (create_milestone, create_task, etc.) instead.",
     ].join(" "),
-    { message: z.string().describe("Free-form text echoed via the host.") },
-    async (args) => {
-      const callId = makeCallId(sessionId);
-      const result = await emit({
-        type: "planner_tool",
-        sessionId,
-        tool: "noop",
-        args,
-        callId,
-      });
-      return bridgeResult(result);
-    },
+    noopSchema.shape,
+    async (args) => dispatch("noop", args),
   );
 
   return createSdkMcpServer({
     name: "mission-planner",
-    version: "0.1.0",
-    tools: [noop],
+    version: "0.2.0",
+    tools: [
+      createMilestone,
+      createTask,
+      updateTask,
+      markTaskBlocked,
+      replanAfterFailure,
+      requestUserApproval,
+      completeMission,
+      noop,
+    ],
   });
 }

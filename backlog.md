@@ -150,6 +150,36 @@ Deferred items called out in `dev/multi-platform-build.md` and
   the envelope. Non-exploitable today (frontend path uses
   `source="user"` which doesn't wrap), but harden when the path
   exists.
+- **P3 — Planner status sticks at Awake after wake done.** `dispatch_wake`
+  flips `PlannerStatus` to `Awake` but nothing flips it back to `Idle` after
+  the sidecar emits `done` for the wake turn. UI may surface "Awake"
+  indefinitely. Add a per-session `done` listener (E6 watchdog candidate).
+- **P3 — `now_millis()` duplicated across 6 tool files.** Hoist to a shared
+  helper in `commands::mission_planner_tools::mod.rs` or reuse the one in
+  `mission_planner.rs`.
+- **P3 — `PersistedStateDto → core::PersistedState` round-trip drops
+  `mission_approvals`.** Fine today (settings-only path), but a debug_assert
+  or stronger guard would prevent future silent loss if a different code
+  path uses the round-trip.
+- **P3 — Milestone DTO bump.** E2-MILE stashes the tool's `goal` field in
+  `Milestone.description` and `dependencies` in `Milestone.validation_criteria`
+  because no proper fields exist. Add `goal: String` and `dependencies: Vec<String>`
+  to `Milestone` and migrate.
+- **P3 — `update_task` `target_spec` patch acked-but-not-persisted.**
+  Handler accepts the key, reports it in `updated_fields`, but no Task field
+  carries it. Either persist on the Task or reject the key.
+- **P3 — `update_task` re-queue doesn't re-launch attempt.** A planner that
+  flips a task back to Queued has no way to actually re-run it. Either
+  reject the Queued transition or wire it to spawn a new attempt.
+- **P3 — `complete_mission` schema strictness mismatch.** Sidecar zod
+  requires `summary.min(1)`; Rust accepts empty via `#[serde(default)]`.
+  Tighten Rust or relax zod.
+- **E3 prereq — `get_mission_approvals(missionId)` Tauri command for
+  cold-start hydration.** Frontend store populates `pendingApprovals` only
+  via event listeners installed at startPlanner. If a mission has pending
+  approvals before the listener attaches (paused mission resume, page
+  reload), they're invisible. E3 must add this command before mounting
+  MissionSpecPane.
 
 ## Product tracks (from `dev/README.md`)
 
