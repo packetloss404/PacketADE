@@ -214,7 +214,7 @@ export function createMissionPlannerMcpServer(
       "prompt, agent_id, target_spec, status (only set to 'cancelled' or",
       "'queued' — other status transitions are owned by the executor). To",
       "mark a task blocked use mark_task_blocked instead. Unknown patch",
-      "keys are rejected by the dispatcher.",
+      "keys are silently dropped (with a warning) — only whitelisted keys mutate.",
     ].join(" "),
     updateTaskSchema.shape,
     async (args) => dispatch("update_task", args),

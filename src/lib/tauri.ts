@@ -1771,6 +1771,19 @@ export async function injectPlannerTurn(
   return invoke("inject_planner_turn", { missionId, content, source });
 }
 
+// E4-LAUNCH — fire a `WakeTrigger::Decomposition` event onto the planner's
+// wake bus. This is the architecturally-correct path for the "user clicked
+// Launch" transition: the wake consumer formats the body via the planner's
+// own `render_decomposition` and injects with `kind="launch"`, which is the
+// kind the planner's system prompt is trained to recognize as the kickoff
+// trigger. Replaces the prior `injectPlannerTurn(..., "wake_trigger")` path
+// which mis-tagged the kind as `"user_message_in_journal"`.
+export async function triggerPlannerDecomposition(
+  missionId: string,
+): Promise<void> {
+  return invoke("trigger_planner_decomposition", { missionId });
+}
+
 // E2 — async-return approval gate. The planner's `request_user_approval`
 // tool files an approval and keeps working; the frontend surfaces it via the
 // `mission-planner:approval-request:<missionId>` event and resolves it back

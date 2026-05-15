@@ -316,6 +316,7 @@ pub fn run() {
             commands::mission_planner::pause_mission_planner,
             commands::mission_planner::resume_mission_planner,
             commands::mission_planner::inject_planner_turn,
+            commands::mission_planner::trigger_planner_decomposition,
             commands::mission_planner::resolve_mission_approval,
             commands::mission_planner::get_mission_approvals,
         ])

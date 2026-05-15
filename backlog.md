@@ -180,6 +180,34 @@ Deferred items called out in `dev/multi-platform-build.md` and
   approvals before the listener attaches (paused mission resume, page
   reload), they're invisible. E3 must add this command before mounting
   MissionSpecPane.
+- **P3 — `read_conversation_tail` whole-file load.** Currently
+  `core::mission_planner_prompts::read_conversation_tail` reads the entire
+  conversation file into memory before slicing the last N lines. For
+  long-running sessions accumulating megabytes of JSONL chunks this is
+  wasteful. Stream-and-tail via `Seek::seek` from end + back-scan for
+  newlines would be safer.
+- **P3 — Planner `replanCount` data source mismatch.**
+  `core::mission_planner_prompts::render_task_failed` displays "Replan
+  budget: X/3 used" by reading `replanCount` off the Task DTO. The
+  authoritative counter lives in `MissionPlannerSession.replans_per_task`
+  on the registry, NOT on the DTO. E5 must either mirror the count onto
+  the Task DTO before firing the TaskFailed wake, or change the renderer
+  to take the count as an explicit argument from `build_wake_payload`.
+  Currently the readout always shows `0/3`, defeating cap awareness.
+- **P3 — Tighten `session_id` path-escape guard.** Today's regex allows
+  Windows drive-relative paths like `C:foo`. Tighten to UUID-only:
+  `session_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')`.
+- **P3 — Focus textarea on starter-prompt click.** `MissionSpecPane`
+  pills populate the input but don't focus the textarea. One-line fix.
+- **P3 — Tighten async-approval prompt-content test.** The current test
+  accepts "continue" as a "don't-block" token; "continue" appears often
+  in any 2000+ char prompt and is false-positive-prone. Require
+  `"pending_approval"` AND ("don't block" OR "do not block" OR
+  "immediately") for a more reliable assertion.
+- **P3 — Surface `replan_count` in wake payload directly.** Today the
+  wake builder reads from the snapshot. Plumbing the count explicitly
+  through `PlannerWakeEvent.payload` would decouple the renderer from
+  DTO mirroring assumptions.
 
 ## Product tracks (from `dev/README.md`)
 

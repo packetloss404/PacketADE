@@ -16,6 +16,7 @@ import {
   resumeMissionPlanner as invokeResumeMissionPlanner,
   startMissionPlanner as invokeStartMissionPlanner,
   stopMissionPlanner as invokeStopMissionPlanner,
+  triggerPlannerDecomposition as invokeTriggerPlannerDecomposition,
 } from "@/lib/tauri";
 import { useFlightStore } from "@/stores/flightStore";
 
@@ -556,37 +557,45 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
 
     // Arm the kickoff flag. The next `api-agent:tool-start` for this
     // planner consumes the flag and flips `planning -> active`. Done
-    // AFTER the status flip and BEFORE the inject so a hypothetical
+    // AFTER the status flip and BEFORE the wake fires so a hypothetical
     // racing pre-launch tool can't accidentally trip the flip.
     set((s) => ({
       runtimes: patchRuntime(s.runtimes, missionId, {
         awaitingLaunchKickoff: true,
+        // Surface as `isStreaming: true` so the chat UI shows the
+        // pending indicator while the planner's first decomposition
+        // turn streams in. The `done` event handler will clear it.
+        isStreaming: true,
       }),
     }));
 
-    // Wake the planner with the [LAUNCH] sentinel via the `wake_trigger`
-    // injection path. The sidecar wraps wake_trigger content in
-    // `<wake_trigger source="wake_trigger" kind="...">…</wake_trigger>`
-    // so the planner sees this as a system re-entry signal, not a user
-    // message. The optimistic transcript push uses role="system" (see
-    // `injectTurn`), keeping the [LAUNCH] sentinel out of the user
-    // bubble column in the chat UI.
-    const LAUNCH_PROMPT =
-      "[LAUNCH] User has approved the spec. Begin decomposition now: " +
-      "call create_milestone and create_task as needed to fully realize " +
-      "the mission. Aim for 2-4 milestones and 4-10 tasks total. When " +
-      "the plan is in place, your turn ends — the executor takes over.";
+    // Fire a `WakeTrigger::Decomposition` event into the planner's
+    // wake bus instead of hand-crafting a user message. The Rust wake
+    // consumer:
+    //   1. enriches the snapshot via `build_wake_payload` (reads the
+    //      Flight DTO from PersistedState),
+    //   2. formats the body via `wake_user_message` → `render_decomposition`
+    //      (the planner's own hand-authored decomposition prompt), and
+    //   3. injects with `kind="launch"`, which the planner's system
+    //      prompt is trained to recognize as the kickoff trigger.
+    //
+    // The previous `injectTurn(..., "wake_trigger")` path mis-tagged
+    // the kind as `"user_message_in_journal"`, so the planner never
+    // saw a `kind="launch"` wake and `render_decomposition`'s body
+    // was unreachable from the UI.
     try {
-      await get().injectTurn(missionId, LAUNCH_PROMPT, "wake_trigger");
+      await invokeTriggerPlannerDecomposition(missionId);
     } catch (err) {
-      // If the inject failed, roll back the flight status + disarm the
-      // kickoff flag so the user can retry. The optimistic "Launching
-      // mission…" line stays in the transcript as a breadcrumb (the
-      // error event listener may also append an `error:` line).
+      // If the wake failed to enqueue, roll back the flight status,
+      // disarm the kickoff flag, and clear the streaming indicator so
+      // the user can retry. The optimistic "Launching mission…" line
+      // stays in the transcript as a breadcrumb (the error event
+      // listener may also append an `error:` line).
       useFlightStore.getState().updateFlight(missionId, { status: "spec" });
       set((s) => ({
         runtimes: patchRuntime(s.runtimes, missionId, {
           awaitingLaunchKickoff: false,
+          isStreaming: false,
         }),
       }));
       throw err;
