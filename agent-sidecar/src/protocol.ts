@@ -20,7 +20,22 @@
 //
 // v4 (F8): adds `cancel_pending_tools` request — drain parked
 // permission/edit prompts as denied without killing the agent loop.
-export const PROTOCOL_VERSION = 4;
+//
+// v5 (Mission Planner E1): adds
+//   - `inject_user_turn` request: typed wake-trigger/user-turn injection
+//     into a long-lived session, used by the autonomous Mission Planner
+//     wake bus and (eventually) the spec-mode chat path.
+//   - `planner_tool` event + `planner_tool_result` request: in-process
+//     MCP tool-call envelope so planner tools dispatched inside the sidecar
+//     can round-trip a structured result through the Rust supervisor.
+//   - `StartSessionRequest.mcpKind` (optional): when set to "planner", the
+//     sidecar constructs an in-process planner MCP server locally and
+//     merges it into the SDK's `mcpServers` map under the pinned key
+//     "planner" (so tool names are `mcp__planner__*`). See
+//     `dev/mission-planner-plan.md` and `dev/mission-planner-spike-retro.md`.
+//   - E1 scaffolds the planner request/event types and ships a single stub
+//     tool (`noop`); the eight real planner tools land in E2.
+export const PROTOCOL_VERSION = 5;
 
 /** Image content a model can interpret natively. base64-encoded bytes. */
 export type ImageAttachment = {
@@ -62,6 +77,13 @@ export type StartSessionRequest = {
   resumeMessages?: ResumeMessage[];
   permissionMode?: PermissionMode;
   approveWrites?: boolean;
+  /** v5: opt-in in-process MCP server kind. Currently the only recognized
+   * value is `"planner"`, which tells the Anthropic provider to construct
+   * the Mission Planner MCP server in-sidecar and merge it into the SDK's
+   * `mcpServers` map under the pinned key `"planner"` (tool names then
+   * read as `mcp__planner__*`). Unknown values are ignored — old sidecars
+   * silently skip this field. */
+  mcpKind?: string;
 };
 
 export type SendMessageRequest = {
@@ -136,6 +158,35 @@ export type CancelPendingToolsRequest = {
   sessionId: string;
 };
 
+/** v5: inject a new user turn into a long-lived session. Used by the
+ * Mission Planner wake bus (`source: "wake_trigger"`) and the spec-mode
+ * chat path (`source: "user"`). Wake-trigger content is wrapped in
+ * `<wake_trigger source="..." kind="...">...</wake_trigger>` by the
+ * provider so the system prompt can distinguish re-entry from a human
+ * turn; user content is pushed verbatim. */
+export type InjectUserTurnRequest = {
+  type: "inject_user_turn";
+  sessionId: string;
+  content: string;
+  source: "user" | "wake_trigger";
+  /** Wake-trigger provenance — currently informational, threaded into the
+   * `<wake_trigger>` envelope's `kind` attribute. Ignored when
+   * `source === "user"`. */
+  trigger?: { kind: string; payload?: unknown };
+};
+
+/** v5: result envelope for an in-process planner MCP tool call. The
+ * sidecar emits a matching `planner_tool` event keyed by `callId` and
+ * awaits this request before resolving the SDK tool handler. */
+export type PlannerToolResultRequest = {
+  type: "planner_tool_result";
+  sessionId: string;
+  callId: string;
+  success: boolean;
+  result?: unknown;
+  error?: string;
+};
+
 export type SidecarRequest =
   | StartSessionRequest
   | SendMessageRequest
@@ -146,7 +197,9 @@ export type SidecarRequest =
   | SetPermissionModeRequest
   | SetModelRequest
   | RetryRequest
-  | CancelPendingToolsRequest;
+  | CancelPendingToolsRequest
+  | InjectUserTurnRequest
+  | PlannerToolResultRequest;
 
 /** v3: structured todo/plan item produced by Anthropic's TodoWrite tool. */
 export type PlanItem = {
@@ -235,6 +288,22 @@ export type SidecarEvent =
        * otherwise multi-agent flights would inflate the root's totals by
        * the children's spend. Empty/absent = root thread. */
       address?: string;
+    }
+  // v5 additions ----------------------------------------------------------
+  /** Mission Planner: an in-sidecar MCP tool was invoked by the model.
+   * The Rust supervisor routes the args to its dispatcher and replies via
+   * `planner_tool_result` (matched by `callId`). The sidecar awaits that
+   * response before resolving the SDK tool handler. */
+  | {
+      type: "planner_tool";
+      sessionId: string;
+      tool: string;
+      args: unknown;
+      callId: string;
     };
+
+/** Wire shape for `planner_tool` (typed so call sites in E2 can import a
+ * single name rather than re-spelling the inline union arm). */
+export type PlannerToolCallEvent = Extract<SidecarEvent, { type: "planner_tool" }>;
 
 export type Emit = (event: SidecarEvent) => void;

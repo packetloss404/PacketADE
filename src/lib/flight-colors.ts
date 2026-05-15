@@ -2,6 +2,7 @@ import type { FlightStatus, FlightPriority, TaskRole } from "@/types/flight";
 import type { IssueStatus } from "@/stores/issueStore";
 
 export const FLIGHT_STATUS_CONFIG: Record<FlightStatus, { dot: string; bg: string; text: string; label: string }> = {
+  spec: { dot: "bg-accent-purple", bg: "bg-accent-purple/10", text: "text-accent-purple", label: "Spec" },
   draft: { dot: "bg-text-muted", bg: "bg-text-muted/10", text: "text-text-muted", label: "Draft" },
   planning: { dot: "bg-accent-purple", bg: "bg-accent-purple/10", text: "text-accent-purple", label: "Planning" },
   ready: { dot: "bg-accent-blue", bg: "bg-accent-blue/10", text: "text-accent-blue", label: "Ready" },

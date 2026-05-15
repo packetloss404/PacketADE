@@ -159,6 +159,8 @@ pub struct AgentConfigDto {
 #[serde(rename_all = "snake_case")]
 pub enum FlightStatusDto {
     Draft,
+    /// Mission Planner spec-mode conversation (planner is the chat partner).
+    Spec,
     Planning,
     Ready,
     Active,
@@ -167,6 +169,19 @@ pub enum FlightStatusDto {
     Done,
     Failed,
     Cancelled,
+}
+
+/// Mission Planner status mirror of `core_flight::PlannerStatus` for the
+/// frontend wire format. See `core/flight.rs::PlannerStatus`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlannerStatusDto {
+    Idle,
+    Awake,
+    Paused,
+    QuotaPaused,
+    Completed,
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -437,6 +452,16 @@ pub struct FlightDto {
     pub prompt: Option<String>,
     #[serde(default)]
     pub attempts: Vec<AttemptDto>,
+    /// Mission Planner: long-lived `api-claude-oauth` session id that owns
+    /// this mission. Absent for missions that never used the planner.
+    #[serde(default)]
+    #[ts(optional)]
+    pub planner_session_id: Option<String>,
+    /// Mission Planner: last-known status of the planner agent for this
+    /// mission.
+    #[serde(default)]
+    #[ts(optional)]
+    pub planner_status: Option<PlannerStatusDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -872,6 +897,7 @@ macro_rules! impl_enum_conversion {
 
 impl_enum_conversion!(FlightStatusDto, core_flight::FlightStatus, {
     core_flight::FlightStatus::Draft => FlightStatusDto::Draft,
+    core_flight::FlightStatus::Spec => FlightStatusDto::Spec,
     core_flight::FlightStatus::Planning => FlightStatusDto::Planning,
     core_flight::FlightStatus::Ready => FlightStatusDto::Ready,
     core_flight::FlightStatus::Active => FlightStatusDto::Active,
@@ -880,6 +906,15 @@ impl_enum_conversion!(FlightStatusDto, core_flight::FlightStatus, {
     core_flight::FlightStatus::Done => FlightStatusDto::Done,
     core_flight::FlightStatus::Failed => FlightStatusDto::Failed,
     core_flight::FlightStatus::Cancelled => FlightStatusDto::Cancelled
+});
+
+impl_enum_conversion!(PlannerStatusDto, core_flight::PlannerStatus, {
+    core_flight::PlannerStatus::Idle => PlannerStatusDto::Idle,
+    core_flight::PlannerStatus::Awake => PlannerStatusDto::Awake,
+    core_flight::PlannerStatus::Paused => PlannerStatusDto::Paused,
+    core_flight::PlannerStatus::QuotaPaused => PlannerStatusDto::QuotaPaused,
+    core_flight::PlannerStatus::Completed => PlannerStatusDto::Completed,
+    core_flight::PlannerStatus::Failed => PlannerStatusDto::Failed
 });
 
 impl_enum_conversion!(FlightPriorityDto, core_flight::FlightPriority, {
@@ -1282,6 +1317,8 @@ impl From<core_flight::Flight> for FlightDto {
             total_tokens: value.total_tokens,
             prompt: value.prompt,
             attempts: value.attempts.into_iter().map(Into::into).collect(),
+            planner_session_id: value.planner_session_id,
+            planner_status: value.planner_status.map(Into::into),
         }
     }
 }
@@ -1306,6 +1343,8 @@ impl From<FlightDto> for core_flight::Flight {
             total_tokens: value.total_tokens,
             prompt: value.prompt,
             attempts: value.attempts.into_iter().map(Into::into).collect(),
+            planner_session_id: value.planner_session_id,
+            planner_status: value.planner_status.map(Into::into),
         }
     }
 }
@@ -1432,6 +1471,7 @@ fn generated_typescript_schema() -> String {
     push_decl!(AgentApprovalActionsDto);
     push_decl!(AgentConfigDto);
     push_decl!(FlightStatusDto);
+    push_decl!(PlannerStatusDto);
     push_decl!(FlightPriorityDto);
     push_decl!(MilestoneStatusDto);
     push_decl!(TaskStatusDto);
@@ -1534,6 +1574,8 @@ mod tests {
                 total_tokens: 0,
                 prompt: None,
                 attempts: vec![],
+                planner_session_id: None,
+                planner_status: None,
             }],
             agents: Vec::new(),
             settings: OrchestratorSettingsDto {

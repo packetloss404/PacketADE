@@ -434,6 +434,11 @@ pub async fn start_api_agent_session(
                 resume_messages_json,
                 permission_mode.clone(),
                 approve_writes,
+                // Mission Planner E1: no in-process MCP kind for the regular
+                // API-agent flow. The planner registers its own session via
+                // `commands::mission_planner::start_mission_planner` which
+                // sets this to `Some("planner")`.
+                None,
             )
             .await;
         if let Err(e) = result {

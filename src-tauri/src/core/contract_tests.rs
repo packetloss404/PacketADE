@@ -77,6 +77,8 @@ mod tests {
                 total_tokens: 1000,
                 prompt: None,
                 attempts: vec![],
+                planner_session_id: None,
+                planner_status: None,
             }],
             agents: vec![],
             settings: OrchestratorSettings::default(),

@@ -8,6 +8,7 @@ use commands::api_agent::ApiAgentState;
 use commands::dictation::audio::create_dictation_state;
 use commands::dictation::whisper::WhisperState;
 use commands::github::create_github_auth_state;
+use commands::mission_planner::{spawn_wake_consumer, MissionPlannerRegistry};
 use commands::orchestration::create_shared_orchestrator;
 use commands::pty::create_shared_pty_manager;
 
@@ -81,6 +82,7 @@ pub fn run() {
         .manage(create_dictation_state())
         .manage(WhisperState::default())
         .manage(std::sync::Arc::new(ApiAgentState::new()))
+        .manage(MissionPlannerRegistry::default())
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in
             // managed state so slice C's routing layer can reach it via
@@ -92,6 +94,16 @@ pub fn run() {
                 let manager = SidecarManager::new(app_handle.clone()).await;
                 app_handle.manage(manager);
             });
+
+            // Mission Planner (E1) wake bus: drains `PlannerWakeEvent`s
+            // emitted by orchestration hooks, debounces a ~2s window per
+            // mission, and forwards consolidated wake turns to each
+            // mission's `api-claude-oauth` sidecar session via the new
+            // typed `inject_user_turn` message (protocol v5). Idempotent
+            // wrt repeated calls; the consumer is owned by the spawned
+            // tokio task and the wake-tx is installed on the
+            // already-managed `MissionPlannerRegistry`.
+            spawn_wake_consumer(app.handle().clone());
 
             // Start the auth-credentials fs watcher so the AuthBadge in the
             // Agents pane updates the moment a `claude login` / `codex
@@ -298,6 +310,12 @@ pub fn run() {
             commands::pricing::calculate_turn_cost,
             // Sidecar lifecycle status (for the status-bar chip)
             commands::agent_sidecar::get_sidecar_status,
+            // Mission Planner (E1)
+            commands::mission_planner::start_mission_planner,
+            commands::mission_planner::stop_mission_planner,
+            commands::mission_planner::pause_mission_planner,
+            commands::mission_planner::resume_mission_planner,
+            commands::mission_planner::inject_planner_turn,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -42,6 +42,7 @@ export function FlightList({ selectedId, onSelect }: FlightListProps) {
     const { computeFlightStatus } = useFlightStore.getState();
 
     const buckets: Record<FlightStatus, Flight[]> = {
+      spec: [],
       draft: [],
       planning: [],
       ready: [],

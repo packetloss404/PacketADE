@@ -12,7 +12,7 @@ export type WorkspacePaneDto = { id: string, agentId: WorkspaceAgentSlotDto, ses
 
 export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, serverId?: string, remoteProjectPath?: string, };
 
-export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath: string | null, remotePath: string | null, lastConnectedAt: bigint | null, installedAgents: Array<string>, };
+export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath: string | null, remotePath: string | null, lastConnectedAt: bigint | null, installedAgents: Array<string>, hostFingerprint: string | null, };
 
 export type PersistedUiStateDto = { selectedFlightId?: string, selectedView?: string, theme?: ThemeDto, };
 
@@ -28,7 +28,9 @@ export type AgentApprovalActionsDto = { approve: string, deny: string, abort: st
 
 export type AgentConfigDto = { id: string, name: string, command: string, defaultArgs: Array<string>, description: string, installed: boolean, capabilities: Array<AgentCapabilityDto>, icon: string, color: string, statusPatterns: AgentStatusPatternsDto, approvalActions: AgentApprovalActionsDto, isBuiltin: boolean, };
 
-export type FlightStatusDto = "draft" | "planning" | "ready" | "active" | "paused" | "review" | "done" | "failed" | "cancelled";
+export type FlightStatusDto = "draft" | "spec" | "planning" | "ready" | "active" | "paused" | "review" | "done" | "failed" | "cancelled";
+
+export type PlannerStatusDto = "idle" | "awake" | "paused" | "quota_paused" | "completed" | "failed";
 
 export type FlightPriorityDto = "low" | "medium" | "high" | "critical";
 
@@ -62,7 +64,17 @@ export type AttemptTargetDto = { "kind": "local", basePath: string, worktreePath
 
 export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDto, agentConfigId: string, model: string, provider: string, branch: string, baseBranch: string, sessionId: string, status: AttemptStatusDto, startedAt?: number, completedAt?: number, cost: number, tokens: number, errorMessage?: string, };
 
-export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, prompt?: string, attempts: Array<AttemptDto>, };
+export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, prompt?: string, attempts: Array<AttemptDto>, 
+/**
+ * Mission Planner: long-lived `api-claude-oauth` session id that owns
+ * this mission. Absent for missions that never used the planner.
+ */
+plannerSessionId?: string, 
+/**
+ * Mission Planner: last-known status of the planner agent for this
+ * mission.
+ */
+plannerStatus?: PlannerStatusDto, };
 
 export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: any[], memoryPatterns: any[], servers: Array<ServerConfigDto>, };
 

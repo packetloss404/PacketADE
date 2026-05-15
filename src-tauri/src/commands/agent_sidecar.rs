@@ -50,7 +50,15 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "openai
 ///
 /// v4 (F8): added `cancel_pending_tools` request — drains parked
 /// permission/edit prompts as denied without killing the session.
-const EXPECTED_PROTOCOL_VERSION: u32 = 4;
+///
+/// v5 (Mission Planner E1): added `inject_user_turn` request (typed
+/// wake-trigger injection — distinct from `send_message` so the planner
+/// system prompt can reliably tell wake-triggered re-entry apart from a
+/// real user message), plus an optional `mcpKind` field on
+/// `start_session` so the sidecar can construct in-process MCP servers
+/// (e.g. the Mission Planner tool surface) locally without those live
+/// JS instances having to cross the wire.
+const EXPECTED_PROTOCOL_VERSION: u32 = 5;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.
@@ -419,6 +427,18 @@ impl SidecarManager {
     }
 
     /// Forward a start_session request to the sidecar.
+    ///
+    /// `mcp_kind` (v5) is an optional discriminator that tells the sidecar to
+    /// construct an additional in-process MCP server locally before opening
+    /// the SDK `query()`. The Mission Planner uses `Some("planner")` to ask
+    /// the sidecar to register the planner tool surface
+    /// (`mcp__planner__create_milestone`, etc.). Live `McpServer` instances
+    /// cannot cross the stdio boundary, so this discriminator is the wire
+    /// hand-off; the actual tool definitions live in
+    /// `agent-sidecar/src/mcp/mission-planner-server.ts`. `None` for
+    /// non-planner sessions, which keeps the existing `api-claude-oauth`
+    /// chat path untouched.
+    #[allow(clippy::too_many_arguments)]
     pub async fn forward_start(
         &self,
         session_id: String,
@@ -437,6 +457,7 @@ impl SidecarManager {
         resume_messages: Value,
         permission_mode: Option<String>,
         approve_writes: Option<bool>,
+        mcp_kind: Option<String>,
     ) -> Result<(), String> {
         {
             let mut sessions = self.owned_sessions.lock().await;
@@ -460,12 +481,81 @@ impl SidecarManager {
             "resumeMessages": resume_messages,
             "permissionMode": permission_mode,
             "approveWrites": approve_writes,
+            "mcpKind": mcp_kind,
         });
         let result = self.send_json(req).await;
         if result.is_err() {
             self.forget_owned_session(&session_id).await;
         }
         result
+    }
+
+    /// Forward a typed `inject_user_turn` request to the sidecar (v5).
+    ///
+    /// Distinct from [`forward_send`] so the planner system prompt can
+    /// reliably distinguish wake-triggered re-entry from a real human
+    /// message. The sidecar wraps `content` in
+    /// `<wake_trigger source="..." kind="...">…</wake_trigger>` before
+    /// pushing it onto the SDK's prompt iterable; responses stream back
+    /// over the same `api-agent:chunk:<sid>` / `api-agent:done:<sid>`
+    /// channel as any other turn.
+    ///
+    /// `source` is `"user"` for human-initiated injections (e.g. the
+    /// journal-comment path) and `"wake_trigger"` for orchestration-driven
+    /// re-entry (task complete/failed, approval gate reached, collision
+    /// detected, quota exhausted).
+    ///
+    /// `trigger_kind` is the specific wake-trigger kind for the
+    /// `<wake_trigger kind="…">` attribute. `None` is fine for plain user
+    /// turns; required (effectively) for `source == "wake_trigger"`.
+    pub async fn forward_inject_user_turn(
+        &self,
+        session_id: &str,
+        content: &str,
+        source: &str,
+        trigger_kind: Option<&str>,
+    ) -> Result<(), String> {
+        let trigger = trigger_kind.map(|kind| json!({ "kind": kind }));
+        let req = json!({
+            "type": "inject_user_turn",
+            "sessionId": session_id,
+            "content": content,
+            "source": source,
+            "trigger": trigger,
+        });
+        self.send_json(req).await
+    }
+
+    /// Forward a `planner_tool_result` envelope to the sidecar (v5).
+    ///
+    /// The sidecar's in-process planner MCP server emits a `planner_tool`
+    /// event when the model invokes a `mcp__planner__*` tool, and parks the
+    /// SDK handler on a pending promise keyed by `call_id`. This method
+    /// resolves that promise from the Rust side after
+    /// [`MissionPlannerRegistry::handle_tool_call`] has produced a result.
+    ///
+    /// `success: true` + `result` resolves the SDK handler with `result`;
+    /// `success: false` + `error` rejects it with that message string. The
+    /// sidecar's `respondPlannerTool` handler tolerates an unknown `callId`
+    /// (e.g. the call already resolved via cancel) — this is a fire-and-go
+    /// dispatch.
+    pub async fn forward_planner_tool_result(
+        &self,
+        session_id: &str,
+        call_id: &str,
+        success: bool,
+        result: Option<Value>,
+        error: Option<String>,
+    ) -> Result<(), String> {
+        let req = json!({
+            "type": "planner_tool_result",
+            "sessionId": session_id,
+            "callId": call_id,
+            "success": success,
+            "result": result,
+            "error": error,
+        });
+        self.send_json(req).await
     }
 
     /// Forward a send_message request for an existing sidecar session.
@@ -1413,6 +1503,87 @@ impl SidecarManager {
                     s.last_error = Some(message);
                 })
                 .await;
+            }
+            "planner_tool" => {
+                // v5: the sidecar's in-process planner MCP server invoked
+                // one of its `mcp__planner__*` tools. The handler is parked
+                // on a pending promise keyed by `callId`; we dispatch the
+                // tool call against the MissionPlannerRegistry and forward
+                // the result back via `planner_tool_result` so the SDK's
+                // tool_use → tool_result round-trip stays well-formed.
+                //
+                // Without this arm the sidecar would hang forever waiting
+                // for a result that never comes (and the event would log as
+                // "unknown event type"), blocking E2's MCP work.
+                let tool = value
+                    .get("tool")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let call_id = value
+                    .get("callId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args = value.get("args").cloned().unwrap_or(Value::Null);
+                if call_id.is_empty() {
+                    warn!(
+                        tool = %tool,
+                        "planner_tool event missing callId; cannot reply"
+                    );
+                } else if let Some(manager) = self
+                    .app_handle
+                    .try_state::<Arc<SidecarManager>>()
+                    .map(|s| s.inner().clone())
+                {
+                    let app_handle = self.app_handle.clone();
+                    let session_for_reply = session_id.clone();
+                    let call_for_reply = call_id.clone();
+                    let tool_for_reply = tool.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let outcome = match app_handle
+                            .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
+                        {
+                            Some(registry) => {
+                                registry
+                                    .handle_tool_call(
+                                        &session_for_reply,
+                                        &tool_for_reply,
+                                        args,
+                                    )
+                                    .await
+                            }
+                            None => Err(
+                                "mission planner registry not managed".to_string(),
+                            ),
+                        };
+                        let (success, result, error) = match outcome {
+                            Ok(v) => (true, Some(v), None),
+                            Err(e) => (false, None, Some(e)),
+                        };
+                        if let Err(e) = manager
+                            .forward_planner_tool_result(
+                                &session_for_reply,
+                                &call_for_reply,
+                                success,
+                                result,
+                                error,
+                            )
+                            .await
+                        {
+                            warn!(
+                                error = %e,
+                                tool = %tool_for_reply,
+                                "failed to forward planner_tool_result"
+                            );
+                        }
+                    });
+                } else {
+                    warn!(
+                        tool = %tool,
+                        "planner_tool event but SidecarManager not managed"
+                    );
+                }
             }
             other => {
                 warn!(

@@ -31,11 +31,12 @@ import type {
 } from "@/types/flight";
 
 type ModalKind = null | "async" | "multitask";
-type GroupKey = "attention" | "active" | "recent";
+type GroupKey = "drafting" | "attention" | "active" | "recent";
 
 type DesignDot = "green" | "blue" | "amber" | "red" | "muted" | "accent" | "purple";
 
 const STATUS_DOT: Record<FlightStatus, DesignDot> = {
+  spec: "purple",
   draft: "muted",
   planning: "muted",
   ready: "muted",
@@ -48,6 +49,7 @@ const STATUS_DOT: Record<FlightStatus, DesignDot> = {
 };
 
 const STATUS_LABEL: Record<FlightStatus, string> = {
+  spec: "spec",
   draft: "draft",
   planning: "planning",
   ready: "ready",
@@ -142,6 +144,7 @@ function flightTasks(flight: Flight): {
 }
 
 function classifyGroup(flight: Flight, status: FlightStatus): GroupKey {
+  if (status === "spec") return "drafting";
   const hasApproval = flight.milestones.some((m) =>
     m.tasks.some((t) => t.status === "approval_needed"),
   );
@@ -206,6 +209,7 @@ export function MissionsView() {
   const grouped = useMemo(() => {
     const filter = query.trim().toLowerCase();
     const buckets: Record<GroupKey, Flight[]> = {
+      drafting: [],
       attention: [],
       active: [],
       recent: [],
@@ -349,6 +353,7 @@ function FlightSidebar({
   computeStatus,
 }: SidebarProps) {
   const groups: { key: GroupKey; label: string }[] = [
+    { key: "drafting", label: "Drafting" },
     { key: "attention", label: "Attention" },
     { key: "active", label: "Active" },
     { key: "recent", label: "Recent" },
@@ -417,7 +422,8 @@ function FlightSidebar({
             </div>
           );
         })}
-        {grouped.attention.length === 0 &&
+        {grouped.drafting.length === 0 &&
+          grouped.attention.length === 0 &&
           grouped.active.length === 0 &&
           grouped.recent.length === 0 && (
             <div className="px-3 py-4 text-[10px] text-text-muted">

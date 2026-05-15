@@ -3,7 +3,9 @@ import type {
   CancelRequest,
   EditResponseRequest,
   Emit,
+  InjectUserTurnRequest,
   PermissionResponseRequest,
+  PlannerToolResultRequest,
   RetryRequest,
   SendMessageRequest,
   SetModelRequest,
@@ -93,7 +95,9 @@ export class SessionRegistry {
       | SetPermissionModeRequest
       | SetModelRequest
       | RetryRequest
-      | CancelPendingToolsRequest,
+      | CancelPendingToolsRequest
+      | InjectUserTurnRequest
+      | PlannerToolResultRequest,
     emit: Emit,
   ): Promise<void> {
     const entry = this.sessions.get(sessionId);
@@ -161,6 +165,28 @@ export class SessionRegistry {
               type: "error",
               sessionId,
               message: `${provider} does not support cancel_pending_tools`,
+            });
+          }
+          break;
+        case "inject_user_turn":
+          if (handler.injectUserTurn) {
+            await handler.injectUserTurn(req, emit);
+          } else {
+            emit({
+              type: "error",
+              sessionId,
+              message: `${provider} does not support inject_user_turn`,
+            });
+          }
+          break;
+        case "planner_tool_result":
+          if (handler.respondPlannerTool) {
+            await handler.respondPlannerTool(req, emit);
+          } else {
+            emit({
+              type: "error",
+              sessionId,
+              message: `${provider} does not support planner_tool_result`,
             });
           }
           break;

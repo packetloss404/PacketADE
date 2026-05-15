@@ -23,6 +23,7 @@ pub mod ideation;
 pub mod insights;
 pub mod mcp;
 pub mod memory;
+pub mod mission_planner;
 pub mod ollama;
 pub mod orchestration;
 pub mod pricing;
