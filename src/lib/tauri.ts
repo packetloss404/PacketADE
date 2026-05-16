@@ -581,6 +581,25 @@ export async function detectAgent(command: string): Promise<boolean> {
   return invoke<boolean>("detect_agent", { command });
 }
 
+// v0.8.3 cli detection — captures version + resolved path for each catalog entry.
+export interface DetectCatalogItem {
+  id: string;
+  binary: string;
+}
+
+export interface DetectCatalogResult {
+  id: string;
+  installed: boolean;
+  version: string | null;
+  path: string | null;
+}
+
+export async function detectCliCatalog(
+  items: Array<{ id: string; binary: string }>,
+): Promise<DetectCatalogResult[]> {
+  return invoke<DetectCatalogResult[]>("detect_cli_catalog", { items });
+}
+
 type PersistedSettings = {
   maxParallelSessions: number;
   milestoneGating: boolean;

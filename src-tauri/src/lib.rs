@@ -241,6 +241,8 @@ pub fn run() {
             commands::state::save_servers_slice,
             // Agent detection
             commands::agent::detect_agent,
+            // v0.8.3 cli detection
+            commands::agent::detect_cli_catalog,
             // Status line
             commands::statusline::claude::read_statusline_states,
             commands::statusline::codex::read_codex_statusline_states,
