@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketADE | Open-Source AI Desktop IDE</title>
-<meta name="description" content="PacketADE is a 100% open-source desktop IDE that unifies Claude Code, Codex, Gemini, OpenCode and seven provider rows (Anthropic subscription/API, OpenAI subscription/API, MiniMax, OpenRouter, Ollama) into one multi-pane cockpit with autonomous Flight Deck orchestration, BYOK, and cross-provider cost tracking." />
+<meta name="description" content="PacketADE is a 100% open-source desktop IDE that unifies Claude Code, Codex, Gemini, OpenCode and eight provider rows (Anthropic subscription/API, OpenAI ChatGPT/API/Agents SDK, MiniMax, OpenRouter, Ollama) into one multi-pane cockpit with autonomous Flight Deck orchestration, four build modes, and cross-provider cost tracking." />
 <meta property="og:title" content="PacketADE — One cockpit. Every AI agent." />
 <meta property="og:description" content="Open-source AI desktop IDE: CLI + API agents, BYOK, conversational chat with tool diffs, Flight Deck orchestration, cross-provider cost tracking." />
 <meta property="og:image" content="https://packetade.app/screenshot.png" />
@@ -341,6 +341,101 @@ nav .container{display:flex;align-items:center;justify-content:space-between;wid
 .oss-body{font-size:0.95rem;color:var(--text-secondary);max-width:580px;margin:0 auto 36px;line-height:1.75}
 .oss-buttons{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
 
+/* ===== SIBLING PROJECT (PacketCode TUI) ===== */
+.sibling{padding:110px 0 100px;position:relative}
+.sibling::before{content:'';position:absolute;top:50%;left:50%;width:1100px;height:900px;transform:translate(-50%,-50%);
+  background:radial-gradient(ellipse,rgba(188,140,255,0.07) 0%,rgba(57,210,192,0.04) 45%,transparent 70%);pointer-events:none}
+.sibling .container{position:relative;z-index:1}
+.sibling-wrap{display:grid;grid-template-columns:1.05fr 1fr;gap:56px;align-items:center}
+.sibling-eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.7rem;font-weight:600;
+  letter-spacing:0.18em;text-transform:uppercase;color:var(--purple);margin-bottom:18px;padding:5px 14px;
+  border:1px solid rgba(188,140,255,0.3);border-radius:999px;background:rgba(188,140,255,0.07)}
+.sibling-eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--purple);box-shadow:0 0 8px var(--purple)}
+.sibling h2{font-size:clamp(2rem,4.6vw,3rem);font-weight:800;letter-spacing:-0.035em;line-height:1.08;margin-bottom:18px}
+.sibling h2 .gradient-purple{background:linear-gradient(135deg,var(--purple),var(--cyan));-webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;background-clip:text}
+.sibling-lead{font-size:clamp(1rem,1.6vw,1.12rem);color:var(--text-secondary);line-height:1.7;margin-bottom:24px;max-width:520px}
+.sibling-bullets{display:flex;flex-direction:column;gap:12px;margin-bottom:28px}
+.sibling-bullet{display:flex;align-items:flex-start;gap:12px;font-size:0.92rem;color:var(--text-primary);line-height:1.55}
+.sibling-bullet svg{width:16px;height:16px;color:var(--purple);flex-shrink:0;margin-top:3px}
+.sibling-bullet strong{font-weight:600;color:var(--text-primary)}
+.sibling-bullet span{color:var(--text-secondary)}
+.sibling-meta{display:flex;align-items:center;gap:10px;margin-bottom:28px;flex-wrap:wrap}
+.sibling-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;
+  font-family:var(--font-mono);font-size:0.68rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase}
+.sibling-badge.dev{background:rgba(210,153,34,0.12);color:var(--amber);border:1px solid rgba(210,153,34,0.3)}
+.sibling-badge.dev .dot{width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);
+  animation:pulse-dot 2s ease-in-out infinite}
+.sibling-badge.oss{background:rgba(188,140,255,0.1);color:var(--purple);border:1px solid rgba(188,140,255,0.3)}
+.sibling-badge.lang{background:rgba(57,210,192,0.1);color:var(--cyan);border:1px solid rgba(57,210,192,0.3)}
+.sibling-actions{display:flex;gap:12px;flex-wrap:wrap}
+.btn-purple{padding:12px 26px;border-radius:999px;font-size:0.9rem;font-weight:600;
+  background:linear-gradient(135deg,var(--purple),#9d6df7);color:#fff;transition:all 0.3s;
+  box-shadow:0 0 24px rgba(188,140,255,0.18),0 4px 18px rgba(0,0,0,0.3);display:inline-flex;align-items:center;gap:8px}
+.btn-purple:hover{box-shadow:0 0 40px rgba(188,140,255,0.32),0 8px 26px rgba(0,0,0,0.4);transform:translateY(-2px)}
+.btn-purple svg{width:16px;height:16px}
+.btn-ghost-purple{padding:12px 26px;border-radius:999px;font-size:0.9rem;font-weight:600;
+  border:1px solid rgba(188,140,255,0.35);color:var(--text-primary);transition:all 0.3s;
+  display:inline-flex;align-items:center;gap:8px;background:rgba(188,140,255,0.04)}
+.btn-ghost-purple:hover{border-color:var(--purple);background:rgba(188,140,255,0.1);transform:translateY(-2px)}
+
+/* terminal mock */
+.tui-mock{background:#080b11;border:1px solid var(--border);border-radius:14px;overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,0.45),0 0 0 1px rgba(188,140,255,0.08);position:relative}
+.tui-mock::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:14px;
+  background:linear-gradient(135deg,rgba(188,140,255,0.06),transparent 40%,rgba(57,210,192,0.04))}
+.tui-titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#0d1117;border-bottom:1px solid var(--border)}
+.tui-titlebar .window-dot{width:11px;height:11px;border-radius:50%}
+.tui-titlebar .title{margin-left:8px;font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted)}
+.tui-body{font-family:var(--font-mono);font-size:0.74rem;line-height:1.65;padding:16px 18px;color:var(--text-secondary);
+  background:linear-gradient(180deg,#080b11 0%,#0a0d15 100%)}
+.tui-statusline{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid var(--border);
+  margin:-16px -18px 14px;background:#0b0f17;color:var(--text-muted);font-size:0.68rem}
+.tui-statusline .left{display:flex;gap:14px}
+.tui-statusline .pill{padding:1px 8px;border-radius:4px}
+.tui-statusline .pill.green{background:rgba(63,185,80,0.15);color:var(--green)}
+.tui-statusline .pill.purple{background:rgba(188,140,255,0.15);color:var(--purple)}
+.tui-line{white-space:pre;display:block}
+.tui-prompt{color:var(--green)}
+.tui-cmd{color:var(--text-primary)}
+.tui-out{color:var(--text-secondary)}
+.tui-dim{color:var(--text-muted)}
+.tui-warn{color:var(--amber)}
+.tui-key{color:var(--cyan)}
+.tui-accent{color:var(--purple)}
+.tui-cursor{display:inline-block;width:8px;height:1em;background:var(--purple);vertical-align:text-bottom;
+  margin-left:1px;animation:blink 1.1s step-end infinite}
+.tui-footer{margin-top:14px;padding-top:10px;border-top:1px dashed rgba(48,54,61,0.6);
+  display:flex;gap:14px;font-size:0.66rem;color:var(--text-muted)}
+.tui-footer kbd{font-family:var(--font-mono);background:rgba(188,140,255,0.1);color:var(--purple);
+  padding:1px 6px;border-radius:3px;border:1px solid rgba(188,140,255,0.25);font-size:0.62rem}
+
+.sibling-compare{margin-top:64px;display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:center;
+  max-width:880px;margin-left:auto;margin-right:auto;padding:24px 28px;border:1px solid var(--border);
+  border-radius:18px;background:rgba(22,27,34,0.5);backdrop-filter:blur(10px)}
+.sibling-compare-side{padding:8px 18px}
+.sibling-compare-side h4{font-size:0.95rem;font-weight:700;margin-bottom:4px}
+.sibling-compare-side p{font-size:0.78rem;color:var(--text-muted);line-height:1.5}
+.sibling-compare-side .label{font-family:var(--font-mono);font-size:0.62rem;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;margin-bottom:8px}
+.sibling-compare-side.left .label{color:var(--green)}
+.sibling-compare-side.right .label{color:var(--purple)}
+.sibling-compare-divider{font-family:var(--font-mono);color:var(--text-muted);font-size:1rem;padding:0 8px;
+  border-left:1px solid var(--border);border-right:1px solid var(--border);align-self:stretch;
+  display:flex;align-items:center;justify-content:center;min-width:40px}
+
+@media(max-width:1024px){
+  .sibling-wrap{grid-template-columns:1fr;gap:40px}
+  .sibling-compare{grid-template-columns:1fr;gap:16px}
+  .sibling-compare-divider{display:none}
+}
+@media(max-width:768px){
+  .sibling{padding:80px 0 70px}
+  .tui-body{font-size:0.68rem;padding:14px 14px}
+  .tui-statusline{margin:-14px -14px 12px}
+  .sibling-compare{padding:20px}
+}
+
 /* ===== FOOTER ===== */
 footer{border-top:1px solid var(--border);padding:32px 0;position:relative;z-index:1}
 footer .container{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px}
@@ -402,6 +497,67 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   .profile-card{min-width:180px}
 }
 
+/* ===== ANNOUNCEMENT BAR ===== */
+:root{--announcement-h:38px}
+.announcement{position:fixed;top:0;left:0;right:0;height:var(--announcement-h);z-index:200;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(90deg,#7a4cf5 0%,var(--purple) 28%,#a07ef9 50%,var(--cyan) 78%,#39d2c0 100%);
+  background-size:220% 100%;background-position:0% 50%;
+  animation:announcement-shift 8s ease-in-out infinite alternate;
+  box-shadow:0 2px 18px rgba(122,76,245,0.25),0 1px 0 rgba(255,255,255,0.06) inset;
+  font-size:0.82rem;color:#fff;font-weight:500;letter-spacing:-0.005em;
+  transition:transform 260ms ease, opacity 260ms ease;will-change:transform,opacity}
+.announcement.is-hiding{transform:translateY(-100%);opacity:0;pointer-events:none}
+.announcement-link{flex:1 1 auto;display:flex;align-items:center;justify-content:center;
+  gap:10px;height:100%;padding:0 56px 0 20px;color:#fff;text-shadow:0 1px 0 rgba(0,0,0,0.18);
+  white-space:nowrap;overflow:hidden}
+.announcement-link:hover .announcement-cta{transform:translateX(3px)}
+.announcement-rocket{font-size:1rem;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,0.25))}
+.announcement-text strong{font-weight:700}
+.announcement-dot{display:inline-block;width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.55);margin:0 4px;vertical-align:middle}
+.announcement-cta{font-weight:700;display:inline-flex;align-items:center;gap:4px;transition:transform 0.2s ease}
+.announcement-mobile{display:none}
+.announcement-desktop{display:inline}
+.announcement-close{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);
+  transition:all 0.2s ease;font-size:0.95rem;line-height:1}
+.announcement-close:hover{background:rgba(255,255,255,0.18);color:#fff;transform:translateY(-50%) scale(1.05)}
+.announcement-close:focus-visible{outline:2px solid #fff;outline-offset:2px}
+@keyframes announcement-shift{0%{background-position:0% 50%}100%{background-position:100% 50%}}
+
+/* body offset when announcement is present */
+body.has-announcement nav{top:var(--announcement-h)}
+body.has-announcement .hero{padding-top:calc(var(--nav-h) + var(--announcement-h) + 40px)}
+
+/* hero NEW pill (companion to announcement) */
+.hero-new-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;margin:0 0 28px 8px;
+  border:1px solid rgba(188,140,255,0.45);border-radius:999px;
+  background:linear-gradient(135deg,rgba(188,140,255,0.18),rgba(57,210,192,0.10));
+  font-size:0.74rem;font-weight:600;letter-spacing:0.02em;color:#fff;
+  box-shadow:0 0 18px rgba(188,140,255,0.18);transition:all 0.25s ease;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.hero-new-pill:hover{border-color:var(--purple);transform:translateY(-1px);
+  box-shadow:0 0 24px rgba(188,140,255,0.32)}
+.hero-new-pill .new-tag{font-family:var(--font-mono);font-size:0.62rem;font-weight:700;
+  letter-spacing:0.12em;padding:2px 7px;border-radius:999px;
+  background:linear-gradient(135deg,var(--purple),#9d6df7);color:#fff;text-transform:uppercase;
+  box-shadow:0 0 10px rgba(188,140,255,0.4)}
+.hero-new-pill .pill-arrow{font-size:0.85rem;color:var(--purple);transition:transform 0.2s ease}
+.hero-new-pill:hover .pill-arrow{transform:translateX(2px)}
+.hero-badges-row{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:28px}
+.hero-badges-row .hero-badge{margin-bottom:0}
+.hero-badges-row .hero-new-pill{margin:0}
+
+@media(max-width:600px){
+  .announcement-desktop{display:none}
+  .announcement-mobile{display:inline}
+  .announcement-link{padding:0 48px 0 14px;font-size:0.76rem}
+}
+@media(max-width:480px){
+  .hero-new-pill{margin:8px 0 28px 0;font-size:0.7rem;padding:5px 12px}
+}
+
 /* ===== REDUCED MOTION ===== */
 @media(prefers-reduced-motion:reduce){
   .reveal{opacity:1;transform:none;transition:none}
@@ -410,6 +566,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   .hero-badge .dot{animation:none}
   .typed-cursor{animation:none}
   #particles-canvas{display:none}
+  .announcement{animation:none;background-position:30% 50%}
   *{transition-duration:0.01ms !important;animation-duration:0.01ms !important}
 }
 </style>
@@ -422,6 +579,19 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <!-- Aurora Background -->
 <div class="aurora" aria-hidden="true"><div class="aurora-layer"></div></div>
 <div class="grid-bg" aria-hidden="true"></div>
+
+<!-- ===== ANNOUNCEMENT BAR ===== -->
+<div class="announcement" id="announcement" role="region" aria-label="Site announcement">
+  <a href="#packetcode" class="announcement-link" id="announcement-link">
+    <span class="announcement-rocket" aria-hidden="true">&#128640;</span>
+    <span class="announcement-text">
+      <span class="announcement-desktop">Introducing <strong>PacketCode</strong> &mdash; the terminal-first sibling to PacketADE <span class="announcement-dot" aria-hidden="true"></span> Pre-release on GitHub</span>
+      <span class="announcement-mobile"><strong>PacketCode</strong> now in pre-release</span>
+    </span>
+    <span class="announcement-cta" aria-hidden="true">&rarr;</span>
+  </a>
+  <button type="button" class="announcement-close" id="announcement-close" aria-label="Dismiss announcement">&times;</button>
+</div>
 
 <!-- ===== NAV ===== -->
 <nav role="navigation" aria-label="Main navigation">
@@ -438,6 +608,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       <a href="#modules">Modules</a>
       <a href="packetade-manual.html">Manual</a>
       <a href="#download">Download</a>
+      <a href="#packetcode">PacketCode</a>
     </div>
     <div class="nav-actions">
       <a href="https://github.com/packetloss404/PacketADE" class="btn-github" target="_blank" rel="noopener" aria-label="View on GitHub">
@@ -456,12 +627,19 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 
 <!-- ===== HERO ===== -->
 <section class="hero" id="hero">
-  <div class="hero-badge reveal">
-    <span class="dot"></span>
-    Open Source &mdash; 100% Free
+  <div class="hero-badges-row reveal">
+    <div class="hero-badge">
+      <span class="dot"></span>
+      Open Source &mdash; 100% Free
+    </div>
+    <a href="#packetcode" class="hero-new-pill" aria-label="PacketCode TUI — new release announcement">
+      <span class="new-tag">New</span>
+      <span>PacketCode TUI</span>
+      <span class="pill-arrow" aria-hidden="true">&rarr;</span>
+    </a>
   </div>
   <h1 class="reveal" style="--delay:0.1s">One cockpit.<br><span class="gradient-text">Every AI agent.</span><br>Ship faster.</h1>
-  <p class="hero-lead reveal" style="--delay:0.2s">Four ways to build &mdash; autonomous <strong>Missions</strong>, supervised <strong>Workspace</strong>, single-thread <strong>Agents</strong>, AI-structured <strong>Issues</strong> &mdash; unifying Claude Code, Codex, Gemini, OpenCode and seven provider rows in one native desktop app.</p>
+  <p class="hero-lead reveal" style="--delay:0.2s">Four ways to build &mdash; autonomous <strong>Missions</strong>, supervised <strong>Workspace</strong>, single-thread <strong>Agents</strong>, AI-structured <strong>Issues</strong> &mdash; unifying Claude Code, Codex, Gemini, OpenCode and eight provider rows in one native desktop app.</p>
   <div class="typed-line reveal" style="--delay:0.3s">Built to <span id="typed-target"></span><span class="typed-cursor"></span></div>
   <div class="hero-buttons reveal" style="--delay:0.35s">
     <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-primary">Download for Free</a>
@@ -469,7 +647,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   </div>
   <div class="tag-chips reveal" style="--delay:0.4s">
     <span class="tag-chip">Tauri v2</span>
-    <span class="tag-chip">7 Provider Rows</span>
+    <span class="tag-chip">8 Provider Rows</span>
     <span class="tag-chip">BYOK</span>
     <span class="tag-chip">Apache 2.0</span>
     <span class="tag-chip">Local-First</span>
@@ -568,20 +746,20 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <div class="stats-grid">
       <div>
-        <div class="stat-number green" data-target="22">0</div>
-        <div class="stat-label">Views &amp; Tools</div>
+        <div class="stat-number green" data-target="4">0</div>
+        <div class="stat-label">Build Modes</div>
       </div>
       <div>
-        <div class="stat-number purple" data-target="5">0</div>
-        <div class="stat-label">API Providers</div>
+        <div class="stat-number purple" data-target="8">0</div>
+        <div class="stat-label">Provider Rows</div>
       </div>
       <div>
-        <div class="stat-number blue" data-target="9">0</div>
-        <div class="stat-label">CLI + API Agents</div>
+        <div class="stat-number blue" data-target="13">0</div>
+        <div class="stat-label">CLI Agents Cataloged</div>
       </div>
       <div>
-        <div class="stat-number amber" data-target="300" data-suffix="+">0</div>
-        <div class="stat-label">Source Files</div>
+        <div class="stat-number amber" data-target="200" data-suffix="+">0</div>
+        <div class="stat-label">Tauri Commands</div>
       </div>
     </div>
   </div>
@@ -591,79 +769,65 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <section class="features" id="features">
   <div class="container">
     <div class="section-header reveal">
-      <h2>Everything you need. Nothing you don't.</h2>
-      <p>Ten core capabilities designed to keep you in flow.</p>
+      <h2>Cross-cutting capabilities</h2>
+      <p>Eight features that compose across every mode &mdash; from Missions to a single chat.</p>
     </div>
     <div class="features-grid">
       <div class="feature-card reveal" style="--delay:0s">
         <div class="feature-icon purple">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
         </div>
-        <h3>API Agents with BYOK</h3>
-        <p>Bring your own key for Anthropic, OpenAI, MiniMax, OpenRouter, and local Ollama. Full tool use, streaming, and agentic loops in Rust &mdash; Opus 4.7 to Llama 4.</p>
+        <h3>BYOK across eight provider rows</h3>
+        <p>Anthropic subscription + API, OpenAI ChatGPT + API + Agents SDK, MiniMax, OpenRouter, and local Ollama. Streaming tool use, cache-aware token metrics, OAuth refresh handled for you.</p>
       </div>
       <div class="feature-card reveal" style="--delay:0.08s">
-        <div class="feature-icon green">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="12" y1="3" x2="12" y2="17"/></svg>
-        </div>
-        <h3>Multi-Pane CLI Sessions</h3>
-        <p>Claude Code, Codex, Gemini, and OpenCode running side-by-side in real PTY terminals. Split, resize, and monitor live.</p>
-      </div>
-      <div class="feature-card wide reveal" style="--delay:0.16s">
-        <div class="feature-icon cyan">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        </div>
-        <h3>Flight Deck</h3>
-        <p>Autonomous orchestration layer. Create flights, link issues, and let agents build while you review. Status rolls up automatically across sessions and providers.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.24s">
-        <div class="feature-icon amber">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>
-        </div>
-        <h3>Conversational Chat</h3>
-        <p>Slash commands, @-file mentions, inline tool diffs, and voice input &mdash; a Claude Code-style experience across every agent and model you use.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.32s">
-        <div class="feature-icon red">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-        </div>
-        <h3>Kanban Issue Tracker</h3>
-        <p>Drag-and-drop board with priorities, labels, epics, and acceptance criteria. Link issues directly into flights and agent sessions.</p>
-      </div>
-      <div class="feature-card reveal" style="--delay:0.4s">
         <div class="feature-icon blue">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </div>
         <h3>Agent Profiles</h3>
-        <p>Switch between 5 built-in personalities or create your own. Each injects custom system prompts and model defaults.</p>
+        <p>Five built-in personalities &mdash; Auto, Speed Runner, Thorough Reviewer, Security Auditor, Refactor Pro &mdash; plus custom profiles. System prompt, tool allowlist, and default model in one keystroke.</p>
       </div>
-      <div class="feature-card reveal" style="--delay:0.48s">
+      <div class="feature-card wide reveal" style="--delay:0.16s">
+        <div class="feature-icon amber">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/><path d="M12 6v2"/><path d="M12 16v2"/></svg>
+        </div>
+        <h3>Code Quality with AutoFix &amp; AI Explain</h3>
+        <p>Live-streaming lint, typecheck, test, and audit runner. ESLint <code>--fix</code>, Prettier <code>--write</code>, <code>cargo fix</code>, <code>npm audit fix</code> &mdash; one click each. Per-error AI Explain, one-shot "Fix in Workspace" that spins up a Claude pane in a worktree, and a cached AI summary at the bottom of every run.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.24s">
         <div class="feature-icon purple">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg>
         </div>
-        <h3>GitHub Integration</h3>
-        <p>Connect repos, browse issues, create PRs, and import tickets &mdash; all from inside the cockpit.</p>
+        <h3>GitHub, deeply wired</h3>
+        <p>Merge / squash / rebase, draft toggle, CI status pills, AI PR descriptions, streaming pre-flight code review, "Catch me up" repo digests, bulk issue triage. Plan flights, branch from issues, or hand off to Claude in one click.</p>
       </div>
-      <div class="feature-card reveal" style="--delay:0.56s">
+      <div class="feature-card reveal" style="--delay:0.32s">
         <div class="feature-icon green">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v6"/><path d="M18 3v6"/><circle cx="12" cy="13" r="6"/><path d="M9 13l2 2 4-4"/></svg>
         </div>
-        <h3>Deploy Pipeline</h3>
-        <p>Configure and trigger deployments from a single panel. Run history, environment variables, live terminal output.</p>
+        <h3>Worktree-bound commits</h3>
+        <p>Issues spawn a Claude pane inside a Git worktree with a <code>prepare-commit-msg</code> hook that auto-appends <code>Fixes #N</code> and <code>Run-By: PacketADE</code> trailers. Commits matching the trailer auto-close the linked Issue.</p>
       </div>
-      <div class="feature-card reveal" style="--delay:0.64s">
+      <div class="feature-card reveal" style="--delay:0.4s">
         <div class="feature-icon cyan">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
         </div>
-        <h3>Cross-Provider Cost Dashboard</h3>
-        <p>Unified spend tracking across Claude CLI, Codex, and every API provider. Cache-aware token metrics, per-model breakdowns, per-flight totals.</p>
+        <h3>Cross-provider cost dashboard</h3>
+        <p>Unified spend across Claude CLI, Codex, and every API row. Cache-aware token metrics, per-model breakdowns, per-flight totals, and a live spend chip in the toolbar.</p>
       </div>
-      <div class="feature-card reveal" style="--delay:0.72s">
+      <div class="feature-card reveal" style="--delay:0.48s">
+        <div class="feature-icon green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+        </div>
+        <h3>Deploy pipeline</h3>
+        <p>Configure environments, trigger deploys, stream live terminal output. Run history with status, env vars, and per-run logs &mdash; reachable from the global <kbd>+ New</kbd> menu.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.56s">
         <div class="feature-icon red">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </div>
-        <h3>Voice-to-Text</h3>
-        <p>Native Whisper dictation with waveform, WPM analytics, and OS-wide push-to-talk (<code>Ctrl+Shift+V</code>). Transcripts insert at the cursor of whichever input you last focused &mdash; or fall back to the clipboard.</p>
+        <h3>Voice-to-text, OS-wide</h3>
+        <p>Native Whisper dictation with waveform, history search, sentiment trend, and WPM analytics. Push-to-talk anywhere with <code>Ctrl+Shift+V</code> &mdash; transcripts land at the cursor of your last-focused input, or in the clipboard if focus is gone.</p>
       </div>
     </div>
   </div>
@@ -743,8 +907,8 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <section class="profiles" id="providers">
   <div class="container">
     <div class="section-header reveal">
-      <h2>Seven provider rows. One chat interface.</h2>
-      <p>Use subscription auth, bring your own keys, or run local models without swapping apps.</p>
+      <h2>Eight provider rows. One chat interface.</h2>
+      <p>Subscription auth, bring-your-own-key, or fully local. Five vendors. Frontier models from Opus 4.7 to Llama 4 to local Qwen 3.</p>
     </div>
     <div class="profiles-row reveal" style="--delay:0.1s">
       <div class="profile-card purple-top">
@@ -776,15 +940,23 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
         </div>
         <h3>OpenAI (API)</h3>
-        <p class="profile-desc">GPT-5.5, GPT-4o, o3, o4-mini</p>
+        <p class="profile-desc">GPT-5.5, ChatGPT 5.4, GPT-4o, o3, o4-mini</p>
         <p class="profile-prompt">OpenAI-compatible streaming with tool use</p>
+      </div>
+      <div class="profile-card green-top">
+        <div class="profile-icon green-bg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        </div>
+        <h3>OpenAI Agents SDK</h3>
+        <p class="profile-desc">GPT-5.5, ChatGPT 5.4, GPT-4o, o3, o4-mini</p>
+        <p class="profile-prompt">Agents SDK runtime with hosted tool loops</p>
       </div>
       <div class="profile-card amber-top">
         <div class="profile-icon amber-bg">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         </div>
         <h3>MiniMax</h3>
-        <p class="profile-desc">M2.7</p>
+        <p class="profile-desc">M2.7 + M2.7 high-speed</p>
         <p class="profile-prompt">Long-context reasoning via BYOK API</p>
       </div>
       <div class="profile-card blue-top">
@@ -792,7 +964,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
         </div>
         <h3>OpenRouter</h3>
-        <p class="profile-desc">Auto + Claude, GPT, Gemini 2.5, Llama 4</p>
+        <p class="profile-desc">Auto + Claude 4.7, GPT-5.5, Gemini 2.5 Pro, Llama 4 Maverick</p>
         <p class="profile-prompt">One key, every frontier model</p>
       </div>
       <div class="profile-card red-top">
@@ -800,7 +972,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
         </div>
         <h3>Ollama (Local)</h3>
-        <p class="profile-desc">Llama 3.3 70B, Qwen 3, DeepSeek, CodeLlama</p>
+        <p class="profile-desc">Llama 3.3 70B, Qwen 3 32B, DeepSeek Coder V2, CodeLlama 34B</p>
         <p class="profile-prompt">100% offline &mdash; no key required</p>
       </div>
     </div>
@@ -811,39 +983,39 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <section class="modules" id="modules">
   <div class="container">
     <div class="section-header reveal">
-      <h2>Extensible by Design</h2>
-      <p>Pluggable modules and a Tools hub that grow with your workflow</p>
+      <h2>Extensible by design</h2>
+      <p>Three opt-in modules plus a Settings-driven Tools surface that grows with your workflow.</p>
     </div>
     <div class="modules-grid">
       <div class="module-card amber-border reveal" style="--delay:0s">
         <span class="module-tag">Module</span>
         <h3>Ideation Scanner</h3>
-        <p>Scans your codebase and surfaces improvement ideas, refactoring opportunities, and security concerns &mdash; filter, promote, or drop each idea.</p>
+        <p>Scans your codebase and surfaces improvement ideas, refactoring opportunities, and security concerns. Filter, promote to Issues, or drop each candidate.</p>
       </div>
       <div class="module-card green-border reveal" style="--delay:0.08s">
         <span class="module-tag">Module</span>
         <h3>Scaffold</h3>
-        <p>Spin up new projects from built-in templates. Next.js, React, FastAPI, Rust CLI, and more &mdash; wired directly into your workspace.</p>
+        <p>Spin up new projects from built-in templates &mdash; Next.js, React, FastAPI, Rust CLI, and more. New scaffolds land directly in your workspace ready to run.</p>
       </div>
       <div class="module-card purple-border reveal" style="--delay:0.16s">
         <span class="module-tag">Module</span>
         <h3>Dictation</h3>
-        <p>Native Whisper voice-to-text with waveform, history search, sentiment trend, and WPM analytics. Push-to-talk anywhere with <code>Ctrl+Shift+V</code>; transcripts land in your last-focused input.</p>
+        <p>Native Whisper voice-to-text with waveform, history search, sentiment trend, and WPM analytics. OS-wide push-to-talk with rebindable hotkeys; transcripts land at your last-focused cursor.</p>
       </div>
       <div class="module-card blue-border reveal" style="--delay:0.24s">
-        <span class="module-tag">Tools Hub</span>
+        <span class="module-tag">Settings</span>
         <h3>MCP Hub</h3>
         <p>Browse, configure, and toggle Claude Code MCP servers across user, project, and local scopes. Provider enablement and routing from one card.</p>
       </div>
       <div class="module-card purple-border reveal" style="--delay:0.32s">
-        <span class="module-tag">Tools Hub</span>
+        <span class="module-tag">Toolbar Modal</span>
         <h3>Code Quality</h3>
-        <p>On-demand AI analysis with language breakdown, complexity hotspots, test coverage ratios, and comment density &mdash; all workspace-scoped.</p>
+        <p>Live-streaming lint/typecheck/test/audit runner with one-click AutoFix (ESLint, Prettier, cargo, npm audit), per-error AI Explain, and a cached AI summary per run.</p>
       </div>
       <div class="module-card amber-border reveal" style="--delay:0.4s">
-        <span class="module-tag">Tools Hub</span>
+        <span class="module-tag">Settings</span>
         <h3>Crash Viewer</h3>
-        <p>Browse, inspect, and manage local crash reports with timestamps, summaries, and full stack traces in a single panel.</p>
+        <p>Inspect local crash reports with timestamps, summaries, and full stack traces in a single panel &mdash; surfaced from Settings &gt; Advanced.</p>
       </div>
     </div>
   </div>
@@ -905,8 +1077,8 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <section class="memory" id="memory">
   <div class="container">
     <div class="section-header reveal">
-      <h2>Your AI remembers everything</h2>
-      <p>Persistent memory that learns your patterns, conventions, and architecture across sessions.</p>
+      <h2>Memory that survives every session</h2>
+      <p>Per-project file maps and learned patterns &mdash; scoped exact / parent / global, pinned where it matters, refreshed on every agent run.</p>
     </div>
     <div class="memory-panel reveal" style="--delay:0.1s">
       <div class="memory-section">
@@ -928,24 +1100,24 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         </div>
       </div>
       <div class="memory-section">
-        <div class="memory-section-title">Learned Patterns</div>
+        <div class="memory-section-title">Learned Patterns &middot; pinned survive cap eviction</div>
         <div class="pattern-row">
           <span class="pattern-text">Uses Zustand for all state management</span>
           <span class="pattern-tag arch">architecture</span>
           <div class="confidence-bar"><div class="confidence-fill" style="width:92%"></div></div>
         </div>
         <div class="pattern-row">
-          <span class="pattern-text">Prefers text-xs for compact UI</span>
-          <span class="pattern-tag conv">convention</span>
-          <div class="confidence-bar"><div class="confidence-fill" style="width:87%"></div></div>
-        </div>
-        <div class="pattern-row">
-          <span class="pattern-text">Never use raw Tailwind colors</span>
+          <span class="pattern-text">Never use raw Tailwind colors &mdash; theme tokens only</span>
           <span class="pattern-tag conv">convention</span>
           <div class="confidence-bar"><div class="confidence-fill" style="width:95%"></div></div>
         </div>
         <div class="pattern-row">
-          <span class="pattern-text">PTY sessions resolve .cmd on Windows</span>
+          <span class="pattern-text">Fixes #N trailer auto-closes the linked Issue</span>
+          <span class="pattern-tag conv">convention</span>
+          <div class="confidence-bar"><div class="confidence-fill" style="width:88%"></div></div>
+        </div>
+        <div class="pattern-row">
+          <span class="pattern-text">PTY sessions resolve .cmd shims on Windows</span>
           <span class="pattern-tag pitfall">pitfall</span>
           <div class="confidence-bar"><div class="confidence-fill" style="width:78%"></div></div>
         </div>
@@ -954,34 +1126,34 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   </div>
 </section>
 
-<!-- ===== WORKFLOW ===== -->
+<!-- ===== WORKFLOW: HOW MODES COMPOSE ===== -->
 <section class="workflow" id="workflow">
   <div class="container">
     <div class="section-header reveal">
-      <h2>From idea to production in three steps</h2>
-      <p>Each step can run in any of the four modes &mdash; Flight Deck for autonomy, Workspace for orchestration, Agents for a chat, Issues for structuring intake.</p>
+      <h2>Modes compose. Memory persists. Costs total up.</h2>
+      <p>The four modes share workspace state, memory, providers, and a single spend ledger &mdash; so handoffs are zero-friction.</p>
     </div>
     <div class="workflow-steps reveal" style="--delay:0.1s">
       <div class="workflow-step">
         <div class="workflow-num">1</div>
-        <h3>Plan</h3>
-        <p>Ideation Scanner surfaces opportunities, issues auto-populate the kanban board, Flight Deck coordinates the work.</p>
+        <h3>Structure intake</h3>
+        <p>Paste a PRD into <strong>Issues</strong>. AI breaks it into tickets with labels, acceptance criteria, and a suggested epic. Drop each into Backlog or Up Next.</p>
       </div>
       <div class="workflow-arrow" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
       </div>
       <div class="workflow-step">
         <div class="workflow-num">2</div>
-        <h3>Execute</h3>
-        <p>Pick a provider or CLI. Memory informs context. Profiles shape behavior. Tool diffs show every change. You review what matters.</p>
+        <h3>Choose the right autonomy</h3>
+        <p>Big multi-step features &rarr; <strong>Flight Deck</strong>. Hands-on parallel work &rarr; <strong>Workspace</strong> with worktree-bound panes. Focused threads &rarr; a single <strong>Agents</strong> chat.</p>
       </div>
       <div class="workflow-arrow" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
       </div>
       <div class="workflow-step">
         <div class="workflow-num">3</div>
-        <h3>Release</h3>
-        <p>Deploy pipeline ships. GitHub handles PRs. Flight Deck confirms all issues resolved &mdash; with unified cost totals on the way out.</p>
+        <h3>Ship and roll up</h3>
+        <p><code>Fixes #N</code> trailers auto-close Issues. GitHub merges with AI-drafted PRs. Deploy from <kbd>+ New</kbd>. The spend chip totals every provider on the way out.</p>
       </div>
     </div>
   </div>
@@ -991,19 +1163,27 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 <section class="features" id="shortcuts" style="padding:60px 0">
   <div class="container">
     <div class="section-header reveal">
-      <h2>Keyboard-driven workflow</h2>
-      <p>Navigate the entire app without touching the mouse</p>
+      <h2>Keyboard-driven by default</h2>
+      <p>Navigate the cockpit without leaving the home row.</p>
     </div>
     <div class="table-wrap reveal" style="--delay:0.1s">
-      <table style="max-width:560px;margin:0 auto;font-size:0.85rem;border-collapse:collapse">
+      <table style="max-width:640px;margin:0 auto;font-size:0.85rem;border-collapse:collapse">
         <thead><tr><th style="text-align:left;padding:10px 16px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600">Shortcut</th><th style="text-align:left;padding:10px 16px;border-bottom:1px solid var(--border);color:var(--text-muted);font-weight:600">Action</th></tr></thead>
         <tbody>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+K</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Command palette &mdash; jump anywhere</td></tr>
           <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+\</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Split &mdash; new session pane</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+1-4</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Switch to pane 1&ndash;4</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+1-6</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Agents, Claude, Codex, Issues, Tools, Flight Deck</td></tr>
-          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">/</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Slash commands in chat (/clear, /model, /help, /new)</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+1&ndash;4</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Focus workspace pane 1&ndash;4 (spatial order)</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+1&ndash;5</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Claude / Codex / Issues / History / Settings</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+W</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Workspace view</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+D</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Jump to Dictation view</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+R</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Toggle dictation recording (start / stop)</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Shift+V</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Push-to-talk &mdash; hold to dictate, release to insert</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">/</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Slash commands &mdash; expand prompt templates in chat</td></tr>
           <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">@</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Mention a file from the workspace</td></tr>
-          <tr><td style="padding:8px 16px;font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Enter</td><td style="padding:8px 16px;color:var(--text-secondary)">Send message &middot; start session</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+Enter</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Send message &middot; start session</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+R</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Refresh inside Code Quality modal</td></tr>
+          <tr><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Ctrl+F</td><td style="padding:8px 16px;border-bottom:1px solid rgba(48,54,61,0.4);color:var(--text-secondary)">Focus line filter inside Code Quality modal</td></tr>
+          <tr><td style="padding:8px 16px;font-family:var(--font-mono);font-size:0.8rem;color:var(--green)">Esc</td><td style="padding:8px 16px;color:var(--text-secondary)">Close palette / modal &middot; cancel push-to-talk</td></tr>
         </tbody>
       </table>
     </div>
@@ -1056,6 +1236,100 @@ cd PacketADE &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
   </div>
 </section>
 
+<!-- ===== SIBLING PROJECT: PacketCode (TUI) ===== -->
+<section class="sibling" id="packetcode">
+  <div class="container">
+    <div class="sibling-wrap">
+      <div class="sibling-copy reveal">
+        <span class="sibling-eyebrow"><span class="dot"></span>Sibling Project &middot; From the same team</span>
+        <h2>PacketCode &mdash; the<br><span class="gradient-purple">terminal-first sibling</span>.</h2>
+        <p class="sibling-lead">A keyboard-first, multi-provider AI coding agent that lives in your terminal. Same crew, different cockpit &mdash; an open-source alternative to OpenCode for developers who never leave the shell.</p>
+
+        <div class="sibling-bullets">
+          <div class="sibling-bullet">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <div><strong>Six providers, one TUI.</strong> <span>OpenAI, Anthropic, Gemini, MiniMax, OpenRouter, and Ollama &mdash; switch with <code>Ctrl+P</code> or <code>/provider</code>, no restart.</span></div>
+          </div>
+          <div class="sibling-bullet">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <div><strong>Approval-gated by default.</strong> <span>File writes, patches, shell commands, and MCP tool calls all confirm before they run. <code>--trust</code> opts you in.</span></div>
+          </div>
+          <div class="sibling-bullet">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <div><strong>Background agents &amp; MCP.</strong> <span><code>/spawn</code> delegates work in parallel; <code>[mcp.*]</code> blocks wire up MCP servers as provider-safe tool aliases.</span></div>
+          </div>
+          <div class="sibling-bullet">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <div><strong>Pairs with PacketADE.</strong> <span>Same provider conventions, same BYOK model, same approval mental model &mdash; one product in the desktop, one in the shell.</span></div>
+          </div>
+        </div>
+
+        <div class="sibling-meta">
+          <span class="sibling-badge dev"><span class="dot"></span>Pre-release</span>
+          <span class="sibling-badge lang">Go 1.24+</span>
+          <span class="sibling-badge oss">MIT licensed</span>
+        </div>
+
+        <div class="sibling-actions">
+          <a href="https://github.com/packetloss404/packetcode" class="btn-purple" target="_blank" rel="noopener">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            View on GitHub
+          </a>
+          <a href="https://github.com/packetloss404/packetcode#start-here" class="btn-ghost-purple" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            Install with one curl
+          </a>
+        </div>
+      </div>
+
+      <div class="tui-mock reveal" style="--delay:0.15s" aria-hidden="true">
+        <div class="tui-titlebar">
+          <span class="window-dot r" style="background:#f85149"></span>
+          <span class="window-dot y" style="background:#d29922"></span>
+          <span class="window-dot g" style="background:#3fb950"></span>
+          <span class="title">packetcode &mdash; ~/projects/api</span>
+        </div>
+        <div class="tui-body">
+          <div class="tui-statusline">
+            <div class="left">
+              <span class="pill purple">anthropic</span>
+              <span class="pill green">claude-opus-4-7</span>
+              <span>ctx 14%</span>
+            </div>
+            <div><span class="tui-dim">tokens 2.4k &middot;</span> <span class="tui-key">$0.043</span></div>
+          </div>
+<span class="tui-line"><span class="tui-prompt">&gt;</span> <span class="tui-cmd">/spawn --write add retry to the rate-limit middleware</span></span>
+<span class="tui-line"><span class="tui-dim">  spawned background agent</span> <span class="tui-accent">job-7af</span> <span class="tui-dim">(read+write)</span></span>
+<span class="tui-line"></span>
+<span class="tui-line"><span class="tui-prompt">&gt;</span> <span class="tui-cmd">refactor handlers.go to use the new logger</span></span>
+<span class="tui-line"><span class="tui-out">  reading internal/handlers/handlers.go ...</span></span>
+<span class="tui-line"><span class="tui-out">  planning edit: replace fmt.Println with slog ...</span></span>
+<span class="tui-line"><span class="tui-warn">  ? apply patch (3 hunks, +18 -11) [Y/n]</span> <span class="tui-cursor"></span></span>
+          <div class="tui-footer">
+            <span><kbd>Ctrl+P</kbd> provider</span>
+            <span><kbd>Ctrl+M</kbd> model</span>
+            <span><kbd>/agents</kbd> view jobs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sibling-compare reveal" style="--delay:0.25s">
+      <div class="sibling-compare-side left">
+        <div class="label">PacketADE</div>
+        <h4>Desktop cockpit</h4>
+        <p>Native multi-pane IDE. Missions, kanban, cost dashboard, GUI dictation, Tauri v2.</p>
+      </div>
+      <div class="sibling-compare-divider">/</div>
+      <div class="sibling-compare-side right">
+        <div class="label">PacketCode</div>
+        <h4>Terminal cockpit</h4>
+        <p>Pure TUI. No webview, no GUI, no daemon &mdash; one Go binary, your shell, your scrollback.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 </main>
 
 <!-- ===== FOOTER ===== -->
@@ -1077,6 +1351,55 @@ cd PacketADE &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
 <script>
 (function(){
   'use strict';
+
+  /* ===== ANNOUNCEMENT BAR ===== */
+  var ANNOUNCEMENT_KEY = 'packetade.announcement.packetcode.dismissed';
+  var announcementEl = document.getElementById('announcement');
+  var announcementClose = document.getElementById('announcement-close');
+  var announcementLink = document.getElementById('announcement-link');
+
+  function dismissAnnouncement(animated) {
+    if (!announcementEl) return;
+    document.body.classList.remove('has-announcement');
+    if (animated) {
+      announcementEl.classList.add('is-hiding');
+      setTimeout(function() {
+        if (announcementEl && announcementEl.parentNode) {
+          announcementEl.parentNode.removeChild(announcementEl);
+        }
+      }, 280);
+    } else {
+      if (announcementEl.parentNode) announcementEl.parentNode.removeChild(announcementEl);
+    }
+  }
+
+  try {
+    if (localStorage.getItem(ANNOUNCEMENT_KEY) === '1') {
+      dismissAnnouncement(false);
+    } else if (announcementEl) {
+      document.body.classList.add('has-announcement');
+    }
+  } catch (err) {
+    if (announcementEl) document.body.classList.add('has-announcement');
+  }
+
+  if (announcementClose) {
+    announcementClose.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      try { localStorage.setItem(ANNOUNCEMENT_KEY, '1'); } catch (err) {}
+      dismissAnnouncement(true);
+    });
+  }
+  if (announcementLink) {
+    announcementLink.addEventListener('click', function(e) {
+      var target = document.querySelector('#packetcode');
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  }
 
   /* ===== SCROLL REVEALS ===== */
   var revealEls = document.querySelectorAll('.reveal');
@@ -1142,7 +1465,7 @@ cd PacketADE &amp;&amp; pnpm install &amp;&amp; pnpm tauri dev</code></pre>
 
   /* ===== TYPED TEXT ===== */
   var typedEl = document.getElementById('typed-target');
-  var phrases = ['orchestrate agents', 'bring your own key', 'run every model', 'ship autonomously', 'track costs across providers', 'learn from every session'];
+  var phrases = ['orchestrate agents in parallel', 'bring your own key', 'run every frontier model', 'ship autonomously', 'total spend across providers', 'remember every session'];
   var phraseIdx = 0;
   var charIdx = 0;
   var isDeleting = false;
