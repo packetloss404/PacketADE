@@ -68,6 +68,20 @@ pub struct WorktreeMission {
     pub flight_title: Option<String>,
 }
 
+/// v0.8.5: issue context the worktree provisioner forwards to the
+/// auto-trailer hook installer for Issue-bound worktrees. The hook for
+/// these worktrees writes two trailers:
+///   `Fixes #{issue_number}`
+///   `Run-By: PacketADE issue I-{issue_id}`
+/// so that on commit the synchronous git_commit watcher can flip the
+/// matching Issue to `done` via the `issue-watcher:fixed` event.
+#[derive(Debug, Clone)]
+pub struct WorktreeIssue {
+    pub issue_id: String,
+    pub issue_number: u32,
+    pub issue_title: String,
+}
+
 /// Create a local git worktree at `<base>/.pkt-worktrees/<attempt_id>` checked
 /// out to a new branch `pkt/<attempt_id>` based on `base_branch`. Idempotent —
 /// if the worktree already exists, returns its path without erroring.
@@ -127,6 +141,68 @@ pub async fn create_local_worktree_with_mission(
     // is still usable, the commit just won't carry the trailer.
     if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id, &mission).await {
         warn!(path = %path, error = %e, "Failed to install prepare-commit-msg hook (non-fatal)");
+    }
+
+    Ok(path)
+}
+
+/// v0.8.5: create a local git worktree dedicated to a specific Issue and
+/// install a `prepare-commit-msg` hook that appends two trailers to every
+/// commit made inside it:
+///   `Fixes #{issue_number}`
+///   `Run-By: PacketADE issue I-{issue_id}`
+///
+/// Mirrors `create_local_worktree_with_mission` but uses
+/// `install_prepare_commit_msg_hook_for_issue` for the trailer logic.
+/// Idempotent: existing worktrees re-receive the hook install on next
+/// launch so older worktrees pick up the trailers.
+///
+/// Trailer installation respects `OrchestratorSettings.auto_commit_trailer_enabled`
+/// — turning the toggle off skips hook installation entirely, matching
+/// the mission-bound variant's behaviour.
+pub async fn create_local_worktree_for_issue(
+    base: &str,
+    attempt_id: &str,
+    base_branch: &str,
+    issue: WorktreeIssue,
+) -> Result<String, String> {
+    let path = worktree_path(base, attempt_id);
+    let branch = branch_name(attempt_id);
+
+    if std::path::Path::new(&path).exists() {
+        info!(path = %path, issue = %issue.issue_id, "Issue worktree already exists, reusing");
+        if let Err(e) = install_prepare_commit_msg_hook_for_issue(&path, &issue).await {
+            warn!(
+                path = %path,
+                issue = %issue.issue_id,
+                error = %e,
+                "Failed to install issue prepare-commit-msg hook on existing worktree (non-fatal)",
+            );
+        }
+        return Ok(path);
+    }
+
+    let (_, stderr, code) = run_local_git(
+        base,
+        &["worktree", "add", "-b", &branch, &path, base_branch],
+    )
+    .await?;
+    if code != 0 {
+        return Err(format!(
+            "git worktree add failed (exit {}): {}",
+            code,
+            stderr.trim()
+        ));
+    }
+    info!(path = %path, branch = %branch, issue = %issue.issue_id, "Created local issue worktree");
+
+    if let Err(e) = install_prepare_commit_msg_hook_for_issue(&path, &issue).await {
+        warn!(
+            path = %path,
+            issue = %issue.issue_id,
+            error = %e,
+            "Failed to install issue prepare-commit-msg hook (non-fatal)",
+        );
     }
 
     Ok(path)
@@ -310,6 +386,119 @@ async fn install_prepare_commit_msg_hook(
         flight = %flight_id_safe,
         attempt = %attempt_id_safe,
         "Installed prepare-commit-msg auto-trailer hook",
+    );
+    Ok(())
+}
+
+/// v0.8.5: write a `prepare-commit-msg` hook inside an Issue-bound
+/// worktree that appends two trailers to every commit message:
+///
+///   `Fixes #{issue_number}`
+///   `Run-By: PacketADE issue I-{issue_id}`
+///
+/// Idempotent: if the commit message already contains either trailer
+/// (e.g. the user typed `Fixes #N` themselves or a previous commit was
+/// being amended), the hook detects it via a POSIX `case` match and
+/// skips writing the duplicate. This means a user who manually wrote
+/// `Fixes #42` will see exactly one `Fixes #42` line, not two.
+///
+/// Behaviour respects `OrchestratorSettings.auto_commit_trailer_enabled`
+/// — turning the toggle off skips hook installation entirely. The
+/// trailer format is fixed (not `auto_commit_trailer_format`) because
+/// the v0.8.5 close-loop watcher needs to parse a stable `Fixes #N`
+/// pattern; allowing arbitrary format strings would break the watcher.
+async fn install_prepare_commit_msg_hook_for_issue(
+    worktree_path: &str,
+    issue: &WorktreeIssue,
+) -> Result<(), String> {
+    let settings = tokio::task::spawn_blocking(|| crate::core::storage::load_state().settings)
+        .await
+        .map_err(|e| format!("settings load join error: {}", e))?;
+
+    if !settings.auto_commit_trailer_enabled {
+        info!(path = %worktree_path, "Auto-trailer disabled in settings; skipping issue hook install");
+        return Ok(());
+    }
+
+    let (stdout, _, code) =
+        run_local_git(worktree_path, &["rev-parse", "--git-path", "hooks"]).await?;
+    if code != 0 {
+        return Err(format!(
+            "git rev-parse --git-path hooks failed (exit {})",
+            code
+        ));
+    }
+    let rel = stdout.trim();
+    if rel.is_empty() {
+        return Err("git rev-parse returned empty hooks path".to_string());
+    }
+    let hooks_dir = if std::path::Path::new(rel).is_absolute() {
+        std::path::PathBuf::from(rel)
+    } else {
+        std::path::PathBuf::from(worktree_path).join(rel)
+    };
+
+    if let Err(e) = std::fs::create_dir_all(&hooks_dir) {
+        return Err(format!("create_dir_all({:?}) failed: {}", hooks_dir, e));
+    }
+
+    let hook_path = hooks_dir.join("prepare-commit-msg");
+
+    let issue_id_safe = sanitize_trailer_value(&issue.issue_id);
+    let issue_title_safe = sanitize_trailer_value(&issue.issue_title);
+    let issue_number = issue.issue_number;
+
+    let fixes_trailer = format!("Fixes #{}", issue_number);
+    let run_by_trailer = format!("Run-By: PacketADE issue I-{}", issue_id_safe);
+
+    // Hook script. Two idempotency checks via `case` glob:
+    //   - skip the `Fixes #N` write if the message already contains it
+    //     (word-boundary anchored via grep -E so `Fixes #4` doesn't match
+    //     a pre-existing `Fixes #42`)
+    //   - skip the `Run-By` write if any existing `Run-By: PacketADE` line
+    //     is present (so amended commits don't stack lineage trailers)
+    //
+    // Single-quoted printf literals — `$` / backticks inside the
+    // sanitized values are already neutralised by sanitize_trailer_value().
+    let _title_unused = &issue_title_safe; // reserved for a future "Issue: <title>" comment line; not emitted today
+    let script = format!(
+        "#!/bin/sh\n\
+         # PacketADE auto-trailer (issue v0.8.5) — appended to commits made inside this issue worktree.\n\
+         FILE=\"$1\"\n\
+         MSG=$(cat \"$FILE\")\n\
+         if ! printf '%s' \"$MSG\" | grep -Eq '(^|[^0-9])Fixes #{number}([^0-9]|$)'; then\n\
+           printf '\\n%s\\n' '{fixes}' >> \"$FILE\"\n\
+         fi\n\
+         case \"$MSG\" in\n\
+           *\"Run-By: PacketADE\"*) ;;\n\
+           *) printf '%s\\n' '{run_by}' >> \"$FILE\" ;;\n\
+         esac\n",
+        number = issue_number,
+        fixes = fixes_trailer,
+        run_by = run_by_trailer,
+    );
+
+    if let Err(e) = std::fs::write(&hook_path, script) {
+        return Err(format!("write {:?} failed: {}", hook_path, e));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&hook_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            if let Err(e) = std::fs::set_permissions(&hook_path, perms) {
+                warn!(path = ?hook_path, error = %e, "chmod +x on issue hook failed (non-fatal)");
+            }
+        }
+    }
+
+    info!(
+        path = ?hook_path,
+        issue = %issue_id_safe,
+        number = issue_number,
+        "Installed prepare-commit-msg auto-trailer hook (issue)",
     );
     Ok(())
 }
@@ -813,5 +1002,32 @@ mod tests {
     fn sanitize_trailer_value_strips_quotes_and_newlines() {
         assert_eq!(sanitize_trailer_value("foo'bar\nbaz"), "foo bar baz");
         assert_eq!(sanitize_trailer_value("  trimmed  "), "trimmed");
+    }
+
+    // --- v0.8.5 issue trailer ---
+
+    #[test]
+    fn worktree_issue_struct_holds_fields() {
+        let wi = WorktreeIssue {
+            issue_id: "abc123".to_string(),
+            issue_number: 42,
+            issue_title: "Fix the foo".to_string(),
+        };
+        assert_eq!(wi.issue_number, 42);
+        assert_eq!(wi.issue_id, "abc123");
+        assert_eq!(wi.issue_title, "Fix the foo");
+    }
+
+    #[test]
+    fn sanitize_trailer_value_neutralises_quote_smuggling_attempts() {
+        // The hook script wraps trailer values in single-quoted printf
+        // literals; the sanitiser must strip both quote characters and
+        // control bytes so an issue title can't smuggle extra trailer
+        // lines into the commit message.
+        let attack = "foo'\n\rRun-By: evil";
+        let cleaned = sanitize_trailer_value(attack);
+        assert!(!cleaned.contains('\''), "single-quote leaked: {:?}", cleaned);
+        assert!(!cleaned.contains('\n'), "newline leaked: {:?}", cleaned);
+        assert!(!cleaned.contains('\r'), "carriage return leaked: {:?}", cleaned);
     }
 }

@@ -3,6 +3,102 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.8.5] - 2026-05-16
+
+### Added — Issues pane rebuild (spec import + workspace close-loop)
+
+Repositions the Issues pane as a fourth user mode: **AI-structured intake →
+human-orchestrated CLI agents in Workspace panes**. Complements Missions
+(autonomous) and Agents (free-form chat).
+
+#### Spec import
+- New `issues_extract_from_spec` Tauri command (one-shot Claude OAuth
+  sidecar session) reads a pasted spec / PRD / design doc and returns
+  structured Issue drafts: title + body + labels + acceptance criteria +
+  suggested epic.
+- New `SpecImportModal` (2-stage: paste → review-and-accept). Each draft
+  is inline-editable, individually selectable. Submit creates Issues with
+  a shared `specImportBatchId` so they're grouped semantically.
+- Spec-imported Issues land in the new **Backlog** column.
+- Prompt module: `src-tauri/src/core/issue_ai_prompts.rs` with explicit
+  anti-injection envelope on the user-supplied spec.
+
+#### Send to Workspace (and the close-loop)
+- New `sendIssueToWorkspace` orchestrator action:
+  1. Provisions an Issue-bound worktree via the new
+     `create_issue_worktree` Tauri command.
+  2. Installs a `prepare-commit-msg` hook in that worktree that
+     idempotently appends `Fixes #{n}` and `Run-By: PacketADE issue
+     I-{id}` trailers to every commit made inside.
+  3. Spins up a workspace (one `claude-code` pane) at the worktree path
+     and seeds the conversation with the Issue title + body + acceptance
+     criteria.
+  4. Stamps `workspaceId`, `sessionId`, `sentToWorkspaceAt` on the Issue,
+     flips status to `in_progress`, switches view.
+- Per-card "Send to Workspace" CTA; linked Issues show a "→ Workspace"
+  pill that jumps to the worktree pane.
+- Graceful fallback: if worktree provisioning fails (uncommitted
+  changes, branch conflict, non-git project), the workspace still opens
+  in the bare project path — only the auto-Done leg is lost for that
+  session.
+
+#### Auto-Done on Fixes-#N trailer
+- `git_commit` Tauri command now parses commit-message trailers via a
+  word-boundary-anchored regex. Recognises `Fixes`/`Closes`/`Resolves`,
+  case-insensitive, start-of-line only, optional colon, rejects
+  `#42foo`, dedupes, multiple trailers per message all parse.
+- Emits `issue-watcher:fixed` events with `{issueId, ticketId,
+  issueNumber, commitSha, commitSubject}` payload.
+- Frontend listener auto-flips matching Issue to `done` and appends a
+  system audit comment `Auto-closed by commit {sha7}: {commit_subject}`.
+
+#### Frontend ↔ backend persistence sync
+- Every issueStore mutation now funnels through a `saveState` chokepoint
+  that writes both the localStorage fast cache AND the Rust
+  `PersistedState.issues` via the existing `save_issues_slice` command.
+  Without this, the trailer parser couldn't resolve `#N` to an Issue.
+
+#### CommitModal Issue-aware autofill
+- When the active workspace is bound to an Issue, the CommitModal opens
+  with `Fixes #{n}\n\n` pre-seeded in the message textarea and a "🔗
+  Linked to Issue #N: {title}" hint above. One-shot per open — never
+  overwrites typing. Caret placed after the seeded line.
+
+#### IssueDetail + filters + smarter columns
+- New `IssueDetail` modal: markdown body, acceptance-criteria checklist,
+  assignee inline editor, dependency lists, linked workspace pill, full
+  status grid, inline comment thread + composer.
+- New `IssueCommentList` + `IssueCommentComposer` — markdown body,
+  hover-delete, no Ctrl+Enter (mirroring CommitModal).
+- New `IssueFilterChips` — multi-select popovers for Label / Epic /
+  Workspace / Assignee with type-ahead filter when >6 options.
+- Five-column board: **Backlog / Up Next / In Progress / In Review /
+  Done**. Legacy status enum values roll up so nothing falls off.
+  Display-only In Review override for Issues whose linked Flight has a
+  draft PR.
+
+#### Process
+- 4 parallel implementation agents (spec import / Send to Workspace /
+  Fixes-#N watcher / IssueDetail polish) → 2-agent peer review (spec/UX
+  + correctness) → 2 fix agents addressing two P0s:
+  1. `sendIssueToWorkspace` didn't invoke the worktree provisioner, so
+     the auto-Done loop was dead end-to-end. Wired via new Tauri
+     command + frontend integration.
+  2. `issueStore` never synced to `PersistedState.issues`, so the
+     trailer parser had no data to match against. Wired via debounced
+     `save_issues_slice` calls on every mutation.
+- Plus inline fixes: hook idempotency regex tightened (was substring
+  matching, would have collided `Fixes #4` with `Fixes #42`), spec
+  import default status moved from `todo` → `backlog`, IssueDetail
+  parallel handoff paths now route through `sendIssueToWorkspace` so
+  linkage is recorded consistently.
+
+### Deferred
+- No "from spec import on {date}" badge yet — `specImportBatchId` is
+  stamped but not surfaced visually.
+- IssueDetail still exposes all 9 legacy `IssueStatus` values in the
+  status grid; could prune to the v0.8.5 5-column set.
+
 ## [0.8.3] - 2026-05-16
 
 ### Added — CLI catalog grid (Settings > Agents)

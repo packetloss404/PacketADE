@@ -22,8 +22,11 @@ export const FLIGHT_PRIORITY_COLORS: Record<FlightPriority, string> = {
 };
 
 export const ISSUE_STATUS_COLORS: Record<IssueStatus, string> = {
+  backlog: "bg-text-faint",
+  up_next: "bg-accent-cyan",
   todo: "bg-text-muted",
   in_progress: "bg-accent-blue",
+  in_review: "bg-accent-purple",
   qa: "bg-accent-purple",
   done: "bg-accent-green",
   blocked: "bg-accent-red",
@@ -31,8 +34,11 @@ export const ISSUE_STATUS_COLORS: Record<IssueStatus, string> = {
 };
 
 export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
+  backlog: "Backlog",
+  up_next: "Up Next",
   todo: "To Do",
   in_progress: "In Progress",
+  in_review: "In Review",
   qa: "QA",
   done: "Done",
   blocked: "Blocked",

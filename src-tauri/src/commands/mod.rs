@@ -21,6 +21,8 @@ pub mod github;
 pub mod history;
 pub mod ideation;
 pub mod insights;
+// v0.8.5 — issues spec import.
+pub mod issues;
 pub mod mcp;
 pub mod memory;
 pub mod mission_planner;

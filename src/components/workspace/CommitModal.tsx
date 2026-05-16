@@ -1,13 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GitCommit, Check } from "lucide-react";
+import { GitCommit, Check, Link2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { gitCommit } from "@/lib/tauri";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useIssueStore } from "@/stores/issueStore";
 
 interface CommitModalProps {
   open: boolean;
   onClose: () => void;
   projectPath: string;
   onCommitted?: (sha?: string) => void;
+}
+
+/**
+ * v0.8.5 (CRITICAL FIX 2): pull the trailing numeric suffix off a ticket
+ * id like `"PKT-042"` → `42`. Returns `null` if the suffix isn't a number
+ * — callers should fall back to skipping the autofill in that case.
+ */
+function extractTicketNumber(ticketId: string): number | null {
+  const m = ticketId.match(/(\d+)$/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -25,6 +39,52 @@ export function CommitModal({ open, onClose, projectPath, onCommitted }: CommitM
   const [committedSha, setCommittedSha] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // v0.8.5 (CRITICAL FIX 2): if the active workspace is bound to an Issue,
+  // auto-seed the commit message with a `Fixes #N` trailer so the Rust
+  // `git_commit` → `emit_fixes_events` chain can close the Issue. Reverse
+  // lookup: an Issue whose `workspaceId` points at the active workspace.
+  // We resolve the workspace by `projectPath` first (the modal's prop is
+  // the authoritative project context) and fall back to `activeWorkspaceId`
+  // for the case where the user has switched away from the linked
+  // workspace but is still committing in the same project tree.
+  //
+  // Edge case: multiple Issues linked to the same workspace — we pick the
+  // smallest ticket number deterministically.
+  //
+  // Implementation note: we subscribe to the raw `issues` + `workspaces`
+  // arrays with plain selectors and derive the linked issue via `useMemo`,
+  // rather than returning a fresh object from a single selector. Zustand
+  // uses ref equality by default, so a selector returning a new object
+  // per render would re-render forever.
+  const issues = useIssueStore((s) => s.issues);
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+
+  const linkedIssue = useMemo(() => {
+    if (!open) return null;
+    const matchingWs = workspaces.find(
+      (w) =>
+        w.status === "active" &&
+        !w.serverId && // remote workspaces don't drive local commits
+        w.projectPath === projectPath,
+    );
+    const wsId = matchingWs?.id ?? activeWorkspaceId ?? null;
+    if (!wsId) return null;
+    const candidates = issues
+      .filter((i) => i.workspaceId === wsId && i.status !== "done")
+      .map((i) => ({ issue: i, num: extractTicketNumber(i.ticketId) }))
+      .filter((c): c is { issue: typeof c.issue; num: number } => c.num !== null)
+      .sort((a, b) => a.num - b.num);
+    return candidates[0] ?? null;
+  }, [open, projectPath, issues, workspaces, activeWorkspaceId]);
+
+  // v0.8.5 (CRITICAL FIX 2): one-shot guard so the `Fixes #N` seed runs
+  // exactly once per modal open. Without this the seed effect would
+  // re-fire after we reset `message=""` on close, or after `linkedIssue`
+  // identity changes mid-edit (e.g. the user added an acceptance
+  // criterion in another pane while the modal was open).
+  const seededForOpenRef = useRef(false);
+
   // Reset local state when the modal closes so it opens fresh next time.
   useEffect(() => {
     if (!open) {
@@ -32,18 +92,43 @@ export function CommitModal({ open, onClose, projectPath, onCommitted }: CommitM
       setError(null);
       setCommittedSha(null);
       setBusy(false);
+      seededForOpenRef.current = false;
     }
   }, [open]);
 
-  // Auto-focus the textarea when the modal opens.
+  // v0.8.5 (CRITICAL FIX 2): seed the message with a `Fixes #N` trailer
+  // when the active workspace is bound to an Issue. Stamps once per
+  // modal open and never overwrites the user's typing. Seeds at the TOP
+  // of the textarea with a blank line below; the user types their
+  // subject + body underneath.
   useEffect(() => {
-    if (open) {
-      // Defer focus until after Modal mounts.
-      const handle = window.setTimeout(() => {
-        textareaRef.current?.focus();
-      }, 0);
-      return () => window.clearTimeout(handle);
-    }
+    if (!open) return;
+    if (seededForOpenRef.current) return;
+    if (!linkedIssue) return;
+    seededForOpenRef.current = true;
+    setMessage((prev) => (prev.length > 0 ? prev : `Fixes #${linkedIssue.num}\n\n`));
+  }, [open, linkedIssue]);
+
+  // Auto-focus the textarea when the modal opens. Place the caret at the
+  // END of the textarea so the user can immediately start typing AFTER
+  // the `Fixes #N` line (rather than overwriting it). Re-fires only on
+  // open transitions — not on every keystroke.
+  useEffect(() => {
+    if (!open) return;
+    // Defer focus until after Modal mounts AND the seed effect has run.
+    const handle = window.setTimeout(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      const end = el.value.length;
+      try {
+        el.setSelectionRange(end, end);
+      } catch {
+        // jsdom-style hosts where setSelectionRange isn't implemented
+        // — focus alone is enough.
+      }
+    }, 0);
+    return () => window.clearTimeout(handle);
   }, [open]);
 
   const projectBasename = useMemo(() => {
@@ -153,6 +238,18 @@ export function CommitModal({ open, onClose, projectPath, onCommitted }: CommitM
           <label className="text-[10px] text-text-muted uppercase tracking-wider">
             Message
           </label>
+          {linkedIssue && (
+            <div
+              className="flex items-center gap-1.5 text-[10px] text-text-muted"
+              title={`This commit will auto-close ${linkedIssue.issue.ticketId} when it lands.`}
+            >
+              <Link2 size={10} className="text-accent-blue/70 shrink-0" />
+              <span className="truncate">
+                Linked to Issue #{linkedIssue.num}:{" "}
+                <span className="text-text-secondary">{linkedIssue.issue.title}</span>
+              </span>
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={message}

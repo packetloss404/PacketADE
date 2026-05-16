@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Search, Github } from "lucide-react";
+import { Plus, Search, Sparkles } from "lucide-react";
 import {
   useIssueStore,
   type Issue,
@@ -7,31 +7,104 @@ import {
 } from "@/stores/issueStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useLayoutStore } from "@/stores/layoutStore";
 import { APP_NAME_LOWER } from "@/lib/brand";
 import { IssueCard } from "./IssueCard";
 import { NewIssueForm } from "./NewIssueForm";
-import { IssueDetailView } from "./IssueDetailView";
-import { SpecImportModal } from "@/components/views/SpecImportModal";
+import { IssueDetail } from "./IssueDetail";
+import {
+  IssueFilterChips,
+  type IssueFilterSelection,
+} from "./IssueFilterChips";
+// v0.8.5 — spec → issues import. Sibling component so we don't take a
+// hard dependency on the views/ tree.
+import { SpecImportModal } from "./SpecImportModal";
 
-const DESIGN_COLUMNS: { key: IssueStatus; label: string }[] = [
-  { key: "todo", label: "To Do" },
-  { key: "in_progress", label: "In Progress" },
-  { key: "qa", label: "QA" },
-  { key: "needs_human", label: "Needs Human" },
-  { key: "done", label: "Done" },
+/**
+ * v0.8.5: Kanban columns.
+ *
+ * Five user-facing columns, each backed by one or more `IssueStatus` values:
+ *
+ *   Backlog     — `backlog`
+ *   Up Next     — `up_next` + legacy `todo`
+ *   In Progress — `in_progress`
+ *   In Review   — `in_review` (manual) OR display-only auto-promote when a
+ *                 linked Flight has an attempt with a draft PR open
+ *   Done        — `done`
+ *
+ * Statuses `qa`, `blocked`, and `needs_human` are still valid lifecycle
+ * states (and editable from `IssueDetail`), but they don't have a dedicated
+ * column in this board — they're rolled into the closest semantic column
+ * (`qa` -> In Review, `blocked`/`needs_human` -> In Progress) so nothing
+ * disappears off the board.
+ */
+interface BoardColumn {
+  key: string;
+  label: string;
+  /** Statuses that belong to this column. */
+  statuses: IssueStatus[];
+  /** Target status when an issue is dropped on this column. */
+  dropTarget: IssueStatus;
+}
+
+const BOARD_COLUMNS: BoardColumn[] = [
+  { key: "backlog", label: "Backlog", statuses: ["backlog"], dropTarget: "backlog" },
+  { key: "up_next", label: "Up Next", statuses: ["up_next", "todo"], dropTarget: "up_next" },
+  {
+    key: "in_progress",
+    label: "In Progress",
+    statuses: ["in_progress", "blocked", "needs_human"],
+    dropTarget: "in_progress",
+  },
+  { key: "in_review", label: "In Review", statuses: ["in_review", "qa"], dropTarget: "in_review" },
+  { key: "done", label: "Done", statuses: ["done"], dropTarget: "done" },
 ];
+
+const EMPTY_FILTERS: IssueFilterSelection = {
+  labels: [],
+  epics: [],
+  workspaces: [],
+  assignees: [],
+};
+
+/**
+ * Map every IssueStatus to a board column key. Statuses not listed above
+ * fall back to Backlog so we never lose an Issue. Computed once.
+ */
+const STATUS_TO_COLUMN: Record<IssueStatus, string> = (() => {
+  const map: Partial<Record<IssueStatus, string>> = {};
+  for (const col of BOARD_COLUMNS) {
+    for (const s of col.statuses) map[s] = col.key;
+  }
+  // Ensure exhaustive coverage at compile time by listing the union explicitly.
+  const all: IssueStatus[] = [
+    "backlog",
+    "up_next",
+    "todo",
+    "in_progress",
+    "in_review",
+    "qa",
+    "done",
+    "blocked",
+    "needs_human",
+  ];
+  for (const s of all) if (!map[s]) map[s] = "backlog";
+  return map as Record<IssueStatus, string>;
+})();
 
 export function IssueBoard() {
   const issues = useIssueStore((s) => s.issues);
   const labels = useIssueStore((s) => s.labels);
+  const epics = useIssueStore((s) => s.epics);
   const moveIssue = useIssueStore((s) => s.moveIssue);
   const flights = useFlightStore((s) => s.flights);
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspace = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === s.activeWorkspaceId));
 
   const [showNewIssue, setShowNewIssue] = useState(false);
   const [showSpecImport, setShowSpecImport] = useState(false);
-  const [newIssueColumn, setNewIssueColumn] = useState<IssueStatus>("todo");
-  const [dragOverColumn, setDragOverColumn] = useState<IssueStatus | null>(null);
+  const [newIssueColumn, setNewIssueColumn] = useState<IssueStatus>("up_next");
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 
@@ -39,8 +112,34 @@ export function IssueBoard() {
   const [filterFlight, setFilterFlight] = useState<string>("all");
   const [filterLabel, setFilterLabel] = useState<string>("all");
 
+  // v0.8.5 chip filter state (local, not persisted).
+  const [chipFilters, setChipFilters] = useState<IssueFilterSelection>(EMPTY_FILTERS);
+
+  // Build the option set for chip filters.
+  // Workspaces: only those with at least one linked Issue (per spec).
+  const workspaceOptions = useMemo(() => {
+    const linkedIds = new Set(
+      issues
+        .map((i) => i.workspaceId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    );
+    return workspaces
+      .filter((w) => linkedIds.has(w.id))
+      .map((w) => ({ id: w.id, name: w.name }));
+  }, [issues, workspaces]);
+
+  // Assignees: distinct non-empty values pulled from current issues.
+  const assigneeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of issues) {
+      if (i.assignee && i.assignee.trim().length > 0) set.add(i.assignee);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [issues]);
+
   const filteredIssues = useMemo(() => {
     return issues.filter((issue) => {
+      // Free-text filter (toolbar, owned by Agent A — preserve behaviour).
       if (filterText) {
         const q = filterText.toLowerCase();
         const labelMatch = issue.labels.some((l) => l.toLowerCase().includes(q));
@@ -59,12 +158,43 @@ export function IssueBoard() {
       if (filterLabel !== "all" && !issue.labels.includes(filterLabel)) return false;
       if (filterFlight === "unassigned" && issue.flightId !== null) return false;
       if (filterFlight !== "all" && filterFlight !== "unassigned" && issue.flightId !== filterFlight) return false;
+
+      // Chip filters (v0.8.5): within each category OR, across categories AND.
+      if (chipFilters.labels.length > 0) {
+        const hit = chipFilters.labels.some((l) => issue.labels.includes(l));
+        if (!hit) return false;
+      }
+      if (chipFilters.epics.length > 0) {
+        if (!issue.epic || !chipFilters.epics.includes(issue.epic)) return false;
+      }
+      if (chipFilters.workspaces.length > 0) {
+        if (!issue.workspaceId || !chipFilters.workspaces.includes(issue.workspaceId)) return false;
+      }
+      if (chipFilters.assignees.length > 0) {
+        if (!issue.assignee || !chipFilters.assignees.includes(issue.assignee)) return false;
+      }
       return true;
     });
-  }, [issues, flights, filterText, filterFlight, filterLabel]);
+  }, [issues, flights, filterText, filterFlight, filterLabel, chipFilters]);
 
   const totalIssues = filteredIssues.length;
   const projectName = activeWorkspace?.name ?? APP_NAME_LOWER;
+
+  /**
+   * Display-only column override: an Issue with a linked Flight whose
+   * attempts have a draft PR is shown in "In Review" regardless of its
+   * stored status. We never mutate `issue.status` from here — moving the
+   * card explicitly via drag still updates the underlying status.
+   */
+  function effectiveColumnKey(issue: Issue): string {
+    if (issue.flightId) {
+      const flight = flights.find((f) => f.id === issue.flightId);
+      if (flight?.attempts?.some((a) => typeof a.draftPrNumber === "number")) {
+        return "in_review";
+      }
+    }
+    return STATUS_TO_COLUMN[issue.status] ?? "backlog";
+  }
 
   function handleDragStart(e: React.DragEvent, issueId: string) {
     e.dataTransfer.setData("text/plain", issueId);
@@ -77,7 +207,7 @@ export function IssueBoard() {
     setDragOverColumn(null);
   }
 
-  function handleDragOver(e: React.DragEvent, columnKey: IssueStatus) {
+  function handleDragOver(e: React.DragEvent, columnKey: string) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setDragOverColumn(columnKey);
@@ -87,22 +217,23 @@ export function IssueBoard() {
     setDragOverColumn(null);
   }
 
-  function handleDrop(e: React.DragEvent, columnKey: IssueStatus) {
+  function handleDrop(e: React.DragEvent, target: IssueStatus) {
     e.preventDefault();
     const issueId = e.dataTransfer.getData("text/plain");
     if (issueId) {
-      moveIssue(issueId, columnKey);
+      moveIssue(issueId, target);
     }
     setDragOverColumn(null);
     setDraggingId(null);
   }
 
-  function getIssuesForColumn(status: IssueStatus): Issue[] {
-    return filteredIssues.filter((i) => i.status === status);
+  function getIssuesForColumn(colKey: string): Issue[] {
+    return filteredIssues.filter((i) => effectiveColumnKey(i) === colKey);
   }
 
   return (
     <div className="flex flex-1 flex-col gap-2.5 bg-bg-primary p-3 min-h-0 h-full">
+      {/* Toolbar — owned by Agent A. Do not modify in this slice. */}
       <div className="flex items-center gap-2">
         <span className="text-[13px] font-semibold text-text-primary">
           Backlog &middot; {projectName}
@@ -142,16 +273,19 @@ export function IssueBoard() {
             <option key={f.id} value={f.id}>{f.title}</option>
           ))}
         </select>
+        {/* v0.8.5 — Import spec button. Opens SpecImportModal, which mounts
+            a one-shot claude-oauth sidecar session to break a pasted spec
+            into Issue tickets. */}
         <button
           onClick={() => setShowSpecImport(true)}
           className="inline-flex items-center gap-1.5 rounded-md border border-bg-border bg-bg-secondary px-2 py-1 text-[11px] text-text-secondary transition-colors hover:border-line-strong hover:text-text-primary"
         >
-          <Github size={11} />
-          Sync GitHub
+          <Sparkles size={11} />
+          Import spec
         </button>
         <button
           onClick={() => {
-            setNewIssueColumn("todo");
+            setNewIssueColumn("up_next");
             setShowNewIssue(true);
           }}
           className="inline-flex items-center gap-1.5 rounded-md border border-accent-line bg-accent-soft px-2 py-1 text-[11px] font-medium text-accent-green transition-colors hover:bg-accent-green/20"
@@ -161,8 +295,23 @@ export function IssueBoard() {
         </button>
       </div>
 
+      {/* v0.8.5: filter chips strip — multi-select chip filters that compose
+          with (logical AND) the toolbar's text/label/flight selects above. */}
+      <IssueFilterChips
+        labels={labels}
+        epics={epics}
+        workspaces={workspaceOptions}
+        assignees={assigneeOptions}
+        selection={chipFilters}
+        onChange={setChipFilters}
+      />
+
+      {/* v0.8.5: five Kanban columns (Backlog / Up Next / In Progress /
+          In Review / Done). Statuses that aren't first-class columns
+          (qa/blocked/needs_human) roll up into the nearest column so
+          nothing falls off the board. */}
       <div className="grid flex-1 grid-cols-5 gap-2.5 min-h-0">
-        {DESIGN_COLUMNS.map((col) => {
+        {BOARD_COLUMNS.map((col) => {
           const columnIssues = getIssuesForColumn(col.key);
           const isDragOver = dragOverColumn === col.key;
 
@@ -174,7 +323,7 @@ export function IssueBoard() {
               }`}
               onDragOver={(e) => handleDragOver(e, col.key)}
               onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, col.key)}
+              onDrop={(e) => handleDrop(e, col.dropTarget)}
               onDragEnd={handleDragEnd}
             >
               <div className="flex items-center gap-1.5 border-b border-line-soft bg-bg-secondary px-2.5 py-2">
@@ -187,7 +336,7 @@ export function IssueBoard() {
                 <div className="flex-1" />
                 <button
                   onClick={() => {
-                    setNewIssueColumn(col.key);
+                    setNewIssueColumn(col.dropTarget);
                     setShowNewIssue(true);
                   }}
                   className="text-text-faint transition-colors hover:text-text-secondary"
@@ -211,7 +360,7 @@ export function IssueBoard() {
                 ))}
                 <button
                   onClick={() => {
-                    setNewIssueColumn(col.key);
+                    setNewIssueColumn(col.dropTarget);
                     setShowNewIssue(true);
                   }}
                   className="inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed border-line-strong bg-transparent px-2 py-1.5 text-[11px] text-text-faint transition-colors hover:border-text-muted hover:text-text-muted"
@@ -233,15 +382,26 @@ export function IssueBoard() {
       )}
 
       {selectedIssueId && (
-        <IssueDetailView
+        <IssueDetail
           issueId={selectedIssueId}
           onClose={() => setSelectedIssueId(null)}
         />
       )}
 
-      {showSpecImport && (
-        <SpecImportModal onClose={() => setShowSpecImport(false)} />
-      )}
+      {/* v0.8.5 — Spec import modal. Wired in the toolbar above. We pull
+          the project path from the active workspace first (mirrors the
+          send-to-workspace logic in `issueStore.sendIssueToWorkspace`) and
+          fall back to `layoutStore.projectPath`. The modal short-circuits
+          rendering when `open` is false so the mount can stay live. */}
+      <SpecImportModal
+        open={showSpecImport}
+        onClose={() => setShowSpecImport(false)}
+        projectPath={
+          activeWorkspace?.projectPath ||
+          useLayoutStore.getState().projectPath ||
+          ""
+        }
+      />
     </div>
   );
 }

@@ -193,6 +193,8 @@ pub fn run() {
             commands::git::git_safety_check,
             commands::git::create_conversation_worktree,
             commands::git::remove_conversation_worktree,
+            // v0.8.5 fix: issue worktree wiring
+            commands::git::create_issue_worktree,
             commands::agents_md::resolve_agents_md,
             // Code quality
             commands::code_quality::analyze_code_quality,
@@ -251,6 +253,8 @@ pub fn run() {
             // Spec parsing
             commands::spec::parse_spec_to_flight,
             commands::spec::parse_spec_to_tickets,
+            // v0.8.5 issues spec import
+            commands::issues::issues_extract_from_spec,
             // Agent-chat side panel streaming (was Insights; Insights folded into
             // the Agents pane via the Scout profile).
             commands::insights::ask_agent_chat_stream,

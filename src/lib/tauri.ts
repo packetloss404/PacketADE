@@ -10,6 +10,7 @@ import type {
 } from "@/generated/tauri-schema";
 import type { AgentConfig } from "@/types/agent";
 import type { Attempt, Flight, Milestone, ReviewType, Task, TaskResult } from "@/types/flight";
+import type { Issue } from "@/stores/issueStore";
 import type { StatusLineData, CodexStatusLineData, GeminiStatusLineData, OpenCodeStatusLineData } from "@/types/statusline";
 import type { Workspace } from "@/types/workspace";
 import type { MemoryEvent, LearnedPattern } from "@/types/memory";
@@ -234,6 +235,27 @@ export async function cloneRepoRemote(args: {
   });
 }
 
+/**
+ * Commit staged changes in `projectPath` with the given message.
+ *
+ * v0.8.5 — close-loop side effect: after the commit succeeds, the Rust
+ * side re-reads the final HEAD commit message (so any
+ * prepare-commit-msg auto-trailers are included) and scans it for
+ * `Fixes #N` / `Closes #N` / `Resolves #N` trailers. When a trailer
+ * resolves to a known local Issue (matched by the numeric tail of its
+ * `ticketId`), the backend emits an `issue-watcher:fixed` Tauri event
+ * with the shape:
+ *
+ * ```
+ * { issueId, ticketId, issueNumber, commitSha, commitSubject }
+ * ```
+ *
+ * The frontend listener in `issueStore.ts` consumes this and flips the
+ * Issue to `done` (plus a system audit comment). External commits made
+ * directly via the terminal bypass this path; the trailer-installed
+ * worktree hook still appends `Fixes #N` to them, but only commits made
+ * through `gitCommit` trigger the synchronous watcher.
+ */
 export async function gitCommit(
   projectPath: string,
   message: string,
@@ -292,6 +314,29 @@ export async function removeConversationWorktree(
   convId: string,
 ): Promise<void> {
   return invoke("remove_conversation_worktree", { projectPath, convId });
+}
+
+/**
+ * v0.8.5 fix: provision a git worktree bound to a specific Issue. The
+ * Rust side installs a `prepare-commit-msg` hook that appends
+ * `Fixes #{issueNumber}` and `Run-By: PacketADE issue I-{issueId}` to
+ * every commit, so the `git_commit` watcher can flip the matching
+ * Issue to `done` via the `issue-watcher:fixed` event. Returns the
+ * absolute worktree path the workspace should use as its
+ * `projectPath`. Idempotent.
+ */
+export async function createIssueWorktree(
+  issueId: string,
+  issueNumber: number,
+  issueTitle: string,
+  projectPath: string,
+): Promise<string> {
+  return invoke<string>("create_issue_worktree", {
+    issueId,
+    issueNumber,
+    issueTitle,
+    projectPath,
+  });
 }
 
 /**
@@ -1130,6 +1175,45 @@ export async function saveWorkspacesSlice(workspaces: Workspace[]): Promise<void
   return invoke("save_workspaces_slice", { workspaces: workspaces.map(toDtoWorkspace) });
 }
 
+/**
+ * v0.8.5 (CRITICAL FIX 2): mirror the local `issueStore` array into the Rust
+ * `PersistedState.issues` slice. The Rust `git_commit` command's
+ * `emit_fixes_events` helper resolves `Fixes #N` trailers against
+ * `load_state().issues` to find the matching local Issue by ticket-id
+ * suffix; before this binding existed the slice was always empty/stale and
+ * the auto-Done event listener never fired.
+ *
+ * The Rust `core::flight::Issue` struct uses snake_case field names without
+ * a `#[serde(rename_all)]`, so the payload must use those names verbatim.
+ * Frontend-only fields (`comments`, `assignee`, `workspaceId`,
+ * `sentToWorkspaceAt`, `specImportBatchId`) are dropped — they have no
+ * backend counterpart and aren't needed for the `Fixes #N` lookup.
+ */
+export async function saveIssuesSlice(issues: Issue[]): Promise<void> {
+  const payload = issues.map((i) => ({
+    id: i.id,
+    ticket_id: i.ticketId,
+    title: i.title,
+    description: i.description,
+    status: i.status,
+    priority: i.priority,
+    labels: i.labels,
+    epic: i.epic,
+    session_id: i.sessionId ?? null,
+    flight_id: i.flightId,
+    acceptance_criteria: i.acceptanceCriteria.map((c) => ({
+      id: c.id,
+      text: c.text,
+      checked: c.checked,
+    })),
+    blocked_by: i.blockedBy,
+    blocks: i.blocks,
+    created_at: i.createdAt,
+    updated_at: i.updatedAt,
+  }));
+  return invoke("save_issues_slice", { issues: payload });
+}
+
 export async function saveSettingsSlice(settings: PersistedState["settings"]): Promise<void> {
   return invoke("save_settings_slice", { settings });
 }
@@ -1244,6 +1328,29 @@ export async function parseSpecToFlight(specText: string): Promise<string> {
 
 export async function parseSpecToTickets(specText: string): Promise<string> {
   return invoke<string>("parse_spec_to_tickets", { specText });
+}
+
+// v0.8.5 — Issues spec import.
+//
+// Mounts a one-shot `claude-oauth` sidecar session that breaks the pasted
+// spec into discrete issue drafts. Returns the parsed array directly; the
+// modal advances from paste → review on the resolved promise.
+export interface ExtractedIssueDraft {
+  title: string;
+  body: string;
+  labels?: string[];
+  acceptanceCriteria?: string[];
+  suggestedEpic?: string;
+}
+
+export async function issuesExtractFromSpec(
+  specText: string,
+  projectPath: string,
+): Promise<ExtractedIssueDraft[]> {
+  return invoke<ExtractedIssueDraft[]>("issues_extract_from_spec", {
+    specText,
+    projectPath,
+  });
 }
 
 export async function askAgentChatStream(
