@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { GitBranch, FolderOpen, Diamond, Wrench, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, LayoutGrid, DollarSign, BookOpen, Mic } from "lucide-react";
+import { FolderOpen, Diamond, Wrench, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, BookOpen, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
@@ -11,31 +11,27 @@ import { getModulesSorted } from "@/modules/registry";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useMosaicStore } from "@/stores/mosaicStore";
 import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
 import { PromptLibrary } from "@/components/workspace/PromptLibrary";
+import { NewFlightModal } from "@/components/flights/NewFlightModal";
+import { NewIssueForm } from "@/components/issues/NewIssueForm";
 import { gitCommit, gitPull, gitPush } from "@/lib/tauri";
-import type { MosaicLayoutPreset } from "@/types/mosaic";
-
-const LAYOUT_PRESETS: { preset: MosaicLayoutPreset; label: string; minPanes: number }[] = [
-  { preset: "1x1", label: "1×1", minPanes: 1 },
-  { preset: "1x2", label: "1×2", minPanes: 2 },
-  { preset: "2x1", label: "2×1", minPanes: 2 },
-  { preset: "2x2", label: "2×2", minPanes: 4 },
-  { preset: "2x3", label: "2×3", minPanes: 5 },
-  { preset: "3x2", label: "3×2", minPanes: 6 },
-];
 
 export function Toolbar() {
-  const projectPath = useLayoutStore((s) => s.projectPath);
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
   const gitBranch = useGitInfo();
   const [showCodeQuality, setShowCodeQuality] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [showNewMenu, setShowNewMenu] = useState(false);
+  const [showNewFlight, setShowNewFlight] = useState(false);
+  const [showNewIssue, setShowNewIssue] = useState(false);
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
+  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
+  const quickStartSession = useAppStore((s) => s.quickStartSession);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
+  const newMenuRef = useRef<HTMLDivElement>(null);
 
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
@@ -47,7 +43,6 @@ export function Toolbar() {
     return Boolean(ws?.serverId);
   });
 
-  const projectName = projectPath.split(/[/\\]/).pop() || "PacketADE";
   const enabledModules = getModulesSorted().filter((mod) => moduleStates[mod.id]?.enabled ?? false);
 
   // Close tools menu when clicking outside
@@ -62,6 +57,18 @@ export function Toolbar() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showToolsMenu]);
 
+  // Close "New" menu when clicking outside
+  useEffect(() => {
+    if (!showNewMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
+        setShowNewMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showNewMenu]);
+
   async function handleOpenFolder() {
     const selected = await open({
       directory: true,
@@ -75,10 +82,63 @@ export function Toolbar() {
 
   return (
     <div className="flex items-center h-9 px-3 bg-bg-secondary border-b border-bg-border gap-2">
-      <div className="flex-1" />
+      {/* Left section: search + global "New" dropdown */}
+      <div className="flex items-center gap-1">
+        {/* Ctrl+K Search chip — opens the command palette */}
+        <button
+          onClick={() => setCommandPaletteOpen(true)}
+          className="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-bg-secondary border border-bg-border text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-colors"
+          title="Search and navigate (Ctrl+K)"
+        >
+          <Search size={12} />
+          <span>Search</span>
+          <span className="text-[9px] text-text-muted bg-bg-elevated px-1 rounded font-mono">Ctrl+K</span>
+        </button>
 
-      {/* Pane layout presets (visible when a workspace is active) */}
-      <PaneLayoutControls />
+        {/* Global "+ New" dropdown */}
+        <div className="relative" ref={newMenuRef}>
+          <button
+            onClick={() => setShowNewMenu((v) => !v)}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs border border-bg-border transition-colors ${
+              showNewMenu
+                ? "bg-bg-elevated text-text-primary"
+                : "bg-bg-secondary text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
+            }`}
+            title="Create a new session, mission, or issue"
+          >
+            <Plus size={12} />
+            <span>New</span>
+            <ChevronDown size={10} className="text-text-muted" />
+          </button>
+
+          {showNewMenu && (
+            <div className="absolute top-full left-0 mt-1 w-52 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
+              <DropdownItem
+                icon={<Zap size={12} className="text-accent-green" />}
+                label="New Claude session"
+                onClick={() => { quickStartSession("claude"); setShowNewMenu(false); }}
+              />
+              <DropdownItem
+                icon={<Zap size={12} className="text-accent-blue" />}
+                label="New Codex session"
+                onClick={() => { quickStartSession("codex"); setShowNewMenu(false); }}
+              />
+              <DropdownItem
+                icon={<Target size={12} className="text-accent-green" />}
+                label="New Mission"
+                onClick={() => { setShowNewFlight(true); setShowNewMenu(false); }}
+              />
+              <DropdownItem
+                icon={<Ticket size={12} className="text-accent-amber" />}
+                label="New Issue"
+                onClick={() => { setShowNewIssue(true); setShowNewMenu(false); }}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1" />
 
       {/* Right section */}
       <div className="flex items-center gap-2">
@@ -130,20 +190,6 @@ export function Toolbar() {
           <span>Deploy</span>
         </button>
 
-        {/* Cost Dashboard button */}
-        <button
-          onClick={() => setActiveView("cost_dashboard")}
-          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
-            activeView === "cost_dashboard"
-              ? "bg-bg-elevated text-accent-green"
-              : "bg-bg-elevated text-text-secondary hover:text-accent-green"
-          }`}
-          title="Cost Dashboard — view API usage costs and spending trends."
-        >
-          <DollarSign size={12} className="text-accent-green" />
-          <span>Costs</span>
-        </button>
-
         {/* Prompt Library button */}
         <button
           onClick={() => setShowPromptLibrary(true)}
@@ -168,38 +214,44 @@ export function Toolbar() {
         </button>
 
         {/* Optional Tools (modules) dropdown — primary nav lives in LeftRail */}
-        {enabledModules.length > 0 && (
-          <div className="relative" ref={toolsMenuRef}>
-            <button
-              onClick={() => setShowToolsMenu(!showToolsMenu)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
-                isModuleView(activeView)
-                  ? "bg-bg-elevated text-accent-green"
-                  : "bg-bg-elevated text-text-secondary hover:text-accent-green"
-              }`}
-              title="Modules — open one of the optional tool modules."
-            >
-              <Wrench size={12} className="text-accent-green" />
-              <span>Modules</span>
-            </button>
+        {/* Dictation is intentionally filtered out here; it surfaces via the dedicated VT button,
+            the CommandPalette, and the StatusStrip indicator instead. */}
+        {(() => {
+          const toolbarModules = enabledModules.filter((mod) => mod.id !== "dictation");
+          if (toolbarModules.length === 0) return null;
+          return (
+            <div className="relative" ref={toolsMenuRef}>
+              <button
+                onClick={() => setShowToolsMenu(!showToolsMenu)}
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+                  isModuleView(activeView)
+                    ? "bg-bg-elevated text-accent-green"
+                    : "bg-bg-elevated text-text-secondary hover:text-accent-green"
+                }`}
+                title="Modules — open one of the optional tool modules."
+              >
+                <Wrench size={12} className="text-accent-green" />
+                <span>Modules</span>
+              </button>
 
-            {showToolsMenu && (
-              <div className="absolute top-full right-0 mt-1 w-48 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
-                {enabledModules.map((mod) => {
-                  const Icon = mod.icon;
-                  return (
-                    <DropdownItem
-                      key={mod.id}
-                      icon={<Icon size={12} className={mod.iconColor} />}
-                      label={mod.name}
-                      onClick={() => { setActiveView(moduleViewId(mod.id)); setShowToolsMenu(false); }}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
+              {showToolsMenu && (
+                <div className="absolute top-full right-0 mt-1 w-48 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
+                  {toolbarModules.map((mod) => {
+                    const Icon = mod.icon;
+                    return (
+                      <DropdownItem
+                        key={mod.id}
+                        icon={<Icon size={12} className={mod.iconColor} />}
+                        label={mod.name}
+                        onClick={() => { setActiveView(moduleViewId(mod.id)); setShowToolsMenu(false); }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Dictation (VT) button */}
         <button
@@ -215,28 +267,16 @@ export function Toolbar() {
           <span>VT</span>
         </button>
 
-        {/* Git branch + actions */}
-        {gitBranch && (
-          <div className="flex items-center gap-0.5">
-            <div
-              className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded-l text-xs"
-              title={`Current git branch: ${gitBranch}`}
-            >
-              <GitBranch size={12} className="text-accent-purple" />
-              <span className="text-text-secondary">{gitBranch}</span>
-            </div>
-            <GitActionButtons />
-          </div>
-        )}
+        {/* Git actions */}
+        {gitBranch && <GitActionButtons />}
 
-        {/* Project name */}
+        {/* Open project folder */}
         <button
           onClick={handleOpenFolder}
-          className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-text-primary transition-colors"
-          title={`Current project folder: ${projectPath || "none"}. Click to open a different folder.`}
+          className="flex items-center px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-text-primary transition-colors"
+          title="Open project folder"
         >
           <FolderOpen size={12} />
-          <span>{projectName}</span>
         </button>
       </div>
 
@@ -247,42 +287,13 @@ export function Toolbar() {
       {showPromptLibrary && (
         <PromptLibrary onClose={() => setShowPromptLibrary(false)} />
       )}
+      {showNewFlight && (
+        <NewFlightModal onClose={() => setShowNewFlight(false)} />
+      )}
+      {showNewIssue && (
+        <NewIssueForm defaultStatus="todo" onClose={() => setShowNewIssue(false)} />
+      )}
 
-    </div>
-  );
-}
-
-function PaneLayoutControls() {
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-  const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const applyPreset = useMosaicStore((s) => s.applyPreset);
-
-  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
-  if (!activeWorkspace) return null;
-
-  const paneIds = activeWorkspace.panes.map((p) => p.id);
-  const paneCount = paneIds.length;
-
-  return (
-    <div
-      className="flex items-center gap-1"
-      title="Pane layout — current workspace tile count and quick layout presets. Click a preset to rearrange."
-    >
-      <div className="w-px h-4 bg-bg-border" />
-      <LayoutGrid size={11} className="text-accent-green flex-shrink-0" />
-      <span className="text-[10px] text-text-secondary">
-        {paneCount} pane{paneCount !== 1 ? "s" : ""}
-      </span>
-      {LAYOUT_PRESETS.filter((p) => p.minPanes <= paneCount).map(({ preset, label }) => (
-        <button
-          key={preset}
-          onClick={() => applyPreset(preset, paneIds)}
-          className="px-1.5 py-0.5 text-[9px] text-text-muted hover:text-text-primary bg-bg-primary border border-bg-border rounded transition-colors hover:border-accent-green/30"
-          title={`Arrange the ${paneCount} workspace panes into a ${label} grid.`}
-        >
-          {label}
-        </button>
-      ))}
     </div>
   );
 }
@@ -314,7 +325,7 @@ function GitActionButtons() {
   }
 
   return (
-    <div className="flex items-center bg-bg-elevated rounded-r border-l border-bg-border">
+    <div className="flex items-center bg-bg-elevated rounded">
       <button
         onClick={() => handleGitAction("pull")}
         disabled={busy !== null}

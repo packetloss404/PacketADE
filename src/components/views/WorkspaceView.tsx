@@ -2,7 +2,6 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useEditorStore } from "@/stores/editorStore";
-import { useMosaicStore } from "@/stores/mosaicStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useServerStore } from "@/stores/serverStore";
@@ -14,8 +13,8 @@ import { isOnboardingComplete } from "@/lib/onboarding";
 import { useState, useRef, useEffect } from "react";
 import { LayoutGrid, FolderOpen, ChevronDown, Layers, GitBranch, FileText, Plus, Zap, Brain } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
+import { PaneLayoutControls } from "@/components/workspace/PaneLayoutControls";
 import type { WorkspaceAgentSlot, Workspace } from "@/types/workspace";
-import type { MosaicLayoutPreset } from "@/types/mosaic";
 
 const agentLabel: Record<WorkspaceAgentSlot, string> = {
   "terminal": "Terminal",
@@ -327,13 +326,6 @@ export function WorkspaceView() {
   );
 }
 
-const SUBTAB_PRESETS: { preset: MosaicLayoutPreset; label: string; minPanes: number }[] = [
-  { preset: "1x1", label: "1×1", minPanes: 1 },
-  { preset: "1x2", label: "1×2", minPanes: 2 },
-  { preset: "2x2", label: "2×2", minPanes: 4 },
-  { preset: "2x3", label: "2×3", minPanes: 5 },
-];
-
 function workspaceStatusDot(ws: Workspace): { className: string; pulse: boolean } {
   const live = ws.panes.some((p) => p.sessionId);
   if (live) {
@@ -350,7 +342,6 @@ function WorkspaceSubTabs() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
   const setBypassPermissions = useWorkspaceStore((s) => s.setBypassPermissions);
-  const applyPreset = useMosaicStore((s) => s.applyPreset);
   const memoryPatterns = useMemoryStore((s) => s.patterns);
   const memoryLearning = useMemoryStore((s) => s.isLearning);
   const [showCreate, setShowCreate] = useState(false);
@@ -359,8 +350,6 @@ function WorkspaceSubTabs() {
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const bypassOn = activeWorkspace?.bypassPermissions ?? false;
   const memoryActive = memoryLearning || memoryPatterns.length > 0;
-  const paneIds = activeWorkspace?.panes.map((p) => p.id) ?? [];
-  const paneCount = paneIds.length;
 
   return (
     <>
@@ -399,6 +388,8 @@ function WorkspaceSubTabs() {
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-2">
+          {/* v0.8.2: pane layout presets (moved from global Toolbar) */}
+          <PaneLayoutControls />
           <button
             onClick={() => activeWorkspace && setBypassPermissions(activeWorkspace.id, !bypassOn)}
             disabled={!activeWorkspace}
@@ -423,26 +414,6 @@ function WorkspaceSubTabs() {
             <Brain size={10} />
             <span>{memoryLearning ? "Memory learning" : "Memory injecting"}</span>
           </span>
-          <div className="flex items-center gap-0.5 bg-bg-secondary border border-bg-border rounded p-0.5">
-            {SUBTAB_PRESETS.map(({ preset, label, minPanes }) => {
-              const disabled = paneCount < minPanes;
-              return (
-                <button
-                  key={preset}
-                  onClick={() => !disabled && applyPreset(preset, paneIds)}
-                  disabled={disabled}
-                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-                    disabled
-                      ? "text-text-faint cursor-not-allowed"
-                      : "text-text-muted hover:bg-bg-elevated hover:text-text-primary"
-                  }`}
-                  title={`Arrange panes into ${label}`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
         </div>
       </div>
       {showCreate && (

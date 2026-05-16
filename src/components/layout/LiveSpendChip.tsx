@@ -48,10 +48,10 @@ export function LiveSpendChip() {
 
   const todayPersisted = useMemo(() => {
     if (!data) return 0;
-    // dailyCosts dates are stored as YYYY-MM-DD in local time of the
-    // backend writer. Use today's local date for the lookup; if the
-    // user is in a wildly different TZ the chip may be off-by-one for
-    // the first hour of the day — acceptable for an inline pill.
+    // dailyCosts dates are stored as YYYY-MM-DD in UTC (see
+    // `today_date_string()` in src-tauri/src/commands/analytics.rs which
+    // uses chrono::Utc). Use UTC on the frontend too via toISOString so
+    // both sides agree on which bucket "today" is.
     const today = new Date().toISOString().slice(0, 10);
     return data.dailyCosts.find((d) => d.date === today)?.costUsd ?? 0;
   }, [data]);
