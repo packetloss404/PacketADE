@@ -8,9 +8,13 @@ interface ModalProps {
   width?: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** When true, the close (X) button is visually dimmed and click is a no-op
+   *  (callers should also pass a no-op `onClose`). Useful while a modal is in
+   *  the middle of an unbreakable operation. */
+  closeDisabled?: boolean;
 }
 
-export function Modal({ onClose, title, icon, width = "w-[480px]", children, footer }: ModalProps) {
+export function Modal({ onClose, title, icon, width = "w-[480px]", children, footer, closeDisabled = false }: ModalProps) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className={`bg-bg-secondary border border-bg-border rounded-lg ${width} max-h-[85vh] overflow-hidden flex flex-col`}>
@@ -21,7 +25,8 @@ export function Modal({ onClose, title, icon, width = "w-[480px]", children, foo
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-text-muted hover:text-text-primary transition-colors"
+            disabled={closeDisabled}
+            className={`p-1 transition-colors ${closeDisabled ? "text-text-faint cursor-not-allowed opacity-40" : "text-text-muted hover:text-text-primary"}`}
           >
             <X size={16} />
           </button>

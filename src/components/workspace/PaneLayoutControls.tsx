@@ -39,7 +39,7 @@ export function PaneLayoutControls() {
       title="Pane layout — current workspace tile count and quick layout presets. Click a preset to rearrange."
     >
       <div className="w-px h-4 bg-bg-border" />
-      <LayoutGrid size={11} className="text-accent-green flex-shrink-0" />
+      <LayoutGrid size={12} className="text-accent-green flex-shrink-0" />
       <span className="text-[10px] text-text-secondary">
         {paneCount} pane{paneCount !== 1 ? "s" : ""}
       </span>
