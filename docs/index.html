@@ -123,6 +123,61 @@ nav .container{display:flex;align-items:center;justify-content:space-between;wid
 .stat-number.amber{background:linear-gradient(135deg,var(--amber),#e3b341);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .stat-label{font-size:0.85rem;color:var(--text-secondary);font-weight:500}
 
+/* ===== MODES (PRIMARY PRODUCT STORY) ===== */
+.modes{padding:120px 0 110px;position:relative}
+.modes::before{content:'';position:absolute;top:50%;left:50%;width:1100px;height:900px;transform:translate(-50%,-50%);
+  background:radial-gradient(ellipse,rgba(57,210,192,0.05) 0%,rgba(188,140,255,0.04) 35%,transparent 70%);pointer-events:none}
+.modes .container{position:relative;z-index:1}
+.modes-header{text-align:center;margin-bottom:64px;max-width:760px;margin-left:auto;margin-right:auto}
+.modes-eyebrow{display:inline-block;font-family:var(--font-mono);font-size:0.7rem;font-weight:600;letter-spacing:0.18em;
+  text-transform:uppercase;color:var(--cyan);margin-bottom:16px;padding:5px 14px;border:1px solid rgba(57,210,192,0.3);
+  border-radius:999px;background:rgba(57,210,192,0.06)}
+.modes-header h2{font-size:clamp(2rem,5vw,3.3rem);font-weight:800;letter-spacing:-0.035em;line-height:1.08;margin-bottom:18px}
+.modes-header h2 .gradient-text{background:linear-gradient(135deg,var(--cyan),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.modes-header p{color:var(--text-secondary);font-size:clamp(1rem,1.7vw,1.18rem);line-height:1.65;max-width:620px;margin:0 auto}
+.modes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:24px}
+.mode-card{position:relative;padding:44px 40px 40px;background:rgba(22,27,34,0.55);border:1px solid var(--border);
+  border-radius:24px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:all 0.4s ease;overflow:hidden;
+  display:flex;flex-direction:column;min-height:340px}
+.mode-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:24px 24px 0 0;opacity:0.9}
+.mode-card::after{content:'';position:absolute;top:-1px;left:0;right:0;height:80px;pointer-events:none;border-radius:24px 24px 0 0;opacity:0.6}
+.mode-card.cyan::before{background:linear-gradient(90deg,var(--cyan),var(--blue))}
+.mode-card.cyan::after{background:linear-gradient(180deg,rgba(57,210,192,0.12),transparent)}
+.mode-card.green::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
+.mode-card.green::after{background:linear-gradient(180deg,rgba(63,185,80,0.12),transparent)}
+.mode-card.purple::before{background:linear-gradient(90deg,var(--purple),#d2a8ff)}
+.mode-card.purple::after{background:linear-gradient(180deg,rgba(188,140,255,0.12),transparent)}
+.mode-card.amber::before{background:linear-gradient(90deg,var(--amber),#e3b341)}
+.mode-card.amber::after{background:linear-gradient(180deg,rgba(210,153,34,0.12),transparent)}
+.mode-card:hover{transform:translateY(-6px);border-color:var(--text-muted);box-shadow:0 20px 60px rgba(0,0,0,0.35)}
+.mode-card-head{display:flex;align-items:flex-start;gap:18px;margin-bottom:22px;position:relative;z-index:1}
+.mode-icon{width:60px;height:60px;border-radius:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mode-icon svg{width:30px;height:30px}
+.mode-icon.cyan{background:rgba(57,210,192,0.12);color:var(--cyan);box-shadow:0 0 24px rgba(57,210,192,0.18) inset}
+.mode-icon.green{background:rgba(63,185,80,0.12);color:var(--green);box-shadow:0 0 24px rgba(63,185,80,0.18) inset}
+.mode-icon.purple{background:rgba(188,140,255,0.12);color:var(--purple);box-shadow:0 0 24px rgba(188,140,255,0.18) inset}
+.mode-icon.amber{background:rgba(210,153,34,0.12);color:var(--amber);box-shadow:0 0 24px rgba(210,153,34,0.18) inset}
+.mode-titles{flex:1;min-width:0;padding-top:4px}
+.mode-caption{display:block;font-family:var(--font-mono);font-size:0.66rem;font-weight:600;letter-spacing:0.12em;
+  text-transform:uppercase;color:var(--text-muted);margin-bottom:6px}
+.mode-card.cyan .mode-caption{color:var(--cyan)}
+.mode-card.green .mode-caption{color:var(--green)}
+.mode-card.purple .mode-caption{color:var(--purple)}
+.mode-card.amber .mode-caption{color:var(--amber)}
+.mode-card h3{font-size:1.6rem;font-weight:800;letter-spacing:-0.02em;line-height:1.15}
+.mode-card .mode-body{font-size:0.95rem;color:var(--text-secondary);line-height:1.7;margin-bottom:24px;position:relative;z-index:1}
+.mode-when{margin-top:auto;padding-top:18px;border-top:1px solid rgba(48,54,61,0.6);font-size:0.78rem;color:var(--text-muted);
+  line-height:1.5;display:flex;align-items:flex-start;gap:8px;position:relative;z-index:1}
+.mode-when strong{color:var(--text-secondary);font-weight:600;font-family:var(--font-mono);font-size:0.7rem;
+  letter-spacing:0.08em;text-transform:uppercase;flex-shrink:0;margin-top:1px}
+.modes-footnote{text-align:center;margin-top:48px;font-size:0.85rem;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:0.02em}
+
+/* breadcrumb chip used on Flight Deck section */
+.mode-breadcrumb{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.7rem;
+  font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:var(--cyan);padding:5px 14px;
+  border:1px solid rgba(57,210,192,0.3);border-radius:999px;background:rgba(57,210,192,0.06);margin-bottom:18px}
+.mode-breadcrumb .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+
 /* ===== FEATURES ===== */
 .features{padding:100px 0}
 .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
@@ -307,6 +362,9 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   .pipeline-connector{display:none}
   .workflow-steps{flex-direction:column;align-items:center}
   .workflow-arrow{transform:rotate(90deg);width:auto;margin:0}
+  .modes-grid{grid-template-columns:1fr;gap:20px}
+  .mode-card{padding:36px 28px 32px;min-height:auto}
+  .mode-card h3{font-size:1.4rem}
 }
 @media(max-width:768px){
   .nav-links{position:fixed;top:var(--nav-h);left:0;right:0;background:rgba(13,17,23,0.97);backdrop-filter:blur(20px);
@@ -327,6 +385,12 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   .memory-desc{margin:0}
   .download-buttons{flex-direction:column;align-items:center}
   footer .container{flex-direction:column;text-align:center}
+  .modes{padding:80px 0}
+  .modes-header{margin-bottom:44px}
+  .mode-card{padding:32px 24px 28px}
+  .mode-card h3{font-size:1.25rem}
+  .mode-icon{width:52px;height:52px;border-radius:14px}
+  .mode-icon svg{width:26px;height:26px}
 }
 @media(max-width:480px){
   .hero h1{font-size:2.2rem}
@@ -368,6 +432,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
     </a>
     <div class="nav-links" id="nav-links">
       <a href="#features">Features</a>
+      <a href="#modes">Modes</a>
       <a href="#flight-deck">Flight Deck</a>
       <a href="#providers">Providers</a>
       <a href="#modules">Modules</a>
@@ -396,7 +461,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
     Open Source &mdash; 100% Free
   </div>
   <h1 class="reveal" style="--delay:0.1s">One cockpit.<br><span class="gradient-text">Every AI agent.</span><br>Ship faster.</h1>
-  <p class="hero-lead reveal" style="--delay:0.2s">PacketADE unifies Claude Code, Codex, Gemini, OpenCode and seven provider rows into a conversational multi-pane desktop IDE &mdash; subscription auth, BYOK, tool diffs, Flight Deck orchestration, and cross-provider cost tracking in one native app.</p>
+  <p class="hero-lead reveal" style="--delay:0.2s">Four ways to build &mdash; autonomous <strong>Missions</strong>, supervised <strong>Workspace</strong>, single-thread <strong>Agents</strong>, AI-structured <strong>Issues</strong> &mdash; unifying Claude Code, Codex, Gemini, OpenCode and seven provider rows in one native desktop app.</p>
   <div class="typed-line reveal" style="--delay:0.3s">Built to <span id="typed-target"></span><span class="typed-cursor"></span></div>
   <div class="hero-buttons reveal" style="--delay:0.35s">
     <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-primary">Download for Free</a>
@@ -420,6 +485,81 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       </div>
       <img src="screenshot.png" alt="PacketADE desktop IDE showing multi-pane AI sessions, API agents with tool diffs, kanban board, and Flight Deck orchestration" loading="lazy" />
     </div>
+  </div>
+</section>
+
+<!-- ===== MODES (PRIMARY PRODUCT STORY) ===== -->
+<section class="modes" id="modes">
+  <div class="container">
+    <div class="modes-header reveal">
+      <span class="modes-eyebrow">The Four Modes</span>
+      <h2>Four ways to build.<br><span class="gradient-text">One desktop app.</span></h2>
+      <p>Every PacketADE workflow falls into one of four modes &mdash; from fully autonomous Missions down to a single focused chat. Pick the mode for the work in front of you. Mix them freely.</p>
+    </div>
+
+    <div class="modes-grid">
+      <!-- Mode 1: Flight Deck (Missions) -->
+      <div class="mode-card cyan reveal" style="--delay:0s">
+        <div class="mode-card-head">
+          <div class="mode-icon cyan" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <div class="mode-titles">
+            <span class="mode-caption">Mode 01 &middot; Full Autonomous</span>
+            <h3>Flight Deck</h3>
+          </div>
+        </div>
+        <p class="mode-body">Write a spec. A Sonnet 4.6 planner decomposes it into milestones and tasks, executors run end-to-end, and you only step in to approve gates. Status, blockers, and costs roll up automatically.</p>
+        <p class="mode-when"><strong>When:</strong> Large multi-step work you want to delegate &mdash; &ldquo;ship the feature&rdquo; and walk away.</p>
+      </div>
+
+      <!-- Mode 2: Workspace -->
+      <div class="mode-card green reveal" style="--delay:0.08s">
+        <div class="mode-card-head">
+          <div class="mode-icon green" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="12" y1="9" x2="12" y2="17"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <div class="mode-titles">
+            <span class="mode-caption">Mode 02 &middot; Semi-Autonomous</span>
+            <h3>Workspace</h3>
+          </div>
+        </div>
+        <p class="mode-body">Tile PTY-backed CLI agents &mdash; Claude Code, Codex, Gemini, OpenCode, PacketCode &mdash; in worktrees. Give each one a task, supervise mid-stream, reply, switch, branch, and steer them all in parallel.</p>
+        <p class="mode-when"><strong>When:</strong> Hands-on work where you orchestrate multiple agents and want a Bypass-perms throttle within reach.</p>
+      </div>
+
+      <!-- Mode 3: Agents -->
+      <div class="mode-card purple reveal" style="--delay:0.16s">
+        <div class="mode-card-head">
+          <div class="mode-icon purple" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>
+          </div>
+          <div class="mode-titles">
+            <span class="mode-caption">Mode 03 &middot; Single-Thread Chat</span>
+            <h3>Agents</h3>
+          </div>
+        </div>
+        <p class="mode-body">One conversation, one API agent &mdash; Claude OAuth subscription, OpenAI API, MiniMax, OpenRouter, or local Ollama. Structured chat with tool diffs, slash commands, @-file mentions, and voice input.</p>
+        <p class="mode-when"><strong>When:</strong> Focused threads, exploratory questions, anything where one chat is the right shape.</p>
+      </div>
+
+      <!-- Mode 4: Issues -->
+      <div class="mode-card amber reveal" style="--delay:0.24s">
+        <div class="mode-card-head">
+          <div class="mode-icon amber" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </div>
+          <div class="mode-titles">
+            <span class="mode-caption">Mode 04 &middot; AI-Structured Intake</span>
+            <h3>Issues</h3>
+          </div>
+        </div>
+        <p class="mode-body">Paste a spec, doc, or PRD. AI breaks it into discrete tickets. One click &ldquo;Send to Workspace&rdquo; spawns a Claude pane in a worktree with the ticket as the opening turn. Commits with <code>Fixes #N</code> auto-close.</p>
+        <p class="mode-when"><strong>When:</strong> You want AI to <em>structure</em> the work but you (or a supervised agent) drive the coding.</p>
+      </div>
+    </div>
+
+    <p class="modes-footnote reveal" style="--delay:0.3s">Mix and match. Hand a Mission off to Workspace. Promote a chat to an Issue. Every mode shares memory, costs, and providers.</p>
   </div>
 </section>
 
@@ -529,12 +669,13 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   </div>
 </section>
 
-<!-- ===== FLIGHT DECK SPOTLIGHT ===== -->
+<!-- ===== FLIGHT DECK SPOTLIGHT (deep dive on Mode 1) ===== -->
 <section class="flight-deck" id="flight-deck">
   <div class="container">
-    <div class="section-header reveal">
-      <h2>Flight Deck</h2>
-      <p>Autonomous AI Orchestration</p>
+    <div class="section-header reveal" style="margin-bottom:24px">
+      <span class="mode-breadcrumb"><span class="dot"></span>Mode 01 of 04 &middot; Full Autonomous</span>
+      <h2>Flight Deck, in depth</h2>
+      <p>A closer look at the most autonomous of the four modes</p>
     </div>
     <p class="flight-deck-body reveal" style="--delay:0.1s">Define an objective. Link your issues. Flight Deck coordinates CLI and API agents across sessions, tracks blockers, captures memory snapshots, and surfaces what needs your attention &mdash; so you steer instead of type.</p>
 
@@ -818,6 +959,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <div class="section-header reveal">
       <h2>From idea to production in three steps</h2>
+      <p>Each step can run in any of the four modes &mdash; Flight Deck for autonomy, Workspace for orchestration, Agents for a chat, Issues for structuring intake.</p>
     </div>
     <div class="workflow-steps reveal" style="--delay:0.1s">
       <div class="workflow-step">
