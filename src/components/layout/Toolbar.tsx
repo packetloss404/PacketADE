@@ -7,6 +7,7 @@ import { LiveSpendChip } from "./LiveSpendChip";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, isModuleView, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
+import { useFlightStore } from "@/stores/flightStore";
 import { getModulesSorted } from "@/modules/registry";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -15,10 +16,12 @@ import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
 import { PromptLibrary } from "@/components/workspace/PromptLibrary";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
-import { gitCommit, gitPull, gitPush } from "@/lib/tauri";
+import { CommitModal } from "@/components/workspace/CommitModal";
+import { gitPull, gitPush, getGitBranch } from "@/lib/tauri";
 
 export function Toolbar() {
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
+  const projectPath = useLayoutStore((s) => s.projectPath);
   const gitBranch = useGitInfo();
   const [showCodeQuality, setShowCodeQuality] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
@@ -44,6 +47,22 @@ export function Toolbar() {
   });
 
   const enabledModules = getModulesSorted().filter((mod) => moduleStates[mod.id]?.enabled ?? false);
+
+  // Count of pending approvals — mirrors ReviewQueueView's filter so the
+  // badge matches what the user sees when they click through. We only count
+  // tasks (not mission-planner approvals) because those surface inline on
+  // the mission view, not in the Review Queue.
+  const pendingApprovalCount = useFlightStore((s) => {
+    let n = 0;
+    for (const flight of s.flights) {
+      for (const milestone of flight.milestones) {
+        for (const task of milestone.tasks) {
+          if (task.status === "approval_needed") n++;
+        }
+      }
+    }
+    return n;
+  });
 
   // Close tools menu when clicking outside
   useEffect(() => {
@@ -83,7 +102,7 @@ export function Toolbar() {
   return (
     <div className="flex items-center h-9 px-3 bg-bg-secondary border-b border-bg-border gap-2">
       {/* Left section: search + global "New" dropdown */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2">
         {/* Ctrl+K Search chip — opens the command palette */}
         <button
           onClick={() => setCommandPaletteOpen(true)}
@@ -92,7 +111,7 @@ export function Toolbar() {
         >
           <Search size={12} />
           <span>Search</span>
-          <span className="text-[9px] text-text-muted bg-bg-elevated px-1 rounded font-mono">Ctrl+K</span>
+          <span className="text-[9px] text-text-muted bg-bg-primary px-1 rounded font-mono">Ctrl+K</span>
         </button>
 
         {/* Global "+ New" dropdown */}
@@ -153,17 +172,35 @@ export function Toolbar() {
             spend. Auto-refreshes; click jumps to the Cost Dashboard. */}
         <LiveSpendChip />
 
+        <div className="w-px h-4 bg-bg-border self-center" />
+
         {/* Review Queue */}
         <button
           onClick={() => setActiveView("review_queue")}
-          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+          className={`relative flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
             activeView === "review_queue"
               ? "bg-bg-elevated text-accent-amber"
-              : "text-text-muted hover:text-accent-amber"
+              : pendingApprovalCount > 0
+                ? "text-accent-red hover:text-accent-amber"
+                : "text-text-muted hover:text-accent-amber"
           }`}
-          title="Review Queue — pending tool / file-write approvals from running flights. Click to triage."
+          title={
+            pendingApprovalCount > 0
+              ? `Pending tool / file-write approvals (${pendingApprovalCount})`
+              : "Pending tool / file-write approvals"
+          }
         >
-          <ShieldCheck size={11} />
+          <div className="relative">
+            <ShieldCheck size={12} />
+            {pendingApprovalCount > 0 && (
+              <span
+                className="absolute -top-1 -right-1 bg-accent-red text-white text-[9px] font-medium px-1 rounded-full min-w-[14px] h-[14px] flex items-center justify-center"
+                aria-label={`${pendingApprovalCount} pending approvals`}
+              >
+                {pendingApprovalCount > 99 ? "99+" : String(pendingApprovalCount)}
+              </span>
+            )}
+          </div>
           <span>Review</span>
         </button>
 
@@ -213,6 +250,8 @@ export function Toolbar() {
           <span>Quality</span>
         </button>
 
+        <div className="w-px h-4 bg-bg-border self-center" />
+
         {/* Optional Tools (modules) dropdown — primary nav lives in LeftRail */}
         {/* Dictation is intentionally filtered out here; it surfaces via the dedicated VT button,
             the CommandPalette, and the StatusStrip indicator instead. */}
@@ -261,11 +300,13 @@ export function Toolbar() {
               ? "bg-bg-elevated text-accent-purple"
               : "bg-bg-elevated text-text-secondary hover:text-accent-purple"
           }`}
-          title="Dictation — voice-to-text with local Whisper transcription."
+          title="Dictation — voice-to-text with local Whisper transcription. (Ctrl+Shift+D)"
         >
           <Mic size={12} className="text-accent-purple" />
           <span>VT</span>
         </button>
+
+        <div className="w-px h-4 bg-bg-border self-center" />
 
         {/* Git actions */}
         {gitBranch && <GitActionButtons />}
@@ -274,7 +315,7 @@ export function Toolbar() {
         <button
           onClick={handleOpenFolder}
           className="flex items-center px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-text-primary transition-colors"
-          title="Open project folder"
+          title={projectPath ? `Project: ${projectPath} — click to open a different folder` : "No project open — click to open one"}
         >
           <FolderOpen size={12} />
         </button>
@@ -300,9 +341,11 @@ export function Toolbar() {
 
 function GitActionButtons() {
   const projectPath = useLayoutStore((s) => s.projectPath);
+  const setGitBranch = useAppStore((s) => s.setGitBranch);
   const [busy, setBusy] = useState<string | null>(null);
+  const [showCommitModal, setShowCommitModal] = useState(false);
 
-  async function handleGitAction(action: "pull" | "push" | "commit") {
+  async function handleGitAction(action: "pull" | "push") {
     if (busy) return;
     setBusy(action);
     try {
@@ -310,12 +353,6 @@ function GitActionButtons() {
         await gitPull(projectPath);
       } else if (action === "push") {
         await gitPush(projectPath);
-      } else if (action === "commit") {
-        // Commit staged changes only (stage-all is rejected by safety layer)
-        const message = window.prompt("Commit message:");
-        if (message) {
-          await gitCommit(projectPath, message, false);
-        }
       }
     } catch (err) {
       console.error(`Git ${action} failed:`, err);
@@ -324,32 +361,49 @@ function GitActionButtons() {
     }
   }
 
+  async function refreshGitBranch() {
+    try {
+      const branch = await getGitBranch(projectPath);
+      setGitBranch(branch);
+    } catch {
+      // poll-based fallback handles the next refresh
+    }
+  }
+
   return (
-    <div className="flex items-center bg-bg-elevated rounded">
-      <button
-        onClick={() => handleGitAction("pull")}
-        disabled={busy !== null}
-        className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-        title="Git Pull — fetch and merge the latest commits from the upstream branch."
-      >
-        <ArrowDown size={11} />
-      </button>
-      <button
-        onClick={() => handleGitAction("push")}
-        disabled={busy !== null}
-        className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-        title="Git Push — publish local commits on the current branch to the remote."
-      >
-        <ArrowUp size={11} />
-      </button>
-      <button
-        onClick={() => handleGitAction("commit")}
-        disabled={busy !== null}
-        className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-        title="Git Commit — commit any staged changes with a message you provide. Does not stage files."
-      >
-        <GitCommit size={11} />
-      </button>
-    </div>
+    <>
+      <div className="flex items-center bg-bg-elevated rounded">
+        <button
+          onClick={() => handleGitAction("pull")}
+          disabled={busy !== null}
+          className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
+          title="Git Pull — fetch and merge the latest commits from the upstream branch."
+        >
+          <ArrowDown size={12} />
+        </button>
+        <button
+          onClick={() => handleGitAction("push")}
+          disabled={busy !== null}
+          className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
+          title="Git Push — publish local commits on the current branch to the remote."
+        >
+          <ArrowUp size={12} />
+        </button>
+        <button
+          onClick={() => setShowCommitModal(true)}
+          disabled={busy !== null}
+          className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
+          title="Git Commit — commit any staged changes with a message you provide. Does not stage files."
+        >
+          <GitCommit size={12} />
+        </button>
+      </div>
+      <CommitModal
+        open={showCommitModal}
+        onClose={() => setShowCommitModal(false)}
+        projectPath={projectPath}
+        onCommitted={refreshGitBranch}
+      />
+    </>
   );
 }
