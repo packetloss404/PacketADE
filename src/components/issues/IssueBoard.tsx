@@ -103,6 +103,10 @@ export function IssueBoard() {
 
   const [showNewIssue, setShowNewIssue] = useState(false);
   const [showSpecImport, setShowSpecImport] = useState(false);
+  // Bind-at-open: capture the projectPath when the user opens the spec import
+  // modal so a workspace switch mid-edit doesn't suddenly retarget the AI
+  // extraction call or stamp drafts with a different project.
+  const [specImportProjectPath, setSpecImportProjectPath] = useState<string>("");
   const [newIssueColumn, setNewIssueColumn] = useState<IssueStatus>("up_next");
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -277,7 +281,19 @@ export function IssueBoard() {
             a one-shot claude-oauth sidecar session to break a pasted spec
             into Issue tickets. */}
         <button
-          onClick={() => setShowSpecImport(true)}
+          onClick={() => {
+            // Capture the active project path at the moment the modal opens.
+            // Read the workspace fresh (vs. closing over `activeWorkspace`)
+            // and fall back to the live layoutStore value before opening.
+            const ws = useWorkspaceStore.getState();
+            const active = ws.workspaces.find((w) => w.id === ws.activeWorkspaceId);
+            setSpecImportProjectPath(
+              active?.projectPath ||
+                useLayoutStore.getState().projectPath ||
+                "",
+            );
+            setShowSpecImport(true);
+          }}
           className="inline-flex items-center gap-1.5 rounded-md border border-bg-border bg-bg-secondary px-2 py-1 text-[11px] text-text-secondary transition-colors hover:border-line-strong hover:text-text-primary"
         >
           <Sparkles size={11} />
@@ -388,19 +404,16 @@ export function IssueBoard() {
         />
       )}
 
-      {/* v0.8.5 — Spec import modal. Wired in the toolbar above. We pull
-          the project path from the active workspace first (mirrors the
-          send-to-workspace logic in `issueStore.sendIssueToWorkspace`) and
-          fall back to `layoutStore.projectPath`. The modal short-circuits
-          rendering when `open` is false so the mount can stay live. */}
+      {/* v0.8.5 — Spec import modal. Wired in the toolbar above. We snapshot
+          the active workspace's project path at the moment the user opens the
+          modal (see the Import-spec button) so a workspace switch while the
+          modal is open doesn't retarget the AI extraction call or stamp the
+          drafts with a different project. The modal short-circuits rendering
+          when `open` is false so the mount can stay live. */}
       <SpecImportModal
         open={showSpecImport}
         onClose={() => setShowSpecImport(false)}
-        projectPath={
-          activeWorkspace?.projectPath ||
-          useLayoutStore.getState().projectPath ||
-          ""
-        }
+        projectPath={specImportProjectPath}
       />
     </div>
   );

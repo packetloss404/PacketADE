@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { LayoutGrid, Check, FileText, ShieldOff, Loader2, FolderOpen, ChevronDown, Zap, Server, AlertTriangle, CheckCircle2, XCircle, GitBranch } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Modal } from "@/components/ui/Modal";
 import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -296,6 +297,13 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const saveBlockedReason = useMemo<string | null>(() => {
     if (!name.trim()) return "Workspace name is required";
     if (selected.size === 0) return "Select at least one agent";
+    if (locationMode === "local") {
+      // v0.8.8 (edge case): zero-workspaces + no fallback = empty
+      // `selectedProjectPath`. Block submit so we never persist a
+      // workspace whose `projectPath === ""` (would break the Toolbar
+      // folder picker, git pollers, MCP, deploy, etc.).
+      if (!selectedProjectPath.trim()) return "Pick a project folder";
+    }
     if (locationMode === "remote") {
       if (!serverId || !server) return "Choose a server";
       if (!server.hostFingerprint) return "Verify the server's host key on the Servers page before connecting";
@@ -307,7 +315,30 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
       if (pathProbe.kind === "error") return pathProbe.message;
     }
     return null;
-  }, [name, selected.size, locationMode, serverId, server, remoteProjectPath, pathProbe]);
+  }, [name, selected.size, locationMode, selectedProjectPath, serverId, server, remoteProjectPath, pathProbe]);
+
+  // v0.8.8 (edge case): pick a folder from the OS dialog. Used when no
+  // workspace exists yet (so `useLayoutStore.projectPath` is empty) and
+  // the user has nothing to seed the dropdown with. Updates only the
+  // modal-local `selectedProjectPath` — we do NOT write through to
+  // `useLayoutStore` here because the path becomes canonical once the
+  // workspace is created and the active-workspace subscription mirrors
+  // it back.
+  const handlePickProjectFolder = useCallback(async () => {
+    try {
+      const picked = await openDialog({
+        directory: true,
+        multiple: false,
+        title: "Select project folder",
+        defaultPath: selectedProjectPath || undefined,
+      });
+      if (typeof picked === "string" && picked.trim()) {
+        setSelectedProjectPath(picked);
+      }
+    } catch {
+      // Dialog cancelled or unavailable — nothing to do.
+    }
+  }, [selectedProjectPath]);
 
   function handleCreate() {
     if (saveBlockedReason) return;
@@ -421,45 +452,78 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
         {locationMode === "local" && (
           <div ref={projectDropdownRef}>
             <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Project</label>
-            <div className="relative">
+            <div className="flex items-stretch gap-1.5">
+              <div className="relative flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // v0.8.8 (edge case): when there's nothing to pick
+                    // from (no current selection, no recent paths) the
+                    // dropdown would be useless — jump straight to the
+                    // OS folder picker so an empty-state user has a
+                    // direct affordance.
+                    if (!selectedProjectPath.trim() && recentProjectPaths.filter((p) => p.trim()).length === 0) {
+                      void handlePickProjectFolder();
+                      return;
+                    }
+                    setProjectDropdownOpen(!projectDropdownOpen);
+                  }}
+                  className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
+                >
+                  <FolderOpen size={12} className="text-accent-green flex-shrink-0" />
+                  {selectedProjectPath ? (
+                    <>
+                      <span className="flex-1 truncate text-text-primary" title={selectedProjectPath}>
+                        {selectedProjectPath.split(/[\\/]/).pop()}
+                      </span>
+                      <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={selectedProjectPath}>
+                        {selectedProjectPath}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="flex-1 truncate text-text-muted italic">
+                      No folder selected — click to pick one
+                    </span>
+                  )}
+                  <ChevronDown
+                    size={10}
+                    className={`text-text-muted flex-shrink-0 transition-transform ${projectDropdownOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {projectDropdownOpen && recentProjectPaths.filter((p) => p.trim()).length > 0 && (
+                  <div className="absolute top-full left-0 mt-1 w-full bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1 max-h-[160px] overflow-y-auto">
+                    {recentProjectPaths.filter((p) => p.trim()).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => {
+                          setSelectedProjectPath(p);
+                          setProjectDropdownOpen(false);
+                        }}
+                        className={`flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-bg-hover transition-colors ${
+                          p === selectedProjectPath ? "bg-accent-green/10" : ""
+                        }`}
+                      >
+                        <FolderOpen size={11} className={p === selectedProjectPath ? "text-accent-green" : "text-text-muted"} />
+                        <span className="flex-1 truncate text-[11px] text-text-primary">{p.split(/[\\/]/).pop()}</span>
+                        <span className="text-[10px] text-text-muted truncate max-w-[180px]">{p}</span>
+                        {p === selectedProjectPath && <Check size={10} className="text-accent-green flex-shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* v0.8.8 (edge case): always-present "Pick folder" affordance
+                  so users can change folders even when there's only one
+                  recent path (which would otherwise hide the dropdown). */}
               <button
                 type="button"
-                onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
-                className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
+                onClick={handlePickProjectFolder}
+                title="Pick folder from disk"
+                className="flex items-center gap-1 px-2.5 text-[10px] text-text-muted hover:text-text-primary bg-bg-primary border border-bg-border rounded hover:border-text-muted/30 transition-colors"
               >
-                <FolderOpen size={12} className="text-accent-green flex-shrink-0" />
-                <span className="flex-1 truncate text-text-primary" title={selectedProjectPath}>
-                  {selectedProjectPath.split(/[\\/]/).pop()}
-                </span>
-                <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={selectedProjectPath}>
-                  {selectedProjectPath}
-                </span>
-                <ChevronDown
-                  size={10}
-                  className={`text-text-muted flex-shrink-0 transition-transform ${projectDropdownOpen ? "rotate-180" : ""}`}
-                />
+                <FolderOpen size={11} />
+                Browse
               </button>
-              {projectDropdownOpen && recentProjectPaths.length > 1 && (
-                <div className="absolute top-full left-0 mt-1 w-full bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1 max-h-[160px] overflow-y-auto">
-                  {recentProjectPaths.map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => {
-                        setSelectedProjectPath(p);
-                        setProjectDropdownOpen(false);
-                      }}
-                      className={`flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-bg-hover transition-colors ${
-                        p === selectedProjectPath ? "bg-accent-green/10" : ""
-                      }`}
-                    >
-                      <FolderOpen size={11} className={p === selectedProjectPath ? "text-accent-green" : "text-text-muted"} />
-                      <span className="flex-1 truncate text-[11px] text-text-primary">{p.split(/[\\/]/).pop()}</span>
-                      <span className="text-[10px] text-text-muted truncate max-w-[180px]">{p}</span>
-                      {p === selectedProjectPath && <Check size={10} className="text-accent-green flex-shrink-0" />}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         )}

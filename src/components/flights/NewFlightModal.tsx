@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Target, Rocket, ListTree } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useFlightStore } from "@/stores/flightStore";
@@ -31,6 +31,20 @@ export function NewFlightModal({ onClose, onCreated }: NewFlightModalProps) {
   const [priority, setPriority] = useState<FlightPriority>("medium");
   const [appliedPlan, setAppliedPlan] = useState<FlightPlanSuggestion | null>(null);
 
+  // v0.8.8 capture-on-open: freeze the projectPath the moment the modal
+  // mounts so a workspace switch mid-edit doesn't bind the new flight to
+  // the wrong project. Mirrors SpecImportModal / CommitModal. Mount-time
+  // snapshot is sufficient because the parent unmounts this modal on
+  // close; re-opening mounts a fresh instance that re-samples.
+  const [capturedProjectPath, setCapturedProjectPath] = useState<string>(
+    activeWorkspace?.projectPath || projectPath || "",
+  );
+  useEffect(() => {
+    setCapturedProjectPath(activeWorkspace?.projectPath || projectPath || "");
+    // Intentionally only run on mount — see comment above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const chat = useFlightChat();
 
   function applyPlanToFlight(flightId: string, plan: FlightPlanSuggestion) {
@@ -62,7 +76,7 @@ export function NewFlightModal({ onClose, onCreated }: NewFlightModalProps) {
       title: title.trim(),
       objective: objective.trim(),
       priority,
-      projectPath: activeWorkspace?.projectPath || projectPath || "",
+      projectPath: capturedProjectPath,
       workspaceId: activeWorkspace?.id ?? null,
       issueIds: [],
     });

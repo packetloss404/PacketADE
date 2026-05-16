@@ -3,6 +3,42 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.8.8] - 2026-05-16
+
+### Changed — projectPath single source of truth
+
+Eliminates the long-standing drift between the global `useLayoutStore.projectPath` and per-workspace `useWorkspaceStore.workspaces[].projectPath`. The active workspace is now the canonical source; `useLayoutStore.projectPath` is kept in sync via a subscription mirror.
+
+#### Store refactor
+- `layoutStore.setProjectPath(p)` is now a **write-through**: with an active local workspace, it updates that workspace's `projectPath` and persists via `saveWorkspacesSlice`. With no active workspace, it writes to a new internal `fallbackProjectPath` field.
+- `installWorkspaceProjectPathSync()` registers a `useWorkspaceStore.subscribe(...)` at module init (via `queueMicrotask` to dodge the existing circular import) that mirrors the active workspace's path into `useLayoutStore.projectPath`. Remote workspaces (`serverId` set) skip the mirror to preserve the previous local path.
+- Public API preserved: `useLayoutStore((s) => s.projectPath)`, `getState().projectPath`, and `setProjectPath(p)` all work unchanged. No consumer migrations required.
+
+#### Toolbar folder picker
+- With an active workspace: picker title reads "Change folder for '{workspaceName}'"; tooltip shows project path + active workspace name.
+- With no active workspace: picker shows a follow-up modal asking whether to create a new workspace at the picked path OR set it as the default for the next workspace.
+- Folder icon button now has `aria-label` for screen readers.
+
+#### Settings ProjectInfoCard
+- Shows "Active: {workspaceName}" context line + explainer copy.
+- With no active workspace: replaces the path input with a "Create workspace" CTA showing the last-used folder.
+- Raw `text-red-400` token violation on the Clear button replaced with `text-accent-red`.
+
+#### Capture-on-open for in-flight modals
+Defends against workspace switches mid-edit:
+- `SpecImportModal` captures `projectPath` on `open` transition.
+- `CommitModal` captures `projectPath` on `open` transition; also blocks submit when captured path is empty + surfaces an amber hint.
+- `NewFlightModal` captures `projectPath` on mount.
+- `IssueBoard` snapshots `projectPath` on Import-Spec click (parent-level guard).
+
+#### WorkspaceCreationModal empty-state
+- Browse button always available alongside the recents dropdown.
+- Auto-jumps to the OS picker when no recents exist.
+- Save gated on a non-empty selected path so the persisted workspace never has `projectPath: ""`.
+
+#### Peer-reviewed
+4-agent big-session review pass caught issues that are addressed in v0.8.7 above (the projectPath refactor itself produced no P0s — the peer review only flagged behavior changes worth documenting: `ScaffoldView` and `Settings > Browse` now rebind the active workspace silently, which is the intended new behavior).
+
 ## [0.8.7] - 2026-05-16
 
 ### Added — CLI install/browse + Toolbar Bell + Flight delete + API-agent → Review + Code Quality deep dive
