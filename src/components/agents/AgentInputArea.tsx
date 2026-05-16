@@ -37,7 +37,10 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import { FileMentionPopover } from "./FileMentionPopover";
+import { InputPopover, type InputPopoverItem } from "./InputPopover";
 import { ContextPreviewChevron } from "./ContextPreviewChevron";
+import { usePromptStore } from "@/stores/promptStore";
+import type { PromptTemplate } from "@/types/prompt";
 import type { AgentCli } from "@/stores/agentTaskStore";
 import type { ServerConfig } from "@/types/server";
 import {
@@ -197,6 +200,35 @@ const INITIAL_MENTION_STATE: MentionState = {
   atIndex: -1,
   highlightedIndex: 0,
 };
+
+interface SlashState {
+  active: boolean;
+  query: string;
+  // '/' position in the textarea value (character index)
+  slashIndex: number;
+  highlightedIndex: number;
+}
+
+const INITIAL_SLASH_STATE: SlashState = {
+  active: false,
+  query: "",
+  slashIndex: -1,
+  highlightedIndex: 0,
+};
+
+/**
+ * Slugify a template name to its slash-command form, e.g. "Code Review"
+ * becomes "code-review". Matches the kebab-case slug used by the in-chat
+ * popover in AgentChatPane so users see the same `/<name>` everywhere.
+ */
+function templateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+const SLASH_POPOVER_LIMIT = 6;
 
 export function AgentInputArea({
   textareaRef,
@@ -471,6 +503,51 @@ export function AgentInputArea({
     mentionItemsRef.current = [];
   }, []);
 
+  // ─── / slash-command (prompt template) state ─────────────────────────
+  // Triggers on `/` at the start of the textarea or after whitespace, like
+  // @-mentions. Selecting a template expands its body into the composer
+  // (replacing the `/query` token) — it does NOT send the message.
+  const promptTemplates = usePromptStore((s) => s.templates);
+  const [slashState, setSlashState] = useState<SlashState>(INITIAL_SLASH_STATE);
+
+  const closeSlash = useCallback(() => {
+    setSlashState(INITIAL_SLASH_STATE);
+  }, []);
+
+  // Templates filtered by what the user has typed after `/`. The slug
+  // (kebab-cased name) is the primary match key; raw name also matches
+  // so "Code R" finds "Code Review" too.
+  const slashMatches = useMemo<PromptTemplate[]>(() => {
+    if (!slashState.active) return [];
+    const q = slashState.query.toLowerCase();
+    if (!q) return promptTemplates.slice(0, SLASH_POPOVER_LIMIT);
+    return promptTemplates
+      .filter((t) => {
+        const slug = templateSlug(t.name);
+        return (
+          slug.startsWith(q) ||
+          slug.includes(q) ||
+          t.name.toLowerCase().includes(q)
+        );
+      })
+      .slice(0, SLASH_POPOVER_LIMIT);
+  }, [promptTemplates, slashState.active, slashState.query]);
+
+  const slashPopoverItems = useMemo<InputPopoverItem[]>(
+    () =>
+      slashMatches.map((t) => {
+        const slug = templateSlug(t.name);
+        const preview =
+          t.content.length > 60 ? `${t.content.slice(0, 60)}…` : t.content;
+        return {
+          key: t.id,
+          label: `/${slug}`,
+          description: `${preview} · ${t.category}`,
+        };
+      }),
+    [slashMatches],
+  );
+
   /**
    * Given the current text value and caret index, detect whether the caret
    * is inside an @-mention token (i.e. there's an '@' preceded by start-of-
@@ -487,6 +564,29 @@ export function AgentInputArea({
         const prev = i === 0 ? "" : value[i - 1];
         if (i === 0 || /\s/.test(prev)) {
           return { atIndex: i, query: value.slice(i + 1, caret) };
+        }
+        return null;
+      }
+      if (/\s/.test(ch)) return null;
+    }
+    return null;
+  }
+
+  /**
+   * Mirror of detectMention for the leading `/` slash-command trigger. Same
+   * "start-of-input or after whitespace" rule, so a stray slash inside a
+   * sentence ("either/or") doesn't pop the menu.
+   */
+  function detectSlash(
+    value: string,
+    caret: number,
+  ): { slashIndex: number; query: string } | null {
+    for (let i = caret - 1; i >= 0; i--) {
+      const ch = value[i];
+      if (ch === "/") {
+        const prev = i === 0 ? "" : value[i - 1];
+        if (i === 0 || /\s/.test(prev)) {
+          return { slashIndex: i, query: value.slice(i + 1, caret) };
         }
         return null;
       }
@@ -513,8 +613,34 @@ export function AgentInputArea({
       } else if (mentionState.active) {
         closeMention();
       }
+      // Slash-command (template) trigger. Skipped while the @-mention popover
+      // is active so the two triggers don't fight.
+      if (!hit) {
+        const slashHit = detectSlash(value, caret);
+        if (slashHit) {
+          setSlashState((prev) => ({
+            active: true,
+            query: slashHit.query,
+            slashIndex: slashHit.slashIndex,
+            highlightedIndex:
+              prev.active && prev.query === slashHit.query
+                ? prev.highlightedIndex
+                : 0,
+          }));
+        } else if (slashState.active) {
+          closeSlash();
+        }
+      } else if (slashState.active) {
+        closeSlash();
+      }
     },
-    [setAgentInputText, mentionState.active, closeMention],
+    [
+      setAgentInputText,
+      mentionState.active,
+      closeMention,
+      slashState.active,
+      closeSlash,
+    ],
   );
 
   const handleMentionItemsChange = useCallback((paths: string[]) => {
@@ -554,7 +680,81 @@ export function AgentInputArea({
     [agentInputText, setAgentInputText, textareaRef],
   );
 
+  /**
+   * Replace the `/query` token at the trigger position with the template's
+   * body content and place the caret at the end of the inserted body. This
+   * expands the prompt INTO the composer — it does not submit. The user can
+   * still edit before pressing Enter.
+   */
+  const insertSlashTemplate = useCallback(
+    (template: PromptTemplate) => {
+      const slashIdx = slashState.slashIndex;
+      if (slashIdx < 0) return;
+      const before = agentInputText.slice(0, slashIdx);
+      // Drop the entire "/query" token (1 + query length).
+      const afterStart = slashIdx + 1 + slashState.query.length;
+      const after = agentInputText.slice(afterStart);
+      // Avoid double-newlines: trim only the trailing whitespace on the
+      // template body, leave the user's `after` content untouched.
+      const body = template.content.replace(/\s+$/, "");
+      const next = `${before}${body}${after}`;
+      setAgentInputText(next);
+      const newCaret = before.length + body.length;
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(newCaret, newCaret);
+        }
+      });
+      closeSlash();
+    },
+    [agentInputText, setAgentInputText, slashState, closeSlash, textareaRef],
+  );
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // If the slash-command popover is open, intercept nav keys first. The
+    // popover is closed by detectSlash whenever the trigger no longer matches,
+    // so we don't need a separate guard against orphan state.
+    if (slashState.active) {
+      const items = slashMatches;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashState((prev) => ({
+          ...prev,
+          highlightedIndex:
+            items.length === 0 ? 0 : (prev.highlightedIndex + 1) % items.length,
+        }));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashState((prev) => ({
+          ...prev,
+          highlightedIndex:
+            items.length === 0
+              ? 0
+              : (prev.highlightedIndex - 1 + items.length) % items.length,
+        }));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        if (items.length > 0) {
+          e.preventDefault();
+          const pick =
+            items[slashState.highlightedIndex] ?? items[0];
+          if (pick) insertSlashTemplate(pick);
+          return;
+        }
+        closeSlash();
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeSlash();
+        return;
+      }
+    }
+
     // If mention popover is open, intercept navigation keys first.
     if (mentionState.active) {
       const items = mentionItemsRef.current;
@@ -895,6 +1095,18 @@ export function AgentInputArea({
               onSelect={insertMentionPath}
               onItemsChange={handleMentionItemsChange}
             />
+            {/* / slash-command popover — expands a prompt template into the
+                composer (replaces `/query` with the template body). */}
+            <InputPopover
+              visible={slashState.active}
+              items={slashPopoverItems}
+              highlightedIndex={slashState.highlightedIndex}
+              onSelect={(item) => {
+                const t = promptTemplates.find((pt) => pt.id === item.key);
+                if (t) insertSlashTemplate(t);
+              }}
+              emptyLabel="No matching templates"
+            />
           </div>
 
           {/* Staged attachment chips (drag-drop or pasted images). */}
@@ -933,7 +1145,10 @@ export function AgentInputArea({
             onPaste={handlePaste}
             onBlur={() => {
               // Delay so onMouseDown selection in the popover can still fire.
-              setTimeout(() => closeMention(), 120);
+              setTimeout(() => {
+                closeMention();
+                closeSlash();
+              }, 120);
             }}
             placeholder="What would you like to work on?  (drag-drop or paste images)"
             rows={4}
@@ -1406,7 +1621,7 @@ export function AgentInputArea({
 
         <p className="text-[9px] text-text-muted mt-2 text-center">
           Enter to send &middot; Shift+Enter for newline &middot; Ctrl+N for new
-          agent &middot; @ to mention a file &middot; drag/paste images
+          agent &middot; @ to mention a file &middot; / to expand a prompt template &middot; drag/paste images
         </p>
       </div>
 

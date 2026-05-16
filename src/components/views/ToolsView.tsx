@@ -21,6 +21,7 @@ import {
   Settings2,
   Palette,
   ChevronRight,
+  Settings,
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
@@ -52,6 +53,7 @@ import { MemorySettingsCard } from "./tools/MemorySettingsCard";
 import { GitHubSettingsCard } from "./tools/GitHubSettingsCard";
 import { SubscriptionsCard } from "./tools/SubscriptionsCard";
 import type { PromptTemplate } from "@/types/prompt";
+import { PromptLibrary } from "@/components/workspace/PromptLibrary";
 
 const HistoryView = lazy(() =>
   import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView })),
@@ -335,7 +337,7 @@ function AdvancedSection({
           <JumpLink
             label="Prompt Templates"
             icon={FileText}
-            description="Authoring and editing prompt templates (toolbar has the modal)"
+            description="Authoring and editing prompt templates (type / in the agent chat to expand one)"
             onJump={null}
             onInline={() => setInlineView((v) => (v === "prompts" ? null : "prompts"))}
             inlineOpen={inlineView === "prompts"}
@@ -423,6 +425,10 @@ function PromptTemplatesCard() {
   const [newName, setNewName] = useState("");
   const [newContent, setNewContent] = useState("");
   const [newCategory, setNewCategory] = useState<PromptTemplate["category"]>("general");
+  // Full-CRUD manager modal. The inline card supports create + delete; the
+  // modal adds in-place editing (and is the home of the templates UI now
+  // that the Toolbar Prompts button is gone).
+  const [showManager, setShowManager] = useState(false);
 
   function handleAdd() {
     if (!newName.trim() || !newContent.trim()) return;
@@ -440,13 +446,23 @@ function PromptTemplatesCard() {
           <FileText size={12} className="text-accent-amber" />
           Prompt Templates
         </h3>
-        <button
-          onClick={() => setShowNew(!showNew)}
-          className="flex items-center gap-1 px-2 py-1 text-[11px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
-        >
-          <Plus size={11} />
-          New
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowManager(true)}
+            className="flex items-center gap-1 px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+            title="Open the full template manager (edit, search, send)"
+          >
+            <Settings size={11} />
+            Manage…
+          </button>
+          <button
+            onClick={() => setShowNew(!showNew)}
+            className="flex items-center gap-1 px-2 py-1 text-[11px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+          >
+            <Plus size={11} />
+            New
+          </button>
+        </div>
       </div>
 
       {showNew && (
@@ -525,6 +541,7 @@ function PromptTemplatesCard() {
           ))}
         </div>
       )}
+      {showManager && <PromptLibrary onClose={() => setShowManager(false)} />}
     </div>
   );
 }

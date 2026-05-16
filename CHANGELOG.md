@@ -3,6 +3,46 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.8.6] - 2026-05-16
+
+### Changed — Toolbar demotion: Deploy + Prompts
+
+Two underused Toolbar buttons demoted to lower-friction surfaces. Both
+features stay alive; they just stop competing for prime chrome real estate.
+
+#### Deploy
+- Removed the Rocket-icon Deploy button from the Toolbar.
+- New entry "**New deploy run**" added to the global "+ New" dropdown
+  (Toolbar left-side, alongside New Claude/Codex/Mission/Issue).
+  Routes via `setActiveView("deploy")`.
+- DeployView itself unchanged.
+
+#### Prompts
+- Removed the BookOpen-icon Prompts button + `<PromptLibrary>` modal mount
+  from the Toolbar. The Toolbar no longer carries a Prompts surface.
+- **Slash-command expansion** added inside `AgentInputArea`: typing `/`
+  at start-of-input or after whitespace opens a popover listing
+  kebab-cased template names with a 60-char preview. Arrow nav,
+  Enter/Tab to insert (replaces the `/query` with the template body),
+  Esc cancels. Coexists with the existing `@`-mention popover; mention
+  takes priority where they overlap.
+- **Workspace pane** gains a BookOpen-icon dropdown in the pane header.
+  Selecting a template writes the body + CR to that pane's PTY via
+  `writePty`. Disabled when the pane has no live `sessionId`. (Uses `\r`
+  to match `runCommand` so the agent's Enter handler fires on Windows
+  ConPTY too.)
+- **Settings**: the existing `PromptTemplatesCard` (under Settings >
+  Advanced per the v0.8.1 IA reorg) gains a "Manage…" button that opens
+  the full `PromptLibrary` modal for in-place CRUD. The card's inline
+  editor keeps quick create + delete; full edit + search + send-to
+  affordances live in the modal.
+
+#### Process
+- 2 parallel agents (Deploy demote + Prompts overhaul) + 1 peer reviewer
+  + 2 fix-touches (PTY `\r` consistency, Rocket icon color separated
+  from the adjacent Ticket's amber so the +New rows don't visually
+  conflate).
+
 ## [0.8.5] - 2026-05-16
 
 ### Added — Issues pane rebuild (spec import + workspace close-loop)

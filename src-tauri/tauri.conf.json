@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/tauri2-schema/main/tauri.conf.json.schema",
   "productName": "PacketADE",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "identifier": "com.packetade.desktop",
   "build": {
     "beforeDevCommand": "pnpm run dev",
