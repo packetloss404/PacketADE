@@ -1,6 +1,9 @@
-import { Plane } from "lucide-react";
-import { type Issue } from "@/stores/issueStore";
+import { useState } from "react";
+import { Plane, Send, LayoutGrid } from "lucide-react";
+import { useIssueStore, type Issue } from "@/stores/issueStore";
 import { useFlightStore } from "@/stores/flightStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useAppStore } from "@/stores/appStore";
 import { getLabelColor } from "@/lib/colors";
 
 interface IssueCardProps {
@@ -35,9 +38,41 @@ function ticketInitials(ticketId: string): string {
 export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCardProps) {
   const flights = useFlightStore((s) => s.flights);
   const flight = flights.find((f) => f.issueIds.includes(issue.id)) ?? null;
+  const sendIssueToWorkspace = useIssueStore((s) => s.sendIssueToWorkspace);
+
+  // v0.8.5 — only show the "→ Workspace" pill when the linked workspace
+  // still exists. If the user archived/deleted the workspace, fall back
+  // to offering the Send CTA again rather than rendering a dead link.
+  const linkedWorkspace = useWorkspaceStore((s) =>
+    issue.workspaceId
+      ? s.workspaces.find((w) => w.id === issue.workspaceId)
+      : undefined,
+  );
+  const isLinked = Boolean(issue.sessionId && linkedWorkspace);
+
+  const [sending, setSending] = useState(false);
 
   const pri = PRIORITY_DISPLAY[issue.priority];
   const initials = ticketInitials(issue.ticketId);
+
+  async function handleSend(e: React.MouseEvent) {
+    // Prevent the card-level onClick (opens detail modal) from firing.
+    e.stopPropagation();
+    if (sending || isLinked) return;
+    setSending(true);
+    try {
+      await sendIssueToWorkspace(issue.id);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function handleJumpToWorkspace(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!linkedWorkspace) return;
+    useWorkspaceStore.getState().setActiveWorkspace(linkedWorkspace.id);
+    useAppStore.getState().setActiveView("workspace");
+  }
 
   return (
     <div
@@ -96,6 +131,36 @@ export function IssueCard({ issue, onDragStart, onClick, isDragging }: IssueCard
             <Plane size={9} />
             {shortFlightId(flight.id)}
           </span>
+        )}
+        {/*
+          v0.8.5 — Send-to-Workspace CTA.
+          When the Issue is already linked to a live workspace we render a
+          clickable pill that jumps the user back to that workspace + pane
+          ("→ Workspace"). Otherwise we render the Send button. Both
+          stopPropagation so the card-level onClick (open detail modal)
+          doesn't fire on top of the action.
+        */}
+        {isLinked ? (
+          <button
+            type="button"
+            onClick={handleJumpToWorkspace}
+            title={`Open workspace: ${linkedWorkspace?.name ?? "linked workspace"}`}
+            className="inline-flex items-center gap-1 rounded border border-accent-blue/40 bg-accent-blue/10 px-1.5 py-px text-[10px] font-medium text-accent-blue transition-colors hover:bg-accent-blue/20"
+          >
+            <LayoutGrid size={9} />
+            <span>&rarr; Workspace</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={sending}
+            title="Send this issue to a new workspace and start Claude on it"
+            className="inline-flex items-center gap-1 rounded border border-bg-border bg-bg-elevated px-1.5 py-px text-[10px] text-text-secondary transition-colors hover:border-accent-green/40 hover:bg-accent-green/10 hover:text-accent-green disabled:opacity-50"
+          >
+            <Send size={9} />
+            <span>{sending ? "Sending…" : "Send to Workspace"}</span>
+          </button>
         )}
         <div className="flex-1" />
         <div

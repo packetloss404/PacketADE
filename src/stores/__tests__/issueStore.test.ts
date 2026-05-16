@@ -190,8 +190,20 @@ describe("issueStore", () => {
   describe("getColumns", () => {
     it("returns the status column definitions", () => {
       const cols = store().getColumns();
-      expect(cols).toHaveLength(6);
-      expect(cols.map((c) => c.key)).toEqual(["todo", "in_progress", "qa", "done", "blocked", "needs_human"]);
+      // v0.8.5: the column set was extended additively with `backlog`,
+      // `up_next`, and `in_review` to back the new five-column Kanban.
+      expect(cols).toHaveLength(9);
+      expect(cols.map((c) => c.key)).toEqual([
+        "backlog",
+        "up_next",
+        "todo",
+        "in_progress",
+        "in_review",
+        "qa",
+        "done",
+        "blocked",
+        "needs_human",
+      ]);
     });
   });
 
@@ -339,6 +351,53 @@ describe("issueStore", () => {
       store().setTicketPrefix("NEW");
       const raw = JSON.parse(localStorage.getItem("packetade:issues")!);
       expect(raw.ticketPrefix).toBe("NEW");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // v0.8.5: inline comments
+  // ---------------------------------------------------------------------------
+  describe("addIssueComment / deleteIssueComment", () => {
+    it("appends a user comment and bumps updatedAt", async () => {
+      const created = store().addIssue(makeIssue());
+      const original = created.updatedAt;
+      // Give the clock a chance to tick so updatedAt is observably newer.
+      await new Promise((r) => setTimeout(r, 2));
+
+      const comment = store().addIssueComment(created.id, "  first thought  ");
+      expect(comment).not.toBeNull();
+      expect(comment!.author).toBe("user");
+      expect(comment!.body).toBe("first thought");
+
+      const after = store().issues[0];
+      expect(after.comments).toHaveLength(1);
+      expect(after.comments![0].id).toBe(comment!.id);
+      expect(after.updatedAt).toBeGreaterThan(original);
+    });
+
+    it("supports system and agent authorship", () => {
+      const created = store().addIssue(makeIssue());
+      store().addIssueComment(created.id, "agent note", "agent");
+      store().addIssueComment(created.id, "system note", "system");
+      const comments = store().issues[0].comments!;
+      expect(comments.map((c) => c.author)).toEqual(["agent", "system"]);
+    });
+
+    it("rejects empty / whitespace-only bodies", () => {
+      const created = store().addIssue(makeIssue());
+      expect(store().addIssueComment(created.id, "   ")).toBeNull();
+      expect(store().addIssueComment(created.id, "")).toBeNull();
+      expect(store().issues[0].comments).toBeUndefined();
+    });
+
+    it("deletes a comment by id", () => {
+      const created = store().addIssue(makeIssue());
+      const c1 = store().addIssueComment(created.id, "first")!;
+      const c2 = store().addIssueComment(created.id, "second")!;
+      store().deleteIssueComment(created.id, c1.id);
+      const remaining = store().issues[0].comments!;
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].id).toBe(c2.id);
     });
   });
 });

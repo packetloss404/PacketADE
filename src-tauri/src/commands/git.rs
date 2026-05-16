@@ -1,7 +1,9 @@
 use crate::core::execution::SshConfig;
 use crate::core::git;
 use crate::core::worktree;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
+use tracing::{info, warn};
 
 #[tauri::command]
 pub async fn get_git_branch(project_path: String) -> Result<String, String> {
@@ -23,8 +25,170 @@ pub async fn get_git_status(project_path: String) -> Result<String, String> {
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// v0.8.5: payload for the `issue-watcher:fixed` Tauri event. Emitted
+/// after a successful commit whose message contains one or more
+/// `Fixes #N` trailers that match a known Issue (looked up in
+/// `PersistedState.issues` by the trailing numeric portion of
+/// `ticket_id`). The frontend `issueStore` listener consumes this and
+/// flips the matching Issue to `done`.
+///
+/// `commit_sha` is the short SHA (`rev-parse --short HEAD`) at the time
+/// of the commit; `commit_subject` is the first line of the commit
+/// message. Both are best-effort — if either probe fails the values
+/// default to empty strings and the listener gracefully tolerates that.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueFixedPayload {
+    pub issue_id: String,
+    pub ticket_id: String,
+    pub issue_number: u32,
+    pub commit_sha: String,
+    pub commit_subject: String,
+}
+
+/// v0.8.5: extract `N` from every `Fixes #N` (case-insensitive) trailer
+/// in a commit message. Accepts standalone lines like `Fixes #42`,
+/// `fixes #42`, `Fixes: #42`, and a handful of conventional synonyms
+/// (`Closes`, `Resolves`). De-duplicated, preserving first-seen order.
+///
+/// Conservative: only matches when the keyword starts at the beginning
+/// of a line (allowing leading whitespace) so prose like "this commit
+/// fixes #42 in the docs" doesn't accidentally close issues — only
+/// real trailers do.
+fn parse_fixes_trailers(msg: &str) -> Vec<u32> {
+    let mut out: Vec<u32> = Vec::new();
+    let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    for raw_line in msg.lines() {
+        let line = raw_line.trim_start();
+        // Find the first whitespace, `:` or `#` after a leading keyword.
+        // We match three keywords: fixes / closes / resolves. Anything
+        // else is left alone.
+        let lower = line.to_ascii_lowercase();
+        let after_kw = if lower.starts_with("fixes") {
+            Some(&line[5..])
+        } else if lower.starts_with("closes") {
+            Some(&line[6..])
+        } else if lower.starts_with("resolves") {
+            Some(&line[8..])
+        } else {
+            None
+        };
+        let Some(after) = after_kw else { continue };
+        // After the keyword we expect: optional `:`, then whitespace,
+        // then `#` and digits. Reject anything else so "fixesthebar"
+        // doesn't false-positive.
+        let after = after.trim_start_matches(':');
+        let after = after.trim_start();
+        let Some(rest) = after.strip_prefix('#') else {
+            continue;
+        };
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if digits.is_empty() {
+            continue;
+        }
+        // Reject trailing junk like `#42foo` so we don't mis-parse a
+        // hash followed by a word. `#42`, `#42.`, `#42,` are all fine.
+        let after_digits = &rest[digits.len()..];
+        if let Some(next) = after_digits.chars().next() {
+            if next.is_alphanumeric() {
+                continue;
+            }
+        }
+        let Ok(n) = digits.parse::<u32>() else { continue };
+        if seen.insert(n) {
+            out.push(n);
+        }
+    }
+    out
+}
+
+/// v0.8.5: parse the trailing numeric portion of a `ticket_id` like
+/// `PKT-001` → `1`. Returns `None` when the id doesn't end in digits.
+/// The matching is purely numeric and ignores the prefix, so different
+/// ticket prefixes (the user-configurable `ticketPrefix` in the issue
+/// store, default `PKT`) all flow through the same close-loop.
+fn ticket_number(ticket_id: &str) -> Option<u32> {
+    let last_dash = ticket_id.rfind('-')?;
+    ticket_id[last_dash + 1..].parse::<u32>().ok()
+}
+
+/// v0.8.5: after a successful commit, emit one `issue-watcher:fixed`
+/// event per `Fixes #N` trailer that resolves to a known Issue (by
+/// `ticket_id` suffix match). Failures are logged at warn but never
+/// propagate — the commit itself already succeeded.
+fn emit_fixes_events(
+    app_handle: &AppHandle,
+    project_path: &str,
+    commit_msg: &str,
+) {
+    let numbers = parse_fixes_trailers(commit_msg);
+    if numbers.is_empty() {
+        return;
+    }
+
+    // Best-effort SHA + subject lookup. If git rev-parse fails (e.g.
+    // detached state we can't recover) we still emit with empty
+    // commit_sha so the listener flips the Issue without the audit
+    // metadata.
+    let commit_sha = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(project_path)
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+
+    let commit_subject = commit_msg.lines().next().unwrap_or("").trim().to_string();
+
+    // Look up the issues persisted state. `load_state()` is sync I/O —
+    // we're already on a `spawn_blocking` thread when called from
+    // `git_commit`, so this is fine.
+    let issues = crate::core::storage::load_state().issues;
+
+    for number in numbers {
+        let matched = issues
+            .iter()
+            .find(|i| ticket_number(&i.ticket_id) == Some(number));
+        let Some(issue) = matched else {
+            info!(number, "Fixes #N trailer found but no matching Issue in state");
+            continue;
+        };
+        if issue.status == "done" {
+            info!(issue = %issue.id, number, "Issue already done, skipping watcher emit");
+            continue;
+        }
+        let payload = IssueFixedPayload {
+            issue_id: issue.id.clone(),
+            ticket_id: issue.ticket_id.clone(),
+            issue_number: number,
+            commit_sha: commit_sha.clone(),
+            commit_subject: commit_subject.clone(),
+        };
+        match app_handle.emit("issue-watcher:fixed", &payload) {
+            Ok(_) => info!(
+                issue = %issue.id,
+                number,
+                sha = %commit_sha,
+                "Emitted issue-watcher:fixed",
+            ),
+            Err(e) => warn!(
+                issue = %issue.id,
+                error = %e,
+                "Failed to emit issue-watcher:fixed event (non-fatal)",
+            ),
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn git_commit(
+    app_handle: AppHandle,
     project_path: String,
     message: String,
     stage_all: bool,
@@ -32,7 +196,31 @@ pub async fn git_commit(
     tokio::task::spawn_blocking(move || {
         super::validate_project_path(&project_path)?;
         super::validate_input_size(&message, super::MAX_INPUT_SIZE, "Commit message")?;
-        git::commit(&project_path, &message, stage_all)
+        let result = git::commit(&project_path, &message, stage_all)?;
+
+        // v0.8.5: scan the committed message (read back from HEAD so we
+        // include any auto-trailers the prepare-commit-msg hook just
+        // appended) for `Fixes #N` lines. This is the synchronous
+        // close-loop trigger — external commits made directly via the
+        // terminal won't flow through here, but the common in-app commit
+        // path does.
+        let final_msg = std::process::Command::new("git")
+            .args(["log", "-1", "--pretty=%B"])
+            .current_dir(&project_path)
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).into_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| message.clone());
+
+        emit_fixes_events(&app_handle, &project_path, &final_msg);
+
+        Ok(result)
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
@@ -144,6 +332,59 @@ pub async fn remove_conversation_worktree(
     worktree::remove_local_worktree(&project_path, &conv_id).await
 }
 
+/// v0.8.5 fix: provision a git worktree bound to a specific Issue and
+/// install the `prepare-commit-msg` hook that appends `Fixes #N` plus a
+/// `Run-By: PacketADE issue I-<id>` trailer to every commit made inside
+/// the worktree. The worktree lives at
+/// `<project_path>/.pkt-worktrees/<issue_id>` on branch `pkt/<issue_id>`.
+///
+/// Returns the absolute worktree path so the frontend can use it as the
+/// new workspace's `projectPath`, ensuring the PTY runs inside the
+/// worktree (where the hook is installed) rather than the bare project
+/// root. Without this, the auto-Done close-loop never fires — commits
+/// in the bare repo carry no `Fixes #N` trailer, so `git_commit`'s
+/// trailer scanner has nothing to match.
+///
+/// Base branch is auto-detected via the current `HEAD` of the project,
+/// falling back to `HEAD` when the probe fails (matches the
+/// `createConversationWorktree` caller in AgentsView).
+///
+/// Idempotent: if the worktree already exists, the hook is re-installed
+/// and the existing path is returned.
+#[tauri::command]
+pub async fn create_issue_worktree(
+    issue_id: String,
+    issue_number: u32,
+    issue_title: String,
+    project_path: String,
+) -> Result<String, String> {
+    super::validate_project_path(&project_path)?;
+
+    // Detect the base branch from the project's current HEAD. Falls
+    // back to `HEAD` (a detached-style ref git can still branch off
+    // of) if the probe fails — matches the conversation-worktree
+    // caller's behaviour in AgentsView.
+    let base_branch = {
+        let pp = project_path.clone();
+        tokio::task::spawn_blocking(move || git::get_branch(&pp))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+            .ok()
+            .filter(|b| !b.trim().is_empty())
+            .unwrap_or_else(|| "HEAD".to_string())
+    };
+
+    let issue = worktree::WorktreeIssue {
+        issue_id: issue_id.clone(),
+        issue_number,
+        issue_title,
+    };
+
+    worktree::create_local_worktree_for_issue(&project_path, &issue_id, &base_branch, issue)
+        .await
+        .map_err(|e| format!("Issue worktree provision failed: {}", e))
+}
+
 /// Phase 3.3: minimum SSH config the remote git dashboard commands need.
 /// The frontend builds this from a `Workspace.serverId` lookup against the
 /// `serverStore`. Mirrors `scaffold::CloneServerConfigDto` but kept
@@ -210,4 +451,79 @@ pub async fn get_git_status_remote(
     }
     let cfg = server_config.into_ssh_config(remote_path.clone());
     worktree::ssh_get_status(&cfg, &remote_path).await
+}
+
+// v0.8.5 — `Fixes #N` trailer parsing & ticket-id mapping tests. Kept
+// alongside the parser so the canonical close-loop contract is locked
+// down by the test suite.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_fixes_trailers_matches_canonical_trailer() {
+        let msg = "feat: add the thing\n\nFixes #42\nRun-By: PacketADE issue I-abc\n";
+        assert_eq!(parse_fixes_trailers(msg), vec![42]);
+    }
+
+    #[test]
+    fn parse_fixes_trailers_is_case_insensitive() {
+        assert_eq!(parse_fixes_trailers("fixes #7"), vec![7]);
+        assert_eq!(parse_fixes_trailers("FIXES #7"), vec![7]);
+        assert_eq!(parse_fixes_trailers("Closes #7"), vec![7]);
+        assert_eq!(parse_fixes_trailers("Resolves #7"), vec![7]);
+    }
+
+    #[test]
+    fn parse_fixes_trailers_handles_colon_form() {
+        // git-interpret-trailers tolerates both forms; we should too.
+        assert_eq!(parse_fixes_trailers("Fixes: #99"), vec![99]);
+    }
+
+    #[test]
+    fn parse_fixes_trailers_deduplicates() {
+        let msg = "Fixes #1\nFixes #1\nFixes #2\n";
+        assert_eq!(parse_fixes_trailers(msg), vec![1, 2]);
+    }
+
+    #[test]
+    fn parse_fixes_trailers_ignores_prose_mentions() {
+        // Conservative: only matches at start-of-line so a mention
+        // inside the commit body doesn't false-positive.
+        let msg = "feat: this also fixes #99 in the docs\n\nNo trailer here.";
+        assert_eq!(parse_fixes_trailers(msg), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn parse_fixes_trailers_ignores_keyword_collisions() {
+        // `fixesthebar` is not a trailer.
+        assert_eq!(parse_fixes_trailers("fixesthebar #99"), Vec::<u32>::new());
+        // `#42foo` is not a valid issue ref.
+        assert_eq!(parse_fixes_trailers("Fixes #42foo"), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn parse_fixes_trailers_accepts_trailing_punctuation() {
+        assert_eq!(parse_fixes_trailers("Fixes #42."), vec![42]);
+        assert_eq!(parse_fixes_trailers("Fixes #42,"), vec![42]);
+    }
+
+    #[test]
+    fn ticket_number_extracts_trailing_digits() {
+        assert_eq!(ticket_number("PKT-001"), Some(1));
+        assert_eq!(ticket_number("PKT-42"), Some(42));
+        assert_eq!(ticket_number("ABC-007"), Some(7));
+    }
+
+    #[test]
+    fn ticket_number_handles_custom_prefixes() {
+        assert_eq!(ticket_number("CUSTOM-PREFIX-99"), Some(99));
+    }
+
+    #[test]
+    fn ticket_number_rejects_non_numeric_tail() {
+        assert_eq!(ticket_number("PKT-abc"), None);
+        assert_eq!(ticket_number("PKT-"), None);
+        assert_eq!(ticket_number("noprefix"), None);
+    }
 }
