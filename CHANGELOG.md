@@ -3,6 +3,81 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.8.2] - 2026-05-16
+
+### Added — Toolbar overhaul
+
+Audit-driven cleanup of the top Toolbar (`src/components/layout/Toolbar.tsx`).
+Shipped in two commits with peer-review rounds, plus a final consolidated
+review pass before push.
+
+#### Commit 1 (`4710028`) — dedupes + Ctrl+K + global "+ New"
+- **Dropped the redundant Costs button.** `LiveSpendChip` is now the sole
+  cost-navigation surface; clicking it routes to the Cost Dashboard. Chip and
+  dashboard both read from `useAnalyticsStore.data` so they agree on today.
+- **Dictation removed from the Modules dropdown.** Still reachable from the
+  dedicated VT button, the CommandPalette, the StatusStrip indicator, and
+  Settings > Modules. Dropdown hides entirely when only Dictation is enabled.
+- **`PaneLayoutControls` moved to WorkspaceView.** Extracted to its own file
+  in `src/components/workspace/PaneLayoutControls.tsx`; reads
+  `useWorkspaceStore` + `useMosaicStore` directly. Removed the duplicate
+  inline `SUBTAB_PRESETS` bar from WorkspaceView that the peer reviewer
+  caught.
+- **Dropped read-only Toolbar git branch + project name displays.**
+  StatusStrip already shows both. Kept the actionable folder picker
+  (icon-only, full path in tooltip) and the GitActionButtons pill.
+- **Ctrl+K discoverability.** New Search chip on the left side of the
+  Toolbar with a visible kbd hint; clicks open the same CommandPalette state
+  the global keyboard handler does.
+- **Global "+ New" dropdown.** Left side of the Toolbar. Four items, all
+  wired end-to-end: New Claude session, New Codex session, New Mission,
+  New Issue.
+
+#### Commit 2 (`4ba3562`) — polish
+- **Icon sizes normalized to 12** across the Toolbar; only intentional
+  outlier is the +New caret ChevronDown at size={10}.
+- **Cluster dividers** between Status / Action / Tooling / Project chip
+  groups for clearer visual rhythm.
+- **Tooltip keyboard-shortcut hints.** VT button now surfaces Ctrl+Shift+D;
+  folder picker tooltip restored the project-path context that was lost
+  when the visible text was removed in commit 1.
+- **Review badge count.** Pending-approval count badge on the Review
+  button (red, with "99+" cap) mirroring `ReviewQueueView`'s filter
+  exactly. Mission-planner approvals correctly excluded (they surface on
+  the mission view, not the review queue).
+- **Commit Modal replaces `window.prompt` anti-pattern.** New
+  `CommitModal` component with a real multi-line message field,
+  auto-focus, no Ctrl+Enter (explicit Commit button only), inline error
+  rendering, brief 800ms success state, and no double-click re-invocation
+  during the success grace window.
+- **Modal X dim-during-busy.** Added a `closeDisabled` prop to the shared
+  `Modal` wrapper so callers can visually dim the close button while a
+  modal is in the middle of an unbreakable operation.
+- **Branch chip refresh on commit.** `CommitModal` calls back to refresh
+  `getGitBranch` immediately on success so the branch chip catches up
+  without waiting for the 10s poll.
+- **Search chip kbd hint contrast** tuned (`bg-bg-primary` vs the chip's
+  `bg-bg-secondary`) so the `Ctrl+K` cap reads as a label inside the
+  search affordance, not a competing button.
+
+#### Architecture
+- 8 implementation agents (4 per commit) + 4 peer reviewers (2 per commit)
+  + 1 final consolidated review pass. ~14 agent runs total.
+- One P0 caught + fixed: `gitCommit` returns raw `git commit -m` stdout
+  (multi-line `[branch sha7] subject\n …`), not a SHA — the modal now
+  parses the short sha out via regex and falls back to a label-only
+  "Committed" if no match.
+
+### Backlog (deferred)
+- Modal lacks Escape-to-close (cross-cutting — affects every modal).
+- Theme toggle still exists in both Toolbar and Settings (intentional —
+  Toolbar is a power-user one-click).
+- Long Windows-path truncation in folder tooltip.
+- Re-render perf on the Review badge selector (sub-ms today; only matters
+  with hundreds of flights).
+- Pane-layout-controls leading internal divider only makes sense when it
+  has a left-side neighbour.
+
 ## [0.8.1] - 2026-05-15
 
 ### Added — Settings panel cleanup + missing v0.8 controls
