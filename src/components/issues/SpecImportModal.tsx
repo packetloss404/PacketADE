@@ -28,7 +28,7 @@
 // at the top toolbar. Closing the modal at any point discards staged
 // drafts — no auto-save.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Loader2,
   Check,
@@ -100,6 +100,23 @@ export function SpecImportModal({ open, onClose, projectPath }: SpecImportModalP
 
   const addIssue = useIssueStore((s) => s.addIssue);
 
+  // v0.8.8 (edge case 4): capture the `projectPath` on open. The parent
+  // (`IssueBoard.tsx`) passes a live expression — `activeWorkspace?.
+  // projectPath || useLayoutStore.getState().projectPath` — which can
+  // change mid-edit if the user switches/archives/deletes the active
+  // workspace in another pane. Capture-on-open guarantees the spec
+  // extraction runs against the same project the user thought they
+  // were targeting when they pasted.
+  const [capturedProjectPath, setCapturedProjectPath] = useState<string>(projectPath);
+  useEffect(() => {
+    if (open) {
+      setCapturedProjectPath(projectPath);
+    }
+    // Intentionally NOT depending on `projectPath` — sample only on the
+    // open transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   if (!open) return null;
 
   const selectedCount = rows.filter((r) => r.selected).length;
@@ -111,7 +128,7 @@ export function SpecImportModal({ open, onClose, projectPath }: SpecImportModalP
     setError(null);
     setPhase("loading");
     try {
-      const drafts = await issuesExtractFromSpec(trimmed, projectPath);
+      const drafts = await issuesExtractFromSpec(trimmed, capturedProjectPath);
       if (!Array.isArray(drafts) || drafts.length === 0) {
         throw new Error("The model returned zero tickets. Try a more concrete spec.");
       }

@@ -31,6 +31,14 @@ function extractTicketNumber(ticketId: string): number | null {
  * gated behind a primary button click; there is intentionally NO Ctrl+Enter
  * submit shortcut, to prevent accidental commits while the user is still
  * editing the message.
+ *
+ * v0.8.8 (edge case 4): captures the `projectPath` prop on open and
+ * holds it stable for the lifetime of the modal session. After v88-A
+ * made `useLayoutStore.projectPath` derive from the active workspace,
+ * the Toolbar prop would otherwise change live mid-edit if the active
+ * workspace got switched, archived, or deleted from another surface —
+ * we'd commit to the WRONG repo. Snapshotting on `open` matches the
+ * mental model: the user typed a message for THIS project.
  */
 export function CommitModal({ open, onClose, projectPath, onCommitted }: CommitModalProps) {
   const [message, setMessage] = useState("");
@@ -38,6 +46,22 @@ export function CommitModal({ open, onClose, projectPath, onCommitted }: CommitM
   const [error, setError] = useState<string | null>(null);
   const [committedSha, setCommittedSha] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // v0.8.8 (edge case 4): freeze the project path the moment the modal
+  // opens. `capturedProjectPath` is what every downstream effect, label,
+  // and `gitCommit` call sees. We also stash it in a ref so the
+  // close-reset effect can null it without triggering re-renders.
+  const [capturedProjectPath, setCapturedProjectPath] = useState<string>(projectPath);
+  const capturedPathRef = useRef<string>(projectPath);
+  useEffect(() => {
+    if (open) {
+      setCapturedProjectPath(projectPath);
+      capturedPathRef.current = projectPath;
+    }
+    // Intentionally NOT depending on `projectPath` — we only want to
+    // sample it on the open transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // v0.8.5 (CRITICAL FIX 2): if the active workspace is bound to an Issue,
   // auto-seed the commit message with a `Fixes #N` trailer so the Rust
@@ -66,17 +90,27 @@ export function CommitModal({ open, onClose, projectPath, onCommitted }: CommitM
       (w) =>
         w.status === "active" &&
         !w.serverId && // remote workspaces don't drive local commits
-        w.projectPath === projectPath,
+        w.projectPath === capturedProjectPath,
     );
     const wsId = matchingWs?.id ?? activeWorkspaceId ?? null;
     if (!wsId) return null;
     const candidates = issues
-      .filter((i) => i.workspaceId === wsId && i.status !== "done")
+      .filter(
+        (i) =>
+          i.workspaceId === wsId &&
+          // Exclude any terminal/closed status. `done` is the only terminal
+          // state in the current IssueStatus union, but we defensively also
+          // exclude `cancelled` so a future union expansion (or a stray
+          // status coming in from external sync) doesn't re-introduce the
+          // bug where a closed issue still seeds `Fixes #N` into the commit.
+          i.status !== "done" &&
+          (i.status as string) !== "cancelled",
+      )
       .map((i) => ({ issue: i, num: extractTicketNumber(i.ticketId) }))
       .filter((c): c is { issue: typeof c.issue; num: number } => c.num !== null)
       .sort((a, b) => a.num - b.num);
     return candidates[0] ?? null;
-  }, [open, projectPath, issues, workspaces, activeWorkspaceId]);
+  }, [open, capturedProjectPath, issues, workspaces, activeWorkspaceId]);
 
   // v0.8.5 (CRITICAL FIX 2): one-shot guard so the `Fixes #N` seed runs
   // exactly once per modal open. Without this the seed effect would
@@ -132,14 +166,21 @@ export function CommitModal({ open, onClose, projectPath, onCommitted }: CommitM
   }, [open]);
 
   const projectBasename = useMemo(() => {
-    if (!projectPath) return "";
+    if (!capturedProjectPath) return "";
     // Handle both POSIX and Windows separators.
-    const trimmed = projectPath.replace(/[\\/]+$/, "");
+    const trimmed = capturedProjectPath.replace(/[\\/]+$/, "");
     const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
     return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-  }, [projectPath]);
+  }, [capturedProjectPath]);
 
-  const canCommit = message.trim().length > 0 && !busy && !committedSha;
+  // v0.8.8 (edge case 2): when no workspace exists and the fallback
+  // never got set, `capturedProjectPath` is `""`. Block the commit
+  // button rather than letting `gitCommit("", ...)` reach the backend.
+  const canCommit =
+    message.trim().length > 0 &&
+    !busy &&
+    !committedSha &&
+    capturedProjectPath.trim().length > 0;
 
   async function handleCommit() {
     if (!canCommit) return;
@@ -151,7 +192,7 @@ export function CommitModal({ open, onClose, projectPath, onCommitted }: CommitM
       //   [main abc1234] subject
       //    N files changed, ...
       // — parse out the short sha from the first line. Fallback: no sha display.
-      const stdout = await gitCommit(projectPath, message.trim(), false);
+      const stdout = await gitCommit(capturedProjectPath, message.trim(), false);
       const shaMatch = stdout.match(/\[[^\]]+\s([a-f0-9]{7,40})\]/);
       const sha = shaMatch ? shaMatch[1] : "";
       setCommittedSha(sha);
@@ -227,10 +268,19 @@ export function CommitModal({ open, onClose, projectPath, onCommitted }: CommitM
           </label>
           <div
             className="text-[11px] text-text-secondary bg-bg-primary border border-bg-border rounded px-2.5 py-1.5 font-mono truncate"
-            title={projectPath || "(no project path)"}
+            title={capturedProjectPath || "(no project path)"}
           >
-            {projectBasename || projectPath || "(no project path)"}
+            {projectBasename || capturedProjectPath || "(no project path)"}
           </div>
+          {/* v0.8.8 (edge case 2): explain why the commit button is
+              disabled when there's no project path. Mirrors the
+              `canCommit` guard so the user knows to set a folder via
+              the Toolbar picker first. */}
+          {!capturedProjectPath.trim() && (
+            <p className="text-[10px] text-accent-amber">
+              No project folder selected — pick one from the Toolbar before committing.
+            </p>
+          )}
         </div>
 
         {/* Commit message */}
