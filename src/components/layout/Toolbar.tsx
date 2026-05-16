@@ -204,15 +204,6 @@ export function Toolbar() {
           <span>Review</span>
         </button>
 
-        {/* Theme toggle */}
-        <button
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="p-1 text-text-muted hover:text-text-primary transition-colors"
-          title={`Theme — currently ${theme}. Click to switch to ${theme === "dark" ? "light" : "dark"} mode.`}
-        >
-          {theme === "dark" ? <Sun size={12} /> : <Moon size={12} />}
-        </button>
-
         {/* Deploy button */}
         <button
           onClick={() => setActiveView("deploy")}
@@ -318,6 +309,18 @@ export function Toolbar() {
           title={projectPath ? `Project: ${projectPath} — click to open a different folder` : "No project open — click to open one"}
         >
           <FolderOpen size={12} />
+        </button>
+
+        <div className="w-px h-4 bg-bg-border self-center" />
+
+        {/* Theme toggle — own slot at the far right; not an action verb so
+            kept separate from the Action cluster. Also mirrored in Settings. */}
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="p-1 text-text-muted hover:text-text-primary transition-colors"
+          title={`Theme — currently ${theme}. Click to switch to ${theme === "dark" ? "light" : "dark"} mode.`}
+        >
+          {theme === "dark" ? <Sun size={12} /> : <Moon size={12} />}
         </button>
       </div>
 
