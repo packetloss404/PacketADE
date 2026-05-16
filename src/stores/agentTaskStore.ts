@@ -76,6 +76,8 @@ import {
   useAgentSettingsStore,
 } from "@/stores/agentSettingsStore";
 import { useAgentStore } from "@/stores/agentStore";
+import { useFlightStore } from "@/stores/flightStore";
+import { useOrchestrationStore } from "@/stores/orchestrationStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
 import { notifyConversationDone } from "@/lib/notifications";
@@ -106,6 +108,60 @@ function scheduleSave(conv: AgentConversation): void {
     });
   }, SAVE_DEBOUNCE_MS);
   saveTimers.set(conv.id, handle);
+}
+
+/**
+ * Resolve an api-agent conversation id to the orchestrator Task it backs,
+ * if any. For API conversations the conversation id IS the session id
+ * (see `createApiConversation` — `sessionId: id`), so the reverse-lookup
+ * is a straight `Task.sessionId === conversationId` match against the
+ * flight store. Returns null for free-standing chats not bound to a task.
+ */
+function findTaskForConversation(conversationId: string): { taskId: string } | null {
+  const hit = useFlightStore.getState().findTaskBySessionId(conversationId);
+  return hit ? { taskId: hit.task.id } : null;
+}
+
+/**
+ * Fire the orchestrator's `onTaskApprovalNeeded` for the task bound to
+ * this conversation, if one exists. Idempotent — the orchestrator's
+ * `notify_approval_needed` Rust command is a state flip (`approval_needed`),
+ * so re-firing on a task that's already in that state is a no-op.
+ * Used by the permission-request handler so the Toolbar Bell / ReviewQueueView
+ * pick up approval prompts from API agents (sidecar + in-process LlmProvider),
+ * not just PTY-orchestrated CLI agents.
+ */
+function fireTaskApprovalNeeded(conversationId: string): void {
+  const hit = findTaskForConversation(conversationId);
+  if (!hit) return; // free-standing chat — inline pendingPermissions still works
+  void useOrchestrationStore
+    .getState()
+    .onTaskApprovalNeeded(hit.taskId)
+    .catch((e) => console.warn("fireTaskApprovalNeeded failed:", e));
+}
+
+/**
+ * Resolve a previously-fired task approval when the conversation's
+ * pendingPermissions queue drains for ANY reason (user accepts/denies,
+ * cancelPendingTools, conversation reset/fork, conversation deleted, etc.).
+ * Only fires when there are no remaining pending permissions AND no
+ * pending edits on the conversation — otherwise the task should stay in
+ * `approval_needed` while other prompts are still parked.
+ *
+ * Callers pass the POST-mutation conversation snapshot.
+ */
+function maybeResolveTaskApproval(conv: AgentConversation | undefined): void {
+  if (!conv) return;
+  const stillPending =
+    (conv.pendingPermissions && conv.pendingPermissions.length > 0) ||
+    (conv.pendingEdits && conv.pendingEdits.length > 0);
+  if (stillPending) return;
+  const hit = findTaskForConversation(conv.id);
+  if (!hit) return;
+  void useOrchestrationStore
+    .getState()
+    .onTaskApprovalResolved(hit.taskId)
+    .catch((e) => console.warn("maybeResolveTaskApproval failed:", e));
 }
 
 export type BuiltinCliAgent = "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
@@ -748,7 +804,17 @@ async function installApiAgentListeners(
           return next;
         }),
       }));
-      if (updated) scheduleSave(updated);
+      // Only persist + flip the task to approval_needed if the conversation
+      // actually exists. The `.map` above silently no-ops for missing
+      // conversations, so without this gate we'd flip a task whose
+      // conversation was deleted while the permission was in flight.
+      if (updated) {
+        scheduleSave(updated);
+        // Wire to Review queue: if this conversation backs an orchestrator
+        // Task, flip the task to `approval_needed` so the Toolbar Bell badge
+        // and ReviewQueueView pick it up. No-op for free-standing chats.
+        fireTaskApprovalNeeded(id);
+      }
     },
   );
 
@@ -763,7 +829,18 @@ async function installApiAgentListeners(
         return next;
       }),
     }));
-    if (updated) scheduleSave(updated);
+    // P0-1: mirror the permission-request handler. API agents that fire only
+    // `pending-edit` (no permission-request) need to wake the Bell badge /
+    // ReviewQueueView too. And if both queues are non-empty mid-stream,
+    // approving the permission alone wouldn't drain — maybeResolveTaskApproval
+    // requires BOTH queues empty, so the task would otherwise stay stuck.
+    // fireTaskApprovalNeeded is idempotent (orchestration's state flip is a
+    // no-op on existing approval_needed), so the dual call site is safe.
+    // Same conversation-existence gate as the permission-request handler.
+    if (updated) {
+      scheduleSave(updated);
+      fireTaskApprovalNeeded(id);
+    }
   });
 
   const planBlockUnlisten = await listen<{ items: AgentPlanItem[] }>(
@@ -1456,6 +1533,26 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         void killPty(conv.sessionId).catch(() => {});
       }
     }
+    // If this conversation had parked permissions/edits AND was linked to
+    // an orchestrator task, deletion drains the queue — clear the task's
+    // `approval_needed` state so the Review queue doesn't get stuck on
+    // a conversation that no longer exists.
+    if (conv && conv.mode === "api") {
+      const hadParked =
+        (conv.pendingPermissions && conv.pendingPermissions.length > 0) ||
+        (conv.pendingEdits && conv.pendingEdits.length > 0);
+      if (hadParked) {
+        const hit = findTaskForConversation(id);
+        if (hit) {
+          void useOrchestrationStore
+            .getState()
+            .onTaskApprovalResolved(hit.taskId)
+            .catch((e) =>
+              console.warn("deleteConversation: onTaskApprovalResolved failed:", e),
+            );
+        }
+      }
+    }
     // Best-effort remove persisted file (API mode only)
     if (conv?.mode === "api") {
       deleteConversationFile(id).catch((e) =>
@@ -1610,6 +1707,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       }),
     }));
     if (updated) scheduleSave(updated);
+    // Resolve the linked task approval iff the conversation has no more
+    // parked prompts (permissions or edits). Idempotent — `onTaskApprovalResolved`
+    // is a state flip back to `running`.
+    maybeResolveTaskApproval(updated);
   },
 
   setEnabledMcpServerIds: (id, ids) => {
@@ -1816,6 +1917,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       }),
     }));
     if (updated) scheduleSave(updated);
+    // All parked prompts drained — flip any linked task back out of
+    // `approval_needed` so the Review queue stays accurate.
+    maybeResolveTaskApproval(updated);
     try {
       await tauriCancelPendingTools(id);
     } catch (e) {
@@ -1836,6 +1940,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       }),
     }));
     if (updated) scheduleSave(updated);
+    maybeResolveTaskApproval(updated);
   },
 
   forkAndResend: async (id, messageId, newContent) => {
@@ -1892,6 +1997,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       }),
     }));
     if (updated) scheduleSave(updated);
+    // Fork wipes parked prompts — release any linked task approval so the
+    // Review queue isn't stuck on a turn we just truncated away from.
+    maybeResolveTaskApproval(updated);
 
     // Send the edited content as the next user turn — sendMessage handles
     // session re-establishment for api-mode conversations that lost their

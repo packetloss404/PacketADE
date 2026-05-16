@@ -7,10 +7,15 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Clock,
   Cpu,
   Diamond,
+  Download,
+  ExternalLink,
+  FolderOpen,
   Github,
   Hexagon,
+  Loader2,
   type LucideIcon,
   MousePointer2,
   Pencil,
@@ -24,15 +29,20 @@ import {
   Wind,
   X,
 } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { createGenericConfig } from "@/agents/generic";
 import { useAgentStore } from "@/stores/agentStore";
+import { useAppStore } from "@/stores/appStore";
+import { useCliOverrideStore } from "@/stores/cliOverrideStore";
+import { useLayoutStore } from "@/stores/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import {
   brandClasses,
   CLI_CATALOG,
   type CliCatalogEntry,
   getCliBinaries,
 } from "@/lib/cli-catalog";
-import { detectCliCatalog, type DetectCatalogResult } from "@/lib/tauri";
+import { detectCliCatalog, type DetectCatalogResult, writePty } from "@/lib/tauri";
 import type { AgentConfig } from "@/types/agent";
 import { CliCatalogHeader } from "./CliCatalogHeader";
 
@@ -59,6 +69,38 @@ function renderCatalogIcon(
 ): React.ReactElement {
   const Resolved: LucideIcon = ICON_MAP[name] ?? Terminal;
   return <Resolved size={16} className={className} />;
+}
+
+// === v0.8.7: card variant model ===
+
+/** Discriminated render mode for each catalog entry. Computed top-to-bottom:
+ *  installed > browse-only > installable > coming-soon > browse-fallback. */
+type CardVariant = "installed" | "browse-only" | "installable" | "coming-soon" | "browse-fallback";
+
+function resolveVariant(
+  entry: CliCatalogEntry,
+  result: DetectCatalogResult | undefined,
+): CardVariant {
+  if (result?.installed) return "installed";
+  if (entry.browseRequired) return "browse-only";
+  if (entry.installCommand) return "installable";
+  if (entry.comingSoon) return "coming-soon";
+  return "browse-fallback";
+}
+
+/** OS detector — we lack `@tauri-apps/plugin-os`, so sniff the user agent.
+ *  Used only to decide the file-picker extension filter; a wrong answer just
+ *  means a less-helpful filter (Unix execs are extensionless either way). */
+function isWindowsHost(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || navigator.platform || "";
+  return /windows/i.test(ua) || /win32|win64/i.test(ua);
+}
+
+function basename(p: string): string {
+  if (!p) return p;
+  const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return idx >= 0 ? p.slice(idx + 1) : p;
 }
 
 // === Custom CLI drawer state (preserved from previous implementation) ===
@@ -121,7 +163,12 @@ interface CliCatalogCardProps {
   result: DetectCatalogResult | undefined;
   selected: boolean;
   detecting: boolean;
+  installing: boolean;
+  manualPath: string | null;
   onSelect: (id: string) => void;
+  onInstall: (entry: CliCatalogEntry) => void;
+  onBrowse: (entry: CliCatalogEntry) => void;
+  onClearOverride: (entry: CliCatalogEntry) => void;
 }
 
 function CliCatalogCard({
@@ -129,22 +176,32 @@ function CliCatalogCard({
   result,
   selected,
   detecting,
+  installing,
+  manualPath,
   onSelect,
+  onInstall,
+  onBrowse,
+  onClearOverride,
 }: CliCatalogCardProps) {
-  const installed = !!result?.installed;
+  const variant = resolveVariant(entry, result);
+  const installed = variant === "installed";
   const brand = brandClasses(entry.color);
 
+  // Selected = filled accent-amber highlight; installed = green; otherwise
+  // faint gray. Browse-only and Installable both stay "not installed" until
+  // the user actually points us at a binary that responds.
   const outerClass = selected
     ? "border-accent-amber/40 bg-accent-amber/5"
     : installed
       ? "border-bg-border bg-bg-secondary hover:bg-bg-elevated"
-      : "border-bg-border bg-bg-secondary opacity-70";
+      : variant === "coming-soon"
+        ? "border-bg-border bg-bg-secondary opacity-80"
+        : "border-bg-border bg-bg-secondary opacity-90 hover:bg-bg-elevated";
 
-  // Per the screenshot reference: selected = filled accent-amber (the
-  // "active CLI" highlight), installed-but-unselected = accent-green
-  // (passive "ready" indicator), not-installed = faint gray.
   const dotClass = !installed
-    ? "bg-text-faint"
+    ? variant === "coming-soon"
+      ? "bg-accent-amber/60"
+      : "bg-text-faint"
     : selected
       ? "bg-accent-amber"
       : "bg-accent-green";
@@ -152,20 +209,42 @@ function CliCatalogCard({
   let versionText: React.ReactNode;
   if (detecting && !result) {
     versionText = <span className="text-text-faint">checking…</span>;
-  } else if (!installed) {
+  } else if (installed) {
+    versionText = result?.version ? (
+      <span className="font-mono">{result.version}</span>
+    ) : (
+      <span className="text-text-muted">installed</span>
+    );
+  } else if (variant === "browse-only") {
+    versionText = <span className="italic text-text-muted">Locate the executable to use it here.</span>;
+  } else if (variant === "installable") {
     versionText = <span className="italic">not installed</span>;
-  } else if (result?.version) {
-    versionText = <span className="font-mono">{result.version}</span>;
+  } else if (variant === "coming-soon") {
+    versionText = <span className="italic text-text-muted">Coming soon — track on the roadmap.</span>;
   } else {
-    versionText = <span className="text-text-muted">installed</span>;
+    versionText = <span className="italic">not installed</span>;
+  }
+
+  // Buttons under the card body. `stopPropagation` so the surrounding card
+  // click (which toggles selection) doesn't also fire when the user is
+  // interacting with the install/browse affordances.
+  function stop<E extends React.SyntheticEvent>(e: E) {
+    e.stopPropagation();
   }
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(entry.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(entry.id);
+        }
+      }}
       aria-pressed={selected}
-      className={`relative flex items-start gap-3 p-3 rounded border cursor-pointer transition-colors text-left ${outerClass}`}
+      className={`relative flex flex-col gap-2 p-3 rounded border cursor-pointer transition-colors text-left ${outerClass}`}
     >
       {/* Status dot */}
       <span
@@ -173,33 +252,158 @@ function CliCatalogCard({
         className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${dotClass}`}
       />
 
-      {/* Icon block */}
-      <div
-        className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 ${
-          installed ? brand.iconBg : "bg-bg-elevated"
-        }`}
-      >
-        {installed ? (
-          renderCatalogIcon(entry.iconName, brand.iconColor)
-        ) : (
-          <span className="w-2 h-2 rounded-full bg-text-faint" />
-        )}
-      </div>
-
-      {/* Name + version */}
-      <div className="flex-1 min-w-0 pr-4">
+      <div className="flex items-start gap-3">
+        {/* Icon block */}
         <div
-          className={`text-xs font-medium truncate ${
-            installed ? "text-text-primary" : "text-text-secondary"
+          className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 ${
+            installed ? brand.iconBg : "bg-bg-elevated"
           }`}
         >
-          {entry.name}
+          {installed ? (
+            renderCatalogIcon(entry.iconName, brand.iconColor)
+          ) : variant === "coming-soon" ? (
+            <Clock size={14} className="text-accent-amber/80" />
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-text-faint" />
+          )}
         </div>
-        <div className="text-[10px] text-text-muted truncate mt-0.5">
-          {versionText}
+
+        {/* Name + version/state line */}
+        <div className="flex-1 min-w-0 pr-4">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span
+              className={`text-xs font-medium truncate ${
+                installed ? "text-text-primary" : "text-text-secondary"
+              }`}
+            >
+              {entry.name}
+            </span>
+            {variant === "coming-soon" && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-amber/15 text-accent-amber font-medium uppercase tracking-wide">
+                Coming Soon
+              </span>
+            )}
+          </div>
+          <div className="text-[10px] text-text-muted truncate mt-0.5">
+            {versionText}
+          </div>
         </div>
       </div>
-    </button>
+
+      {/* Manual-path override tag — visible whenever the user has pinned a
+          path AND detection succeeded. The X clears the override and
+          re-runs detection so the card flips back to PATH-based resolution. */}
+      {installed && manualPath && (
+        <div className="flex items-center gap-1 text-[10px] text-text-faint" onClick={stop}>
+          <span
+            className="px-1.5 py-0.5 rounded bg-bg-elevated text-text-muted truncate max-w-[180px]"
+            title={manualPath}
+          >
+            Override: {basename(manualPath)}
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              stop(e);
+              onClearOverride(entry);
+            }}
+            className="p-0.5 rounded hover:bg-bg-hover hover:text-text-secondary transition-colors"
+            title="Clear manual path override"
+          >
+            <X size={10} />
+          </button>
+        </div>
+      )}
+
+      {/* State-specific actions row. Rendered only for non-installed
+          variants — the installed card relies on its version line and the
+          shared Test button in the header. */}
+      {!installed && (
+        <div className="flex items-center gap-1.5 flex-wrap" onClick={stop} onKeyDown={stop}>
+          {variant === "browse-only" && (
+            <button
+              type="button"
+              onClick={() => onBrowse(entry)}
+              className="flex items-center gap-1 px-2 py-1 text-[10px] rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors"
+            >
+              <FolderOpen size={10} />
+              Browse for binary
+            </button>
+          )}
+
+          {variant === "installable" && (
+            <>
+              <button
+                type="button"
+                onClick={() => onInstall(entry)}
+                disabled={installing}
+                className="flex items-center gap-1 px-2 py-1 text-[10px] rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title={entry.installCommand}
+              >
+                {installing ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  <Download size={10} />
+                )}
+                Install
+              </button>
+              <button
+                type="button"
+                onClick={() => onBrowse(entry)}
+                className="text-[10px] text-text-muted hover:text-accent-blue underline underline-offset-2 transition-colors"
+              >
+                Browse…
+              </button>
+              {entry.installDocsUrl && (
+                <a
+                  href={entry.installDocsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={stop}
+                  className="flex items-center gap-0.5 text-[10px] text-text-faint hover:text-text-muted"
+                  title="Install docs"
+                >
+                  <ExternalLink size={9} />
+                </a>
+              )}
+            </>
+          )}
+
+          {variant === "coming-soon" && entry.installDocsUrl && (
+            <a
+              href={entry.installDocsUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={stop}
+              className="flex items-center gap-1 text-[10px] text-text-faint hover:text-accent-amber underline underline-offset-2"
+            >
+              <ExternalLink size={9} />
+              Roadmap
+            </a>
+          )}
+
+          {variant === "browse-fallback" && (
+            <button
+              type="button"
+              onClick={() => onBrowse(entry)}
+              className="flex items-center gap-1 px-2 py-1 text-[10px] rounded border border-bg-border text-text-secondary hover:bg-bg-hover transition-colors"
+            >
+              <FolderOpen size={10} />
+              Browse for binary
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Installing feedback strip — present while we're spawning the
+          install workspace. Clears when the install pane gets a sessionId. */}
+      {installing && (
+        <div className="flex items-center gap-1 text-[10px] text-accent-green border-t border-accent-green/20 pt-1.5">
+          <Loader2 size={10} className="animate-spin" />
+          <span>Installing in workspace →</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -214,16 +418,37 @@ export function CliAgentsCard() {
   const detectInstalled = useAgentStore((s) => s.detectInstalled);
   const resetBuiltins = useAgentStore((s) => s.resetBuiltins);
 
+  // v0.8.7: manual-path overrides + workspace spawning for installs.
+  const overrides = useCliOverrideStore((s) => s.overrides);
+  const setManualPath = useCliOverrideStore((s) => s.setManualPath);
+  const clearManualPath = useCliOverrideStore((s) => s.clearManualPath);
+
   const [results, setResults] = useState<Record<string, DetectCatalogResult>>({});
   const [scanning, setScanning] = useState(false);
   const [selectedCliId, setSelectedCliId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [draft, setDraft] = useState<DraftState | null>(null);
+  // v0.8.8+ peer-review fix: a Set keyed by entry id, not a single string.
+  // Two installs clicked in quick succession used to overwrite each other —
+  // the second `setInstallingId` would clear the first install's spinner
+  // even though the first install was still running (and the 30s safety net
+  // would later flap the second install's spinner too).
+  const [installingIds, setInstallingIds] = useState<Set<string>>(() => new Set());
 
   const customAgents = useMemo(
     () => agents.filter((a) => !a.isBuiltin),
     [agents],
   );
+
+  /** Build the detector payload from the catalog, layering in any saved
+   *  manual-path overrides so the backend resolves to the pinned binary
+   *  instead of (or in preference to) PATH. */
+  const buildDetectItems = useCallback(() => {
+    return getCliBinaries().map((item) => {
+      const manualPath = overrides[item.id]?.manualPath;
+      return manualPath ? { ...item, manualPath } : item;
+    });
+  }, [overrides]);
 
   // Bulk-scan the catalog via detectCliCatalog (the legacy detectAgent
   // command now routes through the same backend, so a separate fallback
@@ -232,7 +457,7 @@ export function CliAgentsCard() {
   const rescan = useCallback(async () => {
     setScanning(true);
     try {
-      const out = await detectCliCatalog(getCliBinaries());
+      const out = await detectCliCatalog(buildDetectItems());
       const merged: Record<string, DetectCatalogResult> = {};
       for (const r of out) merged[r.id] = r;
       setResults(merged);
@@ -244,7 +469,7 @@ export function CliAgentsCard() {
     } finally {
       setScanning(false);
     }
-  }, [detectInstalled]);
+  }, [buildDetectItems, detectInstalled]);
 
   // Mount: rescan once if results are empty.
   useEffect(() => {
@@ -276,10 +501,14 @@ export function CliAgentsCard() {
     try {
       // Re-probe the selected binary specifically so the user gets fresh
       // installed/version data for the one they care about. Reuses the same
-      // detect_cli_catalog command the grid uses for the full sweep.
-      const [result] = await detectCliCatalog([
-        { id: selectedEntry.id, binary: selectedEntry.binary },
-      ]);
+      // detect_cli_catalog command the grid uses for the full sweep — and
+      // critically threads any pinned manualPath through, so testing an
+      // override-pinned CLI doesn't fall back to PATH.
+      const manualPath = overrides[selectedEntry.id]?.manualPath;
+      const item = manualPath
+        ? { id: selectedEntry.id, binary: selectedEntry.binary, manualPath }
+        : { id: selectedEntry.id, binary: selectedEntry.binary };
+      const [result] = await detectCliCatalog([item]);
       if (!result) {
         return { ok: false, output: "Detection returned no result." };
       }
@@ -303,6 +532,158 @@ export function CliAgentsCard() {
       };
     }
   }
+
+  // === v0.8.7 actions ===
+
+  /** Re-probe a single catalog entry and merge the result into local state.
+   *  Used after Browse-for-binary picks a path, and after Reset-override
+   *  clears one. Keeps the card snappy without forcing a full grid rescan. */
+  const redetectOne = useCallback(
+    async (entry: CliCatalogEntry, manualPath: string | null) => {
+      try {
+        const item = manualPath
+          ? { id: entry.id, binary: entry.binary, manualPath }
+          : { id: entry.id, binary: entry.binary };
+        const [result] = await detectCliCatalog([item]);
+        if (result) {
+          setResults((prev) => ({ ...prev, [entry.id]: result }));
+        }
+      } catch (err) {
+        console.warn("[cli-catalog] single-entry detect failed:", err);
+      }
+    },
+    [],
+  );
+
+  /** Open a file picker scoped to the host OS so the user can pin a binary
+   *  on disk. On selection, persist the override + immediately re-probe the
+   *  entry so the card flips to "installed" if the binary responds. */
+  const handleBrowse = useCallback(
+    async (entry: CliCatalogEntry) => {
+      try {
+        const win = isWindowsHost();
+        const selected = await openDialog({
+          multiple: false,
+          directory: false,
+          title: `Locate ${entry.name} binary`,
+          filters: win
+            ? [{ name: "Executable", extensions: ["exe"] }]
+            : undefined,
+        });
+        if (!selected || typeof selected !== "string") {
+          // Cancelled, or returned an array (we passed multiple: false so
+          // we treat any non-string as a no-op).
+          return;
+        }
+        setManualPath(entry.id, selected);
+        await redetectOne(entry, selected);
+      } catch (err) {
+        console.warn("[cli-catalog] browse failed:", err);
+      }
+    },
+    [setManualPath, redetectOne],
+  );
+
+  /** Clear a manual-path override and re-detect via PATH. */
+  const handleClearOverride = useCallback(
+    async (entry: CliCatalogEntry) => {
+      clearManualPath(entry.id);
+      await redetectOne(entry, null);
+    },
+    [clearManualPath, redetectOne],
+  );
+
+  /** Spawn a single-pane terminal workspace that runs the entry's
+   *  `installCommand` as its first input, then switch the active view to
+   *  the workspace so the user can watch the install run. The pane is a
+   *  plain shell (agentId === "terminal"), not a Claude session, so the
+   *  install command runs verbatim without an agent wrapping prompt.
+   *
+   *  Wiring the install command into the pane:
+   *    1. createWorkspace with a single "terminal" slot.
+   *    2. Subscribe to workspaceStore — when the pane's sessionId flips
+   *       from null to a string, writePty the install command + CR.
+   *    3. Unsubscribe (and clear the spinner) on first write, or on a
+   *       safety timeout if the pane never spawns. */
+  const handleInstall = useCallback(
+    (entry: CliCatalogEntry) => {
+      const cmd = entry.installCommand?.trim();
+      if (!cmd) return;
+
+      const projectPath = useLayoutStore.getState().projectPath;
+      const wsId = useWorkspaceStore.getState().createWorkspace(
+        `Install ${entry.name}`,
+        ["terminal"],
+        projectPath,
+        {
+          // Stamped onto the workspace; the terminal pane currently
+          // ignores `prompt` (it's only forwarded to CLI agents), so we
+          // still need the subscribe-and-write path below. Keeping it
+          // here gives downstream surfaces (history, sidebar previews) a
+          // reasonable summary of what the workspace was for.
+          prompt: cmd,
+        },
+      );
+
+      setInstallingIds((cur) => {
+        const next = new Set(cur);
+        next.add(entry.id);
+        return next;
+      });
+
+      // Watch the workspace until its first pane gets a sessionId. The
+      // pane is created synchronously inside createWorkspace, but its
+      // sessionId is populated asynchronously by TerminalPane.onSessionCreated.
+      // We use a holder + tear-down function so the subscribe callback,
+      // the safety timeout, and the cleanup can all share the same
+      // single-shot resolution path.
+      const teardown = { fn: () => {} };
+      let sent = false;
+      const finish = (cb?: () => void) => {
+        if (sent) return;
+        sent = true;
+        teardown.fn();
+        setInstallingIds((cur) => {
+          if (!cur.has(entry.id)) return cur;
+          const next = new Set(cur);
+          next.delete(entry.id);
+          return next;
+        });
+        cb?.();
+      };
+
+      const unsubscribe = useWorkspaceStore.subscribe((state) => {
+        if (sent) return;
+        const ws = state.workspaces.find((w) => w.id === wsId);
+        const sessionId = ws?.panes[0]?.sessionId;
+        if (!sessionId) return;
+        finish(() => {
+          // Trailing CR (not LF) — some Windows ConPTY configs won't
+          // fire shells' Enter handler on bare LF. Mirrors the
+          // writePty pattern used everywhere else in the workspace
+          // pane code.
+          void writePty(sessionId, cmd + "\r").catch((err) => {
+            console.warn("[cli-catalog] install writePty failed:", err);
+          });
+        });
+      });
+
+      // Safety net: if the pane never produces a sessionId within 30s
+      // (no terminal pane mounted, user closed the workspace, etc.) we
+      // still drop the spinner so the install button comes back.
+      const safety = window.setTimeout(() => finish(), 30_000);
+
+      teardown.fn = () => {
+        window.clearTimeout(safety);
+        unsubscribe();
+      };
+
+      // Flip the active view so the user actually sees the install run.
+      useWorkspaceStore.getState().setActiveWorkspace(wsId);
+      useAppStore.getState().setActiveView("workspace");
+    },
+    [],
+  );
 
   // === Custom CLI drawer handlers (preserved) ===
 
@@ -387,7 +768,12 @@ export function CliAgentsCard() {
             result={results[entry.id]}
             selected={selectedCliId === entry.id}
             detecting={detecting}
+            installing={installingIds.has(entry.id)}
+            manualPath={overrides[entry.id]?.manualPath ?? null}
             onSelect={toggleSelect}
+            onInstall={handleInstall}
+            onBrowse={handleBrowse}
+            onClearOverride={handleClearOverride}
           />
         ))}
       </div>

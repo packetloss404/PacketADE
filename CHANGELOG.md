@@ -3,6 +3,62 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.8.7] - 2026-05-16
+
+### Added — CLI install/browse + Toolbar Bell + Flight delete + API-agent → Review + Code Quality deep dive
+
+Single big drop covering five themes. Built by ~20 parallel agents + 4-agent peer review + 2 fix passes.
+
+#### CLI catalog: Install / Browse / Coming Soon
+- `installCommand` flag annotates 7 catalog entries (claude-code / codex / gemini / opencode / copilot / qwen / qoder) with a stable one-line install command. Clicking Install spawns a one-shot terminal workspace running the command.
+- `browseRequired` flag annotates **PacketCode** as Browse-only — user picks the binary via OS file picker (`.exe` filter on Windows, no filter on POSIX). Path persists in a new `cliOverrideStore`.
+- `comingSoon` flag on devin / kimi / cursor / mistral / deepseek — surfaces as a "Coming Soon" pill instead of an install button.
+- Card grid now has 5 variants: installed / browse-only / installable / coming-soon / browse-fallback. Manual-path overrides display as a clearable "Override: {basename}" tag.
+- Backend `DetectCatalogItem.manualPath` skips PATH lookup and probes the user-supplied absolute path directly.
+- Fixed: Windows `.cmd` wrapper version probes were returning nothing because `probe_version` ran against the unresolved binary name; now uses the resolved path.
+
+#### Toolbar overhaul
+- **Theme toggle removed from Toolbar** — Settings > General > Theme is the canonical control.
+- **Review button → Bell at far right** — `accent-red` with count badge when there's pending work, `text-muted` otherwise. Icon is now `Bell` (notifications semantics) rather than `ShieldCheck`.
+- Final right-side order: Sidecar | Running | Spend | div | Quality | div | Modules | VT | div | Git | Folder | div | Bell.
+
+#### Flight (Mission) delete
+- Inline trash icon on each Mission row (hover-revealed) with two-step confirm + 3s auto-revert.
+- Confirm copy escalates to "Active work — delete?" when the flight has running attempts or queued/approval tasks.
+- `flightStore.deleteFlight` cascades to clear `Issue.flightId` back-references for every linked issue.
+
+#### API-agent → Review queue wiring
+- `api-agent:permission-request` events now fire `fireTaskApprovalNeeded` via a new `flightStore.findTaskBySessionId` reverse-lookup. Tasks bound to a conversation (`Task.sessionId === AgentConversation.id`) get flipped to `approval_needed` and surface in the Toolbar Bell + ReviewQueueView.
+- Same wiring for `pending-edit` events — was a missing-handler P0 caught by peer review.
+- Both handlers gated on conversation existence so a deleted conversation can't flip a stale task.
+
+#### Code Quality deep dive — backend
+- `quality_runner.rs` — new live-streaming check runner with per-check `kill_on_drop`, 3s/300s timeouts (path probe / check run), `quality:chunk:{run_id}` / `quality:check-start` / `quality:check-done` / `quality:done` events, `cancel_quality_run` Tauri command, FIFO run-history eviction by `started_at`, natural-exit prioritized over cancel signals in the post-exit race window.
+- `code_quality_autofix.rs` — ESLint --fix / Prettier --write / `cargo fix` / `pnpm audit --fix`, each with a confirm-modal in the UI. Streams via `quality-fix:chunk:{run_id}`. Includes a duplicate-run-id rejection registry (P0 fix from peer review) + `cancel_quality_fix`.
+- `code_quality_ai_prompts.rs` — anti-injection envelope on every user-supplied tool output (XML-ish tags + system-prompt warning); per-check + total byte caps with two-pass shrink.
+
+#### Code Quality deep dive — frontend
+- Per-check tabs with sticky status badge (idle/queued/running/passed/failed/cancelled/skipped/errored).
+- In-house ANSI renderer (no new deps) with SGR + 256-color + truecolor support, line-level filter, `path:line:col` click-to-copy.
+- Last-5-runs history dropdown keyed on normalised project path.
+- Fullscreen toggle, Ctrl/Cmd+R refresh, Ctrl/Cmd+F filter focus, Escape-to-close (opt-in on the shared Modal).
+- AI features: per-error **Explain** (streamed Markdown explanation), **Fix in Workspace** (creates a backlog Issue + provisions an issue-bound worktree + spawns a claude-code pane seeded with the error context), **File Issue** (one-click ticket creation labeled `lint` / `typecheck` / `test-failure` / `build`), and bottom-of-modal **AI summary** with run-hash cache (clear-by-hash, not full wipe).
+- AutoFix re-analyze nonce chain so the modal refreshes after each fix.
+
+#### Shared
+- `Modal` wrapper gained `closeOnEscape` / `headerExtra` / `fullscreen` props.
+- `agent.rs` gained `probe_version_at(path)` for absolute-path version probes + `is_executable_file(path)` POSIX exec-bit check.
+
+#### Process
+- 4 parallel implementation agents per major slice + 2-agent peer review per slice + final 4-agent big-session peer review (spec/UX + correctness/races + cross-slice integration + regression).
+- ~20 implementation agents total across the session.
+- Peer review caught 4 P0s and 11 P1s, all fixed before this commit:
+  - P0: `code_quality_run_fix` had no run-id registry (duplicate-call interleaving). Added registry + cancel.
+  - P0: `pending-edit` events didn't fire task-approval (Bell undercount). Wired to mirror permission-request.
+  - P0: CLI install rapid-click race (first install's spinner got stuck). Switched to Set-tracked active installs.
+  - P0: `code_quality_run_fix` duplicate-id rejection.
+  - Plus: Windows `.cmd` version probe, CommitModal cancelled-issue filter, raw `text-red-400` token violation, missing `aria-label` on Folder picker, full-cache wipe on AI summary, listener race on rapid re-run, and others.
+
 ## [0.8.6] - 2026-05-16
 
 ### Changed — Toolbar demotion: Deploy + Prompts

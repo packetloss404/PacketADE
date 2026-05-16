@@ -2,6 +2,10 @@ pub mod agent;
 pub mod agent_config;
 pub mod agents_md;
 pub mod brand;
+// v0.8.8 quality ai: hand-authored prompts for the Code Quality AI features
+// (explain-error + summarize-run). Kept next to `github_ai_prompts` so prompt
+// iteration doesn't churn the command surface.
+pub mod code_quality_ai_prompts;
 #[cfg(test)]
 mod contract_tests;
 pub mod error_classifier;

@@ -2887,7 +2887,7 @@ dependencies = [
 
 [[package]]
 name = "packetade"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "async-trait",
  "clipboard-win",
