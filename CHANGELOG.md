@@ -3,6 +3,69 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.8.3] - 2026-05-16
+
+### Added — CLI catalog grid (Settings > Agents)
+
+Visual + functional upgrade to the CLI-detection card in Settings, modeled
+after a reference screenshot the user shared. Tier 1 of the broader
+"detection + diagnosis + auto-install" feature; Tier 2 (PATH fixes and
+native install recipes) deferred.
+
+#### Backend (`src-tauri/src/commands/agent.rs`, `core/agent.rs`)
+- New `detect_cli_catalog([{id, binary}]) → [{id, installed, version, path}]`
+  Tauri command. Each entry's PATH lookup + version probe run truly
+  concurrently via `tokio::process::Command` + `join_all`.
+- PATH lookup: 2-second timeout, `kill_on_drop`, `CREATE_NO_WINDOW` on
+  Windows. Probes `.cmd` shim as a fallback so npm-installed CLIs (claude,
+  codex, gemini, opencode) are found.
+- Version probe: 3-second timeout per binary, tries `--version` then `-v`,
+  captures the first non-empty line of stdout (falls back to stderr),
+  trimmed and clamped to 60 chars.
+- Legacy `detect_agent` Tauri command now bypasses the version probe so
+  back-compat callers don't pay the new latency.
+
+#### Catalog (`src/lib/cli-catalog.ts`)
+13 entries, each with a brand color + lucide icon, in this order:
+Claude Code, Codex CLI, Devin for Terminal, Gemini CLI, OpenCode,
+**PacketCode** (placed immediately adjacent to OpenCode in the 2-column
+grid per request), GitHub Copilot CLI, Kimi CLI, Cursor Agent, Qwen Code,
+Qoder CLI, Mistral Vibe CLI, DeepSeek TUI.
+
+Helpers: `brandClasses(color)` for icon/dot color tokens,
+`getCliBinaries()` for the bulk-detection payload.
+
+#### UI (`src/components/views/tools/CliAgentsCard.tsx` +
+`src/components/views/tools/CliCatalogHeader.tsx`)
+- 2-column responsive card grid. Each card: 32×32 brand icon swatch +
+  name + version (or "not installed") + status dot.
+- Click a card to select it. Click again to deselect. Click another to
+  switch. Status dot color matches the reference: selected = amber
+  (active), installed-unselected = green (passive), not-installed = faint.
+- Header row: "Local CLI" label + "N installed" pill + **Test** /
+  **Rescan** buttons. Test reuses the same detection on just the
+  selected CLI and renders the version + path inline (✓/✕ icon, 8s
+  auto-clear, also clears on selection change).
+- Existing Detect / Reset built-ins / Custom-CLI drawer preserved in a
+  collapsible "Advanced" section below the grid (closed by default).
+
+#### Process
+- 4 parallel implementation agents (backend / catalog / grid / header) +
+  2-agent peer review (spec/UX + correctness).
+- Reviewer-caught P0: original `resolve_path` was synchronous and
+  serialized the entire `join_all` sweep — refactored to fully async with
+  per-probe timeouts.
+- Reviewer-caught P1s: legacy `detect_agent` latency regression, mounted-
+  ref guards on async setState, dot-color inversion vs screenshot, stale
+  test output bleeding across selections. All fixed.
+
+### Deferred (Tier 2)
+- PATH issue diagnosis + repair (per-OS rabbit hole — Windows registry /
+  shell rc files / etc.)
+- Native install recipes per CLI (npm / winget / brew / curl-pipe — each
+  CLI has its own preferred path)
+- Hermes, Pi, Kiro CLI, Kilo catalog entries
+
 ## [0.8.2] - 2026-05-16
 
 ### Added — Toolbar overhaul
