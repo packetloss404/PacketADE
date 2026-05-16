@@ -5,12 +5,14 @@ pub mod core;
 
 use commands::agent_sidecar::SidecarManager;
 use commands::api_agent::ApiAgentState;
+use commands::code_quality_autofix::CodeQualityAutoFixState;
 use commands::dictation::audio::create_dictation_state;
 use commands::dictation::whisper::WhisperState;
 use commands::github::create_github_auth_state;
 use commands::mission_planner::{spawn_wake_consumer, MissionPlannerRegistry};
 use commands::orchestration::create_shared_orchestrator;
 use commands::pty::create_shared_pty_manager;
+use commands::quality_runner::QualityRunnerState;
 
 fn init_tracing() {
     use tracing_subscriber::{fmt, EnvFilter};
@@ -82,6 +84,8 @@ pub fn run() {
         .manage(create_dictation_state())
         .manage(WhisperState::default())
         .manage(std::sync::Arc::new(ApiAgentState::new()))
+        .manage(std::sync::Arc::new(QualityRunnerState::new()))
+        .manage(std::sync::Arc::new(CodeQualityAutoFixState::new()))
         .manage(MissionPlannerRegistry::default())
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in
@@ -198,6 +202,17 @@ pub fn run() {
             commands::agents_md::resolve_agents_md,
             // Code quality
             commands::code_quality::analyze_code_quality,
+            // Quality runner (lint/typecheck/test/cargo)
+            commands::quality_runner::detect_quality_checks,
+            commands::quality_runner::run_quality_checks,
+            commands::quality_runner::cancel_quality_run,
+            // v0.8.8 quality autofix
+            commands::code_quality_autofix::code_quality_probe_fixers,
+            commands::code_quality_autofix::code_quality_run_fix,
+            commands::code_quality_autofix::cancel_quality_fix,
+            // v0.8.8 quality ai
+            commands::code_quality::code_quality_ai_explain,
+            commands::code_quality::code_quality_ai_summarize,
             // Crash reports
             commands::crashes::list_crashes,
             commands::crashes::read_crash,

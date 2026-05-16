@@ -120,6 +120,19 @@ pub async fn probe_version(binary: &str) -> Option<String> {
     None
 }
 
+/// Variant of [`probe_version`] that targets an absolute path instead of
+/// resolving on PATH. Used by the manual-override detection branch — the
+/// user has pointed us at a specific binary and we want to honour that
+/// exact path without round-tripping through `where`/`which`.
+pub async fn probe_version_at(path: &str) -> Option<String> {
+    for arg in ["--version", "-v"] {
+        if let Some(v) = run_version_probe(path, arg).await {
+            return Some(clamp_version(&v));
+        }
+    }
+    None
+}
+
 async fn run_version_probe(binary: &str, arg: &str) -> Option<String> {
     let mut cmd = TokioCommand::new(binary);
     cmd.arg(arg);
@@ -153,6 +166,31 @@ async fn run_version_probe(binary: &str, arg: &str) -> Option<String> {
             // Timed out — the dropped future + kill_on_drop reaps the child.
             None
         }
+    }
+}
+
+/// True iff the path exists and points at a regular file. On POSIX, also
+/// verifies that at least one execute bit is set on the file mode — a
+/// non-executable file at a user-supplied "manual path" is almost certainly
+/// a misconfiguration and we'd rather flag it than silently probe-fail.
+/// On Windows file permissions don't gate exec the same way, so we only
+/// require the regular-file check there.
+pub fn is_executable_file(path: &str) -> bool {
+    let p = std::path::Path::new(path);
+    if !p.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        match std::fs::metadata(p) {
+            Ok(meta) => meta.permissions().mode() & 0o111 != 0,
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        true
     }
 }
 

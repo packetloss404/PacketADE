@@ -158,6 +158,15 @@ interface FlightStore {
   computeFlightStatus: (flightId: string) => FlightStatus;
   getFlightProgress: (flightId: string) => { done: number; total: number };
   getAttentionFlights: () => Flight[];
+  /**
+   * Reverse-lookup a Task by its bound session id. Used by the Review-queue
+   * wiring to map api-agent permission-request events (keyed by sessionId,
+   * which for API conversations equals the AgentConversation id) back to the
+   * orchestrator Task they belong to — so the Toolbar Bell / ReviewQueueView
+   * pick up approval prompts from API agents, not just PTY-orchestrated ones.
+   * Returns null for free-standing chats (no bound task).
+   */
+  findTaskBySessionId: (sessionId: string) => { flight: Flight; milestone: Milestone; task: Task } | null;
   hydrateFromBackend: (persisted?: Awaited<ReturnType<typeof loadPersistedState>>) => Promise<void>;
   reconcileLiveSessions: (liveSessionIds: string[]) => void;
 }
@@ -579,6 +588,20 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       const tasks = getAllTasks(f);
       return tasks.some((t) => t.status === "approval_needed" || t.status === "failed");
     });
+  },
+
+  findTaskBySessionId: (sessionId) => {
+    if (!sessionId) return null;
+    for (const flight of get().flights) {
+      for (const milestone of flight.milestones) {
+        for (const task of milestone.tasks) {
+          if (task.sessionId === sessionId) {
+            return { flight, milestone, task };
+          }
+        }
+      }
+    }
+    return null;
   },
 
   hydrateFromBackend: async (persisted) => {

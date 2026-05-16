@@ -7,6 +7,8 @@ pub mod api_keys;
 pub mod auth_watcher;
 pub mod checkpoints;
 pub mod code_quality;
+// v0.8.8 quality autofix
+pub mod code_quality_autofix;
 pub mod conversations;
 pub mod crashes;
 pub mod custom_agents;
@@ -34,6 +36,7 @@ pub mod pricing;
 pub mod provider_auth;
 pub mod provider_stats;
 pub mod pty;
+pub mod quality_runner;
 pub mod scaffold;
 pub mod shared;
 pub mod side_chat;

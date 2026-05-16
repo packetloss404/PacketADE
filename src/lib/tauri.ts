@@ -90,6 +90,50 @@ export async function analyzeCodeQuality(projectPath: string): Promise<CodeQuali
   return invoke<CodeQualityReport>("analyze_code_quality", { projectPath });
 }
 
+// v0.8.8 quality autofix — actionable fixers
+export type QualityFixer = "eslint" | "prettier" | "cargo_fix" | "npm_audit_fix";
+
+export interface QualityFixerAvailability {
+  eslint: boolean;
+  prettier: boolean;
+  cargo_fix: boolean;
+  npm_audit_fix: boolean;
+  prettier_target_count: number | null;
+  eslint_fixable_count: number | null;
+}
+
+export interface QualityFixRunResult {
+  fixer: string;
+  run_id: string;
+  success: boolean;
+  exit_code: number;
+  duration_ms: number;
+  stdout_tail: string;
+  stderr_tail: string;
+}
+
+/** Probe a project for which auto-fixers are wired up (eslint config,
+ *  prettier config, Cargo.toml, package.json). Cheap — no subprocess. */
+export async function codeQualityProbeFixers(projectPath: string): Promise<QualityFixerAvailability> {
+  return invoke<QualityFixerAvailability>("code_quality_probe_fixers", { projectPath });
+}
+
+/** Spawn the chosen fixer. The backend streams stdout/stderr via
+ *  `quality-fix:chunk:<runId>` Tauri events and a final
+ *  `quality-fix:done:<runId>` event. Subscribe BEFORE awaiting this
+ *  promise so the first chunk doesn't race with `listen()`. */
+export async function codeQualityRunFix(
+  projectPath: string,
+  fixer: QualityFixer,
+  runId: string,
+): Promise<QualityFixRunResult> {
+  return invoke<QualityFixRunResult>("code_quality_run_fix", {
+    projectPath,
+    fixer,
+    runId,
+  });
+}
+
 export interface CodeQualityReport {
   total_files: number;
   total_code_lines: number;
@@ -105,6 +149,124 @@ export interface CodeQualityReport {
   comment_ratio: number;
   test_ratio: number;
   org_score: number;
+}
+
+// ---------------------------------------------------------------------------
+// Quality runner — multi-check lint/typecheck/test/cargo executor
+// ---------------------------------------------------------------------------
+
+/** A single quality check. Mirrors `commands::quality_runner::QualityCheck`
+ *  on the Rust side. Pass `null` to `runQualityChecks(checks)` to
+ *  auto-detect from the project layout. */
+export interface QualityCheck {
+  id: string;
+  label: string;
+  command: string;
+  args: string[];
+  cwd?: string | null;
+  timeoutSecs?: number | null;
+  env?: Record<string, string>;
+  optional?: boolean;
+}
+
+export type QualityCheckStatus =
+  | "passed"
+  | "failed"
+  | "cancelled"
+  | "timed-out"
+  | "missing-tool"
+  | "spawn-error"
+  | "skipped";
+
+export interface QualityCheckStartEvent {
+  runId: string;
+  checkId: string;
+  label: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  startedAt: number;
+}
+
+export interface QualityChunkEvent {
+  runId: string;
+  checkId: string;
+  /** `"stdout"` or `"stderr"`. */
+  stream: "stdout" | "stderr";
+  line: string;
+}
+
+export interface QualityCheckDoneEvent {
+  runId: string;
+  checkId: string;
+  label: string;
+  output: string;
+  truncated: boolean;
+  exitCode: number | null;
+  status: QualityCheckStatus;
+  error: string | null;
+  startedAt: number;
+  completedAt: number;
+  durationMs: number;
+  optional: boolean;
+}
+
+export interface QualityRunSummary {
+  runId: string;
+  projectPath: string;
+  checks: QualityCheckDoneEvent[];
+  startedAt: number;
+  completedAt: number;
+  durationMs: number;
+  cancelled: boolean;
+  allPassed: boolean;
+}
+
+/** Best-effort detection of which quality checks make sense for a project.
+ *  Reads `package.json` scripts, `Cargo.toml` location, etc. Returns
+ *  whatever it finds — the empty list means "no checks configured". */
+export async function detectQualityChecks(projectPath: string): Promise<QualityCheck[]> {
+  return invoke<QualityCheck[]>("detect_quality_checks", { projectPath });
+}
+
+/** Kick off a quality run. Subscribe to the `quality:*:<runId>` events
+ *  via `listen()` BEFORE awaiting this — the first chunk can arrive
+ *  before this promise resolves. Pass `null` for `checks` to
+ *  auto-detect. */
+export async function runQualityChecks(
+  projectPath: string,
+  runId: string,
+  checks: QualityCheck[] | null,
+): Promise<string> {
+  return invoke<string>("run_quality_checks", { projectPath, runId, checks });
+}
+
+/** Request cancellation of an in-flight quality run. Returns `true` if
+ *  the run existed and was signalled, `false` if there was no such run
+ *  (e.g. it already finished). The in-progress child process is killed
+ *  via `start_kill` and `kill_on_drop` reaps it. */
+export async function cancelQualityRun(runId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_quality_run", { runId });
+}
+
+/** Tauri event names for the quality runner. Helpers so callers don't
+ *  spell the magic strings wrong. */
+export const qualityEvents = {
+  checkStart: (runId: string) => `quality:check-start:${runId}`,
+  chunk: (runId: string) => `quality:chunk:${runId}`,
+  checkDone: (runId: string) => `quality:check-done:${runId}`,
+  done: (runId: string) => `quality:done:${runId}`,
+  error: (runId: string) => `quality:error:${runId}`,
+};
+
+/** Request cancellation of an in-flight `code_quality_run_fix`
+ *  invocation. Returns `true` if a matching run was active and was
+ *  signalled, `false` if no such run was found (e.g. it already
+ *  completed). Mirrors `cancelQualityRun` semantics — the running
+ *  child is `start_kill`'d via a shared slot so cancellation lands
+ *  within milliseconds. */
+export async function cancelQualityFix(runId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_quality_fix", { runId });
 }
 
 // Memory
@@ -627,9 +789,12 @@ export async function detectAgent(command: string): Promise<boolean> {
 }
 
 // v0.8.3 cli detection — captures version + resolved path for each catalog entry.
+// v0.8.7: optional `manualPath` lets the user pin detection to a specific
+// absolute binary path, bypassing PATH lookup.
 export interface DetectCatalogItem {
   id: string;
   binary: string;
+  manualPath?: string;
 }
 
 export interface DetectCatalogResult {
@@ -640,7 +805,7 @@ export interface DetectCatalogResult {
 }
 
 export async function detectCliCatalog(
-  items: Array<{ id: string; binary: string }>,
+  items: Array<DetectCatalogItem>,
 ): Promise<DetectCatalogResult[]> {
   return invoke<DetectCatalogResult[]>("detect_cli_catalog", { items });
 }
@@ -2444,5 +2609,74 @@ export async function getMissionJournal(missionId: string): Promise<string> {
 
 export async function getMissionJournalPath(missionId: string): Promise<string> {
   return invoke<string>("get_mission_journal_path", { missionId });
+}
+
+// === v0.8.8 quality ai =====================================================
+//
+// AI-powered actions for the Code Quality modal. Both commands kick off a
+// one-shot `claude-oauth` sidecar session in the backend and return the
+// freshly minted `sessionId`. The caller subscribes to the existing
+// `api-agent:chunk:<sessionId>` / `api-agent:done:<sessionId>` /
+// `api-agent:error:<sessionId>` events to receive streamed chunks and
+// detect completion. See `QualityAIExplanation.tsx` and `QualityAISummary.tsx`
+// for the canonical consumer pattern (mirrors `PRReviewPanel.tsx`).
+
+/**
+ * Start a one-shot AI explanation for a single diagnostic. Returns the
+ * `sessionId` to subscribe to; the call itself does not wait for the
+ * assistant turn to finish.
+ *
+ * Callers SHOULD pre-allocate `sessionIdOverride` (e.g.
+ * `"quality-ai-explain-" + crypto.randomUUID()`) and attach the
+ * `api-agent:chunk|done|error:<sid>` listeners BEFORE invoking, so the
+ * sidecar can't emit chunks before subscription.
+ *
+ * `errorId` is an opaque UI handle the backend logs for observability
+ * and otherwise ignores. `line` / `column` are 1-indexed; pass `0` when
+ * the diagnostic didn't carry a value.
+ */
+export async function codeQualityAiExplain(
+  errorId: string,
+  errorText: string,
+  filePath: string,
+  line: number,
+  column: number,
+  sessionIdOverride?: string,
+): Promise<string> {
+  return invoke<string>("code_quality_ai_explain", {
+    errorId,
+    errorText,
+    filePath,
+    line,
+    column,
+    sessionIdOverride: sessionIdOverride ?? null,
+  });
+}
+
+/**
+ * Start a one-shot AI summary of every failing check in a run. Returns
+ * the `sessionId` to subscribe to.
+ *
+ * `runId` is an opaque caller-supplied key (frontend uses it for client-
+ * side caching so re-opening the modal doesn't re-stream the same
+ * summary). `checkOutputs` is keyed by display name (`lint`, `typecheck`,
+ * `tests`, `build`, …) and contains the combined stdout/stderr from the
+ * check. `checkExitCodes` is parallel and optional (defaults to `1` for
+ * missing entries).
+ */
+export async function codeQualityAiSummarize(
+  runId: string,
+  projectName: string,
+  checkOutputs: Record<string, string>,
+  checkExitCodes?: Record<string, number>,
+  sessionIdOverride?: string,
+): Promise<string> {
+  return invoke<string>("code_quality_ai_summarize", {
+    runId,
+    projectName,
+    checkOutputs,
+    checkExitCodes: checkExitCodes ?? null,
+    sessionIdOverride: sessionIdOverride ?? null,
+  });
 }
 

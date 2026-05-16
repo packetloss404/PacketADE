@@ -32,6 +32,18 @@ export interface CliCatalogEntry {
   color: CliBrandColor;
   /** Short description shown when not installed. */
   description?: string;
+  /** Stable one-line install command that runs in a workspace PTY pane.
+   *  Cross-platform unless noted. Null/undefined = no install button. */
+  installCommand?: string;
+  /** External docs URL for install instructions when there's no scriptable command. */
+  installDocsUrl?: string;
+  /** True for CLIs we're tracking but don't yet support installing — surfaced
+   *  as a "Coming Soon" badge when detection finds nothing. */
+  comingSoon?: boolean;
+  /** True when the CLI cannot be auto-discovered (in-development or
+   *  highly-custom install path) — the card highlights the Browse-for-binary
+   *  affordance instead of "not installed" copy. */
+  browseRequired?: boolean;
 }
 
 export const CLI_CATALOG: CliCatalogEntry[] = [
@@ -42,6 +54,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Bot",
     color: "purple",
     description: "Anthropic's CLI coding agent",
+    installCommand: "npm i -g @anthropic-ai/claude-code",
   },
   {
     id: "codex",
@@ -50,6 +63,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Atom",
     color: "green",
     description: "OpenAI's terminal coding agent",
+    installCommand: "npm i -g @openai/codex",
   },
   {
     id: "devin",
@@ -58,6 +72,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Cpu",
     color: "neutral",
     description: "Cognition's autonomous coding agent",
+    comingSoon: true,
   },
   {
     id: "gemini",
@@ -66,6 +81,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Sparkles",
     color: "blue",
     description: "Google's CLI coding agent",
+    installCommand: "npm i -g @google/gemini-cli",
   },
   {
     id: "opencode",
@@ -74,6 +90,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Hexagon",
     color: "green",
     description: "Open-source coding TUI",
+    installCommand: "curl -fsSL https://opencode.ai/install | bash",
   },
   {
     id: "packetcode",
@@ -82,6 +99,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Terminal",
     color: "amber",
     description: "PacketADE's sibling terminal coding TUI",
+    browseRequired: true,
   },
   {
     id: "copilot",
@@ -90,6 +108,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Github",
     color: "neutral",
     description: "GitHub's AI coding companion",
+    installCommand: "gh extension install github/gh-copilot",
   },
   {
     id: "kimi",
@@ -98,6 +117,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Wand2",
     color: "blue",
     description: "Moonshot's coding CLI",
+    comingSoon: true,
   },
   {
     id: "cursor",
@@ -106,6 +126,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "MousePointer2",
     color: "blue",
     description: "Cursor's terminal agent",
+    comingSoon: true,
   },
   {
     id: "qwen",
@@ -114,6 +135,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "BrainCircuit",
     color: "purple",
     description: "Alibaba's coding CLI",
+    installCommand: "npm i -g @qwen-code/qwen-code",
   },
   {
     id: "qoder",
@@ -122,6 +144,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Hexagon",
     color: "green",
     description: "Open-source coding CLI",
+    installCommand: "npm i -g @qoder/qoder-cli",
   },
   {
     id: "mistral",
@@ -130,6 +153,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Wind",
     color: "amber",
     description: "Mistral's coding CLI",
+    comingSoon: true,
   },
   {
     id: "deepseek",
@@ -138,6 +162,7 @@ export const CLI_CATALOG: CliCatalogEntry[] = [
     iconName: "Diamond",
     color: "blue",
     description: "DeepSeek's terminal coding TUI",
+    comingSoon: true,
   },
 ];
 

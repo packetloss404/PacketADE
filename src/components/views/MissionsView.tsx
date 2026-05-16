@@ -13,6 +13,8 @@ import {
   Target,
   RefreshCw,
   Brain,
+  Trash2,
+  X,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useFlightStore } from "@/stores/flightStore";
@@ -489,6 +491,44 @@ function FlightRow({
   const cost = formatCost(flight.totalCost);
   const priorityClass = FLIGHT_PRIORITY_COLORS[flight.priority];
   const statusLabel = STATUS_LABEL[status];
+  const deleteFlight = useFlightStore((s) => s.deleteFlight);
+
+  // Inline two-step confirm: first trash click flips this to true and we
+  // show a small Confirm? row with check / cancel buttons. Auto-reverts
+  // after 3s if the user does nothing — matches the destructive-action
+  // pattern used elsewhere in this codebase (CommitModal etc).
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = window.setTimeout(() => setConfirming(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [confirming]);
+
+  // Surface a warning if this mission has live work — active attempts or
+  // any task in a non-terminal running/queued state. We still allow the
+  // delete; we just nudge the user that they're abandoning in-flight work.
+  const hasActiveWork = useMemo(() => {
+    const liveAttempt = (flight.attempts ?? []).some(
+      (a) =>
+        a.status === "running" ||
+        a.status === "provisioning" ||
+        a.status === "queued" ||
+        a.status === "reviewing",
+    );
+    if (liveAttempt) return true;
+    for (const m of flight.milestones) {
+      for (const t of m.tasks) {
+        if (
+          t.status === "running" ||
+          t.status === "queued" ||
+          t.status === "approval_needed"
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [flight.attempts, flight.milestones]);
   // B5 — show how many persistent goals are bound to this mission so
   // users see at a glance whether long-running work is parked here.
   const goalCount = useGoalStore(
@@ -519,10 +559,22 @@ function FlightRow({
   });
   const openMemoryView = useAppStore((s) => s.openMemoryView);
 
+  const deleteTitle = hasActiveWork
+    ? `Delete "${flight.title || "Untitled"}"? This mission has active work. Cancel attempts first or proceed anyway.`
+    : `Delete "${flight.title || "Untitled"}"`;
+
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
-      className={`flex flex-col gap-1 w-full px-2.5 py-2 text-left border-b border-line-soft transition-colors border-l-2 ${
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`group flex flex-col gap-1 w-full px-2.5 py-2 text-left border-b border-line-soft transition-colors border-l-2 cursor-pointer ${
         selected
           ? "bg-bg-elevated border-l-accent-green"
           : "border-l-transparent hover:bg-bg-tertiary"
@@ -546,6 +598,60 @@ function FlightRow({
         >
           {PRIORITY_LABEL[flight.priority]}
         </span>
+        {confirming ? (
+          <span
+            className="inline-flex items-center gap-0.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span
+              className="text-[10px] text-accent-red font-medium"
+              title={
+                hasActiveWork
+                  ? "This mission has active work — confirm to delete anyway."
+                  : undefined
+              }
+            >
+              {hasActiveWork ? "Active work — delete?" : "Delete?"}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteFlight(flight.id);
+              }}
+              className="p-0.5 text-accent-red hover:bg-accent-red/15 rounded transition-colors"
+              title="Confirm delete"
+              aria-label="Confirm delete mission"
+            >
+              <Check size={11} />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirming(false);
+              }}
+              className="p-0.5 text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+              title="Cancel"
+              aria-label="Cancel delete"
+            >
+              <X size={11} />
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirming(true);
+            }}
+            className="p-0.5 text-text-muted hover:text-accent-red hover:bg-accent-red/10 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+            title={deleteTitle}
+            aria-label="Delete mission"
+          >
+            <Trash2 size={11} />
+          </button>
+        )}
       </div>
       <span
         className={`text-[12px] leading-snug line-clamp-2 ${
@@ -596,7 +702,7 @@ function FlightRow({
         <span className="flex-1" />
         <span className={`capitalize ${DOT_TEXT[dot]}`}>{statusLabel}</span>
       </div>
-    </button>
+    </div>
   );
 }
 

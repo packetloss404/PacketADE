@@ -16,11 +16,18 @@ use crate::core::agent;
 /// Frontend passes the catalog id (e.g. "claude-code") alongside the
 /// binary name to look up on PATH (e.g. "claude"). Keeping both lets the
 /// caller correlate results regardless of binary name collisions.
+///
+/// `manual_path` is the v0.8.7 manual-override hook: when set, detection
+/// skips PATH lookup entirely and probes the supplied absolute path
+/// directly. Useful for in-development CLIs (e.g. PacketCode) and bespoke
+/// install locations the user has Browse-selected.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectCatalogItem {
     pub id: String,
     pub binary: String,
+    #[serde(default)]
+    pub manual_path: Option<String>,
 }
 
 /// Result for a single catalog entry.
@@ -50,9 +57,42 @@ pub async fn detect_cli_catalog(
     items: Vec<DetectCatalogItem>,
 ) -> Result<Vec<DetectCatalogResult>, String> {
     let futures = items.into_iter().map(|item| async move {
+        // Manual-override branch: user has explicitly pointed us at a binary.
+        // Skip PATH resolution and probe that exact path. If the path is
+        // missing or not executable, surface `installed: false` with the
+        // user-supplied path retained so the UI can highlight the bad value.
+        if let Some(manual) = item.manual_path.as_deref() {
+            if !agent::is_executable_file(manual) {
+                return DetectCatalogResult {
+                    id: item.id,
+                    installed: false,
+                    version: None,
+                    path: Some(manual.to_string()),
+                };
+            }
+            let version = agent::probe_version_at(manual).await;
+            return DetectCatalogResult {
+                id: item.id,
+                installed: version.is_some(),
+                version,
+                path: Some(manual.to_string()),
+            };
+        }
+
         match agent::resolve_path(&item.binary).await {
             Some(path) => {
-                let version = agent::probe_version(&item.binary).await;
+                // Probe the *resolved* absolute path rather than the bare
+                // binary name. On Windows, `resolve_path` returns the full
+                // `.cmd` wrapper (e.g.
+                // `C:\Users\…\AppData\Roaming\npm\claude.cmd`), but
+                // `probe_version` would re-invoke just `claude`, which
+                // `TokioCommand::new` resolves differently than the shell
+                // would — yielding `None` and a card that reads
+                // "installed, no version". Going through
+                // `probe_version_at` ensures the same `.cmd` we resolved
+                // is the one we ask `--version`. On POSIX it's a no-op
+                // difference (the resolved path is fully executable).
+                let version = agent::probe_version_at(&path).await;
                 DetectCatalogResult {
                     id: item.id,
                     installed: true,

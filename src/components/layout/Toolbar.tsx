@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { FolderOpen, Diamond, Wrench, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket, Rocket } from "lucide-react";
+import { FolderOpen, Diamond, Wrench, ArrowDown, ArrowUp, GitCommit, Bell, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
@@ -16,7 +16,15 @@ import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
 import { CommitModal } from "@/components/workspace/CommitModal";
+import { Modal } from "@/components/ui/Modal";
 import { gitPull, gitPush, getGitBranch } from "@/lib/tauri";
+
+/** Last path segment, OS-agnostic. Used to seed the new workspace name. */
+function basenameOfPath(p: string): string {
+  const trimmed = p.replace(/[\\/]+$/, "");
+  const seg = trimmed.split(/[\\/]/).pop() ?? "";
+  return seg || trimmed || "workspace";
+}
 
 export function Toolbar() {
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
@@ -27,8 +35,10 @@ export function Toolbar() {
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [showNewFlight, setShowNewFlight] = useState(false);
   const [showNewIssue, setShowNewIssue] = useState(false);
-  const theme = useAppStore((s) => s.theme);
-  const setTheme = useAppStore((s) => s.setTheme);
+  // v0.8.8: when no workspace is active, picking a folder pops a small
+  // disambiguation dialog (create-new vs. set-default-only). Holds the
+  // path the user selected from the OS picker while they decide.
+  const [pendingPickedPath, setPendingPickedPath] = useState<string | null>(null);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
   const quickStartSession = useAppStore((s) => s.quickStartSession);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
@@ -37,12 +47,14 @@ export function Toolbar() {
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const moduleStates = useModuleStore((s) => s.states);
-  // Code Quality analysis only works on local paths. Disable the button
-  // for remote workspaces (mirrors IdeationView's guard).
-  const activeWorkspaceIsRemote = useWorkspaceStore((s) => {
-    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
-    return Boolean(ws?.serverId);
-  });
+  // v0.8.8: the active workspace drives both the picker title and the
+  // tooltip copy. When no workspace is active, the picker offers a
+  // create-vs-default fork instead of silently writing the fallback.
+  const activeWorkspace = useWorkspaceStore((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId),
+  );
+  const activeWorkspaceIsRemote = Boolean(activeWorkspace?.serverId);
+  const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
 
   const enabledModules = getModulesSorted().filter((mod) => moduleStates[mod.id]?.enabled ?? false);
 
@@ -87,14 +99,46 @@ export function Toolbar() {
   }, [showNewMenu]);
 
   async function handleOpenFolder() {
+    // v0.8.8: smart picker. With an active workspace, the title makes it
+    // clear the choice will rebind THAT workspace's project folder. With
+    // no workspace, we don't silently write the fallback — we let the
+    // user choose whether to create a workspace or just stash the path.
+    const titled = activeWorkspace
+      ? `Change folder for "${activeWorkspace.name}"`
+      : "Open project folder";
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select Project Folder",
+      title: titled,
     });
-    if (selected) {
-      setProjectPath(selected as string);
+    if (!selected) return;
+    const path = selected as string;
+    if (activeWorkspace) {
+      // setProjectPath writes through to the active workspace
+      // (layoutStore subscription in v88-A), so this is the only call
+      // needed. Remote workspaces don't get rebound through this path —
+      // the workspaceStore subscription guards on serverId — so a no-op
+      // here is the right answer for SSH workspaces too.
+      setProjectPath(path);
+      return;
     }
+    // No active workspace: surface the disambiguation dialog.
+    setPendingPickedPath(path);
+  }
+
+  function handleCreateWorkspaceFromPicker(path: string) {
+    const id = createWorkspace(basenameOfPath(path), ["claude-code"], path);
+    setPendingPickedPath(null);
+    // Land the user on the workspace view so the new workspace's panes
+    // become visible immediately — otherwise the create is invisible.
+    if (id) setActiveView("workspace");
+  }
+
+  function handleSetDefaultFromPicker(path: string) {
+    // Store on the fallback field only. No workspace was active, so the
+    // workspaceStore subscription has nothing to write through to.
+    setProjectPath(path);
+    setPendingPickedPath(null);
   }
 
   return (
@@ -177,36 +221,6 @@ export function Toolbar() {
 
         <div className="w-px h-4 bg-bg-border self-center" />
 
-        {/* Review Queue */}
-        <button
-          onClick={() => setActiveView("review_queue")}
-          className={`relative flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
-            activeView === "review_queue"
-              ? "bg-bg-elevated text-accent-amber"
-              : pendingApprovalCount > 0
-                ? "text-accent-red hover:text-accent-amber"
-                : "text-text-muted hover:text-accent-amber"
-          }`}
-          title={
-            pendingApprovalCount > 0
-              ? `Pending tool / file-write approvals (${pendingApprovalCount})`
-              : "Pending tool / file-write approvals"
-          }
-        >
-          <div className="relative">
-            <ShieldCheck size={12} />
-            {pendingApprovalCount > 0 && (
-              <span
-                className="absolute -top-1 -right-1 bg-accent-red text-white text-[9px] font-medium px-1 rounded-full min-w-[14px] h-[14px] flex items-center justify-center"
-                aria-label={`${pendingApprovalCount} pending approvals`}
-              >
-                {pendingApprovalCount > 99 ? "99+" : String(pendingApprovalCount)}
-              </span>
-            )}
-          </div>
-          <span>Review</span>
-        </button>
-
         {/* Code Quality button */}
         <button
           onClick={() => setShowCodeQuality(true)}
@@ -282,24 +296,58 @@ export function Toolbar() {
         {gitBranch && <GitActionButtons />}
 
         {/* Open project folder */}
-        <button
-          onClick={handleOpenFolder}
-          className="flex items-center px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-text-primary transition-colors"
-          title={projectPath ? `Project: ${projectPath} — click to open a different folder` : "No project open — click to open one"}
-        >
-          <FolderOpen size={12} />
-        </button>
+        {(() => {
+          const folderTooltip = activeWorkspace
+            ? `Project: ${projectPath || "(unset)"} (${activeWorkspace.name}) — click to change`
+            : projectPath
+              ? `Default folder: ${projectPath} — no workspace open. Click to change or create one.`
+              : "No workspace open — click to create one";
+          return (
+            <button
+              onClick={handleOpenFolder}
+              className="flex items-center px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-text-primary transition-colors"
+              title={folderTooltip}
+              aria-label={folderTooltip}
+            >
+              <FolderOpen size={12} />
+            </button>
+          );
+        })()}
 
         <div className="w-px h-4 bg-bg-border self-center" />
 
-        {/* Theme toggle — own slot at the far right; not an action verb so
-            kept separate from the Action cluster. Also mirrored in Settings. */}
+        {/* Review Queue — far-right slot. Dull when empty; flips to urgent
+            red with a count badge when approvals are pending. The canonical
+            Theme toggle lives in Settings > General > Theme. */}
         <button
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="p-1 text-text-muted hover:text-text-primary transition-colors"
-          title={`Theme — currently ${theme}. Click to switch to ${theme === "dark" ? "light" : "dark"} mode.`}
+          onClick={() => setActiveView("review_queue")}
+          className={`relative flex items-center p-1 rounded transition-colors ${
+            activeView === "review_queue"
+              ? "text-accent-amber"
+              : pendingApprovalCount > 0
+                ? "text-accent-red hover:text-accent-amber"
+                : "text-text-muted hover:text-text-primary"
+          }`}
+          title={
+            pendingApprovalCount === 0
+              ? "Review queue — no pending approvals"
+              : `Review queue — ${pendingApprovalCount} pending approval${pendingApprovalCount === 1 ? "" : "s"}`
+          }
+          aria-label={
+            pendingApprovalCount === 0
+              ? "Review queue — no pending approvals"
+              : `Review queue — ${pendingApprovalCount} pending approval${pendingApprovalCount === 1 ? "" : "s"}`
+          }
         >
-          {theme === "dark" ? <Sun size={12} /> : <Moon size={12} />}
+          <Bell size={12} />
+          {pendingApprovalCount > 0 && (
+            <span
+              className="absolute -top-0.5 -right-0.5 bg-accent-red text-white text-[9px] font-bold px-1 rounded-full min-w-[14px] h-[14px] flex items-center justify-center leading-none"
+              aria-hidden="true"
+            >
+              {pendingApprovalCount > 99 ? "99+" : String(pendingApprovalCount)}
+            </span>
+          )}
         </button>
       </div>
 
@@ -313,8 +361,91 @@ export function Toolbar() {
       {showNewIssue && (
         <NewIssueForm defaultStatus="todo" onClose={() => setShowNewIssue(false)} />
       )}
+      {pendingPickedPath && (
+        <FolderPickerFollowUp
+          pickedPath={pendingPickedPath}
+          onCreateWorkspace={() => handleCreateWorkspaceFromPicker(pendingPickedPath)}
+          onSetDefault={() => handleSetDefaultFromPicker(pendingPickedPath)}
+          onCancel={() => setPendingPickedPath(null)}
+        />
+      )}
 
     </div>
+  );
+}
+
+/**
+ * Small follow-up shown after the user picks a folder while no workspace
+ * is active. Splits the two reasonable intents: "I want a workspace here
+ * now" vs. "I'm just stashing this path as the default for next time".
+ */
+function FolderPickerFollowUp({
+  pickedPath,
+  onCreateWorkspace,
+  onSetDefault,
+  onCancel,
+}: {
+  pickedPath: string;
+  onCreateWorkspace: () => void;
+  onSetDefault: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal
+      onClose={onCancel}
+      title="Use this folder"
+      icon={<FolderOpen size={16} className="text-accent-green" />}
+      width="w-[460px]"
+      closeOnEscape
+    >
+      <div className="px-5 py-4 flex flex-col gap-4">
+        <div>
+          <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Selected folder</div>
+          <div className="bg-bg-primary border border-bg-border rounded px-3 py-2 text-xs text-text-primary font-mono truncate" title={pickedPath}>
+            {pickedPath}
+          </div>
+        </div>
+        <p className="text-[11px] text-text-secondary">
+          No workspace is open. Pick what to do with this folder:
+        </p>
+        <div className="grid grid-cols-1 gap-2">
+          <button
+            type="button"
+            onClick={onCreateWorkspace}
+            className="flex items-start gap-3 px-3 py-3 bg-bg-primary border border-bg-border rounded text-left hover:border-accent-green/40 hover:bg-accent-green/5 transition-colors"
+          >
+            <LayoutGrid size={14} className="text-accent-green flex-shrink-0 mt-0.5" />
+            <span className="flex flex-col">
+              <span className="text-[12px] font-medium text-text-primary">Create new workspace</span>
+              <span className="text-[10px] text-text-muted mt-0.5">
+                Open a workspace here with a Claude Code pane. You can adjust agents later.
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={onSetDefault}
+            className="flex items-start gap-3 px-3 py-3 bg-bg-primary border border-bg-border rounded text-left hover:border-accent-amber/40 hover:bg-accent-amber/5 transition-colors"
+          >
+            <Bookmark size={14} className="text-accent-amber flex-shrink-0 mt-0.5" />
+            <span className="flex flex-col">
+              <span className="text-[12px] font-medium text-text-primary">Set as default for next workspace</span>
+              <span className="text-[10px] text-text-muted mt-0.5">
+                Remember this path so the next workspace you create starts here. No workspace is opened now.
+              </span>
+            </span>
+          </button>
+        </div>
+        <div className="flex justify-end">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
