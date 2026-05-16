@@ -15,6 +15,7 @@ import {
   Maximize2,
   Minimize2,
   ChevronDown,
+  BookOpen,
 } from "lucide-react";
 import { MosaicWindowContext } from "react-mosaic-component";
 import { TerminalPane, type TerminalHeaderRenderState } from "@/components/session/TerminalPane";
@@ -22,6 +23,7 @@ import { useAgentStore } from "@/stores/agentStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
+import { usePromptStore } from "@/stores/promptStore";
 import { buildSshArgs } from "@/lib/ssh";
 import { writePty } from "@/lib/tauri";
 import { getModelsForAgent } from "@/lib/models";
@@ -129,6 +131,12 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const [showPinPopover, setShowPinPopover] = useState(false);
   const [newPinCmd, setNewPinCmd] = useState("");
   const pinPopoverRef = useRef<HTMLDivElement>(null);
+  // Prompt-template dropdown — paste-affordance for sending a saved
+  // template body to this pane's PTY. Replaces the Toolbar Prompts modal
+  // for the "I want to inject a prompt here" flow.
+  const [showPromptMenu, setShowPromptMenu] = useState(false);
+  const promptMenuRef = useRef<HTMLDivElement>(null);
+  const promptTemplates = usePromptStore((s) => s.templates);
 
   // Close pin popover on outside click
   useEffect(() => {
@@ -154,6 +162,18 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, [showModelPicker]);
 
+  // Close prompt-template menu on outside click
+  useEffect(() => {
+    if (!showPromptMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (promptMenuRef.current && !promptMenuRef.current.contains(e.target as Node)) {
+        setShowPromptMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showPromptMenu]);
+
   const pinnedCommands = useMemo(() => pane.pinnedCommands ?? [], [pane.pinnedCommands]);
 
   const runCommand = useCallback(
@@ -161,6 +181,25 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
       if (pane.sessionId) {
         writePty(pane.sessionId, cmd + "\r");
       }
+    },
+    [pane.sessionId],
+  );
+
+  // Paste a prompt template's body into this pane's PTY. Mirrors the
+  // pre-overhaul Prompt Library "Send to Terminal" affordance, scoped to
+  // the specific pane the user clicked on.
+  const sendPromptTemplate = useCallback(
+    (templateId: string) => {
+      if (!pane.sessionId) return;
+      const tpl = usePromptStore
+        .getState()
+        .templates.find((t) => t.id === templateId);
+      if (!tpl) return;
+      // Use CR ("\r") to match `runCommand` — TTY line discipline submits on
+      // CR, not LF; some Windows ConPTY configs won't fire the agent's
+      // Enter handler on bare LF.
+      void writePty(pane.sessionId, tpl.content + "\r");
+      setShowPromptMenu(false);
     },
     [pane.sessionId],
   );
@@ -383,6 +422,65 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
               </div>
             )}
           </div>
+          {/* Prompts paste-affordance — opens a dropdown of saved templates;
+              selecting one writes the body to this pane's PTY. Disabled
+              until the PTY session is up. */}
+          <div ref={promptMenuRef} className="relative shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!pane.sessionId) return;
+                setShowPromptMenu((v) => !v);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              disabled={!pane.sessionId}
+              className={`p-0.5 transition-colors ${
+                pane.sessionId
+                  ? "text-text-muted hover:text-accent-green"
+                  : "text-text-faint opacity-50 cursor-not-allowed"
+              }`}
+              title={
+                pane.sessionId
+                  ? "Send a prompt template to this pane"
+                  : "PTY not ready"
+              }
+            >
+              <BookOpen size={11} />
+            </button>
+            {showPromptMenu && pane.sessionId && (
+              <div
+                className="absolute right-0 top-full z-50 mt-1 max-h-[280px] w-64 overflow-y-auto rounded-md border border-bg-border bg-bg-elevated py-1 shadow-xl"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="px-2 py-1 text-[9px] uppercase tracking-wide text-text-muted">
+                  Send a prompt to this pane
+                </div>
+                {promptTemplates.length === 0 ? (
+                  <div className="px-3 py-2 text-[10px] text-text-muted">
+                    No templates yet. Add some in Settings → Prompt Templates.
+                  </div>
+                ) : (
+                  promptTemplates.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sendPromptTemplate(t.id);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[10px] text-text-primary transition-colors hover:bg-bg-hover"
+                      title={t.content}
+                    >
+                      <span className="truncate">{t.name}</span>
+                      <span className="ml-auto text-[9px] text-text-muted">
+                        {t.category}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -551,6 +649,9 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
       newPinCmd,
       runCommand,
       pane.sessionId,
+      promptTemplates,
+      showPromptMenu,
+      sendPromptTemplate,
     ],
   );
 

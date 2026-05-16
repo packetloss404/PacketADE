@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { FolderOpen, Diamond, Wrench, Rocket, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, BookOpen, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket } from "lucide-react";
+import { FolderOpen, Diamond, Wrench, ArrowDown, ArrowUp, GitCommit, Sun, Moon, ShieldCheck, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket, Rocket } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
@@ -13,7 +13,6 @@ import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
-import { PromptLibrary } from "@/components/workspace/PromptLibrary";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
 import { CommitModal } from "@/components/workspace/CommitModal";
@@ -24,7 +23,6 @@ export function Toolbar() {
   const projectPath = useLayoutStore((s) => s.projectPath);
   const gitBranch = useGitInfo();
   const [showCodeQuality, setShowCodeQuality] = useState(false);
-  const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [showNewFlight, setShowNewFlight] = useState(false);
@@ -152,6 +150,11 @@ export function Toolbar() {
                 label="New Issue"
                 onClick={() => { setShowNewIssue(true); setShowNewMenu(false); }}
               />
+              <DropdownItem
+                icon={<Rocket size={12} className="text-accent-purple" />}
+                label="New deploy run"
+                onClick={() => { setActiveView("deploy"); setShowNewMenu(false); }}
+              />
             </div>
           )}
         </div>
@@ -202,30 +205,6 @@ export function Toolbar() {
             )}
           </div>
           <span>Review</span>
-        </button>
-
-        {/* Deploy button */}
-        <button
-          onClick={() => setActiveView("deploy")}
-          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
-            activeView === "deploy"
-              ? "bg-bg-elevated text-accent-amber"
-              : "bg-bg-elevated text-text-secondary hover:text-accent-amber"
-          }`}
-          title="Deploy Pipeline — run configured deploy commands for the current project and watch their output."
-        >
-          <Rocket size={12} className="text-accent-amber" />
-          <span>Deploy</span>
-        </button>
-
-        {/* Prompt Library button */}
-        <button
-          onClick={() => setShowPromptLibrary(true)}
-          className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-accent-green transition-colors"
-          title="Prompt Library — browse, create, and send prompt templates to Terminal or Scout (agent chat)."
-        >
-          <BookOpen size={12} className="text-accent-green" />
-          <span>Prompts</span>
         </button>
 
         {/* Code Quality button */}
@@ -327,9 +306,6 @@ export function Toolbar() {
       {/* Modals */}
       {showCodeQuality && (
         <CodeQualityModal onClose={() => setShowCodeQuality(false)} />
-      )}
-      {showPromptLibrary && (
-        <PromptLibrary onClose={() => setShowPromptLibrary(false)} />
       )}
       {showNewFlight && (
         <NewFlightModal onClose={() => setShowNewFlight(false)} />
