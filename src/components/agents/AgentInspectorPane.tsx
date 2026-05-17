@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -6,6 +6,8 @@ import {
   Eye,
   PanelLeft,
   Check,
+  FileDiff,
+  FolderTree,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import {
@@ -14,12 +16,49 @@ import {
 } from "@/lib/aggregateConversationDiffs";
 import { aggregateConversationCost, formatCostPill } from "@/lib/conversationCost";
 import { API_PROVIDERS } from "@/lib/api-models";
+import { AgentPreviewPane } from "./AgentPreviewPane";
+import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
+import { AgentFilePane } from "./AgentFilePane";
+import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import { logSwallowed } from "@/lib/logSwallowed";
 
 interface AgentInspectorPaneProps {
   conversationId: string;
 }
 
-type Tab = "inspector" | "preview";
+type Tab = "inspector" | "preview" | "diff" | "files";
+
+const TAB_DEFS: { id: Tab; icon: typeof PanelLeft; label: string }[] = [
+  { id: "inspector", icon: PanelLeft, label: "Inspector" },
+  { id: "preview", icon: Eye, label: "Preview" },
+  { id: "diff", icon: FileDiff, label: "Diff" },
+  { id: "files", icon: FolderTree, label: "Files" },
+];
+
+const WIDTH_STORAGE_KEY = "packetade:agent-inspector-width-v1";
+const MIN_WIDTH = 280;
+const MAX_WIDTH = 720;
+const DEFAULT_WIDTH = 340;
+
+function readPersistedWidth(): number {
+  try {
+    const raw = localStorage.getItem(WIDTH_STORAGE_KEY);
+    if (!raw) return DEFAULT_WIDTH;
+    const n = Number.parseInt(raw, 10);
+    if (!Number.isFinite(n)) return DEFAULT_WIDTH;
+    return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, n));
+  } catch {
+    return DEFAULT_WIDTH;
+  }
+}
+
+function persistWidth(w: number) {
+  try {
+    localStorage.setItem(WIDTH_STORAGE_KEY, String(w));
+  } catch (err) {
+    logSwallowed("AgentInspectorPane.persistWidth")(err);
+  }
+}
 
 export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) {
   const conversation = useAgentTaskStore((s) =>
@@ -27,6 +66,49 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
   );
   const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<Tab>("inspector");
+  const [width, setWidth] = useState<number>(() => readPersistedWidth());
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Auto-switch to the Preview tab when the preview store flips to open
+  // (e.g. clicking a .md link in chat or detecting a plan response).
+  const previewOpen = usePreviewPaneStore((s) => s.open);
+  const prevPreviewOpenRef = useRef(previewOpen);
+  useEffect(() => {
+    if (previewOpen && !prevPreviewOpenRef.current) {
+      setTab("preview");
+      setOpen(true);
+    }
+    prevPreviewOpenRef.current = previewOpen;
+  }, [previewOpen]);
+
+  // Global pointer-move / up listeners while dragging.
+  useEffect(() => {
+    if (!isDragging) return;
+    const handleMove = (e: PointerEvent) => {
+      const next = window.innerWidth - e.clientX;
+      const clamped = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, next));
+      setWidth(clamped);
+    };
+    const handleUp = () => {
+      setIsDragging(false);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+    };
+  }, [isDragging]);
+
+  // Persist on drag-end (not on every pointermove).
+  useEffect(() => {
+    if (!isDragging) {
+      persistWidth(width);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDragging]);
 
   if (!conversation) return null;
 
@@ -41,37 +123,52 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
           <ChevronRight size={12} className="rotate-180" />
         </button>
         <div className="w-px h-2 bg-line-soft" />
-        {(["inspector", "preview"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => {
-              setTab(t);
-              setOpen(true);
-            }}
-            title={t === "inspector" ? "Inspector" : "Preview"}
-            className={`w-6 h-6 grid place-items-center rounded transition-colors ${
-              tab === t
-                ? "bg-bg-elevated text-text-primary"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
-          >
-            {t === "inspector" ? <PanelLeft size={12} /> : <Eye size={12} />}
-          </button>
-        ))}
+        {TAB_DEFS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              onClick={() => {
+                setTab(t.id);
+                setOpen(true);
+              }}
+              title={t.label}
+              className={`w-6 h-6 grid place-items-center rounded transition-colors ${
+                tab === t.id
+                  ? "bg-bg-elevated text-text-primary"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              <Icon size={12} />
+            </button>
+          );
+        })}
         <div className="flex-1" />
       </div>
     );
   }
 
   return (
-    <aside className="w-[340px] shrink-0 bg-bg-secondary border-l border-bg-border flex flex-col min-h-0">
+    <aside
+      className="relative shrink-0 bg-bg-secondary border-l border-bg-border flex flex-col min-h-0"
+      style={{ width }}
+    >
+      {/* Drag handle on the left edge. Sits above the border so it picks up
+          pointer events first. */}
+      <div
+        onPointerDown={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        className={`absolute top-0 left-0 h-full w-1 cursor-col-resize z-10 transition-colors ${
+          isDragging ? "bg-accent-line" : "bg-transparent hover:bg-accent-line/60"
+        }`}
+        title="Drag to resize"
+        aria-label="Resize right pane"
+        role="separator"
+      />
       <div className="flex items-stretch h-[33px] border-b border-bg-border px-1">
-        {(
-          [
-            { id: "inspector", icon: PanelLeft, label: "Inspector" },
-            { id: "preview", icon: Eye, label: "Preview" },
-          ] as { id: Tab; icon: typeof PanelLeft; label: string }[]
-        ).map((t) => {
+        {TAB_DEFS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
           return (
@@ -98,11 +195,36 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
           <ChevronRight size={12} />
         </button>
       </div>
-      <div className="flex-1 overflow-auto flex flex-col min-h-0">
-        {tab === "inspector" ? (
-          <InspectorContent conversationId={conversationId} />
-        ) : (
-          <PreviewBrowser conversationId={conversationId} />
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        {tab === "inspector" && (
+          <div className="flex-1 overflow-auto flex flex-col min-h-0">
+            <InspectorContent conversationId={conversationId} />
+          </div>
+        )}
+        {tab === "preview" && (
+          <AgentPreviewPane
+            projectPath={conversation.projectPath}
+            embedded
+            onRequestClose={() => setTab("inspector")}
+          />
+        )}
+        {tab === "diff" && (
+          conversation.mode === "api" ? (
+            <EmbeddedDiffPane conversationId={conversationId} />
+          ) : (
+            <div className="flex-1 flex items-center justify-center px-6 text-center bg-bg-primary">
+              <span className="text-[11px] text-text-muted max-w-[220px]">
+                Diffs are only tracked for API-mode conversations.
+              </span>
+            </div>
+          )
+        )}
+        {tab === "files" && (
+          <AgentFilePane
+            conversationId={conversationId}
+            projectPath={conversation.projectPath}
+            sshTarget={conversation.sshTarget ?? null}
+          />
         )}
       </div>
     </aside>
@@ -322,100 +444,6 @@ function KvRow({ k, v }: { k: string; v: React.ReactNode }) {
     <div className="flex items-start gap-2">
       <span className="w-[70px] text-text-muted">{k}</span>
       <span className="flex-1 min-w-0 truncate">{v}</span>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Preview tab — static placeholder browser chrome                     */
-/* ------------------------------------------------------------------ */
-
-function PreviewBrowser({ conversationId }: { conversationId: string }) {
-  const conversation = useAgentTaskStore((s) =>
-    s.conversations.find((c) => c.id === conversationId),
-  );
-  const folder = basename(conversation?.projectPath ?? "");
-  return (
-    <div className="flex-1 flex flex-col min-h-0 bg-bg-primary">
-      <div className="px-2 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-b border-line-soft">
-        <button className="p-0.5 text-text-muted hover:text-text-primary rounded">
-          <ChevronRight size={11} className="rotate-180" />
-        </button>
-        <button className="p-0.5 text-text-muted hover:text-text-primary rounded">
-          <ChevronRight size={11} />
-        </button>
-        <div className="flex-1 flex items-center gap-1.5 px-2 py-0.5 bg-bg-secondary border border-bg-border rounded text-[10.5px] font-mono">
-          <span className="w-2 h-2 rounded-full bg-text-muted" />
-          <span className="text-text-muted">localhost:</span>
-          <span className="text-text-primary">1420</span>
-          <span className="text-text-muted">/agents/{conversationId.slice(0, 6)}</span>
-          <span className="flex-1" />
-          <span className="text-[9px] text-text-muted">static</span>
-        </div>
-      </div>
-      <div className="px-2 py-1 flex items-center gap-1.5 border-b border-line-soft bg-bg-secondary text-[10px] text-text-muted">
-        <span className="w-1.5 h-1.5 rounded-full bg-text-muted" />
-        <span>Static preview state</span>
-        <span>·</span>
-        <span className="font-mono">{folder || "preview"}</span>
-        <span className="flex-1" />
-        <div className="flex border border-bg-border rounded overflow-hidden">
-          {["Desktop", "Tablet", "Mobile"].map((m, i) => (
-            <span
-              key={m}
-              className={`px-1.5 py-px text-[10px] ${
-                i === 0
-                  ? "bg-bg-elevated text-text-primary"
-                  : "text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              {m}
-            </span>
-          ))}
-        </div>
-      </div>
-      <div
-        className="flex-1 p-2.5 overflow-auto"
-        style={{
-          background:
-            "repeating-linear-gradient(45deg, var(--color-bg-primary) 0 10px, var(--color-bg-secondary) 10px 11px)",
-        }}
-      >
-        <div className="bg-bg-secondary border border-bg-border rounded overflow-hidden shadow-md">
-          <div className="px-2 py-1.5 border-b border-line-soft flex items-center gap-1 bg-bg-tertiary">
-            <span className="w-[7px] h-[7px] rounded-full bg-accent-red" />
-            <span className="w-[7px] h-[7px] rounded-full bg-accent-amber" />
-            <span className="w-[7px] h-[7px] rounded-full bg-accent-green" />
-            <span className="flex-1" />
-            <span className="text-[9px] text-text-muted">Agent chat · sample</span>
-          </div>
-          <div className="p-2.5 flex flex-col gap-2">
-            <div className="flex gap-1.5">
-              <div className="w-3.5 h-3.5 rounded-sm bg-accent-soft border border-accent-line shrink-0" />
-              <div className="flex-1">
-                <div className="h-1.5 bg-bg-elevated rounded mb-1 w-3/5" />
-                <div className="h-1 bg-bg-tertiary rounded mb-0.5" />
-                <div className="h-1 bg-bg-tertiary rounded w-[85%]" />
-              </div>
-            </div>
-            <div className="bg-bg-tertiary border border-bg-border rounded p-1.5 flex flex-col gap-1">
-              <div className="flex items-center gap-1">
-                <FileIcon size={9} className="text-text-secondary" />
-                <span className="text-[9px] font-mono text-text-primary">
-                  Edit · {folder || "file"}
-                </span>
-                <span className="flex-1" />
-                <span className="w-1 h-1 rounded-full bg-accent-green" />
-              </div>
-              <div className="h-1 rounded bg-accent-green/20" />
-              <div className="h-1 rounded bg-accent-red/20 w-[55%]" />
-            </div>
-          </div>
-        </div>
-        <div className="mt-2 text-[9.5px] text-text-muted text-center">
-          Static sample; connect a local preview to inspect running changes
-        </div>
-      </div>
     </div>
   );
 }
