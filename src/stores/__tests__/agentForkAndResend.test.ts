@@ -268,12 +268,56 @@ describe("agentTaskStore.forkAndResend — current behavior lock-down", () => {
     expect(closeApiAgentSessionMock).not.toHaveBeenCalled();
   });
 
-  // The audit description suggested forkAndResend should create a new
-  // conversation with a `parentId` field referencing the source. The
-  // current implementation truncates the source conversation in place
-  // instead. Document the gap so a future refactor can flip this `todo`
-  // into a real test without losing the requirement.
-  it.todo(
-    "forkAndResend should create a new conversation with parentConversationId set (current impl truncates in place)",
-  );
+  // Audit suggested forkAndResend should fork into a brand-new
+  // conversation with a parent pointer; the implementation deliberately
+  // truncates in place to avoid multiplying conversations on every
+  // edit-resend. Lock that decision down so a future refactor toward
+  // "true fork" is a deliberate, test-driven change rather than a drift.
+  it("does NOT create a new conversation — truncates source in place and leaves parentConversationId unset", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const conv: AgentConversation = {
+      id: "conv-A",
+      title: "Test",
+      agent: "api-openai",
+      projectPath: "D:/projects/example",
+      status: "idle",
+      messages: [
+        makeMessage({ id: "msg-1", content: "user one" }),
+        makeMessage({ id: "msg-2", role: "assistant", content: "assistant one" }),
+        makeMessage({ id: "msg-3", content: "edit me" }),
+        makeMessage({ id: "msg-4", role: "assistant", content: "assistant two" }),
+      ],
+      sessionId: "conv-A",
+      rawOutput: "",
+      createdAt: 1,
+      updatedAt: 1,
+      mode: "api",
+      provider: "openai",
+      model: "gpt-4o",
+    };
+    seedConversation(useAgentTaskStore, conv);
+    const beforeIds = useAgentTaskStore
+      .getState()
+      .conversations.map((c) => c.id)
+      .sort();
+
+    await useAgentTaskStore.getState().forkAndResend("conv-A", "msg-3", "edited content");
+
+    const afterIds = useAgentTaskStore
+      .getState()
+      .conversations.map((c) => c.id)
+      .sort();
+    // Same set of conversations — no new sibling created by the fork.
+    expect(afterIds).toEqual(beforeIds);
+
+    const updated = useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-A");
+    expect(updated).toBeDefined();
+    // No parent pointer is wired up — fork is in-place, not relational.
+    expect(updated?.parentConversationId).toBeUndefined();
+    // Truncation prefix preserved (msg-3 + msg-4 are dropped before sendMessage re-appends a user turn).
+    expect(updated!.messages.slice(0, 2).map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
+    // The original message id at the edit point is gone — confirms in-place truncation, not branching.
+    expect(updated!.messages.some((m) => m.id === "msg-3")).toBe(false);
+    expect(updated!.messages.some((m) => m.id === "msg-4")).toBe(false);
+  });
 });
