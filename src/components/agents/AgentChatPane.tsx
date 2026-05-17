@@ -57,7 +57,6 @@ import { AgentStatusBar } from "./AgentStatusBar";
 import { SubagentToolCallCard } from "./SubagentToolCallCard";
 import { TaskListCard } from "./TaskListCard";
 import { ContinueInMenu } from "./ContinueInMenu";
-import { AgentMosaicShell } from "./AgentMosaicShell";
 import { AgentTabbedRail } from "./AgentTabbedRail";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
 import { SessionHealthBar } from "./SessionHealthBar";
@@ -69,11 +68,6 @@ import {
   flagsForMode,
   nextMode,
 } from "./agentModeChipUtils";
-import { AgentPaneSplitMenu } from "./AgentPaneSplitMenu";
-import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
-import { AgentFilePane } from "./AgentFilePane";
-import { AgentPreviewPane } from "./AgentPreviewPane";
-import { TerminalPane } from "@/components/session/TerminalPane";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
@@ -1441,9 +1435,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           <Columns2 size={12} />
         </button>
 
-        {/* Split menu (open diff/terminal/file panes inside this conversation) */}
-        <AgentPaneSplitMenu conversationId={conversationId} />
-
         {/* Continue in… */}
         <ContinueInMenu conversation={conversation} />
 
@@ -1862,28 +1853,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   return (
     <div className="flex h-full bg-bg-primary">
-      <div className="flex-1 min-w-0">
-        <AgentMosaicShell
-          conversationId={conversationId}
-          chat={chatContent}
-          diff={<EmbeddedDiffPane conversationId={conversationId} />}
-          terminal={
-            <TerminalPane
-              paneId={`agent-${conversationId}-term`}
-              projectPath={conversation.projectPath}
-            />
-          }
-          file={
-            <AgentFilePane
-              conversationId={conversationId}
-              projectPath={conversation.projectPath}
-              sshTarget={conversation.sshTarget ?? null}
-              onSelectFile={handleOpenMarkdown}
-            />
-          }
-        />
-      </div>
-      {previewOpen && <AgentPreviewPane projectPath={conversation.projectPath} />}
+      <div className="flex-1 min-w-0">{chatContent}</div>
       {useCompactRail && <AgentTabbedRail conversationId={conversationId} />}
       {showRewind && (
         <div className="w-72 shrink-0 border-l border-bg-border">

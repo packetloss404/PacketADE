@@ -18,6 +18,13 @@ import {
 
 interface AgentPreviewPaneProps {
   projectPath: string;
+  /** When true, the pane is rendered inside the InspectorPane's tab and drops
+   *  the standalone aside chrome (fixed width, close button). */
+  embedded?: boolean;
+  /** Called when the header close button is clicked. Used in embedded mode to
+   *  switch the parent tab back to Inspector instead of closing the global
+   *  preview-pane store. Ignored when `embedded` is false. */
+  onRequestClose?: () => void;
 }
 
 function isAbsolutePath(path: string): boolean {
@@ -50,7 +57,11 @@ const TAB_META: Record<PreviewPaneTab, { label: string; icon: typeof BookOpen }>
   plan: { label: "Plan", icon: ClipboardList },
 };
 
-export function AgentPreviewPane({ projectPath }: AgentPreviewPaneProps) {
+export function AgentPreviewPane({
+  projectPath,
+  embedded = false,
+  onRequestClose,
+}: AgentPreviewPaneProps) {
   const {
     activeTab,
     markdownPath,
@@ -61,6 +72,14 @@ export function AgentPreviewPane({ projectPath }: AgentPreviewPaneProps) {
     setActiveTab,
     setBrowserUrl,
   } = usePreviewPaneStore();
+
+  const handleClose = () => {
+    if (embedded) {
+      onRequestClose?.();
+    } else {
+      close();
+    }
+  };
 
   const [markdownContent, setMarkdownContent] = useState("");
   const [markdownLoading, setMarkdownLoading] = useState(false);
@@ -112,32 +131,40 @@ export function AgentPreviewPane({ projectPath }: AgentPreviewPaneProps) {
 
   const activeBrowserUrl = normalizeUrl(browserUrl);
 
+  // In embedded mode we drop the standalone aside chrome (fixed width,
+  // bordered left edge) because the InspectorPane already supplies them.
+  const containerClass = embedded
+    ? "flex-1 min-h-0 flex flex-col bg-bg-primary"
+    : "w-[460px] max-w-[45vw] min-w-[360px] h-full shrink-0 border-l border-bg-border bg-bg-primary flex flex-col";
+
   return (
     <aside
-      className="w-[460px] max-w-[45vw] min-w-[360px] h-full shrink-0 border-l border-bg-border bg-bg-primary flex flex-col"
+      className={containerClass}
       aria-label="Agent preview pane"
     >
-      <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <BookOpen size={13} className="text-text-secondary shrink-0" />
-          <span className="text-xs font-medium text-text-primary truncate">
-            {activeTab === "markdown"
-              ? fileLabel(markdownPath)
-              : activeTab === "plan"
-                ? planTitle
-                : "Browser"}
-          </span>
+      {!embedded && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <BookOpen size={13} className="text-text-secondary shrink-0" />
+            <span className="text-xs font-medium text-text-primary truncate">
+              {activeTab === "markdown"
+                ? fileLabel(markdownPath)
+                : activeTab === "plan"
+                  ? planTitle
+                  : "Browser"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+            title="Collapse preview"
+            aria-label="Collapse preview"
+          >
+            <PanelRightClose size={14} />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={close}
-          className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-          title="Collapse preview"
-          aria-label="Collapse preview"
-        >
-          <PanelRightClose size={14} />
-        </button>
-      </div>
+      )}
 
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-bg-border bg-bg-primary shrink-0">
         {(Object.keys(TAB_META) as PreviewPaneTab[]).map((tab) => {
