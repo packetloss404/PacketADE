@@ -2,6 +2,7 @@ import type {
   AgentConversation,
   AgentPlanItem,
 } from "@/types/agent-conversation";
+import type { SpecRecord } from "@/stores/agentPlanStore";
 
 /** Soft cap on the distillation prompt — well under the smallest Codex
  * context window. Codex doesn't need the parent conversation's full
@@ -60,8 +61,15 @@ function planItemMarkdown(items: AgentPlanItem[]): string {
  * a brief discussion summary, but NOT the parent's full message history
  * — Codex's smaller context budget rewards distillation, and the spec
  * is the canonical statement of intent.
+ *
+ * Spec + plan are passed in (from agentPlanStore) since they no longer
+ * live on the conversation object.
  */
-export function buildHandoffPrompt(parent: AgentConversation): string {
+export function buildHandoffPrompt(
+  parent: AgentConversation,
+  spec: SpecRecord | undefined,
+  plan: AgentPlanItem[] | undefined,
+): string {
   const sections: string[] = [];
 
   sections.push(
@@ -70,22 +78,20 @@ export function buildHandoffPrompt(parent: AgentConversation): string {
       "do not re-plan unless blocked.",
   );
 
-  if (parent.spec && parent.spec.status === "approved" && parent.spec.criteria.length > 0) {
-    const bullets = parent.spec.criteria
+  if (spec && spec.status === "approved" && spec.criteria.length > 0) {
+    const bullets = spec.criteria
       .map((c, i) => `${i + 1}. ${c}`)
       .join("\n");
     sections.push(`## Spec (locked by user)\n\n${bullets}`);
-  } else if (parent.spec && parent.spec.criteria.length > 0) {
-    const bullets = parent.spec.criteria.map((c) => `- ${c}`).join("\n");
+  } else if (spec && spec.criteria.length > 0) {
+    const bullets = spec.criteria.map((c) => `- ${c}`).join("\n");
     sections.push(
       `## Spec (draft — not yet locked, treat as guidance)\n\n${bullets}`,
     );
   }
 
-  if (parent.plan && parent.plan.length > 0) {
-    sections.push(
-      `## Approved plan\n\n${planItemMarkdown(parent.plan)}`,
-    );
+  if (plan && plan.length > 0) {
+    sections.push(`## Approved plan\n\n${planItemMarkdown(plan)}`);
   }
 
   // Brief discussion summary: last user prompt + tail of last assistant.

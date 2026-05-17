@@ -53,8 +53,9 @@ interface GoalStore {
   cancelGoal: (id: string) => void;
 
   /** Sync the bound conversation's checklist into the goal snapshot.
-   * Called by PlanPanel whenever `conversation.plan` changes so the
-   * snapshot stays current for cross-conversation continuation. */
+   * Called by PlanPanel whenever the plan substore's snapshot for this
+   * conversation changes so the goal stays current for cross-conversation
+   * continuation. */
   syncChecklistFromConversation: (
     goalId: string,
     items: AgentPlanItem[],
@@ -126,7 +127,8 @@ export const useGoalStore = create<GoalStore>((set, get) => ({
     const goal = get().goals.find((g) => g.id === goalId);
     if (!goal) return;
     // Cheap shallow check — items are stable references between renders
-    // when conversation.plan hasn't changed, so most calls are no-ops.
+    // when the plan substore's snapshot for this conversation hasn't
+    // changed, so most calls are no-ops.
     if (goal.checklist === items) return;
     get().updateGoal(goalId, { checklist: items });
   },
