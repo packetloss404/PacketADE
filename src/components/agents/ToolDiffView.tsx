@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useMemo, useState } from "react";
 import * as Diff from "diff";
 import { Plus, Check, X } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useFileDisk, type DiskState } from "@/components/agents/hooks/useFileDisk";
 
 interface ToolDiffViewProps {
   projectPath: string;
@@ -17,11 +17,7 @@ interface ToolDiffViewProps {
   conversationId?: string;
 }
 
-type LoadState =
-  | { kind: "loading" }
-  | { kind: "new" }
-  | { kind: "existing"; oldContent: string }
-  | { kind: "error" };
+type LoadState = DiskState;
 
 /** B1: per-line diff row computed from `Diff.diffLines` parts with running
  * old/new line counters. `side` is the file the line lives in: removed
@@ -86,42 +82,19 @@ export function ToolDiffView({
   oldContent,
   conversationId,
 }: ToolDiffViewProps) {
-  const [state, setState] = useState<LoadState>(() => {
+  // Skip the disk read when the caller already supplied `oldContent`; the
+  // hook treats a null filePath as "new file" which we then override below.
+  const hasPreseededContent = oldContent !== undefined;
+  const { state: diskState } = useFileDisk(
+    projectPath,
+    hasPreseededContent ? null : filePath,
+  );
+  const state: LoadState = useMemo(() => {
     if (oldContent === null) return { kind: "new" };
-    if (typeof oldContent === "string") return { kind: "existing", oldContent };
-    return { kind: "loading" };
-  });
-
-  useEffect(() => {
-    if (oldContent === null) {
-      setState({ kind: "new" });
-      return;
-    }
-    if (typeof oldContent === "string") {
-      setState({ kind: "existing", oldContent });
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const result = await invoke<string | null>("read_file_for_diff", {
-          projectPath,
-          relPath: filePath,
-        });
-        if (cancelled) return;
-        if (result === null || result === undefined) {
-          setState({ kind: "new" });
-        } else {
-          setState({ kind: "existing", oldContent: result });
-        }
-      } catch {
-        if (!cancelled) setState({ kind: "error" });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [projectPath, filePath, oldContent]);
+    if (typeof oldContent === "string")
+      return { kind: "existing", oldContent };
+    return diskState;
+  }, [oldContent, diskState]);
 
   const diffParts = useMemo(() => {
     if (state.kind !== "existing") return null;
