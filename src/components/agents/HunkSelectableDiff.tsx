@@ -101,7 +101,7 @@ export function HunkSelectableDiff({
   if (totalHunks === 0) {
     return (
       <div className="bg-bg-primary">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-secondary border-b border-bg-border">
+        <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border">
           <FileDiff size={12} className="text-text-secondary" />
           <span className="text-[11px] font-mono text-text-primary truncate flex-1">
             {filePath}
@@ -117,7 +117,7 @@ export function HunkSelectableDiff({
   return (
     <div className="bg-bg-primary">
       {/* Toolbar */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-bg-secondary border-b border-bg-border">
+      <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border">
         {isNewFile ? (
           <FilePlus2 size={12} className="text-accent-green" />
         ) : (
