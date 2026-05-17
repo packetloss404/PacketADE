@@ -1,6 +1,6 @@
 use crate::core::execution::SshConfig;
 use crate::core::git;
-use crate::core::worktree;
+use crate::core::worktree::{self, RemoteCloneResult};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tracing::{info, warn};
@@ -387,8 +387,8 @@ pub async fn create_issue_worktree(
 
 /// Phase 3.3: minimum SSH config the remote git dashboard commands need.
 /// The frontend builds this from a `Workspace.serverId` lookup against the
-/// `serverStore`. Mirrors `scaffold::CloneServerConfigDto` but kept
-/// separate so callers don't pull in scaffold types just to read git state.
+/// `serverStore`. Shared by `get_git_branch_remote`,
+/// `get_git_status_remote`, and `clone_repo_remote`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitServerConfigDto {
@@ -451,6 +451,50 @@ pub async fn get_git_status_remote(
     }
     let cfg = server_config.into_ssh_config(remote_path.clone());
     worktree::ssh_get_status(&cfg, &remote_path).await
+}
+
+/// Result returned to the frontend after a successful remote clone.
+/// Mirrors `core::worktree::RemoteCloneResult` but lives here so the
+/// `tauri::command` signature stays in the command layer.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneRemoteResultDto {
+    pub remote_path: String,
+    pub default_branch: String,
+}
+
+impl From<RemoteCloneResult> for CloneRemoteResultDto {
+    fn from(r: RemoteCloneResult) -> Self {
+        Self {
+            remote_path: r.remote_path,
+            default_branch: r.default_branch,
+        }
+    }
+}
+
+/// Clone `repo_url` to `dest_path` on the SSH host described by
+/// `server_config`. Behaviour & security guarantees live in
+/// [`worktree::clone_repo_remote_ssh`]; this command is a thin wrapper
+/// that turns the DTO into an `SshConfig`.
+#[tauri::command]
+pub async fn clone_repo_remote(
+    server_id: String,
+    server_config: GitServerConfigDto,
+    repo_url: String,
+    dest_path: String,
+    branch: Option<String>,
+) -> Result<CloneRemoteResultDto, String> {
+    if !server_id.is_empty() && server_id != server_config.id {
+        return Err(format!(
+            "server_id '{}' does not match server_config.id '{}'",
+            server_id, server_config.id
+        ));
+    }
+
+    let cfg = server_config.into_ssh_config(dest_path.clone());
+    let branch_ref = branch.as_deref();
+    let result = worktree::clone_repo_remote_ssh(&cfg, &repo_url, &dest_path, branch_ref).await?;
+    Ok(result.into())
 }
 
 // v0.8.5 — `Fixes #N` trailer parsing & ticket-id mapping tests. Kept

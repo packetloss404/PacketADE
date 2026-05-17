@@ -1,11 +1,47 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Lightbulb, RefreshCw, Loader2, ChevronDown, ChevronRight, Eye, EyeOff, LayoutGrid } from "lucide-react";
 import { useIdeationStore } from "@/stores/ideationStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { API_PROVIDERS, type ApiProviderInfo } from "@/lib/api-models";
+import { storageKey } from "@/lib/brand";
 import type { Idea, IdeationType } from "@/types/ideation";
 import { TYPE_CONFIG, ALL_TYPES } from "./ideation/ideationConfig";
 import { IdeaCard } from "./ideation/IdeaCard";
 import { IdeaDetail } from "./ideation/IdeaDetail";
+
+/** Map API_PROVIDERS row id → backend `LlmProvider` name. Sidecar/OAuth
+ *  rows (anthropic-oauth, openai-codex, openai-agents) are excluded —
+ *  Ideation runs through the in-process `LlmProvider` trait only. */
+const PROVIDER_ID_TO_BACKEND: Record<string, string> = {
+  anthropic: "anthropic",
+  openai: "openai",
+  minimax: "minimax",
+  openrouter: "openrouter",
+  ollama: "ollama",
+};
+
+const LLM_PROVIDERS: ApiProviderInfo[] = API_PROVIDERS.filter(
+  (p) => p.id in PROVIDER_ID_TO_BACKEND,
+);
+
+const DEFAULT_PROVIDER_ID = "anthropic";
+const DEFAULT_MODEL = "claude-sonnet-4-6-20250414";
+const PROVIDER_STORAGE_KEY = storageKey("ideation-provider");
+const MODEL_STORAGE_KEY = storageKey("ideation-model");
+
+function loadInitialProvider(): { providerId: string; model: string } {
+  try {
+    if (typeof localStorage === "undefined") return { providerId: DEFAULT_PROVIDER_ID, model: DEFAULT_MODEL };
+    const providerId = localStorage.getItem(PROVIDER_STORAGE_KEY) || DEFAULT_PROVIDER_ID;
+    const model = localStorage.getItem(MODEL_STORAGE_KEY) || DEFAULT_MODEL;
+    const exists = LLM_PROVIDERS.find((p) => p.id === providerId);
+    if (!exists) return { providerId: DEFAULT_PROVIDER_ID, model: DEFAULT_MODEL };
+    const modelExists = exists.models.find((m) => m.value === model);
+    return { providerId, model: modelExists ? model : exists.models[0]?.value ?? DEFAULT_MODEL };
+  } catch {
+    return { providerId: DEFAULT_PROVIDER_ID, model: DEFAULT_MODEL };
+  }
+}
 
 export function IdeationView() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
@@ -26,6 +62,27 @@ export function IdeationView() {
   const [showDismissed, setShowDismissed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const initial = loadInitialProvider();
+  const [providerId, setProviderId] = useState<string>(initial.providerId);
+  const [model, setModel] = useState<string>(initial.model);
+  const currentProvider = LLM_PROVIDERS.find((p) => p.id === providerId) ?? LLM_PROVIDERS[0];
+
+  useEffect(() => {
+    try {
+      if (typeof localStorage === "undefined") return;
+      localStorage.setItem(PROVIDER_STORAGE_KEY, providerId);
+      localStorage.setItem(MODEL_STORAGE_KEY, model);
+    } catch {
+      // localStorage unavailable — silently ignore.
+    }
+  }, [providerId, model]);
+
+  function handleProviderChange(nextId: string) {
+    const next = LLM_PROVIDERS.find((p) => p.id === nextId);
+    if (!next) return;
+    setProviderId(nextId);
+    setModel(next.models[0]?.value ?? "");
+  }
 
   function toggleType(t: IdeationType) {
     setEnabledTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
@@ -50,9 +107,18 @@ export function IdeationView() {
       setError("Ideation scanning isn't supported for remote workspaces yet.");
       return;
     }
+    if (!currentProvider || !model) {
+      setError("Pick a provider and model first.");
+      return;
+    }
+    const backendProvider = PROVIDER_ID_TO_BACKEND[currentProvider.id];
+    if (!backendProvider) {
+      setError(`Provider '${currentProvider.id}' is not supported by Ideation yet.`);
+      return;
+    }
     setError(null);
     try {
-      await generate(activeWorkspaceId, workspace.projectPath, enabledTypes);
+      await generate(activeWorkspaceId, workspace.projectPath, enabledTypes, backendProvider, model);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -105,6 +171,28 @@ export function IdeationView() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <select
+              value={providerId}
+              onChange={(e) => handleProviderChange(e.target.value)}
+              disabled={isGenerating}
+              className="px-2 py-1 text-[11px] bg-bg-elevated border border-bg-border rounded text-text-secondary focus:outline-none focus:border-accent-green/50 disabled:opacity-40"
+              title="LLM provider used to scan the codebase"
+            >
+              {LLM_PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={isGenerating || !currentProvider}
+              className="px-2 py-1 text-[11px] bg-bg-elevated border border-bg-border rounded text-text-secondary focus:outline-none focus:border-accent-green/50 disabled:opacity-40"
+              title="Model used by the selected provider"
+            >
+              {(currentProvider?.models ?? []).map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
             {session && (
               <button onClick={() => clearSession(activeWorkspaceId)} className="px-2.5 py-1 text-[11px] text-text-muted hover:text-text-secondary transition-colors">
                 Clear

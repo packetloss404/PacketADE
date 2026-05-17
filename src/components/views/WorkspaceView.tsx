@@ -11,7 +11,7 @@ import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
 import { EditorPane } from "@/components/editor/EditorPane";
 import { isOnboardingComplete } from "@/lib/onboarding";
 import { useState, useRef, useEffect } from "react";
-import { LayoutGrid, FolderOpen, ChevronDown, Layers, GitBranch, FileText, Plus, Zap, Brain } from "lucide-react";
+import { LayoutGrid, GitBranch, FileText, Plus, Zap, Brain } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
 import { PaneLayoutControls } from "@/components/workspace/PaneLayoutControls";
 import type { WorkspaceAgentSlot, Workspace } from "@/types/workspace";
@@ -34,22 +34,19 @@ const agentColor: Record<WorkspaceAgentSlot, string> = {
   "packetcode": "bg-purple-500/20 text-purple-400",
 };
 
-function folderName(path: string): string {
-  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
-  return parts[parts.length - 1] || path;
-}
-
 export function WorkspaceView() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
+  const setBypassPermissions = useWorkspaceStore((s) => s.setBypassPermissions);
   const initialized = useAppStore((s) => s.initialized);
   const projectPath = useLayoutStore((s) => s.projectPath);
+  const memoryPatterns = useMemoryStore((s) => s.patterns);
+  const memoryLearning = useMemoryStore((s) => s.isLearning);
   const [onboardingDone, setOnboardingDone] = useState<boolean>(() => isOnboardingComplete());
-  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [addAgentOpen, setAddAgentOpen] = useState(false);
-  const switcherRef = useRef<HTMLDivElement>(null);
+  const [showCreate, setShowCreate] = useState(false);
   const addAgentRef = useRef<HTMLDivElement>(null);
   const addPane = useWorkspaceStore((s) => s.addPane);
   const agents = useAgentStore((s) => s.agents);
@@ -77,17 +74,8 @@ export function WorkspaceView() {
   const showOnboarding =
     initialized && !onboardingDone && activeNonArchived.length === 0 && !projectPath;
 
-  // Close switcher on outside click
-  useEffect(() => {
-    if (!switcherOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
-        setSwitcherOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [switcherOpen]);
+  const bypassOn = activeWorkspace?.bypassPermissions ?? false;
+  const memoryActive = memoryLearning || memoryPatterns.length > 0;
 
   // Close add-agent popover on outside click
   useEffect(() => {
@@ -112,50 +100,49 @@ export function WorkspaceView() {
   return (
     <div className="flex flex-1 overflow-hidden">
       <div className="flex flex-col flex-1 overflow-hidden relative">
-        {/* Workspace context header */}
-        {initialized && activeWorkspace && (
-          <div className="py-2 px-3 bg-bg-secondary border-b border-bg-border flex items-center justify-between shrink-0">
-            {/* Left: workspace name + project folder */}
-            <div className="flex items-center gap-2 min-w-0">
-              <Layers size={12} className="text-text-muted shrink-0" />
-              <div className="relative" ref={switcherRef}>
-                <button
-                  onClick={() => setSwitcherOpen((v) => !v)}
-                  className="flex items-center gap-1 text-xs font-medium text-text-primary hover:text-accent-green transition-colors"
-                >
-                  {activeWorkspace.name}
-                  {activeNonArchived.length > 1 && (
-                    <ChevronDown size={10} className="text-text-muted" />
-                  )}
-                </button>
-                {switcherOpen && activeNonArchived.length > 1 && (
-                  <div className="absolute top-full left-0 mt-1 bg-bg-tertiary border border-bg-border rounded shadow-lg z-50 min-w-[160px] py-1">
-                    {activeNonArchived.map((ws) => (
-                      <button
-                        key={ws.id}
-                        onClick={() => { setActiveWorkspace(ws.id); setSwitcherOpen(false); }}
-                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-bg-secondary transition-colors ${
-                          ws.id === activeWorkspaceId ? "text-accent-green" : "text-text-secondary"
-                        }`}
-                      >
-                        {ws.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <span className="text-[10px] text-text-muted flex items-center gap-1 truncate">
-                <FolderOpen size={10} className="shrink-0" />
-                {folderName(activeWorkspace.projectPath)}
-              </span>
-              <span className="text-[10px] text-text-muted">
-                {activeWorkspace.panes.length} {activeWorkspace.panes.length === 1 ? "pane" : "panes"}
-              </span>
+        {/* Merged header: workspace tabs · agent badges · + Add Agent · git
+            toggle · pane-layout presets · bypass perms · memory indicator.
+            Replaces the previous two-row layout (workspace context header
+            stacked above WorkspaceSubTabs). The active tab's tooltip now
+            carries the project-path info the old folder chip used to show. */}
+        {initialized && activeNonArchived.length > 0 && (
+          <div className="flex items-stretch h-[33px] bg-bg-primary border-b border-line-soft px-2 shrink-0">
+            <div className="flex items-stretch gap-0 overflow-x-auto">
+              {activeNonArchived.map((ws) => {
+                const isActive = ws.id === activeWorkspaceId;
+                const dot = workspaceStatusDot(ws);
+                return (
+                  <button
+                    key={ws.id}
+                    onClick={() => setActiveWorkspace(ws.id)}
+                    title={ws.projectPath}
+                    className={`relative flex items-center gap-1.5 px-3 text-[11px] whitespace-nowrap transition-colors ${
+                      isActive
+                        ? "text-text-primary"
+                        : "text-text-muted hover:text-text-secondary"
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${dot.className} ${dot.pulse ? "animate-pulse" : ""}`}
+                    />
+                    <span>{ws.name}</span>
+                    {isActive && (
+                      <span className="absolute left-2 right-2 bottom-0 h-[2px] bg-accent-green rounded-t" />
+                    )}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setShowCreate(true)}
+                className="flex items-center px-2 text-text-muted hover:text-text-primary transition-colors"
+                title="New workspace"
+              >
+                <Plus size={12} />
+              </button>
             </div>
-
-            {/* Right: agent badges + git toggle */}
-            <div className="flex items-center gap-1.5">
-              {Object.entries(agentCounts).map(([agent, count]) => (
+            <div className="flex-1" />
+            <div className="flex items-center gap-2">
+              {activeWorkspace && Object.entries(agentCounts).map(([agent, count]) => (
                 <span
                   key={agent}
                   className={`text-[10px] px-1.5 py-0.5 rounded ${agentColor[agent as WorkspaceAgentSlot] || "bg-text-muted/20 text-text-secondary"}`}
@@ -164,65 +151,92 @@ export function WorkspaceView() {
                   {(count as number) > 1 && ` x${count}`}
                 </span>
               ))}
-              <div className="relative" ref={addAgentRef}>
+              {activeWorkspace && (
+                <div className="relative" ref={addAgentRef}>
+                  <button
+                    onClick={() => setAddAgentOpen((v) => !v)}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                      addAgentOpen
+                        ? "bg-accent-green/20 text-accent-green"
+                        : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
+                    }`}
+                    title="Add agent to workspace"
+                  >
+                    <Plus size={11} />
+                    Add Agent
+                  </button>
+                  {addAgentOpen && (
+                    <div className="absolute right-0 top-full mt-1 bg-bg-tertiary border border-bg-border rounded shadow-lg z-50 min-w-[150px] py-1">
+                      {(["claude-code", "codex", "gemini", "opencode", "packetcode", "terminal"] as WorkspaceAgentSlot[]).map((agent) => {
+                        const installed = isAgentInstalledForWorkspace(agent, activeWorkspace);
+                        return (
+                          <button
+                            key={agent}
+                            onClick={() => {
+                              if (!installed) return;
+                              addPane(activeWorkspace.id, agent);
+                              setAddAgentOpen(false);
+                            }}
+                            disabled={!installed}
+                            title={installed ? `Add ${agentLabel[agent]}` : `${agentLabel[agent]} is not installed for this workspace`}
+                            className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-2 ${
+                              installed
+                                ? "text-text-secondary hover:text-text-primary hover:bg-bg-secondary"
+                                : "text-text-muted opacity-50 cursor-not-allowed"
+                            }`}
+                          >
+                            <span className={`w-2 h-2 rounded-full ${agentColor[agent]?.split(" ")[0] ?? "bg-text-muted/20"}`} />
+                            {agentLabel[agent]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+              {activeWorkspace && (
                 <button
-                  onClick={() => setAddAgentOpen((v) => !v)}
-                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
-                    addAgentOpen
+                  onClick={() => setGitPanelOpen((v) => !v)}
+                  className={`p-1 rounded transition-colors ${
+                    gitPanelOpen
                       ? "bg-accent-green/20 text-accent-green"
                       : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
                   }`}
-                  title="Add agent to workspace"
+                  title="Git Dashboard"
                 >
-                  <Plus size={11} />
-                  Add Agent
+                  <GitBranch size={12} />
                 </button>
-                {addAgentOpen && activeWorkspace && (
-                  <div className="absolute right-0 top-full mt-1 bg-bg-tertiary border border-bg-border rounded shadow-lg z-50 min-w-[150px] py-1">
-                    {(["claude-code", "codex", "gemini", "opencode", "packetcode", "terminal"] as WorkspaceAgentSlot[]).map((agent) => {
-                      const installed = isAgentInstalledForWorkspace(agent, activeWorkspace);
-                      return (
-                        <button
-                          key={agent}
-                          onClick={() => {
-                            if (!installed) return;
-                            addPane(activeWorkspace.id, agent);
-                            setAddAgentOpen(false);
-                          }}
-                          disabled={!installed}
-                          title={installed ? `Add ${agentLabel[agent]}` : `${agentLabel[agent]} is not installed for this workspace`}
-                          className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-2 ${
-                            installed
-                              ? "text-text-secondary hover:text-text-primary hover:bg-bg-secondary"
-                              : "text-text-muted opacity-50 cursor-not-allowed"
-                          }`}
-                        >
-                          <span className={`w-2 h-2 rounded-full ${agentColor[agent]?.split(" ")[0] ?? "bg-text-muted/20"}`} />
-                          {agentLabel[agent]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              )}
+              <PaneLayoutControls />
               <button
-                onClick={() => setGitPanelOpen((v) => !v)}
-                className={`p-1 rounded transition-colors ${
-                  gitPanelOpen
-                    ? "bg-accent-green/20 text-accent-green"
-                    : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
-                }`}
-                title="Git Dashboard"
+                onClick={() => activeWorkspace && setBypassPermissions(activeWorkspace.id, !bypassOn)}
+                disabled={!activeWorkspace}
+                className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border transition-colors ${
+                  bypassOn
+                    ? "border-accent-line bg-accent-soft text-accent-amber"
+                    : "border-bg-border bg-bg-secondary text-text-muted hover:text-text-secondary"
+                } disabled:opacity-50`}
+                title="Bypass permission prompts for this workspace"
               >
-                <GitBranch size={12} />
+                <Zap size={10} />
+                <span>Bypass perms: {bypassOn ? "on" : "off"}</span>
               </button>
+              <span
+                className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border ${
+                  memoryActive
+                    ? "border-accent-line bg-accent-soft text-accent-green"
+                    : "border-bg-border bg-bg-secondary text-text-muted"
+                }`}
+                title={memoryLearning ? "Memory layer is summarizing recent sessions" : "Top patterns will be injected on next session"}
+              >
+                <Brain size={10} />
+                <span>{memoryLearning ? "Memory learning" : "Memory injecting"}</span>
+              </span>
             </div>
           </div>
         )}
-
-        {/* SubTabs: workspace tabs + bypass/memory pills + layout presets */}
-        {initialized && activeNonArchived.length > 0 && (
-          <WorkspaceSubTabs />
+        {showCreate && (
+          <WorkspaceCreationModal onClose={() => setShowCreate(false)} />
         )}
 
         {/* Main content area: workspace panes + optional git panel */}
@@ -337,88 +351,3 @@ function workspaceStatusDot(ws: Workspace): { className: string; pulse: boolean 
   return { className: "bg-text-faint", pulse: false };
 }
 
-function WorkspaceSubTabs() {
-  const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
-  const setBypassPermissions = useWorkspaceStore((s) => s.setBypassPermissions);
-  const memoryPatterns = useMemoryStore((s) => s.patterns);
-  const memoryLearning = useMemoryStore((s) => s.isLearning);
-  const [showCreate, setShowCreate] = useState(false);
-
-  const activeNonArchived = workspaces.filter((w) => w.status === "active");
-  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
-  const bypassOn = activeWorkspace?.bypassPermissions ?? false;
-  const memoryActive = memoryLearning || memoryPatterns.length > 0;
-
-  return (
-    <>
-      <div className="flex items-stretch h-[33px] bg-bg-primary border-b border-line-soft px-2 shrink-0">
-        <div className="flex items-stretch gap-0 overflow-x-auto">
-          {activeNonArchived.map((ws) => {
-            const isActive = ws.id === activeWorkspaceId;
-            const dot = workspaceStatusDot(ws);
-            return (
-              <button
-                key={ws.id}
-                onClick={() => setActiveWorkspace(ws.id)}
-                className={`relative flex items-center gap-1.5 px-3 text-[11px] whitespace-nowrap transition-colors ${
-                  isActive
-                    ? "text-text-primary"
-                    : "text-text-muted hover:text-text-secondary"
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${dot.className} ${dot.pulse ? "animate-pulse" : ""}`}
-                />
-                <span>{ws.name}</span>
-                {isActive && (
-                  <span className="absolute left-2 right-2 bottom-0 h-[2px] bg-accent-green rounded-t" />
-                )}
-              </button>
-            );
-          })}
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center px-2 text-text-muted hover:text-text-primary transition-colors"
-            title="New workspace"
-          >
-            <Plus size={12} />
-          </button>
-        </div>
-        <div className="flex-1" />
-        <div className="flex items-center gap-2">
-          {/* v0.8.2: pane layout presets (moved from global Toolbar) */}
-          <PaneLayoutControls />
-          <button
-            onClick={() => activeWorkspace && setBypassPermissions(activeWorkspace.id, !bypassOn)}
-            disabled={!activeWorkspace}
-            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border transition-colors ${
-              bypassOn
-                ? "border-accent-line bg-accent-soft text-accent-amber"
-                : "border-bg-border bg-bg-secondary text-text-muted hover:text-text-secondary"
-            } disabled:opacity-50`}
-            title="Bypass permission prompts for this workspace"
-          >
-            <Zap size={10} />
-            <span>Bypass perms: {bypassOn ? "on" : "off"}</span>
-          </button>
-          <span
-            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border ${
-              memoryActive
-                ? "border-accent-line bg-accent-soft text-accent-green"
-                : "border-bg-border bg-bg-secondary text-text-muted"
-            }`}
-            title={memoryLearning ? "Memory layer is summarizing recent sessions" : "Top patterns will be injected on next session"}
-          >
-            <Brain size={10} />
-            <span>{memoryLearning ? "Memory learning" : "Memory injecting"}</span>
-          </span>
-        </div>
-      </div>
-      {showCreate && (
-        <WorkspaceCreationModal onClose={() => setShowCreate(false)} />
-      )}
-    </>
-  );
-}

@@ -11,7 +11,13 @@ interface IdeationStore {
   isGenerating: boolean;
   selectedIdeaId: string | null;
 
-  generate: (workspaceId: string, projectPath: string, types: IdeationType[]) => Promise<void>;
+  generate: (
+    workspaceId: string,
+    projectPath: string,
+    types: IdeationType[],
+    provider: string,
+    model: string,
+  ) => Promise<void>;
   getSession: (workspaceId: string) => IdeationSession | null;
   dismiss: (workspaceId: string, id: string) => void;
   convertToIssue: (workspaceId: string, id: string) => void;
@@ -32,21 +38,21 @@ export const useIdeationStore = create<IdeationStore>((set, get) => ({
   isGenerating: false,
   selectedIdeaId: null,
 
-  generate: async (workspaceId, projectPath, types) => {
+  generate: async (workspaceId, projectPath, types, provider, model) => {
     set({ isGenerating: true });
 
     try {
-      const raw = await generateIdeasApi(projectPath, types);
+      const raw = await generateIdeasApi(projectPath, types, provider, model);
 
       if (!raw || !raw.trim()) {
-        throw new Error("Claude returned an empty response. Try again.");
+        throw new Error("The model returned an empty response. Try again.");
       }
 
       let parsed: unknown;
       try {
         parsed = parseJsonFromResponse(raw);
       } catch {
-        throw new Error(`Failed to parse Claude response. Raw output:\n${raw.slice(0, 500)}`);
+        throw new Error(`Failed to parse the model response as JSON. Raw output:\n${raw.slice(0, 500)}`);
       }
 
       const ideas_raw = parsed as Array<{

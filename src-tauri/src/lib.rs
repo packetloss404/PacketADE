@@ -339,10 +339,8 @@ pub fn run() {
             commands::mcp::read_mcp_servers,
             commands::mcp::write_mcp_server,
             commands::mcp::delete_mcp_server,
-            // Project scaffolding
-            commands::scaffold::scaffold_project,
-            commands::scaffold::check_scaffold_tools,
-            commands::scaffold::clone_repo_remote,
+            // Remote SSH repo clone (used by workspace creation)
+            commands::git::clone_repo_remote,
             // Dictation / audio capture
             commands::dictation::list_audio_devices,
             commands::dictation::start_recording,

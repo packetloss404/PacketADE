@@ -450,6 +450,31 @@ export function CliAgentsCard() {
     });
   }, [overrides]);
 
+  /** Reflect a single catalog detection result back into `agentStore` so the
+   *  WorkspaceView Add Agent menu (which reads `agents[].installed`) and PTY
+   *  launches (which read `agents[].command`) both see the manual-path
+   *  override. Without this, Browse-pinning a binary updates only the
+   *  override store and the local results map, leaving the menu disabled
+   *  and any forced launch attempting to spawn the bare binary name on
+   *  PATH. No-op for catalog ids that don't correspond to a built-in agent
+   *  slot (e.g. `devin`, `copilot`). */
+  const syncAgentFromResult = useCallback(
+    (
+      entry: CliCatalogEntry,
+      result: DetectCatalogResult | undefined,
+      manualPath: string | null,
+    ) => {
+      const store = useAgentStore.getState();
+      if (!store.getAgent(entry.id)) return;
+      const command = manualPath || entry.binary;
+      store.updateAgent(entry.id, {
+        command,
+        installed: !!result?.installed,
+      });
+    },
+    [],
+  );
+
   // Bulk-scan the catalog via detectCliCatalog (the legacy detectAgent
   // command now routes through the same backend, so a separate fallback
   // path would just duplicate work). On error, log + leave results so
@@ -457,19 +482,27 @@ export function CliAgentsCard() {
   const rescan = useCallback(async () => {
     setScanning(true);
     try {
-      const out = await detectCliCatalog(buildDetectItems());
+      const items = buildDetectItems();
+      const out = await detectCliCatalog(items);
       const merged: Record<string, DetectCatalogResult> = {};
       for (const r of out) merged[r.id] = r;
       setResults(merged);
-      // Keep the legacy agent store in sync for consumers that still read
-      // `agentStore.agents[].installed`.
-      void detectInstalled();
+      // Sync override-aware results back into agentStore so the
+      // WorkspaceView Add Agent menu and PTY launch path both see the
+      // pinned binary. Done per-entry so the agentStore's `command` is
+      // updated to the override path when one is set.
+      for (const item of items) {
+        const entry = CLI_CATALOG.find((e) => e.id === item.id);
+        if (!entry) continue;
+        const manualPath = overrides[item.id]?.manualPath ?? null;
+        syncAgentFromResult(entry, merged[item.id], manualPath);
+      }
     } catch (err) {
       console.warn("[cli-catalog] detection failed:", err);
     } finally {
       setScanning(false);
     }
-  }, [buildDetectItems, detectInstalled]);
+  }, [buildDetectItems, overrides, syncAgentFromResult]);
 
   // Mount: rescan once if results are empty.
   useEffect(() => {
@@ -537,7 +570,10 @@ export function CliAgentsCard() {
 
   /** Re-probe a single catalog entry and merge the result into local state.
    *  Used after Browse-for-binary picks a path, and after Reset-override
-   *  clears one. Keeps the card snappy without forcing a full grid rescan. */
+   *  clears one. Also syncs `agentStore` so the WorkspaceView Add Agent
+   *  menu enables the freshly-pinned binary and PTY launches use the
+   *  override path. Keeps the card snappy without forcing a full grid
+   *  rescan. */
   const redetectOne = useCallback(
     async (entry: CliCatalogEntry, manualPath: string | null) => {
       try {
@@ -548,11 +584,12 @@ export function CliAgentsCard() {
         if (result) {
           setResults((prev) => ({ ...prev, [entry.id]: result }));
         }
+        syncAgentFromResult(entry, result, manualPath);
       } catch (err) {
         console.warn("[cli-catalog] single-entry detect failed:", err);
       }
     },
-    [],
+    [syncAgentFromResult],
   );
 
   /** Open a file picker scoped to the host OS so the user can pin a binary

@@ -59,9 +59,14 @@ interface WorkspaceCreationModalProps {
   initialSelected?: Set<WorkspaceAgentSlot>;
   serverId?: string;
   remoteProjectPath?: string;
+  /** Pre-fill the workspace-level prompt textarea — used by the
+   *  `NewAgentModal` handoff so a prompt typed there survives the
+   *  transition. Absent / undefined preserves the prior empty-string
+   *  default. */
+  initialPrompt?: string;
 }
 
-export function WorkspaceCreationModal({ onClose, initialSelected, serverId: initialServerId, remoteProjectPath: initialRemoteProjectPath }: WorkspaceCreationModalProps) {
+export function WorkspaceCreationModal({ onClose, initialSelected, serverId: initialServerId, remoteProjectPath: initialRemoteProjectPath, initialPrompt }: WorkspaceCreationModalProps) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(() => initialSelected ?? new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -73,7 +78,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const [bypassPermissions, setBypassPermissions] = useState(
     () => useWorkspaceStore.getState().defaultBypassPermissions,
   );
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(initialPrompt ?? "");
   const projectPath = useLayoutStore((s) => s.projectPath);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);

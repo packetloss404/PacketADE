@@ -1555,9 +1555,11 @@ export async function askFlightChatStream(
 
 export async function generateIdeas(
   projectPath: string,
-  ideaTypes: string[]
+  ideaTypes: string[],
+  provider: string,
+  model: string,
 ): Promise<string> {
-  return invoke<string>("generate_ideas", { projectPath, ideaTypes });
+  return invoke<string>("generate_ideas", { projectPath, ideaTypes, provider, model });
 }
 
 // GitHub integration
