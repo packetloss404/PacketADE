@@ -17,11 +17,6 @@ const VIEW_LABELS: Partial<Record<AppView, string>> = {
   review_queue: "Review",
   cost_dashboard: "Costs",
   dictation: "Dictation",
-  claude: "Claude",
-  codex: "Codex",
-  gemini: "Gemini",
-  opencode: "OpenCode",
-  packetcode: "PacketCode",
   welcome: "Welcome",
 };
 

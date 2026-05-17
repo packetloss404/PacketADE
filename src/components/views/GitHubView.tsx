@@ -1266,11 +1266,12 @@ function InvestigationPanel({
 }: InvestigationPanelProps) {
   // v0.8-D — wire Hand off to Claude / Draft patch / Save as memory.
   const setActiveView = useAppStore((s) => s.setActiveView);
-  const addPane = useLayoutStore((s) => s.addPane);
   const layoutProjectPath = useLayoutStore((s) => s.projectPath);
   const activeWorkspace = useWorkspaceStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
   );
+  const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
+  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
   const addFlight = useFlightStore((s) => s.addFlight);
   const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
   const launchAsync = useAsyncFlightStore((s) => s.launchAsync);
@@ -1295,26 +1296,34 @@ function InvestigationPanel({
 
   async function handleHandoffToClaude() {
     if (!investigation || busy) return;
+    if (!resolvedProjectPath) {
+      setFeedback({
+        tone: "error",
+        message: "No project path — open a workspace before handing off.",
+      });
+      return;
+    }
     setBusy("handoff");
     setFeedback(null);
     try {
-      // Spawn a PTY pane running the `claude` CLI (Claude Code). The
-      // useTerminalSession hook auto-sends `initialPrompt` after the PTY
-      // signals ready, so we hand off the wrapped investigation as the
-      // very first input.
+      // Create a fresh workspace seeded with claude-code and the
+      // investigation as the workspace-level prompt. The pane spawns
+      // when WorkspaceView renders and `useTerminalSession` writes the
+      // prompt as the first input.
       const initialPrompt =
         `--- GitHub Investigation for #${issue.number} (${issue.title}) ---\n\n` +
         `${investigation}\n\n` +
         `--- end of context ---\n\n` +
         `Please continue from here.`;
-      addPane({
-        cliCommand: "claude",
-        initialPrompt,
-        projectPath: resolvedProjectPath || undefined,
-        issueId: String(issue.number),
-      });
-      // Switch to the Claude view so the new pane is immediately visible.
-      setActiveView("claude");
+      const name = `GH #${issue.number} — ${issue.title}`.slice(0, 64);
+      const wsId = createWorkspace(
+        name,
+        ["claude-code"],
+        resolvedProjectPath,
+        { prompt: initialPrompt },
+      );
+      setActiveWorkspace(wsId);
+      setActiveView("workspace");
       setFeedback({
         tone: "success",
         message: `Opened Claude with #${issue.number} context`,

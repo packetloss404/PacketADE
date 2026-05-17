@@ -41,12 +41,12 @@ export function CommandPalette() {
         keywords: ["new", "session", "quick", "claude", "codex", "agent"],
       },
       {
-        id: "sessions",
-        label: "Sessions",
-        description: "View active sessions",
+        id: "workspace",
+        label: "Workspace",
+        description: "View active workspace panes",
         icon: <MessageSquare size={14} className="text-accent-green" />,
-        action: () => setActiveView("claude"),
-        keywords: ["claude", "codex", "terminal", "pane"],
+        action: () => setActiveView("workspace"),
+        keywords: ["sessions", "claude", "codex", "terminal", "pane"],
       },
       {
         id: "issues",
