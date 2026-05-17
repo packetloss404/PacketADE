@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Key, Check, X, Eye, EyeOff, Trash2 } from "lucide-react";
 import { setApiKey, getApiKeyExists, deleteApiKey } from "@/lib/tauri";
+import { CardHeader } from "./CardHeader";
 
 interface ProviderEntry {
   id: string;
@@ -72,10 +73,12 @@ export function ApiKeysCard() {
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-      <div className="flex items-center gap-2 mb-4">
-        <Key size={12} className="text-accent-amber" />
-        <h3 className="text-xs font-semibold text-text-primary">API Keys</h3>
-      </div>
+      <CardHeader
+        icon={Key}
+        iconColor="text-accent-amber"
+        title="API Keys"
+        className="flex items-center gap-2 mb-4"
+      />
 
       <p className="text-[10px] text-text-muted mb-4">
         Configure API keys for each provider. Keys are stored securely in your OS credential store.

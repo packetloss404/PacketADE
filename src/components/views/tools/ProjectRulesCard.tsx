@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FileText, Save, AlertTriangle, ArrowRightLeft } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { readFileContents, writeFileContents } from "@/lib/tauri";
+import { CardHeader } from "./CardHeader";
 
 const STARTER_TEMPLATE = `# Project Rules
 
@@ -91,10 +92,12 @@ export function ProjectRulesCard() {
   if (state.kind === "no-project") {
     return (
       <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-        <h3 className="text-xs font-semibold text-text-primary flex items-center gap-2 mb-2">
-          <FileText size={12} className="text-accent-amber" />
-          Project Rules
-        </h3>
+        <CardHeader
+          icon={FileText}
+          iconColor="text-accent-amber"
+          title="Project Rules"
+          className="flex items-center gap-2 mb-2"
+        />
         <p className="text-[11px] text-text-muted">
           Open a project folder to edit its <code>AGENTS.md</code> /{" "}
           <code>CLAUDE.md</code>.
