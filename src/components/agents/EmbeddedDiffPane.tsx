@@ -17,11 +17,10 @@ import type {
  * Embeddable variant of DiffPane.
  *
  * The original `DiffPane` is a fixed-position slide-out gated by
- * `useDiffPaneStore.open`. When the user splits their AgentChatPane to add a
- * diff tile, we want the same per-file diff browser to render INLINE inside a
- * mosaic cell. This component is a structural twin of `DiffPane` minus the
- * fixed-position chrome and the open-state store coupling — it owns its own
- * file-selection state instead.
+ * `useDiffPaneStore.open`. This component renders the same per-file diff
+ * browser INLINE — used by the AgentInspectorPane's Diff tab. Structural
+ * twin of `DiffPane` minus the fixed-position chrome and the open-state
+ * store coupling; owns its own file-selection state instead.
  */
 
 interface WriteFileEntry {

@@ -16,7 +16,7 @@ import {
 import { listDirectory } from "@/lib/tauri";
 
 /**
- * Read-only file tree pane for the agent mosaic.
+ * Read-only file tree pane for the agent inspector.
  *
  * Renders the conversation's project directory as a navigable list of folders
  * and files. Folder click descends, file click fires `onSelectFile?(path)` and

@@ -32,10 +32,9 @@ interface AgentTabbedRailProps {
 
 /**
  * B4 — Codex-App-style right rail with Plan / Diff / Inspector tabs in a
- * single 320px column. Lighter alternative to the full mosaic split for
- * users with smaller screens. Toggle from the chat header chevron;
- * collapse-to-30px state is backed by the Agents settings store so it
- * survives reloads and can be changed from Settings.
+ * single 320px column. Toggle from the chat header chevron; collapse-to-30px
+ * state is backed by the Agents settings store so it survives reloads and
+ * can be changed from Settings.
  *
  * Active-tab choice is in-memory only (resets per mount) — matches how
  * AgentInspectorPane already handles its sub-tabs. The rail is a
