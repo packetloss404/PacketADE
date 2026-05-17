@@ -288,14 +288,14 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
 
   return (
     <div
-      className={`shrink-0 border-b border-line-soft bg-bg-secondary ${
+      className={`shrink-0 border-b border-bg-border bg-bg-secondary ${
         awaitingPlanApproval ? "ring-1 ring-accent-amber/40" : ""
       }`}
     >
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
-        className="w-full flex items-center gap-2 px-3.5 py-1.5 text-left hover:bg-bg-hover/40 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover/40 transition-colors"
         title="Toggle plan visibility"
       >
         <CheckSquare size={11} className="text-accent-green shrink-0" />
@@ -312,7 +312,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
         </span>
       </button>
       {!collapsed && (
-        <ul className="px-3.5 pb-2 pt-0 space-y-0.5">
+        <ul className="px-3 pb-2 pt-0 space-y-0.5">
           {items.map((t, i) => (
             <li
               key={`${i}-${t.title}`}
@@ -327,7 +327,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
         </ul>
       )}
       {awaitingPlanApproval && (
-        <div className="flex items-center gap-2 px-3.5 py-1.5 border-t border-bg-border">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-t border-bg-border">
           <span className="text-[10px] text-text-muted flex-1">
             Plan is a proposal — approve to lift plan-mode and execute.
           </span>
@@ -360,7 +360,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
           but keep the conversation running. Complete = mark done.
           Cancel/delete left to a separate confirm flow in MissionsView. */}
       {boundGoal && (
-        <div className="flex items-center gap-2 px-3.5 py-1.5 border-t border-accent-blue/30 bg-accent-blue/5">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-t border-accent-blue/30 bg-accent-blue/5">
           <Target size={11} className="text-accent-blue" />
           <span className="text-[10px] text-text-secondary flex-1 truncate">
             Bound goal:{" "}

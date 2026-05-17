@@ -432,7 +432,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
           >
             <Layers size={10} />
             <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
-            <ChevronDown size={9} className="opacity-70" />
+            <ChevronDown size={11} className="opacity-70" />
           </button>
           {groupMenuOpen && (
             <div className="absolute z-10 left-3 top-full mt-0.5 bg-bg-primary border border-bg-border rounded shadow-lg py-0.5 min-w-[120px]">
