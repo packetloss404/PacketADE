@@ -60,8 +60,8 @@ export function SpecPanel({ conversation }: SpecPanelProps) {
   const canApprove = draft.length > 0 && draft.every((c) => c.trim().length > 0);
 
   return (
-    <div className="shrink-0 border-b border-line-soft bg-bg-secondary">
-      <div className="flex items-center gap-2 px-3.5 py-1.5">
+    <div className="shrink-0 border-b border-bg-border bg-bg-secondary">
+      <div className="flex items-center gap-2 px-3 py-2">
         <ListChecks size={11} className="text-accent-blue shrink-0" />
         <span className="text-[10px] uppercase tracking-wider text-text-muted">
           Spec
@@ -81,7 +81,7 @@ export function SpecPanel({ conversation }: SpecPanelProps) {
           </button>
         </div>
       </div>
-      <ul className="px-3.5 pb-2 pt-0 space-y-1">
+      <ul className="px-3 pb-2 pt-0 space-y-1">
         {draft.map((item, i) => (
           <li key={i} className="flex items-center gap-2">
             <span className="text-[10px] text-text-faint w-4 tabular-nums">
