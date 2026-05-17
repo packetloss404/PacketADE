@@ -87,8 +87,8 @@ vi.mock("@/stores/flightStore", () => ({
   ),
 }));
 
-vi.mock("@/stores/orchestrationStore", () => ({
-  useOrchestrationStore: Object.assign(
+vi.mock("@/stores/orchestrationStateStore", () => ({
+  useOrchestrationStateStore: Object.assign(
     vi.fn((selector?: (s: typeof mocks.orchestrationState) => unknown) =>
       selector ? selector(mocks.orchestrationState) : mocks.orchestrationState,
     ),

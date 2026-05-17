@@ -8,7 +8,7 @@ import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useActivityStore } from "@/stores/activityStore";
-import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { usePtyStateDetector, type PtyDetectorState } from "@/hooks/usePtyStateDetector";
 import {
@@ -115,12 +115,12 @@ export function useTerminalSession({
             notifyApprovalNeeded(sessionId, tab.name);
           }
           if (taskId) {
-            void useOrchestrationStore.getState().onTaskApprovalNeeded(taskId);
+            void useOrchestrationStateStore.getState().onTaskApprovalNeeded(taskId);
           }
         } else if (!next.needsApproval && prev.needsApproval) {
           useTabStore.getState().updateTabStatus(tabId, "running");
           if (taskId) {
-            void useOrchestrationStore.getState().onTaskApprovalResolved(taskId);
+            void useOrchestrationStateStore.getState().onTaskApprovalResolved(taskId);
           }
         }
       }
@@ -217,7 +217,7 @@ export function useTerminalSession({
       useLayoutStore.getState().setPaneSession(paneId, sessionId);
       onSessionCreatedRef.current?.(sessionId);
       if (taskId) {
-        useOrchestrationStore.getState().attachSessionToTask(taskId, sessionId);
+        useOrchestrationStateStore.getState().attachSessionToTask(taskId, sessionId);
       }
 
       useTabStore.getState().updateTabStatus(tabId, "running");
@@ -259,7 +259,7 @@ export function useTerminalSession({
 
         if (taskId) {
           const success = !wasRequested;
-          void useOrchestrationStore.getState().onTaskComplete(taskId, success);
+          void useOrchestrationStateStore.getState().onTaskComplete(taskId, success);
         }
       });
 

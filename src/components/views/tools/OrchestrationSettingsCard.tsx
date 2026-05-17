@@ -1,8 +1,8 @@
 import { GitBranch, Layers3, Tag } from "lucide-react";
 import {
   DEFAULT_AUTO_COMMIT_TRAILER_FORMAT,
-  useOrchestrationStore,
-} from "@/stores/orchestrationStore";
+  useOrchestrationStateStore,
+} from "@/stores/orchestrationStateStore";
 
 const MIN_PARALLEL_SESSIONS = 1;
 const MAX_PARALLEL_SESSIONS = 12;
@@ -23,20 +23,20 @@ function renderTrailerPreview(format: string): string {
 }
 
 export function OrchestrationSettingsCard() {
-  const maxParallelSessions = useOrchestrationStore((s) => s.maxParallelSessions);
-  const milestoneGating = useOrchestrationStore((s) => s.milestoneGating);
-  const autoCommitTrailerEnabled = useOrchestrationStore(
+  const maxParallelSessions = useOrchestrationStateStore((s) => s.maxParallelSessions);
+  const milestoneGating = useOrchestrationStateStore((s) => s.milestoneGating);
+  const autoCommitTrailerEnabled = useOrchestrationStateStore(
     (s) => s.autoCommitTrailerEnabled,
   );
-  const autoCommitTrailerFormat = useOrchestrationStore(
+  const autoCommitTrailerFormat = useOrchestrationStateStore(
     (s) => s.autoCommitTrailerFormat,
   );
-  const setMaxParallelSessions = useOrchestrationStore((s) => s.setMaxParallelSessions);
-  const setMilestoneGating = useOrchestrationStore((s) => s.setMilestoneGating);
-  const setAutoCommitTrailerEnabled = useOrchestrationStore(
+  const setMaxParallelSessions = useOrchestrationStateStore((s) => s.setMaxParallelSessions);
+  const setMilestoneGating = useOrchestrationStateStore((s) => s.setMilestoneGating);
+  const setAutoCommitTrailerEnabled = useOrchestrationStateStore(
     (s) => s.setAutoCommitTrailerEnabled,
   );
-  const setAutoCommitTrailerFormat = useOrchestrationStore(
+  const setAutoCommitTrailerFormat = useOrchestrationStateStore(
     (s) => s.setAutoCommitTrailerFormat,
   );
 

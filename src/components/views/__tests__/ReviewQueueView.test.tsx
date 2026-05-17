@@ -5,8 +5,8 @@ import type { Flight } from "@/types/flight";
 vi.mock("@/stores/flightStore", () => ({
   useFlightStore: vi.fn(),
 }));
-vi.mock("@/stores/orchestrationStore", () => ({
-  useOrchestrationStore: {
+vi.mock("@/stores/orchestrationStateStore", () => ({
+  useOrchestrationStateStore: {
     getState: vi.fn().mockReturnValue({ onTaskApprovalResolved: vi.fn() }),
   },
 }));
