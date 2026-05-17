@@ -1594,8 +1594,13 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         </div>
       </ClickablePathsRoot>
 
-      {/* Pending user-approval prompts */}
-      {(conversation.pendingEdits ?? conversation.pendingPermissions) && (
+      {/* Pending user-approval prompts.
+          `||` (not `??`) is required: both fields are arrays which are
+          non-nullish even when empty, so `??` would short-circuit on the
+          left and never evaluate the right. `||` lets the section render
+          when EITHER has at least one item. */}
+      {((conversation.pendingEdits?.length ?? 0) > 0 ||
+        (conversation.pendingPermissions?.length ?? 0) > 0) && (
         <div className="shrink-0 px-3 py-2 flex flex-col gap-2 border-t border-bg-border bg-bg-primary">
           <TurnDiffSummary
             conversationId={conversationId}

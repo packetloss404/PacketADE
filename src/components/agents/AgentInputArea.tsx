@@ -370,19 +370,36 @@ export function AgentInputArea({
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (!dragActive) setDragActive(true);
-  }, [dragActive]);
+    // Use the functional setter so we don't need `dragActive` in deps.
+    // Previous closure-dep version re-created the callback on every
+    // dragActive flip, oscillating state and re-binding the listener
+    // each frame during an active drag.
+    setDragActive((cur) => (cur ? cur : true));
+  }, []);
 
   const handleDragLeave = useCallback(() => {
     setDragActive(false);
   }, []);
 
+  // Single-flight guard: AgentsView's onLaunch handler kicks off async
+  // work (worktree provisioning, conversation creation) but returns the
+  // accepted-flag synchronously, so the parent can't push back-pressure
+  // on rapid Enter/Send mashing. Without this guard, a second submit
+  // dispatches before the first finishes, double-launching against the
+  // same store state. The window is short enough that legitimate quick
+  // consecutive submits aren't blocked.
+  const submitInFlightRef = useRef(false);
   const submitWithAttachments = useCallback(() => {
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     const toSend = staged.map((s) => s.attachment);
     const accepted = onLaunch(toSend);
     if (accepted) {
       setStaged([]);
     }
+    window.setTimeout(() => {
+      submitInFlightRef.current = false;
+    }, 500);
   }, [onLaunch, staged]);
 
   const { isListening, transcript, startListening, stopListening, isSupported } =
