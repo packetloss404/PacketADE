@@ -1,139 +1,40 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import {
-  Monitor,
-  Mic,
-  Zap,
-  FolderOpen,
-  Folder,
-  Server,
-  Check,
-  Bot,
-  MessageCircle,
-  Hand,
-  Layers,
-  User,
-  GitBranch,
-  Cloud,
-  Send,
-  Loader2,
-  AlertCircle,
-  RefreshCw,
-  LogIn,
-  X,
-} from "lucide-react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import {
-  useAgentTaskStore,
-  repoDisplayName,
-  apiAgentProvider,
-} from "@/stores/agentTaskStore";
-import { useGitHubStore } from "@/stores/githubStore";
-import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
-import { useServerStore } from "@/stores/serverStore";
+import { X } from "lucide-react";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useProfileStore } from "@/stores/profileStore";
-import { useAppStore } from "@/stores/appStore";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
-import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
-import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
+import type { AuthStatus } from "@/components/ui/AuthBadge";
 import { FileMentionPopover } from "./FileMentionPopover";
 import { InputPopover, type InputPopoverItem } from "./InputPopover";
 import { ContextPreviewChevron } from "./ContextPreviewChevron";
 import { usePromptStore } from "@/stores/promptStore";
 import type { PromptTemplate } from "@/types/prompt";
 import type { AgentCli } from "@/stores/agentTaskStore";
-import type { ServerConfig } from "@/types/server";
+import type { ImageAttachment } from "@/lib/tauri";
+import { isSshUri } from "@/lib/ssh-uri";
+
 import {
-  API_PROVIDERS,
-  getProviderForAgent,
-  getModelSpeed,
-  MODEL_SPEED_LABEL,
-} from "@/lib/api-models";
-import {
-  getProviderAuthStatus,
-  listOllamaModels,
-  type ImageAttachment,
-  type OllamaModel,
-  type ProviderAuthStatus,
-} from "@/lib/tauri";
-import { isSshUri, makeSshUri, parseSshUri } from "@/lib/ssh-uri";
+  COMPOSER_HELP_TEXT,
+  SLASH_POPOVER_LIMIT,
+  isSidecarAgent,
+  templateSlug,
+  type AgentMode,
+  type ComposerMode,
+} from "./composer/utils";
+import { useAttachmentStaging } from "./hooks/useAttachmentStaging";
+import { useProviderAuthStatus } from "./hooks/useProviderAuthStatus";
+import { useOllamaModels } from "./hooks/useOllamaModels";
+import { usePrefixMatcher } from "./hooks/usePrefixMatcher";
+import { ProjectPicker } from "./composer/ProjectPicker";
+import { ModeSelector } from "./composer/ModeSelector";
+import { ProfilePicker } from "./composer/ProfilePicker";
+import { ComposerModePicker } from "./composer/ComposerModePicker";
+import { ProviderPicker } from "./composer/ProviderPicker";
+import { ModelSelector } from "./composer/ModelSelector";
+import { ActionButtons } from "./composer/ActionButtons";
 
-/** Cursor-style launch modes. */
-export type AgentMode = "agent" | "ask" | "manual" | "plan";
-
-/** B2: Codex-App-style 3-way "where does the agent run" picker. `local`
- * is the default — no worktree, edits land in the project tree. `worktree`
- * provisions `.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch
- * (T3.F). `cloud` is reserved for future cloud delegation; greyed-out
- * for now. The choice persists in localStorage so users don't re-pick. */
-export type ComposerMode = "local" | "worktree" | "cloud";
-
-const MODE_META: Record<AgentMode, { label: string; description: string; icon: React.ComponentType<{ size?: number; className?: string }>; color: string }> = {
-  agent: {
-    label: "Agent",
-    description: "Full tools — read, write, run commands",
-    icon: Bot,
-    color: "text-accent-green",
-  },
-  ask: {
-    label: "Ask",
-    description: "Read-only — no edits or commands",
-    icon: MessageCircle,
-    color: "text-accent-blue",
-  },
-  manual: {
-    label: "Manual",
-    description: "Every risky tool requires your approval",
-    icon: Hand,
-    color: "text-accent-amber",
-  },
-  plan: {
-    label: "Plan",
-    description: "Produce a structured plan first, then execute",
-    icon: Layers,
-    color: "text-accent-purple",
-  },
-};
-
-const MODE_ORDER: AgentMode[] = ["agent", "ask", "manual", "plan"];
-
-/**
- * Provider dropdown grouping. Only includes `api-*` agents (PTY CLI agents
- * like `claude-code` / `codex` are handled elsewhere). The subscription
- * providers (`api-claude-oauth`, `api-openai-codex`) are fully wired via
- * the sidecar and share this dropdown with the key-based API providers.
- */
-const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
-  { label: "Anthropic", agents: ["api-claude-oauth" as AgentCli, "api-claude"] },
-  {
-    label: "OpenAI",
-    agents: [
-      "api-openai-codex" as AgentCli,
-      "api-openai",
-      "api-openai-agents",
-    ],
-  },
-  { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama"] },
-];
-
-/** Sidecar-routed providers — the backend rejects ssh_config for these
- * because the Node sidecar always runs provider work locally. Keep this
- * list in sync with the SIDECAR_PROVIDERS table in
- * `src-tauri/src/commands/agent_sidecar.rs`. */
-const SIDECAR_AGENTS: readonly AgentCli[] = [
-  "api-claude-oauth" as AgentCli,
-  "api-openai-codex" as AgentCli,
-  "api-openai-agents" as AgentCli,
-];
-
-function isSidecarAgent(agent: AgentCli): boolean {
-  return SIDECAR_AGENTS.includes(agent);
-}
-
-const SSH_NOT_SUPPORTED_TOOLTIP =
-  "Sidecar providers don't support remote SSH yet";
-
-type AuthEntry = ProviderAuthStatus | "loading";
+// Re-export for callers (AgentsView imports these from this module).
+export type { AgentMode, ComposerMode } from "./composer/utils";
 
 interface AgentInputAreaProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -148,87 +49,9 @@ interface AgentInputAreaProps {
   onAgentModeChange?: (mode: AgentMode) => void;
   selectedProfileId?: string;
   onProfileChange?: (id: string) => void;
-  /** B2: Codex-App-style Local / Worktree / Cloud picker. Replaces the
-   * pre-B2 binary `worktreeEnabled` toggle. Cloud is greyed-out until
-   * cloud delegation is wired. Local projects only (SSH hides the
-   * picker entirely — SSH targets always run remote). */
   composerMode?: ComposerMode;
   onComposerModeChange?: (mode: ComposerMode) => void;
 }
-
-/**
- * Read a File / Blob into a base64 string suitable for ImageAttachment.
- * Strips the `data:<mime>;base64,` prefix that FileReader.readAsDataURL
- * always prepends so the wire payload is just the encoded bytes.
- */
-function fileToImageAttachment(file: File): Promise<ImageAttachment> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        reject(new Error("FileReader returned non-string result"));
-        return;
-      }
-      // Format: data:<mime>;base64,<data>
-      const commaIdx = result.indexOf(",");
-      const data_base64 = commaIdx >= 0 ? result.slice(commaIdx + 1) : result;
-      resolve({
-        media_type: file.type || "image/png",
-        data_base64,
-      });
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
-    reader.readAsDataURL(file);
-  });
-}
-
-/** Hard cap to keep payloads sane — Anthropic accepts ~5MB per image. */
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-interface MentionState {
-  active: boolean;
-  query: string;
-  // @-sign position in the textarea value (character index)
-  atIndex: number;
-  highlightedIndex: number;
-}
-
-const INITIAL_MENTION_STATE: MentionState = {
-  active: false,
-  query: "",
-  atIndex: -1,
-  highlightedIndex: 0,
-};
-
-interface SlashState {
-  active: boolean;
-  query: string;
-  // '/' position in the textarea value (character index)
-  slashIndex: number;
-  highlightedIndex: number;
-}
-
-const INITIAL_SLASH_STATE: SlashState = {
-  active: false,
-  query: "",
-  slashIndex: -1,
-  highlightedIndex: 0,
-};
-
-/**
- * Slugify a template name to its slash-command form, e.g. "Code Review"
- * becomes "code-review". Matches the kebab-case slug used by the in-chat
- * popover in AgentChatPane so users see the same `/<name>` everywhere.
- */
-function templateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-const SLASH_POPOVER_LIMIT = 6;
 
 export function AgentInputArea({
   textareaRef,
@@ -250,93 +73,20 @@ export function AgentInputArea({
   const activeProfileId = selectedProfileId ?? defaultProfileId;
   const activeProfile =
     profiles.find((p) => p.id === activeProfileId) ?? profiles[0];
+
   const agentInputText = useAgentTaskStore((s) => s.agentInputText);
   const setAgentInputText = useAgentTaskStore((s) => s.setAgentInputText);
   const selectedRepo = useAgentTaskStore((s) => s.selectedRepo);
   const setSelectedRepo = useAgentTaskStore((s) => s.setSelectedRepo);
-  const repos = useGitHubStore((s) => s.repos);
-  const projectHistory = useProjectHistoryStore((s) => s.projects);
-  const recordOpenProject = useProjectHistoryStore((s) => s.recordOpen);
-  // Phase 2: unified server registry — same store as workspace PTY launches.
-  // Sorted by lastConnectedAt (descending) so the "recents" feel matches the
-  // pre-Phase-2 SshTarget recents.
-  const servers = useServerStore((s) => s.servers);
-  const setActiveView = useAppStore((s) => s.setActiveView);
-  const updateServer = useServerStore((s) => s.updateServer);
 
   // Sidecar (OAuth) providers route through the Node sidecar, which doesn't
-  // speak SSH. The backend now rejects ssh_config for these providers, so we
-  // gate the SSH affordances in the UI to match. If a target is already
-  // selected we leave it visible (with the tooltip) rather than auto-clearing
-  // — the user might be mid-switch and we don't want to lose their choice.
+  // speak SSH. The backend rejects ssh_config for these providers, so we
+  // gate the SSH affordances in the UI to match.
   const sshDisabled = isSidecarAgent(selectedAgent);
-  const sshDisabledTitle = sshDisabled ? SSH_NOT_SUPPORTED_TOOLTIP : undefined;
 
-  // Staged image attachments (from drag-drop or clipboard paste) that will be
-  // sent with the next launch. Cleared after onLaunch fires successfully.
-  // Keeps both the wire-shape attachment and a transient preview URL so the
-  // chip can render a thumbnail without re-decoding the base64.
-  type StagedAttachment = {
-    id: string;
-    name: string;
-    sizeBytes: number;
-    attachment: ImageAttachment;
-    previewUrl: string;
-  };
-  const [staged, setStaged] = useState<StagedAttachment[]>([]);
+  const { staged, addFiles, removeStaged, clear: clearStaged } =
+    useAttachmentStaging();
   const [dragActive, setDragActive] = useState(false);
-  const stagedPreviewUrlsRef = useRef<Set<string>>(new Set());
-
-  const addFiles = useCallback(async (files: File[]) => {
-    const next: StagedAttachment[] = [];
-    for (const file of files) {
-      if (!file.type.startsWith("image/")) continue;
-      if (file.size > MAX_IMAGE_BYTES) {
-        console.warn(`Skipping ${file.name}: ${file.size} bytes > 5MB cap`);
-        continue;
-      }
-      try {
-        const attachment = await fileToImageAttachment(file);
-        next.push({
-          id: `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          name: file.name || "pasted-image",
-          sizeBytes: file.size,
-          attachment,
-          previewUrl: URL.createObjectURL(file),
-        });
-      } catch (err) {
-        console.warn("Failed to read attachment:", err);
-      }
-    }
-    if (next.length > 0) {
-      setStaged((prev) => [...prev, ...next]);
-    }
-  }, []);
-
-  const removeStaged = useCallback((id: string) => {
-    setStaged((prev) => prev.filter((s) => s.id !== id));
-  }, []);
-
-  // Revoke preview URLs as staged attachments are removed or replaced.
-  useEffect(() => {
-    const nextUrls = new Set(staged.map((s) => s.previewUrl));
-    for (const url of stagedPreviewUrlsRef.current) {
-      if (!nextUrls.has(url)) {
-        URL.revokeObjectURL(url);
-      }
-    }
-    stagedPreviewUrlsRef.current = nextUrls;
-  }, [staged]);
-
-  // Cleanup any remaining object URLs on unmount.
-  useEffect(() => {
-    return () => {
-      for (const url of stagedPreviewUrlsRef.current) {
-        URL.revokeObjectURL(url);
-      }
-      stagedPreviewUrlsRef.current.clear();
-    };
-  }, []);
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -370,24 +120,17 @@ export function AgentInputArea({
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    // Use the functional setter so we don't need `dragActive` in deps.
-    // Previous closure-dep version re-created the callback on every
-    // dragActive flip, oscillating state and re-binding the listener
-    // each frame during an active drag.
+    // Functional setter — keeps `dragActive` out of deps so we don't
+    // oscillate state / re-bind the listener every frame during a drag.
     setDragActive((cur) => (cur ? cur : true));
   }, []);
 
-  const handleDragLeave = useCallback(() => {
-    setDragActive(false);
-  }, []);
+  const handleDragLeave = useCallback(() => setDragActive(false), []);
 
-  // Single-flight guard: AgentsView's onLaunch handler kicks off async
-  // work (worktree provisioning, conversation creation) but returns the
-  // accepted-flag synchronously, so the parent can't push back-pressure
-  // on rapid Enter/Send mashing. Without this guard, a second submit
-  // dispatches before the first finishes, double-launching against the
-  // same store state. The window is short enough that legitimate quick
-  // consecutive submits aren't blocked.
+  // Single-flight guard: onLaunch returns synchronously while async work
+  // (worktree provisioning, conversation creation) is still in flight, so
+  // a second submit can race the first. The 500ms window blocks rapid
+  // Enter/Send mashing without delaying legitimate quick consecutive submits.
   const submitInFlightRef = useRef(false);
   const submitWithAttachments = useCallback(() => {
     if (submitInFlightRef.current) return;
@@ -395,18 +138,18 @@ export function AgentInputArea({
     const toSend = staged.map((s) => s.attachment);
     const accepted = onLaunch(toSend);
     if (accepted) {
-      setStaged([]);
+      clearStaged();
     }
     window.setTimeout(() => {
       submitInFlightRef.current = false;
     }, 500);
-  }, [onLaunch, staged]);
+  }, [onLaunch, staged, clearStaged]);
 
   const { isListening, transcript, startListening, stopListening, isSupported } =
     useVoiceInput();
   const prevTranscriptRef = useRef("");
 
-  // Append voice transcript to input
+  // Append voice transcript to input.
   useEffect(() => {
     if (transcript && transcript !== prevTranscriptRef.current) {
       prevTranscriptRef.current = transcript;
@@ -415,128 +158,20 @@ export function AgentInputArea({
     }
   }, [transcript, setAgentInputText]);
 
-  type RecentItem =
-    | { kind: "local"; path: string; ts: number }
-    | { kind: "ssh"; server: ServerConfig; ts: number };
-
-  const recentItems: RecentItem[] = useMemo(() => {
-    const localSeen = new Set<string>();
-    const local: RecentItem[] = [];
-    for (const p of projectHistory) {
-      if (!p.path || localSeen.has(p.path)) continue;
-      localSeen.add(p.path);
-      local.push({ kind: "local", path: p.path, ts: p.lastOpened });
-    }
-    const ssh: RecentItem[] = servers.map((s) => ({
-      kind: "ssh",
-      server: s,
-      ts: s.lastConnectedAt ?? 0,
-    }));
-    return [...local, ...ssh].sort((a, b) => b.ts - a.ts);
-  }, [projectHistory, servers]);
-
-  // Per-session SSH remote path. Seeded from the selected server's default
-  // and editable inline when an SSH target is picked. Encoded into
-  // `selectedRepo` as `ssh://<serverId>?path=<encoded>` so the launch path
-  // can pick it up without an extra store slot.
-  const selectedSshUri = useMemo(
-    () => (selectedRepo && isSshUri(selectedRepo) ? parseSshUri(selectedRepo) : null),
-    [selectedRepo],
-  );
-  const selectedServer = useMemo(
-    () => (selectedSshUri ? servers.find((s) => s.id === selectedSshUri.serverId) : undefined),
-    [selectedSshUri, servers],
-  );
-
-  const currentDisplayName = useMemo(() => {
-    if (!selectedRepo) return "Select a project";
-    if (selectedSshUri) {
-      return selectedServer ? selectedServer.name : "SSH target";
-    }
-    return repoDisplayName(selectedRepo, repos);
-  }, [selectedRepo, repos, selectedSshUri, selectedServer]);
-
   const mentionProjectPath =
     selectedRepo && !isSshUri(selectedRepo) ? selectedRepo : "";
 
-  const handleBrowse = useCallback(async () => {
-    try {
-      const picked = await openDialog({ directory: true, multiple: false });
-      if (typeof picked === "string" && picked) {
-        setSelectedRepo(picked);
-        recordOpenProject(picked);
-      }
-    } catch (err) {
-      console.warn("Folder picker failed:", err);
-    }
-  }, [setSelectedRepo, recordOpenProject]);
-
-  const handleSelectLocal = useCallback(
-    (path: string) => {
-      setSelectedRepo(path);
-    },
-    [setSelectedRepo],
-  );
-
-  const handleSelectSsh = useCallback(
-    (server: ServerConfig) => {
-      // Seed the per-session remote path with the server's default. Users
-      // can override inline (different project per server is common).
-      const initialPath = server.remotePath ?? "";
-      setSelectedRepo(makeSshUri(server.id, initialPath || undefined));
-      // Stamp lastConnectedAt so the recents list reflects use order.
-      updateServer(server.id, { lastConnectedAt: Date.now() });
-    },
-    [setSelectedRepo, updateServer],
-  );
-
-  /** Inline edit of the remote project path on the currently-selected SSH
-   *  server. Re-encodes the URI; the launch path reads the path back from
-   *  `parseSshUri(selectedRepo)`. */
-  const handleRemotePathChange = useCallback(
-    (path: string) => {
-      if (!selectedSshUri) return;
-      setSelectedRepo(makeSshUri(selectedSshUri.serverId, path || undefined));
-    },
-    [selectedSshUri, setSelectedRepo],
-  );
-
-  const handleOpenServersView = useCallback(() => {
-    // Phase 2: no per-agent "Connect SSH" modal. Servers are managed in
-    // the Tools / Servers view alongside workspace PTY targets.
-    setActiveView("tools");
-  }, [setActiveView]);
-
-  // ─── @ file-mention state ─────────────────────────────────────────────
-  const [mentionState, setMentionState] = useState<MentionState>(
-    INITIAL_MENTION_STATE,
-  );
-  // Items are owned by the popover; we track the currently-rendered list
-  // here via a ref so ArrowUp/Down/Enter can read them synchronously.
+  // ─── Prefix-trigger pickers (@ mentions, / slash-commands) ───────────
+  const mention = usePrefixMatcher("@");
+  const slash = usePrefixMatcher("/");
+  // The mention popover owns its directory scan; we keep a ref to the
+  // current list so ArrowUp/Down/Enter can read it synchronously.
   const mentionItemsRef = useRef<string[]>([]);
 
-  const closeMention = useCallback(() => {
-    setMentionState(INITIAL_MENTION_STATE);
-    mentionItemsRef.current = [];
-  }, []);
-
-  // ─── / slash-command (prompt template) state ─────────────────────────
-  // Triggers on `/` at the start of the textarea or after whitespace, like
-  // @-mentions. Selecting a template expands its body into the composer
-  // (replacing the `/query` token) — it does NOT send the message.
   const promptTemplates = usePromptStore((s) => s.templates);
-  const [slashState, setSlashState] = useState<SlashState>(INITIAL_SLASH_STATE);
-
-  const closeSlash = useCallback(() => {
-    setSlashState(INITIAL_SLASH_STATE);
-  }, []);
-
-  // Templates filtered by what the user has typed after `/`. The slug
-  // (kebab-cased name) is the primary match key; raw name also matches
-  // so "Code R" finds "Code Review" too.
   const slashMatches = useMemo<PromptTemplate[]>(() => {
-    if (!slashState.active) return [];
-    const q = slashState.query.toLowerCase();
+    if (!slash.state.active) return [];
+    const q = slash.state.query.toLowerCase();
     if (!q) return promptTemplates.slice(0, SLASH_POPOVER_LIMIT);
     return promptTemplates
       .filter((t) => {
@@ -548,7 +183,7 @@ export function AgentInputArea({
         );
       })
       .slice(0, SLASH_POPOVER_LIMIT);
-  }, [promptTemplates, slashState.active, slashState.query]);
+  }, [promptTemplates, slash.state.active, slash.state.query]);
 
   const slashPopoverItems = useMemo<InputPopoverItem[]>(
     () =>
@@ -565,154 +200,68 @@ export function AgentInputArea({
     [slashMatches],
   );
 
-  /**
-   * Given the current text value and caret index, detect whether the caret
-   * is inside an @-mention token (i.e. there's an '@' preceded by start-of-
-   * input or whitespace, with no whitespace/newline between it and the caret).
-   */
-  function detectMention(
-    value: string,
-    caret: number,
-  ): { atIndex: number; query: string } | null {
-    // Scan backward from the caret looking for '@'.
-    for (let i = caret - 1; i >= 0; i--) {
-      const ch = value[i];
-      if (ch === "@") {
-        const prev = i === 0 ? "" : value[i - 1];
-        if (i === 0 || /\s/.test(prev)) {
-          return { atIndex: i, query: value.slice(i + 1, caret) };
-        }
-        return null;
-      }
-      if (/\s/.test(ch)) return null;
-    }
-    return null;
-  }
-
-  /**
-   * Mirror of detectMention for the leading `/` slash-command trigger. Same
-   * "start-of-input or after whitespace" rule, so a stray slash inside a
-   * sentence ("either/or") doesn't pop the menu.
-   */
-  function detectSlash(
-    value: string,
-    caret: number,
-  ): { slashIndex: number; query: string } | null {
-    for (let i = caret - 1; i >= 0; i--) {
-      const ch = value[i];
-      if (ch === "/") {
-        const prev = i === 0 ? "" : value[i - 1];
-        if (i === 0 || /\s/.test(prev)) {
-          return { slashIndex: i, query: value.slice(i + 1, caret) };
-        }
-        return null;
-      }
-      if (/\s/.test(ch)) return null;
-    }
-    return null;
-  }
-
   const handleTextChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const value = e.target.value;
       setAgentInputText(value);
       const caret = e.target.selectionStart ?? value.length;
-      const hit = detectMention(value, caret);
-      if (hit) {
-        setMentionState((prev) => ({
-          active: true,
-          query: hit.query,
-          atIndex: hit.atIndex,
-          // Reset highlight when the query changes.
-          highlightedIndex:
-            prev.active && prev.query === hit.query ? prev.highlightedIndex : 0,
-        }));
-      } else if (mentionState.active) {
-        closeMention();
-      }
-      // Slash-command (template) trigger. Skipped while the @-mention popover
-      // is active so the two triggers don't fight.
-      if (!hit) {
-        const slashHit = detectSlash(value, caret);
-        if (slashHit) {
-          setSlashState((prev) => ({
-            active: true,
-            query: slashHit.query,
-            slashIndex: slashHit.slashIndex,
-            highlightedIndex:
-              prev.active && prev.query === slashHit.query
-                ? prev.highlightedIndex
-                : 0,
-          }));
-        } else if (slashState.active) {
-          closeSlash();
-        }
-      } else if (slashState.active) {
-        closeSlash();
+      const mentionHit = mention.detect(value, caret);
+      // Slash is suppressed while the mention popover is active so the two
+      // triggers don't fight.
+      if (!mentionHit) {
+        slash.detect(value, caret);
+      } else {
+        slash.close();
       }
     },
-    [
-      setAgentInputText,
-      mentionState.active,
-      closeMention,
-      slashState.active,
-      closeSlash,
-    ],
+    [setAgentInputText, mention, slash],
   );
 
-  const handleMentionItemsChange = useCallback((paths: string[]) => {
-    mentionItemsRef.current = paths;
-    setMentionState((prev) => {
-      if (!prev.active) return prev;
-      if (prev.highlightedIndex >= paths.length) {
-        return { ...prev, highlightedIndex: 0 };
-      }
-      return prev;
-    });
-  }, []);
+  const handleMentionItemsChange = useCallback(
+    (paths: string[]) => {
+      mentionItemsRef.current = paths;
+      mention.clampHighlight(paths.length);
+    },
+    [mention],
+  );
 
   const insertMentionPath = useCallback(
     (path: string) => {
-      setMentionState((prev) => {
-        const before = agentInputText.slice(0, prev.atIndex);
-        const caret =
-          textareaRef.current?.selectionStart ?? agentInputText.length;
-        const after = agentInputText.slice(caret);
-        const inserted = `@${path} `;
-        const next = `${before}${inserted}${after}`;
-        setAgentInputText(next);
-        // Re-focus textarea and place caret right after the inserted chunk.
-        const newCaret = before.length + inserted.length;
-        requestAnimationFrame(() => {
-          const el = textareaRef.current;
-          if (el) {
-            el.focus();
-            el.setSelectionRange(newCaret, newCaret);
-          }
-        });
-        mentionItemsRef.current = [];
-        return INITIAL_MENTION_STATE;
+      const atIndex = mention.state.prefixIndex;
+      if (atIndex < 0) return;
+      const before = agentInputText.slice(0, atIndex);
+      const caret =
+        textareaRef.current?.selectionStart ?? agentInputText.length;
+      const after = agentInputText.slice(caret);
+      const inserted = `@${path} `;
+      const next = `${before}${inserted}${after}`;
+      setAgentInputText(next);
+      const newCaret = before.length + inserted.length;
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(newCaret, newCaret);
+        }
       });
+      mentionItemsRef.current = [];
+      mention.close();
     },
-    [agentInputText, setAgentInputText, textareaRef],
+    [agentInputText, setAgentInputText, textareaRef, mention],
   );
 
-  /**
-   * Replace the `/query` token at the trigger position with the template's
+  /** Replace the `/query` token at the trigger position with the template's
    * body content and place the caret at the end of the inserted body. This
-   * expands the prompt INTO the composer — it does not submit. The user can
-   * still edit before pressing Enter.
-   */
+   * expands the prompt INTO the composer — it does not submit. */
   const insertSlashTemplate = useCallback(
     (template: PromptTemplate) => {
-      const slashIdx = slashState.slashIndex;
+      const slashIdx = slash.state.prefixIndex;
       if (slashIdx < 0) return;
       const before = agentInputText.slice(0, slashIdx);
-      // Drop the entire "/query" token (1 + query length).
-      const afterStart = slashIdx + 1 + slashState.query.length;
+      const afterStart = slashIdx + 1 + slash.state.query.length;
       const after = agentInputText.slice(afterStart);
-      // Avoid double-newlines: trim only the trailing whitespace on the
-      // template body, leave the user's `after` content untouched.
+      // Trim trailing whitespace on the template body, leave user's `after`
+      // content untouched to avoid double-newlines.
       const body = template.content.replace(/\s+$/, "");
       const next = `${before}${body}${after}`;
       setAgentInputText(next);
@@ -724,211 +273,15 @@ export function AgentInputArea({
           el.setSelectionRange(newCaret, newCaret);
         }
       });
-      closeSlash();
+      slash.close();
     },
-    [agentInputText, setAgentInputText, slashState, closeSlash, textareaRef],
+    [agentInputText, setAgentInputText, slash, textareaRef],
   );
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // If the slash-command popover is open, intercept nav keys first. The
-    // popover is closed by detectSlash whenever the trigger no longer matches,
-    // so we don't need a separate guard against orphan state.
-    if (slashState.active) {
-      const items = slashMatches;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashState((prev) => ({
-          ...prev,
-          highlightedIndex:
-            items.length === 0 ? 0 : (prev.highlightedIndex + 1) % items.length,
-        }));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashState((prev) => ({
-          ...prev,
-          highlightedIndex:
-            items.length === 0
-              ? 0
-              : (prev.highlightedIndex - 1 + items.length) % items.length,
-        }));
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        if (items.length > 0) {
-          e.preventDefault();
-          const pick =
-            items[slashState.highlightedIndex] ?? items[0];
-          if (pick) insertSlashTemplate(pick);
-          return;
-        }
-        closeSlash();
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeSlash();
-        return;
-      }
-    }
-
-    // If mention popover is open, intercept navigation keys first.
-    if (mentionState.active) {
-      const items = mentionItemsRef.current;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setMentionState((prev) => ({
-          ...prev,
-          highlightedIndex:
-            items.length === 0 ? 0 : (prev.highlightedIndex + 1) % items.length,
-        }));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setMentionState((prev) => ({
-          ...prev,
-          highlightedIndex:
-            items.length === 0
-              ? 0
-              : (prev.highlightedIndex - 1 + items.length) % items.length,
-        }));
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        if (items.length > 0) {
-          e.preventDefault();
-          const pick = items[mentionState.highlightedIndex] ?? items[0];
-          insertMentionPath(pick);
-          return;
-        }
-        // If no items, just close the popover and let Enter submit below.
-        closeMention();
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeMention();
-        return;
-      }
-    }
-
-    if (e.ctrlKey && e.key === "Enter") {
-      e.preventDefault();
-      if (launchReady) submitWithAttachments();
-      return;
-    }
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (launchReady) submitWithAttachments();
-    }
-  }
-
-  // ─── Provider auth status polling ────────────────────────────────────
-  const [authStatus, setAuthStatus] = useState<Record<string, AuthEntry>>({});
-
-  const groupAgents = useMemo<AgentCli[]>(
-    () => PROVIDER_GROUPS.flatMap((g) => g.agents),
-    [],
-  );
-
-  const refreshAuthStatuses = useCallback(() => {
-    // Mark everything as loading, then fetch each in parallel.
-    setAuthStatus((prev) => {
-      const next: Record<string, AuthEntry> = { ...prev };
-      for (const a of groupAgents) next[a] = "loading";
-      return next;
-    });
-    for (const agent of groupAgents) {
-      const provider = apiAgentProvider(agent);
-      getProviderAuthStatus(provider)
-        .then((res) => {
-          setAuthStatus((prev) => ({ ...prev, [agent]: res }));
-        })
-        .catch((err) => {
-          // On failure, show as service_down with the error hint — better
-          // than leaving the row stuck in a spinner.
-          console.warn(`getProviderAuthStatus(${provider}) failed`, err);
-          setAuthStatus((prev) => ({
-            ...prev,
-            [agent]: { status: "service_down", hint: "Status unavailable" },
-          }));
-        });
-    }
-  }, [groupAgents]);
-
-  // Initial load on mount.
-  useEffect(() => {
-    refreshAuthStatuses();
-  }, [refreshAuthStatuses]);
-
-  // Live updates: the Rust side watches the claude/codex credential dirs
-  // and emits `provider-auth:changed` whenever they mutate. Apply the
-  // payload directly so we avoid a round-trip RPC on every login.
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    let cancelled = false;
-    listen<{ provider: string; status: ProviderAuthStatus }>(
-      "provider-auth:changed",
-      (event) => {
-        const { provider, status } = event.payload;
-        // Map the provider id back onto the agent(s) it governs. Today
-        // there's exactly one agent per OAuth provider, but the lookup is
-        // written defensively in case that changes.
-        const affected = groupAgents.filter(
-          (agent) => apiAgentProvider(agent) === provider,
-        );
-        if (affected.length === 0) return;
-        setAuthStatus((prev) => {
-          const next = { ...prev };
-          for (const agent of affected) next[agent] = status;
-          return next;
-        });
-      },
-    )
-      .then((fn) => {
-        if (cancelled) {
-          fn();
-        } else {
-          unlisten = fn;
-        }
-      })
-      .catch((err) => {
-        console.warn("listen(provider-auth:changed) failed", err);
-      });
-    return () => {
-      cancelled = true;
-      if (unlisten) unlisten();
-    };
-  }, [groupAgents]);
-
-  // ─── Ollama installed-models fetch ───────────────────────────────────
-  type OllamaModelsState = OllamaModel[] | "loading" | { error: string };
-  const [ollamaModels, setOllamaModels] =
-    useState<OllamaModelsState>("loading");
-
-  const refreshOllamaModels = useCallback(() => {
-    setOllamaModels("loading");
-    listOllamaModels()
-      .then((models) => {
-        setOllamaModels(models);
-      })
-      .catch((e: unknown) => {
-        const message =
-          e instanceof Error
-            ? e.message
-            : typeof e === "string"
-              ? e
-              : "Ollama not reachable";
-        setOllamaModels({ error: message || "Ollama not reachable" });
-      });
-  }, []);
-
-  // Fetch on mount and whenever the user switches to the Ollama provider.
-  useEffect(() => {
-    if (selectedAgent === "api-ollama") {
-      refreshOllamaModels();
-    }
-  }, [selectedAgent, refreshOllamaModels]);
+  // ─── Provider auth + Ollama models hooks ─────────────────────────────
+  const { authStatus, refreshAuthStatuses } = useProviderAuthStatus();
+  const { ollamaModels, refresh: refreshOllamaModels } =
+    useOllamaModels(selectedAgent);
 
   const selectedAuth = authStatus[selectedAgent];
   const selectedAuthStatus: AuthStatus =
@@ -939,8 +292,6 @@ export function AgentInputArea({
   const launchLabel =
     selectedAuthStatus === "coming_soon" ? "Coming soon" : "Launch";
   // Which provider (if any) needs an interactive login to become ready.
-  // Returns "claude" / "codex" / null so the button + tooltip below can
-  // branch on a single value and dispatch the right event.
   const needsLogin: "claude" | "codex" | null =
     selectedAuthStatus === "login_required"
       ? selectedAgent === "api-claude-oauth"
@@ -963,135 +314,95 @@ export function AgentInputArea({
       ? "Log in to ChatGPT to continue"
       : "Log in to Claude to continue";
 
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Slash-command popover first — detect() closes itself if the trigger
+    // no longer matches, so no orphan-state guard needed here.
+    if (slash.state.active) {
+      const items = slashMatches;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        slash.moveHighlight(1, items.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        slash.moveHighlight(-1, items.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        if (items.length > 0) {
+          e.preventDefault();
+          const pick = items[slash.state.highlightedIndex] ?? items[0];
+          if (pick) insertSlashTemplate(pick);
+          return;
+        }
+        slash.close();
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        slash.close();
+        return;
+      }
+    }
+
+    if (mention.state.active) {
+      const items = mentionItemsRef.current;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        mention.moveHighlight(1, items.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        mention.moveHighlight(-1, items.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        if (items.length > 0) {
+          e.preventDefault();
+          const pick = items[mention.state.highlightedIndex] ?? items[0];
+          insertMentionPath(pick);
+          return;
+        }
+        // No items — close and let Enter submit below.
+        mention.close();
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        mention.close();
+        return;
+      }
+    }
+
+    if (e.ctrlKey && e.key === "Enter") {
+      e.preventDefault();
+      if (launchReady) submitWithAttachments();
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (launchReady) submitWithAttachments();
+    }
+  }
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8">
       <div className="w-full max-w-[600px]">
-        {/* Repo selector */}
-        <div className="mb-3">
-          <Dropdown
-            trigger={
-              <span
-                className={`flex items-center gap-1.5 ${
-                  selectedRepo ? "text-text-primary" : "text-text-muted"
-                }`}
-                title={
-                  sshDisabled && selectedRepo && isSshUri(selectedRepo)
-                    ? SSH_NOT_SUPPORTED_TOOLTIP
-                    : undefined
-                }
-              >
-                {selectedRepo && isSshUri(selectedRepo) ? (
-                  <Server
-                    size={12}
-                    className={sshDisabled ? "text-text-muted" : "text-accent-green"}
-                  />
-                ) : (
-                  <Monitor size={12} className="text-text-muted" />
-                )}
-                {currentDisplayName}
-              </span>
-            }
-          >
-            {recentItems.length > 0 && (
-              <div className="px-3 pt-1 pb-0.5 text-[9px] uppercase tracking-wider text-text-muted">
-                Recents
-              </div>
-            )}
-            {recentItems.map((item) =>
-              item.kind === "local" ? (
-                <DropdownItem
-                  key={`local:${item.path}`}
-                  onClick={() => handleSelectLocal(item.path)}
-                >
-                  <RecentRow
-                    icon={<Folder size={12} className="text-text-muted" />}
-                    label={repoDisplayName(item.path, repos)}
-                    selected={selectedRepo === item.path}
-                  />
-                </DropdownItem>
-              ) : (
-                <DropdownItem
-                  key={`ssh:${item.server.id}`}
-                  onClick={() => {
-                    if (sshDisabled) return;
-                    handleSelectSsh(item.server);
-                  }}
-                >
-                  <span
-                    className={sshDisabled ? "opacity-50 cursor-not-allowed block" : "block"}
-                    title={sshDisabledTitle}
-                  >
-                    <RecentRow
-                      icon={<Server size={12} className="text-accent-green" />}
-                      label={item.server.name}
-                      selected={selectedSshUri?.serverId === item.server.id}
-                    />
-                  </span>
-                </DropdownItem>
-              ),
-            )}
+        <ProjectPicker
+          selectedRepo={selectedRepo}
+          setSelectedRepo={setSelectedRepo}
+          sshDisabled={sshDisabled}
+        />
 
-            {recentItems.length > 0 && (
-              <div className="my-1 border-t border-bg-border" />
-            )}
-
-            <DropdownItem onClick={handleBrowse}>
-              <span className="flex items-center gap-1.5 text-text-secondary">
-                <FolderOpen size={12} />
-                Open Folder
-              </span>
-            </DropdownItem>
-            <DropdownItem
-              onClick={() => {
-                if (sshDisabled) return;
-                handleOpenServersView();
-              }}
-            >
-              <span
-                className={`flex items-center gap-1.5 text-text-secondary ${sshDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                title={sshDisabledTitle}
-              >
-                <Server size={12} />
-                {servers.length === 0 ? "Configure servers…" : "Manage servers…"}
-              </span>
-            </DropdownItem>
-          </Dropdown>
-
-          {/* Phase 2: inline remote-path editor for SSH selections. Servers
-              are reusable across projects, so the path is per-conversation,
-              not stored on the server config. Seeded from
-              `ServerConfig.remotePath` (a server-level default) on first
-              pick; edits re-encode into `selectedRepo`. */}
-          {selectedSshUri && selectedServer && !sshDisabled && (
-            <div className="mt-2 flex items-center gap-1.5 text-[11px]">
-              <Server size={11} className="text-accent-green shrink-0" />
-              <span className="text-text-muted shrink-0">
-                {selectedServer.username}@{selectedServer.host}
-                {selectedServer.port !== 22 ? `:${selectedServer.port}` : ""}
-                {": "}
-              </span>
-              <input
-                type="text"
-                value={selectedSshUri.remotePath ?? ""}
-                onChange={(e) => handleRemotePathChange(e.target.value)}
-                placeholder="/home/user/project"
-                className="flex-1 bg-bg-primary border border-bg-border rounded px-1.5 py-0.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/60"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* v0.8-H — collapsible preview of the memory snippets that will be
-            injected into the next user turn. Hidden for SSH targets since
-            memory is project-path-keyed and remote project paths aren't a
-            stable key here. */}
+        {/* v0.8-H — preview of memory snippets injected into the next user
+            turn. Hidden for SSH targets since memory is project-path-keyed
+            and remote paths aren't a stable key here. */}
         {selectedRepo && !isSshUri(selectedRepo) && (
           <div className="mb-2">
             <ContextPreviewChevron projectPath={selectedRepo} />
           </div>
         )}
 
-        {/* Input box */}
         <div
           className={`relative border rounded-lg bg-bg-primary transition-colors ${
             dragActive
@@ -1102,22 +413,20 @@ export function AgentInputArea({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
         >
-          {/* @ file-mention popover (positioned above the textarea) */}
+          {/* Popovers positioned above the textarea. */}
           <div className="relative">
             <FileMentionPopover
-              visible={mentionState.active && !!mentionProjectPath}
+              visible={mention.state.active && !!mentionProjectPath}
               projectPath={mentionProjectPath}
-              query={mentionState.query}
-              highlightedIndex={mentionState.highlightedIndex}
+              query={mention.state.query}
+              highlightedIndex={mention.state.highlightedIndex}
               onSelect={insertMentionPath}
               onItemsChange={handleMentionItemsChange}
             />
-            {/* / slash-command popover — expands a prompt template into the
-                composer (replaces `/query` with the template body). */}
             <InputPopover
-              visible={slashState.active}
+              visible={slash.state.active}
               items={slashPopoverItems}
-              highlightedIndex={slashState.highlightedIndex}
+              highlightedIndex={slash.state.highlightedIndex}
               onSelect={(item) => {
                 const t = promptTemplates.find((pt) => pt.id === item.key);
                 if (t) insertSlashTemplate(t);
@@ -1126,7 +435,6 @@ export function AgentInputArea({
             />
           </div>
 
-          {/* Staged attachment chips (drag-drop or pasted images). */}
           {staged.length > 0 && (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
               {staged.map((s) => (
@@ -1163,8 +471,8 @@ export function AgentInputArea({
             onBlur={() => {
               // Delay so onMouseDown selection in the popover can still fire.
               setTimeout(() => {
-                closeMention();
-                closeSlash();
+                mention.close();
+                slash.close();
               }, 120);
             }}
             placeholder="What would you like to work on?  (drag-drop or paste images)"
@@ -1172,496 +480,66 @@ export function AgentInputArea({
             className="w-full bg-transparent px-4 py-3 text-xs text-text-primary placeholder:text-text-muted focus:outline-none resize-none"
           />
 
-          {/* Action row inside the input box */}
           <div className="flex items-center justify-between px-3 py-2 border-t border-bg-border/50">
             <div className="flex items-center gap-2">
-              {/* Mode selector — Cursor-style Agent / Ask / Manual / Plan */}
-              <Dropdown
-                trigger={
-                  <span className="text-text-secondary flex items-center gap-1">
-                    {(() => {
-                      const m = MODE_META[agentMode];
-                      const Icon = m.icon;
-                      return (
-                        <>
-                          <Icon size={10} className={m.color} />
-                          {m.label}
-                        </>
-                      );
-                    })()}
-                  </span>
-                }
-              >
-                {MODE_ORDER.map((m) => {
-                  const meta = MODE_META[m];
-                  const Icon = meta.icon;
-                  return (
-                    <DropdownItem
-                      key={m}
-                      onClick={() => onAgentModeChange?.(m)}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Icon size={10} className={meta.color} />
-                        <span className={agentMode === m ? "text-accent-green" : ""}>
-                          {meta.label}
-                        </span>
-                        <span className="text-text-muted text-[9px] ml-1">
-                          {meta.description}
-                        </span>
-                      </span>
-                    </DropdownItem>
-                  );
-                })}
-              </Dropdown>
-
-              {/* Profile selector — picks system prompt + tool whitelist for
-                  the new conversation. The selected profile is also persisted
-                  as the launch default for the next session. */}
-              <Dropdown
-                searchable
-                searchPlaceholder="Search profiles…"
-                trigger={
-                  <span
-                    className="text-text-secondary flex items-center gap-1"
-                    title={
-                      activeProfile
-                        ? `Profile: ${activeProfile.name} — ${activeProfile.description}`
-                        : "Pick an agent profile"
-                    }
-                  >
-                    <User size={10} className="text-accent-blue" />
-                    {activeProfile?.name ?? "Default"}
-                  </span>
-                }
-              >
-                {profiles.map((p) => (
-                  <DropdownItem
-                    key={p.id}
-                    onClick={() => {
-                      onProfileChange?.(p.id);
-                      setDefaultProfile(p.id);
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <User
-                        size={10}
-                        className={
-                          p.isBuiltin ? "text-accent-blue" : "text-accent-purple"
-                        }
-                      />
-                      <span
-                        className={
-                          activeProfileId === p.id ? "text-accent-green" : ""
-                        }
-                      >
-                        {p.name}
-                      </span>
-                      <span className="text-text-muted text-[9px] ml-1 truncate max-w-[200px]">
-                        {p.description}
-                      </span>
-                    </span>
-                  </DropdownItem>
-                ))}
-              </Dropdown>
-
-              {/* B2: Codex-App-style Local / Worktree / Cloud picker.
-                  Hidden for SSH targets (always run remote, picker
-                  doesn't apply). Cloud is greyed-out — no cloud
-                  delegation surface yet, but the slot teaches the
-                  mental model and reserves the affordance. */}
+              <ModeSelector value={agentMode} onChange={onAgentModeChange} />
+              <ProfilePicker
+                profiles={profiles}
+                selectedProfileId={selectedProfileId}
+                activeProfile={activeProfile}
+                onProfileChange={onProfileChange}
+                setDefaultProfile={setDefaultProfile}
+              />
               {selectedRepo && !isSshUri(selectedRepo) && (
-                <div
-                  className="inline-flex flex-col"
-                  title="Where this conversation runs"
-                >
-                  <div className="inline-flex rounded border border-bg-border overflow-hidden">
-                    {(
-                      [
-                        {
-                          mode: "local" as const,
-                          icon: Folder,
-                          label: "Local",
-                          title:
-                            "Switch to Local — edits land in the project tree (also updates the global default)",
-                        },
-                        {
-                          mode: "worktree" as const,
-                          icon: GitBranch,
-                          label: "Worktree",
-                          title:
-                            "Switch to Worktree — conversation runs on a fresh branch in .pkt-worktrees/ (also updates the global default)",
-                        },
-                        {
-                          mode: "cloud" as const,
-                          icon: Cloud,
-                          label: "Cloud",
-                          title:
-                            "Switch to Cloud — coming soon, cloud delegation not yet wired (also updates the global default)",
-                          disabled: true,
-                        },
-                      ] as const
-                    ).map((opt) => {
-                      const Icon = opt.icon;
-                      const isActive = composerMode === opt.mode;
-                      const isDisabled = "disabled" in opt && opt.disabled;
-                      return (
-                        <button
-                          key={opt.mode}
-                          type="button"
-                          disabled={isDisabled}
-                          onClick={() =>
-                            !isDisabled && onComposerModeChange?.(opt.mode)
-                          }
-                          title={opt.title}
-                          className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] transition-colors ${
-                            isDisabled
-                              ? "text-text-faint opacity-50 cursor-not-allowed"
-                              : isActive
-                                ? "bg-accent-purple/10 text-accent-purple"
-                                : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
-                          }`}
-                        >
-                          <Icon size={10} />
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <span className="text-[9px] text-text-muted mt-0.5 leading-tight">
-                    Persists as default for new conversations.
-                  </span>
-                </div>
+                <ComposerModePicker
+                  value={composerMode}
+                  onChange={onComposerModeChange}
+                />
               )}
-
-              {/* Provider selector (grouped, with auth-status badges) */}
-              <Dropdown
-                searchable
-                searchPlaceholder="Search providers…"
-                trigger={
-                  <span
-                    className="text-text-secondary flex items-center gap-1"
-                    // Refresh auth statuses when the user opens the dropdown.
-                    // onMouseDown fires before Dropdown's click-toggle, so the
-                    // fetch is already in flight by the time the menu renders.
-                    onMouseDown={refreshAuthStatuses}
-                  >
-                    <Zap size={10} className="text-accent-amber" />
-                    {getProviderForAgent(selectedAgent)?.name ??
-                      "Select Provider"}
-                    <AuthBadge
-                      status={selectedAuthStatus}
-                      hint={
-                        selectedAuth && selectedAuth !== "loading"
-                          ? selectedAuth.hint
-                          : ""
-                      }
-                      className="ml-1"
-                    />
-                    {needsLogin && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleOpenLogin();
-                        }}
-                        onMouseDown={(e) => {
-                          // Stop propagation here too so opening the
-                          // dropdown's click-toggle doesn't also fire.
-                          e.stopPropagation();
-                        }}
-                        className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] text-accent-amber hover:bg-accent-amber/10 transition-colors"
-                        title={loginTooltip}
-                      >
-                        <LogIn size={10} />
-                        Log in
-                      </button>
-                    )}
-                  </span>
-                }
-              >
-                {PROVIDER_GROUPS.map((group, gi) => {
-                  // Build the list of renderable rows for this group — skip
-                  // agents that don't exist in API_PROVIDERS (e.g. while the
-                  // parallel OAuth/Codex entries haven't landed yet).
-                  const rows = group.agents
-                    .map((agent) => ({
-                      agent,
-                      info: getProviderForAgent(agent),
-                    }))
-                    .filter(
-                      (r): r is { agent: AgentCli; info: NonNullable<typeof r.info> } =>
-                        !!r.info,
-                    );
-                  if (rows.length === 0) return null;
-                  return (
-                    <div key={group.label}>
-                      {gi > 0 && (
-                        <div className="my-1 border-t border-bg-border" />
-                      )}
-                      <div className="text-[9px] uppercase tracking-wide text-text-muted px-2 py-1">
-                        {group.label}
-                      </div>
-                      {rows.map(({ agent, info }) => {
-                        const entry = authStatus[agent];
-                        const status: AuthStatus =
-                          entry === "loading" || !entry ? "loading" : entry.status;
-                        const hint =
-                          entry && entry !== "loading" ? entry.hint : "";
-                        const dim = status !== "ready";
-                        return (
-                          <DropdownItem
-                            key={agent}
-                            onClick={() => {
-                              onAgentChange(agent);
-                              onModelChange(info.models[0]?.value ?? "");
-                            }}
-                          >
-                            <span
-                              className={`flex items-center justify-between gap-2 ${dim ? "opacity-50" : ""}`}
-                            >
-                              <span className="flex items-center gap-1.5">
-                                <Zap size={10} className="text-accent-amber" />
-                                {info.name}
-                              </span>
-                              <AuthBadge status={status} hint={hint} />
-                            </span>
-                          </DropdownItem>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </Dropdown>
-
-              {/* Model selector */}
-              {(() => {
-                const provider = API_PROVIDERS.find(
-                  (p) => p.agentCli === selectedAgent,
-                );
-                if (!provider) return null;
-
-                const isOllama = selectedAgent === "api-ollama";
-
-                // Trigger label. When in Ollama mode the label swaps to the
-                // live-fetched model name (just the `name` string, there is
-                // no separate display label for Ollama installs).
-                let triggerLabel: string;
-                if (isOllama) {
-                  if (Array.isArray(ollamaModels)) {
-                    const match = ollamaModels.find(
-                      (m) => m.name === selectedModel,
-                    );
-                    triggerLabel =
-                      match?.name ??
-                      selectedModel ??
-                      ollamaModels[0]?.name ??
-                      "Select model";
-                  } else if (ollamaModels === "loading") {
-                    triggerLabel = selectedModel || "Loading models…";
-                  } else {
-                    triggerLabel = selectedModel || "Ollama unreachable";
-                  }
-                } else {
-                  const currentModel =
-                    provider.models.find((m) => m.value === selectedModel) ??
-                    provider.models[0];
-                  triggerLabel = currentModel?.label ?? "Select model";
-                }
-
-                const speed = getModelSpeed(selectedModel);
-                const speedClass =
-                  speed === "fast"
-                    ? "text-accent-green bg-accent-green/10"
-                    : speed === "thorough"
-                      ? "text-accent-purple bg-accent-purple/10"
-                      : "text-accent-blue bg-accent-blue/10";
-
-                return (
-                  <Dropdown
-                    searchable
-                    searchPlaceholder="Search models…"
-                    trigger={
-                      <span className="flex items-center gap-1.5 text-text-muted text-[10px]">
-                        <span>{triggerLabel}</span>
-                        <span
-                          className={`px-1 py-px rounded text-[9px] font-medium ${speedClass}`}
-                          title={`${MODEL_SPEED_LABEL[speed]} mode (heuristic)`}
-                        >
-                          {MODEL_SPEED_LABEL[speed]}
-                        </span>
-                      </span>
-                    }
-                  >
-                    {isOllama ? (
-                      <>
-                        {/* Refresh header — Ollama-specific. */}
-                        <div className="flex items-center justify-between px-2 py-1 text-[9px] uppercase tracking-wide text-text-muted">
-                          <span>Installed models</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              refreshOllamaModels();
-                            }}
-                            className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-text-secondary transition-colors"
-                            title="Refresh installed Ollama models"
-                          >
-                            <RefreshCw size={10} />
-                          </button>
-                        </div>
-                        {ollamaModels === "loading" ? (
-                          <DropdownItem
-                            onClick={() => {
-                              /* disabled */
-                            }}
-                          >
-                            <span className="flex items-center gap-1.5 text-text-muted opacity-60">
-                              <Loader2
-                                size={10}
-                                className="animate-spin"
-                              />
-                              Loading models…
-                            </span>
-                          </DropdownItem>
-                        ) : !Array.isArray(ollamaModels) ? (
-                          <>
-                            <DropdownItem
-                              onClick={() => {
-                                /* disabled */
-                              }}
-                            >
-                              <span className="flex items-center gap-1.5 text-accent-red opacity-80">
-                                <AlertCircle size={10} />
-                                {ollamaModels.error}
-                              </span>
-                            </DropdownItem>
-                            <DropdownItem
-                              onClick={() => refreshOllamaModels()}
-                            >
-                              <span className="flex items-center gap-1.5 text-text-secondary">
-                                <RefreshCw size={10} />
-                                Retry
-                              </span>
-                            </DropdownItem>
-                          </>
-                        ) : ollamaModels.length === 0 ? (
-                          <DropdownItem
-                            onClick={() => {
-                              /* disabled */
-                            }}
-                          >
-                            <span className="text-text-muted opacity-70 text-[10px]">
-                              No models installed. Run{" "}
-                              <code className="text-text-secondary">
-                                ollama pull &lt;model&gt;
-                              </code>{" "}
-                              in a terminal.
-                            </span>
-                          </DropdownItem>
-                        ) : (
-                          ollamaModels.map((m) => (
-                            <DropdownItem
-                              key={m.name}
-                              onClick={() => onModelChange(m.name)}
-                            >
-                              <span className="flex items-center justify-between gap-2 w-full">
-                                <span className="truncate">{m.name}</span>
-                                {typeof m.size === "number" && (
-                                  <span className="text-text-muted text-[9px] shrink-0">
-                                    {(m.size / 1e9).toFixed(1)} GB
-                                  </span>
-                                )}
-                              </span>
-                            </DropdownItem>
-                          ))
-                        )}
-                      </>
-                    ) : (
-                      provider.models.map((m) => (
-                        <DropdownItem
-                          key={m.value}
-                          onClick={() => onModelChange(m.value)}
-                        >
-                          {m.label}
-                        </DropdownItem>
-                      ))
-                    )}
-                  </Dropdown>
-                );
-              })()}
+              <ProviderPicker
+                selectedAgent={selectedAgent}
+                onAgentChange={onAgentChange}
+                onModelChange={onModelChange}
+                authStatus={authStatus}
+                refreshAuthStatuses={refreshAuthStatuses}
+                needsLogin={needsLogin}
+                loginTooltip={loginTooltip}
+                onOpenLogin={handleOpenLogin}
+              />
+              <ModelSelector
+                selectedAgent={selectedAgent}
+                selectedModel={selectedModel}
+                onModelChange={onModelChange}
+                ollamaModels={ollamaModels}
+                refreshOllamaModels={refreshOllamaModels}
+              />
             </div>
 
-            <div className="flex items-center gap-1">
-              {/* Mic button */}
-              {isSupported && (
-                <button
-                  onClick={isListening ? stopListening : startListening}
-                  className={`p-1.5 rounded-full transition-colors ${
-                    isListening
-                      ? "bg-accent-green/20 text-accent-green animate-pulse"
-                      : "text-text-muted hover:text-text-secondary"
-                  }`}
-                  title={isListening ? "Stop listening" : "Voice input"}
-                >
-                  <Mic size={14} />
-                </button>
-              )}
-
-              {/* Launch button — gated on provider auth status */}
-              <button
-                onClick={() => {
-                  if (launchReady) submitWithAttachments();
-                }}
-                disabled={!launchReady}
-                title={
-                  launchReady
-                    ? "Launch (Enter)"
-                    : needsLogin
-                      ? loginTooltip
-                      : selectedAuth && selectedAuth !== "loading"
-                        ? selectedAuth.hint || launchLabel
-                        : launchLabel
-                }
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
-                  launchReady
-                    ? "bg-accent-green/20 text-accent-green hover:bg-accent-green/30"
-                    : "bg-bg-hover text-text-muted cursor-not-allowed"
-                }`}
-              >
-                <Send size={10} />
-                {launchLabel}
-              </button>
-            </div>
+            <ActionButtons
+              isSupported={isSupported}
+              isListening={isListening}
+              startListening={startListening}
+              stopListening={stopListening}
+              launchReady={launchReady}
+              launchLabel={launchLabel}
+              launchTitle={
+                launchReady
+                  ? "Launch (Enter)"
+                  : needsLogin
+                    ? loginTooltip
+                    : selectedAuth && selectedAuth !== "loading"
+                      ? selectedAuth.hint || launchLabel
+                      : launchLabel
+              }
+              onLaunch={submitWithAttachments}
+            />
           </div>
         </div>
 
         <p className="text-[9px] text-text-muted mt-2 text-center">
-          Enter to send &middot; Shift+Enter for newline &middot; Ctrl+N for new
-          agent &middot; @ to mention a file &middot; / to expand a prompt template &middot; drag/paste images
+          {COMPOSER_HELP_TEXT}
         </p>
       </div>
-
-    </div>
-  );
-}
-
-function RecentRow({
-  icon,
-  label,
-  selected,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  selected: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="flex items-center gap-1.5 min-w-0">
-        {icon}
-        <span className="truncate">{label}</span>
-      </span>
-      {selected && <Check size={12} className="text-accent-green shrink-0" />}
     </div>
   );
 }

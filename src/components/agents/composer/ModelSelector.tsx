@@ -1,0 +1,156 @@
+import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
+import type { AgentCli } from "@/stores/agentTaskStore";
+import {
+  API_PROVIDERS,
+  getModelSpeed,
+  MODEL_SPEED_LABEL,
+} from "@/lib/api-models";
+import type { OllamaModelsState } from "../hooks/useOllamaModels";
+
+interface ModelSelectorProps {
+  selectedAgent: AgentCli;
+  selectedModel: string;
+  onModelChange: (model: string) => void;
+  ollamaModels: OllamaModelsState;
+  refreshOllamaModels: () => void;
+}
+
+export function ModelSelector({
+  selectedAgent,
+  selectedModel,
+  onModelChange,
+  ollamaModels,
+  refreshOllamaModels,
+}: ModelSelectorProps) {
+  const provider = API_PROVIDERS.find((p) => p.agentCli === selectedAgent);
+  if (!provider) return null;
+
+  const isOllama = selectedAgent === "api-ollama";
+
+  // Trigger label. In Ollama mode the label is the live-fetched model name
+  // (just the `name` string; Ollama installs have no separate display label).
+  let triggerLabel: string;
+  if (isOllama) {
+    if (Array.isArray(ollamaModels)) {
+      const match = ollamaModels.find((m) => m.name === selectedModel);
+      triggerLabel =
+        match?.name ??
+        selectedModel ??
+        ollamaModels[0]?.name ??
+        "Select model";
+    } else if (ollamaModels === "loading") {
+      triggerLabel = selectedModel || "Loading models…";
+    } else {
+      triggerLabel = selectedModel || "Ollama unreachable";
+    }
+  } else {
+    const currentModel =
+      provider.models.find((m) => m.value === selectedModel) ??
+      provider.models[0];
+    triggerLabel = currentModel?.label ?? "Select model";
+  }
+
+  const speed = getModelSpeed(selectedModel);
+  const speedClass =
+    speed === "fast"
+      ? "text-accent-green bg-accent-green/10"
+      : speed === "thorough"
+        ? "text-accent-purple bg-accent-purple/10"
+        : "text-accent-blue bg-accent-blue/10";
+
+  return (
+    <Dropdown
+      searchable
+      searchPlaceholder="Search models…"
+      trigger={
+        <span className="flex items-center gap-1.5 text-text-muted text-[10px]">
+          <span>{triggerLabel}</span>
+          <span
+            className={`px-1 py-px rounded text-[9px] font-medium ${speedClass}`}
+            title={`${MODEL_SPEED_LABEL[speed]} mode (heuristic)`}
+          >
+            {MODEL_SPEED_LABEL[speed]}
+          </span>
+        </span>
+      }
+    >
+      {isOllama ? (
+        <>
+          <div className="flex items-center justify-between px-2 py-1 text-[9px] uppercase tracking-wide text-text-muted">
+            <span>Installed models</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                refreshOllamaModels();
+              }}
+              className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-text-secondary transition-colors"
+              title="Refresh installed Ollama models"
+            >
+              <RefreshCw size={10} />
+            </button>
+          </div>
+          {ollamaModels === "loading" ? (
+            <DropdownItem onClick={() => {}}>
+              <span className="flex items-center gap-1.5 text-text-muted opacity-60">
+                <Loader2 size={10} className="animate-spin" />
+                Loading models…
+              </span>
+            </DropdownItem>
+          ) : !Array.isArray(ollamaModels) ? (
+            <>
+              <DropdownItem onClick={() => {}}>
+                <span className="flex items-center gap-1.5 text-accent-red opacity-80">
+                  <AlertCircle size={10} />
+                  {ollamaModels.error}
+                </span>
+              </DropdownItem>
+              <DropdownItem onClick={() => refreshOllamaModels()}>
+                <span className="flex items-center gap-1.5 text-text-secondary">
+                  <RefreshCw size={10} />
+                  Retry
+                </span>
+              </DropdownItem>
+            </>
+          ) : ollamaModels.length === 0 ? (
+            <DropdownItem onClick={() => {}}>
+              <span className="text-text-muted opacity-70 text-[10px]">
+                No models installed. Run{" "}
+                <code className="text-text-secondary">
+                  ollama pull &lt;model&gt;
+                </code>{" "}
+                in a terminal.
+              </span>
+            </DropdownItem>
+          ) : (
+            ollamaModels.map((m) => (
+              <DropdownItem
+                key={m.name}
+                onClick={() => onModelChange(m.name)}
+              >
+                <span className="flex items-center justify-between gap-2 w-full">
+                  <span className="truncate">{m.name}</span>
+                  {typeof m.size === "number" && (
+                    <span className="text-text-muted text-[9px] shrink-0">
+                      {(m.size / 1e9).toFixed(1)} GB
+                    </span>
+                  )}
+                </span>
+              </DropdownItem>
+            ))
+          )}
+        </>
+      ) : (
+        provider.models.map((m) => (
+          <DropdownItem
+            key={m.value}
+            onClick={() => onModelChange(m.value)}
+          >
+            {m.label}
+          </DropdownItem>
+        ))
+      )}
+    </Dropdown>
+  );
+}
