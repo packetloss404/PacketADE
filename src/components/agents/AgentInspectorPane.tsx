@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CheckSquare,
   ChevronDown,
   ChevronRight,
   File as FileIcon,
@@ -10,6 +11,7 @@ import {
   FolderTree,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import {
   aggregateConversationDiffs,
   type PerFileDiffStat,
@@ -19,6 +21,7 @@ import { API_PROVIDERS } from "@/lib/api-models";
 import { AgentPreviewPane } from "./AgentPreviewPane";
 import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
 import { AgentFilePane } from "./AgentFilePane";
+import { PlanPanel } from "./PlanPanel";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useReviewedDiffs } from "./hooks/useReviewedDiffs";
@@ -27,10 +30,11 @@ interface AgentInspectorPaneProps {
   conversationId: string;
 }
 
-type Tab = "inspector" | "preview" | "diff" | "files";
+type Tab = "inspector" | "plan" | "preview" | "diff" | "files";
 
 const TAB_DEFS: { id: Tab; icon: typeof PanelLeft; label: string }[] = [
   { id: "inspector", icon: PanelLeft, label: "Inspector" },
+  { id: "plan", icon: CheckSquare, label: "Plan" },
   { id: "preview", icon: Eye, label: "Preview" },
   { id: "diff", icon: FileDiff, label: "Diff" },
   { id: "files", icon: FolderTree, label: "Files" },
@@ -82,6 +86,22 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
     }
     prevPreviewOpenRef.current = previewOpen;
   }, [previewOpen]);
+
+  // Auto-switch to the Plan tab on the rising edge of "plan arrives".
+  // Peer effect to the Preview auto-switch above; uses the same rising-edge
+  // pattern so we never steal focus from a tab the user manually picked
+  // while the plan was already populated.
+  const planCount = useAgentPlanStore(
+    (s) => s.plan.get(conversationId)?.length ?? 0,
+  );
+  const prevPlanCountRef = useRef(planCount);
+  useEffect(() => {
+    if (planCount > 0 && prevPlanCountRef.current === 0) {
+      setTab("plan");
+      setOpen(true);
+    }
+    prevPlanCountRef.current = planCount;
+  }, [planCount]);
 
   // Global pointer-move / up listeners while dragging.
   useEffect(() => {
@@ -212,6 +232,11 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         {tab === "inspector" && (
           <div className="flex-1 overflow-auto flex flex-col min-h-0">
             <InspectorContent conversationId={conversationId} />
+          </div>
+        )}
+        {tab === "plan" && (
+          <div className="flex-1 overflow-auto min-h-0">
+            <PlanPanel conversation={conversation} />
           </div>
         )}
         {tab === "preview" && (

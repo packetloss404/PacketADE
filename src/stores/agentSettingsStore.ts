@@ -7,7 +7,6 @@ export const DEFAULT_AGENT_AUTO_ARCHIVE_DAYS = 14;
 
 interface AgentSettingsValues {
   composerMode: AgentComposerMode;
-  compactRailMode: boolean;
   railCollapsed: boolean;
   onboardingDismissed: boolean;
   autoArchiveDays: number | null;
@@ -16,7 +15,6 @@ interface AgentSettingsValues {
 
 interface AgentSettingsState extends AgentSettingsValues {
   setComposerMode: (mode: AgentComposerMode) => void;
-  setCompactRailMode: (enabled: boolean) => void;
   setRailCollapsed: (collapsed: boolean) => void;
   setOnboardingDismissed: (dismissed: boolean) => void;
   dismissOnboarding: () => void;
@@ -30,7 +28,6 @@ type PersistedAgentSettings = Partial<AgentSettingsValues>;
 
 const STORAGE_KEY = storageKey("agent-settings");
 const LEGACY_COMPOSER_MODE_KEY = storageKey("composer-mode");
-const LEGACY_COMPACT_RAIL_KEY = storageKey("agent-tabbed-rail-mode");
 const LEGACY_RAIL_COLLAPSED_KEY = storageKey("agent-tabbed-rail-collapsed");
 const LEGACY_ONBOARDING_DISMISSED_KEY = storageKey("agents-onboarding-dismissed");
 
@@ -83,8 +80,6 @@ function loadSettings(): AgentSettingsValues {
     composerMode: isComposerMode(persisted.composerMode)
       ? persisted.composerMode
       : readLegacyComposerMode(),
-    compactRailMode:
-      persisted.compactRailMode ?? readLegacyFlag(LEGACY_COMPACT_RAIL_KEY, false),
     railCollapsed:
       persisted.railCollapsed ?? readLegacyFlag(LEGACY_RAIL_COLLAPSED_KEY, false),
     onboardingDismissed:
@@ -100,10 +95,6 @@ function saveSettings(settings: AgentSettingsValues): void {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     localStorage.setItem(LEGACY_COMPOSER_MODE_KEY, settings.composerMode);
-    localStorage.setItem(
-      LEGACY_COMPACT_RAIL_KEY,
-      settings.compactRailMode ? "1" : "0",
-    );
     localStorage.setItem(
       LEGACY_RAIL_COLLAPSED_KEY,
       settings.railCollapsed ? "1" : "0",
@@ -125,7 +116,6 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => {
     set(partial);
     saveSettings({
       composerMode: next.composerMode,
-      compactRailMode: next.compactRailMode,
       railCollapsed: next.railCollapsed,
       onboardingDismissed: next.onboardingDismissed,
       autoArchiveDays: next.autoArchiveDays,
@@ -137,7 +127,6 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => {
     ...initialSettings,
 
     setComposerMode: (composerMode) => update({ composerMode }),
-    setCompactRailMode: (compactRailMode) => update({ compactRailMode }),
     setRailCollapsed: (railCollapsed) => update({ railCollapsed }),
     setOnboardingDismissed: (onboardingDismissed) =>
       update({ onboardingDismissed }),
