@@ -1,17 +1,10 @@
 import { useMemo, useState } from "react";
-import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  Loader2,
-  RotateCw,
-  Terminal,
-  XCircle,
-} from "lucide-react";
+import { CheckCircle2, Copy, RotateCw, Terminal } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { BaseToolCard } from "./tool-cards/BaseToolCard";
+import { StatusPill } from "./tool-cards/StatusPill";
 
 interface BashInput {
   command: string;
@@ -37,40 +30,6 @@ function parseBashInput(raw: string | undefined): BashInput {
   }
 }
 
-function ExitCodePill({
-  status,
-  exitCode,
-}: {
-  status: AgentToolCall["status"];
-  exitCode?: number;
-}) {
-  if (status === "running") {
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full bg-bg-primary text-text-muted text-[10px] font-mono">
-        <Loader2 size={10} className="animate-spin" />
-        running
-      </span>
-    );
-  }
-  // F5: prefer the real exit code from `tool_output_extended` over the
-  // status-derived best guess. Status only tells us "errored or didn't" —
-  // a real `exit 137` is meaningfully different from `exit 1`.
-  const code = exitCode ?? (status === "error" ? 1 : 0);
-  const ok = code === 0;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full text-[10px] font-mono ${
-        ok
-          ? "bg-accent-green/10 text-accent-green"
-          : "bg-accent-red/10 text-accent-red"
-      }`}
-    >
-      {ok ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
-      exit {code}
-    </span>
-  );
-}
-
 export function BashToolCallCard({
   toolCall,
   conversationId,
@@ -86,7 +45,7 @@ export function BashToolCallCard({
 
   const body = toolCall.fullContent ?? toolCall.summary ?? "";
   const hasBody = body.trim().length > 0;
-  const showBody = verbosity !== "summary" && expanded && hasBody;
+  const canToggle = verbosity !== "summary" && hasBody;
 
   const handleCopy = async () => {
     if (!command) return;
@@ -106,71 +65,78 @@ export function BashToolCallCard({
       .sendMessage(conversationId, `Re-run \`${command}\``);
   };
 
-  const canToggle = verbosity !== "summary" && hasBody;
+  // F5: prefer the real exit code from `tool_output_extended` over the
+  // status-derived best guess. Status only tells us "errored or didn't" —
+  // a real `exit 137` is meaningfully different from `exit 1`.
+  const pillStatus = toolCall.status;
+  const pill =
+    pillStatus === "running" ? (
+      <StatusPill status="running" />
+    ) : (
+      <StatusPill
+        status={pillStatus}
+        variant="exit-code"
+        exitCode={
+          toolCall.exitCode ?? (pillStatus === "error" ? 1 : 0)
+        }
+      />
+    );
+
+  const headerActions = (
+    <>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border/50"
+        title={copied ? "Copied!" : "Copy command"}
+        aria-label="Copy command"
+      >
+        {copied ? (
+          <CheckCircle2 size={11} className="text-accent-green" />
+        ) : (
+          <Copy size={11} />
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={handleRerun}
+        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border/50"
+        title="Re-run command"
+        aria-label="Re-run command"
+      >
+        <RotateCw size={11} />
+      </button>
+    </>
+  );
+
+  const subHeader =
+    verbosity === "verbose" && cwd ? (
+      <div className="px-2 pb-1 font-mono text-[10px] text-text-muted/80 truncate">
+        cwd: {cwd}
+      </div>
+    ) : undefined;
 
   return (
-    <div className="bg-bg-hover rounded text-[10px] text-text-muted border border-bg-border/50">
-      <div className="flex items-center gap-1.5 px-2 py-1">
-        {canToggle ? (
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="text-text-muted hover:text-text-primary transition-colors"
-            aria-label={expanded ? "Collapse output" : "Expand output"}
-          >
-            {expanded ? (
-              <ChevronDown size={10} />
-            ) : (
-              <ChevronRight size={10} />
-            )}
-          </button>
-        ) : (
-          <span className="w-[10px]" />
-        )}
-        <Terminal size={11} className="text-text-muted shrink-0" />
-        <span
-          className="font-mono text-text-primary truncate flex-1 min-w-0"
-          title={command}
-        >
-          {command || "(no command)"}
-        </span>
-        <ExitCodePill status={toolCall.status} exitCode={toolCall.exitCode} />
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border/50"
-          title={copied ? "Copied!" : "Copy command"}
-          aria-label="Copy command"
-        >
-          {copied ? (
-            <CheckCircle2 size={11} className="text-accent-green" />
-          ) : (
-            <Copy size={11} />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={handleRerun}
-          className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border/50"
-          title="Re-run command"
-          aria-label="Re-run command"
-        >
-          <RotateCw size={11} />
-        </button>
-      </div>
-      {verbosity === "verbose" && cwd && (
-        <div className="px-2 pb-1 font-mono text-[10px] text-text-muted/80 truncate">
-          cwd: {cwd}
-        </div>
-      )}
-      {showBody && (
-        <pre
-          className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto"
-          style={{ maxHeight: 320 }}
-        >
-          {body}
-        </pre>
-      )}
-    </div>
+    <BaseToolCard
+      icon={<Terminal size={11} className="text-text-muted shrink-0" />}
+      title={
+        <span className="font-mono">{command || "(no command)"}</span>
+      }
+      titleAttr={command}
+      statusPill={pill}
+      headerActions={headerActions}
+      subHeader={subHeader}
+      canToggle={canToggle}
+      expanded={expanded}
+      onToggle={() => setExpanded((v) => !v)}
+      toggleLabel={{
+        expanded: "Collapse output",
+        collapsed: "Expand output",
+      }}
+    >
+      <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
+        {body}
+      </pre>
+    </BaseToolCard>
   );
 }
