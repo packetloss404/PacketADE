@@ -3,7 +3,6 @@ import { TitleBar } from "@/components/layout/TitleBar";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { LeftRail } from "@/components/layout/LeftRail";
 import { StatusStrip } from "@/components/layout/StatusStrip";
-import { MosaicContainer } from "@/components/layout/MosaicContainer";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { DiffPane } from "@/components/agents/DiffPane";
@@ -50,8 +49,6 @@ function ViewLoader() {
 }
 
 export default function App() {
-  const addPane = useLayoutStore((s) => s.addPane);
-  const panes = useLayoutStore((s) => s.panes);
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const theme = useAppStore((s) => s.theme);
@@ -80,11 +77,6 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
-
-  // Persist pane count to localStorage
-  useEffect(() => {
-    localStorage.setItem("packetade:pane-count", String(panes.length));
-  }, [panes.length]);
 
   // Persist project path to localStorage and record in history
   const projectPath = useLayoutStore((s) => s.projectPath);
@@ -143,13 +135,6 @@ export default function App() {
           return;
         }
       }
-      // Ctrl+\ to split pane
-      if (e.ctrlKey && e.key === "\\") {
-        e.preventDefault();
-        const view = useAppStore.getState().activeView;
-        const cli = view === "codex" ? "codex" : "claude";
-        addPane({ cliCommand: cli });
-      }
       // Ctrl+1/2/3/4 to switch panes (uses mosaic leaf order for spatial consistency)
       if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "4") {
         e.preventDefault();
@@ -196,8 +181,8 @@ export default function App() {
           return;
         }
         const viewMap: Record<string, AppView> = {
-          "!": "claude",    // Shift+1
-          "@": "codex",     // Shift+2
+          "!": "agents",    // Shift+1 — was "claude", remapped after CoreView retirement
+          "@": "missions",  // Shift+2 — was "codex"
           "#": "issues",    // Shift+3
           "$": "history",   // Shift+4
           "%": "tools",     // Shift+5
@@ -208,7 +193,7 @@ export default function App() {
         }
       }
     },
-    [addPane, setActiveView]
+    [setActiveView]
   );
 
   useEffect(() => {
@@ -235,25 +220,18 @@ export default function App() {
   }, []);
 
   // Global listeners for agent-login requests dispatched from the Agents pane.
-  // Parallel slice B dispatches `packetade:open-claude-login` / `packetade:open-codex-login`
-  // from AgentInputArea when the user clicks "Log in" on an auth-required agent row.
-  // The login PTY is one-shot and rendered into a floating modal via
-  // `useTransientPty` — no legacy mosaic pane is created.
+  // AgentInputArea dispatches `packetade:open-claude-login` /
+  // `packetade:open-codex-login` when the user clicks "Log in" on an
+  // auth-required agent row. The login PTY is one-shot and rendered into
+  // a floating modal via `useTransientPty` — no legacy mosaic pane is
+  // created.
   const [loginCli, setLoginCli] = useState<"claude" | "codex" | null>(null);
   const [loginProjectPath, setLoginProjectPath] = useState<string | undefined>(undefined);
   useEffect(() => {
     const openLogin = (cli: "claude" | "codex") => {
       const layoutStore = useLayoutStore.getState();
-      const appStore = useAppStore.getState();
       setLoginProjectPath(layoutStore.projectPath || undefined);
       setLoginCli(cli);
-      // Legacy: keep switching to the matching CoreView for now. The
-      // `"claude"`/`"codex"` entries get removed in a later cleanup pass once
-      // Track B (orchestration migration) lands.
-      const targetView: AppView = cli === "codex" ? "codex" : "claude";
-      if (appStore.activeView !== targetView) {
-        appStore.setActiveView(targetView);
-      }
     };
     const handleClaudeLogin = () => openLogin("claude");
     const handleCodexLogin = () => openLogin("codex");
@@ -265,7 +243,6 @@ export default function App() {
     };
   }, []);
 
-  const isSessionsView = activeView === "claude" || activeView === "codex" || activeView === "gemini" || activeView === "opencode";
   const showWorkspaceSidebar = activeView === "workspace";
 
   return (
@@ -285,13 +262,6 @@ export default function App() {
                   <WelcomeScreen />
                 </div>
               )}
-              {/* Mosaic tiling container for CLI sessions */}
-              <div
-                className="flex flex-col flex-1 overflow-hidden"
-                style={{ display: isSessionsView ? "flex" : "none" }}
-              >
-                <MosaicContainer />
-              </div>
               {/* Workspace view — always mounted so PTY sessions stay
                   alive when the user navigates to other tabs. */}
               <div
