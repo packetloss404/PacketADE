@@ -1475,6 +1475,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           return next;
         }),
       }));
+      // Snapshot only restores messages; substores hold post-snapshot
+      // pending permissions / plan / thinking that would otherwise stick.
+      useAgentApprovalStore.getState().clearConversation(id);
+      useAgentPlanStore.getState().clearConversation(id);
+      useAgentStreamingStore.getState().clearConversation(id);
       if (updated) scheduleSave(updated);
     } catch (e) {
       console.warn("Failed to restore checkpoint:", e);
