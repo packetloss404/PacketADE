@@ -1,8 +1,8 @@
 import { Ban } from "lucide-react";
-import type { AgentConversation } from "@/types/agent-conversation";
 
 interface CancelPendingButtonProps {
-  conversation: AgentConversation;
+  /** Total pending tool prompts (edits + permissions). */
+  pendingCount: number;
   onCancel: () => void;
 }
 
@@ -11,12 +11,9 @@ interface CancelPendingButtonProps {
  * Distinct from Stop, which kills the whole turn.
  */
 export function CancelPendingButton({
-  conversation,
+  pendingCount,
   onCancel,
 }: CancelPendingButtonProps) {
-  const pendingCount =
-    (conversation.pendingEdits?.length ?? 0) +
-    (conversation.pendingPermissions?.length ?? 0);
   if (pendingCount === 0) return null;
   return (
     <button

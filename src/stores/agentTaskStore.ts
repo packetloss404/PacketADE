@@ -8,7 +8,6 @@ import {
   startApiAgentSession,
   sendApiAgentMessage,
   cancelApiAgentSession,
-  cancelPendingTools as tauriCancelPendingTools,
   closeApiAgentSession,
   saveConversation,
   loadConversations,
@@ -16,9 +15,7 @@ import {
   changeAgentModel,
   setPlanMode as tauriSetPlanMode,
   setPermissionMode as tauriSetPermissionMode,
-  respondPermission as tauriRespondPermission,
   setApproveWrites as tauriSetApproveWrites,
-  respondEdit as tauriRespondEdit,
   retryLastTurn as tauriRetryLastTurn,
   saveCheckpoint as tauriSaveCheckpoint,
   listCheckpoints as tauriListCheckpoints,
@@ -77,8 +74,9 @@ import {
   useAgentSettingsStore,
 } from "@/stores/agentSettingsStore";
 import { useAgentStore } from "@/stores/agentStore";
-import { useFlightStore } from "@/stores/flightStore";
-import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
+import { useAgentPlanStore } from "@/stores/agentPlanStore";
+import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
 import { notifyConversationDone } from "@/lib/notifications";
@@ -94,6 +92,22 @@ import type {
   PendingEdit,
 } from "@/types/agent-conversation";
 
+/** Build a serializable snapshot of a conversation for `saveConversation`.
+ * Pulls plan/spec state out of `agentPlanStore` so the persisted record
+ * keeps its on-disk shape even though those fields no longer live on the
+ * in-memory conversation object. Ephemeral substores (approval,
+ * streaming) are intentionally omitted — they reset on hydration. */
+function snapshotForPersist(conv: AgentConversation): AgentConversation {
+  const plans = useAgentPlanStore.getState();
+  return {
+    ...conv,
+    spec: plans.getSpec(conv.id),
+    specStage: plans.getSpecStage(conv.id),
+    plan: plans.getPlan(conv.id),
+    planApproved: plans.getPlanApproved(conv.id) || undefined,
+  };
+}
+
 /** Debounced save: per-conversation timers so rapid streaming events coalesce. */
 const SAVE_DEBOUNCE_MS = 500;
 const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -104,65 +118,20 @@ function scheduleSave(conv: AgentConversation): void {
   if (existing) clearTimeout(existing);
   const handle = setTimeout(() => {
     saveTimers.delete(conv.id);
-    saveConversation(conv.id, JSON.stringify(conv)).catch((e) => {
+    saveConversation(conv.id, JSON.stringify(snapshotForPersist(conv))).catch((e) => {
       console.warn("Failed to save conversation:", conv.id, e);
     });
   }, SAVE_DEBOUNCE_MS);
   saveTimers.set(conv.id, handle);
 }
 
-/**
- * Resolve an api-agent conversation id to the orchestrator Task it backs,
- * if any. For API conversations the conversation id IS the session id
- * (see `createApiConversation` — `sessionId: id`), so the reverse-lookup
- * is a straight `Task.sessionId === conversationId` match against the
- * flight store. Returns null for free-standing chats not bound to a task.
- */
-function findTaskForConversation(conversationId: string): { taskId: string } | null {
-  const hit = useFlightStore.getState().findTaskBySessionId(conversationId);
-  return hit ? { taskId: hit.task.id } : null;
-}
-
-/**
- * Fire the orchestrator's `onTaskApprovalNeeded` for the task bound to
- * this conversation, if one exists. Idempotent — the orchestrator's
- * `notify_approval_needed` Rust command is a state flip (`approval_needed`),
- * so re-firing on a task that's already in that state is a no-op.
- * Used by the permission-request handler so the Toolbar Bell / ReviewQueueView
- * pick up approval prompts from API agents (sidecar + in-process LlmProvider),
- * not just PTY-orchestrated CLI agents.
- */
-function fireTaskApprovalNeeded(conversationId: string): void {
-  const hit = findTaskForConversation(conversationId);
-  if (!hit) return; // free-standing chat — inline pendingPermissions still works
-  void useOrchestrationStore
-    .getState()
-    .onTaskApprovalNeeded(hit.taskId)
-    .catch((e) => console.warn("fireTaskApprovalNeeded failed:", e));
-}
-
-/**
- * Resolve a previously-fired task approval when the conversation's
- * pendingPermissions queue drains for ANY reason (user accepts/denies,
- * cancelPendingTools, conversation reset/fork, conversation deleted, etc.).
- * Only fires when there are no remaining pending permissions AND no
- * pending edits on the conversation — otherwise the task should stay in
- * `approval_needed` while other prompts are still parked.
- *
- * Callers pass the POST-mutation conversation snapshot.
- */
-function maybeResolveTaskApproval(conv: AgentConversation | undefined): void {
-  if (!conv) return;
-  const stillPending =
-    (conv.pendingPermissions && conv.pendingPermissions.length > 0) ||
-    (conv.pendingEdits && conv.pendingEdits.length > 0);
-  if (stillPending) return;
-  const hit = findTaskForConversation(conv.id);
-  if (!hit) return;
-  void useOrchestrationStore
-    .getState()
-    .onTaskApprovalResolved(hit.taskId)
-    .catch((e) => console.warn("maybeResolveTaskApproval failed:", e));
+/** Request a save for a conversation by id. Plan-store mutations call
+ * this so plan/spec edits debounce-persist through the same path as
+ * conversation mutations, without plan-store needing to import the full
+ * agentTaskStore module at load time. */
+export function requestConversationSave(conversationId: string): void {
+  const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === conversationId);
+  if (conv) scheduleSave(conv);
 }
 
 export type BuiltinCliAgent = "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
@@ -458,27 +427,13 @@ interface AgentTaskStore {
   setPlanMode: (id: string, enabled: boolean) => Promise<void>;
   setPermissionMode: (id: string, mode: PermissionMode) => Promise<void>;
   setApproveWrites: (id: string, enabled: boolean) => Promise<void>;
-  respondPermission: (
-    id: string,
-    toolId: string,
-    decision: "allow_once" | "allow_always" | "deny",
-  ) => Promise<void>;
-  respondEdit: (
-    id: string,
-    toolId: string,
-    decision: "apply" | "reject",
-    mergedContent?: string,
-  ) => Promise<void>;
-  /** F8: drain every parked permission/edit prompt as denied without
-   * killing the session. Optimistically clears the local pendingPermissions
-   * and pendingEdits arrays — there is no echo event from the backend. */
-  cancelPendingTools: (id: string) => Promise<void>;
   /** B3: append a derived allowlist pattern to the conversation's
    * `allowedTools` (deduped). Read by the next turn's startApiAgentSession
-   * via the resume path — no immediate backend call needed. The smart-
-   * approval row in PermissionPrompt calls this AFTER respondPermission
-   * resolves the in-flight prompt so subsequent same-pattern tool calls
-   * skip the prompt entirely. */
+   * via the resume path — no immediate backend call needed. Stays in
+   * agentTaskStore because `allowedTools` is part of the persisted
+   * conversation config (not approval state); the approval store's smart-
+   * approval row delegates here AFTER respondPermission resolves so
+   * subsequent same-pattern tool calls skip the prompt entirely. */
   appendAllowedToolPattern: (id: string, pattern: string) => void;
   /** B8: tag a child conversation with its parent's id so the chat
    * header can show a "← back to plan" link. Idempotent — calling
@@ -493,15 +448,6 @@ interface AgentTaskStore {
    * (back-compat). [] = explicitly none. Applies on next session start —
    * the sidecar protocol has no mid-session MCP swap. */
   setEnabledMcpServerIds: (id: string, ids: string[] | null) => void;
-  /** F10: replace the conversation's spec criteria (draft state). */
-  setSpec: (id: string, criteria: string[]) => void;
-  /** F10: lock the spec and ask the agent for a Plan. Posts a synthetic
-   * user turn telling the model to produce a TodoWrite covering each
-   * criterion. */
-  approveSpec: (id: string) => void;
-  /** F10: approve the model's plan and start execution. Lifts plan mode
-   * and posts a "Plan approved — execute" user turn. */
-  approvePlan: (id: string) => void;
   retryLastTurn: (id: string, newModel?: string) => Promise<void>;
   /** M2.7 — Cursor-style "edit a prior user message and re-run from there."
    * Truncates the transcript to before the target user message, cancels any
@@ -685,6 +631,9 @@ async function installApiAgentListeners(
       }),
     }));
     if (updated) scheduleSave(updated);
+    // Turn done — reset transient streaming state. Reasoning text already
+    // landed on the assistant message; the live delta buffer is now stale.
+    useAgentStreamingStore.getState().clearThinking(id);
     if (nextQueued !== undefined) {
       const drained = nextQueued;
       setTimeout(() => {
@@ -763,22 +712,21 @@ async function installApiAgentListeners(
   });
 
   const thinkingUnlisten = await listen<{ text: string }>(apiAgentThinkingEvent(id), (event) => {
+    // Reasoning deltas accumulate in agentStreamingStore (ephemeral).
+    // We still mirror each delta onto the streaming assistant message's
+    // `thinking` field so the persisted transcript has the full chain of
+    // thought when the turn ends.
+    useAgentStreamingStore.getState().appendThinking(id, event.payload.text);
     let updated: AgentConversation | undefined;
     set((s) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
-        const nextStream = (c.thinkingStream ?? "") + event.payload.text;
         const messages = c.messages.map((m) =>
           m.isStreaming && m.role === "assistant"
             ? { ...m, thinking: (m.thinking ?? "") + event.payload.text }
             : m,
         );
-        const next = {
-          ...c,
-          messages,
-          thinkingStream: nextStream,
-          updatedAt: Date.now(),
-        };
+        const next = { ...c, messages, updatedAt: Date.now() };
         updated = next;
         return next;
       }),
@@ -787,76 +735,36 @@ async function installApiAgentListeners(
   });
 
   const thinkingStopUnlisten = await listen<unknown>(apiAgentThinkingStopEvent(id), () => {
-    set((s) => ({
-      conversations: s.conversations.map((c) => (c.id === id ? { ...c, thinkingStream: "" } : c)),
-    }));
+    useAgentStreamingStore.getState().clearThinking(id);
   });
 
   const permissionReqUnlisten = await listen<PendingPermission>(
     apiAgentPermissionRequestEvent(id),
     (event) => {
-      let updated: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const pending = [...(c.pendingPermissions ?? []), event.payload];
-          const next = { ...c, pendingPermissions: pending, updatedAt: Date.now() };
-          updated = next;
-          return next;
-        }),
-      }));
-      // Only persist + flip the task to approval_needed if the conversation
-      // actually exists. The `.map` above silently no-ops for missing
-      // conversations, so without this gate we'd flip a task whose
-      // conversation was deleted while the permission was in flight.
-      if (updated) {
-        scheduleSave(updated);
-        // Wire to Review queue: if this conversation backs an orchestrator
-        // Task, flip the task to `approval_needed` so the Toolbar Bell badge
-        // and ReviewQueueView pick it up. No-op for free-standing chats.
-        fireTaskApprovalNeeded(id);
-      }
+      // Gate on conversation existence: if the conversation was deleted
+      // mid-flight, dropping the prompt and skipping the task wake-up is
+      // the right behavior. agentApprovalStore.addPendingPermission also
+      // fires the orchestrator `approval_needed` flip internally.
+      const exists = get().conversations.some((c) => c.id === id);
+      if (!exists) return;
+      useAgentApprovalStore.getState().addPendingPermission(id, event.payload);
     },
   );
 
   const pendingEditUnlisten = await listen<PendingEdit>(apiAgentPendingEditEvent(id), (event) => {
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const pending = [...(c.pendingEdits ?? []), event.payload];
-        const next = { ...c, pendingEdits: pending, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    // P0-1: mirror the permission-request handler. API agents that fire only
-    // `pending-edit` (no permission-request) need to wake the Bell badge /
-    // ReviewQueueView too. And if both queues are non-empty mid-stream,
-    // approving the permission alone wouldn't drain — maybeResolveTaskApproval
-    // requires BOTH queues empty, so the task would otherwise stay stuck.
-    // fireTaskApprovalNeeded is idempotent (orchestration's state flip is a
-    // no-op on existing approval_needed), so the dual call site is safe.
-    // Same conversation-existence gate as the permission-request handler.
-    if (updated) {
-      scheduleSave(updated);
-      fireTaskApprovalNeeded(id);
-    }
+    const exists = get().conversations.some((c) => c.id === id);
+    if (!exists) return;
+    useAgentApprovalStore.getState().addPendingEdit(id, event.payload);
   });
 
   const planBlockUnlisten = await listen<{ items: AgentPlanItem[] }>(
     apiAgentPlanBlockEvent(id),
     (event) => {
-      let updated: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const next = { ...c, plan: event.payload.items, updatedAt: Date.now() };
-          updated = next;
-          return next;
-        }),
-      }));
-      if (updated) scheduleSave(updated);
+      useAgentPlanStore.getState().setPlan(id, event.payload.items);
+      // The plan reduction is part of the persisted conversation snapshot,
+      // so a save still has to schedule for that. snapshotForPersist reads
+      // the plan back out of agentPlanStore.
+      requestConversationSave(id);
     },
   );
 
@@ -878,24 +786,22 @@ async function installApiAgentListeners(
     address?: string | null;
   }>(apiAgentTurnSummaryEvent(id), (event) => {
     const address = event.payload.address ?? "";
+    if (address.length > 0) {
+      // Sub-agent: replace the bucket in agentStreamingStore (Codex emits
+      // cumulative totals). conversationCost.ts reads from the store.
+      useAgentStreamingStore.getState().setSubAgentBucket(id, address, {
+        inputTokens: event.payload.input_tokens,
+        outputTokens: event.payload.output_tokens,
+        reasoningTokens: event.payload.reasoning_tokens ?? 0,
+        cacheReadTokens: event.payload.cache_read_input_tokens,
+      });
+      return;
+    }
+    // Root thread: mutate the streaming message as before.
     let updated: AgentConversation | undefined;
     set((s) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
-        if (address.length > 0) {
-          // Sub-agent: replace the bucket (Codex emits cumulative totals).
-          const buckets = { ...(c.subAgentTokens ?? {}) };
-          buckets[address] = {
-            inputTokens: event.payload.input_tokens,
-            outputTokens: event.payload.output_tokens,
-            reasoningTokens: event.payload.reasoning_tokens ?? 0,
-            cacheReadTokens: event.payload.cache_read_input_tokens,
-          };
-          const next = { ...c, subAgentTokens: buckets, updatedAt: Date.now() };
-          updated = next;
-          return next;
-        }
-        // Root thread: mutate the streaming message as before.
         const messages = c.messages.map((m) =>
           m.isStreaming && m.role === "assistant"
             ? {
@@ -1265,10 +1171,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       planMode: planMode ?? false,
       permissionMode: "auto",
       approveWrites: false,
-      pendingPermissions: [],
-      pendingEdits: [],
       thinkingEnabled: thinkingEnabled ?? false,
-      thinkingStream: "",
       sshTarget: sshTarget
         ? {
             // Phase 2: `id` carries the ServerConfig id from serverStore.
@@ -1543,26 +1446,12 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         void killPty(conv.sessionId).catch(() => {});
       }
     }
-    // If this conversation had parked permissions/edits AND was linked to
-    // an orchestrator task, deletion drains the queue — clear the task's
-    // `approval_needed` state so the Review queue doesn't get stuck on
+    // GC the substores. Approval-store `clearConversation` also routes
+    // through maybeResolveTaskApproval so the Review queue isn't stuck on
     // a conversation that no longer exists.
-    if (conv && conv.mode === "api") {
-      const hadParked =
-        (conv.pendingPermissions && conv.pendingPermissions.length > 0) ||
-        (conv.pendingEdits && conv.pendingEdits.length > 0);
-      if (hadParked) {
-        const hit = findTaskForConversation(id);
-        if (hit) {
-          void useOrchestrationStore
-            .getState()
-            .onTaskApprovalResolved(hit.taskId)
-            .catch((e) =>
-              console.warn("deleteConversation: onTaskApprovalResolved failed:", e),
-            );
-        }
-      }
-    }
+    useAgentApprovalStore.getState().clearConversation(id);
+    useAgentPlanStore.getState().clearConversation(id);
+    useAgentStreamingStore.getState().clearConversation(id);
     // Best-effort remove persisted file (API mode only)
     if (conv?.mode === "api") {
       deleteConversationFile(id).catch((e) =>
@@ -1704,25 +1593,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     if (updated) scheduleSave(updated);
   },
 
-  respondPermission: async (id, toolId, decision) => {
-    await tauriRespondPermission(id, toolId, decision);
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const pending = (c.pendingPermissions ?? []).filter((p) => p.id !== toolId);
-        const next = { ...c, pendingPermissions: pending, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-    // Resolve the linked task approval iff the conversation has no more
-    // parked prompts (permissions or edits). Idempotent — `onTaskApprovalResolved`
-    // is a state flip back to `running`.
-    maybeResolveTaskApproval(updated);
-  },
-
   setEnabledMcpServerIds: (id, ids) => {
     let updated: AgentConversation | undefined;
     set((s) => ({
@@ -1738,80 +1608,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       }),
     }));
     if (updated) scheduleSave(updated);
-  },
-
-  setSpec: (id, criteria) => {
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const next: AgentConversation = {
-          ...c,
-          spec: { criteria, status: "draft", updatedAt: Date.now() },
-          specStage: c.specStage ?? "spec",
-          updatedAt: Date.now(),
-        };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-  },
-
-  approveSpec: (id) => {
-    const conv = get().conversations.find((c) => c.id === id);
-    if (!conv || !conv.spec || conv.spec.criteria.length === 0) return;
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const next: AgentConversation = {
-          ...c,
-          spec: { ...c.spec!, status: "approved", updatedAt: Date.now() },
-          specStage: "plan",
-          updatedAt: Date.now(),
-        };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-    // Synthesize a user turn requesting the structured plan.
-    const bullets = conv.spec.criteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
-    const prompt =
-      `Spec approved. Success criteria:\n${bullets}\n\n` +
-      `Now produce a Plan via TodoWrite covering each criterion. ` +
-      `Stop after the plan — wait for user approval before executing.`;
-    get().sendMessage(id, prompt);
-  },
-
-  approvePlan: (id) => {
-    const conv = get().conversations.find((c) => c.id === id);
-    if (!conv) return;
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const next: AgentConversation = {
-          ...c,
-          planApproved: true,
-          specStage: "code",
-          updatedAt: Date.now(),
-        };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-    // Lift plan mode if it was on (the launcher's Plan mode set it on
-    // start) and tell the model to execute.
-    if (conv.planMode) {
-      void get().setPlanMode(id, false);
-    }
-    get().sendMessage(
-      id,
-      "Plan approved. Execute step-by-step, marking TodoWrite items as you complete them.",
-    );
   },
 
   setParentConversation: (childId, parentId) => {
@@ -1910,49 +1706,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     if (updated) scheduleSave(updated);
   },
 
-  cancelPendingTools: async (id) => {
-    // Optimistic UI clear — backend has no echo event.
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const next: AgentConversation = {
-          ...c,
-          pendingPermissions: [],
-          pendingEdits: [],
-          updatedAt: Date.now(),
-        };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-    // All parked prompts drained — flip any linked task back out of
-    // `approval_needed` so the Review queue stays accurate.
-    maybeResolveTaskApproval(updated);
-    try {
-      await tauriCancelPendingTools(id);
-    } catch (e) {
-      console.warn("cancelPendingTools failed:", e);
-    }
-  },
-
-  respondEdit: async (id, toolId, decision, mergedContent) => {
-    await tauriRespondEdit(id, toolId, decision, mergedContent);
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const pending = (c.pendingEdits ?? []).filter((p) => p.id !== toolId);
-        const next = { ...c, pendingEdits: pending, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-    maybeResolveTaskApproval(updated);
-  },
-
   forkAndResend: async (id, messageId, newContent) => {
     const text = newContent.trim();
     if (!text) return;
@@ -1997,9 +1750,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           sessionId: null,
           resumeToken: undefined,
           status: "idle",
-          thinkingStream: "",
-          pendingEdits: undefined,
-          pendingPermissions: undefined,
           updatedAt: Date.now(),
         };
         updated = next;
@@ -2007,9 +1757,12 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       }),
     }));
     if (updated) scheduleSave(updated);
-    // Fork wipes parked prompts — release any linked task approval so the
-    // Review queue isn't stuck on a turn we just truncated away from.
-    maybeResolveTaskApproval(updated);
+    // Fork wipes parked prompts and transient stream state — also wipes any
+    // linked task approval since the Review queue would otherwise hang on a
+    // turn we just truncated away from. clearConversation on the approval
+    // store handles maybeResolveTaskApproval internally.
+    useAgentApprovalStore.getState().clearConversation(id);
+    useAgentStreamingStore.getState().clearThinking(id);
 
     // Send the edited content as the next user turn — sendMessage handles
     // session re-establishment for api-mode conversations that lost their
@@ -2044,13 +1797,14 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           messages: msgs,
           status: "active" as const,
           model: newModel ?? c.model,
-          thinkingStream: "",
           updatedAt: Date.now(),
         };
         updated = next;
         return next;
       }),
     }));
+    // Reset transient streaming state — a retry restarts the turn.
+    useAgentStreamingStore.getState().clearThinking(id);
     await tauriRetryLastTurn(id, newModel);
     if (updated) scheduleSave(updated);
   },
@@ -2302,9 +2056,22 @@ loadConversations()
         conv.status = "idle";
         conv.messages = (conv.messages ?? []).map((m) => ({ ...m, isStreaming: false }));
         conv.queuedMessages = [];
-        conv.pendingPermissions = [];
-        conv.pendingEdits = [];
-        conv.thinkingStream = "";
+        // Push persisted plan/spec state into the plan substore — it is the
+        // runtime source of truth. The conversation's own copies are kept
+        // for back-compat with code that hasn't migrated yet but the live
+        // UI reads from the store.
+        useAgentPlanStore.getState().hydrateConversation(conv.id, {
+          spec: conv.spec,
+          specStage: conv.specStage,
+          plan: conv.plan,
+          planApproved: conv.planApproved,
+        });
+        // Drop ephemeral fields so the in-memory record matches the new
+        // substore-driven shape. These were already cleared pre-split.
+        delete conv.pendingPermissions;
+        delete conv.pendingEdits;
+        delete conv.thinkingStream;
+        delete conv.subAgentTokens;
         parsed.push(conv);
       } catch (e) {
         console.warn("Skipping malformed conversation:", e);
