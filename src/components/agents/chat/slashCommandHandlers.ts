@@ -1,6 +1,7 @@
 import { generateId } from "@/lib/storage";
 import { buildReviewPrompt } from "@/lib/conversationReview";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useGoalStore } from "@/stores/goalStore";
 import { useFlightStore } from "@/stores/flightStore";
 import type { AgentConversation, AgentMessage } from "@/types/agent-conversation";
@@ -155,9 +156,12 @@ export const slashCommandHandlers: Record<
       );
       return;
     }
+    const plans = useAgentPlanStore.getState();
+    const plan = plans.getPlan(conversationId);
+    const spec = plans.getSpec(conversationId);
     const title =
-      (conversation.plan && conversation.plan[0]?.content) ||
-      conversation.spec?.criteria[0] ||
+      (plan && plan[0]?.content) ||
+      spec?.criteria[0] ||
       conversation.title ||
       "Untitled goal";
     const linkedFlight = useFlightStore
@@ -167,7 +171,7 @@ export const slashCommandHandlers: Record<
       title,
       conversationId,
       missionId: linkedFlight?.id,
-      checklist: conversation.plan ?? [],
+      checklist: plan ?? [],
       status: "active",
     });
     appendMessage(
