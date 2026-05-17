@@ -50,47 +50,25 @@ export interface AgentSshConfigInput {
    *  host-key checking applies. */
   hostFingerprint?: string | null;
 }
-import {
-  ptyOutputEvent,
-  ptyExitEvent,
-  apiAgentChunkEvent,
-  apiAgentToolStartEvent,
-  apiAgentToolResultEvent,
-  apiAgentDoneEvent,
-  apiAgentErrorEvent,
-  apiAgentThinkingEvent,
-  apiAgentThinkingStopEvent,
-  apiAgentPermissionRequestEvent,
-  apiAgentPendingEditEvent,
-  apiAgentPlanBlockEvent,
-  apiAgentToolOutputExtendedEvent,
-  apiAgentTurnSummaryEvent,
-} from "@/lib/events";
+import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import { useMemoryStore } from "@/stores/memoryStore";
-import {
-  getAgentAutoArchiveIdleMs,
-  useAgentSettingsStore,
-} from "@/stores/agentSettingsStore";
+import { getAgentAutoArchiveIdleMs } from "@/stores/agentSettingsStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
-import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
-import { notifyConversationDone } from "@/lib/notifications";
 import type { GitHubRepo } from "@/types/github";
 import type {
   AgentConversation,
   AgentMessage,
-  AgentPlanItem,
   AgentToolCall,
   DiffComment,
   PermissionMode,
-  PendingPermission,
-  PendingEdit,
 } from "@/types/agent-conversation";
+import { installApiAgentListeners } from "@/stores/apiAgentListeners";
 
 /** Build a serializable snapshot of a conversation for `saveConversation`.
  * Pulls plan/spec state out of `agentPlanStore` so the persisted record
@@ -251,8 +229,11 @@ export type AgentInputMode = "build" | "plan";
 const apiConversationCleanup = new Map<string, () => void>();
 
 /** Per-conversation guard so auto-failover never loops. Cleared whenever
- * the user sends a fresh user turn; replenished on a successful turn. */
-const failoverGuard = new Set<string>();
+ * the user sends a fresh user turn; replenished on a successful turn.
+ * Exported so the listener module (apiAgentListeners.ts) can flip the
+ * guard inside the rate-limit error handler without re-importing the
+ * whole store surface. */
+export const failoverGuard = new Set<string>();
 
 const PROJECT_LABELS_STORAGE_KEY = storageKey("project-labels");
 const LEGACY_PROJECT_LABELS_STORAGE_KEY = `${LEGACY_STORAGE_PREFIX}project-labels`;
@@ -481,399 +462,17 @@ interface AgentTaskStore {
 }
 
 /**
- * Type alias for zustand's `set` so the listener installer can read the
- * same arg as the store actions. Avoids exporting the store internals
- * just to give the helper a type.
+ * Idempotency wrapper for the api-agent listener block. The handler logic
+ * lives in `./apiAgentListeners.ts`; this wrapper enforces
+ * "one listener set per conversation id" via the `apiConversationCleanup`
+ * map (the source of truth for which conversations have live listeners).
+ * Callers that need to detach early (delete / forkAndResend) read directly
+ * from `apiConversationCleanup`.
  */
-type StoreSet = typeof useAgentTaskStore.setState;
-
-/**
- * Install the full set of `api-agent:*` event listeners for a session and
- * register a cleanup fn in `apiConversationCleanup`. Idempotent — if a
- * cleanup is already registered, this is a no-op (returns immediately).
- *
- * Pulled out of the inline createApiConversation block (F1) so the resume
- * path can reuse the exact same wiring instead of forking it.
- */
-async function installApiAgentListeners(
-  id: string,
-  get: () => AgentTaskStore,
-  set: StoreSet,
-): Promise<void> {
+async function ensureApiAgentListeners(id: string): Promise<void> {
   if (apiConversationCleanup.has(id)) return;
-
-  const chunkUnlisten = await listen<string>(apiAgentChunkEvent(id), (event) => {
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) => {
-          if (m.isStreaming && m.role === "assistant") {
-            return { ...m, content: m.content + event.payload };
-          }
-          return m;
-        });
-        const next = { ...c, messages, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-  });
-
-  const toolStartUnlisten = await listen<{ id: string; name: string }>(
-    apiAgentToolStartEvent(id),
-    (event) => {
-      let updated: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const messages = c.messages.map((m) => {
-            if (m.isStreaming && m.role === "assistant") {
-              const toolCalls: AgentToolCall[] = [
-                ...(m.toolCalls ?? []),
-                {
-                  id: event.payload.id,
-                  name: event.payload.name,
-                  status: "running" as const,
-                },
-              ];
-              return { ...m, toolCalls };
-            }
-            return m;
-          });
-          const next = { ...c, messages, updatedAt: Date.now() };
-          updated = next;
-          return next;
-        }),
-      }));
-      if (updated) scheduleSave(updated);
-    },
-  );
-
-  const toolResultUnlisten = await listen<{
-    id: string;
-    name: string;
-    content: string;
-    is_error: boolean;
-    input: string;
-  }>(apiAgentToolResultEvent(id), (event) => {
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) => {
-          if (m.isStreaming && m.role === "assistant" && m.toolCalls) {
-            const toolCalls = m.toolCalls.map((tc) =>
-              tc.id === event.payload.id
-                ? {
-                    ...tc,
-                    status: (event.payload.is_error ? "error" : "done") as AgentToolCall["status"],
-                    summary: event.payload.content.slice(0, 200),
-                    fullContent: event.payload.content,
-                    input: event.payload.input,
-                  }
-                : tc,
-            );
-            return { ...m, toolCalls };
-          }
-          return m;
-        });
-        const next = { ...c, messages, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-  });
-
-  const doneUnlisten = await listen<{
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens: number;
-    cache_creation_input_tokens: number;
-    resume_token?: string | null;
-  }>(apiAgentDoneEvent(id), (event) => {
-    let updated: AgentConversation | undefined;
-    let nextQueued: string | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) =>
-          m.isStreaming
-            ? {
-                ...m,
-                isStreaming: false,
-                inputTokens: event.payload.input_tokens,
-                outputTokens: event.payload.output_tokens,
-                cacheReadTokens: event.payload.cache_read_input_tokens,
-                cacheWriteTokens: event.payload.cache_creation_input_tokens,
-              }
-            : m,
-        );
-        const queued = c.queuedMessages ?? [];
-        let remainingQueued = queued;
-        if (queued.length > 0) {
-          nextQueued = queued[0];
-          remainingQueued = queued.slice(1);
-        }
-        const newResume = event.payload.resume_token ?? c.resumeToken;
-        const next: AgentConversation = {
-          ...c,
-          messages,
-          status: "idle",
-          updatedAt: Date.now(),
-          queuedMessages: remainingQueued,
-          resumeToken: newResume ?? undefined,
-        };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-    // Turn done — reset transient streaming state. Reasoning text already
-    // landed on the assistant message; the live delta buffer is now stale.
-    useAgentStreamingStore.getState().clearThinking(id);
-    if (nextQueued !== undefined) {
-      const drained = nextQueued;
-      setTimeout(() => {
-        get().sendMessage(id, drained);
-      }, 0);
-    }
-    if (updated && get().selectedConversationId !== id) {
-      const finishedTitle = updated.title;
-      void notifyConversationDone(finishedTitle);
-    }
-  });
-
-  const errorUnlisten = await listen<{ message: string }>(apiAgentErrorEvent(id), (event) => {
-    const conv = get().conversations.find((c) => c.id === id);
-    if (
-      conv &&
-      conv.mode === "api" &&
-      conv.model &&
-      useAgentSettingsStore.getState().autoFailoverEnabled &&
-      !failoverGuard.has(id) &&
-      looksLikeRateLimit(event.payload.message)
-    ) {
-      const fallback = pickFailoverModel(conv.model);
-      if (fallback && fallback !== conv.model) {
-        failoverGuard.add(id);
-        const noticeMsg: AgentMessage = {
-          id: generateId("msg"),
-          role: "system",
-          content: `(auto-failover: ${conv.model} hit "${event.payload.message.slice(0, 80)}" — retrying on ${fallback})`,
-          timestamp: Date.now(),
-        };
-        set((s) => ({
-          conversations: s.conversations.map((c) =>
-            c.id === id
-              ? {
-                  ...c,
-                  messages: [...c.messages, noticeMsg],
-                  updatedAt: Date.now(),
-                }
-              : c,
-          ),
-        }));
-        void get().retryLastTurn(id, fallback);
-        return;
-      }
-    }
-
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) =>
-          m.isStreaming
-            ? {
-                ...m,
-                isStreaming: false,
-                content: m.content + `\n\nError: ${event.payload.message}`,
-              }
-            : m,
-        );
-        const next = {
-          ...c,
-          messages,
-          status: "failed" as const,
-          updatedAt: Date.now(),
-        };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-    if (updated) {
-      const failedTitle = `Failed: ${updated.title}`;
-      void notifyConversationDone(failedTitle);
-    }
-  });
-
-  const thinkingUnlisten = await listen<{ text: string }>(apiAgentThinkingEvent(id), (event) => {
-    // Reasoning deltas accumulate in agentStreamingStore (ephemeral).
-    // We still mirror each delta onto the streaming assistant message's
-    // `thinking` field so the persisted transcript has the full chain of
-    // thought when the turn ends.
-    useAgentStreamingStore.getState().appendThinking(id, event.payload.text);
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) =>
-          m.isStreaming && m.role === "assistant"
-            ? { ...m, thinking: (m.thinking ?? "") + event.payload.text }
-            : m,
-        );
-        const next = { ...c, messages, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-  });
-
-  const thinkingStopUnlisten = await listen<unknown>(apiAgentThinkingStopEvent(id), () => {
-    useAgentStreamingStore.getState().clearThinking(id);
-  });
-
-  const permissionReqUnlisten = await listen<PendingPermission>(
-    apiAgentPermissionRequestEvent(id),
-    (event) => {
-      // Gate on conversation existence: if the conversation was deleted
-      // mid-flight, dropping the prompt and skipping the task wake-up is
-      // the right behavior. agentApprovalStore.addPendingPermission also
-      // fires the orchestrator `approval_needed` flip internally.
-      const exists = get().conversations.some((c) => c.id === id);
-      if (!exists) return;
-      useAgentApprovalStore.getState().addPendingPermission(id, event.payload);
-    },
-  );
-
-  const pendingEditUnlisten = await listen<PendingEdit>(apiAgentPendingEditEvent(id), (event) => {
-    const exists = get().conversations.some((c) => c.id === id);
-    if (!exists) return;
-    useAgentApprovalStore.getState().addPendingEdit(id, event.payload);
-  });
-
-  const planBlockUnlisten = await listen<{ items: AgentPlanItem[] }>(
-    apiAgentPlanBlockEvent(id),
-    (event) => {
-      useAgentPlanStore.getState().setPlan(id, event.payload.items);
-      // The plan reduction is part of the persisted conversation snapshot,
-      // so a save still has to schedule for that. snapshotForPersist reads
-      // the plan back out of agentPlanStore.
-      requestConversationSave(id);
-    },
-  );
-
-  // F6: live token totals between turns. Update the streaming assistant
-  // message's tokens so SessionHealthBar / cost pills reflect mid-stream
-  // usage instead of waiting for the final `done` payload. A2: also
-  // forward `reasoning_tokens` (Codex 0.125+) so CostDashboard accounts
-  // for GPT-5.5's reasoning slice. A3: when `address` is set (Codex
-  // MultiAgentV2 sub-agent), accumulate into a per-address bucket on
-  // the conversation INSTEAD of mutating the streaming message — the
-  // root thread's tokens belong to the user-visible turn; sub-agent
-  // tokens are an additive cost we surface only via aggregateConversationCost.
-  const turnSummaryUnlisten = await listen<{
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens: number;
-    cache_creation_input_tokens: number;
-    reasoning_tokens?: number | null;
-    address?: string | null;
-  }>(apiAgentTurnSummaryEvent(id), (event) => {
-    const address = event.payload.address ?? "";
-    if (address.length > 0) {
-      // Sub-agent: replace the bucket in agentStreamingStore (Codex emits
-      // cumulative totals). conversationCost.ts reads from the store.
-      useAgentStreamingStore.getState().setSubAgentBucket(id, address, {
-        inputTokens: event.payload.input_tokens,
-        outputTokens: event.payload.output_tokens,
-        reasoningTokens: event.payload.reasoning_tokens ?? 0,
-        cacheReadTokens: event.payload.cache_read_input_tokens,
-      });
-      return;
-    }
-    // Root thread: mutate the streaming message as before.
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) =>
-          m.isStreaming && m.role === "assistant"
-            ? {
-                ...m,
-                inputTokens: event.payload.input_tokens,
-                outputTokens: event.payload.output_tokens,
-                cacheReadTokens: event.payload.cache_read_input_tokens,
-                cacheWriteTokens: event.payload.cache_creation_input_tokens,
-                reasoningTokens: event.payload.reasoning_tokens ?? m.reasoningTokens,
-              }
-            : m,
-        );
-        const next = { ...c, messages, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-  });
-
-  // F5: structured tool metadata — exit code / modified paths / stdout /
-  // stderr — arrives after the matching tool_result. Merge into the
-  // already-rendered tool call so the chat surface can show exit code etc.
-  const toolOutputExtendedUnlisten = await listen<{
-    id: string;
-    exit_code?: number | null;
-    modified_paths?: string[] | null;
-    stdout?: string | null;
-    stderr?: string | null;
-  }>(apiAgentToolOutputExtendedEvent(id), (event) => {
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) => {
-          if (!m.toolCalls) return m;
-          let touched = false;
-          const toolCalls = m.toolCalls.map((tc) => {
-            if (tc.id !== event.payload.id) return tc;
-            touched = true;
-            return {
-              ...tc,
-              exitCode: event.payload.exit_code ?? tc.exitCode,
-              modifiedPaths: event.payload.modified_paths ?? tc.modifiedPaths,
-              stdout: event.payload.stdout ?? tc.stdout,
-              stderr: event.payload.stderr ?? tc.stderr,
-            };
-          });
-          return touched ? { ...m, toolCalls } : m;
-        });
-        const next = { ...c, messages, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-  });
-
-  apiConversationCleanup.set(id, () => {
-    chunkUnlisten();
-    toolStartUnlisten();
-    toolResultUnlisten();
-    doneUnlisten();
-    errorUnlisten();
-    thinkingUnlisten();
-    thinkingStopUnlisten();
-    permissionReqUnlisten();
-    pendingEditUnlisten();
-    planBlockUnlisten();
-    toolOutputExtendedUnlisten();
-    turnSummaryUnlisten();
-  });
+  const cleanup = await installApiAgentListeners(id);
+  apiConversationCleanup.set(id, cleanup);
 }
 
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
@@ -1217,7 +816,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         ),
       }));
 
-      await installApiAgentListeners(id, get, set);
+      await ensureApiAgentListeners(id);
 
       // Start the API agent session unless the caller already did so.
       if (!skipBackendStart) {
@@ -1961,7 +1560,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     if (updated) scheduleSave(updated);
 
     try {
-      await installApiAgentListeners(conversationId, get, set);
+      await ensureApiAgentListeners(conversationId);
       const resumeMessages = buildConversationResumeMessages(conv.messages);
 
       // Phase 2: resolve the live ServerConfig from `serverStore` to pick
