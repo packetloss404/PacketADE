@@ -221,11 +221,47 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
     expect(useAgentTaskStore.getState().selectedConversationId).toBeNull();
   });
 
-  // The audit flagged queued-message drain as P1-hard-to-test: the path
-  // would need real timers + simulated Tauri event listeners firing
-  // post-delete in jsdom. Skipping with a placeholder so the gap is
-  // documented in the spec rather than just absent.
-  it.todo(
-    "queued message drain — orphan messages after delete should not send (needs real timers + Tauri event sim)",
-  );
+  // Audit race: api-agent:done listener drains a queued message via
+  // setTimeout(..., 0). If deleteConversation fires before the timer
+  // tick, sendMessage must no-op against the missing conv id. We can't
+  // synthesize the Tauri done event from the listener side here, but
+  // sendMessage IS the function the drain callback calls, so the safety
+  // net lives there — exercise it directly with fake timers to lock the
+  // behavior down.
+  it("sendMessage drained after deleteConversation is a no-op (no Tauri call for the missing conv)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+      const tauri = await import("@/lib/tauri");
+      const sendSpy = vi.mocked(tauri.sendApiAgentMessage);
+      sendSpy.mockClear();
+
+      const id = await useAgentTaskStore
+        .getState()
+        .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+
+      // Simulate the drain timer that api-agent:done would schedule:
+      // setTimeout(() => getState().sendMessage(id, queued), 0).
+      setTimeout(() => {
+        useAgentTaskStore.getState().sendMessage(id, "queued-drain-payload");
+      }, 0);
+
+      // Delete BEFORE the timer fires — same race the audit flagged.
+      useAgentTaskStore.getState().deleteConversation(id);
+      expect(
+        useAgentTaskStore.getState().conversations.find((c) => c.id === id),
+      ).toBeUndefined();
+
+      vi.runAllTimers();
+
+      // sendMessage's `if (!conv) return;` guard means no Tauri write
+      // happens for the orphaned drain — race is closed.
+      const callsForDeletedId = sendSpy.mock.calls.filter(
+        (call) => call[0] === id,
+      );
+      expect(callsForDeletedId).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

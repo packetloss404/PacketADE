@@ -228,14 +228,11 @@ describe("agentTaskStore.restoreCheckpoint — behavior lock-down", () => {
     warnSpy.mockRestore();
   });
 
-  // XXX: audit gap (agentTaskStore.ts ~line 1858-1883). restoreCheckpoint
-  // resets `messages` but does NOT call clearConversation on the plan /
-  // approval / streaming substores. A checkpoint restored mid-turn will
-  // therefore leave stale spec/plan/permission/thinking state stuck on
-  // the conversation. These tests pin the CURRENT (buggy) behavior so
-  // the eventual fix shows up as a deliberate test flip rather than a
-  // silent regression in some other path.
-  it("XXX leaves agentApprovalStore pending entries in place after restore (audit-flagged bug)", async () => {
+  // restoreCheckpoint must also wipe per-conversation substore state
+  // (pending permissions, plan/spec, thinking buffer) — a checkpoint
+  // captures only `messages`, so any post-snapshot pending state must
+  // be discarded to avoid stale UI sticking after the restore.
+  it("clears agentApprovalStore pending entries for the restored conversation", async () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     const { useAgentApprovalStore } = await import("@/stores/agentApprovalStore");
     const conv: AgentConversation = {
@@ -264,12 +261,11 @@ describe("agentTaskStore.restoreCheckpoint — behavior lock-down", () => {
       .getState()
       .restoreCheckpoint("conv-A", JSON.stringify({ messages: [] }));
 
-    // BUG: ideally these would be cleared. They aren't. Test pins current
-    // behavior; flip to .toBe(false) when the fix lands.
-    expect(useAgentApprovalStore.getState().permissions.has("conv-A")).toBe(true);
+    expect(useAgentApprovalStore.getState().permissions.has("conv-A")).toBe(false);
+    expect(useAgentApprovalStore.getState().edits.has("conv-A")).toBe(false);
   });
 
-  it("XXX leaves agentPlanStore entries in place after restore (audit-flagged bug)", async () => {
+  it("clears agentPlanStore spec / plan entries for the restored conversation", async () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     const { useAgentPlanStore } = await import("@/stores/agentPlanStore");
     const conv: AgentConversation = {
@@ -297,13 +293,11 @@ describe("agentTaskStore.restoreCheckpoint — behavior lock-down", () => {
       .getState()
       .restoreCheckpoint("conv-A", JSON.stringify({ messages: [] }));
 
-    // BUG: stale plan/spec persists across a checkpoint restore. Flip
-    // expectations once the substore-wipe lands inside restoreCheckpoint.
-    expect(useAgentPlanStore.getState().spec.has("conv-A")).toBe(true);
-    expect(useAgentPlanStore.getState().plan.has("conv-A")).toBe(true);
+    expect(useAgentPlanStore.getState().spec.has("conv-A")).toBe(false);
+    expect(useAgentPlanStore.getState().plan.has("conv-A")).toBe(false);
   });
 
-  it("XXX leaves agentStreamingStore entries in place after restore (audit-flagged bug)", async () => {
+  it("clears agentStreamingStore thinking buffer for the restored conversation", async () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     const { useAgentStreamingStore } = await import("@/stores/agentStreamingStore");
     const conv: AgentConversation = {
@@ -328,7 +322,6 @@ describe("agentTaskStore.restoreCheckpoint — behavior lock-down", () => {
       .getState()
       .restoreCheckpoint("conv-A", JSON.stringify({ messages: [] }));
 
-    // BUG: thinking buffer survives the restore. Should be cleared.
-    expect(useAgentStreamingStore.getState().thinkingStream.has("conv-A")).toBe(true);
+    expect(useAgentStreamingStore.getState().thinkingStream.has("conv-A")).toBe(false);
   });
 });
