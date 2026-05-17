@@ -21,6 +21,7 @@ import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
 import { AgentFilePane } from "./AgentFilePane";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { logSwallowed } from "@/lib/logSwallowed";
+import { useReviewedDiffs } from "./hooks/useReviewedDiffs";
 
 interface AgentInspectorPaneProps {
   conversationId: string;
@@ -68,6 +69,7 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
   const [tab, setTab] = useState<Tab>("inspector");
   const [width, setWidth] = useState<number>(() => readPersistedWidth());
   const [isDragging, setIsDragging] = useState(false);
+  const { unreviewedCount } = useReviewedDiffs(conversationId);
 
   // Auto-switch to the Preview tab when the preview store flips to open
   // (e.g. clicking a .md link in chat or detecting a plan response).
@@ -125,6 +127,7 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         <div className="w-px h-2 bg-line-soft" />
         {TAB_DEFS.map((t) => {
           const Icon = t.icon;
+          const showBadge = t.id === "diff" && unreviewedCount > 0;
           return (
             <button
               key={t.id}
@@ -132,14 +135,19 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
                 setTab(t.id);
                 setOpen(true);
               }}
-              title={t.label}
-              className={`w-6 h-6 grid place-items-center rounded transition-colors ${
+              title={
+                showBadge
+                  ? `${t.label} (${unreviewedCount} unreviewed)`
+                  : t.label
+              }
+              className={`relative w-6 h-6 grid place-items-center rounded transition-colors ${
                 tab === t.id
                   ? "bg-bg-elevated text-text-primary"
                   : "text-text-muted hover:text-text-secondary"
               }`}
             >
               <Icon size={12} />
+              {showBadge && <UnreviewedBadge count={unreviewedCount} compact />}
             </button>
           );
         })}
@@ -171,18 +179,23 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         {TAB_DEFS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
+          const showBadge = t.id === "diff" && unreviewedCount > 0;
           return (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-2.5 text-[11px] border-b-2 transition-colors ${
+              className={`relative flex items-center gap-1.5 px-2.5 text-[11px] border-b-2 transition-colors ${
                 active
                   ? "border-accent-green text-text-primary"
                   : "border-transparent text-text-muted hover:text-text-secondary"
               }`}
+              title={
+                showBadge ? `${t.label} (${unreviewedCount} unreviewed)` : undefined
+              }
             >
               <Icon size={11} />
               <span>{t.label}</span>
+              {showBadge && <UnreviewedBadge count={unreviewedCount} />}
             </button>
           );
         })}
@@ -501,6 +514,40 @@ function deriveLatestPlan(messages: { role: string; content: string }[]): {
     }
   }
   return null;
+}
+
+/**
+ * Small accent-green pill rendered on the Diff tab when there are
+ * unreviewed `write_file` tool calls. Caps display at "9+" so the badge
+ * stays compact. `compact=true` is used in the mini-icon strip (collapsed
+ * sidebar) where the host button is only 24px wide.
+ */
+function UnreviewedBadge({
+  count,
+  compact = false,
+}: {
+  count: number;
+  compact?: boolean;
+}) {
+  const label = count > 9 ? "9+" : String(count);
+  if (compact) {
+    return (
+      <span
+        className="absolute -top-0.5 -right-0.5 min-w-[12px] h-[12px] px-[3px] grid place-items-center rounded-full bg-accent-green text-[8.5px] font-mono font-semibold text-bg-primary leading-none pointer-events-none"
+        aria-label={`${count} unreviewed`}
+      >
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 grid place-items-center rounded-full bg-accent-green text-[9px] font-mono font-semibold text-bg-primary leading-none pointer-events-none"
+      aria-label={`${count} unreviewed`}
+    >
+      {label}
+    </span>
+  );
 }
 
 function parseChecklistFromMarkdown(md: string): PlanItem[] {

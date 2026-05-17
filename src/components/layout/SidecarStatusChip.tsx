@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
 import { Zap } from "lucide-react";
-import { listen } from "@tauri-apps/api/event";
-import { getSidecarStatus, type SidecarStatus } from "@/lib/tauri";
+import { useSidecarStatus } from "@/hooks/useSidecarStatus";
 
 /**
  * Compact lifecycle-state chip for the Node agent-sidecar.
@@ -19,32 +17,7 @@ import { getSidecarStatus, type SidecarStatus } from "@/lib/tauri";
  *                     actually done something)
  */
 export function SidecarStatusChip() {
-  const [status, setStatus] = useState<SidecarStatus | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    // Seed with a one-shot poll so the chip renders before any transition
-    // event fires.
-    getSidecarStatus()
-      .then((s) => {
-        if (!cancelled) setStatus(s);
-      })
-      .catch(() => {
-        // If the backend isn't ready yet (Tauri harness still booting) the
-        // listener below will pick up the first real transition.
-      });
-
-    const unlistenPromise = listen<SidecarStatus>("sidecar-status:changed", (evt) => {
-      if (!cancelled) setStatus(evt.payload);
-    });
-
-    return () => {
-      cancelled = true;
-      // Unmount-time unlisten cleanup — swallow; the component is gone.
-      unlistenPromise.then((off) => off()).catch(() => {});
-    };
-  }, []);
+  const status = useSidecarStatus();
 
   if (!status || status.state === "not_started") {
     // Don't clutter the bar before the supervisor has emitted anything.
