@@ -1,4 +1,4 @@
-import { Archive, Columns2, Route, Sparkles, SplitSquareHorizontal } from "lucide-react";
+import { Archive, Route, Sparkles, SplitSquareHorizontal } from "lucide-react";
 import {
   DEFAULT_AGENT_AUTO_ARCHIVE_DAYS,
   useAgentSettingsStore,
@@ -31,14 +31,12 @@ const COMPOSER_OPTIONS: Array<{
 
 export function AgentSettingsCard() {
   const composerMode = useAgentSettingsStore((s) => s.composerMode);
-  const compactRailMode = useAgentSettingsStore((s) => s.compactRailMode);
   const railCollapsed = useAgentSettingsStore((s) => s.railCollapsed);
   const onboardingDismissed = useAgentSettingsStore((s) => s.onboardingDismissed);
   const autoArchiveDays = useAgentSettingsStore((s) => s.autoArchiveDays);
   const autoFailoverEnabled = useAgentSettingsStore((s) => s.autoFailoverEnabled);
 
   const setComposerMode = useAgentSettingsStore((s) => s.setComposerMode);
-  const setCompactRailMode = useAgentSettingsStore((s) => s.setCompactRailMode);
   const setRailCollapsed = useAgentSettingsStore((s) => s.setRailCollapsed);
   const dismissOnboarding = useAgentSettingsStore((s) => s.dismissOnboarding);
   const showOnboarding = useAgentSettingsStore((s) => s.showOnboarding);
@@ -104,12 +102,6 @@ export function AgentSettingsCard() {
           <div className="text-[10px] text-text-muted uppercase tracking-wider">
             Conversation layout
           </div>
-          <Toggle
-            icon={Columns2}
-            label="Use compact right rail"
-            checked={compactRailMode}
-            onChange={setCompactRailMode}
-          />
           <Toggle
             icon={SplitSquareHorizontal}
             label="Start right rail collapsed"

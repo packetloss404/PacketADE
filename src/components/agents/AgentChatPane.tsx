@@ -23,7 +23,6 @@ import type { SlashCommandDef } from "@/lib/tauri";
 import { MemoryInjectionCard } from "./MemoryInjectionCard";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { AgentStatusBar } from "./AgentStatusBar";
-import { AgentTabbedRail } from "./AgentTabbedRail";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
 import { SessionHealthBar } from "./SessionHealthBar";
 import { PlanPanel } from "./PlanPanel";
@@ -40,7 +39,6 @@ import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
-import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { API_PROVIDERS, getModelSpeed } from "@/lib/api-models";
 import { HeaderActions } from "./chat/HeaderActions";
 import { handleExport } from "./chat/handleExport";
@@ -179,12 +177,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       togglePreview: s.toggle,
       openMarkdownPreview: s.openMarkdown,
       openPlanPreview: s.openPlan,
-    })),
-  );
-  const rail = useAgentSettingsStore(
-    useShallow((s) => ({
-      useCompactRail: s.compactRailMode,
-      setCompactRailMode: s.setCompactRailMode,
     })),
   );
   const promptTemplates = usePromptStore((s) => s.templates);
@@ -556,8 +548,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           diffTotals={diffTotals}
           previewOpen={preview.previewOpen}
           togglePreview={preview.togglePreview}
-          useCompactRail={rail.useCompactRail}
-          setCompactRailMode={rail.setCompactRailMode}
           showRewind={showRewind}
           setShowRewind={setShowRewind}
           onClose={onClose}
@@ -764,7 +754,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   return (
     <div className="flex h-full bg-bg-primary">
       <div className="flex-1 min-w-0">{chatContent}</div>
-      {rail.useCompactRail && <AgentTabbedRail conversationId={conversationId} />}
       {showRewind && (
         <div className="w-72 shrink-0 border-l border-bg-border">
           <CheckpointPanel

@@ -1,5 +1,4 @@
 import {
-  Columns2,
   Compass,
   Download,
   FileCheck2,
@@ -24,8 +23,6 @@ interface HeaderActionsProps {
   diffTotals: { fileCount: number; totalAdds: number; totalDels: number };
   previewOpen: boolean;
   togglePreview: () => void;
-  useCompactRail: boolean;
-  setCompactRailMode: (v: boolean) => void;
   showRewind: boolean;
   setShowRewind: (updater: (v: boolean) => boolean) => void;
   onClose: () => void;
@@ -46,8 +43,6 @@ export function HeaderActions({
   diffTotals,
   previewOpen,
   togglePreview,
-  useCompactRail,
-  setCompactRailMode,
   showRewind,
   setShowRewind,
   onClose,
@@ -263,24 +258,6 @@ export function HeaderActions({
         aria-label={previewOpen ? "Collapse preview pane" : "Open preview pane"}
       >
         <PanelRightOpen size={12} />
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setCompactRailMode(!useCompactRail)}
-        className={`p-0.5 rounded transition-colors ${
-          useCompactRail
-            ? "text-accent-blue bg-accent-blue/10"
-            : "text-text-muted hover:text-text-primary"
-        }`}
-        title={
-          useCompactRail
-            ? "Hide compact tabbed rail"
-            : "Show compact tabbed rail (Plan / Diff / Inspector)"
-        }
-        aria-label="Toggle compact tabbed rail"
-      >
-        <Columns2 size={12} />
       </button>
 
       <ContinueInMenu conversation={conversation} />
