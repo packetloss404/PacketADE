@@ -45,8 +45,8 @@ vi.mock("@/stores/flightStore", () => ({
   },
 }));
 
-vi.mock("@/stores/orchestrationStore", () => ({
-  useOrchestrationStore: {
+vi.mock("@/stores/orchestrationStateStore", () => ({
+  useOrchestrationStateStore: {
     getState: vi.fn(() => ({
       onTaskApprovalNeeded: vi.fn().mockResolvedValue(undefined),
       onTaskApprovalResolved: vi.fn().mockResolvedValue(undefined),

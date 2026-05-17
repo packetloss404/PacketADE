@@ -24,7 +24,7 @@ import { AsyncFlightGrid } from "./AsyncFlightGrid";
 import { useDeployStore } from "@/stores/deployStore";
 import { useAppStore } from "@/stores/appStore";
 import { useFlightStore } from "@/stores/flightStore";
-import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useActivityStore } from "@/stores/activityStore";
 import { useIssueStore, type Issue, type IssueStatus } from "@/stores/issueStore";
@@ -78,7 +78,7 @@ function ApprovalBanner({ flight }: { flight: Flight }) {
   if (pending.length === 0) return null;
 
   function approve(taskId: string) {
-    void useOrchestrationStore.getState().onTaskApprovalResolved(taskId);
+    void useOrchestrationStateStore.getState().onTaskApprovalResolved(taskId);
   }
   function deny(milestoneId: string, taskId: string) {
     useFlightStore.getState().updateTask(flight.id, milestoneId, taskId, { status: "cancelled" });
@@ -220,7 +220,7 @@ function LinkedIssueRow({
 
 // Live execution — terminal tabs for running tasks
 function ExecutionPanel({ flight }: { flight: Flight }) {
-  const runningTasksMap = useOrchestrationStore((s) => s.runningTasks);
+  const runningTasksMap = useOrchestrationStateStore((s) => s.runningTasks);
   const runningTasks = useMemo(
     () => Array.from(runningTasksMap.values()).filter((rt) => rt.flightId === flight.id),
     [runningTasksMap, flight.id],
@@ -315,7 +315,7 @@ function ExecutionPanel({ flight }: { flight: Flight }) {
                 taskId={rt.taskId}
                 showCloseButton={false}
                 onSessionCreated={(sessionId) => {
-                  useOrchestrationStore.getState().attachSessionToTask(rt.taskId, sessionId);
+                  useOrchestrationStateStore.getState().attachSessionToTask(rt.taskId, sessionId);
                 }}
                 renderHeader={() => (
                   <div className="flex items-center gap-2 px-3 py-1 bg-bg-secondary border-b border-bg-border">

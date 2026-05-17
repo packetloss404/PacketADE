@@ -31,8 +31,8 @@ const onTaskApprovalNeeded = vi.fn();
 const onTaskApprovalResolved = vi.fn();
 const onTaskComplete = vi.fn();
 
-vi.mock("@/stores/orchestrationStore", () => ({
-  useOrchestrationStore: {
+vi.mock("@/stores/orchestrationStateStore", () => ({
+  useOrchestrationStateStore: {
     getState: vi.fn(() => ({
       attachSessionToTask,
       onTaskApprovalNeeded,
