@@ -3,7 +3,6 @@ import { storageKey } from "@/lib/brand";
 
 const SETTINGS_KEY = storageKey("agent-settings");
 const COMPOSER_MODE_KEY = storageKey("composer-mode");
-const COMPACT_RAIL_KEY = storageKey("agent-tabbed-rail-mode");
 const RAIL_COLLAPSED_KEY = storageKey("agent-tabbed-rail-collapsed");
 const ONBOARDING_DISMISSED_KEY = storageKey("agents-onboarding-dismissed");
 
@@ -19,7 +18,6 @@ describe("agentSettingsStore", () => {
 
   it("hydrates existing Agents UI preference keys", async () => {
     localStorage.setItem(COMPOSER_MODE_KEY, "worktree");
-    localStorage.setItem(COMPACT_RAIL_KEY, "1");
     localStorage.setItem(RAIL_COLLAPSED_KEY, "1");
     localStorage.setItem(ONBOARDING_DISMISSED_KEY, "1");
 
@@ -27,7 +25,6 @@ describe("agentSettingsStore", () => {
 
     expect(useAgentSettingsStore.getState()).toMatchObject({
       composerMode: "worktree",
-      compactRailMode: true,
       railCollapsed: true,
       onboardingDismissed: true,
       autoArchiveDays: 14,
@@ -40,12 +37,10 @@ describe("agentSettingsStore", () => {
     const store = useAgentSettingsStore.getState();
 
     store.setComposerMode("worktree");
-    store.setCompactRailMode(true);
     store.setRailCollapsed(true);
     store.dismissOnboarding();
 
     expect(localStorage.getItem(COMPOSER_MODE_KEY)).toBe("worktree");
-    expect(localStorage.getItem(COMPACT_RAIL_KEY)).toBe("1");
     expect(localStorage.getItem(RAIL_COLLAPSED_KEY)).toBe("1");
     expect(localStorage.getItem(ONBOARDING_DISMISSED_KEY)).toBe("1");
   });
