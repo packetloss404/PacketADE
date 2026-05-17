@@ -1,0 +1,231 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const listenMock = vi.fn();
+const invokeMock = vi.fn();
+const cancelApiAgentSessionMock = vi.fn();
+const closeApiAgentSessionMock = vi.fn();
+const deleteConversationFileMock = vi.fn();
+const killPtyMock = vi.fn();
+const loadConversationsMock = vi.fn();
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (...args: unknown[]) => listenMock(...args),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => invokeMock(...args),
+}));
+
+vi.mock("@/lib/agentsMd", () => ({
+  loadAgentsMd: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@/stores/memoryStore", () => ({
+  useMemoryStore: {
+    getState: vi.fn(() => ({
+      getContextForSession: vi.fn(() => ""),
+    })),
+  },
+}));
+
+vi.mock("@/stores/layoutStore", () => ({
+  useLayoutStore: {
+    getState: vi.fn(() => ({
+      setProjectPath: vi.fn(),
+    })),
+  },
+}));
+
+vi.mock("@/stores/flightStore", () => ({
+  useFlightStore: {
+    getState: vi.fn(() => ({
+      findTaskBySessionId: vi.fn(() => null),
+    })),
+  },
+}));
+
+vi.mock("@/stores/orchestrationStore", () => ({
+  useOrchestrationStore: {
+    getState: vi.fn(() => ({
+      onTaskApprovalNeeded: vi.fn().mockResolvedValue(undefined),
+      onTaskApprovalResolved: vi.fn().mockResolvedValue(undefined),
+    })),
+  },
+}));
+
+vi.mock("@/lib/tauri", () => ({
+  createPtySession: vi.fn(),
+  writePty: vi.fn(),
+  killPty: (...args: unknown[]) => killPtyMock(...args),
+  detectAgent: vi.fn(),
+  loadPersistedState: vi.fn(),
+  saveAgentsSlice: vi.fn().mockResolvedValue(undefined),
+  startApiAgentSession: vi.fn().mockResolvedValue(undefined),
+  sendApiAgentMessage: vi.fn(),
+  cancelApiAgentSession: (...args: unknown[]) => cancelApiAgentSessionMock(...args),
+  cancelPendingTools: vi.fn(),
+  closeApiAgentSession: (...args: unknown[]) => closeApiAgentSessionMock(...args),
+  saveConversation: vi.fn().mockResolvedValue(undefined),
+  loadConversations: (...args: unknown[]) => loadConversationsMock(...args),
+  deleteConversationFile: (...args: unknown[]) => deleteConversationFileMock(...args),
+  changeAgentModel: vi.fn(),
+  setPlanMode: vi.fn(),
+  setPermissionMode: vi.fn(),
+  respondPermission: vi.fn(),
+  setApproveWrites: vi.fn(),
+  respondEdit: vi.fn(),
+  retryLastTurn: vi.fn(),
+  saveCheckpoint: vi.fn(),
+  listCheckpoints: vi.fn(),
+  exportConversationMarkdown: vi.fn(),
+  saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
+}));
+
+describe("agentTaskStore.deleteConversation — substore cleanup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doUnmock("@/stores/agentTaskStore");
+    localStorage.clear();
+    listenMock.mockResolvedValue(() => {});
+    invokeMock.mockResolvedValue(undefined);
+    loadConversationsMock.mockResolvedValue([]);
+    cancelApiAgentSessionMock.mockResolvedValue(undefined);
+    closeApiAgentSessionMock.mockResolvedValue(undefined);
+    deleteConversationFileMock.mockResolvedValue(undefined);
+    killPtyMock.mockResolvedValue(undefined);
+  });
+
+  it("removes the conversation from agentTaskStore.conversations", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const id = await useAgentTaskStore
+      .getState()
+      .createApiConversation(
+        "api-openai",
+        "D:/projects/example",
+        "gpt-4o",
+        "kickoff",
+      );
+
+    expect(useAgentTaskStore.getState().conversations.find((c) => c.id === id)).toBeDefined();
+
+    useAgentTaskStore.getState().deleteConversation(id);
+
+    expect(useAgentTaskStore.getState().conversations.find((c) => c.id === id)).toBeUndefined();
+  });
+
+  it("clears agentApprovalStore entries for the deleted conversation", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { useAgentApprovalStore } = await import("@/stores/agentApprovalStore");
+
+    const id = await useAgentTaskStore
+      .getState()
+      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+
+    useAgentApprovalStore.getState().addPendingPermission(id, {
+      id: "perm-1",
+      name: "bash",
+      arguments: "{}",
+    });
+    useAgentApprovalStore.getState().addPendingEdit(id, {
+      id: "edit-1",
+      path: "src/foo.ts",
+      content: "// new",
+    });
+    expect(useAgentApprovalStore.getState().permissions.has(id)).toBe(true);
+    expect(useAgentApprovalStore.getState().edits.has(id)).toBe(true);
+
+    useAgentTaskStore.getState().deleteConversation(id);
+
+    expect(useAgentApprovalStore.getState().permissions.has(id)).toBe(false);
+    expect(useAgentApprovalStore.getState().edits.has(id)).toBe(false);
+  });
+
+  it("clears agentPlanStore entries for the deleted conversation", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { useAgentPlanStore } = await import("@/stores/agentPlanStore");
+
+    const id = await useAgentTaskStore
+      .getState()
+      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+
+    useAgentPlanStore.getState().setSpec(id, ["criterion"]);
+    useAgentPlanStore.getState().setSpecStage(id, "plan");
+    useAgentPlanStore.getState().setPlan(id, [
+      { id: "t1", content: "do thing", status: "pending" },
+    ]);
+    expect(useAgentPlanStore.getState().spec.has(id)).toBe(true);
+    expect(useAgentPlanStore.getState().plan.has(id)).toBe(true);
+
+    useAgentTaskStore.getState().deleteConversation(id);
+
+    expect(useAgentPlanStore.getState().spec.has(id)).toBe(false);
+    expect(useAgentPlanStore.getState().specStage.has(id)).toBe(false);
+    expect(useAgentPlanStore.getState().plan.has(id)).toBe(false);
+    expect(useAgentPlanStore.getState().planApproved.has(id)).toBe(false);
+  });
+
+  it("clears agentStreamingStore entries for the deleted conversation", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { useAgentStreamingStore } = await import("@/stores/agentStreamingStore");
+
+    const id = await useAgentTaskStore
+      .getState()
+      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+
+    useAgentStreamingStore.getState().appendThinking(id, "thinking...");
+    useAgentStreamingStore.getState().setSubAgentBucket(id, "/root/agent_a", {
+      inputTokens: 100,
+      outputTokens: 50,
+      reasoningTokens: 25,
+      cacheReadTokens: 10,
+    });
+    expect(useAgentStreamingStore.getState().thinkingStream.has(id)).toBe(true);
+    expect(useAgentStreamingStore.getState().subAgentTokens.has(id)).toBe(true);
+
+    useAgentTaskStore.getState().deleteConversation(id);
+
+    expect(useAgentStreamingStore.getState().thinkingStream.has(id)).toBe(false);
+    expect(useAgentStreamingStore.getState().subAgentTokens.has(id)).toBe(false);
+  });
+
+  it("calls cancel + close + deleteConversationFile for live API conversations", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const id = await useAgentTaskStore
+      .getState()
+      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+
+    // createApiConversation leaves status = "active" until first event arrives.
+    expect(useAgentTaskStore.getState().conversations.find((c) => c.id === id)?.status).toBe(
+      "active",
+    );
+
+    useAgentTaskStore.getState().deleteConversation(id);
+
+    expect(cancelApiAgentSessionMock).toHaveBeenCalledWith(id);
+    expect(closeApiAgentSessionMock).toHaveBeenCalledWith(id);
+    expect(deleteConversationFileMock).toHaveBeenCalledWith(id);
+  });
+
+  it("clears the selectedConversationId when the deleted conversation was selected", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const id = await useAgentTaskStore
+      .getState()
+      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+
+    // createApiConversation auto-selects the newly created conversation.
+    expect(useAgentTaskStore.getState().selectedConversationId).toBe(id);
+
+    useAgentTaskStore.getState().deleteConversation(id);
+
+    expect(useAgentTaskStore.getState().selectedConversationId).toBeNull();
+  });
+
+  // The audit flagged queued-message drain as P1-hard-to-test: the path
+  // would need real timers + simulated Tauri event listeners firing
+  // post-delete in jsdom. Skipping with a placeholder so the gap is
+  // documented in the spec rather than just absent.
+  it.todo(
+    "queued message drain — orphan messages after delete should not send (needs real timers + Tauri event sim)",
+  );
+});
