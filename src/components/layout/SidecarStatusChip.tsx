@@ -41,6 +41,7 @@ export function SidecarStatusChip() {
 
     return () => {
       cancelled = true;
+      // Unmount-time unlisten cleanup — swallow; the component is gone.
       unlistenPromise.then((off) => off()).catch(() => {});
     };
   }, []);

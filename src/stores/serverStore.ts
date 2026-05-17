@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { saveServersSlice } from "@/lib/tauri";
 import { generateId } from "@/lib/storage";
+import { logSwallowed } from "@/lib/logSwallowed";
 import type { ServerConfig, ServerConnectionState, ConnectionStep } from "@/types/server";
 
 interface ServerStore {
@@ -31,7 +32,7 @@ interface ServerStore {
 }
 
 function syncToBackend(servers: ServerConfig[]) {
-  void saveServersSlice(servers).catch(() => {});
+  void saveServersSlice(servers).catch(logSwallowed("serverStore.save"));
 }
 
 export const useServerStore = create<ServerStore>((set, get) => ({

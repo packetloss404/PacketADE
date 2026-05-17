@@ -26,6 +26,7 @@ import {
   type ImageAttachment,
   type ResumeMessage,
 } from "@/lib/tauri";
+import { logSwallowed } from "@/lib/logSwallowed";
 /** Phase 2: SSH conversations now reference a `ServerConfig` from
  *  `serverStore` plus a per-session remote path. This payload is what the
  *  Agents UI hands to `createApiConversation` — it carries every field we
@@ -1058,6 +1059,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     const task = get().tasks.find((t) => t.id === id);
     if (!task || task.status !== "running" || !task.sessionId) return;
 
+    // Cancel kills the task's PTY — swallow if already exited.
     void killPty(task.sessionId).catch(() => {});
     set((s) => ({
       tasks: s.tasks.map((t) =>
@@ -1069,6 +1071,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   deleteTask: (id) => {
     const task = get().tasks.find((t) => t.id === id);
     if (task?.status === "running" && task.sessionId) {
+      // Delete tears down any live PTY — swallow if already exited.
       void killPty(task.sessionId).catch(() => {});
     }
     set((s) => ({
@@ -1522,14 +1525,21 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     const conv = get().conversations.find((c) => c.id === id);
     if (conv && (conv.status === "active" || conv.status === "idle")) {
       if (conv.mode === "api") {
-        void cancelApiAgentSession(id).catch(() => {});
-        void closeApiAgentSession(id).catch(() => {});
+        // Failure here orphans an API session in the backend (and
+        // potentially keeps billing tokens) — log so it's diagnosable.
+        void cancelApiAgentSession(id).catch(
+          logSwallowed("agentTaskStore.cancelApiSession"),
+        );
+        void closeApiAgentSession(id).catch(
+          logSwallowed("agentTaskStore.closeApiSession"),
+        );
         const cleanup = apiConversationCleanup.get(id);
         if (cleanup) {
           cleanup();
           apiConversationCleanup.delete(id);
         }
       } else if (conv.sessionId) {
+        // Best-effort kill — swallow if PTY already exited.
         void killPty(conv.sessionId).catch(() => {});
       }
     }

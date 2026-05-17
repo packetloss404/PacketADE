@@ -96,7 +96,14 @@ export function useDictationTarget() {
       // app was focused). Fall back to clipboard so the user can paste anywhere.
       targetRef.current = null;
       if (navigator.clipboard?.writeText) {
-        void navigator.clipboard.writeText(result).catch(() => {});
+        void navigator.clipboard
+          .writeText(result)
+          .catch((err) =>
+            console.warn(
+              "[useDictationTarget.clipboardFallback] write failed:",
+              err,
+            ),
+          );
       }
     });
     return unsub;

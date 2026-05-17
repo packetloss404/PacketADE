@@ -24,7 +24,9 @@ export function TitleBar() {
     getCurrentWindow()
       .isMaximized()
       .then(setIsMaximized)
-      .catch(() => {});
+      .catch((err) =>
+        console.warn("[TitleBar.isMaximizedProbe] failed:", err),
+      );
   }, [setIsMaximized]);
 
   const handleMinimize = useCallback(() => {

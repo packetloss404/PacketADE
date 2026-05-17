@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { loadFromStorage, saveToStorage, generateId as genId } from "@/lib/storage";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createIssueWorktree, saveIssuesSlice } from "@/lib/tauri";
+import { logSwallowed } from "@/lib/logSwallowed";
 
 /**
  * Issue lifecycle states.
@@ -197,7 +198,7 @@ function loadState(): IssueState {
  */
 function syncIssuesToBackend(issues: Issue[]) {
   try {
-    void saveIssuesSlice(issues).catch(() => {});
+    void saveIssuesSlice(issues).catch(logSwallowed("issueStore.save"));
   } catch {
     // invoke unavailable (test env) — silent fail; localStorage remains
     // the authoritative cold-start cache.

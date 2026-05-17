@@ -96,6 +96,9 @@ export function useXterm({ containerRef, sessionIdRef, onUserInput }: UseXtermOp
     term.onData((data) => {
       const sid = sessionIdRef.current;
       if (sid) {
+        // Per-keystroke writePty — swallow silently because a broken
+        // pipeline would otherwise flood the console with one entry per
+        // character. The user will notice their input isn't echoing.
         writePty(sid, data).catch(() => {});
         onUserInput?.();
       }
@@ -122,7 +125,9 @@ export function useXterm({ containerRef, sessionIdRef, onUserInput }: UseXtermOp
       if (cols < 2 || rows < 2) return;
       const sid = sessionIdRef.current;
       if (sid) {
-        resizePty(sid, cols, rows).catch(() => {});
+        resizePty(sid, cols, rows).catch((err) =>
+          console.warn("[useXterm.resizePty] failed:", err),
+        );
       }
     });
 

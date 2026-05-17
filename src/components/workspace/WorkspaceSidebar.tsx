@@ -55,7 +55,8 @@ export function WorkspaceSidebar() {
   async function handleDeleteWorkspace(id: string) {
     const ws = workspaces.find((w) => w.id === id);
     if (ws) {
-      // Kill any running PTY sessions before deleting
+      // Kill any running PTY sessions before deleting — best-effort,
+      // swallow if a pane's PTY has already exited.
       await Promise.all(
         ws.panes
           .filter((p) => p.sessionId)

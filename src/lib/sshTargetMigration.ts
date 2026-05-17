@@ -15,6 +15,7 @@
 import { useServerStore } from "@/stores/serverStore";
 import type { ServerConfig } from "@/types/server";
 import { loadFromStorage, removeFromStorage } from "@/lib/storage";
+import { logSwallowed } from "@/lib/logSwallowed";
 
 const LEGACY_STORAGE_KEY = "packetade:ssh-targets";
 // Older builds used the pre-rename prefix; check both for safety.
@@ -91,7 +92,9 @@ export function migrateSshTargetsToServers(): { migrated: number; skipped: numbe
     try {
       // Lazy import keeps bootstrap.ts free of the tauri sync wiring.
       void import("@/lib/tauri").then(({ saveServersSlice }) =>
-        saveServersSlice(useServerStore.getState().servers).catch(() => {}),
+        saveServersSlice(useServerStore.getState().servers).catch(
+          logSwallowed("sshTargetMigration.saveServers"),
+        ),
       );
     } catch {
       // ignore — backend will catch up on the next add/update.
