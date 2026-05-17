@@ -8,6 +8,7 @@ import { aggregateWriteFiles } from "@/lib/diffUtils";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { FileStats } from "./FileStats";
 import { DiffBody } from "./DiffBody";
+import { useReviewedDiffs } from "../hooks/useReviewedDiffs";
 
 export interface FileListAndDiffBodyProps {
   conversation: AgentConversation | undefined;
@@ -60,9 +61,13 @@ export function FileListAndDiffBody({
   const isControlled = selectedFilePathProp !== undefined;
   const [internalSelected, setInternalSelected] = useState<string | null>(null);
   const selectedPath = isControlled ? selectedFilePathProp : internalSelected;
+  // Mark the file's underlying `write_file` tool calls as reviewed when
+  // the user selects it from the list — feeds the Diff-tab badge counter.
+  const { markReviewed } = useReviewedDiffs(conversation?.id);
   const selectFile = (path: string) => {
     if (onSelectFile) onSelectFile(path);
     if (!isControlled) setInternalSelected(path);
+    markReviewed(path);
   };
 
   // Cache the full diff aggregate (per-file +/- counts). Recomputes whenever
