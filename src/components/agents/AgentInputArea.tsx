@@ -32,6 +32,8 @@ import { ComposerModePicker } from "./composer/ComposerModePicker";
 import { ProviderPicker } from "./composer/ProviderPicker";
 import { ModelSelector } from "./composer/ModelSelector";
 import { ActionButtons } from "./composer/ActionButtons";
+import { AdvancedAccordion } from "./composer/AdvancedAccordion";
+import { MODE_META } from "./composer/utils";
 
 // Re-export for callers (AgentsView imports these from this module).
 export type { AgentMode, ComposerMode } from "./composer/utils";
@@ -480,8 +482,80 @@ export function AgentInputArea({
             className="w-full bg-transparent px-4 py-3 text-xs text-text-primary placeholder:text-text-muted focus:outline-none resize-none"
           />
 
-          <div className="flex items-center justify-between px-3 py-2 border-t border-bg-border/50">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 px-3 py-2 border-t border-bg-border/50">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <ProviderPicker
+                  selectedAgent={selectedAgent}
+                  onAgentChange={onAgentChange}
+                  onModelChange={onModelChange}
+                  authStatus={authStatus}
+                  refreshAuthStatuses={refreshAuthStatuses}
+                  needsLogin={needsLogin}
+                  loginTooltip={loginTooltip}
+                  onOpenLogin={handleOpenLogin}
+                />
+                <ModelSelector
+                  selectedAgent={selectedAgent}
+                  selectedModel={selectedModel}
+                  onModelChange={onModelChange}
+                  ollamaModels={ollamaModels}
+                  refreshOllamaModels={refreshOllamaModels}
+                />
+              </div>
+
+              <ActionButtons
+                isSupported={isSupported}
+                isListening={isListening}
+                startListening={startListening}
+                stopListening={stopListening}
+                launchReady={launchReady}
+                launchLabel={launchLabel}
+                launchTitle={
+                  launchReady
+                    ? "Launch (Enter)"
+                    : needsLogin
+                      ? loginTooltip
+                      : selectedAuth && selectedAuth !== "loading"
+                        ? selectedAuth.hint || launchLabel
+                        : launchLabel
+                }
+                onLaunch={submitWithAttachments}
+              />
+            </div>
+
+            <AdvancedAccordion
+              summary={[
+                {
+                  label:
+                    agentMode === "agent" ? null : MODE_META[agentMode].label,
+                },
+                {
+                  // Profile: "default" here means the built-in default —
+                  // picking any profile also pins it as `defaultProfileId`,
+                  // so we can't use that flag. Truncate long names so the
+                  // summary stays one line.
+                  label:
+                    !activeProfile || activeProfile.id === "builtin-default"
+                      ? null
+                      : activeProfile.name,
+                  maxChars: 12,
+                },
+                {
+                  label:
+                    composerMode === "local"
+                      ? null
+                      : composerMode === "worktree"
+                        ? "Worktree"
+                        : "Cloud",
+                },
+              ]}
+              forceOpenOnFirstMount={
+                agentMode !== "agent" ||
+                (!!activeProfile && activeProfile.id !== "builtin-default") ||
+                composerMode !== "local"
+              }
+            >
               <ModeSelector value={agentMode} onChange={onAgentModeChange} />
               <ProfilePicker
                 profiles={profiles}
@@ -496,43 +570,7 @@ export function AgentInputArea({
                   onChange={onComposerModeChange}
                 />
               )}
-              <ProviderPicker
-                selectedAgent={selectedAgent}
-                onAgentChange={onAgentChange}
-                onModelChange={onModelChange}
-                authStatus={authStatus}
-                refreshAuthStatuses={refreshAuthStatuses}
-                needsLogin={needsLogin}
-                loginTooltip={loginTooltip}
-                onOpenLogin={handleOpenLogin}
-              />
-              <ModelSelector
-                selectedAgent={selectedAgent}
-                selectedModel={selectedModel}
-                onModelChange={onModelChange}
-                ollamaModels={ollamaModels}
-                refreshOllamaModels={refreshOllamaModels}
-              />
-            </div>
-
-            <ActionButtons
-              isSupported={isSupported}
-              isListening={isListening}
-              startListening={startListening}
-              stopListening={stopListening}
-              launchReady={launchReady}
-              launchLabel={launchLabel}
-              launchTitle={
-                launchReady
-                  ? "Launch (Enter)"
-                  : needsLogin
-                    ? loginTooltip
-                    : selectedAuth && selectedAuth !== "loading"
-                      ? selectedAuth.hint || launchLabel
-                      : launchLabel
-              }
-              onLaunch={submitWithAttachments}
-            />
+            </AdvancedAccordion>
           </div>
         </div>
 
