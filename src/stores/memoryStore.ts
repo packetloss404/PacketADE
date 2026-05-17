@@ -179,8 +179,12 @@ function capPatterns(patterns: LearnedPattern[]): LearnedPattern[] {
 async function persistState(events: MemoryEvent[], patterns?: LearnedPattern[]) {
   try {
     await saveMemorySlice(events, patterns);
-  } catch {
-    // Non-fatal: state is still in memory
+  } catch (err) {
+    // Non-fatal: state is still in memory, but the user will lose it on
+    // restart. Surface to the console so dev / log-readers notice instead
+    // of failing silently — a recurring failure here means disk-full,
+    // permission denied, or a backend bug.
+    console.error("[memory] failed to persist memory slice:", err);
   }
 }
 

@@ -77,6 +77,17 @@ export const useAppStore = create<AppStore>((set) => ({
     const memoryStore = useMemoryStore.getState();
     const layoutStore = useLayoutStore.getState();
 
+    // Memory hydration runs synchronously inside `bootstrap.ts` before
+    // `setInitialized(true)`. If quickStartSession fires before that
+    // completes (e.g. via a global keybind during startup), the memory
+    // store is still on its empty default and the injected context would
+    // be an empty string. Warn so the missing injection isn't silent.
+    if (!useAppStore.getState().initialized) {
+      console.warn(
+        "[quickStartSession] called before app initialization — memory context may be empty",
+      );
+    }
+
     const memoryContext = memoryStore.getContextForSession(layoutStore.projectPath);
     const prompt = memoryContext.trim();
 

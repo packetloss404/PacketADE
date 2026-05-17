@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Zap } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { getSidecarStatus, type SidecarStatus } from "@/lib/tauri";
 
@@ -92,9 +93,13 @@ export function SidecarStatusChip() {
       className="flex items-center gap-1 px-1.5 text-text-muted text-[10px] select-none"
       title={tooltip}
     >
-      <span className={`${dotClass} leading-none`} aria-hidden>
-        ●
-      </span>
+      {status.state === "ready" ? (
+        <Zap size={10} className={`${dotClass} fill-current`} aria-hidden />
+      ) : (
+        <span className={`${dotClass} leading-none`} aria-hidden>
+          ●
+        </span>
+      )}
       <span>{label}</span>
     </div>
   );

@@ -94,10 +94,9 @@ export const mockTauriInitScript = `
     save_settings_slice: () => null,
     save_ui_slice: () => null,
     save_workspaces_slice: () => null,
-    // MCP / scaffold / deploy config reads
+    // MCP / deploy config reads
     read_mcp_config: () => ({ servers: [] }),
     read_deploy_config: () => ({}),
-    list_scaffold_templates: () => [],
     // Analytics / history / cost
     get_analytics: () => ({}),
     get_prompt_history: () => [],

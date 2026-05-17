@@ -37,7 +37,6 @@ pub mod provider_auth;
 pub mod provider_stats;
 pub mod pty;
 pub mod quality_runner;
-pub mod scaffold;
 pub mod shared;
 pub mod side_chat;
 pub mod skills;

@@ -3,13 +3,10 @@ import {
   AlertTriangle,
   Diamond,
   LayoutGrid,
-  Maximize2,
-  Minimize2,
   Plus,
   RefreshCw,
   X,
 } from "lucide-react";
-import { Modal } from "@/components/ui/Modal";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
@@ -21,30 +18,20 @@ import {
   calcComplexityScore,
   getLetterGrade,
   getComplexityLabel,
-} from "./codeQualityUtils";
-import { OverviewTab } from "./OverviewTab";
-import { LanguagesTab } from "./LanguagesTab";
-import { ComplexityTab } from "./ComplexityTab";
-import { TestsTab } from "./TestsTab";
-// v0.8.8 quality autofix — actionable fixer buttons (eslint --fix,
-// prettier --write, cargo fix, pnpm audit --fix). Self-discovers which
-// fixers apply for the current project. Rendered as an additive section
-// inside the Overview tab so it doesn't conflict with q2's tab layout.
-import { AutoFixPanel } from "./AutoFixPanel";
-// v0.8.8 quality ai — AI-powered run summary. Streams a structured
-// Markdown summary of every failing check (lint / typecheck / tests /
-// build) using the same Claude OAuth sidecar one-shot pattern as the
-// GitHub PR review feature. Rendered as an additive section below the
-// AutoFixPanel; coordinates with q1's quality runner via
-// `quality:check-done` / `quality:done` events.
-import { QualityAIRunSummaryPanel } from "./QualityAIRunSummaryPanel";
+} from "@/components/quality/codeQualityUtils";
+import { OverviewTab } from "@/components/quality/OverviewTab";
+import { LanguagesTab } from "@/components/quality/LanguagesTab";
+import { ComplexityTab } from "@/components/quality/ComplexityTab";
+import { TestsTab } from "@/components/quality/TestsTab";
+import { AutoFixPanel } from "@/components/quality/AutoFixPanel";
+import { QualityAIRunSummaryPanel } from "@/components/quality/QualityAIRunSummaryPanel";
 import {
   appendQualityHistory,
   clearQualityHistory,
   loadQualityHistory,
   type CodeQualityHistoryEntry,
-} from "./codeQualityHistory";
-import { CodeQualityHistoryDropdown } from "./CodeQualityHistoryDropdown";
+} from "@/components/quality/codeQualityHistory";
+import { CodeQualityHistoryDropdown } from "@/components/quality/CodeQualityHistoryDropdown";
 
 type TabKey = "overview" | "languages" | "complexity" | "tests";
 
@@ -62,39 +49,23 @@ type FetchState =
   | { kind: "ready"; report: CodeQualityReport; historicalIndex: number }
   | { kind: "error"; message: string };
 
-interface CodeQualityModalProps {
-  onClose: () => void;
-}
-
 /**
- * Code Quality modal — fronts `analyze_code_quality` and renders the report
- * across four tabs (Overview / Languages / Complexity / Tests).
+ * Code Quality full-pane view. Fronts `analyze_code_quality` and renders
+ * the report across four tabs (Overview / Languages / Complexity / Tests).
+ * Replaces the prior modal — surfaced from the Toolbar's Tools dropdown
+ * like Ideation Scanner.
  *
- * UX improvements over the prior version:
- *   - Modal is now wider by default and supports a Maximize toggle for
- *     dense report viewing.
- *   - Run controls in the header: Refresh, Maximize, History dropdown.
- *   - Empty / loading / error states all have a Retry path; the analyzer
- *     no longer wedges a closed modal in a stale state.
- *   - Stale fetches are dropped via a generation counter so a slow analyze
- *     can't overwrite a fresher result.
- *   - Last-5 ring buffer of historical runs per project (localStorage). The
- *     history dropdown lets the user diff against prior snapshots.
- *   - Keyboard shortcuts: Esc closes, Ctrl/Cmd+R refreshes, Ctrl/Cmd+F
- *     focuses the in-modal filter.
+ * Behaviour preserved from the modal version:
+ *   - Run controls in the header: Refresh, History dropdown.
+ *   - Empty / loading / error states all have a Retry path.
+ *   - Stale fetches are dropped via a generation counter.
+ *   - Last-5 ring buffer of historical runs per project (localStorage).
+ *   - Keyboard shortcuts: Ctrl/Cmd+R refreshes, Ctrl/Cmd+F focuses filter.
  *   - Last-active tab persisted across sessions.
- *   - Per-tab filtering (lifted into the modal so Ctrl+F always lands here).
  *   - Click-to-copy file paths in the Complexity tab.
- *   - Preserves q3's AutoFixPanel integration on the Overview tab and the
- *     `reanalyzeNonce` bump trigger after a successful fixer run.
- *
- * Streaming hook: when the backend (agent q1) ships `quality:chunk:<runId>`
- * + `quality:done:<runId>` events, see `CodeQualityCheckPanel` and
- * `subscribeQualityStream` for the wiring scaffold. This modal still fronts
- * the synchronous `analyze_code_quality` analyzer; the streaming runner is
- * intended for a sibling diagnostics view, not this report panel.
+ *   - AutoFixPanel + QualityAIRunSummaryPanel on the Overview tab.
  */
-export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
+export function QualityView() {
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window === "undefined") return "overview";
     const stored = window.localStorage.getItem(TAB_PREF_KEY) as TabKey | null;
@@ -102,32 +73,20 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
   });
   const [state, setState] = useState<FetchState>({ kind: "loading" });
   const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
   const [history, setHistory] = useState<CodeQualityHistoryEntry[]>([]);
   const [filter, setFilter] = useState("");
-  // v0.8.8 quality autofix: bumped on each successful fixer run so the
-  // analyzer re-runs and the user sees the post-fix metrics immediately.
   const [reanalyzeNonce, setReanalyzeNonce] = useState(0);
 
-  // Tracks whether the modal is still mounted so the async analyze promise
-  // doesn't setState on a torn-down component. React 18 silences the warning
-  // but the underlying backend work would still complete; we want at least
-  // the UI side to be predictable.
   const mountedRef = useRef(true);
-  // Generation counter — each fetch increments. Stale fetches are ignored
-  // when their generation no longer matches.
   const fetchGenRef = useRef(0);
 
   const workspace = useWorkspaceStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
   );
-  // Subscribe to layoutStore so the path tracks changes (the old code read
-  // via `useLayoutStore.getState()` which doesn't re-render).
   const layoutProjectPath = useLayoutStore((s) => s.projectPath);
   const projectPath = workspace?.projectPath ?? layoutProjectPath;
   const isRemote = Boolean(workspace?.serverId);
 
-  // Load persisted history for this project when the path changes.
   useEffect(() => {
     if (!projectPath) {
       setHistory([]);
@@ -143,8 +102,6 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
     };
   }, []);
 
-  // Persist the last-active tab so reopening the modal lands the user back
-  // where they were.
   useEffect(() => {
     try {
       window.localStorage.setItem(TAB_PREF_KEY, activeTab);
@@ -194,21 +151,17 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
     }
   }, [projectPath, isRemote]);
 
-  // Initial load + reanalyzeNonce trigger from AutoFixPanel.
   useEffect(() => {
     void runAnalyzer();
   }, [runAnalyzer, reanalyzeNonce]);
 
-  // Keyboard shortcuts. Esc is owned by the Modal itself (`closeOnEscape`).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Ctrl/Cmd+R → refresh report
       if ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R")) {
         e.preventDefault();
         if (state.kind !== "loading") void runAnalyzer();
         return;
       }
-      // Ctrl/Cmd+F → focus the in-modal filter input (first one wins)
       if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
         const target = document.querySelector<HTMLInputElement>(`[data-quality-filter]`);
         if (target) {
@@ -222,8 +175,6 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [runAnalyzer, state.kind]);
 
-  // Pick the report to render: live (state.report) or a historical snapshot
-  // when the user has selected one from the history dropdown.
   const displayedReport: CodeQualityReport | null = useMemo(() => {
     if (state.kind === "ready") {
       if (state.historicalIndex > 0 && history[state.historicalIndex]) {
@@ -288,7 +239,6 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
     await writePty(paneWithSession.sessionId, buildInsightPrompt() + "\r");
     useWorkspaceStore.getState().setActiveWorkspace(workspaceId);
     useAppStore.getState().setActiveView("workspace");
-    onClose();
   }
 
   function handleCreateAndSend() {
@@ -302,185 +252,170 @@ export function CodeQualityModal({ onClose }: CodeQualityModalProps) {
     );
     useWorkspaceStore.getState().setActiveWorkspace(wsId);
     useAppStore.getState().setActiveView("workspace");
-    onClose();
   }
 
-  const headerExtra = (
-    <div className="flex items-center gap-1">
-      {history.length > 0 && (
-        <CodeQualityHistoryDropdown
-          entries={history}
-          selectedIndex={historicalIndex}
-          onSelect={(idx) => {
-            if (state.kind === "ready") {
-              setState({ ...state, historicalIndex: idx });
-            } else if (history[idx]) {
-              setState({ kind: "ready", report: history[idx].report, historicalIndex: idx });
-            }
-          }}
-          onClear={() => {
-            if (projectPath) clearQualityHistory(projectPath);
-            setHistory([]);
-          }}
-        />
-      )}
-      <button
-        type="button"
-        onClick={() => void runAnalyzer()}
-        disabled={isLoading}
-        title="Re-run analysis (Ctrl/Cmd+R)"
-        aria-label="Re-run analysis"
-        className="p-1 text-text-muted hover:text-text-primary transition-colors disabled:opacity-40"
-      >
-        <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
-      </button>
-      <button
-        type="button"
-        onClick={() => setFullscreen((v) => !v)}
-        title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-        aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-        className="p-1 text-text-muted hover:text-text-primary transition-colors"
-      >
-        {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-      </button>
-    </div>
-  );
-
-  const footerContent =
-    displayedReport && !isLoading ? (
-      !showWorkspacePicker ? (
-        <button
-          onClick={() => setShowWorkspacePicker(true)}
-          className="flex items-center justify-center gap-2 w-full py-2.5 bg-accent-green/10 border border-accent-green/20 rounded-lg text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-colors"
-        >
-          <Diamond size={12} />
-          Get AI Insight
-        </button>
-      ) : (
-        <InsightWorkspacePicker
-          projectPath={projectPath ?? ""}
-          onSelect={(wsId) => void handleSendToWorkspace(wsId)}
-          onCreate={handleCreateAndSend}
-          onCancel={() => setShowWorkspacePicker(false)}
-        />
-      )
-    ) : undefined;
-
   return (
-    <Modal
-      onClose={onClose}
-      title={`Code Quality${workspace ? ` — ${workspace.name}` : ""}`}
-      icon={<Diamond size={14} className="text-accent-amber" />}
-      width="w-[760px]"
-      fullscreen={fullscreen}
-      footer={footerContent}
-      headerExtra={headerExtra}
-      closeOnEscape
-    >
-      {historicalIndex > 0 && state.kind === "ready" && (
-        <div className="px-5 pt-3">
-          <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded border border-accent-amber/30 bg-accent-amber/10 text-[10px] text-accent-amber">
-            <span>
-              Viewing historical snapshot from{" "}
-              {new Date(history[historicalIndex]?.ranAt ?? 0).toLocaleString()}. Re-run for fresh data.
-            </span>
-            <button
-              type="button"
-              onClick={() => setState({ ...state, historicalIndex: 0 })}
-              className="underline hover:text-accent-amber/80 transition-colors"
-            >
-              Show latest
-            </button>
+    <div className="flex flex-col h-full bg-bg-primary overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-bg-border bg-bg-secondary shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Diamond size={14} className="text-accent-amber" />
+          <h2 className="text-sm font-medium text-text-primary truncate">
+            Code Quality{workspace ? ` — ${workspace.name}` : ""}
+          </h2>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {history.length > 0 && (
+            <CodeQualityHistoryDropdown
+              entries={history}
+              selectedIndex={historicalIndex}
+              onSelect={(idx) => {
+                if (state.kind === "ready") {
+                  setState({ ...state, historicalIndex: idx });
+                } else if (history[idx]) {
+                  setState({ kind: "ready", report: history[idx].report, historicalIndex: idx });
+                }
+              }}
+              onClear={() => {
+                if (projectPath) clearQualityHistory(projectPath);
+                setHistory([]);
+              }}
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => void runAnalyzer()}
+            disabled={isLoading}
+            title="Re-run analysis (Ctrl/Cmd+R)"
+            aria-label="Re-run analysis"
+            className="p-1 text-text-muted hover:text-text-primary transition-colors disabled:opacity-40"
+          >
+            <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
+          </button>
+        </div>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto">
+        {historicalIndex > 0 && state.kind === "ready" && (
+          <div className="px-5 pt-3">
+            <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded border border-accent-amber/30 bg-accent-amber/10 text-[10px] text-accent-amber">
+              <span>
+                Viewing historical snapshot from{" "}
+                {new Date(history[historicalIndex]?.ranAt ?? 0).toLocaleString()}. Re-run for fresh data.
+              </span>
+              <button
+                type="button"
+                onClick={() => setState({ ...state, historicalIndex: 0 })}
+                className="underline hover:text-accent-amber/80 transition-colors"
+              >
+                Show latest
+              </button>
+            </div>
           </div>
+        )}
+
+        <div className="flex items-center gap-1 px-5 pt-3">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-3 py-1.5 text-[11px] rounded-t transition-colors ${
+                activeTab === tab.key
+                  ? "text-accent-green bg-bg-primary border border-bg-border border-b-0"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="px-5 py-4 bg-bg-primary mx-0 min-h-[320px]">
+          {state.kind === "loading" && <LoadingState projectPath={projectPath} />}
+          {state.kind === "error" && (
+            <ErrorState
+              message={state.message}
+              onRetry={() => void runAnalyzer()}
+              isRemote={isRemote}
+            />
+          )}
+          {state.kind === "ready" && displayedReport && (
+            <>
+              {displayedReport.total_files === 0 ? (
+                <EmptyReportState onRetry={() => void runAnalyzer()} />
+              ) : (
+                <>
+                  {activeTab === "overview" && (
+                    <>
+                      <OverviewTab
+                        report={displayedReport}
+                        totalScore={totalScore}
+                        commentScore={commentScore}
+                        testScore={testScore}
+                        complexityScore={complexityScore}
+                        orgScore={orgScore}
+                      />
+                      {!isRemote && historicalIndex === 0 && projectPath && (
+                        <div className="mt-5 pt-4 border-t border-bg-border">
+                          <AutoFixPanel
+                            projectPath={projectPath}
+                            onFixApplied={() => setReanalyzeNonce((n) => n + 1)}
+                          />
+                        </div>
+                      )}
+                      {!isRemote && historicalIndex === 0 && projectPath && (
+                        <div className="mt-5 pt-4 border-t border-bg-border">
+                          <QualityAIRunSummaryPanel
+                            projectPath={projectPath}
+                            projectName={
+                              workspace?.name ||
+                              projectPath.split(/[/\\]/).pop() ||
+                              "Project"
+                            }
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {activeTab === "languages" && <LanguagesTab report={displayedReport} />}
+                  {activeTab === "complexity" && (
+                    <ComplexityTab
+                      report={displayedReport}
+                      filter={filter}
+                      onFilterChange={setFilter}
+                    />
+                  )}
+                  {activeTab === "tests" && <TestsTab report={displayedReport} />}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Footer — Get AI Insight */}
+      {displayedReport && !isLoading && (
+        <div className="px-5 py-3 border-t border-bg-border bg-bg-secondary shrink-0">
+          {!showWorkspacePicker ? (
+            <button
+              onClick={() => setShowWorkspacePicker(true)}
+              className="flex items-center justify-center gap-2 w-full py-2.5 bg-accent-green/10 border border-accent-green/20 rounded-lg text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-colors"
+            >
+              <Diamond size={12} />
+              Get AI Insight
+            </button>
+          ) : (
+            <InsightWorkspacePicker
+              projectPath={projectPath ?? ""}
+              onSelect={(wsId) => void handleSendToWorkspace(wsId)}
+              onCreate={handleCreateAndSend}
+              onCancel={() => setShowWorkspacePicker(false)}
+            />
+          )}
         </div>
       )}
-
-      <div className="flex items-center gap-1 px-5 pt-3">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`px-3 py-1.5 text-[11px] rounded-t transition-colors ${
-              activeTab === tab.key
-                ? "text-accent-green bg-bg-primary border border-bg-border border-b-0"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="px-5 py-4 bg-bg-primary mx-0 min-h-[320px]">
-        {state.kind === "loading" && <LoadingState projectPath={projectPath} />}
-        {state.kind === "error" && (
-          <ErrorState
-            message={state.message}
-            onRetry={() => void runAnalyzer()}
-            isRemote={isRemote}
-          />
-        )}
-        {state.kind === "ready" && displayedReport && (
-          <>
-            {displayedReport.total_files === 0 ? (
-              <EmptyReportState onRetry={() => void runAnalyzer()} />
-            ) : (
-              <>
-                {activeTab === "overview" && (
-                  <>
-                    <OverviewTab
-                      report={displayedReport}
-                      totalScore={totalScore}
-                      commentScore={commentScore}
-                      testScore={testScore}
-                      complexityScore={complexityScore}
-                      orgScore={orgScore}
-                    />
-                    {/* v0.8.8 quality autofix — actionable fixers below the
-                        score breakdown. Re-runs the analyzer after each
-                        successful fix so the user sees the updated score.
-                        Hidden when viewing a historical snapshot to avoid
-                        confusion. */}
-                    {!isRemote && historicalIndex === 0 && projectPath && (
-                      <div className="mt-5 pt-4 border-t border-bg-border">
-                        <AutoFixPanel
-                          projectPath={projectPath}
-                          onFixApplied={() => setReanalyzeNonce((n) => n + 1)}
-                        />
-                      </div>
-                    )}
-                    {/* v0.8.8 quality ai — AI run summary. Same gating as
-                        AutoFixPanel: local projects only, latest snapshot
-                        only, requires a project path to invoke the runner. */}
-                    {!isRemote && historicalIndex === 0 && projectPath && (
-                      <div className="mt-5 pt-4 border-t border-bg-border">
-                        <QualityAIRunSummaryPanel
-                          projectPath={projectPath}
-                          projectName={
-                            workspace?.name ||
-                            projectPath.split(/[/\\]/).pop() ||
-                            "Project"
-                          }
-                        />
-                      </div>
-                    )}
-                  </>
-                )}
-                {activeTab === "languages" && <LanguagesTab report={displayedReport} />}
-                {activeTab === "complexity" && (
-                  <ComplexityTab
-                    report={displayedReport}
-                    filter={filter}
-                    onFilterChange={setFilter}
-                  />
-                )}
-                {activeTab === "tests" && <TestsTab report={displayedReport} />}
-              </>
-            )}
-          </>
-        )}
-      </div>
-    </Modal>
+    </div>
   );
 }
 

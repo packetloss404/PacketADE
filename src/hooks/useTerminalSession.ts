@@ -266,12 +266,21 @@ export function useTerminalSession({
         // Claude Code is ready for input immediately; other CLIs (OpenCode, Gemini)
         // need time to initialize their TUI before accepting stdin.
         const delay = cliCommand === "claude" ? 0 : 3000;
+        const sendInitialPrompt = () => {
+          writePty(sessionId, `${initialPrompt.trim()}\n`).catch((err) => {
+            // Surface — a swallowed failure here means the memory /
+            // workspace initial prompt never reached the agent and the
+            // user can't tell why their first turn looks empty.
+            console.error(
+              `[useTerminalSession] failed to write initial prompt to ${cliCommand} session ${sessionId}:`,
+              err,
+            );
+          });
+        };
         if (delay > 0) {
-          setTimeout(() => {
-            writePty(sessionId, `${initialPrompt.trim()}\n`).catch(() => {});
-          }, delay);
+          setTimeout(sendInitialPrompt, delay);
         } else {
-          writePty(sessionId, `${initialPrompt.trim()}\n`).catch(() => {});
+          sendInitialPrompt();
         }
       }
     } catch (err) {

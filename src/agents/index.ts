@@ -2,7 +2,6 @@ export { CLAUDE_CODE_CONFIG, createClaudeCodeAdapter } from "./claude-code";
 export { OPENCODE_CONFIG, createOpenCodeAdapter } from "./opencode";
 export { CODEX_CONFIG, createCodexAdapter } from "./codex";
 export { GEMINI_CONFIG, createGeminiAdapter } from "./gemini";
-export { PACKETCODE_CONFIG, createPacketCodeAdapter } from "./packetcode";
 export { TERMINAL_CONFIG, createTerminalAdapter } from "./terminal";
 export { createGenericConfig, createGenericAdapter } from "./generic";
 export { createBaseAdapter, createPatternParser, stripAnsi } from "./types";
@@ -13,7 +12,6 @@ import { createClaudeCodeAdapter } from "./claude-code";
 import { createOpenCodeAdapter } from "./opencode";
 import { createCodexAdapter } from "./codex";
 import { createGeminiAdapter } from "./gemini";
-import { createPacketCodeAdapter } from "./packetcode";
 import { createTerminalAdapter } from "./terminal";
 import { createGenericAdapter } from "./generic";
 
@@ -31,8 +29,6 @@ export function getAdapterForAgent(config: AgentConfig): AgentAdapter {
       return createCodexAdapter(config);
     case "gemini":
       return createGeminiAdapter(config);
-    case "packetcode":
-      return createPacketCodeAdapter(config);
     case "terminal":
       return createTerminalAdapter(config);
     default:

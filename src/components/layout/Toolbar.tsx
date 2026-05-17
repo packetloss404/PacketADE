@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { FolderOpen, Diamond, Wrench, ArrowDown, ArrowUp, GitCommit, Bell, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
+import { FolderOpen, Wrench, ArrowDown, ArrowUp, GitCommit, Bell, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
@@ -12,8 +12,8 @@ import { getModulesSorted } from "@/modules/registry";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { CodeQualityModal } from "@/components/quality/CodeQualityModal";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
+import { NewAgentModal } from "@/components/workspace/NewAgentModal";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
 import { CommitModal } from "@/components/workspace/CommitModal";
 import { Modal } from "@/components/ui/Modal";
@@ -30,17 +30,16 @@ export function Toolbar() {
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
   const projectPath = useLayoutStore((s) => s.projectPath);
   const gitBranch = useGitInfo();
-  const [showCodeQuality, setShowCodeQuality] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [showNewFlight, setShowNewFlight] = useState(false);
+  const [showNewAgent, setShowNewAgent] = useState(false);
   const [showNewIssue, setShowNewIssue] = useState(false);
   // v0.8.8: when no workspace is active, picking a folder pops a small
   // disambiguation dialog (create-new vs. set-default-only). Holds the
   // path the user selected from the OS picker while they decide.
   const [pendingPickedPath, setPendingPickedPath] = useState<string | null>(null);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
-  const quickStartSession = useAppStore((s) => s.quickStartSession);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
   const newMenuRef = useRef<HTMLDivElement>(null);
 
@@ -53,7 +52,6 @@ export function Toolbar() {
   const activeWorkspace = useWorkspaceStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
   );
-  const activeWorkspaceIsRemote = Boolean(activeWorkspace?.serverId);
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
 
   const enabledModules = getModulesSorted().filter((mod) => moduleStates[mod.id]?.enabled ?? false);
@@ -176,13 +174,8 @@ export function Toolbar() {
             <div className="absolute top-full left-0 mt-1 w-52 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
               <DropdownItem
                 icon={<Zap size={12} className="text-accent-green" />}
-                label="New Claude session"
-                onClick={() => { quickStartSession("claude"); setShowNewMenu(false); }}
-              />
-              <DropdownItem
-                icon={<Zap size={12} className="text-accent-blue" />}
-                label="New Codex session"
-                onClick={() => { quickStartSession("codex"); setShowNewMenu(false); }}
+                label="New Agent"
+                onClick={() => { setShowNewAgent(true); setShowNewMenu(false); }}
               />
               <DropdownItem
                 icon={<Target size={12} className="text-accent-green" />}
@@ -221,21 +214,6 @@ export function Toolbar() {
 
         <div className="w-px h-4 bg-bg-border self-center" />
 
-        {/* Code Quality button */}
-        <button
-          onClick={() => setShowCodeQuality(true)}
-          disabled={activeWorkspaceIsRemote}
-          className="flex items-center gap-1.5 px-2 py-0.5 bg-bg-elevated rounded text-xs text-text-secondary hover:text-accent-amber transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-secondary"
-          title={activeWorkspaceIsRemote
-            ? "Code Quality analysis is not yet supported on remote workspaces. Open the workspace locally to run it."
-            : "Code Quality — run lint, type-check, and test suites for the current project from one panel."}
-        >
-          <Diamond size={12} className="text-accent-amber" />
-          <span>Quality</span>
-        </button>
-
-        <div className="w-px h-4 bg-bg-border self-center" />
-
         {/* Optional Tools (modules) dropdown — primary nav lives in LeftRail */}
         {/* Dictation is intentionally filtered out here; it surfaces via the dedicated VT button,
             the CommandPalette, and the StatusStrip indicator instead. */}
@@ -251,10 +229,10 @@ export function Toolbar() {
                     ? "bg-bg-elevated text-accent-green"
                     : "bg-bg-elevated text-text-secondary hover:text-accent-green"
                 }`}
-                title="Modules — open one of the optional tool modules."
+                title="Tools — open one of the optional tool modules."
               >
                 <Wrench size={12} className="text-accent-green" />
-                <span>Modules</span>
+                <span>Tools</span>
               </button>
 
               {showToolsMenu && (
@@ -352,8 +330,8 @@ export function Toolbar() {
       </div>
 
       {/* Modals */}
-      {showCodeQuality && (
-        <CodeQualityModal onClose={() => setShowCodeQuality(false)} />
+      {showNewAgent && (
+        <NewAgentModal onClose={() => setShowNewAgent(false)} />
       )}
       {showNewFlight && (
         <NewFlightModal onClose={() => setShowNewFlight(false)} />
