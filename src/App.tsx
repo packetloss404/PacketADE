@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, lazy, Suspense } from "react";
+import { useEffect, useCallback, useRef, useState, lazy, Suspense } from "react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { LeftRail } from "@/components/layout/LeftRail";
@@ -8,6 +8,7 @@ import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { DiffPane } from "@/components/agents/DiffPane";
 import { SideChatOverlay } from "@/components/agents/SideChatOverlay";
+import { LoginPtyModal } from "@/components/auth/LoginPtyModal";
 import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
 import { useDictationTarget } from "@/hooks/useDictationTarget";
 import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts";
@@ -236,19 +237,19 @@ export default function App() {
   // Global listeners for agent-login requests dispatched from the Agents pane.
   // Parallel slice B dispatches `packetade:open-claude-login` / `packetade:open-codex-login`
   // from AgentInputArea when the user clicks "Log in" on an auth-required agent row.
-  // We just need to spawn a PTY session running the CLI's login subcommand.
+  // The login PTY is one-shot and rendered into a floating modal via
+  // `useTransientPty` — no legacy mosaic pane is created.
+  const [loginCli, setLoginCli] = useState<"claude" | "codex" | null>(null);
+  const [loginProjectPath, setLoginProjectPath] = useState<string | undefined>(undefined);
   useEffect(() => {
     const openLogin = (cli: "claude" | "codex") => {
       const layoutStore = useLayoutStore.getState();
       const appStore = useAppStore.getState();
-      const projectPath = layoutStore.projectPath || undefined;
-      layoutStore.addPane({
-        cliCommand: cli,
-        cliArgs: ["login"],
-        projectPath,
-      });
-      // Switch to the CLI's session view so the new pane (rendered by
-      // MosaicContainer under layoutStore) is visible immediately.
+      setLoginProjectPath(layoutStore.projectPath || undefined);
+      setLoginCli(cli);
+      // Legacy: keep switching to the matching CoreView for now. The
+      // `"claude"`/`"codex"` entries get removed in a later cleanup pass once
+      // Track B (orchestration migration) lands.
       const targetView: AppView = cli === "codex" ? "codex" : "claude";
       if (appStore.activeView !== targetView) {
         appStore.setActiveView(targetView);
@@ -315,6 +316,13 @@ export default function App() {
         {commandPaletteOpen && <CommandPalette />}
         <DiffPane />
         <SideChatOverlay />
+        {loginCli && (
+          <LoginPtyModal
+            cli={loginCli}
+            projectPath={loginProjectPath}
+            onClose={() => setLoginCli(null)}
+          />
+        )}
       </div>
     </ErrorBoundary>
   );
