@@ -62,6 +62,14 @@ export async function initializeApp(): Promise<void> {
       }
     }
 
+    // One-time cleanup of the retired agentMosaicStore localStorage key.
+    // Safe to keep indefinitely — removeItem is a no-op when the key is absent.
+    try {
+      localStorage.removeItem("packetade:agent-mosaic-v1");
+    } catch {
+      // localStorage unavailable — fine.
+    }
+
     // Mark app as initialized so UI persistence can begin.
     useAppStore.getState().setInitialized(true);
 
