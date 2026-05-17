@@ -2,31 +2,38 @@ import { PendingApprovalsRollup } from "../PendingApprovalsRollup";
 import { PendingEditPrompt } from "../PendingEditPrompt";
 import { PermissionPrompt } from "../PermissionPrompt";
 import { TurnDiffSummary } from "../TurnDiffSummary";
-import type { AgentConversation } from "@/types/agent-conversation";
+import type {
+  AgentConversation,
+  PendingEdit,
+  PendingPermission,
+} from "@/types/agent-conversation";
 import type { useAgentTaskStore } from "@/stores/agentTaskStore";
+import type { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 
-type Store = ReturnType<typeof useAgentTaskStore.getState>;
+type TaskStore = ReturnType<typeof useAgentTaskStore.getState>;
+type ApprovalStore = ReturnType<typeof useAgentApprovalStore.getState>;
 
 interface PendingApprovalsSectionProps {
   conversation: AgentConversation;
   conversationId: string;
-  respondEdit: Store["respondEdit"];
-  respondPermission: Store["respondPermission"];
-  cancelPendingTools: Store["cancelPendingTools"];
-  appendAllowedToolPattern: Store["appendAllowedToolPattern"];
+  pendingEdits: PendingEdit[];
+  pendingPermissions: PendingPermission[];
+  respondEdit: ApprovalStore["respondEdit"];
+  respondPermission: ApprovalStore["respondPermission"];
+  cancelPendingTools: ApprovalStore["cancelPendingTools"];
+  appendAllowedToolPattern: TaskStore["appendAllowedToolPattern"];
 }
 
 export function PendingApprovalsSection({
   conversation,
   conversationId,
+  pendingEdits,
+  pendingPermissions,
   respondEdit,
   respondPermission,
   cancelPendingTools,
   appendAllowedToolPattern,
 }: PendingApprovalsSectionProps) {
-  const pendingEdits = conversation.pendingEdits ?? [];
-  const pendingPermissions = conversation.pendingPermissions ?? [];
-
   // `||` (not `??`) — both fields are arrays which are non-nullish even when
   // empty, so `??` would short-circuit. `||` renders the section when EITHER
   // has at least one item.

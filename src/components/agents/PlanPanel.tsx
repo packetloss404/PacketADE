@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useGoalStore } from "@/stores/goalStore";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { buildHandoffPrompt } from "@/lib/conversationHandoff";
@@ -22,6 +23,7 @@ import {
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AgentConversation,
+  AgentPlanItem,
   AgentToolCall,
 } from "@/types/agent-conversation";
 
@@ -104,14 +106,16 @@ function parseTaskList(tc: AgentToolCall): PlanItem[] | null {
  * emit in roughly the same conceptual position in the agent's reasoning
  * loop, but TodoWrite's structured payload is richer.
  *
- * v3: prefer the structured `conversation.plan` field reduced from the
- * `api-agent:plan-block:*` event over re-parsing tool calls. Falls back to
- * tool-call parsing for older sessions / providers that don't emit
- * plan_block yet.
+ * v3: prefer the structured plan-block snapshot from agentPlanStore over
+ * re-parsing tool calls. Falls back to tool-call parsing for older sessions
+ * / providers that don't emit plan_block yet.
  */
-function latestPlan(conversation: AgentConversation): PlanItem[] | null {
-  if (conversation.plan && conversation.plan.length > 0) {
-    return conversation.plan.map((p) => ({
+function latestPlan(
+  conversation: AgentConversation,
+  storedPlan: AgentPlanItem[] | undefined,
+): PlanItem[] | null {
+  if (storedPlan && storedPlan.length > 0) {
+    return storedPlan.map((p) => ({
       status: p.status,
       title: p.activeForm ?? p.content,
     }));
@@ -165,9 +169,18 @@ interface PlanPanelProps {
  * Renders nothing when no plan-bearing tool call exists yet.
  */
 export function PlanPanel({ conversation }: PlanPanelProps) {
-  const items = useMemo(() => latestPlan(conversation), [conversation]);
+  const storedPlan = useAgentPlanStore((s) => s.plan.get(conversation.id));
+  const specStage = useAgentPlanStore((s) => s.specStage.get(conversation.id));
+  const planApproved = useAgentPlanStore(
+    (s) => s.planApproved.get(conversation.id) ?? false,
+  );
+  const spec = useAgentPlanStore((s) => s.spec.get(conversation.id));
+  const items = useMemo(
+    () => latestPlan(conversation, storedPlan),
+    [conversation, storedPlan],
+  );
   const [collapsed, setCollapsed] = useState(false);
-  const approvePlan = useAgentTaskStore((s) => s.approvePlan);
+  const approvePlan = useAgentPlanStore((s) => s.approvePlan);
   const createApiConversation = useAgentTaskStore(
     (s) => s.createApiConversation,
   );
@@ -233,22 +246,21 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
   const resumeGoal = useGoalStore((s) => s.resumeGoal);
   const completeGoal = useGoalStore((s) => s.completeGoal);
   useEffect(() => {
-    if (!boundGoal || !conversation.plan) return;
-    syncChecklistFromConversation(boundGoal.id, conversation.plan);
-  }, [boundGoal, conversation.plan, syncChecklistFromConversation]);
+    if (!boundGoal || !storedPlan) return;
+    syncChecklistFromConversation(boundGoal.id, storedPlan);
+  }, [boundGoal, storedPlan, syncChecklistFromConversation]);
 
   if (!items) return null;
 
-  const awaitingPlanApproval =
-    conversation.specStage === "plan" && !conversation.planApproved;
+  const awaitingPlanApproval = specStage === "plan" && !planApproved;
   const handoffEligible =
-    isClaudeParent && (items.length > 0 || (conversation.spec?.criteria.length ?? 0) > 0);
+    isClaudeParent && (items.length > 0 || (spec?.criteria.length ?? 0) > 0);
 
   async function handleHandoff(): Promise<void> {
     if (!conversation.model) return;
     setHandingOff(true);
     try {
-      const prompt = buildHandoffPrompt(conversation);
+      const prompt = buildHandoffPrompt(conversation, spec, storedPlan);
       const codexProvider = API_PROVIDERS.find(
         (p) => p.agentCli === "api-openai-codex",
       );

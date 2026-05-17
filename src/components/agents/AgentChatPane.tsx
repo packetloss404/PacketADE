@@ -35,6 +35,7 @@ import {
 } from "./agentModeChipUtils";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
@@ -145,15 +146,30 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       setPlanMode: s.setPlanMode,
       setPermissionMode: s.setPermissionMode,
       setApproveWrites: s.setApproveWrites,
-      respondPermission: s.respondPermission,
-      respondEdit: s.respondEdit,
-      cancelPendingTools: s.cancelPendingTools,
       appendAllowedToolPattern: s.appendAllowedToolPattern,
       removeDiffComment: s.removeDiffComment,
       clearDiffComments: s.clearDiffComments,
       retryLastTurn: s.retryLastTurn,
       forkAndResend: s.forkAndResend,
     })),
+  );
+
+  // Approval actions live in their own substore now — group them so the
+  // PendingApprovalsSection / CancelPendingButton see stable references.
+  const approvalActions = useAgentApprovalStore(
+    useShallow((s) => ({
+      respondPermission: s.respondPermission,
+      respondEdit: s.respondEdit,
+      cancelPendingTools: s.cancelPendingTools,
+    })),
+  );
+  // Live queues read from the substore — drives both the per-item cards
+  // and the header status line counters.
+  const pendingPermissions = useAgentApprovalStore(
+    (s) => s.permissions.get(conversationId) ?? [],
+  );
+  const pendingEdits = useAgentApprovalStore(
+    (s) => s.edits.get(conversationId) ?? [],
   );
 
   // Preview pane + settings selectors grouped to reduce subscription count.
@@ -472,9 +488,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     (sum, m) => sum + (m.toolCalls?.length ?? 0),
     0,
   );
-  const pendingApprovalCount =
-    (conversation.pendingEdits?.length ?? 0) +
-    (conversation.pendingPermissions?.length ?? 0);
+  const pendingApprovalCount = pendingEdits.length + pendingPermissions.length;
   const statusLineParts: string[] = [];
   if (turnCount > 0)
     statusLineParts.push(`${turnCount} turn${turnCount === 1 ? "" : "s"}`);
@@ -615,9 +629,11 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       <PendingApprovalsSection
         conversation={conversation}
         conversationId={conversationId}
-        respondEdit={actions.respondEdit}
-        respondPermission={actions.respondPermission}
-        cancelPendingTools={actions.cancelPendingTools}
+        pendingEdits={pendingEdits}
+        pendingPermissions={pendingPermissions}
+        respondEdit={approvalActions.respondEdit}
+        respondPermission={approvalActions.respondPermission}
+        cancelPendingTools={approvalActions.cancelPendingTools}
         appendAllowedToolPattern={actions.appendAllowedToolPattern}
       />
 
@@ -718,8 +734,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           )}
 
           <CancelPendingButton
-            conversation={conversation}
-            onCancel={() => void actions.cancelPendingTools(conversationId)}
+            pendingCount={pendingApprovalCount}
+            onCancel={() => void approvalActions.cancelPendingTools(conversationId)}
           />
 
           {isRunning ? (

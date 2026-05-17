@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ListChecks, Plus, Check, X, Trash2 } from "lucide-react";
-import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 
 interface SpecPanelProps {
@@ -8,32 +8,30 @@ interface SpecPanelProps {
 }
 
 /**
- * F10 — editable success-criteria list shown when `conversation.specStage`
- * is `"spec"`. Sits above PlanPanel in the chat header so the Spec → Plan
- * → Code FSM reads top-to-bottom in the UI.
+ * F10 — editable success-criteria list shown when the plan substore's
+ * `specStage` for this conversation is `"spec"`. Sits above PlanPanel in
+ * the chat header so the Spec → Plan → Code FSM reads top-to-bottom in
+ * the UI.
  *
- * The criteria are user-editable bullets. "Lock spec & request plan" hands
- * off to `approveSpec` which posts a synthetic user turn asking the agent
- * for a structured TodoWrite plan.
- *
+ * Reads/writes the spec via agentPlanStore (split out of agentTaskStore).
  * Renders nothing when the conversation isn't in spec stage.
  */
 export function SpecPanel({ conversation }: SpecPanelProps) {
-  const setSpec = useAgentTaskStore((s) => s.setSpec);
-  const approveSpec = useAgentTaskStore((s) => s.approveSpec);
+  const setSpec = useAgentPlanStore((s) => s.setSpec);
+  const approveSpec = useAgentPlanStore((s) => s.approveSpec);
+  const spec = useAgentPlanStore((s) => s.spec.get(conversation.id));
+  const specStage = useAgentPlanStore((s) => s.specStage.get(conversation.id));
 
-  const [draft, setDraft] = useState<string[]>(
-    conversation.spec?.criteria ?? [],
-  );
+  const [draft, setDraft] = useState<string[]>(spec?.criteria ?? []);
   const [newBullet, setNewBullet] = useState("");
 
-  // Re-seed draft whenever the conversation's stored criteria change (e.g.
-  // model-refined spec arrives via a different flow).
+  // Re-seed draft whenever the stored criteria change (e.g. model-refined
+  // spec arrives via a different flow).
   useEffect(() => {
-    if (conversation.spec) setDraft(conversation.spec.criteria);
-  }, [conversation.spec]);
+    if (spec) setDraft(spec.criteria);
+  }, [spec]);
 
-  if (conversation.specStage !== "spec") return null;
+  if (specStage !== "spec") return null;
 
   function commitDraft(next: string[]) {
     setDraft(next);

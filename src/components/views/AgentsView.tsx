@@ -4,6 +4,7 @@ import {
   apiAgentProvider,
   type AgentCli,
 } from "@/stores/agentTaskStore";
+import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useProfileStore } from "@/stores/profileStore";
@@ -287,17 +288,9 @@ export function AgentsView() {
         // F10: enter the spec stage so SpecPanel renders criteria as the
         // model emits them. The model is instructed to bullet-and-stop.
         if (convId && agentMode === "plan") {
-          useAgentTaskStore.setState((s) => ({
-            conversations: s.conversations.map((c) =>
-              c.id === convId
-                ? {
-                    ...c,
-                    specStage: "spec",
-                    spec: { criteria: [], status: "draft", updatedAt: Date.now() },
-                  }
-                : c,
-            ),
-          }));
+          const plans = useAgentPlanStore.getState();
+          plans.setSpec(convId, []);
+          plans.setSpecStage(convId, "spec");
         }
       })();
       setAgentInputText("");
