@@ -4,6 +4,7 @@ import {
   useAgentSettingsStore,
   type AgentComposerMode,
 } from "@/stores/agentSettingsStore";
+import { CardHeader } from "./CardHeader";
 
 const COMPOSER_OPTIONS: Array<{
   mode: AgentComposerMode;
@@ -58,10 +59,11 @@ export function AgentSettingsCard() {
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-      <h3 className="text-xs font-semibold text-text-primary mb-3 flex items-center gap-2">
-        <Sparkles size={12} className="text-accent-purple" />
-        Agents
-      </h3>
+      <CardHeader
+        icon={Sparkles}
+        iconColor="text-accent-purple"
+        title="Agents"
+      />
 
       <div className="space-y-4">
         <div>
