@@ -32,18 +32,17 @@ import {
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { createGenericConfig } from "@/agents/generic";
 import { useAgentStore } from "@/stores/agentStore";
-import { useAppStore } from "@/stores/appStore";
 import { useCliOverrideStore } from "@/stores/cliOverrideStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
 import {
   brandClasses,
   CLI_CATALOG,
   type CliCatalogEntry,
   getCliBinaries,
 } from "@/lib/cli-catalog";
-import { detectCliCatalog, type DetectCatalogResult, writePty } from "@/lib/tauri";
+import { detectCliCatalog, type DetectCatalogResult } from "@/lib/tauri";
 import type { AgentConfig } from "@/types/agent";
+import { TransientPtyModal } from "@/components/ui/TransientPtyModal";
 import { CliCatalogHeader } from "./CliCatalogHeader";
 
 // Static map from catalog iconName -> lucide component. Catalog uses string
@@ -434,6 +433,13 @@ export function CliAgentsCard() {
   // even though the first install was still running (and the 30s safety net
   // would later flap the second install's spinner too).
   const [installingIds, setInstallingIds] = useState<Set<string>>(() => new Set());
+  /** Active install modal — drives the `TransientPtyModal` overlay. */
+  const [installTarget, setInstallTarget] = useState<{
+    entryId: string;
+    name: string;
+    command: string;
+    projectPath: string | undefined;
+  } | null>(null);
 
   const customAgents = useMemo(
     () => agents.filter((a) => !a.isBuiltin),
@@ -630,97 +636,47 @@ export function CliAgentsCard() {
     [clearManualPath, redetectOne],
   );
 
-  /** Spawn a single-pane terminal workspace that runs the entry's
-   *  `installCommand` as its first input, then switch the active view to
-   *  the workspace so the user can watch the install run. The pane is a
-   *  plain shell (agentId === "terminal"), not a Claude session, so the
-   *  install command runs verbatim without an agent wrapping prompt.
+  /** Run the entry's `installCommand` inside a floating PTY modal.
    *
-   *  Wiring the install command into the pane:
-   *    1. createWorkspace with a single "terminal" slot.
-   *    2. Subscribe to workspaceStore — when the pane's sessionId flips
-   *       from null to a string, writePty the install command + CR.
-   *    3. Unsubscribe (and clear the spinner) on first write, or on a
-   *       safety timeout if the pane never spawns. */
+   *  Previously this spawned a one-pane workspace and typed the install
+   *  command into it. Migrated to `useTransientPty` (via TransientPtyModal)
+   *  so the install no longer leaves a persistent workspace behind — when
+   *  the install process exits, the modal stays open with the final output
+   *  for the user to review, then auto-cleans the PTY on close. */
   const handleInstall = useCallback(
     (entry: CliCatalogEntry) => {
       const cmd = entry.installCommand?.trim();
       if (!cmd) return;
 
-      const projectPath = useLayoutStore.getState().projectPath;
-      const wsId = useWorkspaceStore.getState().createWorkspace(
-        `Install ${entry.name}`,
-        ["terminal"],
-        projectPath,
-        {
-          // Stamped onto the workspace; the terminal pane currently
-          // ignores `prompt` (it's only forwarded to CLI agents), so we
-          // still need the subscribe-and-write path below. Keeping it
-          // here gives downstream surfaces (history, sidebar previews) a
-          // reasonable summary of what the workspace was for.
-          prompt: cmd,
-        },
-      );
-
+      const projectPath = useLayoutStore.getState().projectPath || undefined;
       setInstallingIds((cur) => {
         const next = new Set(cur);
         next.add(entry.id);
         return next;
       });
-
-      // Watch the workspace until its first pane gets a sessionId. The
-      // pane is created synchronously inside createWorkspace, but its
-      // sessionId is populated asynchronously by TerminalPane.onSessionCreated.
-      // We use a holder + tear-down function so the subscribe callback,
-      // the safety timeout, and the cleanup can all share the same
-      // single-shot resolution path.
-      const teardown = { fn: () => {} };
-      let sent = false;
-      const finish = (cb?: () => void) => {
-        if (sent) return;
-        sent = true;
-        teardown.fn();
-        setInstallingIds((cur) => {
-          if (!cur.has(entry.id)) return cur;
-          const next = new Set(cur);
-          next.delete(entry.id);
-          return next;
-        });
-        cb?.();
-      };
-
-      const unsubscribe = useWorkspaceStore.subscribe((state) => {
-        if (sent) return;
-        const ws = state.workspaces.find((w) => w.id === wsId);
-        const sessionId = ws?.panes[0]?.sessionId;
-        if (!sessionId) return;
-        finish(() => {
-          // Trailing CR (not LF) — some Windows ConPTY configs won't
-          // fire shells' Enter handler on bare LF. Mirrors the
-          // writePty pattern used everywhere else in the workspace
-          // pane code.
-          void writePty(sessionId, cmd + "\r").catch((err) => {
-            console.warn("[cli-catalog] install writePty failed:", err);
-          });
-        });
+      setInstallTarget({
+        entryId: entry.id,
+        name: entry.name,
+        command: cmd,
+        projectPath,
       });
-
-      // Safety net: if the pane never produces a sessionId within 30s
-      // (no terminal pane mounted, user closed the workspace, etc.) we
-      // still drop the spinner so the install button comes back.
-      const safety = window.setTimeout(() => finish(), 30_000);
-
-      teardown.fn = () => {
-        window.clearTimeout(safety);
-        unsubscribe();
-      };
-
-      // Flip the active view so the user actually sees the install run.
-      useWorkspaceStore.getState().setActiveWorkspace(wsId);
-      useAppStore.getState().setActiveView("workspace");
     },
     [],
   );
+
+  const clearInstallTarget = useCallback(() => {
+    setInstallTarget((current) => {
+      if (current) {
+        setInstallingIds((cur) => {
+          if (!cur.has(current.entryId)) return cur;
+          const next = new Set(cur);
+          next.delete(current.entryId);
+          return next;
+        });
+      }
+      return null;
+    });
+  }, []);
 
   // === Custom CLI drawer handlers (preserved) ===
 
@@ -1024,6 +980,23 @@ export function CliAgentsCard() {
           </div>
         )}
       </div>
+      {installTarget && (
+        <TransientPtyModal
+          title={`Install ${installTarget.name}`}
+          icon={<Download size={14} className="text-accent-green" />}
+          // Run inside a shell so pipelines like `curl … | bash` work. The
+          // install command is fed in as initialInput so users can see the
+          // line that's about to run before output streams in.
+          command={isWindowsHost() ? "cmd" : "bash"}
+          projectPath={installTarget.projectPath}
+          initialInput={installTarget.command}
+          interactive
+          onClose={clearInstallTarget}
+          runningMessage={`Installing ${installTarget.name}…`}
+          doneMessage="Install completed — close to refresh status."
+          errorMessage="Install ended with an error."
+        />
+      )}
     </div>
   );
 }
