@@ -4,6 +4,7 @@ import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
 import type { Flight, FlightStatus, Milestone, Task, TaskHandoff, CoordinationEvent } from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
 import { useRoutingStore } from "@/stores/routingStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 type FlightState = {
   flights: Flight[];
@@ -143,6 +144,17 @@ interface FlightStore {
   // Session linking
   linkSessionToFlight: (flightId: string, sessionId: string) => void;
   unlinkSessionFromFlight: (flightId: string, sessionId: string) => void;
+
+  /**
+   * Track B: return the workspace id bound to this flight, creating one
+   * lazily if absent. Each flight gets one workspace named
+   * `"Flight: {flight.title}"` whose `projectPath` mirrors the flight's,
+   * and whose agent slots are derived from the flight's task agent
+   * configs. Idempotent — repeated calls for the same flight return the
+   * same id and never recreate the workspace. Returns `null` if the
+   * flight doesn't exist.
+   */
+  ensureFlightWorkspace: (flightId: string) => string | null;
 
   // Issue linking
   addIssueToFlight: (flightId: string, issueId: string) => void;
@@ -447,6 +459,42 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       saveState({ flights, activeFlightId: s.activeFlightId });
       return { flights };
     });
+  },
+
+  // === Workspace binding (Track B) ===
+
+  ensureFlightWorkspace: (flightId) => {
+    const flight = get().flights.find((f) => f.id === flightId);
+    if (!flight) return null;
+
+    // Already bound — verify the workspace still exists. If the user
+    // manually deleted the workspace, fall through to recreate one.
+    if (flight.workspaceId) {
+      const existing = useWorkspaceStore
+        .getState()
+        .workspaces.find((w) => w.id === flight.workspaceId);
+      if (existing) return existing.id;
+    }
+
+    // The orchestrator owns pane lifecycle for this workspace — each
+    // running task spawns one pane via `workspaceStore.addPane`. We start
+    // with an empty `agents` list and let the agentConfigId on each spawn
+    // determine its slot (see `orchestrationStore.tick`). This mirrors
+    // the legacy `layoutStore.addPane` behavior, which spawned mosaic
+    // panes on demand with no preconfigured slots.
+    const workspaceId = useWorkspaceStore
+      .getState()
+      .createWorkspace(`Flight: ${flight.title}`, [], flight.projectPath);
+
+    set((s) => {
+      const flights = s.flights.map((f) =>
+        f.id === flightId ? { ...f, workspaceId, updatedAt: Date.now() } : f,
+      );
+      saveState({ flights, activeFlightId: s.activeFlightId });
+      return { flights };
+    });
+
+    return workspaceId;
   },
 
   // === Session linking ===

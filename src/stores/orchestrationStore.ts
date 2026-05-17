@@ -14,9 +14,11 @@ import {
   saveSettingsSlice,
 } from "@/lib/tauri";
 import { useFlightStore } from "@/stores/flightStore";
-import { useLayoutStore } from "@/stores/layoutStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useMemoryStore } from "@/stores/memoryStore";
+import type { WorkspaceAgentSlot } from "@/types/workspace";
+import { logSwallowed } from "@/lib/logSwallowed";
 import {
   notifyApprovalNeeded as notifyApprovalNeededDesktop,
   notifyFlightFailed as notifyFlightFailedDesktop,
@@ -278,6 +280,17 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
           },
           rt.projectPath,
         );
+
+        // Track B: archive the flight's workspace once the flight reaches
+        // a terminal state. The workspace's panes already cleaned up via
+        // `onSessionEnded`, so this is just a status flip.
+        if (flightAfter.workspaceId) {
+          try {
+            useWorkspaceStore.getState().archiveWorkspace(flightAfter.workspaceId);
+          } catch (err) {
+            logSwallowed("orchestration.archiveWorkspace")(err);
+          }
+        }
       }
     } catch {
       useOrchestrationStore.setState((s) => {
@@ -419,15 +432,58 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
         continue;
       }
 
-      const paneId = useLayoutStore.getState().addPane({
-        cliCommand: request.command,
-        cliArgs: request.args,
-        initialPrompt: request.prompt,
-        projectPath: request.projectPath,
-        agentConfigId: request.agentConfigId,
-        taskId: request.taskId,
-        flightId: request.flightId,
-      });
+      // Track B: spawn the task pane inside the flight's workspace.
+      // `ensureFlightWorkspace` lazily creates the workspace on the first
+      // task spawn and is idempotent for subsequent spawns.
+      const workspaceId = flightStore.ensureFlightWorkspace(request.flightId);
+      if (!workspaceId) {
+        console.warn(
+          `[orchestration] ensureFlightWorkspace returned null for flight ${request.flightId}; skipping task ${request.taskId}.`,
+        );
+        continue;
+      }
+
+      // Map the task's agentConfigId onto a WorkspaceAgentSlot. Unknown
+      // ids collapse to "terminal" — the actual command/args are forced
+      // via `overrideCommand`/`overrideArgs` below, so the slot is just
+      // a render-time hint for pane styling.
+      const KNOWN_SLOTS: readonly WorkspaceAgentSlot[] = [
+        "claude-code",
+        "codex",
+        "gemini",
+        "opencode",
+        "packetcode",
+        "terminal",
+      ];
+      const slot: WorkspaceAgentSlot = (KNOWN_SLOTS as readonly string[]).includes(
+        request.agentConfigId,
+      )
+        ? (request.agentConfigId as WorkspaceAgentSlot)
+        : "terminal";
+
+      const paneId = useWorkspaceStore.getState().addPane(workspaceId, slot);
+      if (!paneId) {
+        console.warn(
+          `[orchestration] workspaceStore.addPane returned null for workspace ${workspaceId} (deleted?); skipping task ${request.taskId}.`,
+        );
+        continue;
+      }
+
+      // Stamp the orchestration metadata onto the pane so WorkspacePane
+      // can resolve the right command/args/prompt and useTerminalSession
+      // can wire `attachSessionToTask` once the PTY spawns.
+      try {
+        useWorkspaceStore.getState().updatePane(workspaceId, paneId, {
+          taskId: request.taskId,
+          flightId: request.flightId,
+          agentConfigId: request.agentConfigId,
+          initialPrompt: request.prompt,
+          overrideCommand: request.command,
+          overrideArgs: request.args,
+        });
+      } catch (err) {
+        logSwallowed("orchestration.updatePane")(err);
+      }
 
       set((s) => {
         const runningTasks = new Map(s.runningTasks);
