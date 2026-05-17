@@ -22,6 +22,9 @@ interface PendingEditPromptProps {
   /** B1: when set, ToolDiffView renders hover-`+` to attach Codex-style
    * line comments queued on the conversation. Omit for read-only previews. */
   conversationId?: string;
+  /** When true, this edit is the current Y/N keyboard target — render
+   * inline `(Y)` / `(N)` hints on the Apply and Reject buttons. */
+  showKeyboardHints?: boolean;
 }
 
 /** A contiguous added/removed/unchanged region within a unified diff. */
@@ -141,7 +144,7 @@ function countQuickDiff(before: string | undefined, after: string): {
   return { added, removed, isNew: false };
 }
 
-export function PendingEditPrompt({ item, projectPath, onApply, onReject, conversationId }: PendingEditPromptProps) {
+export function PendingEditPrompt({ item, projectPath, onApply, onReject, conversationId, showKeyboardHints }: PendingEditPromptProps) {
   const [expanded, setExpanded] = useState(false);
   const [hunkPickerOpen, setHunkPickerOpen] = useState(false);
 
@@ -314,6 +317,11 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
               className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
             >
               <Check size={12} /> Apply
+              {showKeyboardHints && (
+                <kbd className="ml-1 text-[9.5px] font-mono text-accent-green/80 border border-accent-green/40 rounded px-1 leading-none py-0.5">
+                  Y
+                </kbd>
+              )}
             </button>
             {canPickHunks && (
               <button
@@ -331,6 +339,11 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
               className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-red/40 text-accent-red hover:bg-accent-red/10"
             >
               <X size={12} /> Reject
+              {showKeyboardHints && (
+                <kbd className="ml-1 text-[9.5px] font-mono text-accent-red/80 border border-accent-red/40 rounded px-1 leading-none py-0.5">
+                  N
+                </kbd>
+              )}
             </button>
           </>
         )}

@@ -16,6 +16,9 @@ interface PermissionPromptProps {
    * appending would NARROW access, opposite intent) and (b) show
    * "(already in this conversation)" when the pattern is already in. */
   conversationAllowedTools?: string[];
+  /** When true, this prompt is the current Y/N keyboard target — render
+   * inline `(Y)` / `(N)` hints on the Allow-once and Deny buttons. */
+  showKeyboardHints?: boolean;
 }
 
 function prettyJson(raw: string): string {
@@ -34,6 +37,7 @@ export function PermissionPrompt({
   onDeny,
   onAllowAlwaysWithPattern,
   conversationAllowedTools,
+  showKeyboardHints,
 }: PermissionPromptProps) {
   const pattern = derivePatternHint(item.name, item.arguments);
   // Show the smart-allow row only when:
@@ -66,6 +70,11 @@ export function PermissionPrompt({
           className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
         >
           <Check size={12} /> Allow once
+          {showKeyboardHints && (
+            <kbd className="ml-1 text-[9.5px] font-mono text-accent-green/80 border border-accent-green/40 rounded px-1 leading-none py-0.5">
+              Y
+            </kbd>
+          )}
         </button>
         <button
           type="button"
@@ -81,6 +90,11 @@ export function PermissionPrompt({
           className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-red/40 text-accent-red hover:bg-accent-red/10"
         >
           <X size={12} /> Deny
+          {showKeyboardHints && (
+            <kbd className="ml-1 text-[9.5px] font-mono text-accent-red/80 border border-accent-red/40 rounded px-1 leading-none py-0.5">
+              N
+            </kbd>
+          )}
         </button>
       </div>
       {/* B3 — Codex-style smart-rule proposal. One-click writes the
