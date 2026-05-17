@@ -47,7 +47,9 @@ function saveState(agents: AgentConfig[]) {
 async function syncAgentsToBackend(agents: AgentConfig[]) {
   try {
     await saveAgentsSlice(agents);
-  } catch {}
+  } catch (err) {
+    console.warn("[agentStore.persist] swallowed error:", err);
+  }
 }
 
 const initial = loadState();
@@ -160,6 +162,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       // Add any custom (non-builtin) agents from persisted state
       const custom = state.agents.filter((a) => !builtinIds.has(a.id));
       set({ agents: [...merged, ...custom] });
-    } catch {}
+    } catch (err) {
+      console.warn("[agentStore.hydrate] swallowed error:", err);
+    }
   },
 }));

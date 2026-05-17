@@ -70,7 +70,8 @@ export default function App() {
   useEffect(() => {
     initializeApp();
     // Request OS notification permission early so async-agent completion
-    // notifications can fire later. No-ops gracefully if unsupported/denied.
+    // notifications can fire later. User-denial is the common case — swallow
+    // silently; downstream `notify()` calls degrade gracefully.
     void requestNotificationPermission().catch(() => {});
   }, []);
 

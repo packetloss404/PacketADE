@@ -210,7 +210,9 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
         if (cancelled) fn();
         else unlisten = fn;
       })
-      .catch(() => {});
+      .catch((err) =>
+        console.warn("[PlanPanel.listenSidecarStatus] subscribe failed:", err),
+      );
     return () => {
       cancelled = true;
       if (unlisten) unlisten();

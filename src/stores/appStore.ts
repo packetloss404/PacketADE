@@ -1,6 +1,4 @@
 import { create } from "zustand";
-import { useLayoutStore } from "@/stores/layoutStore";
-import { useMemoryStore } from "@/stores/memoryStore";
 
 export type CoreView = "welcome" | "claude" | "codex" | "gemini" | "opencode" | "packetcode" | "issues" | "missions" | "history" | "tools" | "github" | "memory" | "deploy" | "review_queue" | "workspace" | "agents" | "cost_dashboard" | "dictation";
 export type AppView = CoreView | `mod:${string}`;
@@ -51,7 +49,6 @@ interface AppStore {
    * a separate routing layer. */
   openMemoryView: (filter?: MemoryViewFilter) => void;
   clearMemoryViewFilter: () => void;
-  quickStartSession: (cli?: "claude" | "codex" | "gemini" | "opencode" | "packetcode") => void;
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -73,28 +70,4 @@ export const useAppStore = create<AppStore>((set) => ({
   openMemoryView: (filter) =>
     set({ activeView: "memory", memoryViewFilter: filter ?? null }),
   clearMemoryViewFilter: () => set({ memoryViewFilter: null }),
-  quickStartSession: async (cli = "claude") => {
-    const memoryStore = useMemoryStore.getState();
-    const layoutStore = useLayoutStore.getState();
-
-    // Memory hydration runs synchronously inside `bootstrap.ts` before
-    // `setInitialized(true)`. If quickStartSession fires before that
-    // completes (e.g. via a global keybind during startup), the memory
-    // store is still on its empty default and the injected context would
-    // be an empty string. Warn so the missing injection isn't silent.
-    if (!useAppStore.getState().initialized) {
-      console.warn(
-        "[quickStartSession] called before app initialization — memory context may be empty",
-      );
-    }
-
-    const memoryContext = memoryStore.getContextForSession(layoutStore.projectPath);
-    const prompt = memoryContext.trim();
-
-    set({ activeView: cli });
-    layoutStore.addPane({
-      cliCommand: cli,
-      initialPrompt: prompt || undefined,
-    });
-  },
 }));

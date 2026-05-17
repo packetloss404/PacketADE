@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { PaneConfig } from "@/types/layout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { saveWorkspacesSlice } from "@/lib/tauri";
+import { logSwallowed } from "@/lib/logSwallowed";
 
 interface LayoutStore {
   panes: PaneConfig[];
@@ -76,7 +77,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
           // quota / storage unavailable — backend persistence below still
           // covers the canonical record.
         }
-        saveWorkspacesSlice(nextWorkspaces).catch(() => {});
+        saveWorkspacesSlice(nextWorkspaces).catch(logSwallowed("layoutStore.saveWorkspaces"));
       }
       // Update the cached `projectPath` immediately so synchronous
       // readers (e.g. the very next `useLayoutStore.getState().projectPath`

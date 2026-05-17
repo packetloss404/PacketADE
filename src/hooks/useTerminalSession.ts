@@ -3,6 +3,7 @@ import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createPtySession, writePty, killPty } from "@/lib/tauri";
+import { logSwallowed } from "@/lib/logSwallowed";
 import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
@@ -155,7 +156,9 @@ export function useTerminalSession({
     const fitAddon = fitAddonRef.current;
     if (!term || !fitAddon) return;
 
-    // Kill any existing PTY session before starting a new one to prevent orphans
+    // Kill any existing PTY session before starting a new one to prevent
+    // orphans. Swallow kill errors — the PTY may already have exited; the
+    // restart will succeed regardless.
     const prevSid = sessionIdRef.current;
     if (prevSid) {
       exitRequestedRef.current = true;
@@ -329,6 +332,7 @@ export function useTerminalSession({
       const sid = sessionIdRef.current;
       if (sid) {
         exitRequestedRef.current = true;
+        // Unmount cleanup — swallow errors; PTY may already be dead.
         killPty(sid).catch(() => {});
       }
       useLayoutStore.getState().setPaneSession(paneId, null);
@@ -345,6 +349,7 @@ export function useTerminalSession({
     const sid = sessionIdRef.current;
     if (sid) {
       exitRequestedRef.current = true;
+      // User-initiated kill — swallow if already exited.
       await killPty(sid).catch(() => {});
       setAlive(false);
     }
@@ -365,6 +370,7 @@ export function useTerminalSession({
     const sid = sessionIdRef.current;
     if (sid) {
       exitRequestedRef.current = true;
+      // Restart kills the prior PTY — swallow if already exited.
       await killPty(sid).catch(() => {});
     }
     sessionIdRef.current = null;
@@ -391,7 +397,7 @@ export function useTerminalSession({
   const handleApprove = useCallback(() => {
     const sid = sessionIdRef.current;
     if (sid) {
-      writePty(sid, "y\n").catch(() => {});
+      writePty(sid, "y\n").catch(logSwallowed("useTerminalSession.approve"));
     }
     setShowApproval(false);
     detectorResult.clearApproval();
@@ -400,7 +406,7 @@ export function useTerminalSession({
   const handleDeny = useCallback(() => {
     const sid = sessionIdRef.current;
     if (sid) {
-      writePty(sid, "n\n").catch(() => {});
+      writePty(sid, "n\n").catch(logSwallowed("useTerminalSession.deny"));
     }
     setShowApproval(false);
     detectorResult.clearApproval();
@@ -409,7 +415,7 @@ export function useTerminalSession({
   const handleAbort = useCallback(() => {
     const sid = sessionIdRef.current;
     if (sid) {
-      writePty(sid, "\x03").catch(() => {});
+      writePty(sid, "\x03").catch(logSwallowed("useTerminalSession.abort"));
     }
     setShowApproval(false);
     detectorResult.clearApproval();

@@ -35,7 +35,9 @@ export function DictationCard() {
         const parsed: AudioDevice[] = typeof raw === "string" ? JSON.parse(raw) : raw;
         setDevices(parsed);
       })
-      .catch(() => {});
+      .catch((err) =>
+        console.warn("[DictationCard.listAudioDevices] failed:", err),
+      );
     let cancelled = false;
     const loadGeminiKeyStatus = async () => {
       const legacySaved =

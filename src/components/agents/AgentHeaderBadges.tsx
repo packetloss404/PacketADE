@@ -142,7 +142,12 @@ export function AgentHeaderBadges({
         if (cancelled) fn();
         else unlisten = fn;
       })
-      .catch(() => {});
+      .catch((err) =>
+        console.warn(
+          "[AgentHeaderBadges.listenProviderAuth] subscribe failed:",
+          err,
+        ),
+      );
     return () => {
       cancelled = true;
       if (unlisten) unlisten();

@@ -84,6 +84,7 @@ async function sshExec(
   }
 
   if (!completed) {
+    // Best-effort kill — swallow if the PTY already exited.
     await killPty(sessionId).catch(() => {});
     return { output: output + "\n[Connection timed out]", success: false };
   }

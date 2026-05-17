@@ -1,4 +1,5 @@
 import { loadPersistedState, getCwd, saveUiSlice, getAppKnownHostsPath } from "@/lib/tauri";
+import { logSwallowed } from "@/lib/logSwallowed";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useAgentStore } from "@/stores/agentStore";
@@ -104,6 +105,6 @@ export function persistUiState() {
       selectedView: activeView,
       selectedFlightId: null,
       theme,
-    }).catch(() => {});
+    }).catch(logSwallowed("bootstrap.saveUi"));
   }, 1000);
 }

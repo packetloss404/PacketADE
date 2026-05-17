@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Workspace, WorkspacePane, WorkspaceAgentSlot } from "@/types/workspace";
 import { saveWorkspacesSlice } from "@/lib/tauri";
+import { logSwallowed } from "@/lib/logSwallowed";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useServerStore } from "@/stores/serverStore";
 
@@ -122,7 +123,7 @@ function syncToLocalStorage(workspaces: Workspace[]) {
 }
 
 function syncToBackend(workspaces: Workspace[]) {
-  saveWorkspacesSlice(workspaces).catch(() => {});
+  saveWorkspacesSlice(workspaces).catch(logSwallowed("workspaceStore.save"));
   syncToLocalStorage(workspaces);
 }
 

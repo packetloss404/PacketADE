@@ -25,7 +25,9 @@ async function syncFlightsToBackend(state: FlightState) {
   try {
     await saveFlightsSlice(state.flights);
     await saveUiSlice({ selectedFlightId: state.activeFlightId });
-  } catch {}
+  } catch (err) {
+    console.warn("[flightStore.persist] swallowed error:", err);
+  }
 }
 
 // === Helpers ===
@@ -611,7 +613,9 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
         flights: state.flights,
         activeFlightId: state.ui.selectedFlightId ?? null,
       });
-    } catch {}
+    } catch (err) {
+      console.warn("[flightStore.hydrate] swallowed error:", err);
+    }
   },
 
   reconcileLiveSessions: (liveSessionIds) => {

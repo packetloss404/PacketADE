@@ -374,12 +374,16 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       .then((cmds) => {
         if (!cancelled) setCustomSlashCommands(cmds);
       })
-      .catch(() => {});
+      .catch((err) =>
+        console.warn("[AgentChatPane.listSlashCommands] failed:", err),
+      );
     listSkills(projectPathForSlash)
       .then((skills) => {
         if (!cancelled) setUserSkills(skills);
       })
-      .catch(() => {});
+      .catch((err) =>
+        console.warn("[AgentChatPane.listSkills] failed:", err),
+      );
     return () => {
       cancelled = true;
     };

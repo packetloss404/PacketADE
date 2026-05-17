@@ -96,6 +96,15 @@ export function Toolbar() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showNewMenu]);
 
+  // Global event hook: CommandPalette's "New Agent" entry dispatches
+  // `packetade:open-new-agent` so it routes through the same modal as
+  // the Toolbar's "+ New → New Agent" item without lifting modal state.
+  useEffect(() => {
+    const open = () => setShowNewAgent(true);
+    window.addEventListener("packetade:open-new-agent", open);
+    return () => window.removeEventListener("packetade:open-new-agent", open);
+  }, []);
+
   async function handleOpenFolder() {
     // v0.8.8: smart picker. With an active workspace, the title makes it
     // clear the choice will rebind THAT workspace's project folder. With

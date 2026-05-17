@@ -21,26 +21,24 @@ export function CommandPalette() {
 
   const setActiveView = useAppStore((s) => s.setActiveView);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
-  const quickStartSession = useAppStore((s) => s.quickStartSession);
   const moduleStates = useModuleStore((s) => s.states);
+
+  /** Dispatch the global event the Toolbar listens for to open the
+   *  unified New Agent modal. Lets the CommandPalette participate in the
+   *  same flow without lifting modal state. */
+  function openNewAgentModal() {
+    window.dispatchEvent(new CustomEvent("packetade:open-new-agent"));
+  }
 
   const actions = useMemo<PaletteAction[]>(() => {
     const items: PaletteAction[] = [
       {
-        id: "quick-claude",
-        label: "Quick Claude Session",
-        description: "Start a new Claude session with defaults",
+        id: "new-agent",
+        label: "New Agent",
+        description: "Add an agent to a workspace (Claude, Codex, Gemini, …)",
         icon: <Zap size={14} className="text-accent-green" />,
-        action: () => quickStartSession("claude"),
-        keywords: ["new", "session", "quick", "claude"],
-      },
-      {
-        id: "quick-codex",
-        label: "Quick Codex Session",
-        description: "Start a new Codex session with defaults",
-        icon: <Zap size={14} className="text-accent-blue" />,
-        action: () => quickStartSession("codex"),
-        keywords: ["new", "session", "quick", "codex"],
+        action: openNewAgentModal,
+        keywords: ["new", "session", "quick", "claude", "codex", "agent"],
       },
       {
         id: "sessions",
@@ -116,7 +114,7 @@ export function CommandPalette() {
     }
 
     return items;
-  }, [setActiveView, quickStartSession, moduleStates]);
+  }, [setActiveView, moduleStates]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return actions;
