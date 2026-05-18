@@ -24,11 +24,17 @@ pub fn load_persisted_state() -> Result<PersistedStateDto, String> {
 
 #[tauri::command]
 pub fn save_persisted_state(state: PersistedStateDto) -> Result<(), String> {
-    let existing = storage::load_state();
-    let mut state: crate::core::storage::PersistedState = state.into();
-    state.issues = existing.issues;
-    state.retrospectives = existing.retrospectives;
-    storage::save_state(&state)
+    // Merge under STATE_LOCK so a concurrent `save_issues_slice` /
+    // `save_retrospectives` (or any other slice writer) between the load
+    // and save can't be silently overwritten by the bulk save here.
+    let incoming: crate::core::storage::PersistedState = state.into();
+    storage::update_state(|state| {
+        let preserved_issues = std::mem::take(&mut state.issues);
+        let preserved_retros = std::mem::take(&mut state.retrospectives);
+        *state = incoming;
+        state.issues = preserved_issues;
+        state.retrospectives = preserved_retros;
+    })
 }
 
 #[tauri::command]
