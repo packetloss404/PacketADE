@@ -2,6 +2,7 @@ import { Puzzle } from "lucide-react";
 import { useModuleStore } from "@/stores/moduleStore";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { getModulesSorted } from "@/modules/registry";
+import { CardHeader } from "./CardHeader";
 
 const CATEGORY_LABELS: Record<string, string> = {
   ai: "AI",
@@ -27,15 +28,16 @@ export function ModulesCard() {
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4 col-span-2">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold text-text-primary flex items-center gap-2">
-          <Puzzle size={12} className="text-accent-blue" />
-          Modules
-        </h3>
-        <span className="text-[10px] text-text-muted px-1.5 py-0.5 bg-bg-elevated rounded">
-          {enabledCount} of {modules.length} enabled
-        </span>
-      </div>
+      <CardHeader
+        icon={Puzzle}
+        iconColor="text-accent-blue"
+        title="Modules"
+        action={
+          <span className="text-[10px] text-text-muted px-1.5 py-0.5 bg-bg-elevated rounded">
+            {enabledCount} of {modules.length} enabled
+          </span>
+        }
+      />
 
       <div className="flex flex-col gap-2">
         {modules.map((mod) => {
