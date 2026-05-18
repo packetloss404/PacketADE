@@ -89,7 +89,7 @@ fn validate_path(path: &str, project_path: &str) -> Result<String, String> {
     resolve_workspace_path(path, project_path, true).map(|p| p.to_string_lossy().to_string())
 }
 
-fn truncate_to_char_boundary(s: &mut String, max_bytes: usize) {
+pub(crate) fn truncate_to_char_boundary(s: &mut String, max_bytes: usize) {
     if s.len() <= max_bytes {
         return;
     }
