@@ -9,7 +9,7 @@ import {
   Rocket,
 } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
-import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
 import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
 import type { Flight, FlightStatus, FlightPriority } from "@/types/flight";
 
@@ -23,10 +23,10 @@ interface FlightHeaderTileProps {
 export function FlightHeaderTile({ flight }: FlightHeaderTileProps) {
   const updateFlight = useFlightStore((s) => s.updateFlight);
   const deleteFlight = useFlightStore((s) => s.deleteFlight);
-  const launchFlight = useOrchestrationStore((s) => s.launchFlight);
-  const pauseFlight = useOrchestrationStore((s) => s.pauseFlight);
-  const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
-  const cancelFlight = useOrchestrationStore((s) => s.cancelFlight);
+  const launchFlight = useOrchestrationStateStore((s) => s.launchFlight);
+  const pauseFlight = useOrchestrationStateStore((s) => s.pauseFlight);
+  const resumeFlight = useOrchestrationStateStore((s) => s.resumeFlight);
+  const cancelFlight = useOrchestrationStateStore((s) => s.cancelFlight);
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingObjective, setEditingObjective] = useState(false);

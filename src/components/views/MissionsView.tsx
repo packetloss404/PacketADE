@@ -17,9 +17,10 @@ import {
   X,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
+import { useShallow } from "zustand/react/shallow";
 import { useFlightStore } from "@/stores/flightStore";
 import { useGoalStore } from "@/stores/goalStore";
-import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useOrchestrationStateStore as useOrchestrationStore } from "@/stores/orchestrationStateStore";
 import { useMissionPlannerStore } from "@/stores/missionPlannerStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -190,12 +191,23 @@ function eventTimeShort(ts: number): string {
 }
 
 export function MissionsView() {
-  const flights = useFlightStore((s) => s.flights);
-  const activeFlightId = useFlightStore((s) => s.activeFlightId);
-  const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
-  const addFlight = useFlightStore((s) => s.addFlight);
-  const updateFlight = useFlightStore((s) => s.updateFlight);
-  const computeFlightStatus = useFlightStore((s) => s.computeFlightStatus);
+  const {
+    flights,
+    activeFlightId,
+    setActiveFlight,
+    addFlight,
+    updateFlight,
+    computeFlightStatus,
+  } = useFlightStore(
+    useShallow((s) => ({
+      flights: s.flights,
+      activeFlightId: s.activeFlightId,
+      setActiveFlight: s.setActiveFlight,
+      addFlight: s.addFlight,
+      updateFlight: s.updateFlight,
+      computeFlightStatus: s.computeFlightStatus,
+    })),
+  );
   const pauseFlight = useOrchestrationStore((s) => s.pauseFlight);
   const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
   const startPlanner = useMissionPlannerStore((s) => s.startPlanner);

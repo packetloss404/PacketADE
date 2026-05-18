@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Target, Rocket, ListTree } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useFlightStore } from "@/stores/flightStore";
-import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useFlightChat } from "@/hooks/useFlightChat";
@@ -21,7 +21,7 @@ export function NewFlightModal({ onClose, onCreated }: NewFlightModalProps) {
   const addFlight = useFlightStore((s) => s.addFlight);
   const addMilestone = useFlightStore((s) => s.addMilestone);
   const addTask = useFlightStore((s) => s.addTask);
-  const launchFlight = useOrchestrationStore((s) => s.launchFlight);
+  const launchFlight = useOrchestrationStateStore((s) => s.launchFlight);
   const projectPath = useLayoutStore((s) => s.projectPath);
   const activeWorkspace = useWorkspaceStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),

@@ -5,7 +5,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
@@ -78,7 +78,7 @@ export async function initializeApp(): Promise<void> {
     // state, so this is really just a clarity/intent signal.
     void useFlightStore.getState().hydrateFromBackend(state).catch(() => undefined);
     void useAgentStore.getState().hydrateFromBackend(state).catch(() => undefined);
-    void useOrchestrationStore.getState().hydrateFromBackend(state).catch(() => undefined);
+    void useOrchestrationStateStore.getState().hydrateFromBackend(state).catch(() => undefined);
   } catch {
     // Backend unavailable — fall back to localStorage defaults.
     const localPath = localStorage.getItem("packetade:project-path");
