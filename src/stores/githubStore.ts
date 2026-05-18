@@ -31,6 +31,7 @@ import type {
   GitHubConfig,
 } from "@/types/github";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
+import { logSwallowed } from "@/lib/logSwallowed";
 
 const STORAGE_KEY = "packetade:github";
 const SETTINGS_STORAGE_KEY = "packetade:github:settings";
@@ -317,9 +318,11 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       if (hasToken) {
         try {
           authenticatedUser = await githubGetAuthenticatedUser();
-        } catch {
+        } catch (e) {
           // Token may be stale/invalid — leave user null; badge falls back to
-          // "user" and the next API call will surface a clearer error.
+          // "user" and the next API call will surface a clearer error. Surface
+          // the failure so a broken probe doesn't silently mask real issues.
+          logSwallowed("githubStore.initializeAuth.userProbe")(e);
         }
       }
 
@@ -348,9 +351,10 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       let authenticatedUser: AuthenticatedUser | null = null;
       try {
         authenticatedUser = await githubGetAuthenticatedUser();
-      } catch {
+      } catch (e) {
         // Don't fail connect on the probe; the badge will show "user" until
         // the next refresh.
+        logSwallowed("githubStore.connect.userProbe")(e);
       }
       set({
         isConnected: true,
@@ -419,8 +423,10 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
             error: null,
           });
           return;
-        } catch {
-          // fall through to error path
+        } catch (fallbackErr) {
+          // Both paginated + legacy fell over — surface the legacy failure so
+          // we can tell a backend regression apart from a paginated-only bug.
+          logSwallowed("githubStore.fetchRepos.legacyFallback")(fallbackErr);
         }
       }
       set({
@@ -493,8 +499,10 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
             error: null,
           });
           return;
-        } catch {
-          // fall through to error path
+        } catch (fallbackErr) {
+          // Both paginated + legacy issues calls failed — log so we don't lose
+          // the legacy error under the (later-reported) paginated message.
+          logSwallowed("githubStore.fetchIssues.legacyFallback")(fallbackErr);
         }
       }
       set({
@@ -593,8 +601,10 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
             error: null,
           });
           return;
-        } catch {
-          // fall through
+        } catch (fallbackErr) {
+          // Both paginated + legacy PR list calls failed — surface so the
+          // legacy error isn't masked by the paginated one we report below.
+          logSwallowed("githubStore.fetchPrs.legacyFallback")(fallbackErr);
         }
       }
       set({ error: message, isPrLoading: false });
