@@ -301,6 +301,7 @@ mod tests {
         // FlightStatus
         let statuses = vec![
             (FlightStatus::Draft, "draft"),
+            (FlightStatus::Spec, "spec"),
             (FlightStatus::Planning, "planning"),
             (FlightStatus::Ready, "ready"),
             (FlightStatus::Active, "active"),
@@ -320,9 +321,44 @@ mod tests {
             );
         }
 
+        // FlightPriority
+        let priorities = vec![
+            (FlightPriority::Low, "low"),
+            (FlightPriority::Medium, "medium"),
+            (FlightPriority::High, "high"),
+            (FlightPriority::Critical, "critical"),
+        ];
+        for (variant, expected) in priorities {
+            let json = serde_json::to_string(&variant).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{}\"", expected),
+                "FlightPriority::{:?}",
+                variant
+            );
+        }
+
         // TaskStatus — verify approval_needed (not "approvalNeeded")
-        let approval = serde_json::to_string(&TaskStatus::ApprovalNeeded).unwrap();
-        assert_eq!(approval, "\"approval_needed\"");
+        let task_statuses = vec![
+            (TaskStatus::Pending, "pending"),
+            (TaskStatus::Blocked, "blocked"),
+            (TaskStatus::Queued, "queued"),
+            (TaskStatus::Running, "running"),
+            (TaskStatus::ApprovalNeeded, "approval_needed"),
+            (TaskStatus::Paused, "paused"),
+            (TaskStatus::Done, "done"),
+            (TaskStatus::Failed, "failed"),
+            (TaskStatus::Cancelled, "cancelled"),
+        ];
+        for (variant, expected) in task_statuses {
+            let json = serde_json::to_string(&variant).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{}\"", expected),
+                "TaskStatus::{:?}",
+                variant
+            );
+        }
 
         // TaskType
         let types = vec![
