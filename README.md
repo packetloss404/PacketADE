@@ -77,7 +77,7 @@ The Agents pane is the front door. One composer, two backends (in-process Rust +
 
 ### Sidecar Protocol
 
-The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **4**, with these v3+ additions:
+The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **6**, with these v3+ additions:
 
 - Events: `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken`), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns)
 - Requests: `start_session` (with image attachments + resume), `send_message`, `permission_response`, `edit_response` (with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`

@@ -3,6 +3,109 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+## [0.9.3] - 2026-05-17
+
+### Fixed — `core/` library audit closeout + 3 surgical high-priority fixes
+
+Phase C audit covered the 41-file `src-tauri/src/core/` library across 4 parallel agents on disjoint scopes (LLM provider stack, tool runtime, MCP/workspace/execution, storage/orchestration/prompts). Combined verdict: **29 CLEAN / 12 MIXED**, all 41 modules now categorized. Two inline fixes landed during the audit (`55d8715`, `5ef885c`); the highest-severity findings shipped as a Phase D follow-up wave.
+
+#### Inline audit fixes
+
+- **UTF-8-safe SSH bash truncation** (`tool_runtime_ssh.rs`): the local `tool_runtime.rs::execute_bash` already had a char-boundary-safe `truncate_to_char_boundary` helper, but the SSH variant was using raw `String::truncate` which panics mid-codepoint on multi-byte output. Promoted the helper to `pub(crate)` and reused it. 2-line diff (`55d8715`).
+- **`git checkout -b --` was broken** (`core/git.rs:233`): git parses `--` as the branch name when used with `checkout -b`, producing "fatal: '<name>' is not a commit and a branch '--' cannot be created from it". Removed `--` from the `checkout -b` arm; kept it on the `branch` arm where it works. `validate_branch_name` already rejects `-`-prefixed names so flag injection is still blocked (`5ef885c`).
+
+#### Phase D — surgical fixes for highest-severity audit findings
+
+- **Closed the load-modify-write race in `commands/orchestration.rs`** (same severity as the `state.rs` race fixed in v0.9.2). Phase A R1 missed this; Phase C C4 caught it. Four racy sites (`create_shared_orchestrator`, `with_orchestrator_and_flights`, `pause_flight`, `cancel_flight`) migrated to `storage::update_state(|state| ...)`. The bare `let _ = save_state(...)` swallow at line 22 is replaced with `tracing::warn!` since `lib.rs:83 .manage(...)` consumes the function's non-Result signature.
+- **Hook child no longer orphaned on timeout** (`core/hooks.rs::run_hook`): `tokio::time::timeout` around `wait_with_output` returned `Err(...)` but the spawned hook child kept running detached. Added `.kill_on_drop(true)` on the `Command` builder so cancel / panic / timeout paths all reap the child uniformly on Unix and Windows. Timeout branch now also emits `tracing::warn!` with hook name + duration. Payload-serialize error at `hooks.rs:205` now logs before falling back to `b"{}"`.
+- **TS-binding contract test backfill** (`core/contract_tests.rs::enum_variants_serialize_to_expected_strings`): previously missed `FlightStatus::Spec`, the entire `FlightPriority` enum, and 7 of 8 `TaskStatus` variants (only `ApprovalNeeded` was asserted). Drift in any of those would have silently mismatched TS bindings. Now all three enums are fully covered.
+
+#### Process
+
+- 4 parallel audit agents (C1-C4) on disjoint scopes → 3 parallel surgical fix agents (D1-D3) on disjoint scopes. All 33 worktree branches and directories cleaned up after merge.
+- Rust backend now at **100% audit coverage**: 28/28 command modules (v0.9.2) + 41/41 core library modules (v0.9.3).
+
+## [0.9.2] - 2026-05-17
+
+### Fixed — Rust commands audit (Phase A) + silent-error sweep + `state.rs` race fix
+
+Multi-agent audit of every file in `src-tauri/src/commands/` (3 parallel auditors covering 26 single-file modules + 2 module directories). Combined verdict: 22 CLEAN / 6 MIXED. Phase B fix wave addressed all six MIXED files plus a few catches in the deferred `statusline/` and `dictation/` module dirs.
+
+#### High-severity fix — `state.rs` load-modify-write race
+
+`commands/state.rs::save_persisted_state` had an unprotected read-modify-write cycle: `load_state(); state.<merge>(...); save_state(state);`. A concurrent slice-writer (`save_issues_slice`, `save_flights_slice`, etc.) landing between the load and the save could lose data. Closed by adding `core/storage.rs::update_state<F, R>(mutate: F)` — acquires `STATE_LOCK` once, runs the closure with `&mut PersistedState`, and saves atomically. `save_persisted_state` rewritten as a single `update_state(|state| { /* preserve issues + retrospectives, swap rest */ })`.
+
+#### Silent-error sweep (6 files)
+
+Every site below preserves prior behaviour — fallback values are unchanged — but failures are now visible via `tracing::warn!`:
+
+- **`commands/fs.rs`** (`list_directory`, `list_subdirectories`, `walk_collect`): directory-traversal skips now log path + error reason instead of silently dropping unreadable entries.
+- **`commands/history.rs`** (lines 79, 85, 92 + JSONL parse branch): silent IO/parse swallows on `.claude/history.jsonl` and per-project files now warn.
+- **`commands/pty.rs`** (lines 68, 156, 629, 658): four platform-path `unwrap_or` fallbacks (where-output `\` parsing, SSH home_dir, ssh-keyscan algorithm token, ssh-keygen SHA256 token) now warn before defaulting.
+- **`commands/mcp.rs`**: corrupt JSON parse via `tracing::warn!` (was silently coerced to empty config); collapsed a redundant `if scope == "global" { "mcpServers" } else { "mcpServers" }` branch.
+- **`commands/insights.rs:103`**: fire-and-forget `tokio::spawn` now logs task start (`info!`) and outcome (`info!` on success, `warn!` with stderr on non-zero exit).
+- **`commands/dictation/config.rs:55`**: `get_dictation_settings()` corrupt-config errors now warn before falling back to defaults (was `unwrap_or_default()`).
+
+#### Audit coverage
+
+- 28 of 28 command modules verdicted (incl. 2 module directories: `statusline/` 6 files all CLEAN; `dictation/` 5 CLEAN + 1 fixed).
+- Standout CLEAN files called out by auditors: `issues.rs` (production-grade), `provider_auth.rs`, `provider_stats.rs`, `pricing.rs`, `quality_runner.rs`, `code_quality_autofix.rs`, the 4 `mission_planner*.rs` shards from the v0.9.1 split.
+
+## [0.9.1] - 2026-05-17
+
+### Changed — GitHubView decomposition + W-wave refactors (mission_planner, agent_sidecar, MissionsView, DictationCard, orchestrationStore, Tools cards)
+
+Follow-on cleanup wave after the v0.9.0 agent-pane overhaul. Big files split into focused units, four new GitHubView extracts get test coverage, and one Rust module joins the LoC-bloat retirement list.
+
+#### GitHubView extracts (T1a/b/c → T2a/b/c)
+
+`src/components/views/GitHubView.tsx` shed 532 LoC (1,509 → 977) across three sibling extractions and a dedup pass. Each new component owns one feed:
+
+- `github/IssueList.tsx` — open + closed issue rows with state-filter chips.
+- `github/PRList.tsx` — open + merged PR rows; same chip pattern as IssueList.
+- `github/ActivityFeed.tsx` — cross-event feed (issues + PRs + commits + reviews); manual cherry-pick after the 3-way auto-merge produced a 300-line conflict (T1c).
+- `github/shared.tsx` — single home for `StateFilterChip` + `timeAgo`, previously duplicated across the three sibling files.
+
+#### Test coverage
+
+- 21 unit tests across 5 new GitHubView sub-components (IssueList, PRList, ActivityFeed, CtaFeedbackRow, InvestigationPanel) targeting empty states, filter chips, label rendering, and event-card variants.
+- `githubStore` catch sweep — 5 silent `catch {}` sites now route through `logSwallowed("githubStore.<op>")`.
+
+#### W-wave splits
+
+- **W2**: `src-tauri/src/commands/agent_sidecar.rs` → 6 focused sub-modules (supervisor, forward_*, lifetime stats, etc.).
+- **W3**: `src/stores/orchestrationStore.ts` → scheduler + state substores; 3 bare catches surfaced.
+- **W4**: `GitHubView` InvestigationPanel extract (1,848 → ~1,570 LoC).
+- **W5**: `MissionsView` adopted `useShallow` grouping; `useFlightChat` got `subscribeToFlightChatStream` + `sendMessage` extractions.
+- **W6**: `DictationCard` split into 3 focused cards.
+- **W7**: shared `<CardHeader>` extracted across the 5 Tools cards.
+- **W1'**: `commands/mission_planner.rs` shed its cost-bookkeeping into `commands/mission_planner_costs.rs` (first cut; planner_compaction + planner_tools shards followed).
+
+## [0.9.0] - 2026-05-17
+
+### Changed — Agent-pane overhaul: AgentChatPane / AgentInputArea / agentTaskStore decomposition + UX polish
+
+Major refactor + UX wave targeting the API-agent surface. The two largest files in the pane (`AgentChatPane.tsx`, `AgentInputArea.tsx`) and the central store (`agentTaskStore.ts`) each shed more than half their LoC by being decomposed into focused sub-components, hooks, and substores. Five user-facing UX additions landed alongside.
+
+#### Mega-refactors
+
+- **`AgentChatPane.tsx`** — 2,320 LoC → 763 LoC across 16 new files (hooks + sub-components). Streaming, tool rendering, approval batching, and diff display each became its own seam.
+- **`AgentInputArea.tsx`** — 1,667 LoC → 545 LoC across 12 new files. Composer mode, slash commands, image attachments, and provider switching extracted.
+- **`agentTaskStore.ts`** — split into approval / plan / streaming substores; checkpoint restore now clears all three correctly. `apiAgentListeners` extracted (`agentTaskStore` 2,086 → 1,685 LoC).
+
+#### UI consolidation
+
+- **DiffPane + EmbeddedDiffPane** — merged around a shared core, eliminating ~237 LoC of duplication.
+- **BaseToolCard shell** — Bash and Subagent tool cards now compose a single base shell with a shared `StatusPill`.
+- **AgentTabbedRail retired** — collapsed into a `Plan` tab inside `AgentInspectorPane` so there's one inspection surface instead of two.
+- **Visual sweep** — header padding standardized at `px-3 py-2` and border semantics unified across every agent pane (`border-line-soft` for internal separators, `border-bg-border` for outer frames).
+
+#### UX additions
+
+- **U1 — Collapsible approval batches + Y/N keyboard shortcuts.** When 2+ writes or permissions stack up they collapse into a single batch row; `Y` / `N` accept-all / reject-all without leaving the keyboard.
+- **U2 — Diff-tab unreviewed badge + sidecar status dot.** The Diff tab on `AgentInspectorPane` shows a count badge when unreviewed hunks pile up; the StatusStrip surfaces a live sidecar status dot mirroring `sidecar-status:changed`.
+- **U3 — Composer Advanced accordion.** Profile + Mode + ComposerMode chips hidden behind an "Advanced" disclosure so the default composer is two visible affordances instead of five.
+
 ## [0.8.8] - 2026-05-16
 
 ### Changed — projectPath single source of truth

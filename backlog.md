@@ -418,3 +418,122 @@ Deferred items called out in `dev/multi-platform-build.md` and
   (`dev/zen-workspace/features-git-workspace.md` Phase 3); command-palette
   integration of prompt library
   (`dev/zen-workspace/features-prompt-library.md`).
+
+## Rust audit follow-ups (from v0.9.2 / v0.9.3 Phase C+D waves)
+
+Items surfaced by the Phase C `core/` library audit that didn't ship in
+Phase D. Backend is 100% audit-covered now; these are the next-tier
+hardening passes worth doing when context allows.
+
+### LLM provider stack
+
+- **P2 — `let _ = tx.send(...)` backpressure swallow.**
+  ~20 sites across `core/llm_anthropic.rs` and `core/llm_openai_compat.rs`
+  silently keep parsing the upstream HTTP stream after the consumer
+  receiver has dropped. Convert each to a check-and-return so a dropped
+  receiver short-circuits the parser loop.
+- **P3 — Tool-args JSON parse coerced to `{}` at 4 sites.**
+  `llm_anthropic.rs:326` and three sites in `llm_openai_compat.rs`
+  (`:301`, `:354`, `:378`) silently mask malformed tool argument JSON
+  from a truncated stream. At minimum log; ideally emit
+  `StreamChunk::Error` so malformed-stream bugs are visible.
+- **P3 — `llm_openai_compat.rs:349-352` finish_reason "stop" branch
+  flushes tool_use.** May emit a spurious `ToolUseEnd` for an
+  incomplete/malformed tool stream — `stop` typically means the
+  assistant message ended *without* a tool call. Verify intent.
+- **P3 — Brand violation in `core/llm_system_prompt.rs:57`.**
+  `BASE_SYSTEM_PROMPT` hardcodes `"PacketADE"` instead of using
+  `brand::APP_NAME`. Switch to `format!`.
+- **P3 — `include_usage` not gated for MiniMax/Ollama.**
+  `llm_openai_compat.rs:178` enables `include_usage` only for OpenAI
+  and OpenRouter; MiniMax and Ollama get zero token counts unless
+  they happen to include `usage` by default.
+
+### Tool runtime
+
+- **P2 — `core/tool_web.rs` body-size cap before `.text().await`.**
+  No content-length cap today — a malicious 10 GB response can OOM
+  the process before the post-fetch `truncate` runs. Switch to
+  `bytes_stream()` with an early-abort threshold.
+- **P2 — Wrap `tool_web.rs` fetched content in an untrusted-content
+  envelope before returning to the model.** Today the agent receives
+  raw HTML-stripped plain text with no provenance marker, which is a
+  known prompt-injection footgun.
+- **P3 — `tool_web.rs:103-106` recompile 4 regexes per fetch.**
+  Use `once_cell::sync::Lazy` (or `regex::OnceLock`). Perf, not
+  correctness.
+- **P3 — `tool_subagent.rs` + `tool_custom_agent.rs` ~80 LoC dedupe.**
+  Both files share ~80% structure (collect_response, message-loop,
+  build/exec/dispatch). Extract a shared `agent_loop(provider, tools,
+  system_prompt, model, max_tokens, parent_target)` helper.
+- **P3 — `tool_pull_request.rs:124` orphan PR body tempfile on cancel
+  or crash.** `gh pr create` killed mid-flight leaves
+  `.pkt-pr-body-*.md` files behind. Switch to
+  `tempfile::NamedTempFile` so the file is dropped on scope exit.
+- **P3 — `tool_pull_request.rs:301-314` duplicates
+  `pick_heredoc_terminator` from `tool_runtime_ssh.rs:136-149`** —
+  hoist into `core::shared` (already pairs with the existing
+  `PACKETCODE_EOF_` rename backlog item).
+- **P3 — `tool_custom_agent.rs:173` silent SSH `project_path` → empty.**
+  `ExecutionTarget::Ssh { .. } => String::new()` silently degrades
+  to "home-dir agents only"; document or guard with an explicit
+  comment.
+
+### MCP / workspace / runtime
+
+- **P2 — `core/worktree.rs:507` unconditional `git worktree remove
+  --force`.** No uncommitted-changes guard. Same path that bit us mid-
+  session when the classifier blocked discarding agent work. Add a
+  pre-flight check that the worktree is clean unless the caller passes
+  an explicit "force-anyway" flag.
+- **P3 — `worktree.rs` ~120 LoC dedup.** 1,033 LoC file;
+  `install_prepare_commit_msg_hook` and
+  `install_prepare_commit_msg_hook_for_issue` are ~95% duplicated
+  (settings load, hooks-dir resolution, dir create, chmod, write).
+  Extract a shared `write_hook_script(worktree_path, script_body)`
+  helper.
+- **P3 — `worktree.rs:463` dead `_title_unused` binding.** Wire it in
+  or delete; the "reserved for future" comment is now stale.
+- **P3 — `worktree.rs` `attempt_id` ASCII sanitization.** Today the
+  callers always pass UUIDs from `orchestrator.rs` / `commands/git.rs`,
+  but the public function has no defence-in-depth. Tighten to
+  ASCII-alphanumeric + `-_`.
+- **P3 — `core/mcp_bridge.rs::resolve_mcp_name` per-call server
+  re-spawn.** Every `mcp__*` tool call re-spawns every enabled MCP
+  server and re-runs `tools/list`. Cache the advertised-name →
+  (server, tool) map at agent-session start.
+- **P3 — `core/hooks.rs:205` payload-serialize fallback.** Now logs
+  before falling back to `b"{}"` (landed in v0.9.3), but consider
+  whether `serde_json::Value` failing to encode is recoverable at
+  all — could promote to error.
+- **P3 — `core/pty.rs:253-263` reader-thread error spin.** Only
+  `BrokenPipe` exits the loop; a persistent OS-level error retries
+  silently. Log once per error kind to make the spin visible.
+- **P3 — `core/pty.rs:217` transcript-init `let _ = fs::write(...)`.**
+  If `data_dir` is unwritable the user gets empty transcripts with no
+  log line. Add `warn!`.
+- **P3 — `commands/mcp.rs::write_mcp_server` non-atomic save.** Today
+  it's a direct `fs::write`; consider a tmp+rename atomic pattern so a
+  crash mid-write doesn't corrupt the user's `mcp-servers.json`.
+
+### Storage / orchestration / prompts
+
+- **P3 — `core/orchestrator.rs:415` `unwrap()` after `is_none()` guard
+  in the `tick()` hot loop.** Idiomatic `if let Some(agent) = ... {}
+  else { continue; }` reads cleaner and removes the hazard signal.
+- **P3 — `core/mission_planner_prompts.rs` LoC bloat (1,656).**
+  Mostly long `r#"..."#` system-prompt strings, which is the right
+  place for them, but the file deserves extraction into per-section
+  sub-modules (decomposition prompt, reactive replan prompt,
+  wake-message builders) for review-ability.
+
+### Test gaps (carried from earlier in the session)
+
+- **P3 — `InvestigationPanel` Draft-patch error path missing test.**
+- **P3 — `PendingApprovalsSection` Y/N keyboard edge cases missing
+  test** (e.g., focused inside an input — should not consume).
+- **P3 — `forkAndResend` should clear `agentPlanStore`.** 1-line
+  follow-up from the v0.9.0 S1 refactor.
+- **P3 — `IssueCommentList.tsx` duplicate `timeAgo` helper.**
+  Surface caught during the v0.9.1 T2c dedup pass; not addressed
+  because it lives outside the GitHubView surface that owned T2c.
