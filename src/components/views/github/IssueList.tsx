@@ -1,5 +1,6 @@
 import { AlertCircle, Loader2, Search, Sparkles } from "lucide-react";
 import type { GitHubIssue } from "@/types/github";
+import { StateFilterChip } from "@/components/views/github/shared";
 
 interface IssueListProps {
   issues: GitHubIssue[];
@@ -197,29 +198,3 @@ export function IssueList({
   );
 }
 
-// Private duplicate of the shared StateFilterChip from GitHubView.tsx — kept
-// local to avoid a circular import (GitHubView renders IssueList) and to keep
-// the parent's `StateFilterChip` available for sibling extractions (PRList).
-function StateFilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
-        active
-          ? "bg-accent-green/15 text-accent-green border-accent-green/30"
-          : "bg-bg-tertiary text-text-muted border-bg-border hover:text-text-primary"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
