@@ -52,7 +52,16 @@ pub fn get_dictation_settings() -> Result<String, String> {
     let config = if path.exists() {
         let contents =
             fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {e}"))?;
-        serde_json::from_str::<DictationConfig>(&contents).unwrap_or_default()
+        match serde_json::from_str::<DictationConfig>(&contents) {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                tracing::warn!(
+                    "Corrupt dictation config at {:?} ({err}); falling back to defaults",
+                    path
+                );
+                DictationConfig::default()
+            }
+        }
     } else {
         DictationConfig::default()
     };
