@@ -39,7 +39,9 @@ import { CrashViewerCard } from "./tools/CrashViewerCard";
 import { McpServersCard } from "./tools/McpServersCard";
 import { McpProviderCard } from "./tools/McpProviderCard";
 import { CostCard } from "./tools/CostCard";
-import { DictationCard } from "./tools/DictationCard";
+import { DictationSettingsCard } from "./tools/DictationSettingsCard";
+import { KeyboardShortcutsCard } from "./tools/KeyboardShortcutsCard";
+import { GeminiApiKeyCard } from "./tools/GeminiApiKeyCard";
 import { ApiKeysCard } from "./tools/ApiKeysCard";
 import { ServersSettingsCard } from "./tools/ServersSettingsCard";
 import { AgentProfilesCard } from "./tools/AgentProfilesCard";
@@ -266,8 +268,10 @@ export function ToolsView() {
         )}
 
         {activeSection === "dictation" && (
-          <div className="max-w-2xl">
-            <DictationCard />
+          <div className="max-w-2xl space-y-4">
+            <DictationSettingsCard />
+            <KeyboardShortcutsCard />
+            <GeminiApiKeyCard />
           </div>
         )}
 
