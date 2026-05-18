@@ -11,7 +11,7 @@ use crate::claude::binary::claude_command;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tracing::info;
+use tracing::{info, warn};
 
 fn agent_chat_chunk_event(request_id: &str) -> String {
     format!("agent-chat:chunk:{}", request_id)
@@ -100,12 +100,16 @@ pub async fn ask_agent_chat_stream(
     let stderr = child.stderr.take();
 
     let handle = app_handle.clone();
+    // Fire-and-forget by design (caller doesn't wait), but log start + outcome so a
+    // task hung on a stalled CLI is detectable in the log stream.
+    let task_request_id = request_id.clone();
+    info!(request_id = %task_request_id, "agent-chat stream task started");
     tokio::spawn(async move {
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
 
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = handle.emit(&agent_chat_chunk_event(&request_id), &line);
+            let _ = handle.emit(&agent_chat_chunk_event(&task_request_id), &line);
         }
 
         let stderr_text = if let Some(se) = stderr {
@@ -123,7 +127,7 @@ pub async fn ask_agent_chat_stream(
         if !success && !stderr_text.trim().is_empty() {
             let classified = super::error_classifier::classify_cli_error(&stderr_text);
             let _ = handle.emit(
-                &agent_chat_error_event(&request_id),
+                &agent_chat_error_event(&task_request_id),
                 StreamError {
                     category: format!("{:?}", classified.category).to_lowercase(),
                     message: classified.message,
@@ -133,7 +137,13 @@ pub async fn ask_agent_chat_stream(
             );
         }
 
-        let _ = handle.emit(&agent_chat_done_event(&request_id), success);
+        let _ = handle.emit(&agent_chat_done_event(&task_request_id), success);
+
+        if success {
+            info!(request_id = %task_request_id, "agent-chat stream task finished");
+        } else {
+            warn!(request_id = %task_request_id, stderr = %stderr_text.trim(), "agent-chat stream task exited non-zero");
+        }
     });
 
     Ok(())
