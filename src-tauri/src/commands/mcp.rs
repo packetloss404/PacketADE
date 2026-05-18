@@ -2,6 +2,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
+use tracing::warn;
 
 #[derive(Clone, Serialize)]
 pub struct McpServerConfig {
@@ -40,17 +41,23 @@ fn project_mcp_path(project_path: &str) -> PathBuf {
 
 fn read_json_file(path: &PathBuf) -> Value {
     match fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str(&content).unwrap_or(Value::Object(Default::default())),
+        Ok(content) => match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(e) => {
+                // Corrupt JSON would otherwise present as an empty config; surface it so
+                // users can spot a malformed mcp-servers.json instead of silent reset.
+                warn!(path = %path.display(), error = %e, "MCP config JSON parse failed; using empty config");
+                Value::Object(Default::default())
+            }
+        },
         Err(_) => Value::Object(Default::default()),
     }
 }
 
 fn extract_servers(json: &Value, scope: &str) -> Vec<McpServerEntry> {
-    let servers_key = if scope == "global" {
-        "mcpServers"
-    } else {
-        "mcpServers"
-    };
+    // Both scopes share the same key name; kept as a constant to make a future
+    // per-scope key swap a single-line change.
+    let servers_key = "mcpServers";
     let servers = match json.get(servers_key) {
         Some(Value::Object(map)) => map,
         _ => return Vec::new(),

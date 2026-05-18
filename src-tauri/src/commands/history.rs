@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
+use tracing::warn;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct HistoryEntry {
@@ -76,20 +77,33 @@ pub fn read_prompt_history() -> String {
     // Cap at 2000 entries to avoid huge payloads
     entries.truncate(2000);
 
-    serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string())
+    serde_json::to_string(&entries).unwrap_or_else(|e| {
+        // Should never fail (HistoryEntry is a plain struct), but surface it so an
+        // empty payload isn't mistaken for "no history".
+        warn!(error = %e, "Failed to serialize history entries; returning empty list");
+        "[]".to_string()
+    })
 }
 
 fn read_jsonl_file(path: &PathBuf, default_project: &str, entries: &mut Vec<HistoryEntry>) {
     let file = match fs::File::open(path) {
         Ok(f) => f,
-        Err(_) => return,
+        Err(e) => {
+            // Distinguish missing/unreadable history file from a genuinely empty one.
+            warn!(path = %path.display(), error = %e, "Failed to open history.jsonl; skipping");
+            return;
+        }
     };
 
     let reader = BufReader::new(file);
     for line in reader.lines() {
         let line = match line {
             Ok(l) => l,
-            Err(_) => continue,
+            Err(e) => {
+                // Per-line read failure (e.g., non-UTF8 byte) shouldn't sink the whole file silently.
+                warn!(path = %path.display(), error = %e, "Failed to read line in history.jsonl; skipping");
+                continue;
+            }
         };
 
         let trimmed = line.trim();
@@ -97,18 +111,24 @@ fn read_jsonl_file(path: &PathBuf, default_project: &str, entries: &mut Vec<Hist
             continue;
         }
 
-        if let Ok(raw) = serde_json::from_str::<RawHistoryEntry>(trimmed) {
-            let display = raw.display.or(raw.message).unwrap_or_default();
-            if display.is_empty() {
-                continue;
-            }
+        match serde_json::from_str::<RawHistoryEntry>(trimmed) {
+            Ok(raw) => {
+                let display = raw.display.or(raw.message).unwrap_or_default();
+                if display.is_empty() {
+                    continue;
+                }
 
-            entries.push(HistoryEntry {
-                display,
-                timestamp: raw.timestamp.unwrap_or(0.0),
-                project: raw.project.unwrap_or_else(|| default_project.to_string()),
-                session_id: raw.session_id.unwrap_or_default(),
-            });
+                entries.push(HistoryEntry {
+                    display,
+                    timestamp: raw.timestamp.unwrap_or(0.0),
+                    project: raw.project.unwrap_or_else(|| default_project.to_string()),
+                    session_id: raw.session_id.unwrap_or_default(),
+                });
+            }
+            Err(e) => {
+                // Malformed JSONL line — keep going but make corruption visible.
+                warn!(path = %path.display(), error = %e, "Failed to parse history.jsonl line; skipping");
+            }
         }
     }
 }
