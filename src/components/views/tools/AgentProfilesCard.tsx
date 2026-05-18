@@ -12,6 +12,7 @@ import {
 import { useProfileStore } from "@/stores/profileStore";
 import type { AgentProfile } from "@/types/profiles";
 import type { PermissionMode } from "@/types/agent-conversation";
+import { CardHeader } from "./CardHeader";
 
 const PERMISSION_MODES: PermissionMode[] = [
   "auto",
@@ -156,19 +157,20 @@ export function AgentProfilesCard() {
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold text-text-primary flex items-center gap-2">
-          <User size={12} className="text-accent-blue" />
-          Agent Profiles
-        </h3>
-        <button
-          type="button"
-          onClick={startCreate}
-          className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-bg-border text-text-secondary hover:border-accent-green/40 hover:text-accent-green transition-colors"
-        >
-          <Plus size={11} /> New profile
-        </button>
-      </div>
+      <CardHeader
+        icon={User}
+        iconColor="text-accent-blue"
+        title="Agent Profiles"
+        action={
+          <button
+            type="button"
+            onClick={startCreate}
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-bg-border text-text-secondary hover:border-accent-green/40 hover:text-accent-green transition-colors"
+          >
+            <Plus size={11} /> New profile
+          </button>
+        }
+      />
 
       <p className="text-[10px] text-text-muted mb-3">
         Profiles bundle a system prompt, tool whitelist, and posture defaults.
