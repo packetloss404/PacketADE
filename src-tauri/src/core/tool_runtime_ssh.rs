@@ -269,7 +269,7 @@ pub async fn execute_bash(args: &serde_json::Value, config: &SshConfig) -> Resul
     }
 
     if result.len() > MAX_OUTPUT_SIZE {
-        result.truncate(MAX_OUTPUT_SIZE);
+        crate::core::tool_runtime::truncate_to_char_boundary(&mut result, MAX_OUTPUT_SIZE);
         result.push_str("\n... [output truncated]");
     }
 
