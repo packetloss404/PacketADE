@@ -7,7 +7,6 @@ import {
   notifyApprovalNeeded,
   notifyApprovalResolved,
   notifyTaskComplete,
-  orchestrationTick,
   pauseFlightInBackend,
   recordTaskSpawn,
   resumeFlightInBackend,
@@ -17,7 +16,7 @@ import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useMemoryStore } from "@/stores/memoryStore";
-import type { WorkspaceAgentSlot } from "@/types/workspace";
+import { useOrchestrationSchedulerStore } from "@/stores/orchestrationSchedulerStore";
 import { logSwallowed } from "@/lib/logSwallowed";
 import {
   notifyApprovalNeeded as notifyApprovalNeededDesktop,
@@ -27,7 +26,7 @@ import {
 
 // === Types ===
 
-interface RunningTask {
+export interface RunningTask {
   taskId: string;
   milestoneId: string;
   flightId: string;
@@ -41,15 +40,13 @@ interface RunningTask {
   projectPath: string;
 }
 
-interface OrchestrationState {
+interface OrchestrationStateData {
   /** Currently executing tasks */
   runningTasks: Map<string, RunningTask>;
   /** Max parallel agent sessions */
   maxParallelSessions: number;
   /** Flights currently being orchestrated */
   activeFlightIds: Set<string>;
-  /** Whether the scheduling loop is running */
-  loopRunning: boolean;
   /** Milestone gating: pause between milestones for review */
   milestoneGating: boolean;
   /** Flights paused at a milestone boundary */
@@ -75,7 +72,7 @@ interface OrchestrationState {
 export const DEFAULT_AUTO_COMMIT_TRAILER_FORMAT =
   "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}";
 
-interface OrchestrationStore extends OrchestrationState {
+export interface OrchestrationStateStore extends OrchestrationStateData {
   // Flight lifecycle
   launchFlight: (flightId: string) => Promise<void>;
   pauseFlight: (flightId: string) => Promise<void>;
@@ -87,11 +84,6 @@ interface OrchestrationStore extends OrchestrationState {
   onTaskApprovalNeeded: (taskId: string) => Promise<void>;
   onTaskApprovalResolved: (taskId: string) => Promise<void>;
   attachSessionToTask: (taskId: string, sessionId: string) => void;
-
-  // Scheduling
-  tick: () => Promise<void>;
-  startLoop: () => void;
-  stopLoop: () => void;
 
   // Settings
   setMaxParallelSessions: (max: number) => void;
@@ -134,13 +126,10 @@ async function hydrateFlightsAndRuntime(
   await syncRuntime();
 }
 
-let loopInterval: ReturnType<typeof setInterval> | null = null;
-
-export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
+export const useOrchestrationStateStore = create<OrchestrationStateStore>((set, get) => ({
   runningTasks: new Map(),
   maxParallelSessions: 3,
   activeFlightIds: new Set(),
-  loopRunning: false,
   milestoneGating: true,
   pausedAtMilestone: new Map(),
   autoCommitTrailerEnabled: true,
@@ -171,18 +160,25 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
     try {
       const persisted = await launchFlightInBackend(flightId);
       await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
-    } catch {
+    } catch (err) {
+      // Catch-sweep follow-up to df17bfb: surface backend launch failures so
+      // they no longer disappear when the Rust side rejects (auth gates,
+      // worktree provisioning, persistence). We still bail out — the caller
+      // doesn't get a thrown error, only the log.
+      logSwallowed("orchestrationStore.launchFlight")(err);
       return;
     }
-    get().startLoop();
+    useOrchestrationSchedulerStore.getState().startLoop();
   },
 
   pauseFlight: async (flightId) => {
     try {
       const persisted = await pauseFlightInBackend(flightId);
       await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
-    } catch {
-      // Keep local state when backend is unavailable.
+    } catch (err) {
+      // Keep local state when backend is unavailable, but log so we can
+      // tell a missed-pause from "backend genuinely down".
+      logSwallowed("orchestrationStore.pauseFlight")(err);
     }
   },
 
@@ -190,10 +186,12 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
     try {
       const persisted = await resumeFlightInBackend(flightId);
       await hydrateFlightsAndRuntime(persisted, get().syncFromBackend);
-    } catch {
+    } catch (err) {
+      // Catch-sweep follow-up to df17bfb.
+      logSwallowed("orchestrationStore.resumeFlight")(err);
       return;
     }
-    get().startLoop();
+    useOrchestrationSchedulerStore.getState().startLoop();
   },
 
   cancelFlight: async (flightId) => {
@@ -293,7 +291,7 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
         }
       }
     } catch {
-      useOrchestrationStore.setState((s) => {
+      useOrchestrationStateStore.setState((s) => {
         const runningTasks = new Map(s.runningTasks);
         runningTasks.delete(taskId);
         return { runningTasks };
@@ -388,145 +386,6 @@ export const useOrchestrationStore = create<OrchestrationStore>((set, get) => ({
       prompt: rt.prompt,
       projectPath: rt.projectPath,
     });
-  },
-
-  tick: async () => {
-    const state = get();
-    const currentRunning = state.runningTasks.size;
-    const available = state.maxParallelSessions - currentRunning;
-    if (available <= 0) return;
-
-    const flightStore = useFlightStore.getState();
-    const requests = await orchestrationTick().catch(() => []);
-
-    for (const request of requests.slice(0, available)) {
-      const flight = flightStore.flights.find((entry) => entry.id === request.flightId);
-      const milestone = flight?.milestones.find((entry) => entry.id === request.milestoneId);
-      const task = milestone?.tasks.find((entry) => entry.id === request.taskId);
-      if (!flight || !milestone || !task || state.runningTasks.has(task.id)) continue;
-
-      // Check for file ownership collisions before launching
-      const collisions = flightStore.checkFileCollisions(
-        request.flightId,
-        request.milestoneId,
-        request.taskId,
-      );
-      if (collisions.length > 0) {
-        console.warn(
-          `[orchestration] File collision detected for task "${task.title}": ${collisions.join(", ")}. Blocking task.`,
-        );
-        flightStore.setTaskBlocked(
-          request.flightId,
-          request.milestoneId,
-          request.taskId,
-          `File ownership collision: ${collisions.join("; ")}`,
-        );
-        flightStore.addCoordinationEvent(request.flightId, {
-          flightId: request.flightId,
-          type: "collision_warning",
-          taskId: request.taskId,
-          taskTitle: task.title,
-          agentId: task.agentConfigId,
-          summary: `Task "${task.title}" blocked due to file collisions: ${collisions.join(", ")}`,
-        });
-        continue;
-      }
-
-      // Track B: spawn the task pane inside the flight's workspace.
-      // `ensureFlightWorkspace` lazily creates the workspace on the first
-      // task spawn and is idempotent for subsequent spawns.
-      const workspaceId = flightStore.ensureFlightWorkspace(request.flightId);
-      if (!workspaceId) {
-        console.warn(
-          `[orchestration] ensureFlightWorkspace returned null for flight ${request.flightId}; skipping task ${request.taskId}.`,
-        );
-        continue;
-      }
-
-      // Map the task's agentConfigId onto a WorkspaceAgentSlot. Unknown
-      // ids collapse to "terminal" — the actual command/args are forced
-      // via `overrideCommand`/`overrideArgs` below, so the slot is just
-      // a render-time hint for pane styling.
-      const KNOWN_SLOTS: readonly WorkspaceAgentSlot[] = [
-        "claude-code",
-        "codex",
-        "gemini",
-        "opencode",
-        "packetcode",
-        "terminal",
-      ];
-      const slot: WorkspaceAgentSlot = (KNOWN_SLOTS as readonly string[]).includes(
-        request.agentConfigId,
-      )
-        ? (request.agentConfigId as WorkspaceAgentSlot)
-        : "terminal";
-
-      const paneId = useWorkspaceStore.getState().addPane(workspaceId, slot);
-      if (!paneId) {
-        console.warn(
-          `[orchestration] workspaceStore.addPane returned null for workspace ${workspaceId} (deleted?); skipping task ${request.taskId}.`,
-        );
-        continue;
-      }
-
-      // Stamp the orchestration metadata onto the pane so WorkspacePane
-      // can resolve the right command/args/prompt and useTerminalSession
-      // can wire `attachSessionToTask` once the PTY spawns.
-      try {
-        useWorkspaceStore.getState().updatePane(workspaceId, paneId, {
-          taskId: request.taskId,
-          flightId: request.flightId,
-          agentConfigId: request.agentConfigId,
-          initialPrompt: request.prompt,
-          overrideCommand: request.command,
-          overrideArgs: request.args,
-        });
-      } catch (err) {
-        logSwallowed("orchestration.updatePane")(err);
-      }
-
-      set((s) => {
-        const runningTasks = new Map(s.runningTasks);
-        runningTasks.set(request.taskId, {
-          taskId: request.taskId,
-          milestoneId: request.milestoneId,
-          flightId: request.flightId,
-          paneId,
-          sessionId: null,
-          agentConfigId: request.agentConfigId,
-          startedAt: Date.now(),
-          command: request.command,
-          args: request.args,
-          prompt: request.prompt,
-          projectPath: request.projectPath,
-        });
-        return { runningTasks };
-      });
-    }
-  },
-
-  startLoop: () => {
-    if (loopInterval) return;
-    set({ loopRunning: true });
-    loopInterval = setInterval(() => {
-      void get().tick();
-
-      // Stop loop if no active flights
-      const state = get();
-      if (state.activeFlightIds.size === 0 && state.runningTasks.size === 0) {
-        get().stopLoop();
-      }
-    }, 1000);
-    // Run immediately
-    void get().tick();
-  },
-
-  stopLoop: () => {
-    if (loopInterval) {
-      clearInterval(loopInterval);
-      loopInterval = null;
-    }
-    set({ loopRunning: false });
   },
 
   setMaxParallelSessions: (max) => {

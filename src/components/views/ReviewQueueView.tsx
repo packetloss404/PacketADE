@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { ShieldCheck, ShieldX, Clock, CheckCircle, XCircle } from "lucide-react";
 import { useFlightStore } from "@/stores/flightStore";
-import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
 import type { Task, Flight, Milestone } from "@/types/flight";
 
 interface ApprovalItem {
@@ -42,7 +42,7 @@ export function ReviewQueueView() {
   }, [flights]);
 
   function handleApprove(taskId: string) {
-    useOrchestrationStore.getState().onTaskApprovalResolved(taskId);
+    useOrchestrationStateStore.getState().onTaskApprovalResolved(taskId);
   }
 
   function handleDeny(item: ApprovalItem) {

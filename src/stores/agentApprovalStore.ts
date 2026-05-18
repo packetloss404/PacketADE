@@ -4,7 +4,7 @@ import {
   respondEdit as tauriRespondEdit,
   cancelPendingTools as tauriCancelPendingTools,
 } from "@/lib/tauri";
-import { useOrchestrationStore } from "@/stores/orchestrationStore";
+import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
 import { useFlightStore } from "@/stores/flightStore";
 import type {
   PendingPermission,
@@ -39,7 +39,7 @@ function findTaskForConversation(
 function fireTaskApprovalNeeded(conversationId: string): void {
   const hit = findTaskForConversation(conversationId);
   if (!hit) return;
-  void useOrchestrationStore
+  void useOrchestrationStateStore
     .getState()
     .onTaskApprovalNeeded(hit.taskId)
     .catch((e) => console.warn("fireTaskApprovalNeeded failed:", e));
@@ -58,7 +58,7 @@ function maybeResolveTaskApproval(
   if (perms.length > 0 || edits.length > 0) return;
   const hit = findTaskForConversation(conversationId);
   if (!hit) return;
-  void useOrchestrationStore
+  void useOrchestrationStateStore
     .getState()
     .onTaskApprovalResolved(hit.taskId)
     .catch((e) => console.warn("maybeResolveTaskApproval failed:", e));
