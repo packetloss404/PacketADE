@@ -121,6 +121,52 @@ function parseFlightPlan(content: string): FlightPlanSuggestion | null {
   }
 }
 
+interface FlightChatStreamHandlers {
+  onChunk: (chunk: string) => void;
+  onError: (err: StreamErrorEvent) => void;
+  onDone: (success: boolean) => void;
+}
+
+interface FlightChatStreamSubscription {
+  unlisten: () => void;
+  done: Promise<boolean>;
+}
+
+// Wires up the chunk/error/done listeners for a single ask_flight_chat_stream
+// request. Subscription order (chunk → error → done) is load-bearing for the
+// useFlightChat tests; keep it.
+async function subscribeToFlightChatStream(
+  requestId: string,
+  handlers: FlightChatStreamHandlers,
+): Promise<FlightChatStreamSubscription> {
+  let resolveDone: (success: boolean) => void = () => {};
+  const done = new Promise<boolean>((resolve) => {
+    resolveDone = resolve;
+  });
+
+  const [unlistenChunk, unlistenError, unlistenDone] = await Promise.all([
+    listen<string>(flightChatChunkEvent(requestId), (event) => {
+      handlers.onChunk(event.payload);
+    }),
+    listen<StreamErrorEvent>(flightChatErrorEvent(requestId), (event) => {
+      handlers.onError(event.payload);
+    }),
+    listen<boolean>(flightChatDoneEvent(requestId), (event) => {
+      handlers.onDone(event.payload);
+      resolveDone(event.payload);
+    }),
+  ]);
+
+  return {
+    unlisten: () => {
+      unlistenChunk();
+      unlistenError();
+      unlistenDone();
+    },
+    done,
+  };
+}
+
 export function useFlightChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -131,24 +177,14 @@ export function useFlightChat() {
   const msgCounterRef = useRef(0);
   const messagesRef = useRef<ChatMessage[]>([]);
   const inFlightRef = useRef(false);
-  const unlistenChunkRef = useRef<UnlistenFn | null>(null);
-  const unlistenDoneRef = useRef<UnlistenFn | null>(null);
-  const unlistenErrorRef = useRef<UnlistenFn | null>(null);
+  const unlistenRef = useRef<UnlistenFn | null>(null);
   const mountedRef = useRef(true);
 
   // Cleanup all listeners
   const cleanupListeners = useCallback(() => {
-    if (unlistenChunkRef.current) {
-      unlistenChunkRef.current();
-      unlistenChunkRef.current = null;
-    }
-    if (unlistenDoneRef.current) {
-      unlistenDoneRef.current();
-      unlistenDoneRef.current = null;
-    }
-    if (unlistenErrorRef.current) {
-      unlistenErrorRef.current();
-      unlistenErrorRef.current = null;
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
     }
   }, []);
 
@@ -205,41 +241,22 @@ export function useFlightChat() {
       let backendError: FlightChatError | null = null;
 
       try {
-        let resolveDone: (success: boolean) => void = () => {};
-        const streamDonePromise = new Promise<boolean>((resolve) => {
-          resolveDone = resolve;
+        const subscription = await subscribeToFlightChatStream(requestId, {
+          onChunk: (chunk) => {
+            accumulated += chunk + "\n";
+            if (mountedRef.current) {
+              setStreamingContent(accumulated);
+            }
+          },
+          onError: (err) => {
+            backendError = err;
+            if (mountedRef.current) setLastError(err);
+          },
+          onDone: () => {
+            /* resolution handled via subscription.done */
+          },
         });
-
-        await Promise.all([
-          listen<string>(
-            flightChatChunkEvent(requestId),
-            (event) => {
-              accumulated += event.payload + "\n";
-              if (mountedRef.current) {
-                setStreamingContent(accumulated);
-              }
-            },
-          ).then((unlisten) => {
-            unlistenChunkRef.current = unlisten;
-            return unlisten;
-          }),
-          listen<StreamErrorEvent>(
-            flightChatErrorEvent(requestId),
-            (event) => {
-              backendError = event.payload;
-              if (mountedRef.current) setLastError(event.payload);
-            },
-          ).then((unlisten) => {
-            unlistenErrorRef.current = unlisten;
-            return unlisten;
-          }),
-          listen<boolean>(flightChatDoneEvent(requestId), (event) => {
-            resolveDone(event.payload);
-          }).then((unlisten) => {
-            unlistenDoneRef.current = unlisten;
-            return unlisten;
-          }),
-        ]);
+        unlistenRef.current = subscription.unlisten;
 
         const projectPath = useLayoutStore.getState().projectPath;
         const retroContext = useMemoryStore.getState().getContextForSession(projectPath);
@@ -250,7 +267,7 @@ export function useFlightChat() {
           retroContext || undefined,
           requestId,
         );
-        const doneOk = await streamDonePromise;
+        const doneOk = await subscription.done;
 
         // Clean up listeners immediately after done
         cleanupListeners();
