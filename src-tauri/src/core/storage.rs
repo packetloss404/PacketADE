@@ -197,6 +197,25 @@ pub fn save_state(state: &PersistedState) -> Result<(), String> {
     save_state_inner(&state)
 }
 
+/// Atomic load → mutate → save under `STATE_LOCK`. Mirrors the slice-writer
+/// pattern (e.g. `save_flights`) for callers that need to merge multiple
+/// fields into the persisted state in a single critical section, instead of
+/// `load_state(); mutate; save_state()` — which exposes a lost-update race
+/// against concurrent slice writers landing between the load and the save.
+pub fn update_state<F, R>(mutate: F) -> Result<R, String>
+where
+    F: FnOnce(&mut PersistedState) -> R,
+{
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let mut state = load_state();
+    let result = mutate(&mut state);
+    state.version += 1;
+    save_state_inner(&state)?;
+    Ok(result)
+}
+
 /// Run an async closure with an exclusive load → mutate → save critical
 /// section over `PersistedState`. Solves the lost-update race that
 /// `load_state(); mutate; save_state()` exposes when called from

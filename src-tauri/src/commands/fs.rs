@@ -2,7 +2,7 @@ use super::shared::SKIP_DIRS;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Clone, Serialize)]
 pub struct DirEntry {
@@ -50,7 +50,19 @@ pub async fn list_directory(dir_path: String, workspace: String) -> Result<Vec<D
         let read_dir =
             fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
-        for entry in read_dir.flatten() {
+        for entry_result in read_dir {
+            let entry = match entry_result {
+                Ok(e) => e,
+                Err(e) => {
+                    warn!(
+                        target: "packetade::fs::list_directory",
+                        parent = %dir_path,
+                        error = %e,
+                        "skipping unreadable directory entry"
+                    );
+                    continue;
+                }
+            };
             let file_name = entry.file_name().to_string_lossy().to_string();
 
             // Skip hidden files/dirs (starting with .) except a few useful ones
@@ -77,7 +89,15 @@ pub async fn list_directory(dir_path: String, workspace: String) -> Result<Vec<D
 
             let metadata = match entry.metadata() {
                 Ok(m) => m,
-                Err(_) => continue,
+                Err(e) => {
+                    warn!(
+                        target: "packetade::fs::list_directory",
+                        path = %entry.path().display(),
+                        error = %e,
+                        "skipping entry: failed to read metadata"
+                    );
+                    continue;
+                }
             };
 
             let is_dir = metadata.is_dir();
@@ -141,15 +161,41 @@ pub async fn list_subdirectories(dir_path: String) -> Result<Vec<String>, String
             fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
         let mut dirs: Vec<String> = Vec::new();
-        for entry in read_dir.flatten() {
-            if let Ok(meta) = entry.metadata() {
-                if meta.is_dir() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if !name.starts_with('.') && !SKIP_DIRS.contains(&name.as_str()) {
-                        dirs.push(entry.path().to_string_lossy().to_string());
+        let mut skipped_count = 0usize;
+        for entry_result in read_dir {
+            let entry = match entry_result {
+                Ok(e) => e,
+                Err(_) => {
+                    skipped_count += 1;
+                    continue;
+                }
+            };
+            match entry.metadata() {
+                Ok(meta) => {
+                    if meta.is_dir() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if !name.starts_with('.') && !SKIP_DIRS.contains(&name.as_str()) {
+                            dirs.push(entry.path().to_string_lossy().to_string());
+                        }
                     }
                 }
+                Err(e) => {
+                    warn!(
+                        target: "packetade::fs::list_subdirectories",
+                        path = %entry.path().display(),
+                        error = %e,
+                        "skipping entry: failed to read metadata"
+                    );
+                }
             }
+        }
+        if skipped_count > 0 {
+            warn!(
+                target: "packetade::fs::list_subdirectories",
+                parent = %dir_path,
+                count = skipped_count,
+                "skipped unreadable directory entries"
+            );
         }
         dirs.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
         Ok(dirs)
@@ -241,16 +287,44 @@ fn walk_collect(
     }
     let read_dir = match fs::read_dir(current) {
         Ok(rd) => rd,
-        Err(_) => return,
+        Err(e) => {
+            warn!(
+                target: "packetade::fs::walk_collect",
+                path = %current.display(),
+                error = %e,
+                "skipping directory: failed to read_dir"
+            );
+            return;
+        }
     };
-    for entry in read_dir.flatten() {
+    for entry_result in read_dir {
         if out.len() >= limit {
             return;
         }
+        let entry = match entry_result {
+            Ok(e) => e,
+            Err(e) => {
+                warn!(
+                    target: "packetade::fs::walk_collect",
+                    parent = %current.display(),
+                    error = %e,
+                    "skipping unreadable directory entry"
+                );
+                continue;
+            }
+        };
         let file_name = entry.file_name().to_string_lossy().to_string();
         let metadata = match entry.metadata() {
             Ok(m) => m,
-            Err(_) => continue,
+            Err(e) => {
+                warn!(
+                    target: "packetade::fs::walk_collect",
+                    path = %entry.path().display(),
+                    error = %e,
+                    "skipping entry: failed to read metadata"
+                );
+                continue;
+            }
         };
         let path = entry.path();
         if metadata.is_dir() {
@@ -261,7 +335,16 @@ fn walk_collect(
         } else if metadata.is_file() {
             let rel = match path.strip_prefix(root) {
                 Ok(r) => r.to_string_lossy().replace('\\', "/"),
-                Err(_) => continue,
+                Err(e) => {
+                    warn!(
+                        target: "packetade::fs::walk_collect",
+                        path = %path.display(),
+                        root = %root.display(),
+                        error = %e,
+                        "skipping file: path is not under root"
+                    );
+                    continue;
+                }
             };
             if let Some(f) = filter_lower {
                 if !rel.to_lowercase().contains(f) {
