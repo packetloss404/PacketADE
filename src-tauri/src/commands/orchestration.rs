@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use tracing::warn;
+
 use crate::api::{OrchestratorSnapshotDto, PersistedStateDto, TaskSpawnRequestDto};
 use crate::commands::mission_planner::{
     MissionPlannerRegistry, PlannerWakeEvent, WakeTrigger,
@@ -13,13 +15,33 @@ use crate::core::storage::{self, PersistedState};
 /// Shared orchestrator state managed by Tauri
 pub type SharedOrchestrator = Arc<Mutex<Orchestrator>>;
 
-/// Create the shared orchestrator, recovering state from persisted flights
+/// Create the shared orchestrator, recovering state from persisted flights.
+///
+/// Runs the load → recover → save under `storage::update_state` so the
+/// recovery write can't be clobbered by an early slice-writer racing with
+/// app startup. The function signature is non-`Result` (it's wired into
+/// the Tauri builder chain in `lib.rs`), so a save failure is logged as
+/// a warning rather than propagated — strictly better than the previous
+/// `let _ = save_state(&state)` swallow.
 pub fn create_shared_orchestrator() -> SharedOrchestrator {
-    let mut state = storage::load_state();
-    let mut orchestrator = Orchestrator::new(state.settings.clone());
-    orchestrator.recover_from_flights(&mut state.flights);
-    // Save recovered state (tasks moved to paused, sessions cleared)
-    let _ = storage::save_state(&state);
+    let mut orchestrator_slot: Option<Orchestrator> = None;
+    let recover_result = storage::update_state(|state| {
+        let mut orchestrator = Orchestrator::new(state.settings.clone());
+        orchestrator.recover_from_flights(&mut state.flights);
+        orchestrator_slot = Some(orchestrator);
+    });
+    if let Err(e) = recover_result {
+        warn!(
+            "Failed to persist recovered orchestrator state on startup: {}",
+            e
+        );
+    }
+    let orchestrator = orchestrator_slot.unwrap_or_else(|| {
+        // `update_state` failed before the closure ran (lock poisoned).
+        // Fall back to a fresh orchestrator from a best-effort load so
+        // the app can still come up.
+        Orchestrator::new(storage::load_state().settings)
+    });
     Arc::new(Mutex::new(orchestrator))
 }
 
@@ -51,10 +73,12 @@ where
     F: FnOnce(&mut Orchestrator, &mut PersistedState) -> Result<R, String>,
 {
     let mut orch = lock_mutex(orchestrator)?;
-    let mut state = storage::load_state();
-    let result = action(&mut orch, &mut state)?;
-    storage::save_state(&state)?;
-    Ok(result)
+    // Hold the orchestrator lock across `update_state`, which itself takes
+    // `STATE_LOCK` for the entire load → mutate → save. This closes the
+    // load-modify-write race against concurrent slice writers
+    // (`save_issues_slice`, `save_flights_slice`, etc.) that could land
+    // between a bare `load_state()` and `save_state(&state)`.
+    storage::update_state(|state| action(&mut orch, state))?
 }
 
 #[tauri::command]
@@ -79,29 +103,32 @@ pub fn pause_flight(
     pty_manager: tauri::State<'_, SharedPtyManager>,
     flight_id: String,
 ) -> Result<PersistedStateDto, String> {
-    // Step 1: Collect session IDs and pause flight (under orchestrator lock)
+    // Step 1: Collect session IDs and pause flight (under orchestrator lock
+    // AND STATE_LOCK via update_state — closes the load-modify-write race
+    // against concurrent slice writers).
     let (result, session_ids) = {
         let mut orch = lock_mutex(&orchestrator)?;
-        let mut state = storage::load_state();
+        storage::update_state(|state| {
+            let session_ids: Vec<String> = orch
+                .running_tasks
+                .values()
+                .filter(|rt| rt.flight_id == flight_id)
+                .map(|rt| rt.session_id.clone())
+                .filter(|id| !id.is_empty())
+                .collect();
 
-        let session_ids: Vec<String> = orch
-            .running_tasks
-            .values()
-            .filter(|rt| rt.flight_id == flight_id)
-            .map(|rt| rt.session_id.clone())
-            .filter(|id| !id.is_empty())
-            .collect();
-
-        let flight = state
-            .flights
-            .iter_mut()
-            .find(|f| f.id == flight_id)
-            .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
-        orch.pause_flight(flight);
-        storage::save_state(&state)?;
-
-        (PersistedStateDto::from(state), session_ids)
-    }; // orchestrator lock released here
+            let flight = state
+                .flights
+                .iter_mut()
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+            orch.pause_flight(flight);
+            Ok::<(PersistedStateDto, Vec<String>), String>((
+                PersistedStateDto::from(state.clone()),
+                session_ids,
+            ))
+        })?
+    }?; // orchestrator lock released here
 
     // Step 2: Kill PTY sessions (under pty lock, orchestrator already released)
     if !session_ids.is_empty() {
@@ -135,29 +162,32 @@ pub fn cancel_flight(
     pty_manager: tauri::State<'_, SharedPtyManager>,
     flight_id: String,
 ) -> Result<PersistedStateDto, String> {
-    // Step 1: Collect session IDs and cancel flight (under orchestrator lock)
+    // Step 1: Collect session IDs and cancel flight (under orchestrator lock
+    // AND STATE_LOCK via update_state — closes the load-modify-write race
+    // against concurrent slice writers).
     let (result, session_ids) = {
         let mut orch = lock_mutex(&orchestrator)?;
-        let mut state = storage::load_state();
+        storage::update_state(|state| {
+            let session_ids: Vec<String> = orch
+                .running_tasks
+                .values()
+                .filter(|rt| rt.flight_id == flight_id)
+                .map(|rt| rt.session_id.clone())
+                .filter(|id| !id.is_empty())
+                .collect();
 
-        let session_ids: Vec<String> = orch
-            .running_tasks
-            .values()
-            .filter(|rt| rt.flight_id == flight_id)
-            .map(|rt| rt.session_id.clone())
-            .filter(|id| !id.is_empty())
-            .collect();
-
-        let flight = state
-            .flights
-            .iter_mut()
-            .find(|f| f.id == flight_id)
-            .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
-        orch.cancel_flight(flight);
-        storage::save_state(&state)?;
-
-        (PersistedStateDto::from(state), session_ids)
-    }; // orchestrator lock released here
+            let flight = state
+                .flights
+                .iter_mut()
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+            orch.cancel_flight(flight);
+            Ok::<(PersistedStateDto, Vec<String>), String>((
+                PersistedStateDto::from(state.clone()),
+                session_ids,
+            ))
+        })?
+    }?; // orchestrator lock released here
 
     // Step 2: Kill PTY sessions (under pty lock, orchestrator already released)
     if !session_ids.is_empty() {
