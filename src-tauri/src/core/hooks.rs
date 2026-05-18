@@ -194,7 +194,11 @@ pub async fn run_hook(hook: &HookConfig, payload: Value) -> Result<HookResult, S
 
     cmd.stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::piped())
+        // Ensure a runaway hook child is reaped if we bail out (e.g. on
+        // timeout below). Dropping the `Child` will SIGKILL the process on
+        // Unix / TerminateProcess on Windows instead of leaving a zombie.
+        .kill_on_drop(true);
 
     let mut child = cmd
         .spawn()
@@ -202,7 +206,16 @@ pub async fn run_hook(hook: &HookConfig, payload: Value) -> Result<HookResult, S
 
     // Pipe the payload to stdin and drop the handle so the child sees EOF.
     if let Some(mut stdin) = child.stdin.take() {
-        let body = serde_json::to_vec(&payload).unwrap_or_else(|_| b"{}".to_vec());
+        let body = match serde_json::to_vec(&payload) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    "Hooks: failed to serialize hook payload to JSON; falling back to empty object"
+                );
+                b"{}".to_vec()
+            }
+        };
         if let Err(e) = stdin.write_all(&body).await {
             warn!(error = %e, "Hooks: failed to write payload to hook stdin");
         }
@@ -210,11 +223,21 @@ pub async fn run_hook(hook: &HookConfig, payload: Value) -> Result<HookResult, S
         drop(stdin);
     }
 
-    let output = match tokio::time::timeout(Duration::from_secs(5), child.wait_with_output()).await
-    {
+    let timeout = Duration::from_secs(5);
+    let output = match tokio::time::timeout(timeout, child.wait_with_output()).await {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => return Err(format!("Hook process error: {}", e)),
-        Err(_) => return Err("Hook timed out after 5s".to_string()),
+        Err(_) => {
+            // `child` was consumed by `wait_with_output`, but that future
+            // internally owns the `Child` with `kill_on_drop(true)`, so
+            // dropping the timed-out future will terminate the process.
+            warn!(
+                command = %hook.command,
+                timeout_secs = timeout.as_secs(),
+                "Hooks: hook exceeded timeout; killing runaway child"
+            );
+            return Err(format!("Hook timed out after {}s", timeout.as_secs()));
+        }
     };
 
     let exit_code = output.status.code().unwrap_or(-1);
