@@ -65,7 +65,11 @@ fn resolve_windows_command(command: &str) -> String {
                 l.rsplit('\\')
                     .next()
                     .map(|f| f.contains('.'))
-                    .unwrap_or(false)
+                    .unwrap_or_else(|| {
+                        // `where` output should always be \-delimited on Windows; log if not.
+                        warn!(line = %l, "where output line had no \\ separator; treating as no extension");
+                        false
+                    })
             }) {
                 return with_ext.to_string();
             }
@@ -153,7 +157,12 @@ pub fn create_pty_session(
     let project_path = if command == "ssh" {
         dirs::home_dir()
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| project_path.clone())
+            .unwrap_or_else(|| {
+                // No home dir resolvable — falling back to the caller-supplied path keeps SSH alive
+                // but signals an environment issue worth investigating.
+                warn!(fallback = %project_path, "dirs::home_dir() returned None for SSH session; using caller path");
+                project_path.clone()
+            })
     } else {
         let project_dir = std::path::Path::new(&project_path);
         if !project_dir.is_dir() {
@@ -626,7 +635,11 @@ pub async fn ssh_fetch_fingerprint(host: String, port: u16) -> Result<Vec<HostKe
         // alongside the fingerprint).
         let mut parts = line.split_whitespace();
         let _host_part = parts.next();
-        let algorithm = parts.next().unwrap_or("").to_string();
+        let algorithm = parts.next().unwrap_or_else(|| {
+            // Malformed keyscan line — empty alg is harmless downstream but useful to flag.
+            warn!(line = %line, "ssh-keyscan line missing algorithm token");
+            ""
+        }).to_string();
 
         // Derive the SHA256 fingerprint by piping the keyscan line to
         // `ssh-keygen -lf -`. Output: "<bits> SHA256:<...> <comment> (<alg>)".
@@ -655,7 +668,12 @@ pub async fn ssh_fetch_fingerprint(host: String, port: u16) -> Result<Vec<HostKe
         let fingerprint = fp_line
             .split_whitespace()
             .find(|tok| tok.starts_with("SHA256:"))
-            .unwrap_or("")
+            .unwrap_or_else(|| {
+                // ssh-keygen output format changed or input was rejected — empty fingerprint
+                // gets filtered out below, but the cause is otherwise invisible.
+                warn!(keygen_output = %fp_line, "ssh-keygen output missing SHA256 token");
+                ""
+            })
             .to_string();
 
         if !fingerprint.is_empty() {
