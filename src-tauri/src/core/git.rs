@@ -230,7 +230,14 @@ pub fn create_branch(
 ) -> Result<String, String> {
     validate_branch_name(branch_name)?;
     if checkout {
-        git_command_result(&["checkout", "-b", "--", branch_name], project_path)
+        // NOTE: `git checkout -b -- <name>` is broken — git parses `--` as
+        // the new branch name and `<name>` as the commit-ish to branch from
+        // ("fatal: '<name>' is not a commit and a branch '--' cannot be
+        // created from it"). `git branch -- <name>` works because branch
+        // accepts `--` as end-of-options, but `checkout -b` does not. Flag
+        // injection is already prevented by `validate_branch_name`
+        // (rejects names starting with `-`).
+        git_command_result(&["checkout", "-b", branch_name], project_path)
     } else {
         git_command_result(&["branch", "--", branch_name], project_path)
     }
