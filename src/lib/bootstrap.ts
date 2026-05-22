@@ -76,9 +76,18 @@ export async function initializeApp(): Promise<void> {
     // Heavy stores hydrate in the background — welcome doesn't need them,
     // and they don't make additional backend calls when given pre-loaded
     // state, so this is really just a clarity/intent signal.
-    void useFlightStore.getState().hydrateFromBackend(state).catch(() => undefined);
-    void useAgentStore.getState().hydrateFromBackend(state).catch(() => undefined);
-    void useOrchestrationStateStore.getState().hydrateFromBackend(state).catch(() => undefined);
+    void useFlightStore
+      .getState()
+      .hydrateFromBackend(state)
+      .catch(() => undefined);
+    void useAgentStore
+      .getState()
+      .hydrateFromBackend(state)
+      .catch(() => undefined);
+    void useOrchestrationStateStore
+      .getState()
+      .hydrateFromBackend(state)
+      .catch(() => undefined);
   } catch {
     // Backend unavailable — fall back to localStorage defaults.
     const localPath = localStorage.getItem("packetade:project-path");
@@ -111,7 +120,6 @@ export function persistUiState() {
     const { activeView, theme } = useAppStore.getState();
     saveUiSlice({
       selectedView: activeView,
-      selectedFlightId: null,
       theme,
     }).catch(logSwallowed("bootstrap.saveUi"));
   }, 1000);

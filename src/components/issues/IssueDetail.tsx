@@ -13,11 +13,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
-import {
-  useIssueStore,
-  type Issue,
-  type IssueStatus,
-} from "@/stores/issueStore";
+import { useIssueStore, type Issue, type IssueStatus } from "@/stores/issueStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -47,18 +43,29 @@ const STATUS_BUTTONS: { key: IssueStatus; label: string }[] = [
 ];
 
 function getStatusButtonColor(status: IssueStatus, isActive: boolean): string {
-  if (!isActive) return "bg-bg-primary border-bg-border text-text-muted hover:bg-bg-hover hover:text-text-secondary";
+  if (!isActive)
+    return "bg-bg-primary border-bg-border text-text-muted hover:bg-bg-hover hover:text-text-secondary";
   switch (status) {
-    case "backlog": return "bg-text-faint/20 border-text-faint/40 text-text-secondary";
-    case "up_next": return "bg-accent-blue/15 border-accent-blue/35 text-accent-blue";
-    case "todo": return "bg-text-muted/20 border-text-muted/40 text-text-primary";
-    case "in_progress": return "bg-accent-blue/20 border-accent-blue/40 text-accent-blue";
-    case "in_review": return "bg-accent-purple/20 border-accent-purple/40 text-accent-purple";
-    case "qa": return "bg-accent-amber/20 border-accent-amber/40 text-accent-amber";
-    case "done": return "bg-accent-green/20 border-accent-green/40 text-accent-green";
-    case "blocked": return "bg-accent-red/20 border-accent-red/40 text-accent-red";
-    case "needs_human": return "bg-accent-purple/20 border-accent-purple/40 text-accent-purple";
-    default: return "bg-bg-elevated border-bg-border text-text-primary";
+    case "backlog":
+      return "bg-text-faint/20 border-text-faint/40 text-text-secondary";
+    case "up_next":
+      return "bg-accent-blue/15 border-accent-blue/35 text-accent-blue";
+    case "todo":
+      return "bg-text-muted/20 border-text-muted/40 text-text-primary";
+    case "in_progress":
+      return "bg-accent-blue/20 border-accent-blue/40 text-accent-blue";
+    case "in_review":
+      return "bg-accent-purple/20 border-accent-purple/40 text-accent-purple";
+    case "qa":
+      return "bg-accent-amber/20 border-accent-amber/40 text-accent-amber";
+    case "done":
+      return "bg-accent-green/20 border-accent-green/40 text-accent-green";
+    case "blocked":
+      return "bg-accent-red/20 border-accent-red/40 text-accent-red";
+    case "needs_human":
+      return "bg-accent-purple/20 border-accent-purple/40 text-accent-purple";
+    default:
+      return "bg-bg-elevated border-bg-border text-text-primary";
   }
 }
 
@@ -132,10 +139,10 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
     .filter(Boolean) as Issue[];
 
   const availableForBlockedBy = issues.filter(
-    (i) => i.id !== issue.id && !issue.blockedBy.includes(i.id),
+    (i) => i.id !== issue.id && !issue.blockedBy.includes(i.id) && !issue.blocks.includes(i.id),
   );
   const availableForBlocks = issues.filter(
-    (i) => i.id !== issue.id && !issue.blocks.includes(i.id),
+    (i) => i.id !== issue.id && !issue.blocks.includes(i.id) && !issue.blockedBy.includes(i.id),
   );
 
   const linkedWorkspace = issue.workspaceId
@@ -248,26 +255,22 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
       <span className={issue.status === "done" ? "line-through opacity-60" : ""}>
         {issue.ticketId}: {issue.title}
       </span>
-      <div className="flex items-center gap-2 mt-1 flex-wrap">
-        <span className={`text-[11px] font-medium ${priorityInfo.cls}`}>
-          {priorityInfo.text}
-        </span>
-        <span className="text-[10px] text-text-muted">
-          {formatDate(issue.createdAt)}
-        </span>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <span className={`text-[11px] font-medium ${priorityInfo.cls}`}>{priorityInfo.text}</span>
+        <span className="text-[10px] text-text-muted">{formatDate(issue.createdAt)}</span>
         {issue.labels.map((label) => {
           const color = getLabelColor(label);
           return (
             <span
               key={label}
-              className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${color.bg} ${color.text}`}
+              className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${color.bg} ${color.text}`}
             >
               {label}
             </span>
           );
         })}
         {issue.epic && (
-          <span className="text-[9px] px-1.5 py-0.5 bg-accent-purple/15 text-accent-purple rounded font-medium">
+          <span className="bg-accent-purple/15 rounded px-1.5 py-0.5 text-[9px] font-medium text-accent-purple">
             {issue.epic}
           </span>
         )}
@@ -277,23 +280,21 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
 
   return (
     <Modal onClose={onClose} title="" width="w-[600px]">
-      <div className="px-5 pt-1 pb-3 border-b border-bg-border">
-        <h2 className="text-sm font-semibold text-text-primary leading-snug">
-          {titleWithMeta}
-        </h2>
+      <div className="border-b border-bg-border px-5 pb-3 pt-1">
+        <h2 className="text-sm font-semibold leading-snug text-text-primary">{titleWithMeta}</h2>
       </div>
 
-      <div className="px-5 py-4 flex flex-col gap-4">
+      <div className="flex flex-col gap-4 px-5 py-4">
         {/* Description (markdown so notes from spec import render properly) */}
         {issue.description && (
-          <div className="text-xs text-text-secondary leading-relaxed">
+          <div className="text-xs leading-relaxed text-text-secondary">
             <MarkdownRenderer content={issue.description} />
           </div>
         )}
 
         {/* Status buttons row */}
         <div>
-          <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+          <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-text-muted">
             Status
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -301,7 +302,7 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
               <button
                 key={s.key}
                 onClick={() => moveIssue(issueId, s.key)}
-                className={`px-2.5 py-1 text-[11px] rounded border transition-colors ${getStatusButtonColor(s.key, issue.status === s.key)}`}
+                className={`rounded border px-2.5 py-1 text-[11px] transition-colors ${getStatusButtonColor(s.key, issue.status === s.key)}`}
               >
                 {s.label}
               </button>
@@ -312,32 +313,30 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
         {/* Linked workspace pill (read-only — handoff CTA lives on the card) */}
         {linkedWorkspace && (
           <div>
-            <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+            <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-text-muted">
               Workspace
             </label>
             <button
               type="button"
               onClick={jumpToLinkedWorkspace}
-              className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-bg-primary border border-bg-border rounded hover:border-accent-green/40 transition-colors group"
+              className="hover:border-accent-green/40 group inline-flex items-center gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-1.5 transition-colors"
             >
-              <LayoutGrid size={12} className="text-accent-green flex-shrink-0" />
-              <span className="text-[11px] text-text-primary truncate">
-                {linkedWorkspace.name}
-              </span>
+              <LayoutGrid size={12} className="flex-shrink-0 text-accent-green" />
+              <span className="truncate text-[11px] text-text-primary">{linkedWorkspace.name}</span>
               <ExternalLink
                 size={10}
-                className="text-text-muted group-hover:text-accent-green transition-colors"
+                className="text-text-muted transition-colors group-hover:text-accent-green"
               />
             </button>
           </div>
         )}
 
         {/* Work on this issue (only when no linked workspace) */}
-        {!linkedWorkspace && (
-          !showWorkspacePicker ? (
+        {!linkedWorkspace &&
+          (!showWorkspacePicker ? (
             <button
               onClick={() => setShowWorkspacePicker(true)}
-              className="flex items-center justify-center gap-2 py-2.5 bg-accent-green/15 border border-accent-green/30 rounded-lg text-accent-green text-xs font-medium hover:bg-accent-green/25 transition-colors"
+              className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 flex items-center justify-center gap-2 rounded-lg border py-2.5 text-xs font-medium text-accent-green transition-colors"
             >
               <Play size={14} />
               Work on this issue
@@ -348,12 +347,11 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
               onCreate={handleCreateAndSend}
               onCancel={() => setShowWorkspacePicker(false)}
             />
-          )
-        )}
+          ))}
 
         {/* Assignee */}
         <div>
-          <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+          <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-text-muted">
             Assignee
           </label>
           {editingAssignee ? (
@@ -373,12 +371,12 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
                   }
                 }}
                 placeholder='username, email, or "me"'
-                className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+                className="flex-1 rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:border-accent-green focus:outline-none"
               />
               <button
                 type="button"
                 onClick={commitAssignee}
-                className="p-1 text-accent-green hover:text-accent-green/80 transition-colors"
+                className="hover:text-accent-green/80 p-1 text-accent-green transition-colors"
                 title="Save"
               >
                 <Check size={12} />
@@ -386,7 +384,7 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
               <button
                 type="button"
                 onClick={() => setEditingAssignee(false)}
-                className="p-1 text-text-muted hover:text-text-secondary transition-colors"
+                className="p-1 text-text-muted transition-colors hover:text-text-secondary"
                 title="Cancel"
               >
                 <X size={12} />
@@ -396,7 +394,7 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
             <button
               type="button"
               onClick={startEditingAssignee}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-bg-primary border border-bg-border rounded text-[11px] text-text-primary hover:border-accent-green/40 transition-colors"
+              className="hover:border-accent-green/40 inline-flex items-center gap-1.5 rounded border border-bg-border bg-bg-primary px-2.5 py-1 text-[11px] text-text-primary transition-colors"
             >
               <UserPlus size={11} className="text-accent-green" />
               {issue.assignee}
@@ -405,7 +403,7 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
             <button
               type="button"
               onClick={startEditingAssignee}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-bg-primary border border-dashed border-bg-border rounded text-[11px] text-text-muted hover:text-text-secondary hover:border-line-strong transition-colors"
+              className="inline-flex items-center gap-1.5 rounded border border-dashed border-bg-border bg-bg-primary px-2.5 py-1 text-[11px] text-text-muted transition-colors hover:border-line-strong hover:text-text-secondary"
             >
               <UserPlus size={11} />
               Assign...
@@ -415,13 +413,13 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
 
         {/* Flight assignment */}
         <div>
-          <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+          <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-text-muted">
             Flight
           </label>
           {issue.flightId ? (
-            <div className="flex items-center gap-2 px-2.5 py-1.5 bg-bg-primary border border-bg-border rounded">
-              <Target size={12} className="text-accent-green flex-shrink-0" />
-              <span className="text-[11px] text-text-primary flex-1 truncate">
+            <div className="flex items-center gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-1.5">
+              <Target size={12} className="flex-shrink-0 text-accent-green" />
+              <span className="flex-1 truncate text-[11px] text-text-primary">
                 {flights.find((f) => f.id === issue.flightId)?.title || "Unknown flight"}
               </span>
               <button
@@ -431,7 +429,7 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
                     assignToFlight(issue.id, null);
                   }
                 }}
-                className="p-0.5 text-text-muted hover:text-accent-red transition-colors flex-shrink-0"
+                className="flex-shrink-0 p-0.5 text-text-muted transition-colors hover:text-accent-red"
                 title="Remove from flight"
               >
                 <X size={10} />
@@ -439,7 +437,7 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
             </div>
           ) : (
             <select
-              className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1.5 text-[11px] text-text-secondary focus:outline-none focus:border-accent-green"
+              className="w-full rounded border border-bg-border bg-bg-primary px-2 py-1.5 text-[11px] text-text-secondary focus:border-accent-green focus:outline-none"
               value=""
               onChange={(e) => {
                 if (e.target.value) {
@@ -450,7 +448,9 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
             >
               <option value="">Assign to flight...</option>
               {flights.map((f) => (
-                <option key={f.id} value={f.id}>{f.title}</option>
+                <option key={f.id} value={f.id}>
+                  {f.title}
+                </option>
               ))}
             </select>
           )}
@@ -480,14 +480,14 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
           <div>
             <button
               onClick={() => setShowDepGraph(!showDepGraph)}
-              className="flex items-center gap-1 text-[10px] text-text-muted uppercase tracking-wider hover:text-text-secondary transition-colors"
+              className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-text-muted transition-colors hover:text-text-secondary"
             >
               {showDepGraph ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
               Dependency Graph
             </button>
             {showDepGraph && (
-              <div className="mt-1.5 p-2 bg-bg-primary rounded border border-bg-border">
-                <pre className="text-[10px] text-text-secondary font-mono leading-relaxed">
+              <div className="mt-1.5 rounded border border-bg-border bg-bg-primary p-2">
+                <pre className="font-mono text-[10px] leading-relaxed text-text-secondary">
                   {buildDepGraph().join("\n")}
                 </pre>
               </div>
@@ -497,29 +497,29 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
 
         {/* Acceptance Criteria */}
         <div>
-          <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+          <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-text-muted">
             Acceptance Criteria ({checkedCount}/{totalCriteria} complete)
           </label>
           {issue.acceptanceCriteria.length > 0 ? (
             <div className="flex flex-col gap-1.5">
               {issue.acceptanceCriteria.map((criterion) => (
-                <div key={criterion.id} className="flex items-start gap-2 group">
+                <div key={criterion.id} className="group flex items-start gap-2">
                   <input
                     type="checkbox"
                     checked={criterion.checked}
                     onChange={() => toggleCriterion(issueId, criterion.id)}
-                    className="mt-0.5 accent-[#00ff41] cursor-pointer"
+                    className="mt-0.5 cursor-pointer accent-[#00ff41]"
                   />
                   <span
-                    className={`text-[11px] leading-snug flex-1 ${
-                      criterion.checked ? "line-through text-text-muted" : "text-text-secondary"
+                    className={`flex-1 text-[11px] leading-snug ${
+                      criterion.checked ? "text-text-muted line-through" : "text-text-secondary"
                     }`}
                   >
                     {criterion.text}
                   </span>
                   <button
                     onClick={() => removeCriterion(issueId, criterion.id)}
-                    className="p-0.5 text-text-muted hover:text-accent-red opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                    className="flex-shrink-0 p-0.5 text-text-muted opacity-0 transition-opacity hover:text-accent-red group-hover:opacity-100"
                   >
                     <Trash2 size={10} />
                   </button>
@@ -530,7 +530,7 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
             <p className="text-[10px] text-text-muted">No acceptance criteria defined</p>
           )}
 
-          <div className="flex items-center gap-1.5 mt-2">
+          <div className="mt-2 flex items-center gap-1.5">
             <input
               type="text"
               value={newCriterionText}
@@ -542,12 +542,12 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
                 }
               }}
               placeholder="Add criterion..."
-              className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+              className="flex-1 rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:border-accent-green focus:outline-none"
             />
             <button
               onClick={handleAddCriterion}
               disabled={!newCriterionText.trim()}
-              className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-30"
+              className="p-1 text-text-muted transition-colors hover:text-accent-green disabled:opacity-30"
             >
               <Plus size={14} />
             </button>
@@ -556,7 +556,7 @@ export function IssueDetail({ issueId, onClose }: IssueDetailProps) {
 
         {/* Comments thread (v0.8.5) */}
         <div>
-          <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+          <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-text-muted">
             Comments
           </label>
           <IssueCommentList issueId={issueId} comments={comments} />
@@ -589,20 +589,15 @@ function WorkspacePicker({
         projectPath.replace(/\\/g, "/").toLowerCase(),
   );
 
-  const workspacesWithSessions = activeWorkspaces.filter((w) =>
-    w.panes.some((p) => p.sessionId),
-  );
+  const workspacesWithSessions = activeWorkspaces.filter((w) => w.panes.some((p) => p.sessionId));
 
   return (
-    <div className="bg-bg-primary border border-bg-border rounded-lg p-3">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
+    <div className="rounded-lg border border-bg-border bg-bg-primary p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">
           Send to workspace
         </span>
-        <button
-          onClick={onCancel}
-          className="text-text-muted hover:text-text-primary"
-        >
+        <button onClick={onCancel} className="text-text-muted hover:text-text-primary">
           <X size={12} />
         </button>
       </div>
@@ -611,23 +606,21 @@ function WorkspacePicker({
           <button
             key={ws.id}
             onClick={() => onSelect(ws.id)}
-            className="flex items-center gap-2 w-full px-3 py-2 text-left bg-bg-secondary border border-bg-border rounded-lg hover:border-accent-green/30 hover:bg-bg-hover transition-colors"
+            className="hover:border-accent-green/30 flex w-full items-center gap-2 rounded-lg border border-bg-border bg-bg-secondary px-3 py-2 text-left transition-colors hover:bg-bg-hover"
           >
-            <LayoutGrid size={12} className="text-text-muted flex-shrink-0" />
-            <span className="text-[11px] text-text-primary font-medium truncate">
-              {ws.name}
-            </span>
-            <span className="text-[10px] text-text-muted ml-auto flex-shrink-0">
+            <LayoutGrid size={12} className="flex-shrink-0 text-text-muted" />
+            <span className="truncate text-[11px] font-medium text-text-primary">{ws.name}</span>
+            <span className="ml-auto flex-shrink-0 text-[10px] text-text-muted">
               {ws.panes.filter((p) => p.sessionId).length} active
             </span>
           </button>
         ))}
         <button
           onClick={onCreate}
-          className="flex items-center gap-2 w-full px-3 py-2 text-left bg-accent-green/5 border border-accent-green/20 rounded-lg hover:bg-accent-green/10 transition-colors"
+          className="bg-accent-green/5 border-accent-green/20 hover:bg-accent-green/10 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors"
         >
-          <Plus size={12} className="text-accent-green flex-shrink-0" />
-          <span className="text-[11px] text-accent-green font-medium truncate">
+          <Plus size={12} className="flex-shrink-0 text-accent-green" />
+          <span className="truncate text-[11px] font-medium text-accent-green">
             Create workspace "{projectName}"
           </span>
         </button>

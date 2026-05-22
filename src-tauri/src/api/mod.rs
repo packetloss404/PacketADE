@@ -53,6 +53,29 @@ pub struct WorkspacePaneDto {
     pub agent_id: WorkspaceAgentSlotDto,
     pub session_id: Option<String>,
     pub grid_position: GridPositionDto,
+    #[ts(optional)]
+    pub accent_color: Option<String>,
+    #[ts(optional)]
+    pub pinned_commands: Option<Vec<String>>,
+    #[ts(optional)]
+    pub task_id: Option<String>,
+    #[ts(optional)]
+    pub flight_id: Option<String>,
+    #[ts(optional)]
+    pub agent_config_id: Option<String>,
+    #[ts(optional)]
+    pub initial_prompt: Option<String>,
+    #[ts(optional)]
+    pub override_command: Option<String>,
+    #[ts(optional)]
+    pub override_args: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubRepoDto {
+    pub owner: String,
+    pub repo: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -80,6 +103,8 @@ pub struct WorkspaceDto {
     pub server_id: Option<String>,
     #[ts(optional)]
     pub remote_project_path: Option<String>,
+    #[ts(optional)]
+    pub github_repo: Option<GithubRepoDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -99,13 +124,8 @@ pub struct OrchestratorSettingsDto {
     pub max_parallel_sessions: usize,
     pub milestone_gating: bool,
     pub project_path: String,
-    /// v0.8: enable the prepare-commit-msg trailer hook in mission
-    /// worktrees. Defaults to `true` for back-compat with v0.8-16
-    /// (which always installed the hook).
     #[serde(default = "crate::api::default_auto_commit_trailer_enabled_dto")]
     pub auto_commit_trailer_enabled: bool,
-    /// v0.8: format string for the auto-trailer. Supports `{flightId}`,
-    /// `{attemptId}`, and `{flightTitle}` placeholders.
     #[serde(default = "crate::api::default_auto_commit_trailer_format_dto")]
     pub auto_commit_trailer_format: String,
 }
@@ -754,6 +774,14 @@ impl From<core_workspace::WorkspacePane> for WorkspacePaneDto {
             agent_id: value.agent_id.into(),
             session_id: value.session_id,
             grid_position: value.grid_position.into(),
+            accent_color: value.accent_color,
+            pinned_commands: value.pinned_commands,
+            task_id: value.task_id,
+            flight_id: value.flight_id,
+            agent_config_id: value.agent_config_id,
+            initial_prompt: value.initial_prompt,
+            override_command: value.override_command,
+            override_args: value.override_args,
         }
     }
 }
@@ -765,6 +793,32 @@ impl From<WorkspacePaneDto> for core_workspace::WorkspacePane {
             agent_id: value.agent_id.into(),
             session_id: value.session_id,
             grid_position: value.grid_position.into(),
+            accent_color: value.accent_color,
+            pinned_commands: value.pinned_commands,
+            task_id: value.task_id,
+            flight_id: value.flight_id,
+            agent_config_id: value.agent_config_id,
+            initial_prompt: value.initial_prompt,
+            override_command: value.override_command,
+            override_args: value.override_args,
+        }
+    }
+}
+
+impl From<core_workspace::GithubRepo> for GithubRepoDto {
+    fn from(value: core_workspace::GithubRepo) -> Self {
+        Self {
+            owner: value.owner,
+            repo: value.repo,
+        }
+    }
+}
+
+impl From<GithubRepoDto> for core_workspace::GithubRepo {
+    fn from(value: GithubRepoDto) -> Self {
+        Self {
+            owner: value.owner,
+            repo: value.repo,
         }
     }
 }
@@ -786,6 +840,7 @@ impl From<core_workspace::Workspace> for WorkspaceDto {
             effort_overrides: value.effort_overrides,
             server_id: value.server_id,
             remote_project_path: value.remote_project_path,
+            github_repo: value.github_repo.map(Into::into),
         }
     }
 }
@@ -807,6 +862,7 @@ impl From<WorkspaceDto> for core_workspace::Workspace {
             effort_overrides: value.effort_overrides,
             server_id: value.server_id,
             remote_project_path: value.remote_project_path,
+            github_repo: value.github_repo.map(Into::into),
         }
     }
 }
@@ -1592,6 +1648,7 @@ fn generated_typescript_schema() -> String {
     push_decl!(ThemeDto);
     push_decl!(GridPositionDto);
     push_decl!(WorkspacePaneDto);
+    push_decl!(GithubRepoDto);
     push_decl!(WorkspaceDto);
     push_decl!(ServerConfigDto);
     push_decl!(PersistedUiStateDto);
@@ -1752,6 +1809,73 @@ mod tests {
             .get("filesChanged")
             .is_some());
         assert_eq!(value["ui"]["theme"], "dark");
+    }
+
+    #[test]
+    fn workspace_dto_preserves_frontend_metadata_through_core_round_trip() {
+        let json = r#"{
+            "id": "workspace-1",
+            "name": "Workspace",
+            "agents": ["codex"],
+            "panes": [
+                {
+                    "id": "pane-1",
+                    "agentId": "codex",
+                    "sessionId": "session-1",
+                    "gridPosition": { "row": 0, "col": 0 },
+                    "accentColor": "accent-green",
+                    "pinnedCommands": ["pnpm test"],
+                    "taskId": "task-1",
+                    "flightId": "flight-1",
+                    "agentConfigId": "codex",
+                    "initialPrompt": "Start here",
+                    "overrideCommand": "codex",
+                    "overrideArgs": ["--ask-for-approval", "never"]
+                }
+            ],
+            "projectPath": "/repo",
+            "prompt": null,
+            "createdAt": 1,
+            "updatedAt": 2,
+            "status": "active",
+            "githubRepo": { "owner": "openai", "repo": "packetade" }
+        }"#;
+
+        let dto: WorkspaceDto = serde_json::from_str(json).expect("workspace dto should parse");
+        let core: core_workspace::Workspace = dto.into();
+
+        let pane = &core.panes[0];
+        assert_eq!(pane.accent_color.as_deref(), Some("accent-green"));
+        assert_eq!(
+            pane.pinned_commands.as_deref(),
+            Some(&["pnpm test".to_string()][..])
+        );
+        assert_eq!(pane.task_id.as_deref(), Some("task-1"));
+        assert_eq!(pane.flight_id.as_deref(), Some("flight-1"));
+        assert_eq!(pane.agent_config_id.as_deref(), Some("codex"));
+        assert_eq!(pane.initial_prompt.as_deref(), Some("Start here"));
+        assert_eq!(pane.override_command.as_deref(), Some("codex"));
+        assert_eq!(
+            pane.override_args.as_deref(),
+            Some(&["--ask-for-approval".to_string(), "never".to_string()][..])
+        );
+        let github_repo = core.github_repo.as_ref().expect("github repo should persist");
+        assert_eq!(github_repo.owner, "openai");
+        assert_eq!(github_repo.repo, "packetade");
+
+        let back: WorkspaceDto = core.into();
+        let value = serde_json::to_value(back).unwrap();
+        assert_eq!(value["githubRepo"]["owner"], "openai");
+        assert_eq!(value["githubRepo"]["repo"], "packetade");
+        assert_eq!(value["panes"][0]["accentColor"], "accent-green");
+        assert_eq!(value["panes"][0]["pinnedCommands"][0], "pnpm test");
+        assert_eq!(value["panes"][0]["taskId"], "task-1");
+        assert_eq!(value["panes"][0]["flightId"], "flight-1");
+        assert_eq!(value["panes"][0]["agentConfigId"], "codex");
+        assert_eq!(value["panes"][0]["initialPrompt"], "Start here");
+        assert_eq!(value["panes"][0]["overrideCommand"], "codex");
+        assert_eq!(value["panes"][0]["overrideArgs"][0], "--ask-for-approval");
+        assert_eq!(value["panes"][0]["overrideArgs"][1], "never");
     }
 
     #[test]

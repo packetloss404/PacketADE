@@ -17,7 +17,8 @@
  * Target selection (in priority order):
  *   1. CLI `--target=<triple>` or `--all-targets`
  *   2. Env `TAURI_TARGET=<triple>`
- *   3. Host detection from `process.platform` + `process.arch`
+ *   3. Env `TAURI_ENV_TARGET_TRIPLE=<triple>`
+ *   4. Host detection from `process.platform` + `process.arch`
  *
  * Idempotent: if the target binary already exists and its sibling `.sha256`
  * marker records the same nodeVersion + target + on-disk sha256, the download
@@ -115,12 +116,7 @@ function httpsGet(url, onResponse) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, (res) => {
       // Handle redirects (nodejs.org has historically used them for cdn/mirrors)
-      if (
-        res.statusCode &&
-        res.statusCode >= 300 &&
-        res.statusCode < 400 &&
-        res.headers.location
-      ) {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
         const next = new URL(res.headers.location, url).toString();
         httpsGet(next, onResponse).then(resolve, reject);
@@ -129,9 +125,7 @@ function httpsGet(url, onResponse) {
       if (res.statusCode !== 200) {
         res.resume();
         reject(
-          new Error(
-            `GET ${url} failed with status ${res.statusCode} ${res.statusMessage ?? ""}`,
-          ),
+          new Error(`GET ${url} failed with status ${res.statusCode} ${res.statusMessage ?? ""}`),
         );
         return;
       }
@@ -194,9 +188,7 @@ function findShasum(shasumsText, basename) {
       return parts[0].toLowerCase();
     }
   }
-  throw new Error(
-    `Could not find sha256 entry for ${basename} in SHASUMS256.txt`,
-  );
+  throw new Error(`Could not find sha256 entry for ${basename} in SHASUMS256.txt`);
 }
 
 function fail(message, cause) {
@@ -242,7 +234,8 @@ function printHelp() {
       `Target selection (priority):\n` +
       `  1. --target / --all-targets CLI flag\n` +
       `  2. TAURI_TARGET environment variable\n` +
-      `  3. Host-detected target (process.platform + process.arch)\n\n` +
+      `  3. TAURI_ENV_TARGET_TRIPLE environment variable\n` +
+      `  4. Host-detected target (process.platform + process.arch)\n\n` +
       `Supported targets:\n${supported}\n`,
   );
 }
@@ -272,22 +265,64 @@ function resolveTargets(args) {
   const candidate =
     args.target ??
     process.env.TAURI_TARGET ??
+    process.env.TAURI_ENV_TARGET_TRIPLE ??
     detectHostTarget();
   if (!candidate) {
     const supported = Object.keys(TARGETS).join(", ");
     fail(
       `could not auto-detect a supported target for ` +
         `platform=${process.platform} arch=${process.arch}. ` +
-        `Pass --target=<triple> or set TAURI_TARGET. Supported: ${supported}`,
+        `Pass --target=<triple>, set TAURI_TARGET, or set ` +
+        `TAURI_ENV_TARGET_TRIPLE. Supported: ${supported}`,
     );
   }
   if (!TARGETS[candidate]) {
     const supported = Object.keys(TARGETS).join(", ");
-    fail(
-      `unknown target '${candidate}'. Supported targets: ${supported}`,
-    );
+    fail(`unknown target '${candidate}'. Supported targets: ${supported}`);
   }
   return [candidate];
+}
+
+function cachedTargetStatus(triple) {
+  const entry = TARGETS[triple];
+  const outputPath = path.join(TARGET_DIR, entry.outputFilename);
+  const markerPath = `${outputPath}.sha256`;
+
+  if (!existsSync(outputPath)) {
+    return { valid: false, outputPath, reason: "binary missing" };
+  }
+  if (!existsSync(markerPath)) {
+    return { valid: false, outputPath, reason: "marker missing" };
+  }
+
+  try {
+    const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+    if (
+      !marker ||
+      marker.nodeVersion !== NODE_VERSION ||
+      marker.target !== triple ||
+      typeof marker.sha256 !== "string"
+    ) {
+      return { valid: false, outputPath, reason: "marker is for a different version/layout" };
+    }
+
+    const actual = sha256File(outputPath);
+    if (actual !== marker.sha256) {
+      return {
+        valid: false,
+        outputPath,
+        reason: `existing binary sha256 mismatch (stored=${marker.sha256.slice(0, 12)}..., actual=${actual.slice(0, 12)}...)`,
+      };
+    }
+
+    return { valid: true, outputPath };
+  } catch (err) {
+    return {
+      valid: false,
+      outputPath,
+      reason: `could not parse .sha256 marker (${err.message})`,
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -302,9 +337,7 @@ function extractFromZip(archivePath, innerPath) {
   const zip = new AdmZip(archivePath);
   const entry = zip.getEntry(innerPath);
   if (!entry) {
-    throw new Error(
-      `zip does not contain expected entry ${innerPath}`,
-    );
+    throw new Error(`zip does not contain expected entry ${innerPath}`);
   }
   const buf = entry.getData();
   if (!buf || buf.length === 0) {
@@ -338,15 +371,11 @@ async function extractFromTarGz(archivePath, innerPath, destDir) {
     },
   });
   if (!matched) {
-    throw new Error(
-      `tar archive does not contain expected entry ${innerPath}`,
-    );
+    throw new Error(`tar archive does not contain expected entry ${innerPath}`);
   }
   const extracted = path.join(destDir, innerPath);
   if (!existsSync(extracted)) {
-    throw new Error(
-      `tar extraction reported match but ${extracted} is missing`,
-    );
+    throw new Error(`tar extraction reported match but ${extracted} is missing`);
   }
   return extracted;
 }
@@ -366,47 +395,16 @@ async function processTarget(triple, shasumsText) {
   try {
     expectedArchiveSha = findShasum(shasumsText, entry.distBasename);
   } catch (err) {
-    fail(
-      `[${triple}] could not locate sha256 for ${entry.distBasename}`,
-      err,
-    );
+    fail(`[${triple}] could not locate sha256 for ${entry.distBasename}`, err);
   }
 
-  // Idempotency check.
-  if (existsSync(outputPath) && existsSync(markerPath)) {
-    try {
-      const marker = JSON.parse(readFileSync(markerPath, "utf8"));
-      if (
-        marker &&
-        marker.nodeVersion === NODE_VERSION &&
-        marker.target === triple &&
-        typeof marker.sha256 === "string"
-      ) {
-        const actual = sha256File(outputPath);
-        if (actual === marker.sha256) {
-          log(
-            `[${triple}] already present (v${NODE_VERSION}), skipping fetch`,
-          );
-          reportOutcome(triple, outputPath, false);
-          return;
-        }
-        log(
-          `[${triple}] existing binary sha256 mismatch (stored=${marker.sha256.slice(0, 12)}..., actual=${actual.slice(0, 12)}...) — re-fetching`,
-        );
-      } else if (marker && marker.target && marker.target !== triple) {
-        log(
-          `[${triple}] marker is for a different target (${marker.target}) — re-fetching`,
-        );
-      } else {
-        log(
-          `[${triple}] marker is for a different version/layout — re-fetching`,
-        );
-      }
-    } catch (err) {
-      log(
-        `[${triple}] could not parse .sha256 marker (${err.message}) — re-fetching`,
-      );
-    }
+  const cached = cachedTargetStatus(triple);
+  if (cached.valid) {
+    log(`[${triple}] already present (v${NODE_VERSION}), skipping fetch`);
+    reportOutcome(triple, outputPath, false);
+    return;
+  } else if (cached.reason !== "binary missing") {
+    log(`[${triple}] ${cached.reason} — re-fetching`);
   }
 
   // Download + extract in a scratch dir.
@@ -448,11 +446,7 @@ async function processTarget(triple, shasumsText) {
     if (entry.archive === "zip") {
       binaryBuf = extractFromZip(archivePath, entry.innerBinaryPath);
     } else if (entry.archive === "tar.gz") {
-      const extractedPath = await extractFromTarGz(
-        archivePath,
-        entry.innerBinaryPath,
-        workDir,
-      );
+      const extractedPath = await extractFromTarGz(archivePath, entry.innerBinaryPath, workDir);
       binaryBuf = readFileSync(extractedPath);
       if (!binaryBuf || binaryBuf.length === 0) {
         throw new Error(`extracted binary buffer is empty`);
@@ -538,6 +532,15 @@ async function main() {
   log(`resolved targets: ${triples.join(", ")}`);
 
   mkdirSync(TARGET_DIR, { recursive: true });
+
+  const cachedStatuses = triples.map((triple) => [triple, cachedTargetStatus(triple)]);
+  if (cachedStatuses.every(([, status]) => status.valid)) {
+    log(`all requested targets already present; skipping ${SHASUMS_URL}`);
+    for (const [triple, status] of cachedStatuses) {
+      reportOutcome(triple, status.outputPath, false);
+    }
+    return;
+  }
 
   // Fetch SHASUMS256.txt once and reuse across all targets.
   log(`fetching ${SHASUMS_URL}`);

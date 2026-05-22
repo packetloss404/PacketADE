@@ -22,14 +22,18 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("@/lib/tauri", () => ({
   createPtySession: vi.fn(),
   killPty: vi.fn(),
+  listPtySessions: vi.fn(),
+  readPtyTranscript: vi.fn(),
   saveServersSlice: vi.fn(),
   sshExec: vi.fn(),
 }));
 
-import { createPtySession, killPty } from "@/lib/tauri";
+import { createPtySession, killPty, listPtySessions, readPtyTranscript } from "@/lib/tauri";
 
 const mockCreatePtySession = vi.mocked(createPtySession);
 const mockKillPty = vi.mocked(killPty);
+const mockListPtySessions = vi.mocked(listPtySessions);
+const mockReadPtyTranscript = vi.mocked(readPtyTranscript);
 
 const server: ServerConfig = {
   id: "srv-1",
@@ -54,6 +58,10 @@ describe("useServerConnection", () => {
     });
     mockCreatePtySession.mockResolvedValue("pty-1");
     mockKillPty.mockResolvedValue(undefined);
+    mockReadPtyTranscript.mockResolvedValue({ session_id: "pty-1", data: "", truncated: false });
+    mockListPtySessions.mockResolvedValue([
+      { id: "pty-1", project_path: "", pid: null, alive: true },
+    ]);
   });
 
   afterEach(() => {

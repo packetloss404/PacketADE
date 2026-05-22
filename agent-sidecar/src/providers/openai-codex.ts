@@ -141,6 +141,19 @@ const logStderr = (msg: string): void => {
 /** Windows requires the .cmd shim when invoking npm-installed CLIs via spawn. */
 const CODEX_BIN = process.platform === "win32" ? "codex.cmd" : "codex";
 
+function resolveCodexCommand(req: StartSessionRequest): string {
+  const aliases = req as StartSessionRequest & {
+    manualPath?: unknown;
+    cliPath?: unknown;
+    codexCommandPath?: unknown;
+  };
+  const raw = req.commandPath ?? aliases.codexCommandPath ?? aliases.cliPath ?? aliases.manualPath;
+  if (typeof raw === "string" && raw.trim().length > 0) {
+    return raw.trim();
+  }
+  return CODEX_BIN;
+}
+
 /**
  * Best-effort extraction of string fields from an unknown-shaped JSON object.
  * Codex's event schema is not formally pinned in public docs, so we navigate
@@ -274,6 +287,7 @@ export class OpenAICodexProvider implements ProviderHandler {
   private stderrReader: ReadlineInterface | null = null;
   private killTimer: NodeJS.Timeout | null = null;
   private sessionId: string | null = null;
+  private codexCommand = CODEX_BIN;
   /** The Codex-assigned session UUID captured from session_start events. */
   private codexSessionId: string | null = null;
   private doneEmitted = false;
@@ -322,6 +336,10 @@ export class OpenAICodexProvider implements ProviderHandler {
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.sessionId = req.sessionId;
     this.lastReq = req;
+    this.codexCommand = resolveCodexCommand(req);
+    if (this.codexCommand !== CODEX_BIN) {
+      logStderr(`using manual codex command path: ${this.codexCommand}`);
+    }
     this.doneEmitted = false;
     // Seed effective overrides from the initial request. `set_model` /
     // `set_permission_mode` can override these for subsequent spawns.
@@ -405,7 +423,7 @@ export class OpenAICodexProvider implements ProviderHandler {
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(CODEX_BIN, args, {
+      child = spawn(this.codexCommand, args, {
         cwd,
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
@@ -417,7 +435,7 @@ export class OpenAICodexProvider implements ProviderHandler {
       emit({
         type: "error",
         sessionId,
-        message: `failed to spawn codex: ${err instanceof Error ? err.message : String(err)}`,
+        message: `failed to spawn codex (${this.codexCommand}): ${err instanceof Error ? err.message : String(err)}`,
       });
       return;
     }
@@ -511,8 +529,7 @@ export class OpenAICodexProvider implements ProviderHandler {
       envelope.msg && typeof envelope.msg === "object"
         ? (envelope.msg as Record<string, unknown>)
         : envelope;
-    const typeStr =
-      pickString(payload, "type") ?? pickString(envelope, "type") ?? "";
+    const typeStr = pickString(payload, "type") ?? pickString(envelope, "type") ?? "";
 
     // Capture Codex session-id as soon as it shows up so we can resume later.
     const maybeSession =
@@ -643,11 +660,7 @@ export class OpenAICodexProvider implements ProviderHandler {
         pickString(payload, "name", "command", "reason") ??
         (typeStr === "apply_patch_approval_request" ? "apply_patch" : "exec");
       const input =
-        payload.arguments ??
-        payload.command ??
-        payload.patch ??
-        payload.input ??
-        payload;
+        payload.arguments ?? payload.command ?? payload.patch ?? payload.input ?? payload;
       this.pendingApprovals.set(toolUseId, typeStr);
       emit({
         type: "permission_request",
@@ -702,10 +715,8 @@ export class OpenAICodexProvider implements ProviderHandler {
       // Codex emits cumulative running totals — replace, not accumulate.
       bucket.input = typeof input === "number" ? input : bucket.input;
       bucket.output = typeof output === "number" ? output : bucket.output;
-      bucket.reasoning =
-        typeof reasoning === "number" ? reasoning : bucket.reasoning;
-      bucket.cachedInput =
-        typeof cachedInput === "number" ? cachedInput : bucket.cachedInput;
+      bucket.reasoning = typeof reasoning === "number" ? reasoning : bucket.reasoning;
+      bucket.cachedInput = typeof cachedInput === "number" ? cachedInput : bucket.cachedInput;
       this.tokensByAddress.set(address, bucket);
 
       // Mirror root totals into the legacy scalars so the `done` payload
@@ -717,9 +728,7 @@ export class OpenAICodexProvider implements ProviderHandler {
       } else {
         // Trace once per never-seen address so the prompt's "verify Codex
         // field name" risk shows up loudly in the sidecar log.
-        process.stderr.write(
-          `[sidecar:codex] sub-agent token attribution: ${address}\n`,
-        );
+        process.stderr.write(`[sidecar:codex] sub-agent token attribution: ${address}\n`);
       }
 
       // Live mid-stream HUD: emit a turn_summary every time tokens update so
@@ -743,38 +752,23 @@ export class OpenAICodexProvider implements ProviderHandler {
     // for Codex without any frontend change. Item shape:
     //   { type: "item.started" | "item.updated" | "item.completed",
     //     item: { type: "todo_list", items: [{ text, completed }] } }
-    if (
-      typeStr === "item.started" ||
-      typeStr === "item.updated" ||
-      typeStr === "item.completed"
-    ) {
-      const item = (payload.item ?? envelope.item) as
-        | Record<string, unknown>
-        | undefined;
+    if (typeStr === "item.started" || typeStr === "item.updated" || typeStr === "item.completed") {
+      const item = (payload.item ?? envelope.item) as Record<string, unknown> | undefined;
       if (item && pickString(item, "type") === "todo_list") {
         const rawItems = item.items;
         if (Array.isArray(rawItems)) {
           const items = rawItems
-            .filter(
-              (r): r is Record<string, unknown> =>
-                r != null && typeof r === "object",
-            )
+            .filter((r): r is Record<string, unknown> => r != null && typeof r === "object")
             .map((r) => {
-              const text =
-                pickString(r, "text", "title", "content") ?? "";
-              const completed = Boolean(
-                r.completed ?? r.done ?? r.status === "completed",
-              );
+              const text = pickString(r, "text", "title", "content") ?? "";
+              const completed = Boolean(r.completed ?? r.done ?? r.status === "completed");
               return {
                 content: text,
                 status: (completed
                   ? "completed"
                   : pickString(r, "status") === "in_progress"
                     ? "in_progress"
-                    : "pending") as
-                  | "completed"
-                  | "in_progress"
-                  | "pending",
+                    : "pending") as "completed" | "in_progress" | "pending",
               };
             })
             .filter((p) => p.content.length > 0);
@@ -821,8 +815,7 @@ export class OpenAICodexProvider implements ProviderHandler {
     // Explicit error event from Codex.
     if (typeStr === "error" || typeStr === "stream_error") {
       const message =
-        pickString(payload, "message", "error", "reason") ??
-        stringifyUnknown(payload);
+        pickString(payload, "message", "error", "reason") ?? stringifyUnknown(payload);
       if (!this.doneEmitted) {
         this.doneEmitted = true;
         emit({ type: "error", sessionId, message: `codex error: ${message}` });
@@ -909,9 +902,7 @@ export class OpenAICodexProvider implements ProviderHandler {
     // We emit a shape that matches both exec and patch approvals by setting
     // the op type based on the tracked request kind. If Codex doesn't
     // recognize it, the process will emit an error event and we surface it.
-    const opType = kind === "apply_patch_approval_request"
-      ? "patch_approval"
-      : "exec_approval";
+    const opType = kind === "apply_patch_approval_request" ? "patch_approval" : "exec_approval";
     const decision = req.decision === "deny" ? "denied" : "approved";
     const submission = {
       id: req.toolUseId,
@@ -989,9 +980,7 @@ export class OpenAICodexProvider implements ProviderHandler {
    */
   async setModel(req: SetModelRequest, _emit: Emit): Promise<void> {
     this.effectiveModel = req.model;
-    logStderr(
-      `model override queued for next spawn: model=${req.model} (codex exec is one-shot)`,
-    );
+    logStderr(`model override queued for next spawn: model=${req.model} (codex exec is one-shot)`);
   }
 
   /**

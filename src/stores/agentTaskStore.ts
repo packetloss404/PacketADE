@@ -1,10 +1,12 @@
 import { create } from "zustand";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import {
   createPtySession,
   writePty,
   killPty,
+  listPtySessions,
+  readPtyTranscript,
   startApiAgentSession,
   sendApiAgentMessage,
   cancelApiAgentSession,
@@ -59,6 +61,7 @@ import { useAgentStore } from "@/stores/agentStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
+import { useCliOverrideStore } from "@/stores/cliOverrideStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
 import type { GitHubRepo } from "@/types/github";
 import type {
@@ -112,6 +115,74 @@ export function requestConversationSave(conversationId: string): void {
   if (conv) scheduleSave(conv);
 }
 
+function nonOverlappingSuffix(base: string, tail: string): string {
+  if (!base || !tail) return tail;
+  const max = Math.min(base.length, tail.length);
+  for (let len = max; len > 0; len--) {
+    if (base.endsWith(tail.slice(0, len))) return tail.slice(len);
+  }
+  return tail;
+}
+
+async function installPtyListenersWithReplay(
+  sessionId: string,
+  onOutput: (chunk: string) => void,
+  onExit: () => void,
+): Promise<UnlistenFn[]> {
+  let buffering = true;
+  let buffered = "";
+  let exitWhileBuffering = false;
+  let finished = false;
+  const unlisteners: UnlistenFn[] = [];
+
+  const finish = () => {
+    if (finished) return;
+    if (buffering) {
+      exitWhileBuffering = true;
+      return;
+    }
+    finished = true;
+    for (const unlisten of unlisteners) {
+      try {
+        unlisten();
+      } catch {
+        // listener already gone
+      }
+    }
+    onExit();
+  };
+
+  const [outputUnlisten, exitUnlisten] = await Promise.all([
+    listen<string>(ptyOutputEvent(sessionId), (event) => {
+      if (buffering) {
+        buffered += event.payload;
+      } else {
+        onOutput(event.payload);
+      }
+    }),
+    listen<string>(ptyExitEvent(sessionId), finish),
+  ]);
+  unlisteners.push(outputUnlisten, exitUnlisten);
+  if (finished) {
+    outputUnlisten();
+    exitUnlisten();
+  }
+
+  const transcript = await readPtyTranscript(sessionId).catch(() => null);
+  const replayed = transcript?.data ?? "";
+  if (replayed) onOutput(replayed);
+  const bufferedRemainder = nonOverlappingSuffix(replayed, buffered);
+  if (bufferedRemainder) onOutput(bufferedRemainder);
+  buffering = false;
+  if (exitWhileBuffering) finish();
+
+  const sessions = await listPtySessions().catch(() => null);
+  const liveSession = sessions?.find((s) => s.id === sessionId);
+  if (sessions && (!liveSession || !liveSession.alive)) finish();
+
+  return unlisteners;
+}
+
 export type BuiltinCliAgent = "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
 export type ApiAgentCli =
   | "api-claude-oauth"
@@ -157,6 +228,12 @@ export function apiAgentProvider(agent: AgentCli): string {
     "api-ollama": "ollama",
   };
   return map[agent] ?? "anthropic";
+}
+
+function apiAgentCommandPath(agent: AgentCli): string | null {
+  if (agent !== "api-openai-codex") return null;
+  const manualPath = useCliOverrideStore.getState().overrides.codex?.manualPath.trim();
+  return manualPath || null;
 }
 export type AgentTaskStatus = "running" | "done" | "failed" | "cancelled";
 
@@ -382,6 +459,11 @@ interface AgentTaskStore {
     /** F9: per-conversation MCP server filter passed to the sidecar at
      * session start. null = all enabled servers. */
     enabledMcpServerIds?: string[] | null,
+    /** Initial permission posture for the backend session. Must be supplied
+     * before startApiAgentSession so the first turn doesn't race with a
+     * post-create permission update. */
+    permissionMode?: PermissionMode,
+    approveWrites?: boolean,
   ) => Promise<string>;
   sendMessage: (
     conversationId: string,
@@ -525,16 +607,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         tasks: s.tasks.map((t) => (t.id === id ? { ...t, sessionId } : t)),
       }));
 
-      // Listen for output
-      const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
-        get().appendOutput(id, event.payload);
-      });
-
-      // Listen for exit
-      listen<string>(ptyExitEvent(sessionId), () => {
-        outputUnlisten();
-        get().completeTask(id, 0);
-      });
+      await installPtyListenersWithReplay(
+        sessionId,
+        (chunk) => get().appendOutput(id, chunk),
+        () => get().completeTask(id, 0),
+      );
 
       // Send the task description as the initial prompt after a brief delay
       // (Claude is ready immediately; other CLIs need time to init)
@@ -658,20 +735,17 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         conversations: s.conversations.map((c) => (c.id === id ? { ...c, sessionId } : c)),
       }));
 
-      // Listen for PTY output
-      const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
-        get().appendRawOutput(id, event.payload);
-      });
-
-      // Listen for PTY exit
-      listen<string>(ptyExitEvent(sessionId), () => {
-        outputUnlisten();
-        set((s) => ({
-          conversations: s.conversations.map((c) =>
-            c.id === id ? { ...c, status: "done", updatedAt: Date.now() } : c,
-          ),
-        }));
-      });
+      await installPtyListenersWithReplay(
+        sessionId,
+        (chunk) => get().appendRawOutput(id, chunk),
+        () => {
+          set((s) => ({
+            conversations: s.conversations.map((c) =>
+              c.id === id ? { ...c, status: "done", updatedAt: Date.now() } : c,
+            ),
+          }));
+        },
+      );
     } catch (err) {
       set((s) => ({
         conversations: s.conversations.map((c) =>
@@ -705,6 +779,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     memoryContextEnabled,
     attachments,
     enabledMcpServerIds,
+    permissionMode,
+    approveWrites,
   ) => {
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
@@ -768,8 +844,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       systemPromptOverride: effectiveSystemPrompt,
       queuedMessages: [],
       planMode: planMode ?? false,
-      permissionMode: "auto",
-      approveWrites: false,
+      permissionMode: permissionMode ?? "auto",
+      approveWrites: approveWrites ?? false,
       thinkingEnabled: thinkingEnabled ?? false,
       sshTarget: sshTarget
         ? {
@@ -849,8 +925,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           null, // resumeToken — fresh start
           enabledMcpServerIds ?? null,
           null,
-          "auto",
-          false,
+          permissionMode ?? "auto",
+          approveWrites ?? false,
+          apiAgentCommandPath(agent),
         );
       }
     } catch {
@@ -1614,6 +1691,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         resumeMessages,
         conv.permissionMode ?? "auto",
         conv.approveWrites ?? false,
+        apiAgentCommandPath(conv.agent),
       );
     } catch (e) {
       console.warn("resumeApiConversation failed:", e);

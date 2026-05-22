@@ -193,6 +193,7 @@ pub async fn issues_extract_from_spec(
             None,                               // permission_mode
             None,                               // approve_writes
             None,                               // mcp_kind — vanilla one-shot
+            None,                               // command_path
         )
         .await;
 

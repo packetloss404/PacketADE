@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { createPtySession, killPty, writePty } from "@/lib/tauri";
+import {
+  createPtySession,
+  killPty,
+  listPtySessions,
+  readPtyTranscript,
+  writePty,
+} from "@/lib/tauri";
 import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
 
 export type TransientPtyStatus = "idle" | "spawning" | "running" | "done" | "error";
@@ -29,6 +35,15 @@ export interface UseTransientPtyResult {
   sessionId: string | null;
   start: () => void;
   kill: () => void;
+}
+
+function nonOverlappingSuffix(base: string, tail: string): string {
+  if (!base || !tail) return tail;
+  const max = Math.min(base.length, tail.length);
+  for (let len = max; len > 0; len--) {
+    if (base.endsWith(tail.slice(0, len))) return tail.slice(len);
+  }
+  return tail;
 }
 
 /**
@@ -97,8 +112,15 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
         setStatus("running");
         current.onSpawn?.(sid);
 
+        let buffering = true;
+        let buffered = "";
+        let exitWhileBuffering = false;
         const finish = (success: boolean) => {
           if (finishedRef.current) return;
+          if (buffering) {
+            exitWhileBuffering = true;
+            return;
+          }
           finishedRef.current = true;
           cleanup();
           if (!mountedRef.current) return;
@@ -108,13 +130,35 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
 
         const [outputUnlisten, exitUnlisten] = await Promise.all([
           listen<string>(ptyOutputEvent(sid), (event) => {
-            current.onOutput?.(event.payload);
+            if (buffering) {
+              buffered += event.payload;
+            } else {
+              current.onOutput?.(event.payload);
+            }
           }),
           listen<string>(ptyExitEvent(sid), () => {
             finish(true);
           }),
         ]);
         unlistenersRef.current = [outputUnlisten, exitUnlisten];
+        if (finishedRef.current) {
+          outputUnlisten();
+          exitUnlisten();
+          unlistenersRef.current = [];
+        }
+
+        const transcript = await readPtyTranscript(sid).catch(() => null);
+        const replayed = transcript?.data ?? "";
+        if (mountedRef.current && replayed) current.onOutput?.(replayed);
+        const bufferedRemainder = nonOverlappingSuffix(replayed, buffered);
+        if (mountedRef.current && bufferedRemainder) current.onOutput?.(bufferedRemainder);
+        buffering = false;
+        if (exitWhileBuffering) finish(true);
+
+        const sessions = await listPtySessions().catch(() => null);
+        const liveSession = sessions?.find((s) => s.id === sid);
+        if (sessions && (!liveSession || !liveSession.alive)) finish(true);
+        if (finishedRef.current) return;
 
         if (current.timeoutMs && current.timeoutMs > 0) {
           timeoutRef.current = setTimeout(() => {
@@ -198,14 +242,30 @@ export async function runTransientPty(
     resolveExit = resolve;
   });
 
+  let buffering = true;
+  let buffered = "";
   const [outputUnlisten, exitUnlisten] = await Promise.all([
     listen<string>(ptyOutputEvent(sessionId), (event) => {
-      output += event.payload;
+      if (buffering) {
+        buffered += event.payload;
+      } else {
+        output += event.payload;
+      }
     }),
     listen<string>(ptyExitEvent(sessionId), () => {
       resolveExit(true);
     }),
   ]);
+
+  const transcript = await readPtyTranscript(sessionId).catch(() => null);
+  const replayed = transcript?.data ?? "";
+  output += replayed;
+  output += nonOverlappingSuffix(replayed, buffered);
+  buffering = false;
+
+  const sessions = await listPtySessions().catch(() => null);
+  const liveSession = sessions?.find((s) => s.id === sessionId);
+  if (sessions && (!liveSession || !liveSession.alive)) resolveExit(true);
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let completed = false;

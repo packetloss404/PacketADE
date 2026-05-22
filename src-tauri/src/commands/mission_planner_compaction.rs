@@ -142,6 +142,7 @@ pub async fn summarize_mission_journal(
             None,                               // permission_mode
             None,                               // approve_writes
             None,                               // mcp_kind — no planner tools
+            None,                               // command_path
         )
         .await;
 
@@ -433,6 +434,7 @@ pub async fn perform_compaction(
             None,                    // permissionMode
             None,                    // approveWrites
             Some(PLANNER_MCP_KIND.to_string()),
+            None,                    // commandPath
         )
         .await
     {

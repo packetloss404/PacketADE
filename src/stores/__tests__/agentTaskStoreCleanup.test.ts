@@ -57,6 +57,8 @@ vi.mock("@/lib/tauri", () => ({
   createPtySession: vi.fn(),
   writePty: vi.fn(),
   killPty: (...args: unknown[]) => killPtyMock(...args),
+  readPtyTranscript: vi.fn().mockResolvedValue({ data: "" }),
+  listPtySessions: vi.fn().mockResolvedValue([]),
   detectAgent: vi.fn(),
   loadPersistedState: vi.fn(),
   saveAgentsSlice: vi.fn().mockResolvedValue(undefined),

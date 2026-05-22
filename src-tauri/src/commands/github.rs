@@ -2,7 +2,7 @@ use crate::core::brand::{
     DATA_DIR_NAME, KEYRING_SERVICE, LEGACY_DATA_DIR_NAME, LEGACY_KEYRING_SERVICE,
     USER_AGENT as BRAND_USER_AGENT,
 };
-use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{ACCEPT, AUTHORIZATION, LINK, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
@@ -800,6 +800,11 @@ pub async fn github_list_issues_page(
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
+    let has_more = resp
+        .headers()
+        .get(LINK)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|link| link.contains("rel=\"next\""));
     let body = github_response_text(resp).await?;
     match serde_json::from_str::<Vec<serde_json::Value>>(&body) {
         Ok(items) => {
@@ -807,7 +812,10 @@ pub async fn github_list_issues_page(
                 .into_iter()
                 .filter(|item| item.get("pull_request").is_none())
                 .collect();
-            serde_json::to_string(&filtered)
+            serde_json::to_string(&serde_json::json!({
+                "items": filtered,
+                "has_more": has_more,
+            }))
                 .map_err(|e| format!("Failed to serialize issues: {}", e))
         }
         Err(_) => Ok(body),
@@ -1169,6 +1177,7 @@ pub async fn github_ai_pr_description(
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -1294,6 +1303,7 @@ pub async fn github_ai_pr_review(
             Some(false),
             serde_json::Value::Null,
             serde_json::Value::Null,
+            None,
             None,
             None,
             None,

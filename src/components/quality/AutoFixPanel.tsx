@@ -23,6 +23,7 @@ import { codeQualityProbeFixers, type QualityFixerAvailability } from "@/lib/tau
 import { AutoFixButton } from "./AutoFixButton";
 import {
   QUALITY_AUTOFIX_STORAGE_KEY,
+  autoFixPrefStorageKey,
   readAutoFixPref,
   writeAutoFixPref,
 } from "./autoFixPrefs";
@@ -39,7 +40,10 @@ export function AutoFixPanel({ projectPath, onFixApplied }: AutoFixPanelProps) {
   const [availability, setAvailability] = useState<QualityFixerAvailability | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [autoFixOnNextRun, setAutoFixOnNextRun] = useState<boolean>(readAutoFixPref);
+  const [autoFixOnNextRun, setAutoFixOnNextRun] = useState<boolean>(() =>
+    readAutoFixPref(projectPath),
+  );
+  const prefStorageKey = autoFixPrefStorageKey(projectPath);
 
   async function refreshAvailability() {
     try {
@@ -59,21 +63,25 @@ export function AutoFixPanel({ projectPath, onFixApplied }: AutoFixPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectPath]);
 
+  useEffect(() => {
+    setAutoFixOnNextRun(readAutoFixPref(projectPath));
+  }, [projectPath]);
+
   // Re-sync the preference if another tab toggles it (storage event).
   useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key === QUALITY_AUTOFIX_STORAGE_KEY) {
-        setAutoFixOnNextRun(readAutoFixPref());
+      if (e.key === prefStorageKey || e.key === QUALITY_AUTOFIX_STORAGE_KEY) {
+        setAutoFixOnNextRun(readAutoFixPref(projectPath));
       }
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [prefStorageKey, projectPath]);
 
   function togglePref() {
     const next = !autoFixOnNextRun;
     setAutoFixOnNextRun(next);
-    writeAutoFixPref(next);
+    writeAutoFixPref(next, projectPath);
   }
 
   function onComplete() {
@@ -82,13 +90,11 @@ export function AutoFixPanel({ projectPath, onFixApplied }: AutoFixPanelProps) {
   }
 
   if (loading) {
-    return (
-      <div className="text-[11px] text-text-muted px-3 py-2">Detecting available fixers…</div>
-    );
+    return <div className="px-3 py-2 text-[11px] text-text-muted">Detecting available fixers…</div>;
   }
   if (error) {
     return (
-      <div className="text-[11px] text-accent-red px-3 py-2 bg-accent-red/5 border border-accent-red/20 rounded">
+      <div className="bg-accent-red/5 border-accent-red/20 rounded border px-3 py-2 text-[11px] text-accent-red">
         {error}
       </div>
     );
@@ -102,7 +108,7 @@ export function AutoFixPanel({ projectPath, onFixApplied }: AutoFixPanelProps) {
 
   if (!anyAvailable) {
     return (
-      <div className="text-[11px] text-text-muted px-3 py-2 bg-bg-primary border border-bg-border rounded">
+      <div className="rounded border border-bg-border bg-bg-primary px-3 py-2 text-[11px] text-text-muted">
         No auto-fixers detected for this project. Add an{" "}
         <code className="text-text-secondary">eslint.config.js</code>,{" "}
         <code className="text-text-secondary">.prettierrc</code>, or{" "}
@@ -114,16 +120,16 @@ export function AutoFixPanel({ projectPath, onFixApplied }: AutoFixPanelProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold text-text-primary flex items-center gap-1.5">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-text-primary">
           <Sparkles size={12} className="text-accent-amber" />
           Auto-fix
         </h3>
-        <label className="flex items-center gap-1.5 cursor-pointer">
+        <label className="flex cursor-pointer items-center gap-1.5">
           <input
             type="checkbox"
             checked={autoFixOnNextRun}
             onChange={togglePref}
-            className="accent-accent-green w-3 h-3 cursor-pointer"
+            className="h-3 w-3 cursor-pointer accent-accent-green"
           />
           <span className="text-[10px] text-text-muted">Auto-fix on next run</span>
         </label>
@@ -166,10 +172,7 @@ export function AutoFixPanel({ projectPath, onFixApplied }: AutoFixPanelProps) {
       )}
 
       {cargoAvailable && (
-        <FixerSection
-          icon={<TerminalIcon size={11} className="text-accent-amber" />}
-          title="Rust"
-        >
+        <FixerSection icon={<TerminalIcon size={11} className="text-accent-amber" />} title="Rust">
           <AutoFixButton
             projectPath={projectPath}
             fixer="cargo_fix"
@@ -183,10 +186,7 @@ export function AutoFixPanel({ projectPath, onFixApplied }: AutoFixPanelProps) {
       )}
 
       {securityAvailable && (
-        <FixerSection
-          icon={<ShieldAlert size={11} className="text-accent-red" />}
-          title="Security"
-        >
+        <FixerSection icon={<ShieldAlert size={11} className="text-accent-red" />} title="Security">
           <AutoFixButton
             projectPath={projectPath}
             fixer="npm_audit_fix"
@@ -212,10 +212,10 @@ function FixerSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-bg-primary border border-bg-border rounded-lg px-3 py-2">
-      <div className="flex items-center gap-1.5 mb-1">
+    <div className="rounded-lg border border-bg-border bg-bg-primary px-3 py-2">
+      <div className="mb-1 flex items-center gap-1.5">
         {icon}
-        <span className="text-[10px] uppercase tracking-wider text-text-muted font-medium">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">
           {title}
         </span>
       </div>

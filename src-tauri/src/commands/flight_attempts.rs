@@ -320,6 +320,7 @@ pub async fn launch_flight_async(
             None,        // resume_messages — flights start fresh
             None,        // permission_mode — default auto
             Some(false), // approve_writes
+            None,        // command_path
         )
         .await
         {

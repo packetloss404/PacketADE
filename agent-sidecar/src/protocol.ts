@@ -58,11 +58,7 @@ export type ResumeMessage = {
   content: string;
 };
 
-export type PermissionMode =
-  | "auto"
-  | "ask_for_risky"
-  | "allow_all"
-  | "deny_all";
+export type PermissionMode = "auto" | "ask_for_risky" | "allow_all" | "deny_all";
 
 export type StartSessionRequest = {
   type: "start_session";
@@ -94,6 +90,10 @@ export type StartSessionRequest = {
    * read as `mcp__planner__*`). Unknown values are ignored — old sidecars
    * silently skip this field. */
   mcpKind?: string;
+  /** Optional absolute command path for CLI-backed providers. Currently used
+   * by `openai-codex` so PacketADE can honor a user-pinned Codex binary
+   * instead of relying on PATH resolution. */
+  commandPath?: string;
 };
 
 export type SendMessageRequest = {
@@ -139,13 +139,7 @@ export type CloseSessionRequest = {
 export type SetPermissionModeRequest = {
   type: "set_permission_mode";
   sessionId: string;
-  mode:
-    | "default"
-    | "acceptEdits"
-    | "bypassPermissions"
-    | "plan"
-    | "dontAsk"
-    | PermissionMode;
+  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | PermissionMode;
 };
 
 export type SetModelRequest = {

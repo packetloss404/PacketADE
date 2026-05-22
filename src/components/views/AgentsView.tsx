@@ -3,6 +3,7 @@ import {
   useAgentTaskStore,
   apiAgentProvider,
   type AgentCli,
+  type AgentSshConfigInput,
 } from "@/stores/agentTaskStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
@@ -165,10 +166,11 @@ export function AgentsView() {
         selectedModel ||
         getDefaultModel(selectedAgent);
 
-      // Mode → planMode + post-create permissionMode (mode overrides profile).
+      // Mode -> planMode + launch-time permission posture (mode overrides profile).
       const planMode = agentMode === "ask" || agentMode === "plan";
-      const postCreatePermissionMode: "auto" | "ask_for_risky" =
+      const launchPermissionMode: "auto" | "ask_for_risky" =
         agentMode === "manual" ? "ask_for_risky" : "auto";
+      const launchApproveWrites = false;
       // F10: Plan mode now drives the three-stage Spec → Plan → Code FSM.
       // Tell the agent to lead with bullet success criteria and STOP — the
       // SpecPanel will render those criteria as editable rows for the user.
@@ -177,61 +179,70 @@ export function AgentsView() {
           ? `Before any plan or code, propose 3-7 success-criterion bullets for this task and STOP. Wait for the user to lock the spec before producing a Plan.\n\nTask:\n${text}`
           : text;
 
-      const setPermissionMode = useAgentTaskStore.getState().setPermissionMode;
       const att = attachments.length > 0 ? attachments : null;
+      let sshProjectPath: string | null = null;
+      let sshTarget: AgentSshConfigInput | null = null;
+
+      if (isSshUri(selectedRepo)) {
+        const parsed = parseSshUri(selectedRepo);
+        const server = parsed
+          ? useServerStore.getState().getServer(parsed.serverId)
+          : undefined;
+        if (!parsed || !server) {
+          alert(
+            "SSH server no longer exists. Pick another from the project dropdown.",
+          );
+          return false;
+        }
+        // Per-session remote path comes from the URI (edited inline in
+        // AgentInputArea), falling back to the server-level default.
+        const remotePath =
+          (parsed.remotePath && parsed.remotePath.trim().length > 0
+            ? parsed.remotePath.trim()
+            : server.remotePath?.trim()) ?? "";
+        if (!remotePath) {
+          alert(
+            "Enter a remote project path for this SSH server before launching.",
+          );
+          return false;
+        }
+        sshProjectPath = remotePath;
+        sshTarget = {
+          serverId: server.id,
+          name: server.name,
+          host: server.host,
+          port: server.port,
+          user: server.username,
+          remotePath,
+          keyPath: server.keyPath ?? null,
+          hostFingerprint: server.hostFingerprint ?? null,
+        };
+      }
 
       void (async () => {
         let convId: string | undefined;
-        if (isSshUri(selectedRepo)) {
-          const parsed = parseSshUri(selectedRepo);
-          const server = parsed
-            ? useServerStore.getState().getServer(parsed.serverId)
-            : undefined;
-          if (!parsed || !server) {
-            alert(
-              "SSH server no longer exists. Pick another from the project dropdown.",
-            );
-            return;
-          }
-          // Per-session remote path comes from the URI (edited inline in
-          // AgentInputArea), falling back to the server-level default.
-          const remotePath =
-            (parsed.remotePath && parsed.remotePath.trim().length > 0
-              ? parsed.remotePath.trim()
-              : server.remotePath?.trim()) ?? "";
-          if (!remotePath) {
-            alert(
-              "Enter a remote project path for this SSH server before launching.",
-            );
-            return;
-          }
+        if (sshTarget && sshProjectPath) {
           // Stamp lastConnectedAt so the recents ordering reflects use.
-          useServerStore.getState().updateServer(server.id, {
+          useServerStore.getState().updateServer(sshTarget.serverId, {
             lastConnectedAt: Date.now(),
           });
           convId = await createApiConversation(
             selectedAgent,
-            remotePath,
+            sshProjectPath,
             model,
             initialMessage,
             systemPrompt,
             undefined,
             planMode,
-            {
-              serverId: server.id,
-              name: server.name,
-              host: server.host,
-              port: server.port,
-              user: server.username,
-              remotePath,
-              keyPath: server.keyPath ?? null,
-              hostFingerprint: server.hostFingerprint ?? null,
-            },
+            sshTarget,
             undefined,
             false,
             allowedTools,
             memoryContextEnabled,
             att,
+            undefined,
+            launchPermissionMode,
+            launchApproveWrites,
           );
         } else {
           useProjectHistoryStore.getState().recordOpen(selectedRepo);
@@ -276,14 +287,10 @@ export function AgentsView() {
             allowedTools,
             memoryContextEnabled,
             att,
+            undefined,
+            launchPermissionMode,
+            launchApproveWrites,
           );
-        }
-        if (convId && postCreatePermissionMode !== "auto") {
-          try {
-            await setPermissionMode(convId, postCreatePermissionMode);
-          } catch (e) {
-            console.warn("Failed to set permission mode:", e);
-          }
         }
         // F10: enter the spec stage so SpecPanel renders criteria as the
         // model emits them. The model is instructed to bullet-and-stop.

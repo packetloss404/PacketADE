@@ -93,11 +93,8 @@ pub fn run() {
             // `State<Arc<SidecarManager>>`. The manager spawns the child
             // asynchronously, so `.setup()` returns immediately.
             use tauri::Manager;
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let manager = SidecarManager::new(app_handle.clone()).await;
-                app_handle.manage(manager);
-            });
+            let manager = SidecarManager::new(app.handle().clone());
+            app.manage(manager);
 
             // Mission Planner (E1) wake bus: drains `PlannerWakeEvent`s
             // emitted by orchestration hooks, debounces a ~2s window per

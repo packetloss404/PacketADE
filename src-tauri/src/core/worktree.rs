@@ -24,9 +24,26 @@ pub fn branch_name(attempt_id: &str) -> String {
 }
 
 /// Worktree path for an attempt, given its base path.
-pub fn worktree_path(base: &str, attempt_id: &str) -> String {
+pub fn worktree_path(base: &str, attempt_id: &str) -> Result<String, String> {
+    validate_worktree_component(attempt_id)?;
     let trimmed = base.trim_end_matches(['/', '\\']);
-    format!("{}/{}/{}", trimmed, WORKTREES_DIR, attempt_id)
+    Ok(format!("{}/{}/{}", trimmed, WORKTREES_DIR, attempt_id))
+}
+
+fn validate_worktree_component(component: &str) -> Result<(), String> {
+    if component.is_empty() {
+        return Err("Worktree id cannot be empty".to_string());
+    }
+    if std::path::Path::new(component).is_absolute() {
+        return Err("Worktree id cannot be absolute".to_string());
+    }
+    if component == "." || component == ".." || component.contains("..") {
+        return Err("Worktree id cannot contain traversal components".to_string());
+    }
+    if component.contains('/') || component.contains('\\') {
+        return Err("Worktree id cannot contain path separators".to_string());
+    }
+    Ok(())
 }
 
 // --- Local ---
@@ -110,7 +127,7 @@ pub async fn create_local_worktree_with_mission(
     base_branch: &str,
     mission: WorktreeMission,
 ) -> Result<String, String> {
-    let path = worktree_path(base, attempt_id);
+    let path = worktree_path(base, attempt_id)?;
     let branch = branch_name(attempt_id);
 
     if std::path::Path::new(&path).exists() {
@@ -166,7 +183,7 @@ pub async fn create_local_worktree_for_issue(
     base_branch: &str,
     issue: WorktreeIssue,
 ) -> Result<String, String> {
-    let path = worktree_path(base, attempt_id);
+    let path = worktree_path(base, attempt_id)?;
     let branch = branch_name(attempt_id);
 
     if std::path::Path::new(&path).exists() {
@@ -505,7 +522,7 @@ async fn install_prepare_commit_msg_hook_for_issue(
 
 /// Remove a local git worktree. Idempotent — missing worktree is not an error.
 pub async fn remove_local_worktree(base: &str, attempt_id: &str) -> Result<(), String> {
-    let path = worktree_path(base, attempt_id);
+    let path = worktree_path(base, attempt_id)?;
     if !std::path::Path::new(&path).exists() {
         return Ok(());
     }
@@ -548,7 +565,7 @@ pub async fn create_remote_worktree(
     attempt_id: &str,
     base_branch: &str,
 ) -> Result<String, String> {
-    let path = worktree_path(base, attempt_id);
+    let path = worktree_path(base, attempt_id)?;
     let branch = branch_name(attempt_id);
 
     let (_, code) = ssh_git(cfg, base, &["rev-parse", "--git-dir"]).await?;
@@ -862,7 +879,7 @@ pub async fn remove_remote_worktree(
     base: &str,
     attempt_id: &str,
 ) -> Result<(), String> {
-    let path = worktree_path(base, attempt_id);
+    let path = worktree_path(base, attempt_id)?;
     let (combined, code) = ssh_git(cfg, base, &["worktree", "remove", "--force", &path]).await?;
     if code != 0 && !combined.contains("not a working tree") {
         warn!(path = %path, output = %combined.trim(), "remote git worktree remove failed");
@@ -881,9 +898,15 @@ mod tests {
 
     #[test]
     fn worktree_path_strips_trailing_slashes() {
-        assert_eq!(worktree_path("/repo", "a"), "/repo/.pkt-worktrees/a");
-        assert_eq!(worktree_path("/repo/", "a"), "/repo/.pkt-worktrees/a");
-        assert_eq!(worktree_path("/repo\\", "a"), "/repo/.pkt-worktrees/a");
+        assert_eq!(worktree_path("/repo", "a").unwrap(), "/repo/.pkt-worktrees/a");
+        assert_eq!(
+            worktree_path("/repo/", "a").unwrap(),
+            "/repo/.pkt-worktrees/a"
+        );
+        assert_eq!(
+            worktree_path("/repo\\", "a").unwrap(),
+            "/repo/.pkt-worktrees/a"
+        );
     }
 
     #[test]
@@ -894,9 +917,19 @@ mod tests {
     #[test]
     fn worktree_path_handles_windows_base() {
         assert_eq!(
-            worktree_path("D:\\projects\\demo", "att-1"),
+            worktree_path("D:\\projects\\demo", "att-1").unwrap(),
             "D:\\projects\\demo/.pkt-worktrees/att-1"
         );
+    }
+
+    #[test]
+    fn worktree_component_rejects_path_escape() {
+        for invalid in ["", ".", "..", "../x", "x/../y", "/tmp/x", "x/y", "x\\y"] {
+            assert!(
+                worktree_path("/repo", invalid).is_err(),
+                "{invalid:?} should be rejected"
+            );
+        }
     }
 
     // --- Phase 3.2 input validation ---

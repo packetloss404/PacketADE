@@ -30,7 +30,7 @@ export function flagsForMode(mode: AgentMode): ModeFlags {
       return {
         planMode: false,
         permissionMode: "ask_for_risky",
-        approveWrites: true,
+        approveWrites: false,
       };
     case "yolo":
       return {

@@ -1,4 +1,4 @@
-import { Sparkles, Terminal, Plane, KanbanSquare, Github, Settings } from "lucide-react";
+import { Sparkles, Terminal, Plane, KanbanSquare, Brain, Github, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAppStore, type AppView } from "@/stores/appStore";
 
@@ -14,6 +14,7 @@ const ITEMS: RailItem[] = [
   { id: "workspace", icon: Terminal, label: "Workspace" },
   { id: "missions", icon: Plane, label: "Flight Deck" },
   { id: "issues", icon: KanbanSquare, label: "Issues" },
+  { id: "memory", icon: Brain, label: "Memory" },
   { id: "github", icon: Github, label: "GitHub" },
 ];
 

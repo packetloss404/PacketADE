@@ -36,7 +36,13 @@ async function handleRequest(raw: string): Promise<void> {
 
   switch (req.type) {
     case "start_session":
-      await registry.start(req, emit);
+      void registry.start(req, emit).catch((err) => {
+        emit({
+          type: "error",
+          sessionId: req.sessionId,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      });
       break;
     case "send_message":
     case "permission_response":
@@ -48,10 +54,22 @@ async function handleRequest(raw: string): Promise<void> {
     case "retry":
     case "inject_user_turn":
     case "planner_tool_result":
-      await registry.dispatch(req.sessionId, req, emit);
+      void registry.dispatch(req.sessionId, req, emit).catch((err) => {
+        emit({
+          type: "error",
+          sessionId: req.sessionId,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      });
       break;
     case "close_session":
-      await registry.close(req.sessionId);
+      void registry.close(req.sessionId).catch((err) => {
+        emit({
+          type: "error",
+          sessionId: req.sessionId,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      });
       break;
     default: {
       const unknown = req as { type?: string };
@@ -75,7 +93,8 @@ function main(): void {
   process.stdin.setEncoding("utf8");
   const rl = createInterface({ input: process.stdin });
 
-  // Serialize line handling so concurrent start/send ordering is predictable.
+  // Keep request parsing ordered; SessionRegistry preserves per-session work
+  // ordering while allowing unrelated sessions to progress concurrently.
   let queue: Promise<void> = Promise.resolve();
   rl.on("line", (line) => {
     queue = queue.then(() => handleRequest(line)).catch((err) => {

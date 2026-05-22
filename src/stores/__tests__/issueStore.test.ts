@@ -29,7 +29,17 @@ describe("issueStore", () => {
       nextTicketNum: 1,
       ticketPrefix: "PKT",
       epics: [],
-      labels: ["bug", "feature", "enhancement", "refactor", "docs", "api", "frontend", "working", "devops"],
+      labels: [
+        "bug",
+        "feature",
+        "enhancement",
+        "refactor",
+        "docs",
+        "api",
+        "frontend",
+        "working",
+        "devops",
+      ],
     });
   });
 
@@ -327,6 +337,32 @@ describe("issueStore", () => {
       store().addBlockedBy(b.id, a.id); // duplicate call
       const bState = store().issues.find((i) => i.id === b.id)!;
       expect(bState.blockedBy.filter((id) => id === a.id)).toHaveLength(1);
+    });
+
+    it("prevents contradictory direct dependency cycles", () => {
+      const a = store().addIssue(makeIssue({ title: "A" }));
+      const b = store().addIssue(makeIssue({ title: "B" }));
+
+      store().addBlocks(a.id, b.id);
+      store().addBlockedBy(a.id, b.id);
+
+      let aState = store().issues.find((i) => i.id === a.id)!;
+      let bState = store().issues.find((i) => i.id === b.id)!;
+      expect(aState.blocks).toContain(b.id);
+      expect(aState.blockedBy).not.toContain(b.id);
+      expect(bState.blockedBy).toContain(a.id);
+      expect(bState.blocks).not.toContain(a.id);
+
+      store().removeBlocks(a.id, b.id);
+      store().addBlockedBy(a.id, b.id);
+      store().addBlocks(a.id, b.id);
+
+      aState = store().issues.find((i) => i.id === a.id)!;
+      bState = store().issues.find((i) => i.id === b.id)!;
+      expect(aState.blockedBy).toContain(b.id);
+      expect(aState.blocks).not.toContain(b.id);
+      expect(bState.blocks).toContain(a.id);
+      expect(bState.blockedBy).not.toContain(a.id);
     });
 
     it("no-ops for nonexistent issues", () => {

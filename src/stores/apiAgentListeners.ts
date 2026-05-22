@@ -14,17 +14,14 @@ import {
   apiAgentTurnSummaryEvent,
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
+import { sendApiAgentMessage } from "@/lib/tauri";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
 import { notifyConversationDone } from "@/lib/notifications";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
-import {
-  useAgentTaskStore,
-  requestConversationSave,
-  failoverGuard,
-} from "@/stores/agentTaskStore";
+import { useAgentTaskStore, requestConversationSave, failoverGuard } from "@/stores/agentTaskStore";
 import type {
   AgentConversation,
   AgentMessage,
@@ -33,6 +30,63 @@ import type {
   PendingPermission,
   PendingEdit,
 } from "@/types/agent-conversation";
+
+function sendPromotedQueuedMessage(
+  conversationId: string,
+  content: string,
+  afterMessageId: string,
+): void {
+  const setState = useAgentTaskStore.setState;
+  const getState = useAgentTaskStore.getState;
+  if (!getState().conversations.some((c) => c.id === conversationId)) return;
+
+  failoverGuard.delete(conversationId);
+
+  const assistantMsg: AgentMessage = {
+    id: generateId("msg"),
+    role: "assistant",
+    content: "",
+    timestamp: Date.now(),
+    isStreaming: true,
+  };
+
+  let updated = false;
+  setState((s) => ({
+    conversations: s.conversations.map((c) => {
+      if (c.id !== conversationId) return c;
+      let inserted = false;
+      const messages: AgentMessage[] = [];
+      for (const message of c.messages) {
+        messages.push(message);
+        if (!inserted && message.id === afterMessageId) {
+          messages.push(assistantMsg);
+          inserted = true;
+        }
+      }
+      if (!inserted) messages.push(assistantMsg);
+      updated = true;
+      return {
+        ...c,
+        messages,
+        status: "active",
+        updatedAt: Date.now(),
+      };
+    }),
+  }));
+  if (updated) requestConversationSave(conversationId);
+
+  void sendApiAgentMessage(conversationId, content, undefined).catch(() => {
+    let failed = false;
+    setState((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== conversationId) return c;
+        failed = true;
+        return { ...c, status: "failed", updatedAt: Date.now() };
+      }),
+    }));
+    if (failed) requestConversationSave(conversationId);
+  });
+}
 
 /**
  * Install the full set of `api-agent:*` event listeners for a session.
@@ -47,9 +101,7 @@ import type {
  * `api-agent:{kind}:{sessionId}` events, so this single handler set covers
  * every provider.
  */
-export async function installApiAgentListeners(
-  conversationId: string,
-): Promise<() => void> {
+export async function installApiAgentListeners(conversationId: string): Promise<() => void> {
   const id = conversationId;
   const setState = useAgentTaskStore.setState;
   const getState = useAgentTaskStore.getState;
@@ -145,6 +197,7 @@ export async function installApiAgentListeners(
   }>(apiAgentDoneEvent(id), (event) => {
     let updated: AgentConversation | undefined;
     let nextQueued: string | undefined;
+    let promotedQueuedMessageId: string | undefined;
     setState((s) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
@@ -162,14 +215,26 @@ export async function installApiAgentListeners(
         );
         const queued = c.queuedMessages ?? [];
         let remainingQueued = queued;
+        const shouldDrainQueued = queued.length > 0;
         if (queued.length > 0) {
           nextQueued = queued[0];
           remainingQueued = queued.slice(1);
         }
+        let promotedDrainingBubble = false;
+        const visibleMessages = shouldDrainQueued
+          ? messages.map((m) => {
+              if (!promotedDrainingBubble && m.queued) {
+                promotedDrainingBubble = true;
+                promotedQueuedMessageId = m.id;
+                return { ...m, queued: undefined };
+              }
+              return m;
+            })
+          : messages;
         const newResume = event.payload.resume_token ?? c.resumeToken;
         const next: AgentConversation = {
           ...c,
-          messages,
+          messages: visibleMessages,
           status: "idle",
           updatedAt: Date.now(),
           queuedMessages: remainingQueued,
@@ -185,8 +250,13 @@ export async function installApiAgentListeners(
     useAgentStreamingStore.getState().clearThinking(id);
     if (nextQueued !== undefined) {
       const drained = nextQueued;
+      const afterMessageId = promotedQueuedMessageId;
       setTimeout(() => {
-        getState().sendMessage(id, drained);
+        if (afterMessageId) {
+          sendPromotedQueuedMessage(id, drained, afterMessageId);
+        } else {
+          getState().sendMessage(id, drained);
+        }
       }, 0);
     }
     if (updated && getState().selectedConversationId !== id) {

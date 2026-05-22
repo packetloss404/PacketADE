@@ -73,7 +73,7 @@ pub struct SidecarManager {
 impl SidecarManager {
     /// Construct the manager, spawn the child, and start the IO tasks.
     /// Safe to call during `.setup()`; the child is spawned asynchronously.
-    pub async fn new(app_handle: AppHandle) -> Arc<Self> {
+    pub fn new(app_handle: AppHandle) -> Arc<Self> {
         let sidecar_path = resolve_sidecar_path(&app_handle);
         // Hydrate lifetime counters from disk before spawning. Missing /
         // corrupt file → defaults. Never fatal.
@@ -93,7 +93,7 @@ impl SidecarManager {
         // initial spawn fails we log and continue — the frontend won't notice
         // until someone actually tries to use a sidecar provider.
         let mgr = Arc::clone(&manager);
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             mgr.spawn_and_supervise().await;
         });
 
