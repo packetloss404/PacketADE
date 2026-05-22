@@ -39,6 +39,7 @@ impl SidecarManager {
         permission_mode: Option<String>,
         approve_writes: Option<bool>,
         mcp_kind: Option<String>,
+        command_path: Option<String>,
     ) -> Result<(), String> {
         {
             let mut sessions = self.owned_sessions.lock().await;
@@ -63,6 +64,7 @@ impl SidecarManager {
             "permissionMode": permission_mode,
             "approveWrites": approve_writes,
             "mcpKind": mcp_kind,
+            "commandPath": command_path,
         });
         let result = self.send_json(req).await;
         if result.is_err() {

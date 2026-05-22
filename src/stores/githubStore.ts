@@ -71,9 +71,7 @@ function loadConfig(): LoadedConfig {
       ? (parsed.selectedRepo as { owner: string; repo: string })
       : null;
   const legacyToken =
-    typeof parsed.token === "string" && parsed.token.trim()
-      ? parsed.token.trim()
-      : null;
+    typeof parsed.token === "string" && parsed.token.trim() ? parsed.token.trim() : null;
   return { config: { selectedRepo }, legacyToken };
 }
 
@@ -82,10 +80,7 @@ function saveConfig(config: GitHubConfig) {
 }
 
 function loadSettings(): GitHubSettings {
-  const parsed = loadFromStorage<Partial<GitHubSettings>>(
-    SETTINGS_STORAGE_KEY,
-    {},
-  );
+  const parsed = loadFromStorage<Partial<GitHubSettings>>(SETTINGS_STORAGE_KEY, {});
   const strategy: GitHubMergeStrategy =
     parsed.defaultMergeStrategy === "merge" ||
     parsed.defaultMergeStrategy === "squash" ||
@@ -180,8 +175,7 @@ interface GitHubStore {
   issuesPage: number;
   prsPage: number;
   reposPage: number;
-  /** True iff the most recent fetched page filled to its limit (30) — i.e.
-   *  more rows may exist on the next page. */
+  /** True iff GitHub reports a next page for the backing API request. */
   issuesHasMore: boolean;
   prsHasMore: boolean;
   reposHasMore: boolean;
@@ -191,18 +185,12 @@ interface GitHubStore {
   setIssueStateFilter: (state: "open" | "closed" | "all") => void;
   setPrStateFilter: (state: "open" | "closed" | "all") => void;
   fetchIssueComments: (issue: { number: number }) => Promise<void>;
-  postIssueComment: (
-    issue: { number: number },
-    body: string,
-  ) => Promise<void>;
+  postIssueComment: (issue: { number: number }, body: string) => Promise<void>;
   setIssueState: (
     issue: { number: number; state: string },
     nextState: "open" | "closed",
   ) => Promise<void>;
-  setIssueAssignees: (
-    issue: { number: number },
-    assignees: string[],
-  ) => Promise<void>;
+  setIssueAssignees: (issue: { number: number }, assignees: string[]) => Promise<void>;
   setIssueLabels: (
     issue: { number: number },
     labels: { name: string; color: string }[],
@@ -241,21 +229,31 @@ interface GitHubStore {
 // v0.8-E: cache key shared by the AI-review store + the `PRReviewPanel`
 // component. Stable shape across renders so component lookups stay O(1).
 // Exported so the `PRReviewPanel` doesn't have to duplicate the format.
-export function prCacheKey(
-  owner: string,
-  repo: string,
-  number: number,
-): string {
+export function prCacheKey(owner: string, repo: string, number: number): string {
   return `${owner}/${repo}#${number}`;
 }
 
 // v0.8-C: cache key for issue comments. Stable across re-renders.
-function issueCommentsKey(
-  owner: string,
-  repo: string,
-  number: number,
-): string {
+function issueCommentsKey(owner: string, repo: string, number: number): string {
   return `${owner}/${repo}#${number}`;
+}
+
+function parseIssuesPage(json: string): { issues: GitHubIssue[]; hasMore: boolean } {
+  const parsed = JSON.parse(json) as
+    | Array<GitHubIssue & { pull_request?: unknown }>
+    | {
+        items?: Array<GitHubIssue & { pull_request?: unknown }>;
+        has_more?: boolean;
+        hasMore?: boolean;
+      };
+
+  const raw = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+  const issues: GitHubIssue[] = raw.filter((item) => !item.pull_request);
+  const hasMore = Array.isArray(parsed)
+    ? issues.length >= 30
+    : (parsed.has_more ?? parsed.hasMore ?? issues.length >= 30);
+
+  return { issues, hasMore };
 }
 
 const loaded = loadConfig();
@@ -463,33 +461,20 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         issueStateFilter,
         1,
       );
-      // GitHub's /issues endpoint returns BOTH issues and PRs; PRs carry a
-      // `pull_request` field. The Rust side already filters these out, but
-      // we defensively drop any that slip through (e.g. older sidecar/Rust
-      // build) so the Issues tab never shows PRs.
-      const raw = JSON.parse(json) as Array<
-        GitHubIssue & { pull_request?: unknown }
-      >;
-      const issues: GitHubIssue[] = raw.filter((item) => !item.pull_request);
+      const { issues, hasMore } = parseIssuesPage(json);
       set({
         issues,
         isLoading: false,
         lastSyncAt: Date.now(),
         issuesPage: 1,
-        issuesHasMore: issues.length >= 30,
+        issuesHasMore: hasMore,
       });
     } catch (e) {
       const message = String(e);
       if (!isTokenError(message) && issueStateFilter === "open") {
         try {
-          const json = await githubListIssues(
-            config.selectedRepo.owner,
-            config.selectedRepo.repo,
-          );
-          const raw = JSON.parse(json) as Array<
-            GitHubIssue & { pull_request?: unknown }
-          >;
-          const issues: GitHubIssue[] = raw.filter((item) => !item.pull_request);
+          const json = await githubListIssues(config.selectedRepo.owner, config.selectedRepo.repo);
+          const { issues } = parseIssuesPage(json);
           set({
             issues,
             isLoading: false,
@@ -522,7 +507,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         projectPath,
         config.selectedRepo.owner,
         config.selectedRepo.repo,
-        issueNumber
+        issueNumber,
       );
       set({ investigation: result, isInvestigating: false });
     } catch (e) {
@@ -538,8 +523,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
 
   createPR: async (title, body, head, base, draft) => {
     const { config } = get();
-    if (!get().isConnected || !config.selectedRepo)
-      throw new Error("No repo selected");
+    if (!get().isConnected || !config.selectedRepo) throw new Error("No repo selected");
     set({ isLoading: true, error: null });
     try {
       const json = await githubCreatePr(
@@ -587,10 +571,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       const message = String(e);
       if (!isTokenError(message) && prStateFilter === "open") {
         try {
-          const json = await githubListPrs(
-            config.selectedRepo.owner,
-            config.selectedRepo.repo,
-          );
+          const json = await githubListPrs(config.selectedRepo.owner, config.selectedRepo.repo);
           const prs: GitHubPr[] = JSON.parse(json);
           set({
             prs,
@@ -619,7 +600,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       const diff = await githubGetPrDiff(
         config.selectedRepo.owner,
         config.selectedRepo.repo,
-        prNumber
+        prNumber,
       );
       set({ prDiff: diff, isPrLoading: false });
     } catch (e) {
@@ -683,11 +664,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   fetchIssueComments: async (issue) => {
     const { config } = get();
     if (!get().isConnected || !config.selectedRepo) return;
-    const key = issueCommentsKey(
-      config.selectedRepo.owner,
-      config.selectedRepo.repo,
-      issue.number,
-    );
+    const key = issueCommentsKey(config.selectedRepo.owner, config.selectedRepo.repo, issue.number);
     set((s) => ({
       issueCommentsLoading: { ...s.issueCommentsLoading, [key]: true },
     }));
@@ -729,11 +706,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     if (!get().isConnected || !config.selectedRepo) {
       throw new Error("Not connected");
     }
-    const key = issueCommentsKey(
-      config.selectedRepo.owner,
-      config.selectedRepo.repo,
-      issue.number,
-    );
+    const key = issueCommentsKey(config.selectedRepo.owner, config.selectedRepo.repo, issue.number);
     try {
       const created = await githubPostIssueComment(
         config.selectedRepo.owner,
@@ -765,23 +738,13 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     const prev = issue.state;
     // Optimistic update.
     set((s) => ({
-      issues: s.issues.map((i) =>
-        i.number === issue.number ? { ...i, state: nextState } : i,
-      ),
+      issues: s.issues.map((i) => (i.number === issue.number ? { ...i, state: nextState } : i)),
     }));
     try {
       if (nextState === "closed") {
-        await githubCloseIssue(
-          config.selectedRepo.owner,
-          config.selectedRepo.repo,
-          issue.number,
-        );
+        await githubCloseIssue(config.selectedRepo.owner, config.selectedRepo.repo, issue.number);
       } else {
-        await githubReopenIssue(
-          config.selectedRepo.owner,
-          config.selectedRepo.repo,
-          issue.number,
-        );
+        await githubReopenIssue(config.selectedRepo.owner, config.selectedRepo.repo, issue.number);
       }
       // Success: reconcile with the server (handles GitHub-side
       // normalization). On error we skip this — the rollback above is
@@ -792,9 +755,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       const message = String(e);
       // Roll back optimistic update.
       set((s) => ({
-        issues: s.issues.map((i) =>
-          i.number === issue.number ? { ...i, state: prev } : i,
-        ),
+        issues: s.issues.map((i) => (i.number === issue.number ? { ...i, state: prev } : i)),
         error: message,
         isConnected: isTokenError(message) ? false : s.isConnected,
       }));
@@ -808,9 +769,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     const prev = get().issues.find((i) => i.number === issue.number);
     set((s) => ({
       issues: s.issues.map((i) =>
-        i.number === issue.number
-          ? { ...i, assignees: assignees.map((login) => ({ login })) }
-          : i,
+        i.number === issue.number ? { ...i, assignees: assignees.map((login) => ({ login })) } : i,
       ),
     }));
     try {
@@ -826,9 +785,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       if (prev) {
         set((s) => ({
           issues: s.issues.map((i) =>
-            i.number === issue.number
-              ? { ...i, assignees: prev.assignees }
-              : i,
+            i.number === issue.number ? { ...i, assignees: prev.assignees } : i,
           ),
           error: message,
         }));
@@ -842,9 +799,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     if (!get().isConnected || !config.selectedRepo) return;
     const prev = get().issues.find((i) => i.number === issue.number);
     set((s) => ({
-      issues: s.issues.map((i) =>
-        i.number === issue.number ? { ...i, labels } : i,
-      ),
+      issues: s.issues.map((i) => (i.number === issue.number ? { ...i, labels } : i)),
     }));
     try {
       await githubSetIssueLabels(
@@ -873,9 +828,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     if (!get().isConnected || !config.selectedRepo) return;
     const prev = get().issues.find((i) => i.number === issue.number);
     set((s) => ({
-      issues: s.issues.map((i) =>
-        i.number === issue.number ? { ...i, milestone } : i,
-      ),
+      issues: s.issues.map((i) => (i.number === issue.number ? { ...i, milestone } : i)),
     }));
     try {
       await githubSetIssueMilestone(
@@ -901,12 +854,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
 
   loadMoreIssues: async () => {
     const { config, issuesPage, isLoadingMoreIssues, issueStateFilter } = get();
-    if (
-      !get().isConnected ||
-      !config.selectedRepo ||
-      isLoadingMoreIssues ||
-      !get().issuesHasMore
-    ) {
+    if (!get().isConnected || !config.selectedRepo || isLoadingMoreIssues || !get().issuesHasMore) {
       return;
     }
     set({ isLoadingMoreIssues: true });
@@ -918,20 +866,14 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         issueStateFilter,
         nextPage,
       );
-      const raw = JSON.parse(json) as Array<
-        GitHubIssue & { pull_request?: unknown }
-      >;
-      const more: GitHubIssue[] = raw.filter((i) => !i.pull_request);
+      const { issues: more, hasMore } = parseIssuesPage(json);
       set((s) => {
         const seen = new Set(s.issues.map((i) => i.number));
-        const appended = [
-          ...s.issues,
-          ...more.filter((i) => !seen.has(i.number)),
-        ];
+        const appended = [...s.issues, ...more.filter((i) => !seen.has(i.number))];
         return {
           issues: appended,
           issuesPage: nextPage,
-          issuesHasMore: more.length >= 30,
+          issuesHasMore: hasMore,
           isLoadingMoreIssues: false,
         };
       });
@@ -942,12 +884,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
 
   loadMorePrs: async () => {
     const { config, prsPage, isLoadingMorePrs, prStateFilter } = get();
-    if (
-      !get().isConnected ||
-      !config.selectedRepo ||
-      isLoadingMorePrs ||
-      !get().prsHasMore
-    ) {
+    if (!get().isConnected || !config.selectedRepo || isLoadingMorePrs || !get().prsHasMore) {
       return;
     }
     set({ isLoadingMorePrs: true });
@@ -962,10 +899,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       const more: GitHubPr[] = JSON.parse(json);
       set((s) => {
         const seen = new Set(s.prs.map((p) => p.number));
-        const appended = [
-          ...s.prs,
-          ...more.filter((p) => !seen.has(p.number)),
-        ];
+        const appended = [...s.prs, ...more.filter((p) => !seen.has(p.number))];
         return {
           prs: appended,
           prsPage: nextPage,
@@ -990,10 +924,7 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       const more: GitHubRepo[] = JSON.parse(json);
       set((s) => {
         const seen = new Set(s.repos.map((r) => r.id));
-        const appended = [
-          ...s.repos,
-          ...more.filter((r) => !seen.has(r.id)),
-        ];
+        const appended = [...s.repos, ...more.filter((r) => !seen.has(r.id))];
         return {
           repos: appended,
           reposPage: nextPage,

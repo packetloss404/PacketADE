@@ -5,10 +5,10 @@ test.describe("Issue board", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "Issues", exact: true }).click();
 
-    // IssueBoard renders kanban columns — at minimum a "Todo" column header.
+    // IssueBoard renders kanban columns — at minimum a Backlog column header.
     // Use a loose match since the store is persisted to localStorage (cleared
     // per-test by the fixture) so the board always starts empty.
-    await expect(page.getByText(/^To Do$/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^Backlog$/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/^In Progress$/)).toBeVisible();
   });
 

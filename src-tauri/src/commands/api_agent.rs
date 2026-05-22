@@ -369,6 +369,7 @@ pub async fn start_api_agent_session(
     resume_messages: Option<Vec<ResumeMessage>>,
     permission_mode: Option<String>,
     approve_writes: Option<bool>,
+    command_path: Option<String>,
 ) -> Result<(), String> {
     // v2 Tier 4 slice B: bump the local-only per-provider launch counter
     // before any routing decision so both sidecar and in-process launches are
@@ -439,6 +440,7 @@ pub async fn start_api_agent_session(
                 // `commands::mission_planner::start_mission_planner` which
                 // sets this to `Some("planner")`.
                 None,
+                command_path.clone(),
             )
             .await;
         if let Err(e) = result {

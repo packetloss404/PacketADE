@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -465,33 +465,40 @@ pub async fn code_quality_run_fix(
         tail
     });
 
-    // Take the child back out of the slot so we can `.wait()` it.
-    // After this point, `cancel_quality_fix` flipping the bool is still
-    // honoured (kill_on_drop reaps the child if we bail on error), but
-    // an explicit `start_kill` from the registry won't reach the child
-    // — that's fine, the kill the registry fired BEFORE we took it out
-    // has already started the process tearing down.
-    let mut child = {
-        let mut slot = current_child.lock().expect("autofix child slot poisoned");
-        match slot.take() {
-            Some(c) => c,
-            None => {
+    // Keep the child inside the shared slot until it exits so
+    // `cancel_quality_fix` can always reach the live process. We poll
+    // `try_wait` briefly instead of taking ownership for `.wait().await`.
+    let status = loop {
+        let wait_result = {
+            let mut slot = current_child.lock().expect("autofix child slot poisoned");
+            match slot.as_mut() {
+                Some(child) => child.try_wait(),
+                None => {
+                    state.unregister(&run_id);
+                    return Err(format!(
+                        "Internal error: {} child vanished from registry",
+                        fixer.label()
+                    ));
+                }
+            }
+        };
+
+        match wait_result {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(e) => {
                 state.unregister(&run_id);
-                return Err(format!(
-                    "Internal error: {} child vanished from registry",
-                    fixer.label()
-                ));
+                return Err(format!("Failed to wait for {}: {}", fixer.label(), e));
             }
         }
     };
 
-    let status = match child.wait().await {
-        Ok(s) => s,
-        Err(e) => {
-            state.unregister(&run_id);
-            return Err(format!("Failed to wait for {}: {}", fixer.label(), e));
-        }
-    };
+    {
+        let mut slot = current_child.lock().expect("autofix child slot poisoned");
+        *slot = None;
+    }
 
     let stdout_tail = stdout_collector.await.unwrap_or_default().join("\n");
     let stderr_tail = stderr_collector.await.unwrap_or_default().join("\n");

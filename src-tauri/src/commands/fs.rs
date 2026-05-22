@@ -314,19 +314,19 @@ fn walk_collect(
             }
         };
         let file_name = entry.file_name().to_string_lossy().to_string();
-        let metadata = match entry.metadata() {
+        let path = entry.path();
+        let metadata = match fs::symlink_metadata(&path) {
             Ok(m) => m,
             Err(e) => {
                 warn!(
                     target: "packetade::fs::walk_collect",
-                    path = %entry.path().display(),
+                    path = %path.display(),
                     error = %e,
                     "skipping entry: failed to read metadata"
                 );
                 continue;
             }
         };
-        let path = entry.path();
         if metadata.is_dir() {
             if PROJECT_FILES_SKIP_DIRS.contains(&file_name.as_str()) {
                 continue;

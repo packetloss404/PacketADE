@@ -13,7 +13,7 @@
     "lint:src": "eslint src e2e",
     "lint:strict": "eslint src e2e --max-warnings=0",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check package.json eslint.config.js docs/local-quality-gates.md \"e2e/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check package.json eslint.config.js dev/local-quality-gates.md \"e2e/**/*.{ts,tsx}\"",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",

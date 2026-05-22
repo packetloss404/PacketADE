@@ -2013,6 +2013,7 @@ pub async fn start_mission_planner(
             None, // permissionMode
             None, // approveWrites
             Some(PLANNER_MCP_KIND.to_string()),
+            None, // commandPath
         )
         .await
         .map_err(|e| format!("start planner sidecar session: {}", e))?;

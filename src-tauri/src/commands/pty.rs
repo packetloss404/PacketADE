@@ -193,7 +193,8 @@ pub fn create_pty_session(
     // On Windows, CLIs may be installed as .exe (e.g. claude.exe) or .cmd wrappers
     // (e.g. codex.cmd). We use `where` to resolve the actual binary path and choose
     // the right spawn strategy.
-    let mut cmd = if cfg!(windows) {
+    #[cfg(windows)]
+    let mut cmd = {
         let resolved = resolve_windows_command(&command);
         if resolved.ends_with(".cmd") {
             // .cmd batch scripts must go through cmd.exe /c
@@ -205,7 +206,9 @@ pub fn create_pty_session(
             // Native .exe — spawn directly
             CommandBuilder::new(&resolved)
         }
-    } else {
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
         CommandBuilder::new(&command)
     };
     cmd.cwd(&project_path);
@@ -304,6 +307,7 @@ pub fn create_pty_session(
                 Ok(0) => break, // EOF — process exited
                 Ok(n) => {
                     let data = crate::core::pty::decode_terminal_chunk(&buf[..n], &mut pending);
+                    crate::core::pty::append_transcript(&sid, &data);
                     if let Err(e) = app_handle.emit(&pty_output_event(&sid), &data) {
                         warn!(session_id = %sid, error = %e, "Failed to emit scoped pty output");
                     }
@@ -419,7 +423,16 @@ pub fn list_pty_sessions(
 pub fn kill_pty_and_wait(
     manager: State<'_, SharedPtyManager>,
     session_id: String,
+    timeout_ms: Option<u64>,
 ) -> Result<bool, String> {
+    const DEFAULT_TIMEOUT_MS: u64 = 200;
+    const MAX_TIMEOUT_MS: u64 = 30_000;
+
+    let timeout = std::time::Duration::from_millis(
+        timeout_ms
+            .unwrap_or(DEFAULT_TIMEOUT_MS)
+            .min(MAX_TIMEOUT_MS),
+    );
     let mut mgr = lock_mutex(&manager)?;
     info!(session_id = %session_id, "Killing PTY session and waiting for exit");
     if let Some(mut session) = mgr.sessions.remove(&session_id) {
@@ -430,10 +443,25 @@ pub fn kill_pty_and_wait(
         if let Err(e) = session.child.kill() {
             warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
         }
-        // Wait briefly for cleanup
         drop(mgr);
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        Ok(true)
+
+        let start = std::time::Instant::now();
+        loop {
+            match session.child.try_wait() {
+                Ok(Some(_)) => return Ok(true),
+                Ok(None) if start.elapsed() < timeout => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Ok(None) => {
+                    warn!(session_id = %session_id, ?timeout, "PTY kill timed out");
+                    return Ok(false);
+                }
+                Err(e) => {
+                    warn!(session_id = %session_id, error = %e, "Failed waiting for PTY child process");
+                    return Ok(false);
+                }
+            }
+        }
     } else {
         Ok(false)
     }

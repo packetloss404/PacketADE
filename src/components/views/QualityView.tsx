@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  Diamond,
-  LayoutGrid,
-  Plus,
-  RefreshCw,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Diamond, LayoutGrid, Plus, RefreshCw, X } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
-import { analyzeCodeQuality, writePty } from "@/lib/tauri";
-import type { CodeQualityReport } from "@/lib/tauri";
+import {
+  analyzeCodeQuality,
+  codeQualityProbeFixers,
+  codeQualityRunFix,
+  writePty,
+} from "@/lib/tauri";
+import type { CodeQualityReport, QualityFixer } from "@/lib/tauri";
 import {
   calcCommentScore,
   calcTestScore,
@@ -32,6 +30,7 @@ import {
   type CodeQualityHistoryEntry,
 } from "@/components/quality/codeQualityHistory";
 import { CodeQualityHistoryDropdown } from "@/components/quality/CodeQualityHistoryDropdown";
+import { readAutoFixPref, writeAutoFixPref } from "@/components/quality/autoFixPrefs";
 
 type TabKey = "overview" | "languages" | "complexity" | "tests";
 
@@ -129,6 +128,12 @@ export function QualityView() {
     setShowWorkspacePicker(false);
 
     try {
+      if (readAutoFixPref(projectPath)) {
+        writeAutoFixPref(false, projectPath);
+        await runConfiguredAutoFixers(projectPath);
+        if (!mountedRef.current || gen !== fetchGenRef.current) return;
+      }
+
       const report = await analyzeCodeQuality(projectPath);
       if (!mountedRef.current || gen !== fetchGenRef.current) return;
 
@@ -198,15 +203,25 @@ export function QualityView() {
   const buildInsightPrompt = useCallback((): string => {
     if (!displayedReport) return "";
     const lines: string[] = [];
-    lines.push("Analyze this codebase's code quality and give specific, actionable recommendations:");
+    lines.push(
+      "Analyze this codebase's code quality and give specific, actionable recommendations:",
+    );
     lines.push("");
     lines.push(`## Code Quality Report`);
     lines.push(`- **Score**: ${totalScore}/100 (${getLetterGrade(totalScore).letter})`);
-    lines.push(`- **Files**: ${displayedReport.total_files} across ${displayedReport.language_count} languages`);
-    lines.push(`- **Lines of Code**: ${displayedReport.total_code_lines} (${displayedReport.total_lines} total)`);
+    lines.push(
+      `- **Files**: ${displayedReport.total_files} across ${displayedReport.language_count} languages`,
+    );
+    lines.push(
+      `- **Lines of Code**: ${displayedReport.total_code_lines} (${displayedReport.total_lines} total)`,
+    );
     lines.push(`- **Comment Ratio**: ${(displayedReport.comment_ratio * 100).toFixed(1)}%`);
-    lines.push(`- **Avg Complexity**: ${displayedReport.avg_complexity.toFixed(1)} (${getComplexityLabel(displayedReport.avg_complexity)})`);
-    lines.push(`- **Test Files**: ${displayedReport.test_files} (${(displayedReport.test_ratio * 100).toFixed(1)}% of files)`);
+    lines.push(
+      `- **Avg Complexity**: ${displayedReport.avg_complexity.toFixed(1)} (${getComplexityLabel(displayedReport.avg_complexity)})`,
+    );
+    lines.push(
+      `- **Test Files**: ${displayedReport.test_files} (${(displayedReport.test_ratio * 100).toFixed(1)}% of files)`,
+    );
     lines.push(`- **Organization Score**: ${orgScore}/100`);
     lines.push("");
     lines.push("### Scores");
@@ -227,7 +242,9 @@ export function QualityView() {
       lines.push(`- ${lang.name}: ${lang.files} files, ${lang.code_lines} code lines`);
     }
     lines.push("");
-    lines.push("Please provide 5-7 specific, prioritized recommendations to improve this codebase's quality.");
+    lines.push(
+      "Please provide 5-7 specific, prioritized recommendations to improve this codebase's quality.",
+    );
     return lines.join("\n");
   }, [displayedReport, totalScore, commentScore, testScore, complexityScore, orgScore]);
 
@@ -244,27 +261,24 @@ export function QualityView() {
   function handleCreateAndSend() {
     if (!projectPath) return;
     const projectName = projectPath.split(/[/\\]/).pop() || "Workspace";
-    const wsId = useWorkspaceStore.getState().createWorkspace(
-      projectName,
-      ["claude-code"],
-      projectPath,
-      { prompt: buildInsightPrompt() },
-    );
+    const wsId = useWorkspaceStore
+      .getState()
+      .createWorkspace(projectName, ["claude-code"], projectPath, { prompt: buildInsightPrompt() });
     useWorkspaceStore.getState().setActiveWorkspace(wsId);
     useAppStore.getState().setActiveView("workspace");
   }
 
   return (
-    <div className="flex flex-col h-full bg-bg-primary overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden bg-bg-primary">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-bg-border bg-bg-secondary shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex shrink-0 items-center justify-between border-b border-bg-border bg-bg-secondary px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
           <Diamond size={14} className="text-accent-amber" />
-          <h2 className="text-sm font-medium text-text-primary truncate">
+          <h2 className="truncate text-sm font-medium text-text-primary">
             Code Quality{workspace ? ` — ${workspace.name}` : ""}
           </h2>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex flex-shrink-0 items-center gap-1">
           {history.length > 0 && (
             <CodeQualityHistoryDropdown
               entries={history}
@@ -288,7 +302,7 @@ export function QualityView() {
             disabled={isLoading}
             title="Re-run analysis (Ctrl/Cmd+R)"
             aria-label="Re-run analysis"
-            className="p-1 text-text-muted hover:text-text-primary transition-colors disabled:opacity-40"
+            className="p-1 text-text-muted transition-colors hover:text-text-primary disabled:opacity-40"
           >
             <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
           </button>
@@ -299,15 +313,16 @@ export function QualityView() {
       <div className="flex-1 overflow-y-auto">
         {historicalIndex > 0 && state.kind === "ready" && (
           <div className="px-5 pt-3">
-            <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded border border-accent-amber/30 bg-accent-amber/10 text-[10px] text-accent-amber">
+            <div className="border-accent-amber/30 bg-accent-amber/10 flex items-center justify-between gap-2 rounded border px-3 py-1.5 text-[10px] text-accent-amber">
               <span>
                 Viewing historical snapshot from{" "}
-                {new Date(history[historicalIndex]?.ranAt ?? 0).toLocaleString()}. Re-run for fresh data.
+                {new Date(history[historicalIndex]?.ranAt ?? 0).toLocaleString()}. Re-run for fresh
+                data.
               </span>
               <button
                 type="button"
                 onClick={() => setState({ ...state, historicalIndex: 0 })}
-                className="underline hover:text-accent-amber/80 transition-colors"
+                className="hover:text-accent-amber/80 underline transition-colors"
               >
                 Show latest
               </button>
@@ -320,9 +335,9 @@ export function QualityView() {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`px-3 py-1.5 text-[11px] rounded-t transition-colors ${
+              className={`rounded-t px-3 py-1.5 text-[11px] transition-colors ${
                 activeTab === tab.key
-                  ? "text-accent-green bg-bg-primary border border-bg-border border-b-0"
+                  ? "border border-b-0 border-bg-border bg-bg-primary text-accent-green"
                   : "text-text-muted hover:text-text-secondary"
               }`}
             >
@@ -331,7 +346,7 @@ export function QualityView() {
           ))}
         </div>
 
-        <div className="px-5 py-4 bg-bg-primary mx-0 min-h-[320px]">
+        <div className="mx-0 min-h-[320px] bg-bg-primary px-5 py-4">
           {state.kind === "loading" && <LoadingState projectPath={projectPath} />}
           {state.kind === "error" && (
             <ErrorState
@@ -357,7 +372,7 @@ export function QualityView() {
                         orgScore={orgScore}
                       />
                       {!isRemote && historicalIndex === 0 && projectPath && (
-                        <div className="mt-5 pt-4 border-t border-bg-border">
+                        <div className="mt-5 border-t border-bg-border pt-4">
                           <AutoFixPanel
                             projectPath={projectPath}
                             onFixApplied={() => setReanalyzeNonce((n) => n + 1)}
@@ -365,13 +380,11 @@ export function QualityView() {
                         </div>
                       )}
                       {!isRemote && historicalIndex === 0 && projectPath && (
-                        <div className="mt-5 pt-4 border-t border-bg-border">
+                        <div className="mt-5 border-t border-bg-border pt-4">
                           <QualityAIRunSummaryPanel
                             projectPath={projectPath}
                             projectName={
-                              workspace?.name ||
-                              projectPath.split(/[/\\]/).pop() ||
-                              "Project"
+                              workspace?.name || projectPath.split(/[/\\]/).pop() || "Project"
                             }
                           />
                         </div>
@@ -396,11 +409,11 @@ export function QualityView() {
 
       {/* Footer — Get AI Insight */}
       {displayedReport && !isLoading && (
-        <div className="px-5 py-3 border-t border-bg-border bg-bg-secondary shrink-0">
+        <div className="shrink-0 border-t border-bg-border bg-bg-secondary px-5 py-3">
           {!showWorkspacePicker ? (
             <button
               onClick={() => setShowWorkspacePicker(true)}
-              className="flex items-center justify-center gap-2 w-full py-2.5 bg-accent-green/10 border border-accent-green/20 rounded-lg text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-colors"
+              className="bg-accent-green/10 border-accent-green/20 hover:bg-accent-green/20 flex w-full items-center justify-center gap-2 rounded-lg border py-2.5 text-xs font-medium text-accent-green transition-colors"
             >
               <Diamond size={12} />
               Get AI Insight
@@ -427,13 +440,36 @@ function computeTotalScore(report: CodeQualityReport): number {
   return Math.round(cs * 0.2 + ts * 0.3 + cx * 0.3 + org * 0.2);
 }
 
+async function runConfiguredAutoFixers(projectPath: string): Promise<void> {
+  try {
+    const availability = await codeQualityProbeFixers(projectPath);
+    const fixers: QualityFixer[] = [];
+    if (availability.eslint) fixers.push("eslint");
+    if (availability.prettier) fixers.push("prettier");
+
+    for (const fixer of fixers) {
+      await codeQualityRunFix(projectPath, fixer, qualityAutoFixRunId(fixer));
+    }
+  } catch (err) {
+    console.warn("Auto-fix on next run failed:", err);
+  }
+}
+
+function qualityAutoFixRunId(fixer: QualityFixer): string {
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `quality-auto-${fixer}-${random}`;
+}
+
 function LoadingState({ projectPath }: { projectPath: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 gap-2">
-      <div className="w-8 h-8 border-2 border-accent-amber/30 border-t-accent-amber rounded-full animate-spin" />
+    <div className="flex flex-col items-center justify-center gap-2 py-12">
+      <div className="border-accent-amber/30 h-8 w-8 animate-spin rounded-full border-2 border-t-accent-amber" />
       <span className="text-xs text-text-muted">Analyzing codebase…</span>
       {projectPath && (
-        <span className="text-[10px] text-text-muted font-mono truncate max-w-full px-4">
+        <span className="max-w-full truncate px-4 font-mono text-[10px] text-text-muted">
           {projectPath}
         </span>
       )}
@@ -451,17 +487,17 @@ function ErrorState({
   isRemote: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
       <AlertTriangle size={28} className="text-accent-red" />
-      <div className="text-xs text-text-primary font-medium">
+      <div className="text-xs font-medium text-text-primary">
         {isRemote ? "Remote workspaces not supported yet" : "Analysis failed"}
       </div>
-      <div className="text-[11px] text-text-muted max-w-md leading-relaxed">{message}</div>
+      <div className="max-w-md text-[11px] leading-relaxed text-text-muted">{message}</div>
       {!isRemote && (
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] bg-bg-secondary border border-bg-border rounded hover:border-accent-amber/40 hover:text-accent-amber transition-colors"
+          className="hover:border-accent-amber/40 inline-flex items-center gap-1.5 rounded border border-bg-border bg-bg-secondary px-3 py-1.5 text-[11px] transition-colors hover:text-accent-amber"
         >
           <RefreshCw size={11} /> Try again
         </button>
@@ -472,17 +508,17 @@ function ErrorState({
 
 function EmptyReportState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
       <Diamond size={28} className="text-text-muted" />
-      <div className="text-xs text-text-primary font-medium">No source files detected</div>
-      <div className="text-[11px] text-text-muted max-w-md leading-relaxed">
-        The analyzer didn't find any files in supported languages. If you just cloned the project
-        or restored a worktree, try refreshing.
+      <div className="text-xs font-medium text-text-primary">No source files detected</div>
+      <div className="max-w-md text-[11px] leading-relaxed text-text-muted">
+        The analyzer didn't find any files in supported languages. If you just cloned the project or
+        restored a worktree, try refreshing.
       </div>
       <button
         type="button"
         onClick={onRetry}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] bg-bg-secondary border border-bg-border rounded hover:border-accent-amber/40 hover:text-accent-amber transition-colors"
+        className="hover:border-accent-amber/40 inline-flex items-center gap-1.5 rounded border border-bg-border bg-bg-secondary px-3 py-1.5 text-[11px] transition-colors hover:text-accent-amber"
       >
         <RefreshCw size={11} /> Refresh
       </button>
@@ -508,14 +544,12 @@ function InsightWorkspacePicker({
   const activeWorkspaces = workspaces.filter(
     (w) => w.status === "active" && norm(w.projectPath) === norm(projectPath),
   );
-  const workspacesWithSessions = activeWorkspaces.filter((w) =>
-    w.panes.some((p) => p.sessionId),
-  );
+  const workspacesWithSessions = activeWorkspaces.filter((w) => w.panes.some((p) => p.sessionId));
 
   return (
-    <div className="bg-bg-primary border border-bg-border rounded-lg p-3">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
+    <div className="rounded-lg border border-bg-border bg-bg-primary p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">
           Send insight to workspace
         </span>
         <button onClick={onCancel} className="text-text-muted hover:text-text-primary">
@@ -527,21 +561,21 @@ function InsightWorkspacePicker({
           <button
             key={ws.id}
             onClick={() => onSelect(ws.id)}
-            className="flex items-center gap-2 w-full px-3 py-2 text-left bg-bg-secondary border border-bg-border rounded-lg hover:border-accent-green/30 hover:bg-bg-hover transition-colors"
+            className="hover:border-accent-green/30 flex w-full items-center gap-2 rounded-lg border border-bg-border bg-bg-secondary px-3 py-2 text-left transition-colors hover:bg-bg-hover"
           >
-            <LayoutGrid size={12} className="text-text-muted flex-shrink-0" />
-            <span className="text-[11px] text-text-primary font-medium truncate">{ws.name}</span>
-            <span className="text-[10px] text-text-muted ml-auto flex-shrink-0">
+            <LayoutGrid size={12} className="flex-shrink-0 text-text-muted" />
+            <span className="truncate text-[11px] font-medium text-text-primary">{ws.name}</span>
+            <span className="ml-auto flex-shrink-0 text-[10px] text-text-muted">
               {ws.panes.filter((p) => p.sessionId).length} active
             </span>
           </button>
         ))}
         <button
           onClick={onCreate}
-          className="flex items-center gap-2 w-full px-3 py-2 text-left bg-accent-green/5 border border-accent-green/20 rounded-lg hover:bg-accent-green/10 transition-colors"
+          className="bg-accent-green/5 border-accent-green/20 hover:bg-accent-green/10 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors"
         >
-          <Plus size={12} className="text-accent-green flex-shrink-0" />
-          <span className="text-[11px] text-accent-green font-medium truncate">
+          <Plus size={12} className="flex-shrink-0 text-accent-green" />
+          <span className="truncate text-[11px] font-medium text-accent-green">
             Create workspace "{projectName}"
           </span>
         </button>

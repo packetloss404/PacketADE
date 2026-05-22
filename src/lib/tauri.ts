@@ -11,10 +11,33 @@ import type {
 import type { AgentConfig } from "@/types/agent";
 import type { Attempt, Flight, Milestone, ReviewType, Task, TaskResult } from "@/types/flight";
 import type { Issue } from "@/stores/issueStore";
-import type { StatusLineData, CodexStatusLineData, GeminiStatusLineData, OpenCodeStatusLineData } from "@/types/statusline";
+import type {
+  StatusLineData,
+  CodexStatusLineData,
+  GeminiStatusLineData,
+  OpenCodeStatusLineData,
+} from "@/types/statusline";
 import type { Workspace } from "@/types/workspace";
 import type { MemoryEvent, LearnedPattern } from "@/types/memory";
 import type { ServerConfig } from "@/types/server";
+
+type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
+  Pick<
+    Workspace["panes"][number],
+    | "accentColor"
+    | "pinnedCommands"
+    | "taskId"
+    | "flightId"
+    | "agentConfigId"
+    | "initialPrompt"
+    | "overrideCommand"
+    | "overrideArgs"
+  >;
+
+type WorkspaceDtoWithFrontendMetadata = Omit<WorkspaceDto, "panes"> & {
+  panes: WorkspacePaneDtoWithFrontendMetadata[];
+  githubRepo?: Workspace["githubRepo"];
+};
 
 // Filesystem
 export async function getCwd(): Promise<string> {
@@ -25,13 +48,18 @@ export async function listSubdirectories(dirPath: string): Promise<string[]> {
   return invoke<string[]>("list_subdirectories", { dirPath });
 }
 
-export async function listDirectory(dirPath: string, workspace: string): Promise<{
-  name: string;
-  path: string;
-  is_dir: boolean;
-  size: number;
-  extension: string | null;
-}[]> {
+export async function listDirectory(
+  dirPath: string,
+  workspace: string,
+): Promise<
+  {
+    name: string;
+    path: string;
+    is_dir: boolean;
+    size: number;
+    extension: string | null;
+  }[]
+> {
   return invoke("list_directory", { dirPath, workspace });
 }
 
@@ -39,7 +67,11 @@ export async function readFileContents(filePath: string, workspace: string): Pro
   return invoke<string>("read_file_contents", { filePath, workspace });
 }
 
-export async function writeFileContents(filePath: string, workspace: string, content: string): Promise<void> {
+export async function writeFileContents(
+  filePath: string,
+  workspace: string,
+  content: string,
+): Promise<void> {
   return invoke("write_file_contents", { filePath, workspace, content });
 }
 
@@ -52,7 +84,14 @@ export async function createPtySession(
   args: string[] | null,
   env?: Record<string, string> | null,
 ): Promise<string> {
-  return invoke<string>("create_pty_session", { projectPath, cols, rows, command, args, env: env ?? null });
+  return invoke<string>("create_pty_session", {
+    projectPath,
+    cols,
+    rows,
+    command,
+    args,
+    env: env ?? null,
+  });
 }
 
 export async function writePty(sessionId: string, data: string): Promise<void> {
@@ -114,7 +153,9 @@ export interface QualityFixRunResult {
 
 /** Probe a project for which auto-fixers are wired up (eslint config,
  *  prettier config, Cargo.toml, package.json). Cheap — no subprocess. */
-export async function codeQualityProbeFixers(projectPath: string): Promise<QualityFixerAvailability> {
+export async function codeQualityProbeFixers(
+  projectPath: string,
+): Promise<QualityFixerAvailability> {
   return invoke<QualityFixerAvailability>("code_quality_probe_fixers", { projectPath });
 }
 
@@ -141,7 +182,15 @@ export interface CodeQualityReport {
   total_comment_lines: number;
   total_blank_lines: number;
   language_count: number;
-  languages: { name: string; extension: string; files: number; code_lines: number; comment_lines: number; blank_lines: number; total_lines: number }[];
+  languages: {
+    name: string;
+    extension: string;
+    files: number;
+    code_lines: number;
+    comment_lines: number;
+    blank_lines: number;
+    total_lines: number;
+  }[];
   avg_complexity: number;
   test_files: number;
   test_lines: number;
@@ -275,7 +324,10 @@ export async function saveServersSlice(servers: ServerConfig[]): Promise<void> {
   return invoke("save_servers_slice", { servers });
 }
 
-export async function saveMemorySlice(memoryEvents: MemoryEvent[], memoryPatterns?: LearnedPattern[]): Promise<void> {
+export async function saveMemorySlice(
+  memoryEvents: MemoryEvent[],
+  memoryPatterns?: LearnedPattern[],
+): Promise<void> {
   return invoke("save_memory_slice", { memoryEvents, memoryPatterns: memoryPatterns ?? [] });
 }
 
@@ -311,7 +363,7 @@ export interface FlightSummaryInput {
 export async function summarizeFlight(
   projectPath: string,
   flightSummary: FlightSummaryInput,
-  sessionLogs: string
+  sessionLogs: string,
 ): Promise<string> {
   return invoke<string>("summarize_flight", { projectPath, flightSummary, sessionLogs });
 }
@@ -421,7 +473,7 @@ export async function cloneRepoRemote(args: {
 export async function gitCommit(
   projectPath: string,
   message: string,
-  stageAll: boolean
+  stageAll: boolean,
 ): Promise<string> {
   return invoke<string>("git_commit", { projectPath, message, stageAll });
 }
@@ -437,7 +489,7 @@ export async function gitPull(projectPath: string): Promise<string> {
 export async function gitCreateBranch(
   projectPath: string,
   branchName: string,
-  checkout: boolean
+  checkout: boolean,
 ): Promise<string> {
   return invoke<string>("git_create_branch", { projectPath, branchName, checkout });
 }
@@ -529,7 +581,10 @@ export async function readOpenCodeStatusLineStates(): Promise<OpenCodeStatusLine
 }
 
 // PTY session management (extended)
-export async function killPtyAndWait(sessionId: string, timeoutMs: number = 5000): Promise<boolean> {
+export async function killPtyAndWait(
+  sessionId: string,
+  timeoutMs: number = 5000,
+): Promise<boolean> {
   return invoke<boolean>("kill_pty_and_wait", { sessionId, timeoutMs });
 }
 
@@ -710,10 +765,7 @@ export async function launchFlightAsync(
   return dtoAttempts.map(fromDtoAttempt);
 }
 
-export async function cancelFlightAttempt(
-  flightId: string,
-  attemptId: string,
-): Promise<void> {
+export async function cancelFlightAttempt(flightId: string, attemptId: string): Promise<void> {
   return invoke("cancel_flight_attempt", { flightId, attemptId });
 }
 
@@ -868,9 +920,9 @@ export type OrchestratorSnapshot = {
   pausedAtMilestone: [string, string][];
 };
 
-function normalizeOptionalRecord(
-  record?: { [key: string]: string | null | undefined },
-): Record<string, string | null> | undefined {
+function normalizeOptionalRecord(record?: {
+  [key: string]: string | null | undefined;
+}): Record<string, string | null> | undefined {
   if (!record) return undefined;
   const normalized: Record<string, string | null> = {};
   for (const [key, value] of Object.entries(record)) {
@@ -883,6 +935,11 @@ function normalizeOptionalRecord(
 
 function toOptional<T>(value: T | null | undefined): T | undefined {
   return value ?? undefined;
+}
+
+function toUiPatchString(value: string | null | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value ?? "";
 }
 
 function fromDtoAgent(agent: AgentConfigDto): AgentConfig {
@@ -937,7 +994,11 @@ function toDtoAgent(agent: AgentConfig): AgentConfigDto {
   };
 }
 
-function fromDtoTaskResult(result: NonNullable<PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number]["result"]>): TaskResult {
+function fromDtoTaskResult(
+  result: NonNullable<
+    PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number]["result"]
+  >,
+): TaskResult {
   return {
     exitCode: result.exitCode,
     summary: result.summary,
@@ -956,17 +1017,23 @@ function fromDtoTaskResult(result: NonNullable<PersistedStateDto["flights"][numb
       ? {
           verdict: result.validation.verdict,
           summary: result.validation.summary,
-          assertions: result.validation.assertions.map((assertion): NonNullable<TaskResult["validation"]>["assertions"][number] => ({
-            label: assertion.label,
-            status: assertion.status,
-            details: assertion.details,
-          })),
+          assertions: result.validation.assertions.map(
+            (assertion): NonNullable<TaskResult["validation"]>["assertions"][number] => ({
+              label: assertion.label,
+              status: assertion.status,
+              details: assertion.details,
+            }),
+          ),
         }
       : undefined,
   };
 }
 
-function toDtoTaskResult(result: TaskResult): NonNullable<PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number]["result"]> {
+function toDtoTaskResult(
+  result: TaskResult,
+): NonNullable<
+  PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number]["result"]
+> {
   return {
     exitCode: result.exitCode,
     summary: result.summary,
@@ -995,7 +1062,9 @@ function toDtoTaskResult(result: TaskResult): NonNullable<PersistedStateDto["fli
   };
 }
 
-function fromDtoTask(task: PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number]): Task {
+function fromDtoTask(
+  task: PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number],
+): Task {
   return {
     id: task.id,
     milestoneId: task.milestoneId,
@@ -1038,7 +1107,9 @@ function fromDtoTask(task: PersistedStateDto["flights"][number]["milestones"][nu
   };
 }
 
-function toDtoTask(task: Task): PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number] {
+function toDtoTask(
+  task: Task,
+): PersistedStateDto["flights"][number]["milestones"][number]["tasks"][number] {
   return {
     id: task.id,
     milestoneId: task.milestoneId,
@@ -1133,16 +1204,18 @@ function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
     projectPath: flight.projectPath,
     workspaceId: flight.workspaceId ?? null,
     gitBranch: flight.gitBranch,
-    milestones: flight.milestones.map((milestone): Milestone => ({
-      id: milestone.id,
-      flightId: milestone.flightId,
-      title: milestone.title,
-      description: milestone.description,
-      order: milestone.order,
-      status: milestone.status,
-      tasks: milestone.tasks.map(fromDtoTask),
-      validationCriteria: milestone.validationCriteria,
-    })),
+    milestones: flight.milestones.map(
+      (milestone): Milestone => ({
+        id: milestone.id,
+        flightId: milestone.flightId,
+        title: milestone.title,
+        description: milestone.description,
+        order: milestone.order,
+        status: milestone.status,
+        tasks: milestone.tasks.map(fromDtoTask),
+        validationCriteria: milestone.validationCriteria,
+      }),
+    ),
     linkedSessionIds: flight.linkedSessionIds,
     issueIds: flight.issueIds ?? [],
     createdAt: flight.createdAt,
@@ -1152,6 +1225,11 @@ function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
     totalTokens: flight.totalTokens,
     prompt: flight.prompt,
     attempts: (flight.attempts ?? []).map(fromDtoAttempt),
+    plannerSessionId: flight.plannerSessionId,
+    plannerStatus: flight.plannerStatus,
+    plannerCost: flight.plannerCost,
+    plannerTokens: flight.plannerTokens,
+    plannerProvider: flight.plannerProvider,
     publishAttemptsAsPrs: flight.publishAttemptsAsPrs ?? false,
   };
 }
@@ -1164,6 +1242,7 @@ function toDtoFlight(flight: Flight): PersistedStateDto["flights"][number] {
     status: flight.status,
     priority: flight.priority,
     projectPath: flight.projectPath,
+    workspaceId: toOptional(flight.workspaceId),
     gitBranch: flight.gitBranch,
     milestones: flight.milestones.map((milestone) => ({
       id: milestone.id,
@@ -1184,20 +1263,34 @@ function toDtoFlight(flight: Flight): PersistedStateDto["flights"][number] {
     totalTokens: flight.totalTokens,
     prompt: flight.prompt,
     attempts: (flight.attempts ?? []).map(toDtoAttempt),
+    plannerSessionId: flight.plannerSessionId,
+    plannerStatus: flight.plannerStatus,
+    plannerCost: flight.plannerCost,
+    plannerTokens: flight.plannerTokens,
+    plannerProvider: flight.plannerProvider,
     publishAttemptsAsPrs: flight.publishAttemptsAsPrs ?? false,
   };
 }
 
 function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
+  const workspaceWithMetadata = workspace as WorkspaceDtoWithFrontendMetadata;
   return {
     id: workspace.id,
     name: workspace.name,
     agents: workspace.agents,
-    panes: workspace.panes.map((pane) => ({
+    panes: workspaceWithMetadata.panes.map((pane) => ({
       id: pane.id,
       agentId: pane.agentId,
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition,
+      accentColor: pane.accentColor,
+      pinnedCommands: pane.pinnedCommands,
+      taskId: pane.taskId,
+      flightId: pane.flightId,
+      agentConfigId: pane.agentConfigId,
+      initialPrompt: pane.initialPrompt,
+      overrideCommand: pane.overrideCommand,
+      overrideArgs: pane.overrideArgs,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1209,10 +1302,11 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
     effortOverrides: normalizeOptionalRecord(workspace.effortOverrides),
     serverId: workspace.serverId,
     remoteProjectPath: workspace.remoteProjectPath,
+    githubRepo: workspaceWithMetadata.githubRepo,
   };
 }
 
-function toDtoWorkspace(workspace: Workspace): WorkspaceDto {
+function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata {
   return {
     id: workspace.id,
     name: workspace.name,
@@ -1222,6 +1316,14 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDto {
       agentId: pane.agentId,
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition ?? { row: 0, col: index },
+      accentColor: pane.accentColor,
+      pinnedCommands: pane.pinnedCommands,
+      taskId: pane.taskId,
+      flightId: pane.flightId,
+      agentConfigId: pane.agentConfigId,
+      initialPrompt: pane.initialPrompt,
+      overrideCommand: pane.overrideCommand,
+      overrideArgs: pane.overrideArgs,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1233,7 +1335,8 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDto {
     effortOverrides: workspace.effortOverrides,
     serverId: workspace.serverId,
     remoteProjectPath: workspace.remoteProjectPath,
-  };
+    githubRepo: workspace.githubRepo,
+  } satisfies WorkspaceDtoWithFrontendMetadata;
 }
 
 function fromDtoPersistedState(state: PersistedStateDto): PersistedState {
@@ -1270,6 +1373,7 @@ function fromDtoServer(s: PersistedStateDto["servers"][number]): ServerConfig {
     authMethod: s.authMethod as ServerConfig["authMethod"],
     keyPath: s.keyPath ?? undefined,
     remotePath: s.remotePath ?? undefined,
+    hostFingerprint: s.hostFingerprint ?? undefined,
     lastConnectedAt: s.lastConnectedAt != null ? Number(s.lastConnectedAt) : undefined,
     installedAgents: s.installedAgents,
   };
@@ -1384,11 +1488,13 @@ export async function saveSettingsSlice(settings: PersistedState["settings"]): P
 }
 
 export async function saveUiSlice(ui: PersistedState["ui"]): Promise<void> {
-  const payload: PersistedUiStateDto = {
-    selectedFlightId: toOptional(ui.selectedFlightId),
-    selectedView: toOptional(ui.selectedView),
-    theme: toOptional(ui.theme),
-  };
+  const payload: PersistedUiStateDto = {};
+  const selectedFlightId = toUiPatchString(ui.selectedFlightId);
+  const selectedView = toUiPatchString(ui.selectedView);
+  const theme = toUiPatchString(ui.theme);
+  if (selectedFlightId !== undefined) payload.selectedFlightId = selectedFlightId;
+  if (selectedView !== undefined) payload.selectedView = selectedView;
+  if (theme !== undefined) payload.theme = theme as PersistedUiStateDto["theme"];
   return invoke("save_ui_slice", { ui: payload });
 }
 
@@ -1479,7 +1585,10 @@ export async function notifyApprovalResolved(taskId: string): Promise<PersistedS
   return fromDtoPersistedState(payload);
 }
 
-export async function notifyTaskComplete(taskId: string, success: boolean): Promise<PersistedState> {
+export async function notifyTaskComplete(
+  taskId: string,
+  success: boolean,
+): Promise<PersistedState> {
   const payload = await invoke<PersistedStateDto>("notify_task_complete", {
     taskId,
     success,
@@ -1583,15 +1692,10 @@ export async function githubGetAuthenticatedUser(): Promise<{
   login: string;
   avatarUrl: string;
 }> {
-  return invoke<{ login: string; avatarUrl: string }>(
-    "github_get_authenticated_user",
-  );
+  return invoke<{ login: string; avatarUrl: string }>("github_get_authenticated_user");
 }
 
-export async function githubListIssues(
-  owner: string,
-  repo: string
-): Promise<string> {
+export async function githubListIssues(owner: string, repo: string): Promise<string> {
   return invoke<string>("github_list_issues", { owner, repo });
 }
 
@@ -1621,17 +1725,14 @@ export async function githubCreatePr(
   });
 }
 
-export async function githubListPrs(
-  owner: string,
-  repo: string
-): Promise<string> {
+export async function githubListPrs(owner: string, repo: string): Promise<string> {
   return invoke<string>("github_list_prs", { owner, repo });
 }
 
 export async function githubGetPrDiff(
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
 ): Promise<string> {
   return invoke<string>("github_get_pr_diff", { owner, repo, prNumber });
 }
@@ -1665,20 +1766,12 @@ export async function githubMergePr(
 }
 
 /** PATCH /repos/{owner}/{repo}/pulls/{number} state=closed */
-export async function githubClosePr(
-  owner: string,
-  repo: string,
-  number: number,
-): Promise<string> {
+export async function githubClosePr(owner: string, repo: string, number: number): Promise<string> {
   return invoke<string>("github_close_pr", { owner, repo, number });
 }
 
 /** PATCH /repos/{owner}/{repo}/pulls/{number} state=open */
-export async function githubReopenPr(
-  owner: string,
-  repo: string,
-  number: number,
-): Promise<string> {
+export async function githubReopenPr(owner: string, repo: string, number: number): Promise<string> {
   return invoke<string>("github_reopen_pr", { owner, repo, number });
 }
 
@@ -1718,7 +1811,7 @@ export async function githubInvestigateIssue(
   projectPath: string,
   owner: string,
   repo: string,
-  issueNumber: number
+  issueNumber: number,
 ): Promise<string> {
   return invoke<string>("github_investigate_issue", {
     projectPath,
@@ -1761,10 +1854,11 @@ export async function githubAiTriage(
   repo: string,
   issueNumbers: number[],
 ): Promise<import("@/types/github").TriageSuggestion[]> {
-  return invoke<import("@/types/github").TriageSuggestion[]>(
-    "github_ai_triage",
-    { owner, repo, issueNumbers },
-  );
+  return invoke<import("@/types/github").TriageSuggestion[]>("github_ai_triage", {
+    owner,
+    repo,
+    issueNumbers,
+  });
 }
 
 // === v0.8-E: AI PR description + AI pre-flight code review =================
@@ -1916,24 +2010,15 @@ export async function githubSetIssueMilestone(
   });
 }
 
-export async function githubListRepoLabels(
-  owner: string,
-  repo: string,
-): Promise<string> {
+export async function githubListRepoLabels(owner: string, repo: string): Promise<string> {
   return invoke<string>("github_list_repo_labels", { owner, repo });
 }
 
-export async function githubListRepoMilestones(
-  owner: string,
-  repo: string,
-): Promise<string> {
+export async function githubListRepoMilestones(owner: string, repo: string): Promise<string> {
   return invoke<string>("github_list_repo_milestones", { owner, repo });
 }
 
-export async function githubListRepoAssignableUsers(
-  owner: string,
-  repo: string,
-): Promise<string> {
+export async function githubListRepoAssignableUsers(owner: string, repo: string): Promise<string> {
   return invoke<string>("github_list_repo_assignable_users", { owner, repo });
 }
 
@@ -1974,10 +2059,7 @@ export interface GitHubBranchInfo {
 }
 
 /** List a repository's branches (up to 100). */
-export async function githubListBranches(
-  owner: string,
-  repo: string,
-): Promise<GitHubBranchInfo[]> {
+export async function githubListBranches(owner: string, repo: string): Promise<GitHubBranchInfo[]> {
   return invoke<GitHubBranchInfo[]>("github_list_branches", { owner, repo });
 }
 
@@ -2085,7 +2167,7 @@ export async function writeMcpServer(
   command: string,
   args: string[],
   env: Record<string, string>,
-  scope: string
+  scope: string,
 ): Promise<void> {
   return invoke("write_mcp_server", { projectPath, name, command, args, env, scope });
 }
@@ -2093,7 +2175,7 @@ export async function writeMcpServer(
 export async function deleteMcpServer(
   projectPath: string,
   name: string,
-  scope: string
+  scope: string,
 ): Promise<void> {
   return invoke("delete_mcp_server", { projectPath, name, scope });
 }
@@ -2117,7 +2199,7 @@ export async function readUsageAnalytics(): Promise<string> {
 
 export async function createDeployConfig(
   projectPath: string,
-  configs: DeployConfig[]
+  configs: DeployConfig[],
 ): Promise<void> {
   return invoke("create_deploy_config", { projectPath, configs });
 }
@@ -2126,7 +2208,11 @@ export async function validateDeploy(projectPath: string, command: string): Prom
   return invoke<string>("validate_deploy", { projectPath, command });
 }
 
-export async function runDeploy(projectPath: string, command: string, runId: string): Promise<string> {
+export async function runDeploy(
+  projectPath: string,
+  command: string,
+  runId: string,
+): Promise<string> {
   return invoke<string>("run_deploy", { projectPath, command, runId });
 }
 
@@ -2282,6 +2368,7 @@ export async function startApiAgentSession(
   resumeMessages?: ResumeMessage[] | null,
   permissionMode?: "auto" | "ask_for_risky" | "allow_all" | "deny_all" | null,
   approveWrites?: boolean | null,
+  commandPath?: string | null,
 ): Promise<void> {
   return invoke("start_api_agent_session", {
     sessionId,
@@ -2300,6 +2387,7 @@ export async function startApiAgentSession(
     resumeMessages: resumeMessages ?? null,
     permissionMode: permissionMode ?? null,
     approveWrites: approveWrites ?? null,
+    commandPath: commandPath ?? null,
   });
 }
 
@@ -2565,9 +2653,7 @@ export async function injectPlannerTurn(
 // kind the planner's system prompt is trained to recognize as the kickoff
 // trigger. Replaces the prior `injectPlannerTurn(..., "wake_trigger")` path
 // which mis-tagged the kind as `"user_message_in_journal"`.
-export async function triggerPlannerDecomposition(
-  missionId: string,
-): Promise<void> {
+export async function triggerPlannerDecomposition(missionId: string): Promise<void> {
   return invoke("trigger_planner_decomposition", { missionId });
 }
 
@@ -2577,10 +2663,7 @@ export async function triggerPlannerDecomposition(
 // to the planner with this binding. `choice` is one of the option labels the
 // planner offered, the user's free-text answer, `"acknowledged"`, or
 // `"dismissed"`.
-export async function resolveMissionApproval(
-  approvalId: string,
-  choice: string,
-): Promise<void> {
+export async function resolveMissionApproval(approvalId: string, choice: string): Promise<void> {
   return invoke("resolve_mission_approval", { approvalId, choice });
 }
 
@@ -2589,9 +2672,7 @@ export async function resolveMissionApproval(
 // attach; this binding backfills any unresolved approvals already on disk
 // (paused mission resume, page reload, cold app start). Returns only
 // unresolved entries — resolved approvals are historical.
-export async function getMissionApprovals(
-  missionId: string,
-): Promise<MissionApprovalRequestDto[]> {
+export async function getMissionApprovals(missionId: string): Promise<MissionApprovalRequestDto[]> {
   return invoke<MissionApprovalRequestDto[]>("get_mission_approvals", { missionId });
 }
 
@@ -2681,4 +2762,3 @@ export async function codeQualityAiSummarize(
     sessionIdOverride: sessionIdOverride ?? null,
   });
 }
-

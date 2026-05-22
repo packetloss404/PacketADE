@@ -3,7 +3,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use tracing::{info, warn};
 
@@ -50,6 +50,7 @@ fn resolve_command_path(command: &str) -> String {
 }
 
 const PTY_TRANSCRIPT_LIMIT_BYTES: usize = 256 * 1024;
+static PTY_TRANSCRIPT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub(crate) fn decode_terminal_chunk(bytes: &[u8], pending: &mut Vec<u8>) -> String {
     let (data, leftover) = {
@@ -215,6 +216,9 @@ impl PtyManager {
 
         if let Some(path) = transcript_path(&session_id) {
             let _ = fs::write(path, "");
+        }
+        if let Some(path) = transcript_truncated_marker_path(&session_id) {
+            let _ = fs::remove_file(path);
         }
 
         let session = PtySession {
@@ -429,15 +433,23 @@ pub fn read_transcript(session_id: &str) -> Result<PtyTranscript, String> {
     let path = transcript_path(session_id)
         .ok_or_else(|| "Unable to resolve transcript path".to_string())?;
 
+    let lock = PTY_TRANSCRIPT_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock
+        .lock()
+        .map_err(|_| "PTY transcript lock poisoned".to_string())?;
+
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(e) => return Err(format!("Failed to read PTY transcript: {}", e)),
     };
 
-    let truncated = bytes.len() > PTY_TRANSCRIPT_LIMIT_BYTES;
+    let marker_exists = transcript_truncated_marker_path(session_id)
+        .map(|path| path.exists())
+        .unwrap_or(false);
+    let truncated = marker_exists || bytes.len() > PTY_TRANSCRIPT_LIMIT_BYTES;
     let relevant = if truncated {
-        &bytes[bytes.len() - PTY_TRANSCRIPT_LIMIT_BYTES..]
+        &bytes[bytes.len().saturating_sub(PTY_TRANSCRIPT_LIMIT_BYTES)..]
     } else {
         &bytes[..]
     };
@@ -459,14 +471,52 @@ fn transcript_path(session_id: &str) -> Option<PathBuf> {
     Some(dir.join(format!("{}.log", session_id)))
 }
 
-fn append_transcript(session_id: &str, data: &str) {
+fn transcript_truncated_marker_path(session_id: &str) -> Option<PathBuf> {
+    transcript_path(session_id).map(|path| path.with_extension("log.truncated"))
+}
+
+fn mark_transcript_truncated(session_id: &str) {
+    if let Some(path) = transcript_truncated_marker_path(session_id) {
+        let _ = fs::write(path, b"truncated\n");
+    }
+}
+
+pub(crate) fn append_transcript(session_id: &str, data: &str) {
     let Some(path) = transcript_path(session_id) else {
         return;
     };
 
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = file.write_all(data.as_bytes());
+    let lock = PTY_TRANSCRIPT_LOCK.get_or_init(|| Mutex::new(()));
+    let Ok(_guard) = lock.lock() else {
+        return;
+    };
+
+    let incoming = data.as_bytes();
+    let existing_len = fs::metadata(&path).map(|m| m.len() as usize).unwrap_or(0);
+    if incoming.len() >= PTY_TRANSCRIPT_LIMIT_BYTES {
+        let start = incoming.len() - PTY_TRANSCRIPT_LIMIT_BYTES;
+        let _ = fs::write(&path, &incoming[start..]);
+        if incoming.len() > PTY_TRANSCRIPT_LIMIT_BYTES || existing_len > 0 {
+            mark_transcript_truncated(session_id);
+        }
+        return;
     }
+
+    if existing_len + incoming.len() <= PTY_TRANSCRIPT_LIMIT_BYTES {
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = file.write_all(incoming);
+        }
+        return;
+    }
+
+    let existing = fs::read(&path).unwrap_or_default();
+    let keep_existing = PTY_TRANSCRIPT_LIMIT_BYTES.saturating_sub(incoming.len());
+    let start = existing.len().saturating_sub(keep_existing);
+    let mut bounded = Vec::with_capacity(PTY_TRANSCRIPT_LIMIT_BYTES);
+    bounded.extend_from_slice(&existing[start..]);
+    bounded.extend_from_slice(incoming);
+    let _ = fs::write(&path, bounded);
+    mark_transcript_truncated(session_id);
 }
 
 /// Thread-safe wrapper
@@ -530,5 +580,30 @@ mod tests {
 
         assert_eq!(data, "Claude Code for Cursor");
         assert!(pending.is_empty());
+    }
+
+    fn cleanup_transcript_files(session_id: &str) {
+        if let Some(path) = transcript_path(session_id) {
+            let _ = std::fs::remove_file(path);
+        }
+        if let Some(path) = transcript_truncated_marker_path(session_id) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    #[test]
+    fn read_transcript_reports_truncated_after_bounded_append_discards_history() {
+        let id = uuid::Uuid::new_v4().to_string();
+        cleanup_transcript_files(&id);
+
+        append_transcript(&id, &"a".repeat(PTY_TRANSCRIPT_LIMIT_BYTES - 4));
+        append_transcript(&id, "bbbbbbbb");
+
+        let transcript = read_transcript(&id).expect("read transcript");
+        assert!(transcript.truncated);
+        assert_eq!(transcript.data.len(), PTY_TRANSCRIPT_LIMIT_BYTES);
+        assert!(transcript.data.ends_with("bbbbbbbb"));
+
+        cleanup_transcript_files(&id);
     }
 }

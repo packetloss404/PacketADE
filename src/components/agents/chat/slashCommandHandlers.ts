@@ -1,6 +1,9 @@
 import { generateId } from "@/lib/storage";
 import { buildReviewPrompt } from "@/lib/conversationReview";
-import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import {
+  requestConversationSave,
+  useAgentTaskStore,
+} from "@/stores/agentTaskStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useGoalStore } from "@/stores/goalStore";
 import { useFlightStore } from "@/stores/flightStore";
@@ -39,8 +42,9 @@ function appendMessage(conversationId: string, msg: AgentMessage) {
       c.id === conversationId
         ? { ...c, messages: [...c.messages, msg], updatedAt: Date.now() }
         : c,
-    ),
+      ),
   }));
+  requestConversationSave(conversationId);
 }
 
 function sysMessage(content: string): AgentMessage {
@@ -64,6 +68,7 @@ export const slashCommandHandlers: Record<
           : c,
       ),
     }));
+    requestConversationSave(conversationId);
   },
 
   model: ({ conversationId }) => {
@@ -135,6 +140,7 @@ export const slashCommandHandlers: Record<
         };
       }),
     }));
+    requestConversationSave(conversationId);
   },
 
   usage: ({ setActiveView }) => {

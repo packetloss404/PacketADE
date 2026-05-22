@@ -8,23 +8,57 @@
 
 export const QUALITY_AUTOFIX_STORAGE_KEY = "packetade:quality-autofix";
 
-export function readAutoFixPref(): boolean {
+export function normalizeAutoFixProjectPath(projectPath: string): string {
+  const trimmed = projectPath.trim();
+  if (!trimmed) return "";
+
+  const slashNormalized = trimmed.replace(/\\/g, "/");
+  const withoutTrailingSlash = slashNormalized.replace(/\/+$/, "");
+  const normalized = withoutTrailingSlash || (slashNormalized.startsWith("/") ? "/" : "");
+
+  return normalized.replace(/^([A-Z]):/, (_, drive: string) => `${drive.toLowerCase()}:`);
+}
+
+export function autoFixPrefStorageKey(projectPath: string): string {
+  return `${QUALITY_AUTOFIX_STORAGE_KEY}:project:${encodeURIComponent(
+    normalizeAutoFixProjectPath(projectPath),
+  )}`;
+}
+
+export function readAutoFixPref(projectPath: string): boolean {
   try {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(QUALITY_AUTOFIX_STORAGE_KEY) === "1";
+    const normalizedProjectPath = normalizeAutoFixProjectPath(projectPath);
+    if (!normalizedProjectPath) return false;
+
+    const scopedKey = autoFixPrefStorageKey(normalizedProjectPath);
+    if (window.localStorage.getItem(scopedKey) === "1") return true;
+
+    if (window.localStorage.getItem(QUALITY_AUTOFIX_STORAGE_KEY) === "1") {
+      window.localStorage.setItem(scopedKey, "1");
+      window.localStorage.removeItem(QUALITY_AUTOFIX_STORAGE_KEY);
+      return true;
+    }
+
+    return false;
   } catch {
     return false;
   }
 }
 
-export function writeAutoFixPref(value: boolean): void {
+export function writeAutoFixPref(value: boolean, projectPath: string): void {
   try {
     if (typeof window === "undefined") return;
+    const normalizedProjectPath = normalizeAutoFixProjectPath(projectPath);
+    if (!normalizedProjectPath) return;
+
+    const scopedKey = autoFixPrefStorageKey(normalizedProjectPath);
     if (value) {
-      window.localStorage.setItem(QUALITY_AUTOFIX_STORAGE_KEY, "1");
+      window.localStorage.setItem(scopedKey, "1");
     } else {
-      window.localStorage.removeItem(QUALITY_AUTOFIX_STORAGE_KEY);
+      window.localStorage.removeItem(scopedKey);
     }
+    window.localStorage.removeItem(QUALITY_AUTOFIX_STORAGE_KEY);
   } catch {
     // ignore quota / disabled-storage errors
   }

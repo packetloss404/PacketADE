@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { createPtySession, writePty, killPty } from "@/lib/tauri";
+import {
+  createPtySession,
+  killPty,
+  listPtySessions,
+  readPtyTranscript,
+  writePty,
+} from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -22,6 +28,15 @@ function useLatestRef<T>(value: T): RefObject<T> {
   const ref = useRef(value);
   ref.current = value;
   return ref;
+}
+
+function nonOverlappingSuffix(base: string, tail: string): string {
+  if (!base || !tail) return tail;
+  const max = Math.min(base.length, tail.length);
+  for (let len = max; len > 0; len--) {
+    if (base.endsWith(tail.slice(0, len))) return tail.slice(len);
+  }
+  return tail;
 }
 
 interface UseTerminalSessionOptions {
@@ -227,11 +242,26 @@ export function useTerminalSession({
 
       startDurationTimer(tabId);
 
-      const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
-        term.write(event.payload);
-      });
+      let buffering = true;
+      let buffered = "";
+      let exitWhileBuffering = false;
+      let sessionFinished = false;
+      const finishSession = () => {
+        if (sessionFinished) return;
+        if (buffering) {
+          exitWhileBuffering = true;
+          return;
+        }
+        sessionFinished = true;
+        for (const fn of unlistenersRef.current) {
+          try {
+            fn();
+          } catch {
+            // listener already gone
+          }
+        }
+        unlistenersRef.current = [];
 
-      const exitUnlisten = await listen<string>(ptyExitEvent(sessionId), () => {
         const wasRequested = exitRequestedRef.current;
         setAlive(false);
         setShowApproval(false);
@@ -261,9 +291,37 @@ export function useTerminalSession({
           const success = !wasRequested;
           void useOrchestrationStateStore.getState().onTaskComplete(taskId, success);
         }
+      };
+
+      const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
+        if (buffering) {
+          buffered += event.payload;
+        } else {
+          term.write(event.payload);
+        }
       });
 
+      const exitUnlisten = await listen<string>(ptyExitEvent(sessionId), finishSession);
+
       unlistenersRef.current = [outputUnlisten, exitUnlisten];
+      if (sessionFinished) {
+        outputUnlisten();
+        exitUnlisten();
+        unlistenersRef.current = [];
+      }
+
+      const transcript = await readPtyTranscript(sessionId).catch(() => null);
+      const replayed = transcript?.data ?? "";
+      if (replayed) term.write(replayed);
+      const bufferedRemainder = nonOverlappingSuffix(replayed, buffered);
+      if (bufferedRemainder) term.write(bufferedRemainder);
+      buffering = false;
+      if (exitWhileBuffering) finishSession();
+
+      const sessions = await listPtySessions().catch(() => null);
+      const liveSession = sessions?.find((s) => s.id === sessionId);
+      if (sessions && (!liveSession || !liveSession.alive)) finishSession();
+      if (sessionFinished) return;
 
       if (initialPrompt?.trim()) {
         // Claude Code is ready for input immediately; other CLIs (OpenCode, Gemini)

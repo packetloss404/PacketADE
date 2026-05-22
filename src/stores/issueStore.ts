@@ -55,7 +55,7 @@ export interface Issue {
   flightId: string | null;
   acceptanceCriteria: AcceptanceCriterion[];
   blockedBy: string[]; // issue IDs
-  blocks: string[];    // issue IDs
+  blocks: string[]; // issue IDs
   /** v0.8.5: inline comments — optional for back-compat with stored issues. */
   comments?: IssueComment[];
   /** v0.8.5: free-form assignee (username/email/"me"). */
@@ -102,7 +102,11 @@ interface IssueStore {
   epics: string[];
   labels: string[];
 
-  addIssue: (issue: Omit<Issue, "id" | "ticketId" | "createdAt" | "updatedAt" | "flightId"> & { flightId?: string | null }) => Issue;
+  addIssue: (
+    issue: Omit<Issue, "id" | "ticketId" | "createdAt" | "updatedAt" | "flightId"> & {
+      flightId?: string | null;
+    },
+  ) => Issue;
   updateIssue: (id: string, updates: Partial<Issue>) => void;
   deleteIssue: (id: string) => void;
   moveIssue: (id: string, status: IssueStatus) => void;
@@ -170,14 +174,30 @@ function migrateIssue(issue: Issue): Issue {
   };
 }
 
-type IssueState = { issues: Issue[]; nextTicketNum: number; ticketPrefix: string; epics: string[]; labels: string[] };
+type IssueState = {
+  issues: Issue[];
+  nextTicketNum: number;
+  ticketPrefix: string;
+  epics: string[];
+  labels: string[];
+};
 
 const DEFAULT_ISSUE_STATE: IssueState = {
   issues: [],
   nextTicketNum: 1,
   ticketPrefix: "PKT",
   epics: [],
-  labels: ["bug", "feature", "enhancement", "refactor", "docs", "api", "frontend", "working", "devops"],
+  labels: [
+    "bug",
+    "feature",
+    "enhancement",
+    "refactor",
+    "docs",
+    "api",
+    "frontend",
+    "working",
+    "devops",
+  ],
 };
 
 function loadState(): IssueState {
@@ -245,9 +265,15 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
   updateIssue: (id, updates) => {
     set((s) => {
       const issues = s.issues.map((i) =>
-        i.id === id ? { ...i, ...updates, updatedAt: Date.now() } : i
+        i.id === id ? { ...i, ...updates, updatedAt: Date.now() } : i,
       );
-      saveState({ issues, nextTicketNum: s.nextTicketNum, ticketPrefix: s.ticketPrefix, epics: s.epics, labels: s.labels });
+      saveState({
+        issues,
+        nextTicketNum: s.nextTicketNum,
+        ticketPrefix: s.ticketPrefix,
+        epics: s.epics,
+        labels: s.labels,
+      });
       return { issues };
     });
   },
@@ -262,7 +288,13 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
           blockedBy: i.blockedBy.filter((bid) => bid !== id),
           blocks: i.blocks.filter((bid) => bid !== id),
         }));
-      saveState({ issues, nextTicketNum: s.nextTicketNum, ticketPrefix: s.ticketPrefix, epics: s.epics, labels: s.labels });
+      saveState({
+        issues,
+        nextTicketNum: s.nextTicketNum,
+        ticketPrefix: s.ticketPrefix,
+        epics: s.epics,
+        labels: s.labels,
+      });
       return { issues };
     });
   },
@@ -278,7 +310,13 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
   addEpic: (epic) => {
     set((s) => {
       const epics = s.epics.includes(epic) ? s.epics : [...s.epics, epic];
-      saveState({ issues: s.issues, nextTicketNum: s.nextTicketNum, ticketPrefix: s.ticketPrefix, epics, labels: s.labels });
+      saveState({
+        issues: s.issues,
+        nextTicketNum: s.nextTicketNum,
+        ticketPrefix: s.ticketPrefix,
+        epics,
+        labels: s.labels,
+      });
       return { epics };
     });
   },
@@ -286,14 +324,26 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
   addLabel: (label) => {
     set((s) => {
       const labels = s.labels.includes(label) ? s.labels : [...s.labels, label];
-      saveState({ issues: s.issues, nextTicketNum: s.nextTicketNum, ticketPrefix: s.ticketPrefix, epics: s.epics, labels });
+      saveState({
+        issues: s.issues,
+        nextTicketNum: s.nextTicketNum,
+        ticketPrefix: s.ticketPrefix,
+        epics: s.epics,
+        labels,
+      });
       return { labels };
     });
   },
 
   setTicketPrefix: (prefix) => {
     set((s) => {
-      saveState({ issues: s.issues, nextTicketNum: s.nextTicketNum, ticketPrefix: prefix, epics: s.epics, labels: s.labels });
+      saveState({
+        issues: s.issues,
+        nextTicketNum: s.nextTicketNum,
+        ticketPrefix: prefix,
+        epics: s.epics,
+        labels: s.labels,
+      });
       return { ticketPrefix: prefix };
     });
   },
@@ -307,7 +357,7 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     const issue = get().issues.find((i) => i.id === issueId);
     if (!issue) return;
     const acceptanceCriteria = issue.acceptanceCriteria.map((c) =>
-      c.id === criterionId ? { ...c, checked: !c.checked } : c
+      c.id === criterionId ? { ...c, checked: !c.checked } : c,
     );
     get().updateIssue(issueId, { acceptanceCriteria });
   },
@@ -336,7 +386,13 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
   // Dependencies
   addBlockedBy: (issueId, blockerIssueId) => {
     const issue = get().issues.find((i) => i.id === issueId);
-    if (!issue || issue.blockedBy.includes(blockerIssueId)) return;
+    if (
+      !issue ||
+      issue.blockedBy.includes(blockerIssueId) ||
+      issue.blocks.includes(blockerIssueId)
+    ) {
+      return;
+    }
     get().updateIssue(issueId, { blockedBy: [...issue.blockedBy, blockerIssueId] });
     // Also add the reverse relationship
     const blocker = get().issues.find((i) => i.id === blockerIssueId);
@@ -348,7 +404,9 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
   removeBlockedBy: (issueId, blockerIssueId) => {
     const issue = get().issues.find((i) => i.id === issueId);
     if (!issue) return;
-    get().updateIssue(issueId, { blockedBy: issue.blockedBy.filter((id) => id !== blockerIssueId) });
+    get().updateIssue(issueId, {
+      blockedBy: issue.blockedBy.filter((id) => id !== blockerIssueId),
+    });
     // Also remove the reverse relationship
     const blocker = get().issues.find((i) => i.id === blockerIssueId);
     if (blocker) {
@@ -358,7 +416,13 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
 
   addBlocks: (issueId, blockedIssueId) => {
     const issue = get().issues.find((i) => i.id === issueId);
-    if (!issue || issue.blocks.includes(blockedIssueId)) return;
+    if (
+      !issue ||
+      issue.blocks.includes(blockedIssueId) ||
+      issue.blockedBy.includes(blockedIssueId)
+    ) {
+      return;
+    }
     get().updateIssue(issueId, { blocks: [...issue.blocks, blockedIssueId] });
     // Also add the reverse relationship
     const blocked = get().issues.find((i) => i.id === blockedIssueId);
@@ -374,7 +438,9 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     // Also remove the reverse relationship
     const blocked = get().issues.find((i) => i.id === blockedIssueId);
     if (blocked) {
-      get().updateIssue(blockedIssueId, { blockedBy: blocked.blockedBy.filter((id) => id !== issueId) });
+      get().updateIssue(blockedIssueId, {
+        blockedBy: blocked.blockedBy.filter((id) => id !== issueId),
+      });
     }
   },
 
@@ -420,12 +486,11 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     const issue = get().issues.find((i) => i.id === issueId);
     if (!issue) return null;
 
-    const [{ useLayoutStore }, { useWorkspaceStore }, { useAppStore }] =
-      await Promise.all([
-        import("@/stores/layoutStore"),
-        import("@/stores/workspaceStore"),
-        import("@/stores/appStore"),
-      ]);
+    const [{ useLayoutStore }, { useWorkspaceStore }, { useAppStore }] = await Promise.all([
+      import("@/stores/layoutStore"),
+      import("@/stores/workspaceStore"),
+      import("@/stores/appStore"),
+    ]);
 
     // Build the Issue-context prompt that seeds the new pane. Mirrors the
     // "Hand off to Claude" CTA in GitHubView so the receiving CLI sees a
@@ -450,10 +515,7 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     const activeWs = workspaceState.workspaces.find(
       (w) => w.id === workspaceState.activeWorkspaceId,
     );
-    const projectPath =
-      activeWs?.projectPath ||
-      useLayoutStore.getState().projectPath ||
-      "";
+    const projectPath = activeWs?.projectPath || useLayoutStore.getState().projectPath || "";
     if (!projectPath) return null;
 
     // Spin up a workspace dedicated to this Issue. Naming pattern matches
@@ -503,20 +565,15 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
       );
     }
 
-    const workspaceId = workspaceState.createWorkspace(
-      wsName,
-      ["claude-code"],
-      worktreePath,
-      { prompt: initialPrompt },
-    );
+    const workspaceId = workspaceState.createWorkspace(wsName, ["claude-code"], worktreePath, {
+      prompt: initialPrompt,
+    });
 
     // `createWorkspace` builds exactly one pane for the single agent we
     // passed. Grab its id so we can stamp it onto the Issue. If the
     // workspace creation somehow produced no panes (defensive — never
     // observed in practice) we bail without touching Issue state.
-    const created = useWorkspaceStore
-      .getState()
-      .workspaces.find((w) => w.id === workspaceId);
+    const created = useWorkspaceStore.getState().workspaces.find((w) => w.id === workspaceId);
     const paneId = created?.panes[0]?.id;
     if (!paneId) return null;
 
@@ -572,42 +629,39 @@ let issueWatcherUnlisten: UnlistenFn | null = null;
 
 async function registerIssueWatcher() {
   try {
-    issueWatcherUnlisten = await listen<IssueFixedPayload>(
-      "issue-watcher:fixed",
-      (event) => {
-        const payload = event.payload;
-        if (!payload || !payload.issueId) return;
-        const store = useIssueStore.getState();
-        const issue = store.issues.find((i) => i.id === payload.issueId);
-        if (!issue) return;
-        if (issue.status === "done") return;
+    issueWatcherUnlisten = await listen<IssueFixedPayload>("issue-watcher:fixed", (event) => {
+      const payload = event.payload;
+      if (!payload || !payload.issueId) return;
+      const store = useIssueStore.getState();
+      const issue = store.issues.find((i) => i.id === payload.issueId);
+      if (!issue) return;
+      if (issue.status === "done") return;
 
-        // Flip to done. We deliberately do NOT touch sessionId /
-        // workspaceId — the agent session stays alive for follow-up.
-        store.updateIssue(payload.issueId, { status: "done" });
+      // Flip to done. We deliberately do NOT touch sessionId /
+      // workspaceId — the agent session stays alive for follow-up.
+      store.updateIssue(payload.issueId, { status: "done" });
 
-        // Audit trail: drop a system comment with the commit ref. The
-        // comments field was introduced in v0.8.5 (Agent D's slice) so
-        // the API is available; on stored issues that pre-date comments
-        // the `addIssueComment` helper transparently initialises the
-        // array.
-        const shortSha = (payload.commitSha || "").slice(0, 7);
-        const subject = (payload.commitSubject || "").trim();
-        const body = shortSha
-          ? subject
-            ? `Auto-closed by commit ${shortSha}: ${subject}`
-            : `Auto-closed by commit ${shortSha}`
-          : subject
-            ? `Auto-closed by commit: ${subject}`
-            : "Auto-closed by commit";
-        try {
-          store.addIssueComment(payload.issueId, body, "system");
-        } catch {
-          // Comment failure is non-fatal — the status flip is the
-          // primary effect and has already happened.
-        }
-      },
-    );
+      // Audit trail: drop a system comment with the commit ref. The
+      // comments field was introduced in v0.8.5 (Agent D's slice) so
+      // the API is available; on stored issues that pre-date comments
+      // the `addIssueComment` helper transparently initialises the
+      // array.
+      const shortSha = (payload.commitSha || "").slice(0, 7);
+      const subject = (payload.commitSubject || "").trim();
+      const body = shortSha
+        ? subject
+          ? `Auto-closed by commit ${shortSha}: ${subject}`
+          : `Auto-closed by commit ${shortSha}`
+        : subject
+          ? `Auto-closed by commit: ${subject}`
+          : "Auto-closed by commit";
+      try {
+        store.addIssueComment(payload.issueId, body, "system");
+      } catch {
+        // Comment failure is non-fatal — the status flip is the
+        // primary effect and has already happened.
+      }
+    });
   } catch {
     // listen() throws under non-Tauri contexts (vitest unit tests). The
     // store still functions; the close-loop simply won't auto-trigger.

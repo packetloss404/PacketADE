@@ -18,12 +18,14 @@ import { AnthropicProvider } from "./providers/anthropic.js";
 import { OpenAICodexProvider } from "./providers/openai-codex.js";
 import { OpenAIAgentsProvider } from "./providers/openai-agents.js";
 
+type ProviderFactories = Record<string, () => ProviderHandler>;
+
 // Factory map — both subscription providers are wired:
 //   - "claude-oauth"  → Anthropic Agent SDK (OAuth / `claude login`)
 //   - "openai-codex"  → Codex CLI exec mode (`codex login`)
 //   - "openai-agents" → OpenAI Agents SDK (OpenAI API key)
 // Add new providers by importing the handler and extending this record.
-const PROVIDERS: Record<string, () => ProviderHandler> = {
+const PROVIDERS: ProviderFactories = {
   echo: () => new EchoProvider(),
   "claude-oauth": () => new AnthropicProvider(),
   "openai-codex": () => new OpenAICodexProvider(),
@@ -42,9 +44,29 @@ interface SessionEntry {
 
 export class SessionRegistry {
   private sessions = new Map<string, SessionEntry>();
+  private queues = new Map<string, Promise<void>>();
+
+  constructor(private readonly providers: ProviderFactories = PROVIDERS) {}
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
-    const factory = PROVIDERS[req.provider];
+    return this.enqueue(req.sessionId, () => this.startNow(req, emit));
+  }
+
+  private enqueue(sessionId: string, operation: () => Promise<void>): Promise<void> {
+    const previous = this.queues.get(sessionId) ?? Promise.resolve();
+    const next = previous.then(operation, operation);
+    const tail = next.catch(() => undefined);
+    this.queues.set(sessionId, tail);
+    void tail.finally(() => {
+      if (this.queues.get(sessionId) === tail) {
+        this.queues.delete(sessionId);
+      }
+    });
+    return next;
+  }
+
+  private async startNow(req: StartSessionRequest, emit: Emit): Promise<void> {
+    const factory = this.providers[req.provider];
     if (!factory) {
       emit({
         type: "error",
@@ -67,6 +89,7 @@ export class SessionRegistry {
     const startEmit: Emit = (event) => {
       if (event.type === "error" && event.sessionId === req.sessionId) {
         startFailed = true;
+        this.sessions.delete(req.sessionId);
       }
       emit(event);
     };
@@ -86,6 +109,24 @@ export class SessionRegistry {
   }
 
   async dispatch(
+    sessionId: string,
+    req:
+      | SendMessageRequest
+      | PermissionResponseRequest
+      | EditResponseRequest
+      | CancelRequest
+      | SetPermissionModeRequest
+      | SetModelRequest
+      | RetryRequest
+      | CancelPendingToolsRequest
+      | InjectUserTurnRequest
+      | PlannerToolResultRequest,
+    emit: Emit,
+  ): Promise<void> {
+    return this.enqueue(sessionId, () => this.dispatchNow(sessionId, req, emit));
+  }
+
+  private async dispatchNow(
     sessionId: string,
     req:
       | SendMessageRequest
@@ -201,6 +242,10 @@ export class SessionRegistry {
   }
 
   async close(sessionId: string): Promise<void> {
+    return this.enqueue(sessionId, () => this.closeNow(sessionId));
+  }
+
+  private async closeNow(sessionId: string): Promise<void> {
     const entry = this.sessions.get(sessionId);
     if (!entry) return;
     this.sessions.delete(sessionId);
@@ -219,7 +264,7 @@ export class SessionRegistry {
   }
 
   async closeAll(): Promise<void> {
-    const ids = Array.from(this.sessions.keys());
+    const ids = Array.from(new Set([...this.sessions.keys(), ...this.queues.keys()]));
     await Promise.all(ids.map((id) => this.close(id)));
   }
 }

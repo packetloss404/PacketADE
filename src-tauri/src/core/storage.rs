@@ -4,6 +4,7 @@ use std::future::Future;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::{info, warn};
 
@@ -70,20 +71,17 @@ pub const DEFAULT_OLLAMA_ROOT_BASE_URL: &str = "http://localhost:11434";
 static STATE_LOCK: Mutex<()> = Mutex::new(());
 static PROVIDER_SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 
-/// Async-safe critical-section mutex for `with_state_lock` callers. Held
-/// across the **entire** load → mutate → save sequence so concurrent async
-/// writers can't lose each other's mutations. Distinct from `STATE_LOCK`
-/// (which is a sync mutex that only protects the write itself and would
-/// be illegal to hold across an `.await`).
+/// Async-safe critical-section mutex for every state writer. Async callers
+/// hold it across the **entire** load → mutate → save sequence, and sync
+/// slice writers acquire it through a small blocking adapter before taking
+/// `STATE_LOCK`. This gives async and sync writers one shared ordering, so
+/// a stale async full-state save cannot overwrite a sync slice save that
+/// landed between the async load and save.
 ///
 /// Migration note: callers that take `&mut PersistedState` and only need
 /// to be serialized against other planner-tool callers should use
-/// [`with_state_lock`]. The orchestrator's existing sync helper
-/// (`commands::orchestration::with_orchestrator_and_flights`) is **not**
-/// gated on this mutex — it holds the sync `Orchestrator` mutex across
-/// its load-mutate-save, which serializes its own writers but can still
-/// theoretically race against the async path. Tightening that bridge is
-/// tracked in the backlog (see "Mission Planner v1.1" P3 entries).
+/// [`with_state_lock`]. Sync state writers in this module must acquire this
+/// gate before `STATE_LOCK`; do not invert that order.
 static ASYNC_STATE_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
@@ -188,7 +186,17 @@ fn save_state_inner(state: &PersistedState) -> Result<(), String> {
     Ok(())
 }
 
+fn lock_state_gate_blocking() -> tokio::sync::MutexGuard<'static, ()> {
+    loop {
+        if let Ok(guard) = ASYNC_STATE_LOCK.try_lock() {
+            return guard;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
 pub fn save_state(state: &PersistedState) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -206,6 +214,7 @@ pub fn update_state<F, R>(mutate: F) -> Result<R, String>
 where
     F: FnOnce(&mut PersistedState) -> R,
 {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -236,8 +245,9 @@ where
 ///     acquire site — callers that need to abort should drop the future
 ///     *before* it acquires the lock.
 ///
-/// Anything currently using `save_state` directly is left alone — only the
-/// load-mutate-save composite (where the race exists) needs this helper.
+/// Sync state writers in this module acquire the same gate before taking
+/// `STATE_LOCK`, so this helper is serialized against both async planner
+/// writers and sync slice writers.
 pub async fn with_state_lock<F, Fut, R>(action: F) -> Result<R, String>
 where
     F: FnOnce(&mut PersistedState) -> Fut,
@@ -246,11 +256,16 @@ where
     let _guard = ASYNC_STATE_LOCK.lock().await;
     let mut state = load_state();
     let result = action(&mut state).await?;
-    save_state(&state)?;
+    let _lock = STATE_LOCK
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    state.version += 1;
+    save_state_inner(&state)?;
     Ok(result)
 }
 
 pub fn save_flights(flights: Vec<Flight>) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -261,6 +276,7 @@ pub fn save_flights(flights: Vec<Flight>) -> Result<(), String> {
 }
 
 pub fn save_agents(agents: Vec<AgentConfig>) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -271,6 +287,7 @@ pub fn save_agents(agents: Vec<AgentConfig>) -> Result<(), String> {
 }
 
 pub fn save_settings(settings: OrchestratorSettings) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -281,16 +298,26 @@ pub fn save_settings(settings: OrchestratorSettings) -> Result<(), String> {
 }
 
 pub fn save_ui(ui: PersistedUiState) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
-    state.ui = ui;
+    if let Some(value) = ui.selected_flight_id {
+        state.ui.selected_flight_id = if value.is_empty() { None } else { Some(value) };
+    }
+    if let Some(value) = ui.selected_view {
+        state.ui.selected_view = if value.is_empty() { None } else { Some(value) };
+    }
+    if let Some(value) = ui.theme {
+        state.ui.theme = if value.is_empty() { None } else { Some(value) };
+    }
     state.version += 1;
     save_state_inner(&state)
 }
 
 pub fn save_issues(issues: Vec<Issue>) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -301,6 +328,7 @@ pub fn save_issues(issues: Vec<Issue>) -> Result<(), String> {
 }
 
 pub fn save_workspaces(workspaces: Vec<Workspace>) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -311,6 +339,7 @@ pub fn save_workspaces(workspaces: Vec<Workspace>) -> Result<(), String> {
 }
 
 pub fn save_servers(servers: Vec<ServerConfig>) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -324,6 +353,7 @@ pub fn save_memory(
     events: Vec<serde_json::Value>,
     patterns: Vec<serde_json::Value>,
 ) -> Result<(), String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -339,6 +369,7 @@ pub fn save_memory(
 /// Storing as `serde_json::Value` lets us mutate the field in-place rather
 /// than round-tripping the whole slice — robust across schema additions.
 pub fn toggle_pinned_pattern(pattern_id: &str) -> Result<Option<bool>, String> {
+    let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;

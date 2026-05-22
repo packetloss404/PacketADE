@@ -43,6 +43,8 @@ vi.mock("@/lib/tauri", () => ({
   createPtySession: (...args: unknown[]) => createPtySessionMock(...args),
   writePty: vi.fn(),
   killPty: vi.fn(),
+  readPtyTranscript: vi.fn().mockResolvedValue({ data: "" }),
+  listPtySessions: vi.fn().mockResolvedValue([{ id: "pty-session-1", alive: true }]),
   detectAgent: vi.fn(),
   loadPersistedState: vi.fn(),
   saveAgentsSlice: (...args: unknown[]) => saveAgentsSliceMock(...args),
@@ -133,6 +135,7 @@ describe("agent/workspace store decoupling", () => {
       null,
       "auto",
       false,
+      null,
     );
   });
 
