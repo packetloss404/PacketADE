@@ -1,0 +1,255 @@
+# 08 - Testing Plan
+
+## Test Philosophy
+
+Remote Agents has three failure classes:
+
+- correctness failures: duplicated prompts, lost chunks, stale state
+- security failures: unauthorized device, leaked secret, overbroad command
+- mobile reliability failures: reconnect, backgrounding, push, offline
+
+The test plan must cover all three before beta.
+
+## Unit Tests
+
+### Shared Protocol
+
+- valid envelope parses
+- unknown version rejected
+- unknown mutating command rejected
+- missing idempotency key rejected for mutating commands
+- oversized payload rejected
+- encrypted-required channels enforced in beta mode
+- command/event discriminated unions exhaustive
+
+### Cloud Worker
+
+- auth middleware accepts valid token
+- auth middleware rejects expired token
+- object-level ACL blocks cross-account host access
+- revoked device rejected
+- origin validation
+- rate limit counters
+- audit row generated
+
+### Durable Object
+
+- host connect/disconnect
+- device connect/disconnect
+- route device command to host
+- route host event to all trusted devices
+- sequence assignment monotonic
+- replay after cursor
+- replay too old returns snapshot-required
+- slow client queue coalesces chunks
+- duplicate command id ignored
+
+### Desktop Rust
+
+- remote config load/save
+- token storage wrapper
+- relay reconnect backoff
+- provider snapshot mapping
+- workspace snapshot redacts secrets
+- remote command validation
+- conversation create persists
+- approval command routes to existing backend
+- revoked device command rejected
+
+### PWA
+
+- event reducer appends chunks
+- done marks stream complete
+- error marks failed
+- duplicate event ignored
+- approval card state updates
+- offline outbox TTL expires
+- host status reducer
+
+## Integration Tests
+
+### Fake Relay Harness
+
+Create a local test harness:
+
+```text
+fake-pwa <-> relay-worker dev <-> fake-desktop
+```
+
+Scenarios:
+
+- connect host and device
+- unauthorized device denied
+- device approval
+- start conversation command
+- stream chunks
+- permission request and approval response
+- pending edit and reject
+- cancel active run
+- reconnect device and replay
+- reconnect host and continue
+- duplicate send does not duplicate prompt
+
+### Real Desktop With Fake Provider
+
+Use a deterministic provider or echo provider:
+
+- start from PWA
+- stream known chunks
+- emit permission request
+- emit done
+- verify desktop conversation persistence
+- verify PWA final transcript
+
+### Sidecar Smoke
+
+Keep existing checks:
+
+- `pnpm run sidecar:check`
+
+Add:
+
+- fake remote-start smoke
+- sidecar runtime event fanout smoke
+
+## End-To-End Tests
+
+### PWA Playwright
+
+Mobile viewport tests:
+
+- sign-in mock
+- host list
+- new agent form
+- streaming conversation
+- approval flow
+- cancel
+- retry
+- reconnect banner
+- history view
+
+### Desktop + PWA
+
+Use local relay dev:
+
+- desktop connects
+- PWA starts conversation
+- desktop sidebar updates
+- PWA receives stream
+- desktop sends follow-up
+- PWA receives update
+
+## Security Tests
+
+Required before private beta:
+
+- cross-account device cannot list host
+- trusted device cannot access untrusted host
+- revoked device active socket is closed
+- revoked token rejected
+- expired token rejected
+- WebSocket bad origin rejected
+- command with mismatched host id rejected
+- command with mismatched account id rejected
+- command without idempotency key rejected
+- payload over limit rejected
+- provider secrets absent from cloud logs
+- SSH key paths absent from snapshots
+- MCP env values absent from snapshots
+- audit log records every mutating command
+
+## Load And Reliability Tests
+
+Scenarios:
+
+- 1,000 idle hosts connected
+- 10,000 idle devices connected if feasible in staged load
+- 100 active streams
+- slow mobile client during long stream
+- desktop reconnect storm
+- relay deployment while clients connected
+- push queue burst
+
+Metrics:
+
+- connect latency
+- stream event latency p50/p95/p99
+- reconnect recovery time
+- dropped event count
+- duplicate command count
+- Durable Object memory/CPU
+- queue backlog
+
+## Manual Mobile Matrix
+
+### iOS Safari Installed PWA
+
+- install to Home Screen
+- sign in
+- enable push
+- receive approval push
+- open correct conversation from push
+- background for 5 minutes
+- reopen and resume
+- lock/unlock during stream
+- low-power mode behavior
+
+### iOS Safari Browser Tab
+
+- sign in
+- host list
+- stream while foreground
+- clear explanation if push/install unavailable
+
+### Android Chrome Installed PWA
+
+- install
+- push
+- background/reopen
+- file attachment picker later
+
+### Android Chrome Browser Tab
+
+- sign in
+- foreground stream
+- offline/reconnect
+
+## Build Checks
+
+Desktop:
+
+- `pnpm lint`
+- `pnpm test`
+- `pnpm build`
+- `pnpm run rust:check`
+- `pnpm run sidecar:check`
+- targeted Rust tests for `remote_agents`
+
+PWA:
+
+- lint
+- typecheck
+- unit tests
+- Playwright mobile tests
+- Lighthouse PWA smoke
+
+Worker:
+
+- lint
+- typecheck
+- unit tests
+- Miniflare/Durable Object tests
+- D1 migration tests
+- deploy dry run
+
+## Beta Exit Criteria
+
+- all private beta launch gates in `04-security.md` pass
+- no known P1/P2 security issues
+- 30-minute remote active session passes
+- iOS and Android manual matrix complete
+- all mutating remote commands audited
+- remote disabled path leaves desktop behavior unchanged
+- revocation tested during active stream
+- no provider secrets observed in cloud/PWA logs
+
