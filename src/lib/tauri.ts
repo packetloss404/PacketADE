@@ -1491,10 +1491,9 @@ export async function saveUiSlice(ui: PersistedState["ui"]): Promise<void> {
   const payload: PersistedUiStateDto = {};
   const selectedFlightId = toUiPatchString(ui.selectedFlightId);
   const selectedView = toUiPatchString(ui.selectedView);
-  const theme = toUiPatchString(ui.theme);
   if (selectedFlightId !== undefined) payload.selectedFlightId = selectedFlightId;
   if (selectedView !== undefined) payload.selectedView = selectedView;
-  if (theme !== undefined) payload.theme = theme as PersistedUiStateDto["theme"];
+  if (ui.theme !== undefined && ui.theme !== null) payload.theme = ui.theme;
   return invoke("save_ui_slice", { ui: payload });
 }
 

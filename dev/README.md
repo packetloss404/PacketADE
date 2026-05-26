@@ -1,6 +1,6 @@
 # Dev Planning Docs
 
-Last updated: 2026-05-12
+Last updated: 2026-05-26
 
 This directory holds **active** planning docs with outstanding work items plus the engineering reference docs that used to live in `docs/`. Completed docs have been moved to `dev/archive/`.
 
@@ -28,6 +28,9 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 ### Workspace UX
 - `zen-workspace/features-git-workspace.md` — Phase 3 review packet ties partial
 - `zen-workspace/features-prompt-library.md` — command palette integration not started
+
+### Remote Agents
+- `remoteagents/README.md` — cloud-relayed PWA Remote Agents plan, architecture, security, protocol, implementation sprints, and six-agent runbook
 
 ## Archive
 

@@ -11,11 +11,11 @@ function deferred() {
 
 const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
 
-function startReq(sessionId) {
+function startReq(sessionId, provider = "controlled") {
   return {
     type: "start_session",
     sessionId,
-    provider: "controlled",
+    provider,
     model: "",
     systemPrompt: "",
     allowedTools: [],
@@ -57,6 +57,44 @@ class ControlledProvider {
 
   async close() {
     this.events.push(`${this.sessionId}:close`);
+  }
+}
+
+class RuntimeErrorProvider {
+  constructor(events) {
+    this.events = events;
+    this.sessionId = "";
+    this.emit = undefined;
+  }
+
+  async start(req, emit) {
+    this.sessionId = req.sessionId;
+    this.emit = emit;
+    this.events.push(`${req.sessionId}:start`);
+    emit({
+      type: "done",
+      sessionId: req.sessionId,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+  }
+
+  emitRuntimeError() {
+    this.emit?.({
+      type: "error",
+      sessionId: this.sessionId,
+      message: "runtime failure",
+    });
+  }
+
+  async sendMessage(req, emit) {
+    this.events.push(`${req.sessionId}:send:${req.content}`);
+    emit({
+      type: "done",
+      sessionId: req.sessionId,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
   }
 }
 
@@ -107,6 +145,35 @@ assert.equal(
     (event) =>
       event.type === "error" &&
       event.sessionId === "a" &&
+      event.message.startsWith("No active session:"),
+  ),
+  false,
+);
+
+const runtimeEvents = [];
+const runtimeEmitted = [];
+let runtimeProvider;
+const runtimeRegistry = new SessionRegistry({
+  runtime: () => {
+    runtimeProvider = new RuntimeErrorProvider(runtimeEvents);
+    return runtimeProvider;
+  },
+});
+
+await runtimeRegistry.start(startReq("runtime", "runtime"), (event) => runtimeEmitted.push(event));
+runtimeProvider.emitRuntimeError();
+await runtimeRegistry.dispatch(
+  "runtime",
+  { type: "send_message", sessionId: "runtime", content: "after-error" },
+  (event) => runtimeEmitted.push(event),
+);
+
+assert.deepEqual(runtimeEvents, ["runtime:start", "runtime:send:after-error"]);
+assert.equal(
+  runtimeEmitted.some(
+    (event) =>
+      event.type === "error" &&
+      event.sessionId === "runtime" &&
       event.message.startsWith("No active session:"),
   ),
   false,

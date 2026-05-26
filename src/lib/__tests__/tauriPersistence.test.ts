@@ -258,4 +258,14 @@ describe("Tauri persistence DTO mapping", () => {
       },
     });
   });
+
+  it("omits null theme values because the backend theme dto is an enum", async () => {
+    await saveUiSlice({ selectedView: "missions", theme: null });
+
+    expect(mockInvoke).toHaveBeenCalledWith("save_ui_slice", {
+      ui: {
+        selectedView: "missions",
+      },
+    });
+  });
 });
