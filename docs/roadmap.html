@@ -281,15 +281,15 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
   <div class="container">
     <span class="hero-eyebrow reveal">The PacketADE Roadmap</span>
     <h1 class="reveal" style="--delay:0.05s">What shipped.<br><span class="gradient-text">What's coming next.</span></h1>
-    <p class="hero-lead reveal" style="--delay:0.1s">An honest tour of where PacketADE stands today. Mission Planner v1, GitHub + Memory v0.8, the Issues rebuild, Code Quality, and the queue we're working through next &mdash; pulled straight from <code>CHANGELOG.md</code> and <code>backlog.md</code>.</p>
+    <p class="hero-lead reveal" style="--delay:0.1s">An honest tour of where PacketADE stands today. Remote Agents, Mission Planner v1, GitHub + Memory v0.8, the Issues rebuild, Code Quality, and the queue we're working through next &mdash; pulled straight from <code>CHANGELOG.md</code>, <code>ROADMAP.md</code>, and <code>backlog.md</code>.</p>
 
     <div class="headline-stats reveal" style="--delay:0.2s">
       <div class="headline-stat">
-        <div class="v green">v0.8.8</div>
+        <div class="v green">v0.9.3</div>
         <div class="k">Current release &middot; May 2026</div>
       </div>
       <div class="headline-stat">
-        <div class="v blue">9</div>
+        <div class="v blue">12</div>
         <div class="k">Releases since Mission Planner v1</div>
       </div>
       <div class="headline-stat">
@@ -297,7 +297,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <div class="k">Modes &middot; Missions, Workspace, Agents, Issues</div>
       </div>
       <div class="headline-stat">
-        <div class="v amber">7</div>
+        <div class="v amber">8</div>
         <div class="k">Provider rows with live auth badges</div>
       </div>
     </div>
@@ -509,8 +509,22 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
 
     <div class="backlog-themes">
 
+      <!-- Remote Agents -->
+      <div class="theme remote reveal" style="--delay:0s">
+        <div class="theme-head">
+          <h3>Remote Agents</h3>
+          <span class="count">current flagship &middot; PWA + Packet Cloud relay</span>
+        </div>
+        <div class="theme-items">
+          <div class="b-item"><span class="pill p1">P1</span><div><strong>Packet Cloud relay MVP</strong> &mdash; Worker/Durable Object relay, desktop connector, host/session routing, reconnect semantics, and relay observability.</div></div>
+          <div class="b-item"><span class="pill p1">P1</span><div><strong>Account sign-in + device trust</strong> &mdash; Packet account auth, desktop-side approval, revocation, and audit trail. QR is optional later, not the primary flow.</div></div>
+          <div class="b-item"><span class="pill p1">P1</span><div><strong>PWA conversation shell</strong> &mdash; conversation list, chat stream, provider/model/profile picker, approval sheets, and reconnect/offline states.</div></div>
+          <div class="b-item"><span class="pill p1">P1</span><div><strong>Secure remote command envelope</strong> &mdash; narrow API-agent commands only; no generic remote Tauri bridge and no cloud-side provider secrets.</div></div>
+        </div>
+      </div>
+
       <!-- SSH & remote workspaces -->
-      <div class="theme ssh reveal" style="--delay:0s">
+      <div class="theme ssh reveal" style="--delay:0.05s">
         <div class="theme-head">
           <h3>SSH &amp; remote workspaces</h3>
           <span class="count">5 items &middot; biggest open gap</span>
@@ -525,7 +539,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       </div>
 
       <!-- Mission Planner v1.1 -->
-      <div class="theme planner reveal" style="--delay:0.05s">
+      <div class="theme planner reveal" style="--delay:0.1s">
         <div class="theme-head">
           <h3>Mission Planner v1.1</h3>
           <span class="count">5 items &middot; deepens v0.7</span>
@@ -540,7 +554,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       </div>
 
       <!-- Memory v0.9+ -->
-      <div class="theme memory reveal" style="--delay:0.1s">
+      <div class="theme memory reveal" style="--delay:0.15s">
         <div class="theme-head">
           <h3>Memory v0.9+</h3>
           <span class="count">4 items &middot; from v0.8 deferrals</span>
@@ -554,7 +568,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       </div>
 
       <!-- GitHub v0.9+ -->
-      <div class="theme github reveal" style="--delay:0.15s">
+      <div class="theme github reveal" style="--delay:0.2s">
         <div class="theme-head">
           <h3>GitHub v0.9+</h3>
           <span class="count">4 items &middot; from v0.8 deferrals</span>
@@ -568,13 +582,13 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       </div>
 
       <!-- Platform & distribution -->
-      <div class="theme platform reveal" style="--delay:0.2s">
+      <div class="theme platform reveal" style="--delay:0.25s">
         <div class="theme-head">
           <h3>Platform &amp; distribution</h3>
           <span class="count">4 items &middot; ops, not features</span>
         </div>
         <div class="theme-items">
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Auto-updater (Tauri v2)</strong> &mdash; signing keypair + signed <code>latest.json</code> + UI prompt. Currently PacketADE is manual-install. Runbook lives in <code>docs/updater-setup.md</code>.</div></div>
+          <div class="b-item"><span class="pill p2">P2</span><div><strong>Auto-updater (Tauri v2)</strong> &mdash; signing keypair + signed <code>latest.json</code> + UI prompt. Currently PacketADE is manual-install. Runbook lives in <code>dev/updater-setup.md</code>.</div></div>
           <div class="b-item"><span class="pill p2">P2</span><div><strong>macOS code signing + notarization</strong> &mdash; replaces today's <code>xattr -cr</code> Gatekeeper workaround. Requires Apple Developer ID enrollment.</div></div>
           <div class="b-item"><span class="pill p2">P2</span><div><strong>Windows Authenticode signing</strong> &mdash; kills the SmartScreen warning on first run. EV cert is the fast path.</div></div>
           <div class="b-item"><span class="pill p3">P3</span><div><strong>Snap / Flatpak packaging</strong> &mdash; broadens Linux reach beyond today's AppImage + DEB.</div></div>
@@ -582,7 +596,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       </div>
 
       <!-- Performance & polish -->
-      <div class="theme perf reveal" style="--delay:0.25s">
+      <div class="theme perf reveal" style="--delay:0.3s">
         <div class="theme-head">
           <h3>Performance &amp; polish</h3>
           <span class="count">3 items &middot; visible wins</span>
@@ -622,6 +636,26 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
         <div>Version</div>
         <div>Released</div>
         <div>Headline</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version">v0.9.3</div>
+        <div class="history-date">2026-05-17</div>
+        <div class="history-title"><strong>core library audit closeout</strong> &mdash; command/core audit coverage completed, high-priority Rust fixes landed</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version">v0.9.2</div>
+        <div class="history-date">2026-05-17</div>
+        <div class="history-title"><strong>Rust commands audit</strong> &mdash; state race closed, silent-error sweep, command modules reviewed</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version">v0.9.1</div>
+        <div class="history-date">2026-05-17</div>
+        <div class="history-title"><strong>decomposition wave</strong> &mdash; GitHubView, Mission Planner, sidecar, Missions, Dictation, and stores split into tighter modules</div>
+      </div>
+      <div class="history-row">
+        <div class="history-version">v0.9.0</div>
+        <div class="history-date">2026-05-17</div>
+        <div class="history-title"><strong>Agents pane overhaul</strong> &mdash; unified provider polish, reviewer flows, approvals, planning, and sidecar parity</div>
       </div>
       <div class="history-row">
         <div class="history-version">v0.8.8</div>

@@ -4,6 +4,9 @@ Operator-facing manual validation. Run this before signing off on a v1
 release of the Mission Planner work-stream
 ([`mission-planner-plan.md`](./mission-planner-plan.md)).
 
+Status: **active manual acceptance runbook**. Current open Mission Planner work
+belongs in [`../backlog.md`](../backlog.md); the locked design remains reference.
+
 - **Time budget**: 15–20 minutes end-to-end.
 - **Mode**: real Claude Sonnet 4.6 OAuth (`api-claude-oauth`). No mocks.
 - **Scope**: validates the headline acceptance test plus three regression
@@ -184,8 +187,8 @@ Validates the on-disk journal artifact.
     `wake_trigger` should all be represented after Test 1.
 - [ ] **5.3** Click **Export**. A toast or inline notice confirms the
   path was copied to clipboard. Expected path shape:
-  `~/.packetade/missions/<shortId>.md` (or
-  `%USERPROFILE%\.packetade\missions\<shortId>.md` on Windows).
+  `~/.packetade/missions/<shortId>_<mission_id>.md` (or
+  `%USERPROFILE%\.packetade\missions\<shortId>_<mission_id>.md` on Windows).
 - [ ] **5.4** Paste the path into a terminal (or your file explorer)
   and open the file in any markdown viewer (VS Code preview, Obsidian,
   glow, etc.).
@@ -213,7 +216,8 @@ Common failure modes encountered during dogfooding.
   Re-run `claude login` from a terminal and wait for the auth badge to
   flip to **ready** before re-clicking *Start a mission*.
 - **Protocol-version mismatch.** Sidecar log warns
-  `protocol version mismatch: expected 5, got N`. Rebuild the sidecar:
+  `protocol version mismatch: expected 6, got N` (or a later expected version
+  if the protocol has advanced again). Rebuild the sidecar:
   `pnpm sidecar:install && pnpm sidecar:build` then restart the app.
 
 ### No milestones populate after Launch
@@ -289,7 +293,7 @@ Sign-off requires **all** of the following:
 - [ ] **Test 3** (approval gate) renders `<PlannerApprovalGate>` and
   clicking an option visibly resumes the planner.
 - [ ] **Test 4** (journal export) produces a readable markdown file
-  on disk at `~/.packetade/missions/<shortId>.md`.
+  on disk at `~/.packetade/missions/<shortId>_<mission_id>.md`.
 - [ ] **Zero red errors** in the browser devtools console across all
   four tests.
 - [ ] **Zero Rust panics** in the sidecar/Tauri stderr (`backend log`

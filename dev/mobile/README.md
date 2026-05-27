@@ -1,5 +1,10 @@
 # PacketADE Mobile — Planning Folder
 
+Status: **superseded for implementation** by
+[`../remoteagents/README.md`](../remoteagents/README.md). Keep this folder as
+May 2026 research/background only; the current phone/PWA plan is Packet account
+sign-in plus a Packet Cloud relay, starting as a PWA.
+
 Living folder for the **PacketADE Mobile companion** investigation (May 2026). The
 phone client connects to the **API agents** in the desktop app — NOT to
 workspaces / PTYs / file editor. It mirrors Claude Code's "Remote Control"
@@ -7,6 +12,10 @@ feature pattern, adapted for PacketADE's existing `api-agent:*` event contract.
 
 ## Decision log (latest first)
 
+- **2026-05-27** — Superseded by the Remote Agents plan in
+  `dev/remoteagents/`: cloud relay is Packet Cloud/Cloudflare-based,
+  sign-in is account-first (no QR primary flow), PWA comes before any native
+  iOS/TestFlight work, and all provider secrets stay on the desktop.
 - **2026-05-12** — Direction set: build as a **PWA first**, native SwiftUI later
   if needed. Reuses existing React components, avoids App Store / TestFlight
   gatekeeping, supports Web Push since iOS 16.4. See
@@ -53,9 +62,10 @@ feature pattern, adapted for PacketADE's existing `api-agent:*` event contract.
 
 ## How to revisit
 
-Start with this file's decision log to see what was settled. If anything
-above changed, update the log. The research files are frozen snapshots —
-don't edit, write a new dated entry here if the landscape moves.
+Start with [`../remoteagents/README.md`](../remoteagents/README.md) for current
+implementation work. Use this file only to understand the earlier research path.
+The research files are frozen snapshots — don't edit them unless you are adding
+a clearly dated correction note.
 
 ## Cross-refs
 
@@ -63,5 +73,6 @@ don't edit, write a new dated entry here if the landscape moves.
   branch), `src-tauri/src/commands/agent_sidecar.rs` (sidecar branch), both
   emit `api-agent:{chunk,thinking,thinking-stop,tool-start,tool-result,permission-request,pending-edit,done,error,plan-block,tool-output-extended,turn-summary}:<sessionId>`.
 - Reference event consumer: `src/stores/agentTaskStore.ts::installApiAgentListeners`.
-- Sidecar protocol baseline: `agent-sidecar/src/protocol.ts` (`PROTOCOL_VERSION = 4`).
+- Sidecar protocol baseline at capture time: `agent-sidecar/src/protocol.ts`
+  was protocol v4. Current truth is the constant in that source file.
 - Pairing security playbook to copy: `src-tauri/src/commands/pty.rs::ssh_pin_host` and `ServerFormModal.tsx`.

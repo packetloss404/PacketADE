@@ -70,16 +70,18 @@ The factory lives in `src/session-registry.ts`. Currently wired:
 
 ## Protocol summary
 
-**Protocol version: 4**. The version is advertised
+**Protocol version: 6**. The version is advertised
 in the `ready` event's `protocolVersion` field at startup, and the Rust
 supervisor's `EXPECTED_PROTOCOL_VERSION` constant must match. v2 added
 `set_permission_mode`, `set_model`, and `retry`; v3 added typed attachments,
 per-hunk edit acceptance payloads, richer tool/plan/token events, and resume
 tokens on `done`; v4 added `cancel_pending_tools`, which drains parked
-permission/edit prompts as denied without killing the session. Providers
-advertise support by implementing the matching handler methods on
-`ProviderHandler`; the registry emits a clean "not supported" error when a
-provider skips one.
+permission/edit prompts as denied without killing the session; v5 added the
+Mission Planner `inject_user_turn` request, in-process planner MCP handshake,
+and planner-tool result round-trip; v6 added the typed `rate_limited` event
+used by the Mission Planner quota-pause flow. Providers advertise support by
+implementing the matching handler methods on `ProviderHandler`; the registry
+emits a clean "not supported" error when a provider skips one.
 
 **stdin (requests, one per line):**
 
@@ -95,6 +97,8 @@ provider skips one.
 | `set_model`          | v2: swap the model without restarting the session |
 | `retry`              | v2: re-run the last turn (UI "Retry" affordance) |
 | `cancel_pending_tools` | v4: deny parked tool/edit prompts without cancelling the turn |
+| `inject_user_turn`   | v5: inject a user/wake-trigger turn into a long-lived session |
+| `planner_tool_result` | v5: resolve an in-process Mission Planner MCP tool call |
 
 **stdout (events, one per line):**
 
@@ -111,6 +115,8 @@ provider skips one.
 | `plan_block`         | v3: structured plan/TodoWrite mirror             |
 | `tool_output_extended` | v3: tool exit code, paths, stdout/stderr       |
 | `turn_summary`       | v3: running token totals between turns           |
+| `planner_tool`       | v5: ask Rust to execute/record a planner MCP tool call |
+| `rate_limited`       | v6: provider hit a quota limit and may include retry timing |
 
 See `src/protocol.ts` for the full TypeScript definitions — that file is the
 source of truth for the wire format.
@@ -166,4 +172,5 @@ custom Node binary:
 
 ### Auto-updates
 
-Auto-updates are documented in `docs/updater-setup.md` (not yet enabled).
+Auto-updates are documented in [`dev/updater-setup.md`](../dev/updater-setup.md)
+(not yet enabled).

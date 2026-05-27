@@ -7,6 +7,35 @@ it from here.
 Priority: **P1** = real bug or major user-facing gap · **P2** = correctness/UX
 · **P3** = cleanup.
 
+## Remote Agents (current flagship)
+
+Canonical plan: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md).
+This is the next major product bet: PWA first, Packet account sign-in, Packet
+Cloud relay, desktop-owned providers/secrets/tools, and no generic remote Tauri
+bridge.
+
+- **P1 — Packet Cloud relay MVP.** Implement the Worker/Durable Object relay,
+  desktop connector, host/session routing, reconnect semantics, and relay
+  observability described in `02-architecture.md` and `03-protocol.md`.
+- **P1 — Account sign-in + desktop device trust.** Ship Packet account auth,
+  device enrollment, desktop-side approval, revocation, and audit trail. QR is
+  optional later; it is not the primary flow.
+- **P1 — PWA conversation shell.** Build the mobile conversation list, chat
+  stream, provider/model/profile picker, permission/edit approval sheets, and
+  reconnect/offline states from `05-pwa.md`.
+- **P1 — Secure remote command envelope.** Implement only the narrow remote
+  command set: list hosts/workspaces/providers/models/profiles/conversations,
+  start/continue API-agent conversations, stream `api-agent:*`, respond to
+  prompts, cancel/retry/change model/close, and observe cost/status summaries.
+- **P1 — E2EE gate before external beta.** Add protocol fixtures, sequence
+  validation, replay protection, device-key handling, and end-to-end encryption
+  checks from `04-security.md` / `08-testing.md`.
+- **P2 — Web Push attention loop.** Foreground traffic stays WebSocket; push is
+  only for attention-needed events such as permission requests, pending edits,
+  errors, and done summaries.
+- **P2 — Native iOS/TestFlight spike.** Defer until the PWA proves the relay,
+  auth, push, and phone UX.
+
 ## SSH & remote workspaces
 
 - **P1 — Remote-workspace consumer sweep.** `workspace.projectPath` is
@@ -81,7 +110,7 @@ Priority: **P1** = real bug or major user-facing gap · **P2** = correctness/UX
   remote git commands use POSIX `[ -e ... ]` / `git -C` — fine on Unix
   remotes, breaks on Windows OpenSSH targets.
 
-## Platform & distribution (from `docs/`)
+## Platform & distribution (from `dev/`)
 
 Deferred items called out in `dev/multi-platform-build.md` and
 `dev/updater-setup.md`. These are ops/release tasks, not feature work.

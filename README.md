@@ -4,6 +4,15 @@
 
 PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, deployment tooling, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
+## Documentation Map
+
+- [`ROADMAP.md`](./ROADMAP.md) — current product direction and release path.
+- [`backlog.md`](./backlog.md) — master ledger for outstanding work.
+- [`dev/README.md`](./dev/README.md) — planning index, active implementation briefs, runbooks, and archive.
+- [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) — canonical Remote Agents plan.
+- [`CHANGELOG.md`](./CHANGELOG.md) — shipped history only.
+- [`AGENTS.md`](./AGENTS.md) / [`CLAUDE.md`](./CLAUDE.md) — agent-facing repository instructions.
+
 ## What It Does
 
 - Chat with eight coding-agent providers from a **single Agents pane** that normalizes Claude Code subscription, Codex subscription, OpenAI Agents SDK, four API-key providers, and local Ollama into one event contract
