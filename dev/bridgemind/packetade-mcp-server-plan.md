@@ -2,6 +2,10 @@
 
 Last updated: 2026-04-28
 
+Status: **strategy/reference**. The implementation owner for deferred transport
+work is [`../mcp-provider-transport.md`](../mcp-provider-transport.md); keep
+this file for product context and BridgeMind positioning.
+
 ## Implementation Status — 2026-04-15
 
 | Item | Status | Notes |

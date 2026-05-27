@@ -1,6 +1,14 @@
 # Architecture Fit — Mobile Client ↔ PacketADE Codebase
 
-> Captured 2026-05-12. Codebase snapshot at v0.6.0. Note: PacketADE now has **eight** API-agent providers (an OpenAI Agents SDK row was added 2026-05-12 alongside the existing seven). Existing event contract unchanged.
+> Captured 2026-05-12. Codebase snapshot at v0.6.0. Superseded for
+> implementation by `dev/remoteagents/README.md` on 2026-05-27. Keep this as
+> research/background; current phone/PWA planning uses Packet Cloud relay,
+> account sign-in, and the live sidecar protocol version in
+> `agent-sidecar/src/protocol.ts`.
+>
+> Note: PacketADE now has **eight** API-agent providers (an OpenAI Agents SDK
+> row was added 2026-05-12 alongside the existing seven). Existing event
+> contract unchanged.
 
 ## 1. Current agent stack — state map
 
@@ -168,7 +176,7 @@ See `v0-plan.md` for the full plan. Quick summary:
 - `D:\projects\PacketADE\src-tauri\src\commands\agent_sidecar.rs` (sidecar supervisor, event mirroring, lifetime stats — template for `mobile_relay`)
 - `D:\projects\PacketADE\src-tauri\src\core\llm_provider.rs` (provider trait — backend symmetry)
 - `D:\projects\PacketADE\src-tauri\src\commands\conversations.rs` (on-disk transcript persistence)
-- `D:\projects\PacketADE\agent-sidecar\src\protocol.ts` (`PROTOCOL_VERSION=4`, request/event union)
+- `D:\projects\PacketADE\agent-sidecar\src\protocol.ts` (captured at protocol v4; check the source constant for current protocol)
 - `D:\projects\PacketADE\agent-sidecar\src\index.ts` (dispatch loop)
 - `D:\projects\PacketADE\src\stores\agentTaskStore.ts` (reference event consumer — `installApiAgentListeners`)
 - `D:\projects\PacketADE\src\types\agent-conversation.ts` (`AgentConversation`, `PendingPermission`, `PendingEdit`, `resumeToken`)

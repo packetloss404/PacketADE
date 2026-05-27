@@ -3,6 +3,10 @@
 All notable changes to PacketADE are documented in this file. Outstanding work
 lives in [`backlog.md`](./backlog.md) at the project root.
 
+For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
+runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
+task list.
+
 ## [0.9.3] - 2026-05-17
 
 ### Fixed — `core/` library audit closeout + 3 surgical high-priority fixes
@@ -921,7 +925,7 @@ everything" April 16 release + GPT-5.5 + CLI 0.107→0.128 cuts.
 - `.github/workflows/{build,ci,release}.yml` — builds and releases run locally; no GitHub Actions CI in this repo
 
 ### Sidecar protocol
-- `PROTOCOL_VERSION = 4`. v4 added `cancel_pending_tools` request. v3 added typed `attachments` on `start_session` / `send_message`, `mergedContent` on `edit_response`, `batchId`/`batchSize` on `permission_request`, `resumeToken` on `done`, plus `plan_block` / `tool_output_extended` / `turn_summary` events. Old sidecars reply "Unknown request type" to v3+ requests; supervisor warns on version mismatch (does not refuse)
+- At this release, the sidecar protocol advanced to v4. v4 added `cancel_pending_tools` request. v3 added typed `attachments` on `start_session` / `send_message`, `mergedContent` on `edit_response`, `batchId`/`batchSize` on `permission_request`, `resumeToken` on `done`, plus `plan_block` / `tool_output_extended` / `turn_summary` events. Old sidecars reply "Unknown request type" to v3+ requests; supervisor warns on version mismatch (does not refuse)
 
 ---
 

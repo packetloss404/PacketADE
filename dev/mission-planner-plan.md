@@ -1,10 +1,15 @@
 # Mission Planner — Locked Design (v1)
 
-Canonical reference for the autonomous Mission Planner work-stream. All
-implementation agents must read this top-to-bottom before touching code.
+Locked v1 reference for the autonomous Mission Planner work-stream. For current
+outstanding work, use [`../backlog.md`](../backlog.md). For manual release
+sign-off, use
+[`mission-planner-v1-acceptance-runbook.md`](./mission-planner-v1-acceptance-runbook.md).
+All implementation agents touching Mission Planner internals should still read
+this top-to-bottom before changing that surface.
 
 Status: **locked 2026-05-14** after a two-agent independent-draft synthesis
-and decisions from the project owner.
+and decisions from the project owner. Updated 2026-05-27 to clarify live
+ownership only; no design semantics changed.
 
 ## Why we're building this
 
@@ -29,7 +34,8 @@ API credit):
    helper-planner *(deferred to v1.1)*.
 4. Maintains a per-mission **journal** (markdown rendered in a new
    Journal tab on `FlightDetailPane`, exportable to
-   `~/.packetade/missions/<shortId>.md`).
+   `~/.packetade/missions/<shortId>_<mission_id>.md`; early drafts used
+   `<shortId>.md`).
 
 ## Locked decisions
 
@@ -52,9 +58,10 @@ API credit):
 - `replan_after_failure(task_id) → new task subtree`
 - `request_user_approval(question, options)` — **async return**
   (sentinel `pending_approval:<id>`, planner keeps working)
-- `spawn_helper_planner(scope, reason)` — **stub in v1, returns
-  "deferred to v1.1"**
 - `complete_mission(summary)`
+
+Deferred for v1.1 and intentionally not exposed in v1:
+- `spawn_helper_planner(scope, reason)`
 
 ### Wake triggers
 `task_completed`, `task_failed`, `approval_gate_reached`,
@@ -115,7 +122,8 @@ but should land soon after.
   `agent-sidecar/src/mcp/mission-planner-server.ts` and merges it into
   `query()`'s `mcpServers` map.
 - Wake-triggers injected via **new typed `inject_user_turn` sidecar
-  message (protocol v5)** — NOT sentinel-overloaded `send_message`.
+  message (introduced in protocol v5; live protocol is now v6)** — NOT
+  sentinel-overloaded `send_message`.
   Content wrapped in
   `<wake_trigger source="..." kind="...">…</wake_trigger>` so the
   planner system prompt distinguishes wake-triggered re-entry from
@@ -135,7 +143,8 @@ but should land soon after.
 - `src-tauri/src/core/mission_planner_prompts.rs` — hand-authored
   system prompts + per-wake-trigger user-message builders
 - `agent-sidecar/src/mcp/mission-planner-server.ts` — in-process MCP
-  server with 8 tool handlers
+  server with 7 real tool handlers (`noop` remains for E1 smoke
+  back-compat; helper planner is deferred)
 - `src/stores/missionPlannerStore.ts` — frontend state + event subs
 - `src/components/missions/MissionSpecPane.tsx` — full-pane spec chat
 - `src/components/missions/JournalTab.tsx` — markdown journal render
@@ -145,9 +154,9 @@ but should land soon after.
   `plannerSessionId?`, `plannerStatus?`, `plannerCost?`, `plannerTokens?`
 - `src-tauri/src/core/flight.rs` — mirror enum + DTO fields
   (`#[serde(default)]` for back-compat)
-- `agent-sidecar/src/protocol.ts` — bump `PROTOCOL_VERSION = 5`, add
+- `agent-sidecar/src/protocol.ts` — protocol v5 added
   `InjectUserTurnRequest`, `PlannerToolEvent`, `PlannerToolResultRequest`,
-  `RateLimitedEvent` types
+  and planner MCP fields; protocol v6 added `RateLimitedEvent`
 - `src-tauri/src/commands/agent_sidecar.rs` — bump expected version, add
   `forward_inject_user_turn`, route `planner_tool` events to callback
 - `src-tauri/src/commands/orchestration.rs` — emit `PlannerWakeEvent`
@@ -159,7 +168,7 @@ but should land soon after.
 
 | Epic | Title | Build-seq | Depends |
 |---|---|---|---|
-| E1 | Planner session plumbing (struct, registry, protocol v5, wake bus) | 1 | spike |
+| E1 | Planner session plumbing (struct, registry, protocol v5 wake bus; live protocol now v6) | 1 | spike |
 | E2 | Planner MCP tool surface (server + dispatcher + 7 handlers) | 2 | E1 |
 | E3 | Spec mode UI (MissionSpecPane + MissionsView empty state) | 3 | E1 |
 | E4 | Initial decomposition (system prompt + Launch transition) | 4 | E2, E3 |

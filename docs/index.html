@@ -4,9 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketADE | Open-Source AI Desktop IDE</title>
-<meta name="description" content="PacketADE is a 100% open-source desktop IDE that unifies Claude Code, Codex, Gemini, OpenCode and eight provider rows (Anthropic subscription/API, OpenAI ChatGPT/API/Agents SDK, MiniMax, OpenRouter, Ollama) into one multi-pane cockpit with autonomous Flight Deck orchestration, four build modes, and cross-provider cost tracking." />
+<meta name="description" content="PacketADE is a 100% open-source desktop IDE that unifies Claude Code, Codex, Gemini, OpenCode and eight provider rows into one multi-pane cockpit with autonomous Flight Deck orchestration, four build modes, cross-provider cost tracking, and a PWA-first Remote Agents roadmap." />
 <meta property="og:title" content="PacketADE — One cockpit. Every AI agent." />
-<meta property="og:description" content="Open-source AI desktop IDE: CLI + API agents, BYOK, conversational chat with tool diffs, Flight Deck orchestration, cross-provider cost tracking." />
+<meta property="og:description" content="Open-source AI desktop IDE: CLI + API agents, BYOK, conversational chat with tool diffs, Flight Deck orchestration, cross-provider cost tracking, and Remote Agents planning." />
 <meta property="og:image" content="https://packetade.app/screenshot.png" />
 <meta property="og:url" content="https://packetade.app" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -603,6 +603,7 @@ body.has-announcement .hero{padding-top:calc(var(--nav-h) + var(--announcement-h
     <div class="nav-links" id="nav-links">
       <a href="#features">Features</a>
       <a href="#modes">Modes</a>
+      <a href="#remote-agents">Remote Agents</a>
       <a href="#flight-deck">Flight Deck</a>
       <a href="#providers">Providers</a>
       <a href="#modules">Modules</a>
@@ -637,9 +638,14 @@ body.has-announcement .hero{padding-top:calc(var(--nav-h) + var(--announcement-h
       <span>PacketCode TUI</span>
       <span class="pill-arrow" aria-hidden="true">&rarr;</span>
     </a>
+    <a href="#remote-agents" class="hero-new-pill" aria-label="Remote Agents roadmap">
+      <span class="new-tag">Plan</span>
+      <span>Remote Agents</span>
+      <span class="pill-arrow" aria-hidden="true">&rarr;</span>
+    </a>
   </div>
   <h1 class="reveal" style="--delay:0.1s">One cockpit.<br><span class="gradient-text">Every AI agent.</span><br>Ship faster.</h1>
-  <p class="hero-lead reveal" style="--delay:0.2s">Four ways to build &mdash; autonomous <strong>Missions</strong>, supervised <strong>Workspace</strong>, single-thread <strong>Agents</strong>, AI-structured <strong>Issues</strong> &mdash; unifying Claude Code, Codex, Gemini, OpenCode and eight provider rows in one native desktop app.</p>
+  <p class="hero-lead reveal" style="--delay:0.2s">Four ways to build &mdash; autonomous <strong>Missions</strong>, supervised <strong>Workspace</strong>, single-thread <strong>Agents</strong>, AI-structured <strong>Issues</strong> &mdash; unifying Claude Code, Codex, Gemini, OpenCode and eight provider rows in one native desktop app. Remote Agents brings that cockpit to your phone next.</p>
   <div class="typed-line reveal" style="--delay:0.3s">Built to <span id="typed-target"></span><span class="typed-cursor"></span></div>
   <div class="hero-buttons reveal" style="--delay:0.35s">
     <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-primary">Download for Free</a>
@@ -761,6 +767,50 @@ body.has-announcement .hero{padding-top:calc(var(--nav-h) + var(--announcement-h
         <div class="stat-number amber" data-target="200" data-suffix="+">0</div>
         <div class="stat-label">Tauri Commands</div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== REMOTE AGENTS ===== -->
+<section class="features" id="remote-agents">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Remote Agents are the next big bet</h2>
+      <p>PWA first, Packet account sign-in, Packet Cloud relay, and desktop-owned execution. Use PacketADE Agents from your phone without sending provider secrets or tool access to the cloud.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card wide reveal" style="--delay:0s">
+        <div class="feature-icon cyan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+        </div>
+        <h3>Phone control, desktop ownership</h3>
+        <p>The PWA can list providers, models, profiles, workspaces, and conversations; start or continue API-agent chats; stream <code>api-agent:*</code> events; and approve permission or edit prompts. Files, shells, MCP servers, provider secrets, and execution stay on the PacketADE desktop.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.08s">
+        <div class="feature-icon green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <h3>Sign in, then trust a host</h3>
+        <p>Packet account sign-in is the primary flow. A desktop must still approve and trust each device before it can control conversations.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.16s">
+        <div class="feature-icon blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-6"/><path d="M14 9h6v6"/></svg>
+        </div>
+        <h3>Relay, not cloud agent</h3>
+        <p>Packet Cloud carries encrypted frames and push notifications. It does not call OpenAI, Anthropic, Ollama, shells, or MCP tools.</p>
+      </div>
+      <div class="feature-card reveal" style="--delay:0.24s">
+        <div class="feature-icon amber">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        </div>
+        <h3>Push only for attention</h3>
+        <p>Foreground work streams over WebSocket. Web Push is reserved for approval requests, pending edits, errors, and done summaries.</p>
+      </div>
+    </div>
+    <div class="hero-buttons reveal" style="--delay:0.3s; margin-top:34px">
+      <a href="roadmap.html" class="btn-primary">Read the Roadmap</a>
+      <a href="https://github.com/packetloss404/PacketADE/blob/main/dev/remoteagents/README.md" class="btn-outline" target="_blank" rel="noopener">Implementation Plan</a>
     </div>
   </div>
 </section>

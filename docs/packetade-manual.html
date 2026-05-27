@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PacketADE Manual | The Complete User Guide</title>
-<meta name="description" content="Complete user manual for PacketADE v0.8.8 — the open-source AI desktop IDE. The four modes, workspaces, Flight Deck Missions, Issues, GitHub, Code Quality, Cost Dashboard, and more." />
+<meta name="description" content="Complete user manual for PacketADE v0.9.3 — the open-source AI desktop IDE. The four modes, workspaces, Flight Deck Missions, Issues, GitHub, Code Quality, Cost Dashboard, and more." />
 <link rel="canonical" href="https://packetade.app/packetade-manual.html" />
 <link rel="icon" type="image/png" href="favicon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -390,6 +390,14 @@ footer.manual-foot a{color:var(--text-secondary)}
       <a href="#chapter-19"><span class="ch-num">19</span>Architecture</a>
     </li>
     <li class="ch-item">
+      <a href="#chapter-20"><span class="ch-num">20</span>Remote Agents</a>
+      <ul class="subs">
+        <li><a href="#ch20-scope">Scope</a></li>
+        <li><a href="#ch20-security">Security model</a></li>
+        <li><a href="#ch20-status">Status</a></li>
+      </ul>
+    </li>
+    <li class="ch-item">
       <a href="#appendix"><span class="ch-num">A</span>Appendix</a>
       <ul class="subs">
         <li><a href="#ap-files">File locations</a></li>
@@ -407,7 +415,7 @@ footer.manual-foot a{color:var(--text-secondary)}
     <h1>PacketADE <span>Manual</span></h1>
     <p class="lede">Everything you need to run every agent, orchestrate Missions, wire up integrations, and ship from one cockpit. Written to be readable top-to-bottom, or dipped into by chapter when you need the reference.</p>
     <div class="meta">
-      <span>v0.8.8</span>
+      <span>v0.9.3</span>
       <span>Apache 2.0</span>
       <span>Tauri v2 &middot; React 19 &middot; Rust &middot; Node sidecar</span>
       <span>No telemetry &middot; BYOK</span>
@@ -421,7 +429,7 @@ footer.manual-foot a{color:var(--text-secondary)}
 <p class="chapter-lede">Install PacketADE, open a folder, and have a CLI agent talking to you in under five minutes. The rest of the manual is reference material; this chapter is the on-ramp.</p>
 
 <h3 class="section-title" id="ch1-what">What is PacketADE?</h3>
-<p>PacketADE is an open-source desktop IDE that unifies every AI coding agent &mdash; CLI and API &mdash; into a single multi-pane cockpit. It wraps the major CLI agents (Claude Code, OpenAI Codex, Google Gemini, OpenCode, and others from a 13-entry catalog) alongside seven API provider rows spanning Anthropic subscription/API, OpenAI subscription/API, MiniMax, OpenRouter, and local Ollama. You bring the keys; PacketADE brings the cockpit.</p>
+<p>PacketADE is an open-source desktop IDE that unifies every AI coding agent &mdash; CLI and API &mdash; into a single multi-pane cockpit. It wraps the major CLI agents (Claude Code, OpenAI Codex, Google Gemini, OpenCode, and others from a 13-entry catalog) alongside eight API provider rows spanning Anthropic subscription/API, OpenAI subscription/API, OpenAI Agents SDK, MiniMax, OpenRouter, and local Ollama. You bring the keys; PacketADE brings the cockpit.</p>
 <p>The product is built around <strong>four modes</strong> &mdash; pick the one that matches the shape of your task, then mix freely:</p>
 <ul class="bullet-list">
   <li><span class="pill pill-cyan">Flight Deck</span> Spec a mission and let it run autonomously.</li>
@@ -524,7 +532,7 @@ pnpm tauri build    # production build</code></pre>
 <p>Open it from the <span class="pill pill-green">Terminal</span> icon in the LeftRail (Workspace), or <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>W</kbd></span>. Chapter 4 covers the workspace in depth.</p>
 
 <h3 class="section-title" id="ch2-agents-mode">Mode 3 &middot; Agents</h3>
-<p>The Agents view runs structured single-thread conversations through one of seven API provider rows. Unlike a PTY session, an API agent is a Rust-side agentic loop that owns the system prompt, the tool schema, the streaming, and the UI. You get inline diffs on every <code>write_file</code> call, slash commands, @-mentions, voice input, and a cost pill on every turn.</p>
+<p>The Agents view runs structured single-thread conversations through one of eight API provider rows. Unlike a PTY session, an API agent is a Rust-side agentic loop that owns the system prompt, the tool schema, the streaming, and the UI. You get inline diffs on every <code>write_file</code> call, slash commands, @-mentions, voice input, and a cost pill on every turn.</p>
 <p>Open it from the <span class="pill pill-purple">Sparkles</span> icon in the LeftRail (Agents), or <span class="kbd-row"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span><kbd>1</kbd></span>. Chapter 5 covers API conversations in depth.</p>
 
 <h3 class="section-title" id="ch2-issues-mode">Mode 4 &middot; Issues</h3>
@@ -1348,7 +1356,7 @@ export const myModule: ModuleManifest = {
   hooks/                           # useGitInfo, useStatusLine, useFlightChat, useVoiceInput
   lib/
     tauri.ts                       # All Tauri invoke wrappers + TS event helpers
-    api-models.ts                  # API_PROVIDERS catalog (7 rows)
+    api-models.ts                  # API_PROVIDERS catalog (8 rows)
     cli-catalog.ts                 # 13-entry CLI catalog
     brand.ts                       # APP_NAME, STORAGE_PREFIX
   stores/                          # Zustand stores (agent, flight, issue, layout, mcp, ...)
@@ -1370,13 +1378,41 @@ agent-sidecar/                     # Node sidecar (separate package)
   src/
     index.ts                       # stdio JSON dispatcher
     protocol.ts                    # SidecarRequest / SidecarEvent types, PROTOCOL_VERSION
-    providers/                     # echo, anthropic, openai-codex, base</code></pre>
+    providers/                     # echo, anthropic, openai-codex, openai-agents, base</code></pre>
 
 <h3 class="section-title" id="ch19-build">Build &amp; bundle</h3>
 <p>The release pipeline runs <code>scripts/fetch-node.js</code> (pinned Node 24.15.0 per triple), <code>pnpm sidecar:install</code>, <code>pnpm sidecar:build</code>, and <code>scripts/prune-sidecar.js</code> (destructive hoisted prod-only reinstall). Node + sidecar dist + pruned <code>node_modules</code> are embedded as <code>externalBin</code> + <code>resources</code> per <code>src-tauri/tauri.conf.json</code>.</p>
 <p>After bundling, re-run <code>pnpm sidecar:install</code> to restore devDeps for development.</p>
 
 <a class="roadmap-link" href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg> Source on GitHub</a>
+</section>
+
+<!-- ===== CHAPTER 20: REMOTE AGENTS ===== -->
+<section class="chapter" id="chapter-20">
+<span class="chapter-badge">Chapter 20</span>
+<h2 class="chapter-title">Remote Agents Roadmap</h2>
+<p class="chapter-lede">Remote Agents is the next major PacketADE track: a PWA-first way to use PacketADE Agents from a phone while the desktop keeps ownership of providers, models, secrets, MCP config, workspaces, permissions, and execution.</p>
+
+<h3 class="section-title" id="ch20-scope">Scope</h3>
+<p>The first release focuses on API-agent conversations, not raw terminal control. From the PWA, a trusted device should be able to list hosts, workspaces, providers, models, profiles, and conversations; start or continue an API-agent conversation; stream existing <code>api-agent:*</code> events; respond to permission or edit prompts; cancel, retry, change model, close; and observe cost/status summaries.</p>
+<p>Remote Agents deliberately does <strong>not</strong> expose a generic Tauri bridge. New remote actions require explicit protocol commands and security review.</p>
+
+<h3 class="section-title" id="ch20-security">Security model</h3>
+<dl class="def-list">
+  <dt>Packet account sign-in</dt><dd>The primary phone flow is account sign-in. QR may become a shortcut later, but it is not the main trust path.</dd>
+  <dt>Desktop trust gate</dt><dd>A desktop host must approve a device before the PWA can control sessions. Revocation and audit trails are part of the MVP.</dd>
+  <dt>Desktop-owned secrets</dt><dd>Provider keys, OAuth tokens, local files, shells, MCP servers, and SSH access remain on the desktop. Packet Cloud relays frames; it does not call model providers or tools.</dd>
+  <dt>End-to-end encryption</dt><dd>E2EE, replay protection, sequence validation, and protocol fixtures are gates before any external beta.</dd>
+  <dt>Push boundaries</dt><dd>Foreground interaction is WebSocket. Web Push is only for attention-needed notifications such as permission requests, pending edits, errors, and done summaries.</dd>
+</dl>
+
+<h3 class="section-title" id="ch20-status">Status</h3>
+<p>Planning is complete and ready for implementation split. The canonical implementation package lives in <a href="https://github.com/packetloss404/PacketADE/blob/main/dev/remoteagents/README.md" target="_blank" rel="noopener"><code>dev/remoteagents/README.md</code></a>, with product scope, architecture, protocol, security, PWA UX, sprint plan, six-agent runbook, testing, and open decisions. The top-level summary is in <a href="roadmap.html">the public roadmap</a>.</p>
+
+<div class="callout callout-info">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="callout-body"><strong>Availability:</strong> Remote Agents is not in the current desktop release. It is the active roadmap track after the docs/planning consolidation.</div>
+</div>
 </section>
 
 <!-- ===== APPENDIX ===== -->
@@ -1446,12 +1482,13 @@ agent-sidecar/                     # Node sidecar (separate package)
   <dt>Bypass permissions</dt><dd>The toggle that suppresses CLI permission prompts for write tools (e.g. Claude's <code>--dangerously-skip-permissions</code>).</dd>
   <dt>FlightDeck</dt><dd>The sibling terminal-first product at <code>d:\projects\flightdeck</code>. Mirrors the same Mission concepts; separate repo, separate git history.</dd>
   <dt>PacketCode</dt><dd>The sibling TUI product (OpenCode rival) at <code>d:\projects\packetcode</code>. Not the same as this product, despite the legacy name.</dd>
+  <dt>Remote Agents</dt><dd>The planned PWA + Packet Cloud relay track for controlling PacketADE API-agent conversations from a trusted phone while execution and secrets stay on desktop.</dd>
 </dl>
 
 </section>
 
 <footer class="manual-foot">
-  <div>&copy; PacketADE v0.8.8 &mdash; Apache 2.0 licensed. No telemetry. Your keys, your models.</div>
+  <div>&copy; PacketADE v0.9.3 &mdash; Apache 2.0 licensed. No telemetry. Your keys, your models.</div>
   <div><a href="index.html">Home</a> &middot; <a href="roadmap.html">Roadmap</a> &middot; <a href="https://github.com/packetloss404/PacketADE" target="_blank" rel="noopener">Source</a> &middot; <a href="https://github.com/packetloss404/PacketADE/releases" target="_blank" rel="noopener">Releases</a></div>
 </footer>
 </main>
@@ -1549,4 +1586,3 @@ agent-sidecar/                     # Node sidecar (separate package)
 </script>
 </body>
 </html>
-
