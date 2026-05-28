@@ -56,8 +56,8 @@ pub async fn handle(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // 1. Parse + validate args.
-    let parsed: RequestUserApprovalArgs = serde_json::from_value(args)
-        .map_err(|e| format!("invalid args: {}", e))?;
+    let parsed: RequestUserApprovalArgs =
+        serde_json::from_value(args).map_err(|e| format!("invalid args: {}", e))?;
 
     let question = parsed.question.trim();
     if question.is_empty() {

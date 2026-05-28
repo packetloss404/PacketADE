@@ -94,7 +94,9 @@ fn parse_fixes_trailers(msg: &str) -> Vec<u32> {
                 continue;
             }
         }
-        let Ok(n) = digits.parse::<u32>() else { continue };
+        let Ok(n) = digits.parse::<u32>() else {
+            continue;
+        };
         if seen.insert(n) {
             out.push(n);
         }
@@ -116,11 +118,7 @@ fn ticket_number(ticket_id: &str) -> Option<u32> {
 /// event per `Fixes #N` trailer that resolves to a known Issue (by
 /// `ticket_id` suffix match). Failures are logged at warn but never
 /// propagate — the commit itself already succeeded.
-fn emit_fixes_events(
-    app_handle: &AppHandle,
-    project_path: &str,
-    commit_msg: &str,
-) {
+fn emit_fixes_events(app_handle: &AppHandle, project_path: &str, commit_msg: &str) {
     let numbers = parse_fixes_trailers(commit_msg);
     if numbers.is_empty() {
         return;
@@ -156,7 +154,10 @@ fn emit_fixes_events(
             .iter()
             .find(|i| ticket_number(&i.ticket_id) == Some(number));
         let Some(issue) = matched else {
-            info!(number, "Fixes #N trailer found but no matching Issue in state");
+            info!(
+                number,
+                "Fixes #N trailer found but no matching Issue in state"
+            );
             continue;
         };
         if issue.status == "done" {
@@ -410,6 +411,7 @@ impl GitServerConfigDto {
             user: self.username,
             remote_path,
             key_path: self.key_path,
+            auth_method: None,
             target_id: Some(self.id),
             host_fingerprint: self.host_fingerprint,
         }

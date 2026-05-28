@@ -602,11 +602,7 @@ impl MissionPlannerRegistry {
     /// error-category exemption logic so RateLimit / Network failures
     /// don't increment the counter — that path uses [`read_replan_count`]
     /// instead.
-    pub async fn bump_replan_count(
-        &self,
-        mission_id: &str,
-        task_id: &str,
-    ) -> Option<u32> {
+    pub async fn bump_replan_count(&self, mission_id: &str, task_id: &str) -> Option<u32> {
         // Phase 1: bump the in-memory counter and capture the new value.
         // Scoped so the sessions mutex is released BEFORE we acquire the
         // PersistedState lock — never hold two locks at once.
@@ -637,9 +633,7 @@ impl MissionPlannerRegistry {
                     .find(|f| f.id == mission_id)
                     .ok_or_else(|| format!("mission '{}' not found", mission_id))?;
                 for milestone in flight.milestones.iter_mut() {
-                    if let Some(task) =
-                        milestone.tasks.iter_mut().find(|t| t.id == task_id)
-                    {
+                    if let Some(task) = milestone.tasks.iter_mut().find(|t| t.id == task_id) {
                         task.replan_count = new_count;
                         return Ok(());
                     }
@@ -670,11 +664,7 @@ impl MissionPlannerRegistry {
     ///
     /// E5-REPLAN uses this on the exempt path (RateLimit / Network failures)
     /// to surface the unchanged count back to the planner without bumping.
-    pub async fn read_replan_count(
-        &self,
-        mission_id: &str,
-        task_id: &str,
-    ) -> Option<u32> {
+    pub async fn read_replan_count(&self, mission_id: &str, task_id: &str) -> Option<u32> {
         let guard = self.sessions.lock().await;
         let session = guard.get(mission_id)?;
         Some(session.replans_per_task.get(task_id).copied().unwrap_or(0))
@@ -718,15 +708,14 @@ impl MissionPlannerRegistry {
                         "draining partial chunk buffer on planner session removal"
                     );
                     if let Some(app) = app {
-                        let body = format!(
-                            "{}\n\n*(partial — session closed)*",
-                            trimmed
-                        );
+                        let body = format!("{}\n\n*(partial — session closed)*", trimmed);
                         let entry = journal_entry(
                             mission_id.to_string(),
                             JournalKind::PlannerMessage,
                             body,
-                            Some(serde_json::json!({ "partial": true, "reason": "session_closed" })),
+                            Some(
+                                serde_json::json!({ "partial": true, "reason": "session_closed" }),
+                            ),
                         );
                         write_journal_and_emit(app, entry).await;
                     }
@@ -873,9 +862,7 @@ impl MissionPlannerRegistry {
         //    those, but defensive clamp here too).
         let raw = retry_after_seconds.filter(|v| v.is_finite() && *v > 0.0);
         let wait_secs = raw.unwrap_or(QUOTA_DEFAULT_WAIT_SECS);
-        let wait_secs = wait_secs
-            .max(QUOTA_MIN_WAIT_SECS)
-            .min(QUOTA_MAX_WAIT_SECS);
+        let wait_secs = wait_secs.max(QUOTA_MIN_WAIT_SECS).min(QUOTA_MAX_WAIT_SECS);
 
         // 3. Atomically bump the quota generation counter (lease) and flip
         //    the planner to QuotaPaused. FIX P1-C: holding the sessions
@@ -946,9 +933,7 @@ impl MissionPlannerRegistry {
         let captured_lease = lease;
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs_f64(wait_secs)).await;
-            let registry = match app_clone
-                .try_state::<MissionPlannerRegistry>()
-            {
+            let registry = match app_clone.try_state::<MissionPlannerRegistry>() {
                 Some(r) => r,
                 None => return,
             };
@@ -1021,11 +1006,7 @@ impl MissionPlannerRegistry {
     /// was just removed by a concurrent stop), this is a silent no-op —
     /// the caller will not be able to unlisten via this registry, but the
     /// listener-leak window in that race is a single stop cycle's worth.
-    pub async fn set_compaction_listener(
-        &self,
-        mission_id: &str,
-        event_id: tauri::EventId,
-    ) {
+    pub async fn set_compaction_listener(&self, mission_id: &str, event_id: tauri::EventId) {
         let mut guard = self.sessions.lock().await;
         if let Some(session) = guard.get_mut(mission_id) {
             session.compaction_listener = Some(event_id);
@@ -1040,10 +1021,7 @@ impl MissionPlannerRegistry {
     ///
     /// Returns `None` when the mission has no planner session OR when no
     /// listener was ever installed (cold-start before re-install, etc.).
-    pub async fn take_compaction_listener(
-        &self,
-        mission_id: &str,
-    ) -> Option<tauri::EventId> {
+    pub async fn take_compaction_listener(&self, mission_id: &str) -> Option<tauri::EventId> {
         let mut guard = self.sessions.lock().await;
         guard.get_mut(mission_id)?.compaction_listener.take()
     }
@@ -1186,9 +1164,8 @@ impl MissionPlannerRegistry {
         let Some(session) = sessions.get_mut(mission_id) else {
             return false;
         };
-        session.cumulative_input_tokens = session
-            .cumulative_input_tokens
-            .saturating_add(input_tokens);
+        session.cumulative_input_tokens =
+            session.cumulative_input_tokens.saturating_add(input_tokens);
         if session.compaction_in_progress {
             return false;
         }
@@ -1360,11 +1337,7 @@ pub(crate) async fn persist_planner_state_on_flight(
             // Missing flight is tolerated (mission may have been deleted
             // between the registry update and this call) — return Ok with
             // no mutation so `with_state_lock` skips the save path.
-            let Some(flight) = state
-                .flights
-                .iter_mut()
-                .find(|f| f.id == mission_id)
-            else {
+            let Some(flight) = state.flights.iter_mut().find(|f| f.id == mission_id) else {
                 return Ok(());
             };
             // Only mark changes when the field actually moves, matching the
@@ -1613,7 +1586,9 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         None => return,
     };
     match session.status {
-        PlannerStatus::Paused | PlannerStatus::QuotaPaused | PlannerStatus::Completed
+        PlannerStatus::Paused
+        | PlannerStatus::QuotaPaused
+        | PlannerStatus::Completed
         | PlannerStatus::Failed => {
             return;
         }
@@ -1645,7 +1620,9 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
     // token budget off the same mode below. We do this even if the inject
     // ultimately fails — the counter reset is idempotent.
     let mode = PlannerMode::from_trigger(&event.trigger);
-    registry.set_mode_and_reset_tick(&event.mission_id, mode).await;
+    registry
+        .set_mode_and_reset_tick(&event.mission_id, mode)
+        .await;
     let max_output_tokens = mode.max_output_tokens();
 
     // Inject FIRST, then flip status. The previous ordering left the
@@ -1681,8 +1658,8 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
     // inject succeeds so the journal reflects events the planner actually
     // saw. Payload is the full trigger event for future analyses; the
     // markdown body is a 1-2 line human-readable summary.
-    let payload_summary = serde_json::to_string(&event.payload)
-        .unwrap_or_else(|_| "{}".to_string());
+    let payload_summary =
+        serde_json::to_string(&event.payload).unwrap_or_else(|_| "{}".to_string());
     let body = format!(
         "**kind**: `{}`\n**payload**: {}",
         trigger_kind,
@@ -1832,16 +1809,12 @@ fn build_wake_payload(
                             .ok()
                             .and_then(|v| v.as_str().map(str::to_string))
                             .unwrap_or_else(|| format!("{:?}", category).to_ascii_lowercase());
-                        let exempt =
-                            crate::core::error_classifier::is_replan_exempt(&category);
+                        let exempt = crate::core::error_classifier::is_replan_exempt(&category);
                         obj.insert(
                             "errorCategory".to_string(),
                             serde_json::Value::String(category_str),
                         );
-                        obj.insert(
-                            "replanExempt".to_string(),
-                            serde_json::Value::Bool(exempt),
-                        );
+                        obj.insert("replanExempt".to_string(), serde_json::Value::Bool(exempt));
                     }
                     // If classification returned None (task has no
                     // errors recorded), we deliberately leave the fields
@@ -1955,9 +1928,7 @@ pub async fn start_mission_planner(
                 );
                 return Ok(existing.id);
             }
-            PlannerStatus::Idle
-            | PlannerStatus::Awake
-            | PlannerStatus::QuotaPaused => {
+            PlannerStatus::Idle | PlannerStatus::Awake | PlannerStatus::QuotaPaused => {
                 return Ok(existing.id);
             }
         }
@@ -2004,28 +1975,27 @@ pub async fn start_mission_planner(
             // initialMessage: empty — the planner waits for the user's
             // spec-mode opening message.
             String::new(),
-            None, // apiKey — claude-oauth pulls from ~/.claude
-            None, // resume token
-            Some(false), // thinkingEnabled — E4 may flip this
-            Some(false), // planMode
+            None,                    // apiKey — claude-oauth pulls from ~/.claude
+            None,                    // resume token
+            Some(false),             // thinkingEnabled — E4 may flip this
+            Some(false),             // planMode
             serde_json::Value::Null, // attachments
             serde_json::Value::Null, // resumeMessages
-            None, // permissionMode
-            None, // approveWrites
+            None,                    // permissionMode
+            None,                    // approveWrites
             Some(PLANNER_MCP_KIND.to_string()),
             None, // commandPath
+            None, // workspace — derive local from project_path
         )
         .await
         .map_err(|e| format!("start planner sidecar session: {}", e))?;
 
-    let session = MissionPlannerSession::new(session_id.clone(), mission_id.clone(), sidecar_session_id);
+    let session =
+        MissionPlannerSession::new(session_id.clone(), mission_id.clone(), sidecar_session_id);
     registry.insert(session).await;
-    if let Err(e) = persist_planner_state_on_flight(
-        &mission_id,
-        Some(&session_id),
-        Some(PlannerStatus::Idle),
-    )
-    .await
+    if let Err(e) =
+        persist_planner_state_on_flight(&mission_id, Some(&session_id), Some(PlannerStatus::Idle))
+            .await
     {
         warn!(
             mission_id = %mission_id,
@@ -2065,7 +2035,9 @@ pub async fn start_mission_planner(
         &app_handle,
         &mission_id,
     );
-    registry.set_compaction_listener(&mission_id, event_id).await;
+    registry
+        .set_compaction_listener(&mission_id, event_id)
+        .await;
 
     info!(mission_id = %mission_id, planner_session = %session_id, "started mission planner");
     Ok(session_id)
@@ -2116,7 +2088,9 @@ pub async fn stop_mission_planner(app_handle: AppHandle, mission_id: String) -> 
     // `remove`) so any pending streamed chunks from a turn that was in
     // flight when the user pressed Stop are drained and journaled as a
     // partial `PlannerMessage` rather than silently dropped.
-    registry.remove_session(&mission_id, Some(&app_handle)).await;
+    registry
+        .remove_session(&mission_id, Some(&app_handle))
+        .await;
 
     if let Err(e) = persist_planner_state_on_flight(&mission_id, None, None).await {
         warn!(
@@ -2391,9 +2365,7 @@ pub async fn resolve_mission_approval(
                 .mission_approvals
                 .iter_mut()
                 .find(|a| a.id == approval_id)
-                .ok_or_else(|| {
-                    format!("no mission approval found for id '{}'", approval_id)
-                })?;
+                .ok_or_else(|| format!("no mission approval found for id '{}'", approval_id))?;
             let mission_id = approval.mission_id.clone();
             // Idempotency: if the approval was already resolved, short-
             // circuit so the caller can still emit a "we already handled
@@ -2437,10 +2409,7 @@ pub async fn resolve_mission_approval(
     // E7-HOOKS site 4 — journal the resolution as a SystemNote so the
     // timeline shows who chose what. We do this AFTER the state lock is
     // released (file IO must not happen under the mutex).
-    let body = format!(
-        "Approval `{}` resolved: **{}**",
-        approval_id, choice
-    );
+    let body = format!("Approval `{}` resolved: **{}**", approval_id, choice);
     let metadata = serde_json::json!({
         "approvalId": approval_id,
         "choice": choice,
@@ -2640,7 +2609,10 @@ mod tests {
             WakeTrigger::TaskCompleted("t1".into()).kind_str(),
             "task_completed"
         );
-        assert_eq!(WakeTrigger::TaskFailed("t1".into()).kind_str(), "task_failed");
+        assert_eq!(
+            WakeTrigger::TaskFailed("t1".into()).kind_str(),
+            "task_failed"
+        );
         assert_eq!(
             WakeTrigger::ApprovalGateReached("t1".into()).kind_str(),
             "approval_gate_reached"
@@ -2758,8 +2730,8 @@ mod tests {
             serde_json::Value::String("quota_paused".to_string()),
             "QuotaPaused must wire as snake_case \"quota_paused\""
         );
-        let back: PlannerStatus = serde_json::from_value(json)
-            .expect("PlannerStatus must deserialize cleanly");
+        let back: PlannerStatus =
+            serde_json::from_value(json).expect("PlannerStatus must deserialize cleanly");
         assert_eq!(back, PlannerStatus::QuotaPaused);
 
         // Full MissionPlannerSession round-trip — guards against the
@@ -3182,9 +3154,7 @@ mod tests {
         let after = registry.get_by_mission(mission_id).await.unwrap();
         assert_eq!(after.status, PlannerStatus::Completed);
 
-        registry
-            .set_status(mission_id, PlannerStatus::Failed)
-            .await;
+        registry.set_status(mission_id, PlannerStatus::Failed).await;
         registry.on_planner_done(sidecar_session_id).await;
         let after = registry.get_by_mission(mission_id).await.unwrap();
         assert_eq!(after.status, PlannerStatus::Failed);
@@ -3271,12 +3241,9 @@ mod tests {
         // Missing-on-disk mission is tolerated (silent no-op). The point
         // is that this call compiles only with the new async + Result
         // signature.
-        let result: Result<(), String> = super::persist_planner_state_on_flight(
-            "mission-does-not-exist-on-disk",
-            None,
-            None,
-        )
-        .await;
+        let result: Result<(), String> =
+            super::persist_planner_state_on_flight("mission-does-not-exist-on-disk", None, None)
+                .await;
         // Either Ok or Err is acceptable — save_state may legitimately
         // fail in some test environments (no HOME, read-only fs). The
         // suite's cold-start tests cover the actual save path.
@@ -3639,7 +3606,10 @@ mod e6_integration {
         ]);
 
         let n = compute_cold_start_paused(&mut state);
-        assert_eq!(n, 0, "non-terminal flights without planner metadata => no-op");
+        assert_eq!(
+            n, 0,
+            "non-terminal flights without planner metadata => no-op"
+        );
 
         for f in &state.flights {
             assert!(f.planner_status.is_none());

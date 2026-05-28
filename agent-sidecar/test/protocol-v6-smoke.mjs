@@ -18,16 +18,18 @@
 //
 // Sequence:
 //   1. Spawn the sidecar, wait for `ready` (must advertise protocol v6).
-//   2. `start_session` for provider "echo", wait for its `done`.
-//   3. `set_permission_mode { mode: "plan" }` → expect chunk echoing "plan"
+//   2. `start_session` with an SSH workspace → expect clean refusal before
+//      any provider can treat the remote path as local cwd.
+//   3. `start_session` for provider "echo", wait for its `done`.
+//   4. `set_permission_mode { mode: "plan" }` → expect chunk echoing "plan"
 //      then `done`, within 3s.
-//   4. `set_model { model: "test-model" }` → expect chunk echoing
+//   5. `set_model { model: "test-model" }` → expect chunk echoing
 //      "test-model" then `done`, within 3s.
-//   5. `retry` → expect chunk containing "retry" then `done`, within 3s.
-//   6. `cancel_pending_tools` → expect clean unsupported error, within 3s.
-//   7. `inject_user_turn` → expect clean unsupported error, within 3s.
-//   8. `planner_tool_result` → expect clean unsupported error, within 3s.
-//   9. v6 `rate_limited` event shape round-trip via JSON.parse — pure
+//   6. `retry` → expect chunk containing "retry" then `done`, within 3s.
+//   7. `cancel_pending_tools` → expect clean unsupported error, within 3s.
+//   8. `inject_user_turn` → expect clean unsupported error, within 3s.
+//   9. `planner_tool_result` → expect clean unsupported error, within 3s.
+//   10. v6 `rate_limited` event shape round-trip via JSON.parse — pure
 //      wire-format check, no IPC.
 //
 // Exits 0 if all steps pass, 1 otherwise — printing which step failed
@@ -316,7 +318,32 @@ async function run() {
     return;
   }
 
-  // 2) start_session for echo and wait for the provider's initial `done`.
+  // 2) Remote workspace metadata must not fall through into provider cwd use.
+  await runStep(
+    "start_session_remote_workspace_guard",
+    {
+      type: "start_session",
+      sessionId: SESSION_ID,
+      provider: "echo",
+      model: "echo",
+      systemPrompt: "",
+      allowedTools: [],
+      mcpServers: {},
+      projectPath: "",
+      initialMessage: "init",
+      workspace: {
+        kind: "ssh",
+        serverId: "srv-123",
+        host: "example.com",
+        port: 22,
+        user: "ian",
+        remotePath: "/srv/app",
+      },
+    },
+    { expectErrorSubstring: "Remote SSH workspace metadata reached" },
+  );
+
+  // 3) start_session for echo and wait for the provider's initial `done`.
   {
     const chunkStart = chunks.length;
     send({

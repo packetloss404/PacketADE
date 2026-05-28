@@ -215,6 +215,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
             user: server.username,
             remotePath: a.target.basePath,
             keyPath: server.keyPath ?? null,
+            authMethod: server.authMethod,
             hostFingerprint: server.hostFingerprint ?? null,
           };
         }

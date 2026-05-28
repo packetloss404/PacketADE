@@ -36,13 +36,9 @@ struct Args {
     patch: Value,
 }
 
-pub async fn handle(
-    app: &AppHandle,
-    session_id: &str,
-    args: Value,
-) -> Result<Value, String> {
-    let parsed: Args = serde_json::from_value(args)
-        .map_err(|e| format!("update_task: invalid args: {}", e))?;
+pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Value, String> {
+    let parsed: Args =
+        serde_json::from_value(args).map_err(|e| format!("update_task: invalid args: {}", e))?;
 
     let patch_obj = match &parsed.patch {
         Value::Object(map) => map.clone(),

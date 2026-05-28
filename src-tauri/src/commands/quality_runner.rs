@@ -640,9 +640,9 @@ async fn run_single_check(
             (Some(status), _) => Outcome::Exited(status.code()),
             (None, Some(KillReason::Cancelled)) => Outcome::Cancelled,
             (None, Some(KillReason::TimedOut)) => Outcome::TimedOut,
-            (None, None) => Outcome::WaitError(
-                "child disappeared from slot without reaping".to_string(),
-            ),
+            (None, None) => {
+                Outcome::WaitError("child disappeared from slot without reaping".to_string())
+            }
         }
     };
 
@@ -737,11 +737,8 @@ fn detect_checks_for_path(project_path: &Path) -> Vec<QualityCheck> {
             };
             let scripts = pkg_val.get("scripts").and_then(|v| v.as_object());
 
-            let has_script = |name: &str| -> bool {
-                scripts
-                    .map(|s| s.get(name).is_some())
-                    .unwrap_or(false)
-            };
+            let has_script =
+                |name: &str| -> bool { scripts.map(|s| s.get(name).is_some()).unwrap_or(false) };
 
             // Lint: only added if there's an actual `lint` script.
             if has_script("lint") {
@@ -963,7 +960,8 @@ pub fn run_quality_checks(
         let project_root = Path::new(&project_path_clone).to_path_buf();
         let started_at = now_ms();
         let started_instant = Instant::now();
-        let mut summary_checks: Vec<QualityCheckDoneEvent> = Vec::with_capacity(resolved_checks.len());
+        let mut summary_checks: Vec<QualityCheckDoneEvent> =
+            Vec::with_capacity(resolved_checks.len());
         let mut overall_cancelled = false;
         let mut all_passed = true;
 
@@ -993,10 +991,7 @@ pub fn run_quality_checks(
                     duration_ms: 0,
                     optional: check.optional,
                 };
-                let _ = app_handle.emit(
-                    &format!("quality:check-done:{}", run_id_clone),
-                    &skipped,
-                );
+                let _ = app_handle.emit(&format!("quality:check-done:{}", run_id_clone), &skipped);
                 summary_checks.push(skipped);
                 if !check.optional {
                     all_passed = false;
@@ -1017,19 +1012,12 @@ pub fn run_quality_checks(
             if matches!(done.status, CheckStatus::Cancelled) {
                 overall_cancelled = true;
             }
-            if !done.optional
-                && !matches!(
-                    done.status,
-                    CheckStatus::Passed | CheckStatus::Skipped
-                )
+            if !done.optional && !matches!(done.status, CheckStatus::Passed | CheckStatus::Skipped)
             {
                 all_passed = false;
             }
 
-            let _ = app_handle.emit(
-                &format!("quality:check-done:{}", run_id_clone),
-                &done,
-            );
+            let _ = app_handle.emit(&format!("quality:check-done:{}", run_id_clone), &done);
             summary_checks.push(done);
         }
 

@@ -38,8 +38,8 @@ pub async fn handle(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // 1. Parse args.
-    let parsed: CreateMilestoneArgs = serde_json::from_value(args)
-        .map_err(|e| format!("invalid args: {}", e))?;
+    let parsed: CreateMilestoneArgs =
+        serde_json::from_value(args).map_err(|e| format!("invalid args: {}", e))?;
 
     let title = parsed.title.trim().to_string();
     if title.is_empty() {

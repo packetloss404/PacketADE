@@ -237,16 +237,7 @@ mod tests {
 
     #[test]
     fn explain_error_user_turn_handles_empty_context() {
-        let p = explain_error_user_turn(
-            "boom",
-            "missing.ts",
-            0,
-            0,
-            "unknown",
-            "",
-            false,
-            0,
-        );
+        let p = explain_error_user_turn("boom", "missing.ts", 0, 0, "unknown", "", false, 0);
         assert!(p.contains("<file_contents empty=\"true\">"));
         // No line/column tags emitted when value is 0.
         assert!(!p.contains("<line>"));
@@ -255,16 +246,8 @@ mod tests {
 
     #[test]
     fn explain_error_user_turn_emits_truncation_marker() {
-        let p = explain_error_user_turn(
-            "boom",
-            "f.ts",
-            1,
-            1,
-            "typescript",
-            "snippet\n",
-            true,
-            12345,
-        );
+        let p =
+            explain_error_user_turn("boom", "f.ts", 1, 1, "typescript", "snippet\n", true, 12345);
         assert!(p.contains("truncated=\"true\""));
         assert!(p.contains("original_bytes=\"12345\""));
     }

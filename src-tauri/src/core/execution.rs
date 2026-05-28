@@ -62,6 +62,11 @@ pub struct SshConfig {
     pub remote_path: String,
     #[serde(default)]
     pub key_path: Option<String>,
+    /// Frontend `ServerConfig.authMethod` when available (`agent`, `key`, or
+    /// `password`). Older callers omit it; SSH helpers then fall back to
+    /// password-keyring detection for compatibility.
+    #[serde(default)]
+    pub auth_method: Option<String>,
     /// Frontend `ServerConfig.id` — used to look up the saved password in
     /// the OS keychain (keyring entry: `ssh-<id>`). None means key-only
     /// auth. Phase 2 consolidated `SshTarget` into `ServerConfig`, so all
@@ -271,6 +276,7 @@ mod tests {
             user: "alice".into(),
             remote_path: "/home/alice/project".into(),
             key_path: None,
+            auth_method: Some("agent".into()),
             target_id: Some("target-abc".into()),
             host_fingerprint: None,
         }

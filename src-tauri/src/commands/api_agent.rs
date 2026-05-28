@@ -201,6 +201,56 @@ pub struct ResumeMessage {
     content: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum ApiAgentWorkspaceInput {
+    #[serde(rename = "local", rename_all = "camelCase")]
+    Local { project_path: String },
+    #[serde(rename = "ssh", rename_all = "camelCase")]
+    Ssh {
+        server_id: Option<String>,
+        host: String,
+        port: u16,
+        user: String,
+        remote_path: String,
+        key_path: Option<String>,
+        auth_method: Option<String>,
+        host_fingerprint: Option<String>,
+    },
+}
+
+fn sidecar_workspace_value(
+    project_path: &str,
+    ssh_config: Option<&SshConfig>,
+    workspace: Option<ApiAgentWorkspaceInput>,
+) -> serde_json::Value {
+    if let Some(cfg) = ssh_config {
+        return serde_json::json!({
+            "kind": "ssh",
+            "serverId": cfg.target_id.clone(),
+            "host": cfg.host.clone(),
+            "port": cfg.port,
+            "user": cfg.user.clone(),
+            "remotePath": cfg.remote_path.clone(),
+            "keyPath": cfg.key_path.clone(),
+            "authMethod": cfg.auth_method.clone(),
+            "hostFingerprint": cfg.host_fingerprint.clone(),
+        });
+    }
+
+    if let Some(ApiAgentWorkspaceInput::Local { project_path }) = workspace {
+        return serde_json::json!({
+            "kind": "local",
+            "projectPath": project_path,
+        });
+    }
+
+    serde_json::json!({
+        "kind": "local",
+        "projectPath": project_path,
+    })
+}
+
 fn build_start_history(
     resume_messages: Option<Vec<ResumeMessage>>,
     initial_message: &str,
@@ -370,6 +420,7 @@ pub async fn start_api_agent_session(
     permission_mode: Option<String>,
     approve_writes: Option<bool>,
     command_path: Option<String>,
+    workspace: Option<ApiAgentWorkspaceInput>,
 ) -> Result<(), String> {
     // v2 Tier 4 slice B: bump the local-only per-provider launch counter
     // before any routing decision so both sidecar and in-process launches are
@@ -381,17 +432,20 @@ pub async fn start_api_agent_session(
     // request and return early. In-process providers fall through to the
     // existing LlmProvider runtime untouched.
     if is_sidecar_provider(&provider) {
-        // Sidecar providers don't speak SSH yet — the sidecar dispatch
-        // path runs the underlying CLI locally and silently ignores any
-        // ssh_config. Fail loudly so users aren't surprised by edits landing
-        // on the wrong machine. In-process API-key providers (api-claude,
-        // api-openai, etc.) handle SSH via ExecutionTarget below.
-        if ssh_config.is_some() {
-            return Err(
-                "Remote SSH execution is not yet supported for sidecar providers (Anthropic Subscription, OpenAI ChatGPT, OpenAI Agents SDK). Use Claude (API) or OpenAI (API) for remote execution, or run this provider locally.".to_string(),
-            );
-        }
-        if provider == "openai-agents" {
+        let is_remote_workspace = ssh_config.is_some();
+        let sidecar_workspace = if is_remote_workspace {
+            // The sidecar process itself runs on the remote host, so the
+            // remote path is local from the sidecar's point of view. Sending
+            // `kind: "ssh"` would correctly trip the sidecar's local-transport
+            // guard, which is only meant to prevent accidental local execution.
+            serde_json::json!({
+                "kind": "local",
+                "projectPath": project_path.clone(),
+            })
+        } else {
+            sidecar_workspace_value(&project_path, None, workspace)
+        };
+        if provider == "openai-agents" && !is_remote_workspace {
             super::validate_project_path(&project_path)?;
         }
         let sys_prompt = system_prompt_override.clone().unwrap_or_default();
@@ -405,8 +459,35 @@ pub async fn start_api_agent_session(
         // server configs, drop disabled entries, and transform into the shape
         // the Claude Agent SDK expects. See `build_mcp_config_for_sidecar`
         // below for the exact output shape and per-entry fields.
-        let mcp_servers =
-            build_mcp_config_for_sidecar(&project_path, enabled_mcp_server_ids.as_deref()).await;
+        let mcp_servers = if is_remote_workspace {
+            if enabled_mcp_server_ids
+                .as_deref()
+                .map(|ids| !ids.is_empty())
+                .unwrap_or(false)
+            {
+                return Err(
+                    "Remote sidecar sessions do not support PacketADE MCP server forwarding yet. Disable MCP servers for this launch or run the provider locally.".to_string(),
+                );
+            }
+            warn!(
+                session_id = %session_id,
+                provider = %provider,
+                "Remote sidecar launch skips local PacketADE MCP server config"
+            );
+            serde_json::Value::Object(serde_json::Map::new())
+        } else {
+            build_mcp_config_for_sidecar(&project_path, enabled_mcp_server_ids.as_deref()).await
+        };
+        let sidecar_project_path = project_path.clone();
+        // A locally pinned Codex executable path is not meaningful on the
+        // remote host. Remote sidecars resolve provider CLIs from the remote
+        // PATH; explicit remote overrides can be added once the server model
+        // has a field for them.
+        let sidecar_command_path = if is_remote_workspace {
+            None
+        } else {
+            command_path.clone()
+        };
         // v3: pass attachments through to the sidecar — Anthropic provider
         // builds an image-block content array when present.
         let attachments_json = match &attachments {
@@ -417,32 +498,64 @@ pub async fn start_api_agent_session(
             Some(messages) => serde_json::to_value(messages).unwrap_or(serde_json::Value::Null),
             None => serde_json::Value::Null,
         };
-        let result = sidecar
-            .forward_start(
-                session_id.clone(),
-                provider.clone(),
-                model.clone(),
-                sys_prompt,
-                tools,
-                mcp_servers,
-                project_path.clone(),
-                initial_message.clone(),
-                api_key,
-                resume_token.clone(),
-                thinking_enabled,
-                plan_mode,
-                attachments_json,
-                resume_messages_json,
-                permission_mode.clone(),
-                approve_writes,
-                // Mission Planner E1: no in-process MCP kind for the regular
-                // API-agent flow. The planner registers its own session via
-                // `commands::mission_planner::start_mission_planner` which
-                // sets this to `Some("planner")`.
-                None,
-                command_path.clone(),
-            )
-            .await;
+        let result = if let Some(ssh_config) = ssh_config.clone() {
+            sidecar
+                .forward_start_ssh(
+                    session_id.clone(),
+                    provider.clone(),
+                    model.clone(),
+                    sys_prompt,
+                    tools,
+                    mcp_servers,
+                    sidecar_project_path,
+                    initial_message.clone(),
+                    api_key,
+                    resume_token.clone(),
+                    thinking_enabled,
+                    plan_mode,
+                    attachments_json,
+                    resume_messages_json,
+                    permission_mode.clone(),
+                    approve_writes,
+                    // Mission Planner E1: no in-process MCP kind for the regular
+                    // API-agent flow. The planner registers its own session via
+                    // `commands::mission_planner::start_mission_planner` which
+                    // sets this to `Some("planner")`.
+                    None,
+                    sidecar_command_path,
+                    Some(sidecar_workspace),
+                    ssh_config,
+                )
+                .await
+        } else {
+            sidecar
+                .forward_start(
+                    session_id.clone(),
+                    provider.clone(),
+                    model.clone(),
+                    sys_prompt,
+                    tools,
+                    mcp_servers,
+                    sidecar_project_path,
+                    initial_message.clone(),
+                    api_key,
+                    resume_token.clone(),
+                    thinking_enabled,
+                    plan_mode,
+                    attachments_json,
+                    resume_messages_json,
+                    permission_mode.clone(),
+                    approve_writes,
+                    // Mission Planner E1: no in-process MCP kind for the regular
+                    // API-agent flow. The planner registers its own session via
+                    // `commands::mission_planner::start_mission_planner` which
+                    // sets this to `Some("planner")`.
+                    None,
+                    sidecar_command_path,
+                    Some(sidecar_workspace),
+                )
+                .await
+        };
         if let Err(e) = result {
             warn!(session_id = %session_id, error = %e, "Sidecar forward_start failed");
             let _ = app_handle.emit(

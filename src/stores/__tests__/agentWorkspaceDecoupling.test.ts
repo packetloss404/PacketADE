@@ -10,6 +10,7 @@ const saveWorkspacesSliceMock = vi.fn();
 const detachConversationsFromWorkspaceMock = vi.fn();
 const retryLastTurnMock = vi.fn();
 const saveAgentsSliceMock = vi.fn();
+const loadAgentsMdMock = vi.fn();
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (...args: unknown[]) => listenMock(...args),
@@ -20,7 +21,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@/lib/agentsMd", () => ({
-  loadAgentsMd: vi.fn().mockResolvedValue(null),
+  loadAgentsMd: (...args: unknown[]) => loadAgentsMdMock(...args),
 }));
 
 vi.mock("@/stores/memoryStore", () => ({
@@ -102,6 +103,7 @@ describe("agent/workspace store decoupling", () => {
     createPtySessionMock.mockResolvedValue("pty-session-1");
     startApiAgentSessionMock.mockResolvedValue(undefined);
     loadConversationsMock.mockResolvedValue([]);
+    loadAgentsMdMock.mockResolvedValue(null);
     saveWorkspacesSliceMock.mockResolvedValue(undefined);
     retryLastTurnMock.mockResolvedValue(undefined);
     saveAgentsSliceMock.mockResolvedValue(undefined);
@@ -129,6 +131,137 @@ describe("agent/workspace store decoupling", () => {
       undefined,
       false,
       null,
+      null,
+      null,
+      null,
+      null,
+      "auto",
+      false,
+      null,
+    );
+  });
+
+  it("starts SSH API conversations with remote metadata without local AGENTS.md probing", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+
+    const id = await useAgentTaskStore
+      .getState()
+      .createApiConversation(
+        "api-openai-codex",
+        "/srv/packetade",
+        "gpt-5-codex",
+        "Build remotely",
+        undefined,
+        false,
+        false,
+        {
+          serverId: "srv-123",
+          name: "Staging",
+          host: "example.com",
+          port: 2222,
+          user: "ian",
+          remotePath: "/srv/packetade",
+          keyPath: "C:/Users/ian/.ssh/id_ed25519",
+          authMethod: "key",
+          hostFingerprint: "SHA256:abc123",
+        },
+      );
+
+    const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
+
+    expect(loadAgentsMdMock).not.toHaveBeenCalled();
+    expect(conversation?.sshTarget).toEqual({
+      id: "srv-123",
+      name: "Staging",
+      host: "example.com",
+      user: "ian",
+      remotePath: "/srv/packetade",
+    });
+    expect(startApiAgentSessionMock).toHaveBeenCalledWith(
+      id,
+      "openai-codex",
+      "gpt-5-codex",
+      "/srv/packetade",
+      "Build remotely",
+      null,
+      false,
+      undefined,
+      false,
+      {
+        host: "example.com",
+        port: 2222,
+        user: "ian",
+        remote_path: "/srv/packetade",
+        key_path: "C:/Users/ian/.ssh/id_ed25519",
+        auth_method: "key",
+        target_id: "srv-123",
+        host_fingerprint: "SHA256:abc123",
+      },
+      null,
+      null,
+      null,
+      null,
+      "auto",
+      false,
+      null,
+    );
+  });
+
+  it("threads SSH target config through sidecar-backed API conversations", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+
+    const id = await useAgentTaskStore
+      .getState()
+      .createApiConversation(
+        "api-claude-oauth",
+        "/srv/app",
+        "claude-sonnet-4.5",
+        "Work on the remote repo",
+        null,
+        false,
+        false,
+        {
+          serverId: "server-1",
+          name: "Build host",
+          host: "example.com",
+          port: 2222,
+          user: "ian",
+          remotePath: "/srv/app",
+          keyPath: "/home/ian/.ssh/id_ed25519",
+          authMethod: "key",
+          hostFingerprint: "SHA256:test",
+        },
+      );
+
+    const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
+
+    expect(conversation?.sshTarget).toEqual({
+      id: "server-1",
+      name: "Build host",
+      host: "example.com",
+      user: "ian",
+      remotePath: "/srv/app",
+    });
+    expect(startApiAgentSessionMock).toHaveBeenCalledWith(
+      id,
+      "claude-oauth",
+      "claude-sonnet-4.5",
+      "/srv/app",
+      "Work on the remote repo",
+      null,
+      false,
+      undefined,
+      false,
+      {
+        host: "example.com",
+        port: 2222,
+        user: "ian",
+        remote_path: "/srv/app",
+        key_path: "/home/ian/.ssh/id_ed25519",
+        auth_method: "key",
+        target_id: "server-1",
+        host_fingerprint: "SHA256:test",
+      },
       null,
       null,
       null,
@@ -184,10 +317,12 @@ describe("agent/workspace store decoupling", () => {
 
   it("does not auto-failover when the Agents setting is disabled", async () => {
     const listeners = new Map<string, (event: { payload: unknown }) => void>();
-    listenMock.mockImplementation((eventName: string, callback: (event: { payload: unknown }) => void) => {
-      listeners.set(eventName, callback);
-      return Promise.resolve(() => {});
-    });
+    listenMock.mockImplementation(
+      (eventName: string, callback: (event: { payload: unknown }) => void) => {
+        listeners.set(eventName, callback);
+        return Promise.resolve(() => {});
+      },
+    );
 
     const { useAgentSettingsStore } = await import("@/stores/agentSettingsStore");
     useAgentSettingsStore.getState().setAutoFailoverEnabled(false);
@@ -220,10 +355,12 @@ describe("agent/workspace store decoupling", () => {
 
   it("keeps auto-failover enabled by default", async () => {
     const listeners = new Map<string, (event: { payload: unknown }) => void>();
-    listenMock.mockImplementation((eventName: string, callback: (event: { payload: unknown }) => void) => {
-      listeners.set(eventName, callback);
-      return Promise.resolve(() => {});
-    });
+    listenMock.mockImplementation(
+      (eventName: string, callback: (event: { payload: unknown }) => void) => {
+        listeners.set(eventName, callback);
+        return Promise.resolve(() => {});
+      },
+    );
 
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     await useAgentTaskStore

@@ -144,6 +144,7 @@ fn override_agent_id(spec: AttemptTargetSpec, agent_id: &str) -> AttemptTargetSp
             user,
             key_path,
             host_fingerprint,
+            auth_method,
             base_path,
             base_branch,
             agent_config_id: _,
@@ -156,6 +157,7 @@ fn override_agent_id(spec: AttemptTargetSpec, agent_id: &str) -> AttemptTargetSp
             user,
             key_path,
             host_fingerprint,
+            auth_method,
             base_path,
             base_branch,
             agent_config_id: agent_id.to_string(),
@@ -192,8 +194,8 @@ pub async fn handle(
     }
 
     // 1. Parse args.
-    let parsed: CreateTaskArgs = serde_json::from_value(args)
-        .map_err(|e| format!("invalid args: {}", e))?;
+    let parsed: CreateTaskArgs =
+        serde_json::from_value(args).map_err(|e| format!("invalid args: {}", e))?;
 
     // 2. Resolve mission id via the planner registry (peer-review FIX 1).
     //    The registry already maps sidecar session id → mission id, so we
@@ -535,9 +537,12 @@ async fn mark_task_failed_and_emit(
     let milestone_id_inner = milestone_id.to_string();
     let task_id_inner = task_id.to_string();
     let lock_result = storage::with_state_lock(move |state| {
-        if let Some(task) =
-            find_task_mut(state, &mission_id_inner, &milestone_id_inner, &task_id_inner)
-        {
+        if let Some(task) = find_task_mut(
+            state,
+            &mission_id_inner,
+            &milestone_id_inner,
+            &task_id_inner,
+        ) {
             task.status = TaskStatus::Failed;
         }
         if let Some(flight) = state.flights.iter_mut().find(|f| f.id == mission_id_inner) {
@@ -582,9 +587,7 @@ fn args_contains_placeholder(v: &serde_json::Value) -> bool {
     match v {
         serde_json::Value::String(s) => s == "(not set)",
         serde_json::Value::Array(arr) => arr.iter().any(args_contains_placeholder),
-        serde_json::Value::Object(map) => {
-            map.values().any(args_contains_placeholder)
-        }
+        serde_json::Value::Object(map) => map.values().any(args_contains_placeholder),
         _ => false,
     }
 }
@@ -827,10 +830,7 @@ mod tests {
             "fixture should produce exactly TASK_CEILING tasks"
         );
         // The guard's condition is `total_tasks >= TASK_CEILING`.
-        assert!(
-            total >= TASK_CEILING,
-            "60 tasks must hit the ceiling guard"
-        );
+        assert!(total >= TASK_CEILING, "60 tasks must hit the ceiling guard");
         let err = task_ceiling_error_message(total);
         assert!(
             err.starts_with("task_ceiling_reached:"),

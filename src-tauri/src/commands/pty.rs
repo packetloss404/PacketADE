@@ -208,9 +208,7 @@ pub fn create_pty_session(
         }
     };
     #[cfg(not(windows))]
-    let mut cmd = {
-        CommandBuilder::new(&command)
-    };
+    let mut cmd = { CommandBuilder::new(&command) };
     cmd.cwd(&project_path);
 
     // Append any extra arguments (e.g. --model)
@@ -429,9 +427,7 @@ pub fn kill_pty_and_wait(
     const MAX_TIMEOUT_MS: u64 = 30_000;
 
     let timeout = std::time::Duration::from_millis(
-        timeout_ms
-            .unwrap_or(DEFAULT_TIMEOUT_MS)
-            .min(MAX_TIMEOUT_MS),
+        timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).min(MAX_TIMEOUT_MS),
     );
     let mut mgr = lock_mutex(&manager)?;
     info!(session_id = %session_id, "Killing PTY session and waiting for exit");
@@ -663,11 +659,14 @@ pub async fn ssh_fetch_fingerprint(host: String, port: u16) -> Result<Vec<HostKe
         // alongside the fingerprint).
         let mut parts = line.split_whitespace();
         let _host_part = parts.next();
-        let algorithm = parts.next().unwrap_or_else(|| {
-            // Malformed keyscan line — empty alg is harmless downstream but useful to flag.
-            warn!(line = %line, "ssh-keyscan line missing algorithm token");
-            ""
-        }).to_string();
+        let algorithm = parts
+            .next()
+            .unwrap_or_else(|| {
+                // Malformed keyscan line — empty alg is harmless downstream but useful to flag.
+                warn!(line = %line, "ssh-keyscan line missing algorithm token");
+                ""
+            })
+            .to_string();
 
         // Derive the SHA256 fingerprint by piping the keyscan line to
         // `ssh-keygen -lf -`. Output: "<bits> SHA256:<...> <comment> (<alg>)".

@@ -22,9 +22,8 @@ use tracing::{info, warn};
 
 use crate::commands::agent_sidecar::SidecarManager;
 use crate::commands::mission_planner::{
-    journal_entry, persist_planner_state_on_flight, write_journal_and_emit,
-    MissionPlannerRegistry, PlannerStatus, COMPACTION_FAILURE_ESCALATION_COUNT,
-    COMPACTION_THRESHOLD_TOKENS,
+    journal_entry, persist_planner_state_on_flight, write_journal_and_emit, MissionPlannerRegistry,
+    PlannerStatus, COMPACTION_FAILURE_ESCALATION_COUNT, COMPACTION_THRESHOLD_TOKENS,
 };
 use crate::core::mission_journal;
 use crate::core::mission_journal::JournalKind;
@@ -129,20 +128,21 @@ pub async fn summarize_mission_journal(
             SUMMARIZER_PROVIDER.to_string(),
             SUMMARIZER_MODEL.to_string(),
             SUMMARIZER_SYSTEM_PROMPT.to_string(),
-            Vec::new(),                         // allowed_tools — none
-            serde_json::Value::Null,            // mcp_servers — none
-            project_path_for_summary(),         // project_path — see below
-            prompt,                             // initial_message carries the work
-            None,                               // api_key — claude-oauth uses ~/.claude
-            None,                               // resume token
-            Some(false),                        // thinking_enabled
-            Some(false),                        // plan_mode
-            serde_json::Value::Null,            // attachments
-            serde_json::Value::Null,            // resume_messages
-            None,                               // permission_mode
-            None,                               // approve_writes
-            None,                               // mcp_kind — no planner tools
-            None,                               // command_path
+            Vec::new(),                 // allowed_tools — none
+            serde_json::Value::Null,    // mcp_servers — none
+            project_path_for_summary(), // project_path — see below
+            prompt,                     // initial_message carries the work
+            None,                       // api_key — claude-oauth uses ~/.claude
+            None,                       // resume token
+            Some(false),                // thinking_enabled
+            Some(false),                // plan_mode
+            serde_json::Value::Null,    // attachments
+            serde_json::Value::Null,    // resume_messages
+            None,                       // permission_mode
+            None,                       // approve_writes
+            None,                       // mcp_kind — no planner tools
+            None,                       // command_path
+            None,                       // workspace — derive local from project_path
         )
         .await;
 
@@ -189,7 +189,9 @@ pub async fn summarize_mission_journal(
 /// Claude Agent SDK uses it as the cwd. Falling back to the user's
 /// home directory keeps it neutral if the data dir isn't writable.
 fn project_path_for_summary() -> String {
-    crate::core::storage::data_dir().to_string_lossy().into_owned()
+    crate::core::storage::data_dir()
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Truncate the journal to at most `max_chars`. Keeps the **latest**
@@ -342,10 +344,7 @@ struct PlannerSnapshot {
 ///   8. Append a `SystemNote` journal entry recording the swap.
 ///   9. Emit `mission-planner:compaction-completed:<missionId>` for the
 ///      frontend toast.
-pub async fn perform_compaction(
-    app: &AppHandle,
-    mission_id: &str,
-) -> Result<(), String> {
+pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(), String> {
     info!(mission_id, "starting context compaction");
 
     let registry = app
@@ -403,7 +402,10 @@ pub async fn perform_compaction(
     //    closed error here is non-fatal — the new session below is what
     //    matters.
     if let Some(sidecar) = app.try_state::<Arc<SidecarManager>>() {
-        if let Err(e) = sidecar.forward_close(snapshot.sidecar_session_id.clone()).await {
+        if let Err(e) = sidecar
+            .forward_close(snapshot.sidecar_session_id.clone())
+            .await
+        {
             warn!(error = %e, "compaction: forward_close on old session failed");
         }
     }
@@ -424,17 +426,18 @@ pub async fn perform_compaction(
             planner_allowed_tools(),
             serde_json::Value::Null, // mcpServers — sidecar builds the planner tools from `mcpKind`
             snapshot.project_path.clone(),
-            String::new(),           // initialMessage — empty; we inject the summary right after
-            None,                    // apiKey — claude-oauth pulls from ~/.claude
-            None,                    // resume — fresh session
-            Some(false),             // thinkingEnabled
-            Some(false),             // planMode
+            String::new(), // initialMessage — empty; we inject the summary right after
+            None,          // apiKey — claude-oauth pulls from ~/.claude
+            None,          // resume — fresh session
+            Some(false),   // thinkingEnabled
+            Some(false),   // planMode
             serde_json::Value::Null, // attachments
             serde_json::Value::Null, // resumeMessages
-            None,                    // permissionMode
-            None,                    // approveWrites
+            None,          // permissionMode
+            None,          // approveWrites
             Some(PLANNER_MCP_KIND.to_string()),
-            None,                    // commandPath
+            None, // commandPath
+            None, // workspace — derive local from projectPath
         )
         .await
     {
@@ -637,10 +640,7 @@ pub async fn perform_compaction(
         }),
     );
 
-    info!(
-        mission_id,
-        new_sidecar_session_id, "compaction completed"
-    );
+    info!(mission_id, new_sidecar_session_id, "compaction completed");
     Ok(())
 }
 
@@ -665,9 +665,7 @@ async fn maybe_journal_failure_escalation(
     }
     warn!(
         mission_id,
-        failure_count,
-        phase,
-        "compaction has failed repeatedly; escalating via journal"
+        failure_count, phase, "compaction has failed repeatedly; escalating via journal"
     );
     let entry = journal_entry(
         mission_id.to_string(),
@@ -816,9 +814,7 @@ mod tests {
     /// threshold, set `compaction_in_progress`, and we'd loop forever).
     #[tokio::test]
     async fn reset_compaction_in_progress_clears_flag_without_zeroing_tokens() {
-        use crate::commands::mission_planner::{
-            MissionPlannerRegistry, MissionPlannerSession,
-        };
+        use crate::commands::mission_planner::{MissionPlannerRegistry, MissionPlannerSession};
         let registry = MissionPlannerRegistry::default();
 
         // Build a session manually via the public Default+insert path the
@@ -876,9 +872,7 @@ mod tests {
     /// branches of the compaction orchestrator.
     #[tokio::test]
     async fn swap_sidecar_session_after_compaction_resets_tokens_and_flag() {
-        use crate::commands::mission_planner::{
-            MissionPlannerRegistry, MissionPlannerSession,
-        };
+        use crate::commands::mission_planner::{MissionPlannerRegistry, MissionPlannerSession};
         let registry = MissionPlannerRegistry::default();
         let mut session: MissionPlannerSession = serde_json::from_value(serde_json::json!({
             "id": "p-1",
@@ -953,11 +947,8 @@ mod tests {
             MissionPlannerRegistry, MissionPlannerSession, COMPACTION_THRESHOLD_TOKENS,
         };
         let registry = MissionPlannerRegistry::default();
-        let mut session = MissionPlannerSession::new(
-            "p-1".to_string(),
-            "m-1".to_string(),
-            "sid-old".to_string(),
-        );
+        let mut session =
+            MissionPlannerSession::new("p-1".to_string(), "m-1".to_string(), "sid-old".to_string());
         // Already over threshold from a prior turn that triggered the
         // (now-failed) compaction.
         session.cumulative_input_tokens = COMPACTION_THRESHOLD_TOKENS + 5_000;
@@ -1000,15 +991,10 @@ mod tests {
     /// `consecutive_compaction_failures` (release escalation counter).
     #[tokio::test]
     async fn successful_swap_clears_failure_tracking() {
-        use crate::commands::mission_planner::{
-            MissionPlannerRegistry, MissionPlannerSession,
-        };
+        use crate::commands::mission_planner::{MissionPlannerRegistry, MissionPlannerSession};
         let registry = MissionPlannerRegistry::default();
-        let session = MissionPlannerSession::new(
-            "p-1".to_string(),
-            "m-1".to_string(),
-            "sid-old".to_string(),
-        );
+        let session =
+            MissionPlannerSession::new("p-1".to_string(), "m-1".to_string(), "sid-old".to_string());
         registry.insert_for_test(session).await;
         let _ = registry.record_compaction_failure("m-1").await;
         let _ = registry.record_compaction_failure("m-1").await;
@@ -1046,15 +1032,10 @@ mod tests {
     /// been moved out for the unlisten call).
     #[tokio::test]
     async fn compaction_listener_set_take_is_one_shot() {
-        use crate::commands::mission_planner::{
-            MissionPlannerRegistry, MissionPlannerSession,
-        };
+        use crate::commands::mission_planner::{MissionPlannerRegistry, MissionPlannerSession};
         let registry = MissionPlannerRegistry::default();
-        let session = MissionPlannerSession::new(
-            "p-1".to_string(),
-            "m-1".to_string(),
-            "sid-1".to_string(),
-        );
+        let session =
+            MissionPlannerSession::new("p-1".to_string(), "m-1".to_string(), "sid-1".to_string());
         registry.insert_for_test(session).await;
 
         // tauri::EventId is a u32 alias — any value will do for the

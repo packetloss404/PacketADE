@@ -41,8 +41,8 @@ pub async fn handle(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // 1. Parse args.
-    let parsed: CompleteMissionArgs = serde_json::from_value(args)
-        .map_err(|e| format!("invalid args: {}", e))?;
+    let parsed: CompleteMissionArgs =
+        serde_json::from_value(args).map_err(|e| format!("invalid args: {}", e))?;
     let summary = parsed.summary;
 
     // 2. Resolve mission_id from sidecar session_id via the registry.

@@ -103,7 +103,9 @@ impl SidecarManager {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let _ = self.app_handle.emit(&chunk_event(&session_id), text.clone());
+                let _ = self
+                    .app_handle
+                    .emit(&chunk_event(&session_id), text.clone());
 
                 // E10-SUMMARIZE — if a one-shot waiter exists for this
                 // session, append the chunk to its buffer. Cheap lookup;
@@ -339,8 +341,8 @@ impl SidecarManager {
                 let app_for_async = self.app_handle.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(registry) = app_for_async
-                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
-                    {
+                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                    ) {
                         // Resolve mission_id BEFORE on_planner_done — that
                         // call never removes sessions (it only flips status),
                         // but resolving up front keeps the two registry
@@ -351,9 +353,8 @@ impl SidecarManager {
                             .await;
                         registry.on_planner_done(&session_for_async).await;
                         if let Some(mission_id) = mission_id_opt {
-                            if let Some(buffer) = registry
-                                .drain_chunk_buffer(&session_for_async)
-                                .await
+                            if let Some(buffer) =
+                                registry.drain_chunk_buffer(&session_for_async).await
                             {
                                 let trimmed = buffer.trim();
                                 if !trimmed.is_empty() {
@@ -502,7 +503,8 @@ impl SidecarManager {
                 let app_for_async = self.app_handle.clone();
                 tauri::async_runtime::spawn(async move {
                     let registry_opt = app_for_async
-                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>();
+                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                    );
                     if let Some(registry) = registry_opt {
                         if let Some(mission_id) = registry
                             .mission_id_for_sidecar_session(&session_for_async)
@@ -538,8 +540,8 @@ impl SidecarManager {
                             let planner_input_direction = input_tokens
                                 .saturating_add(cache_read_input_tokens)
                                 .saturating_add(cache_creation_input_tokens);
-                            let planner_total_tokens = planner_input_direction
-                                .saturating_add(output_tokens);
+                            let planner_total_tokens =
+                                planner_input_direction.saturating_add(output_tokens);
 
                             // E10-DETECT + E10 FIX P1-E — bump the planner's
                             // cumulative-input counter and emit the
@@ -616,9 +618,10 @@ impl SidecarManager {
                     // Not a planner session — try the executor (flight-attempt
                     // / flight-task) linkage instead.
                     let state_snap = crate::core::storage::load_state();
-                    let owner = match crate::commands::mission_planner::
-                        flight_for_executor_session(&state_snap, &session_for_async)
-                    {
+                    let owner = match crate::commands::mission_planner::flight_for_executor_session(
+                        &state_snap,
+                        &session_for_async,
+                    ) {
                         Some(o) => o,
                         None => return,
                     };
@@ -633,13 +636,12 @@ impl SidecarManager {
                         cache_read_input_tokens,
                         cache_creation_input_tokens,
                     );
-                    if let Err(e) =
-                        crate::commands::mission_planner::accumulate_executor_cost(
-                            &owner.flight_id,
-                            exec_total_tokens,
-                            exec_cost_usd,
-                        )
-                        .await
+                    if let Err(e) = crate::commands::mission_planner::accumulate_executor_cost(
+                        &owner.flight_id,
+                        exec_total_tokens,
+                        exec_cost_usd,
+                    )
+                    .await
                     {
                         warn!(
                             mission_id = %owner.flight_id,
@@ -676,6 +678,7 @@ impl SidecarManager {
                     },
                 );
                 self.forget_owned_session(&session_id).await;
+                self.close_remote_session(&session_id).await;
 
                 // E10-SUMMARIZE — resolve any one-shot waiter for this
                 // session with the error. The compaction summarizer treats
@@ -709,15 +712,14 @@ impl SidecarManager {
                 let error_for_async = message.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(registry) = app_for_async
-                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
-                    {
+                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                    ) {
                         let mission_id_opt = registry
                             .mission_id_for_sidecar_session(&session_for_async)
                             .await;
                         if let Some(mission_id) = mission_id_opt {
-                            if let Some(buffer) = registry
-                                .drain_chunk_buffer(&session_for_async)
-                                .await
+                            if let Some(buffer) =
+                                registry.drain_chunk_buffer(&session_for_async).await
                             {
                                 let trimmed = buffer.trim();
                                 if !trimmed.is_empty() {
@@ -784,8 +786,8 @@ impl SidecarManager {
                     let tool_for_reply = tool.clone();
                     tauri::async_runtime::spawn(async move {
                         let outcome = match app_handle
-                            .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
-                        {
+                            .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                        ) {
                             Some(registry) => {
                                 registry
                                     .handle_tool_call(
@@ -796,9 +798,7 @@ impl SidecarManager {
                                     )
                                     .await
                             }
-                            None => Err(
-                                "mission planner registry not managed".to_string(),
-                            ),
+                            None => Err("mission planner registry not managed".to_string()),
                         };
                         let (success, result, error) = match outcome {
                             Ok(v) => (true, Some(v), None),
@@ -844,9 +844,7 @@ impl SidecarManager {
                 // returns `None` for them and `on_rate_limited` no-ops.
                 // The regular `error` event has already been emitted, so
                 // those sessions still surface the failure to the user.
-                let retry_after_seconds = value
-                    .get("retryAfterSeconds")
-                    .and_then(|v| v.as_f64());
+                let retry_after_seconds = value.get("retryAfterSeconds").and_then(|v| v.as_f64());
                 let message = value
                     .get("message")
                     .and_then(|v| v.as_str())
@@ -867,8 +865,8 @@ impl SidecarManager {
                 let app_for_async = self.app_handle.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(registry) = app_for_async
-                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
-                    {
+                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                    ) {
                         registry
                             .on_rate_limited(
                                 &session_for_async,
@@ -889,9 +887,8 @@ impl SidecarManager {
                             .mission_id_for_sidecar_session(&session_for_async)
                             .await;
                         if let Some(mission_id) = mission_id_opt {
-                            if let Some(buffer) = registry
-                                .drain_chunk_buffer(&session_for_async)
-                                .await
+                            if let Some(buffer) =
+                                registry.drain_chunk_buffer(&session_for_async).await
                             {
                                 let trimmed = buffer.trim();
                                 if !trimmed.is_empty() {

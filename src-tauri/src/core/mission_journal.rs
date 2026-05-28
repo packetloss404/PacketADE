@@ -209,8 +209,7 @@ pub fn read_journal(mission_id: &str) -> Result<String, String> {
     if !path.exists() {
         return Ok(String::new());
     }
-    std::fs::read_to_string(&path)
-        .map_err(|e| format!("failed to read journal {:?}: {}", path, e))
+    std::fs::read_to_string(&path).map_err(|e| format!("failed to read journal {:?}: {}", path, e))
 }
 
 // === Tests ===

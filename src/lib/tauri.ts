@@ -715,6 +715,7 @@ export type AttemptTargetSpec =
       port: number;
       user: string;
       keyPath?: string | null;
+      authMethod?: "agent" | "key" | "password" | null;
       /** Phase 2: pinned SHA256 host-key fingerprint, copied from
        *  `ServerConfig.hostFingerprint`. When omitted, the per-attempt
        *  SSH connection falls back to TOFU `accept-new` and the Rust
@@ -750,6 +751,7 @@ export async function launchFlightAsync(
       port: t.port,
       user: t.user,
       key_path: t.keyPath ?? null,
+      auth_method: t.authMethod ?? null,
       host_fingerprint: t.hostFingerprint ?? null,
       base_path: t.basePath,
       base_branch: t.baseBranch,
@@ -2325,6 +2327,7 @@ export interface SshConfigInput {
   user: string;
   remote_path: string;
   key_path?: string | null;
+  auth_method?: "agent" | "key" | "password" | null;
   /** Phase 2: callers should derive this from `ServerConfig` (the canonical
    *  SSH model) so flight attempts and API-agent sessions pin host keys
    *  instead of falling back to TOFU. Frontend conversion site lives in
@@ -2332,6 +2335,41 @@ export interface SshConfigInput {
    *  (per-attempt spec build). */
   target_id?: string | null;
   host_fingerprint?: string | null;
+}
+
+export type ApiAgentWorkspaceInput =
+  | {
+      kind: "local";
+      projectPath: string;
+    }
+  | {
+      kind: "ssh";
+      serverId?: string | null;
+      host: string;
+      port: number;
+      user: string;
+      remotePath: string;
+      keyPath?: string | null;
+      authMethod?: "agent" | "key" | "password" | null;
+      hostFingerprint?: string | null;
+    };
+
+function apiAgentWorkspaceFrom(
+  projectPath: string,
+  sshConfig?: SshConfigInput | null,
+): ApiAgentWorkspaceInput {
+  if (!sshConfig) return { kind: "local", projectPath };
+  return {
+    kind: "ssh",
+    serverId: sshConfig.target_id ?? null,
+    host: sshConfig.host,
+    port: sshConfig.port,
+    user: sshConfig.user,
+    remotePath: sshConfig.remote_path,
+    keyPath: sshConfig.key_path ?? null,
+    authMethod: sshConfig.auth_method ?? null,
+    hostFingerprint: sshConfig.host_fingerprint ?? null,
+  };
 }
 
 export interface SlashCommandDef {
@@ -2368,6 +2406,7 @@ export async function startApiAgentSession(
   permissionMode?: "auto" | "ask_for_risky" | "allow_all" | "deny_all" | null,
   approveWrites?: boolean | null,
   commandPath?: string | null,
+  workspace?: ApiAgentWorkspaceInput | null,
 ): Promise<void> {
   return invoke("start_api_agent_session", {
     sessionId,
@@ -2387,6 +2426,7 @@ export async function startApiAgentSession(
     permissionMode: permissionMode ?? null,
     approveWrites: approveWrites ?? null,
     commandPath: commandPath ?? null,
+    workspace: workspace ?? apiAgentWorkspaceFrom(projectPath, sshConfig),
   });
 }
 

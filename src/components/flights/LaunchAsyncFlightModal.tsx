@@ -36,6 +36,7 @@ function pickedToSpec(p: PickedTarget): AttemptTargetSpec {
     port: p.server.port,
     user: p.server.username,
     keyPath: p.server.keyPath ?? null,
+    authMethod: p.server.authMethod,
     hostFingerprint: p.server.hostFingerprint ?? null,
     basePath: p.basePath,
     baseBranch: p.baseBranch,

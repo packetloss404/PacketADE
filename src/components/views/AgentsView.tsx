@@ -215,6 +215,7 @@ export function AgentsView() {
           user: server.username,
           remotePath,
           keyPath: server.keyPath ?? null,
+          authMethod: server.authMethod,
           hostFingerprint: server.hostFingerprint ?? null,
         };
       }

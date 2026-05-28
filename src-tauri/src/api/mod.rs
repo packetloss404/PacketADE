@@ -1777,8 +1777,8 @@ mod tests {
                 milestone_gating: true,
                 project_path: "/test".into(),
                 auto_commit_trailer_enabled: true,
-                auto_commit_trailer_format:
-                    core_orchestrator::DEFAULT_AUTO_COMMIT_TRAILER_FORMAT.into(),
+                auto_commit_trailer_format: core_orchestrator::DEFAULT_AUTO_COMMIT_TRAILER_FORMAT
+                    .into(),
             },
             ui: PersistedUiStateDto {
                 selected_flight_id: None,
@@ -1859,7 +1859,10 @@ mod tests {
             pane.override_args.as_deref(),
             Some(&["--ask-for-approval".to_string(), "never".to_string()][..])
         );
-        let github_repo = core.github_repo.as_ref().expect("github repo should persist");
+        let github_repo = core
+            .github_repo
+            .as_ref()
+            .expect("github repo should persist");
         assert_eq!(github_repo.owner, "openai");
         assert_eq!(github_repo.repo, "packetade");
 

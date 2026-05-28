@@ -180,28 +180,26 @@ pub async fn issues_extract_from_spec(
             SPEC_IMPORT_PROVIDER.to_string(),
             SPEC_IMPORT_MODEL.to_string(),
             system_prompt,
-            Vec::new(),                         // allowed_tools — none
-            serde_json::Value::Null,            // mcp_servers — none
+            Vec::new(),              // allowed_tools — none
+            serde_json::Value::Null, // mcp_servers — none
             resolved_project_path,
-            user_turn,                          // initial_message carries the work
-            None,                               // api_key — claude-oauth uses ~/.claude
-            None,                               // resume token
-            Some(false),                        // thinking_enabled
-            Some(false),                        // plan_mode
-            serde_json::Value::Null,            // attachments
-            serde_json::Value::Null,            // resume_messages
-            None,                               // permission_mode
-            None,                               // approve_writes
-            None,                               // mcp_kind — vanilla one-shot
-            None,                               // command_path
+            user_turn,               // initial_message carries the work
+            None,                    // api_key — claude-oauth uses ~/.claude
+            None,                    // resume token
+            Some(false),             // thinking_enabled
+            Some(false),             // plan_mode
+            serde_json::Value::Null, // attachments
+            serde_json::Value::Null, // resume_messages
+            None,                    // permission_mode
+            None,                    // approve_writes
+            None,                    // mcp_kind — vanilla one-shot
+            None,                    // command_path
+            None,                    // workspace — derive local from project_path
         )
         .await;
 
     if let Err(e) = start_result {
-        return Err(format!(
-            "Failed to start spec-import session: {}",
-            e
-        ));
+        return Err(format!("Failed to start spec-import session: {}", e));
     }
 
     // Await completion with a wall-clock timeout. The waiter is resolved
@@ -222,11 +220,7 @@ pub async fn issues_extract_from_spec(
     let raw = match wait_result {
         Ok(Ok(Ok(text))) => text,
         Ok(Ok(Err(msg))) => return Err(format!("Spec import session error: {}", msg)),
-        Ok(Err(_)) => {
-            return Err(
-                "Spec import waiter dropped before completion.".to_string(),
-            )
-        }
+        Ok(Err(_)) => return Err("Spec import waiter dropped before completion.".to_string()),
         Err(_) => {
             return Err(format!(
                 "Spec import timed out after {}s.",
@@ -323,7 +317,10 @@ mod tests {
         assert_eq!(drafts.len(), 1);
         let d = &drafts[0];
         assert_eq!(d.title, "Add login");
-        assert_eq!(d.labels.as_deref(), Some(&["frontend".to_string(), "auth".to_string()][..]));
+        assert_eq!(
+            d.labels.as_deref(),
+            Some(&["frontend".to_string(), "auth".to_string()][..])
+        );
         assert_eq!(
             d.acceptance_criteria.as_deref(),
             Some(

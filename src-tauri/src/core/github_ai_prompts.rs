@@ -215,7 +215,10 @@ mod tests {
             title: "Fix login",
             body: "Crash on submit",
         }];
-        let commits = vec!["feat: add login".to_string(), "fix: handle null".to_string()];
+        let commits = vec![
+            "feat: add login".to_string(),
+            "fix: handle null".to_string(),
+        ];
         let p = pr_description_user_turn(
             "octocat",
             "Hello-World",
@@ -300,8 +303,12 @@ mod tests {
     #[test]
     fn triage_prompt_grounds_in_existing_labels() {
         let labels = vec!["bug".to_string(), "enhancement".to_string()];
-        let (sys, user) =
-            triage_prompt("octocat", "Hello-World", &labels, "[{\"number\":1,\"title\":\"x\"}]");
+        let (sys, user) = triage_prompt(
+            "octocat",
+            "Hello-World",
+            &labels,
+            "[{\"number\":1,\"title\":\"x\"}]",
+        );
         assert!(sys.contains("octocat/Hello-World"));
         assert!(sys.contains("bug, enhancement"));
         assert!(sys.contains("P0 / P1 / P2 / P3"));
