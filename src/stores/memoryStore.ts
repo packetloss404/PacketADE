@@ -36,6 +36,27 @@ export interface ContextItem {
   reason: string;
 }
 
+export type MemoryBriefScopeKind = "local" | "ssh";
+
+export interface MemoryBriefScope {
+  projectPath: string;
+  kind?: MemoryBriefScopeKind;
+  workspaceId?: string | null;
+  serverId?: string | null;
+  remotePath?: string | null;
+}
+
+export interface MemoryBrief {
+  text: string;
+  items: ContextItem[];
+  charBudget: number;
+  truncated: boolean;
+  scopeKey: string;
+}
+
+const DEFAULT_MEMORY_BRIEF_MAX_CHARS = 1800;
+const MAX_MEMORY_BRIEF_MAX_CHARS = 4000;
+
 interface MemoryStore {
   events: MemoryEvent[];
   patterns: LearnedPattern[];
@@ -66,7 +87,12 @@ interface MemoryStore {
   }) => MemoryEvent;
 
   // Auto-learning: summarize a session transcript and store the result
-  learnFromSession: (sessionId: string, agentId: string, projectPath: string, durationMs: number) => Promise<void>;
+  learnFromSession: (
+    sessionId: string,
+    agentId: string,
+    projectPath: string,
+    durationMs: number,
+  ) => Promise<void>;
 
   // Manual pattern refresh
   refreshPatterns: (projectPath: string) => Promise<void>;
@@ -89,16 +115,22 @@ interface MemoryStore {
   /** Context injection (live, not snapshot). Accepts either a project-path
    * string (legacy single-arg form) or an options object so callers can
    * pass a sessionId without breaking back-compat. */
-  getContextForSession: (
-    input: string | { sessionId?: string; projectPath: string },
-  ) => string;
+  getContextForSession: (input: string | { sessionId?: string; projectPath: string }) => string;
   /** v0.8-H: structured form of `getContextForSession` used by the
    * AgentInputArea context-preview chevron. Returns the same items that
    * would compose the injected string, broken into rows the UI can
    * render with relative time + reason tooltips. */
   getContextItemsForSession: (
-    input: string | { sessionId?: string; projectPath: string },
+    input: string | ({ sessionId?: string } & MemoryBriefScope),
   ) => ContextItem[];
+  /** Compact prompt-injection form used when launching executor/API-agent
+   * sessions. It is intentionally smaller and stricter than the context
+   * preview: remote SSH scopes only match memory explicitly keyed to that
+   * workspace/server. */
+  composeMemoryBrief: (
+    input: string | MemoryBriefScope,
+    options?: { maxChars?: number },
+  ) => MemoryBrief;
 }
 
 function createEvent<T extends MemoryEventType>(
@@ -149,8 +181,7 @@ function capPatterns(patterns: LearnedPattern[]): LearnedPattern[] {
   if (!settings.pinnedExemptFromCap) {
     if (patterns.length <= maxPatterns) return patterns;
     const sorted = [...patterns].sort(
-      (a, b) =>
-        b.confidence - a.confidence || b.extractedAt - a.extractedAt,
+      (a, b) => b.confidence - a.confidence || b.extractedAt - a.extractedAt,
     );
     const survivors = new Set<string>(sorted.slice(0, maxPatterns).map((p) => p.id));
     return patterns.filter((p) => survivors.has(p.id));
@@ -162,18 +193,59 @@ function capPatterns(patterns: LearnedPattern[]): LearnedPattern[] {
     unpinned.length <= headroom
       ? unpinned
       : [...unpinned]
-          .sort(
-            (a, b) =>
-              b.confidence - a.confidence || b.extractedAt - a.extractedAt,
-          )
+          .sort((a, b) => b.confidence - a.confidence || b.extractedAt - a.extractedAt)
           .slice(0, headroom);
-  const survivors = new Set<string>([
-    ...pinned.map((p) => p.id),
-    ...keptUnpinned.map((p) => p.id),
-  ]);
+  const survivors = new Set<string>([...pinned.map((p) => p.id), ...keptUnpinned.map((p) => p.id)]);
   // Preserve original ordering so the rest of the store doesn't see
   // patterns shuffle on every persist.
   return patterns.filter((p) => survivors.has(p.id));
+}
+
+function clampBriefChars(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_MEMORY_BRIEF_MAX_CHARS;
+  return Math.max(400, Math.min(MAX_MEMORY_BRIEF_MAX_CHARS, Math.round(parsed)));
+}
+
+function normalizeBriefText(text: string, maxChars = 260): string {
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= maxChars) return singleLine;
+  return `${singleLine.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
+function normalizeScopeInput(input: string | MemoryBriefScope): Required<MemoryBriefScope> {
+  if (typeof input === "string") {
+    return {
+      projectPath: input,
+      kind: "local",
+      workspaceId: null,
+      serverId: null,
+      remotePath: null,
+    };
+  }
+  return {
+    projectPath: input.projectPath,
+    kind: input.kind ?? (input.serverId ? "ssh" : "local"),
+    workspaceId: input.workspaceId ?? null,
+    serverId: input.serverId ?? null,
+    remotePath: input.remotePath ?? null,
+  };
+}
+
+export function remoteMemoryProjectKey(serverId: string, remotePath: string): string {
+  return `ssh:${serverId}:${normalizePath(remotePath)}`;
+}
+
+export function workspaceMemoryProjectKey(workspaceId: string): string {
+  return `workspace:${workspaceId}`;
+}
+
+function memoryScopeKey(scope: Required<MemoryBriefScope>): string {
+  if (scope.kind === "ssh" && scope.serverId) {
+    return remoteMemoryProjectKey(scope.serverId, scope.remotePath || scope.projectPath);
+  }
+  if (scope.workspaceId) return workspaceMemoryProjectKey(scope.workspaceId);
+  return normalizePath(scope.projectPath);
 }
 
 async function persistState(events: MemoryEvent[], patterns?: LearnedPattern[]) {
@@ -263,9 +335,8 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       }
 
       // Trim transcript to last ~4000 chars to avoid blowing up the LLM call
-      const trimmedTranscript = transcript.data.length > 4000
-        ? transcript.data.slice(-4000)
-        : transcript.data;
+      const trimmedTranscript =
+        transcript.data.length > 4000 ? transcript.data.slice(-4000) : transcript.data;
 
       // 2. Summarize the session
       set({ learningStatus: "Summarizing session..." });
@@ -410,9 +481,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     // feels instant; the backend toggle is atomic and authoritative, so
     // on success we leave state alone, and on failure we revert.
     const before = get().patterns;
-    const next = before.map((p) =>
-      p.id === id ? { ...p, pinned: !p.pinned } : p,
-    );
+    const next = before.map((p) => (p.id === id ? { ...p, pinned: !p.pinned } : p));
     set({ patterns: next });
     void togglePinnedPatternBackend(id)
       .then((result) => {
@@ -428,9 +497,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
         const stored = get().patterns.find((p) => p.id === id);
         if (stored && stored.pinned !== result) {
           set({
-            patterns: get().patterns.map((p) =>
-              p.id === id ? { ...p, pinned: result } : p,
-            ),
+            patterns: get().patterns.map((p) => (p.id === id ? { ...p, pinned: result } : p)),
           });
         }
       })
@@ -454,7 +521,9 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const projectPath = typeof input === "string" ? input : input.projectPath;
     if (!projectPath) return "";
 
-    const items = get().getContextItemsForSession({ projectPath });
+    const items = get().getContextItemsForSession(
+      typeof input === "string" ? { projectPath } : input,
+    );
     if (items.length === 0) return "";
 
     const lines: string[] = [];
@@ -484,11 +553,21 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   },
 
   getContextItemsForSession: (input) => {
-    const projectPath =
-      typeof input === "string" ? input : input.projectPath;
-    if (!projectPath) return [];
+    const scope = normalizeScopeInput(input);
+    if (!scope.projectPath) return [];
 
-    const normalizedCurrent = normalizePath(projectPath);
+    const normalizedCurrent = normalizePath(scope.projectPath);
+    const explicitScopeKeys = new Set<string>();
+    if (scope.workspaceId) {
+      explicitScopeKeys.add(normalizePath(workspaceMemoryProjectKey(scope.workspaceId)));
+    }
+    if (scope.kind === "ssh" && scope.serverId) {
+      explicitScopeKeys.add(
+        normalizePath(
+          remoteMemoryProjectKey(scope.serverId, scope.remotePath || scope.projectPath),
+        ),
+      );
+    }
     const { events, patterns } = get();
     const settings = getMemorySettings();
     const out: ContextItem[] = [];
@@ -501,15 +580,19 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     //
     // Items with no `projectPath` (legacy / global) always match.
     const projectPathsMatch = (recorded: string | undefined | null): boolean => {
+      if (scope.kind === "ssh") {
+        if (!recorded) return false;
+        return explicitScopeKeys.has(normalizePath(recorded));
+      }
+
       if (!recorded) return true; // legacy/global item — always relevant
+      if (explicitScopeKeys.has(normalizePath(recorded))) return true;
       if (settings.projectPathMatching === "global") return true;
       const recordedN = normalizePath(recorded);
       if (recordedN === normalizedCurrent) return true;
       if (settings.projectPathMatching === "parent") {
         const a = recordedN.endsWith("/") ? recordedN : recordedN + "/";
-        const b = normalizedCurrent.endsWith("/")
-          ? normalizedCurrent
-          : normalizedCurrent + "/";
+        const b = normalizedCurrent.endsWith("/") ? normalizedCurrent : normalizedCurrent + "/";
         return a.startsWith(b) || b.startsWith(a);
       }
       return false;
@@ -552,9 +635,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const flightEvents = events.filter(
       (e): e is Extract<MemoryEvent, { type: "flight_completed" }> =>
-        e.type === "flight_completed" &&
-        projectPathsMatch(e.projectPath) &&
-        e.timestamp > cutoff,
+        e.type === "flight_completed" && projectPathsMatch(e.projectPath) && e.timestamp > cutoff,
     );
     let pushed = 0;
     outer: for (const e of flightEvents) {
@@ -594,5 +675,58 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     }
 
     return out;
+  },
+
+  composeMemoryBrief: (input, options) => {
+    const scope = normalizeScopeInput(input);
+    const charBudget = clampBriefChars(options?.maxChars);
+    const items = get().getContextItemsForSession(scope);
+    const scopeKey = memoryScopeKey(scope);
+    if (items.length === 0) {
+      return { text: "", items: [], charBudget, truncated: false, scopeKey };
+    }
+
+    const lines: string[] = [
+      "## PacketADE Memory Brief",
+      "Use this project memory when relevant. Prefer current repository files over stale notes.",
+      "",
+    ];
+    const included: ContextItem[] = [];
+    let truncated = false;
+
+    const pushLine = (line: string, item?: ContextItem): boolean => {
+      const next = [...lines, line].join("\n");
+      if (next.length > charBudget) {
+        truncated = true;
+        return false;
+      }
+      lines.push(line);
+      if (item) included.push(item);
+      return true;
+    };
+
+    const groups: Array<[ContextItemKind, string]> = [
+      ["pattern", "Learned patterns"],
+      ["lesson", "Mission lessons"],
+      ["session", "Recent session context"],
+    ];
+
+    for (const [kind, label] of groups) {
+      const groupItems = items.filter((item) => item.kind === kind);
+      if (groupItems.length === 0) continue;
+      if (!pushLine(`${label}:`)) break;
+      for (const item of groupItems) {
+        if (!pushLine(`- ${normalizeBriefText(item.title)}`, item)) break;
+      }
+      if (!pushLine("")) break;
+    }
+
+    return {
+      text: lines.join("\n").trim(),
+      items: included,
+      charBudget,
+      truncated,
+      scopeKey,
+    };
   },
 }));

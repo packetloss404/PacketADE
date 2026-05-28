@@ -7,13 +7,13 @@ platform. If you are adding a new target triple, extend this doc.
 
 ## Supported target triples
 
-| OS            | Triple                         | Bundle formats         |
-| ------------- | ------------------------------ | ---------------------- |
-| Windows x64   | `x86_64-pc-windows-msvc`       | `.exe` + NSIS installer|
-| macOS x64     | `x86_64-apple-darwin`          | `.app` + DMG           |
-| macOS ARM64   | `aarch64-apple-darwin`         | `.app` + DMG           |
-| Linux x64     | `x86_64-unknown-linux-gnu`     | AppImage + DEB         |
-| Linux ARM64   | `aarch64-unknown-linux-gnu`    | AppImage + DEB (cross) |
+| OS          | Triple                      | Bundle formats          |
+| ----------- | --------------------------- | ----------------------- |
+| Windows x64 | `x86_64-pc-windows-msvc`    | `.exe` + NSIS installer |
+| macOS x64   | `x86_64-apple-darwin`       | `.app` + DMG            |
+| macOS ARM64 | `aarch64-apple-darwin`      | `.app` + DMG            |
+| Linux x64   | `x86_64-unknown-linux-gnu`  | AppImage + DEB          |
+| Linux ARM64 | `aarch64-unknown-linux-gnu` | AppImage + DEB (cross)  |
 
 Add a target with `rustup target add <triple>` before building.
 
@@ -70,12 +70,22 @@ pnpm install        # postinstall runs the sidecar install too
 pnpm sidecar:build  # compile agent-sidecar/dist
 pnpm fetch-node     # download host-matching Node into src-tauri/binaries/
 pnpm tauri build    # prebundle chain + Tauri bundler
+pnpm run release:readiness
 ```
 
 `pnpm tauri build` invokes the `prebundle` script via Tauri's
 `beforeBuildCommand`, so in most cases just running `pnpm install` followed
 by `pnpm tauri build` is enough. The explicit commands above make the order
 visible when debugging.
+
+`pnpm run release:readiness` is the beta distribution gate. It confirms the
+package and Tauri versions match, bundle artifacts exist for the current host
+target, release quality-gate scripts are present, and signing / updater
+signals are visible. It does not require certificates to be present on
+ordinary developer machines and does not print secret values.
+
+Set `PACKETADE_RELEASE_TARGET=windows`, `macos`, or `linux` when checking
+artifacts for a target other than the current host.
 
 For cross-compiling (e.g. producing an ARM64 Linux bundle on an x64 host),
 set `TAURI_TARGET` so `scripts/fetch-node.js` pulls the right runtime:
@@ -104,6 +114,7 @@ var to select one explicitly.
 
   This removes the quarantine xattr. **Do not ship this workaround to end
   users** — distribute a signed + notarized DMG instead.
+
 - DMG signing needs an Apple Developer ID. See the "Not covered here"
   section at the bottom.
 
@@ -127,12 +138,12 @@ var to select one explicitly.
 
 ## Installer sizes (for reference)
 
-| Bundle          | Expected size |
-| --------------- | ------------- |
-| Windows NSIS    | ~78 MiB       |
-| macOS DMG       | ~80–90 MiB    |
-| Linux DEB       | ~80–100 MiB   |
-| Linux AppImage  | ~80–100 MiB   |
+| Bundle         | Expected size |
+| -------------- | ------------- |
+| Windows NSIS   | ~78 MiB       |
+| macOS DMG      | ~80–90 MiB    |
+| Linux DEB      | ~80–100 MiB   |
+| Linux AppImage | ~80–100 MiB   |
 
 Wildly different numbers usually mean the sidecar `node_modules` was not
 pruned — `pnpm sidecar:prune` runs automatically in the `prebundle` chain.
@@ -147,6 +158,10 @@ pruned — `pnpm sidecar:prune` runs automatically in the `prebundle` chain.
 - **`PACKETADE_SIDECAR_PATH` / `PACKETADE_NODE_PATH`** — at runtime these
   override the bundled locations, useful when running a packaged build
   against a working-copy sidecar.
+- **Release readiness warnings** — warnings from `pnpm run release:readiness`
+  are expected until signing identities, notarization credentials, and updater
+  manifests are configured for the release machine. Failures should block a
+  beta handoff.
 
 ## Not covered here
 

@@ -157,7 +157,76 @@ pub fn get_status(project_path: &str) -> Result<String, String> {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct GitCommitContext {
+    pub flight_id: Option<String>,
+    pub task_id: Option<String>,
+    pub attempt_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub session_id: Option<String>,
+}
+
+fn clean_trailer_value(value: &str) -> Option<String> {
+    let cleaned = value
+        .trim()
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .collect::<String>();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+pub fn append_packetade_context_trailers(message: &str, context: &GitCommitContext) -> String {
+    let mut trailers: Vec<String> = Vec::new();
+    if let Some(value) = context.flight_id.as_deref().and_then(clean_trailer_value) {
+        trailers.push(format!("PacketADE-Mission: {}", value));
+    }
+    if let Some(value) = context.task_id.as_deref().and_then(clean_trailer_value) {
+        trailers.push(format!("PacketADE-Task: {}", value));
+    }
+    if let Some(value) = context.attempt_id.as_deref().and_then(clean_trailer_value) {
+        trailers.push(format!("PacketADE-Attempt: {}", value));
+    }
+    if let Some(value) = context
+        .conversation_id
+        .as_deref()
+        .and_then(clean_trailer_value)
+    {
+        trailers.push(format!("PacketADE-Conversation: {}", value));
+    }
+    if let Some(value) = context.session_id.as_deref().and_then(clean_trailer_value) {
+        trailers.push(format!("PacketADE-Session: {}", value));
+    }
+
+    if trailers.is_empty() {
+        return message.trim().to_string();
+    }
+
+    let mut out = message.trim_end().to_string();
+    if !out.ends_with("\n\n") {
+        if out.ends_with('\n') {
+            out.push('\n');
+        } else {
+            out.push_str("\n\n");
+        }
+    }
+    out.push_str(&trailers.join("\n"));
+    out
+}
+
 pub fn commit(project_path: &str, message: &str, stage_all: bool) -> Result<String, String> {
+    commit_with_context(project_path, message, stage_all, None)
+}
+
+pub fn commit_with_context(
+    project_path: &str,
+    message: &str,
+    stage_all: bool,
+    context: Option<GitCommitContext>,
+) -> Result<String, String> {
     let trimmed_message = message.trim();
     if trimmed_message.is_empty() {
         return Err("Commit message is required".to_string());
@@ -174,7 +243,11 @@ pub fn commit(project_path: &str, message: &str, stage_all: bool) -> Result<Stri
         return Err("No staged changes to commit. Stage files explicitly first.".to_string());
     }
 
-    git_command_result(&["commit", "-m", trimmed_message], project_path)
+    let final_message = context
+        .as_ref()
+        .map(|ctx| append_packetade_context_trailers(trimmed_message, ctx))
+        .unwrap_or_else(|| trimmed_message.to_string());
+    git_command_result(&["commit", "-m", &final_message], project_path)
 }
 
 pub fn push(project_path: &str) -> Result<String, String> {
@@ -401,6 +474,34 @@ mod tests {
         assert!(validate_branch_name("fix-123").is_ok());
         assert!(validate_branch_name("release/v1.0.0").is_ok());
         assert!(validate_branch_name("my_branch").is_ok());
+    }
+
+    #[test]
+    fn append_packetade_context_trailers_adds_mission_task_metadata() {
+        let msg = append_packetade_context_trailers(
+            "feat: land work",
+            &GitCommitContext {
+                flight_id: Some("flight-123".to_string()),
+                task_id: Some("task-456".to_string()),
+                ..GitCommitContext::default()
+            },
+        );
+        assert!(msg.contains("PacketADE-Mission: flight-123"));
+        assert!(msg.contains("PacketADE-Task: task-456"));
+        assert!(msg.starts_with("feat: land work\n\n"));
+    }
+
+    #[test]
+    fn append_packetade_context_trailers_sanitizes_control_chars() {
+        let msg = append_packetade_context_trailers(
+            "fix: thing\n",
+            &GitCommitContext {
+                conversation_id: Some("conv-1\nBAD".to_string()),
+                ..GitCommitContext::default()
+            },
+        );
+        assert!(msg.contains("PacketADE-Conversation: conv-1BAD"));
+        assert!(!msg.contains("\nBAD"));
     }
 
     // v0.8-15 — workspace auto-bind helpers

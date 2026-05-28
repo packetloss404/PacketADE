@@ -32,9 +32,7 @@ export function MemorySettingsCard() {
   const retentionDays = useMemorySettingsStore((s) => s.retentionDays);
   const maxEvents = useMemorySettingsStore((s) => s.maxEvents);
   const maxPatterns = useMemorySettingsStore((s) => s.maxPatterns);
-  const patternRefreshThreshold = useMemorySettingsStore(
-    (s) => s.patternRefreshThreshold,
-  );
+  const patternRefreshThreshold = useMemorySettingsStore((s) => s.patternRefreshThreshold);
   const contextMaxPatterns = useMemorySettingsStore((s) => s.contextMaxPatterns);
   const contextMaxSessions = useMemorySettingsStore((s) => s.contextMaxSessions);
   const contextMaxLessons = useMemorySettingsStore((s) => s.contextMaxLessons);
@@ -49,28 +47,17 @@ export function MemorySettingsCard() {
   const setRetentionDays = useMemorySettingsStore((s) => s.setRetentionDays);
   const setMaxEvents = useMemorySettingsStore((s) => s.setMaxEvents);
   const setMaxPatterns = useMemorySettingsStore((s) => s.setMaxPatterns);
-  const setPatternRefreshThreshold = useMemorySettingsStore(
-    (s) => s.setPatternRefreshThreshold,
-  );
-  const setContextMaxPatterns = useMemorySettingsStore(
-    (s) => s.setContextMaxPatterns,
-  );
-  const setContextMaxSessions = useMemorySettingsStore(
-    (s) => s.setContextMaxSessions,
-  );
-  const setContextMaxLessons = useMemorySettingsStore(
-    (s) => s.setContextMaxLessons,
-  );
-  const setProjectPathMatching = useMemorySettingsStore(
-    (s) => s.setProjectPathMatching,
-  );
-  const setPinnedExemptFromCap = useMemorySettingsStore(
-    (s) => s.setPinnedExemptFromCap,
-  );
+  const setPatternRefreshThreshold = useMemorySettingsStore((s) => s.setPatternRefreshThreshold);
+  const setContextMaxPatterns = useMemorySettingsStore((s) => s.setContextMaxPatterns);
+  const setContextMaxSessions = useMemorySettingsStore((s) => s.setContextMaxSessions);
+  const setContextMaxLessons = useMemorySettingsStore((s) => s.setContextMaxLessons);
+  const setProjectPathMatching = useMemorySettingsStore((s) => s.setProjectPathMatching);
+  const setPinnedExemptFromCap = useMemorySettingsStore((s) => s.setPinnedExemptFromCap);
   const resetMemorySettings = useMemorySettingsStore((s) => s.resetMemorySettings);
 
   const retentionEnabled = retentionDays !== null;
   const retentionValue = retentionDays ?? DEFAULT_MEMORY_RETENTION_DAYS;
+  const briefSourceCap = contextMaxPatterns + contextMaxSessions + contextMaxLessons;
 
   function updateAndPrune(action: () => void) {
     action();
@@ -78,16 +65,16 @@ export function MemorySettingsCard() {
   }
 
   return (
-    <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h3 className="text-xs font-semibold text-text-primary flex items-center gap-2">
+    <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-xs font-semibold text-text-primary">
           <Brain size={12} className="text-accent-green" />
           Memory
         </h3>
         <button
           type="button"
           onClick={resetMemorySettings}
-          className="p-1 text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+          className="rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
           title="Reset memory settings"
         >
           <RotateCcw size={11} />
@@ -95,9 +82,10 @@ export function MemorySettingsCard() {
       </div>
 
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <Stat label="Events" value={events.length} />
           <Stat label="Patterns" value={patterns.length} />
+          <Stat label="Brief cap" value={briefSourceCap} />
         </div>
 
         <Section title="Capture">
@@ -150,9 +138,7 @@ export function MemorySettingsCard() {
             label="Expire events by age"
             checked={retentionEnabled}
             onChange={(enabled) =>
-              updateAndPrune(() =>
-                setRetentionDays(enabled ? DEFAULT_MEMORY_RETENTION_DAYS : null),
-              )
+              updateAndPrune(() => setRetentionDays(enabled ? DEFAULT_MEMORY_RETENTION_DAYS : null))
             }
           />
           <NumberRow
@@ -179,7 +165,11 @@ export function MemorySettingsCard() {
           />
         </Section>
 
-        <Section title="Context budget">
+        <Section title="Memory brief budget">
+          <div className="rounded border border-bg-border bg-bg-primary px-2.5 py-2 text-[10px] leading-relaxed text-text-muted">
+            Agent sessions receive a compact brief assembled from capped sources, never an unbounded
+            raw memory dump.
+          </div>
           <NumberRow
             label="Patterns"
             value={contextMaxPatterns}
@@ -204,10 +194,7 @@ export function MemorySettingsCard() {
         </Section>
 
         <Section title="Project scope">
-          <ProjectPathMatchingRadio
-            value={projectPathMatching}
-            onChange={setProjectPathMatching}
-          />
+          <ProjectPathMatchingRadio value={projectPathMatching} onChange={setProjectPathMatching} />
           <Toggle
             icon={Pin}
             label="Pinned patterns survive cap eviction"
@@ -216,12 +203,12 @@ export function MemorySettingsCard() {
           />
         </Section>
 
-        <div className="flex items-center gap-2 text-[10px] text-text-muted bg-bg-primary border border-bg-border rounded px-3 py-2">
-          <Database size={11} className="text-accent-blue flex-shrink-0" />
+        <div className="flex items-center gap-2 rounded border border-bg-border bg-bg-primary px-3 py-2 text-[10px] text-text-muted">
+          <Database size={11} className="flex-shrink-0 text-accent-blue" />
           <span>
-            Defaults are {DEFAULT_MEMORY_MAX_EVENTS} events,{" "}
-            {DEFAULT_MEMORY_MAX_PATTERNS} patterns, and pattern refresh every{" "}
-            {DEFAULT_MEMORY_PATTERN_REFRESH_THRESHOLD} summaries.
+            Defaults are {DEFAULT_MEMORY_MAX_EVENTS} events, {DEFAULT_MEMORY_MAX_PATTERNS} patterns,
+            and pattern refresh every {DEFAULT_MEMORY_PATTERN_REFRESH_THRESHOLD} summaries. Brief
+            injection uses the source caps above.
           </span>
         </div>
       </div>
@@ -229,18 +216,10 @@ export function MemorySettingsCard() {
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
-      <div className="text-[10px] text-text-muted uppercase tracking-wider">
-        {title}
-      </div>
+      <div className="text-[10px] uppercase tracking-wider text-text-muted">{title}</div>
       {children}
     </div>
   );
@@ -248,11 +227,9 @@ function Section({
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="bg-bg-primary border border-bg-border rounded px-3 py-2">
+    <div className="rounded border border-bg-border bg-bg-primary px-3 py-2">
       <div className="text-[10px] text-text-muted">{label}</div>
-      <div className="text-sm font-semibold tabular-nums text-text-primary">
-        {value}
-      </div>
+      <div className="text-sm font-semibold tabular-nums text-text-primary">{value}</div>
     </div>
   );
 }
@@ -269,21 +246,21 @@ function Toggle({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 cursor-pointer group">
-      <span className="flex items-center gap-2 text-[11px] text-text-secondary group-hover:text-text-primary transition-colors">
+    <label className="group flex cursor-pointer items-center justify-between gap-3">
+      <span className="flex items-center gap-2 text-[11px] text-text-secondary transition-colors group-hover:text-text-primary">
         <Icon size={11} className="text-text-muted" />
         {label}
       </span>
       <button
         type="button"
         onClick={() => onChange(!checked)}
-        className={`relative w-7 h-4 rounded-full transition-colors ${
+        className={`relative h-4 w-7 rounded-full transition-colors ${
           checked ? "bg-accent-green" : "bg-bg-elevated"
         }`}
         aria-pressed={checked}
       >
         <span
-          className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+          className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
             checked ? "translate-x-3.5" : "translate-x-0.5"
           }`}
         />
@@ -325,18 +302,16 @@ function ProjectPathMatchingRadio({
 }) {
   return (
     <fieldset className="space-y-1.5">
-      <legend className="text-[11px] text-text-secondary mb-1">
-        Match memory by project path
-      </legend>
+      <legend className="mb-1 text-[11px] text-text-secondary">Match memory by project path</legend>
       {MATCHING_OPTIONS.map((opt) => {
         const selected = value === opt.value;
         return (
           <label
             key={opt.value}
-            className={`flex items-start gap-2 cursor-pointer rounded border px-2 py-1.5 transition-colors ${
+            className={`flex cursor-pointer items-start gap-2 rounded border px-2 py-1.5 transition-colors ${
               selected
                 ? "border-accent-green/40 bg-accent-green/5"
-                : "border-bg-border hover:border-text-muted/30"
+                : "hover:border-text-muted/30 border-bg-border"
             }`}
           >
             <input
@@ -353,9 +328,7 @@ function ProjectPathMatchingRadio({
               >
                 {opt.label}
               </div>
-              <div className="text-[10px] text-text-muted leading-snug">
-                {opt.description}
-              </div>
+              <div className="text-[10px] leading-snug text-text-muted">{opt.description}</div>
             </div>
           </label>
         );
@@ -394,7 +367,7 @@ function NumberRow({
         disabled={disabled}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-20 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary disabled:text-text-faint disabled:opacity-60 focus:outline-none focus:border-accent-green"
+        className="w-20 rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11px] text-text-primary focus:border-accent-green focus:outline-none disabled:text-text-faint disabled:opacity-60"
       />
     </label>
   );

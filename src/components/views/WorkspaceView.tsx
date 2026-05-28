@@ -17,21 +17,21 @@ import { PaneLayoutControls } from "@/components/workspace/PaneLayoutControls";
 import type { WorkspaceAgentSlot, Workspace } from "@/types/workspace";
 
 const agentLabel: Record<WorkspaceAgentSlot, string> = {
-  "terminal": "Terminal",
+  terminal: "Terminal",
   "claude-code": "Claude",
-  "codex": "Codex",
-  "gemini": "Gemini",
-  "opencode": "OpenCode",
-  "packetcode": "PacketCode",
+  codex: "Codex",
+  gemini: "Gemini",
+  opencode: "OpenCode",
+  packetcode: "PacketCode",
 };
 
 const agentColor: Record<WorkspaceAgentSlot, string> = {
-  "terminal": "bg-text-muted/20 text-text-secondary",
+  terminal: "bg-text-muted/20 text-text-secondary",
   "claude-code": "bg-accent-green/20 text-accent-green",
-  "codex": "bg-blue-500/20 text-blue-400",
-  "gemini": "bg-purple-500/20 text-purple-400",
-  "opencode": "bg-orange-500/20 text-orange-400",
-  "packetcode": "bg-purple-500/20 text-purple-400",
+  codex: "bg-blue-500/20 text-blue-400",
+  gemini: "bg-purple-500/20 text-purple-400",
+  opencode: "bg-orange-500/20 text-orange-400",
+  packetcode: "bg-purple-500/20 text-purple-400",
 };
 
 export function WorkspaceView() {
@@ -99,14 +99,14 @@ export function WorkspaceView() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <div className="flex flex-col flex-1 overflow-hidden relative">
+      <div className="relative flex flex-1 flex-col overflow-hidden">
         {/* Merged header: workspace tabs · agent badges · + Add Agent · git
             toggle · pane-layout presets · bypass perms · memory indicator.
             Replaces the previous two-row layout (workspace context header
             stacked above WorkspaceSubTabs). The active tab's tooltip now
             carries the project-path info the old folder chip used to show. */}
         {initialized && activeNonArchived.length > 0 && (
-          <div className="flex items-stretch h-[33px] bg-bg-primary border-b border-line-soft px-2 shrink-0">
+          <div className="flex h-[33px] shrink-0 items-stretch border-b border-line-soft bg-bg-primary px-2">
             <div className="flex items-stretch gap-0 overflow-x-auto">
               {activeNonArchived.map((ws) => {
                 const isActive = ws.id === activeWorkspaceId;
@@ -116,25 +116,23 @@ export function WorkspaceView() {
                     key={ws.id}
                     onClick={() => setActiveWorkspace(ws.id)}
                     title={ws.projectPath}
-                    className={`relative flex items-center gap-1.5 px-3 text-[11px] whitespace-nowrap transition-colors ${
-                      isActive
-                        ? "text-text-primary"
-                        : "text-text-muted hover:text-text-secondary"
+                    className={`relative flex items-center gap-1.5 whitespace-nowrap px-3 text-[11px] transition-colors ${
+                      isActive ? "text-text-primary" : "text-text-muted hover:text-text-secondary"
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${dot.className} ${dot.pulse ? "animate-pulse" : ""}`}
+                      className={`h-1.5 w-1.5 rounded-full ${dot.className} ${dot.pulse ? "animate-pulse" : ""}`}
                     />
                     <span>{ws.name}</span>
                     {isActive && (
-                      <span className="absolute left-2 right-2 bottom-0 h-[2px] bg-accent-green rounded-t" />
+                      <span className="absolute bottom-0 left-2 right-2 h-[2px] rounded-t bg-accent-green" />
                     )}
                   </button>
                 );
               })}
               <button
                 onClick={() => setShowCreate(true)}
-                className="flex items-center px-2 text-text-muted hover:text-text-primary transition-colors"
+                className="flex items-center px-2 text-text-muted transition-colors hover:text-text-primary"
                 title="New workspace"
               >
                 <Plus size={12} />
@@ -142,23 +140,24 @@ export function WorkspaceView() {
             </div>
             <div className="flex-1" />
             <div className="flex items-center gap-2">
-              {activeWorkspace && Object.entries(agentCounts).map(([agent, count]) => (
-                <span
-                  key={agent}
-                  className={`text-[10px] px-1.5 py-0.5 rounded ${agentColor[agent as WorkspaceAgentSlot] || "bg-text-muted/20 text-text-secondary"}`}
-                >
-                  {agentLabel[agent as WorkspaceAgentSlot] || agent}
-                  {(count as number) > 1 && ` x${count}`}
-                </span>
-              ))}
+              {activeWorkspace &&
+                Object.entries(agentCounts).map(([agent, count]) => (
+                  <span
+                    key={agent}
+                    className={`rounded px-1.5 py-0.5 text-[10px] ${agentColor[agent as WorkspaceAgentSlot] || "bg-text-muted/20 text-text-secondary"}`}
+                  >
+                    {agentLabel[agent as WorkspaceAgentSlot] || agent}
+                    {(count as number) > 1 && ` x${count}`}
+                  </span>
+                ))}
               {activeWorkspace && (
                 <div className="relative" ref={addAgentRef}>
                   <button
                     onClick={() => setAddAgentOpen((v) => !v)}
-                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors ${
                       addAgentOpen
                         ? "bg-accent-green/20 text-accent-green"
-                        : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
+                        : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
                     }`}
                     title="Add agent to workspace"
                   >
@@ -166,8 +165,17 @@ export function WorkspaceView() {
                     Add Agent
                   </button>
                   {addAgentOpen && (
-                    <div className="absolute right-0 top-full mt-1 bg-bg-tertiary border border-bg-border rounded shadow-lg z-50 min-w-[150px] py-1">
-                      {(["claude-code", "codex", "gemini", "opencode", "packetcode", "terminal"] as WorkspaceAgentSlot[]).map((agent) => {
+                    <div className="absolute right-0 top-full z-50 mt-1 min-w-[150px] rounded border border-bg-border bg-bg-tertiary py-1 shadow-lg">
+                      {(
+                        [
+                          "claude-code",
+                          "codex",
+                          "gemini",
+                          "opencode",
+                          "packetcode",
+                          "terminal",
+                        ] as WorkspaceAgentSlot[]
+                      ).map((agent) => {
                         const installed = isAgentInstalledForWorkspace(agent, activeWorkspace);
                         return (
                           <button
@@ -178,14 +186,20 @@ export function WorkspaceView() {
                               setAddAgentOpen(false);
                             }}
                             disabled={!installed}
-                            title={installed ? `Add ${agentLabel[agent]}` : `${agentLabel[agent]} is not installed for this workspace`}
-                            className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-2 ${
+                            title={
                               installed
-                                ? "text-text-secondary hover:text-text-primary hover:bg-bg-secondary"
-                                : "text-text-muted opacity-50 cursor-not-allowed"
+                                ? `Add ${agentLabel[agent]}`
+                                : `${agentLabel[agent]} is not installed for this workspace`
+                            }
+                            className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors ${
+                              installed
+                                ? "text-text-secondary hover:bg-bg-secondary hover:text-text-primary"
+                                : "cursor-not-allowed text-text-muted opacity-50"
                             }`}
                           >
-                            <span className={`w-2 h-2 rounded-full ${agentColor[agent]?.split(" ")[0] ?? "bg-text-muted/20"}`} />
+                            <span
+                              className={`h-2 w-2 rounded-full ${agentColor[agent]?.split(" ")[0] ?? "bg-text-muted/20"}`}
+                            />
                             {agentLabel[agent]}
                           </button>
                         );
@@ -197,10 +211,10 @@ export function WorkspaceView() {
               {activeWorkspace && (
                 <button
                   onClick={() => setGitPanelOpen((v) => !v)}
-                  className={`p-1 rounded transition-colors ${
+                  className={`rounded p-1 transition-colors ${
                     gitPanelOpen
                       ? "bg-accent-green/20 text-accent-green"
-                      : "text-text-muted hover:text-text-primary hover:bg-bg-tertiary"
+                      : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
                   }`}
                   title="Git Dashboard"
                 >
@@ -209,9 +223,11 @@ export function WorkspaceView() {
               )}
               <PaneLayoutControls />
               <button
-                onClick={() => activeWorkspace && setBypassPermissions(activeWorkspace.id, !bypassOn)}
+                onClick={() =>
+                  activeWorkspace && setBypassPermissions(activeWorkspace.id, !bypassOn)
+                }
                 disabled={!activeWorkspace}
-                className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border transition-colors ${
+                className={`flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] transition-colors ${
                   bypassOn
                     ? "border-accent-line bg-accent-soft text-accent-amber"
                     : "border-bg-border bg-bg-secondary text-text-muted hover:text-text-secondary"
@@ -222,12 +238,16 @@ export function WorkspaceView() {
                 <span>Bypass perms: {bypassOn ? "on" : "off"}</span>
               </button>
               <span
-                className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border ${
+                className={`flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] ${
                   memoryActive
                     ? "border-accent-line bg-accent-soft text-accent-green"
                     : "border-bg-border bg-bg-secondary text-text-muted"
                 }`}
-                title={memoryLearning ? "Memory layer is summarizing recent sessions" : "Top patterns will be injected on next session"}
+                title={
+                  memoryLearning
+                    ? "Memory layer is summarizing recent sessions"
+                    : "Top patterns will be injected on next session"
+                }
               >
                 <Brain size={10} />
                 <span>{memoryLearning ? "Memory learning" : "Memory injecting"}</span>
@@ -235,24 +255,23 @@ export function WorkspaceView() {
             </div>
           </div>
         )}
-        {showCreate && (
-          <WorkspaceCreationModal onClose={() => setShowCreate(false)} />
-        )}
+        {showCreate && <WorkspaceCreationModal onClose={() => setShowCreate(false)} />}
 
         {/* Main content area: workspace panes + optional git panel */}
         <div className="flex flex-1 overflow-hidden">
           {/* Workspace panes */}
-          <div className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex flex-1 flex-col overflow-hidden">
             {/* All active workspaces stay mounted so PTY sessions persist */}
-            {initialized && activeNonArchived.map((ws) => (
-              <div
-                key={ws.id}
-                className="flex flex-col flex-1 overflow-hidden"
-                style={{ display: ws.id === activeWorkspaceId ? "flex" : "none" }}
-              >
-                <WorkspaceMosaicContainer workspace={ws} />
-              </div>
-            ))}
+            {initialized &&
+              activeNonArchived.map((ws) => (
+                <div
+                  key={ws.id}
+                  className="flex flex-1 flex-col overflow-hidden"
+                  style={{ display: ws.id === activeWorkspaceId ? "flex" : "none" }}
+                >
+                  <WorkspaceMosaicContainer workspace={ws} />
+                </div>
+              ))}
           </div>
 
           {/* Editor panel.
@@ -262,10 +281,10 @@ export function WorkspaceView() {
               placeholder instead. Phase 3.2/3.3 will add a remote-aware
               editor path. */}
           {editorVisible && activeWorkspace && activeOpenFile && (
-            <div className="w-[480px] shrink-0 border-l border-bg-border bg-bg-primary overflow-hidden flex flex-col">
+            <div className="flex w-[480px] shrink-0 flex-col overflow-hidden border-l border-bg-border bg-bg-primary">
               {/* File tabs */}
               {openFiles.length > 1 && (
-                <div className="flex items-center bg-bg-secondary border-b border-bg-border overflow-x-auto shrink-0">
+                <div className="flex shrink-0 items-center overflow-x-auto border-b border-bg-border bg-bg-secondary">
                   {openFiles.map((f) => {
                     const name = f.path.replace(/\\/g, "/").split("/").pop() || f.path;
                     const isActive = f.id === activeFileId;
@@ -273,10 +292,10 @@ export function WorkspaceView() {
                       <button
                         key={f.id}
                         onClick={() => setActiveFile(f.id)}
-                        className={`flex items-center gap-1 px-2 py-1 text-[11px] border-r border-bg-border whitespace-nowrap transition-colors ${
+                        className={`flex items-center gap-1 whitespace-nowrap border-r border-bg-border px-2 py-1 text-[11px] transition-colors ${
                           isActive
                             ? "bg-bg-primary text-text-primary"
-                            : "text-text-muted hover:text-text-secondary hover:bg-bg-tertiary"
+                            : "text-text-muted hover:bg-bg-tertiary hover:text-text-secondary"
                         }`}
                       >
                         <FileText size={10} />
@@ -287,9 +306,9 @@ export function WorkspaceView() {
                 </div>
               )}
               {activeWorkspace.serverId ? (
-                <div className="flex flex-col items-center justify-center flex-1 px-6 text-center select-none">
-                  <FileText size={20} className="text-text-muted opacity-40 mb-2" />
-                  <p className="text-xs text-text-secondary mb-1">
+                <div className="flex flex-1 select-none flex-col items-center justify-center px-6 text-center">
+                  <FileText size={20} className="mb-2 text-text-muted opacity-40" />
+                  <p className="mb-1 text-xs text-text-secondary">
                     Editor not yet available for remote workspaces
                   </p>
                   <p className="text-[11px] text-text-muted">
@@ -311,13 +330,14 @@ export function WorkspaceView() {
               Phase 3.3: for remote workspaces the dashboard reads via SSH
               using the workspace's `serverId` + `remoteProjectPath`. */}
           {gitPanelOpen && activeWorkspace && (
-            <div className="w-[280px] shrink-0 border-l border-bg-border bg-bg-primary overflow-hidden flex flex-col">
+            <div className="flex w-[280px] shrink-0 flex-col overflow-hidden border-l border-bg-border bg-bg-primary">
               <GitDashboard
                 projectPath={
                   activeWorkspace.serverId
                     ? (activeWorkspace.remoteProjectPath ?? activeWorkspace.projectPath)
                     : activeWorkspace.projectPath
                 }
+                workspaceId={activeWorkspace.id}
                 serverId={activeWorkspace.serverId}
               />
             </div>
@@ -325,16 +345,16 @@ export function WorkspaceView() {
         </div>
 
         {/* No workspace selected */}
-        {initialized && !activeWorkspace && (
-          showOnboarding ? (
+        {initialized &&
+          !activeWorkspace &&
+          (showOnboarding ? (
             <OnboardingPane onComplete={() => setOnboardingDone(true)} />
           ) : (
-            <div className="flex flex-col items-center justify-center flex-1 select-none text-text-muted">
+            <div className="flex flex-1 select-none flex-col items-center justify-center text-text-muted">
               <LayoutGrid size={28} className="mb-3 opacity-30" />
               <p className="text-xs">Select a workspace from the sidebar or create a new one</p>
             </div>
-          )
-        )}
+          ))}
       </div>
     </div>
   );
@@ -350,4 +370,3 @@ function workspaceStatusDot(ws: Workspace): { className: string; pulse: boolean 
   }
   return { className: "bg-text-faint", pulse: false };
 }
-

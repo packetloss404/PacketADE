@@ -312,6 +312,10 @@ nav .container{display:flex;align-items:center;justify-content:space-between;wid
 /* ===== DOWNLOAD ===== */
 .download{padding:100px 0}
 .download-buttons{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:40px}
+.release-note{max-width:720px;margin:-16px auto 36px;padding:14px 18px;border:1px solid rgba(210,153,34,0.25);border-radius:12px;background:rgba(210,153,34,0.06);color:var(--text-secondary);font-size:0.82rem;line-height:1.65;text-align:left}
+.release-note strong{color:var(--text-primary)}
+.release-note a{color:var(--cyan);border-bottom:1px dotted rgba(57,210,192,0.4)}
+.release-note a:hover{color:var(--green);border-bottom-color:var(--green)}
 .btn-win{padding:14px 32px;border-radius:14px;font-weight:600;font-size:0.92rem;
   background:linear-gradient(135deg,var(--green),#2ea043);color:#fff;transition:all 0.3s;
   display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(63,185,80,0.2)}
@@ -1245,7 +1249,7 @@ body.has-announcement .hero{padding-top:calc(var(--nav-h) + var(--announcement-h
   <div class="container">
     <div class="section-header reveal">
       <h2>Get PacketADE</h2>
-      <p>Free and open source. Always.</p>
+      <p>Free and open source. Current beta builds install manually from GitHub Releases.</p>
     </div>
     <div class="download-buttons reveal" style="--delay:0.1s">
       <a href="https://github.com/packetloss404/PacketADE/releases" class="btn-win">
@@ -1260,6 +1264,9 @@ body.has-announcement .hero{padding-top:calc(var(--nav-h) + var(--announcement-h
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.368 1.884 1.43.868.065 1.157-.49 1.291-.872.654-.174 1.548-.368 2.283-.874 1.234-.675 1.929-.935 2.115-1.862.09-.353.055-.696-.09-1.005l.02-.007c.092-.164.195-.306.294-.516.147-.317.215-.698.163-1.072-.088-.636-.473-1.235-1.066-1.593-.18-.105-.378-.189-.593-.237a.795.795 0 00-.277-.58c-.093-.091-.212-.154-.322-.223a1.023 1.023 0 01-.163-.162c-.063-.097-.043-.225-.091-.345-.112-.26-.375-.543-.653-.637-.108-.04-.234-.046-.35-.035a.653.653 0 00-.162-.085 1.17 1.17 0 00-.119-.044c.004-.01.01-.018.013-.027.117-.284-.091-.562-.261-.707a.768.768 0 00-.146-.08l-.029-.016a3.4 3.4 0 00.122-.743c.098-.702-.024-1.417-.392-2.009-.756-1.187-1.924-2.068-2.883-3.139-.958-1.119-1.598-2.213-1.74-3.768-.034-1.381.563-5.876-3.045-6.278a5.5 5.5 0 00-.553-.024z"/></svg>
         Linux
       </a>
+    </div>
+    <div class="release-note reveal" style="--delay:0.15s">
+      <strong>Beta distribution status:</strong> code signing, macOS notarization, and the Tauri auto-updater are next release-trust targets, not active guarantees in the current repo. Fresh beta downloads may still trigger SmartScreen or Gatekeeper prompts. Contributors can follow the setup runbook in <a href="https://github.com/packetloss404/PacketADE/blob/main/dev/updater-setup.md" target="_blank" rel="noopener">dev/updater-setup.md</a>.
     </div>
     <div class="code-block reveal" style="--delay:0.2s">
       <button class="btn-copy" id="btn-copy" aria-label="Copy to clipboard">

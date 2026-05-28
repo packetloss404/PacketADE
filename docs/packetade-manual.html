@@ -447,7 +447,12 @@ footer.manual-foot a{color:var(--text-secondary)}
 <h3 class="section-title" id="ch1-install">Install &amp; first run</h3>
 
 <h4 class="subsection-title">Option 1 &mdash; Download a release</h4>
-<p>Grab a signed installer for Windows, macOS, or Linux from the <a href="https://github.com/packetloss404/PacketADE/releases" target="_blank" rel="noopener">GitHub Releases page</a>. Run it, open PacketADE, skip ahead to <a href="#ch1-first-workspace">Your first workspace</a>.</p>
+<p>Grab the latest beta installer or package from the <a href="https://github.com/packetloss404/PacketADE/releases" target="_blank" rel="noopener">GitHub Releases page</a>. Run it, open PacketADE, skip ahead to <a href="#ch1-first-workspace">Your first workspace</a>.</p>
+
+<div class="callout callout-warn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div class="callout-body"><strong>Beta distribution status:</strong> PacketADE is manual-install today. Windows Authenticode signing, macOS notarization, and the Tauri auto-updater are planned release-trust gates but are not enabled in the repo yet, so beta builds may trigger SmartScreen or Gatekeeper prompts.</div>
+</div>
 
 <h4 class="subsection-title">Option 2 &mdash; Build from source</h4>
 <p>Prerequisites: Node.js 18+, pnpm 9+, Rust 1.70+, and the Tauri OS toolchain (VS Build Tools on Windows, Xcode CLT on macOS, <code>libgtk-3-dev</code> + <code>webkit2gtk-4.1</code> on Linux).</p>

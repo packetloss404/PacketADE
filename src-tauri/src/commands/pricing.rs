@@ -4,12 +4,22 @@
 //! Cache-read and cache-write rates are derived as multipliers on the input rate,
 //! following each provider's published multipliers.
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModelPricing {
     pub input_per_mtok: f64,
     pub output_per_mtok: f64,
     pub cache_read_per_mtok: f64,
     pub cache_write_per_mtok: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PricingStatus {
+    Priced,
+    Free,
+    Unknown,
 }
 
 impl ModelPricing {
@@ -151,6 +161,22 @@ pub fn pricing_for(model: &str) -> Option<ModelPricing> {
     None
 }
 
+pub fn pricing_status_for(model: &str) -> PricingStatus {
+    let Some(pricing) = pricing_for(model) else {
+        return PricingStatus::Unknown;
+    };
+
+    if pricing.input_per_mtok == 0.0
+        && pricing.output_per_mtok == 0.0
+        && pricing.cache_read_per_mtok == 0.0
+        && pricing.cache_write_per_mtok == 0.0
+    {
+        PricingStatus::Free
+    } else {
+        PricingStatus::Priced
+    }
+}
+
 /// Returns true for local/self-hosted model families that should be billed at $0.
 fn is_local_model(m: &str) -> bool {
     // Strip common provider-route prefixes used for local runners.
@@ -238,6 +264,10 @@ mod tests {
     #[test]
     fn unknown_model_returns_zero_cost() {
         assert!(pricing_for("totally-unknown-model-xyz").is_none());
+        assert_eq!(
+            pricing_status_for("totally-unknown-model-xyz"),
+            PricingStatus::Unknown
+        );
         let cost = calculate_cost("totally-unknown-model-xyz", 1_000_000, 1_000_000, 0, 0);
         assert_eq!(cost, 0.0);
     }
@@ -247,6 +277,7 @@ mod tests {
         let p = pricing_for("llama3.1:70b").expect("local llama");
         assert_eq!(p.input_per_mtok, 0.0);
         assert_eq!(p.output_per_mtok, 0.0);
+        assert_eq!(pricing_status_for("llama3.1:70b"), PricingStatus::Free);
         let cost = calculate_cost("qwen2.5-coder", 5_000_000, 5_000_000, 0, 0);
         assert_eq!(cost, 0.0);
     }
@@ -263,5 +294,9 @@ mod tests {
         let p = pricing_for("meta-llama/llama-4-maverick").expect("maverick");
         assert_eq!(p.input_per_mtok, 0.40);
         assert_eq!(p.output_per_mtok, 1.20);
+        assert_eq!(
+            pricing_status_for("meta-llama/llama-4-maverick"),
+            PricingStatus::Priced
+        );
     }
 }

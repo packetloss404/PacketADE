@@ -1,24 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import {
-  ArrowDown,
-  Bookmark,
-  Mic,
-  Send,
-  Server,
-  Sparkles,
-  Square,
-  X,
-} from "lucide-react";
+import { ArrowDown, Bookmark, Mic, Send, Server, Sparkles, Square, X } from "lucide-react";
 import { MentionSourcePicker } from "./MentionSourcePicker";
-import {
-  SlashCommandPopover,
-  type SlashSelection,
-} from "./SlashCommandPopover";
-import {
-  BUILTIN_SLASH_NAMES,
-  TEMPLATE_SOURCE_TAG,
-} from "./slashCommandConstants";
+import { SlashCommandPopover, type SlashSelection } from "./SlashCommandPopover";
+import { BUILTIN_SLASH_NAMES, TEMPLATE_SOURCE_TAG } from "./slashCommandConstants";
 import type { SlashCommandDef } from "@/lib/tauri";
 import { MemoryInjectionCard } from "./MemoryInjectionCard";
 import { CheckpointPanel } from "./CheckpointPanel";
@@ -27,11 +12,7 @@ import { AgentHeaderBadges } from "./AgentHeaderBadges";
 import { SessionHealthBar } from "./SessionHealthBar";
 import { PlanPanel } from "./PlanPanel";
 import { SpecPanel } from "./SpecPanel";
-import {
-  deriveMode,
-  flagsForMode,
-  nextMode,
-} from "./agentModeChipUtils";
+import { deriveMode, flagsForMode, nextMode } from "./agentModeChipUtils";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
@@ -39,6 +20,7 @@ import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import { API_PROVIDERS, getModelSpeed } from "@/lib/api-models";
 import { HeaderActions } from "./chat/HeaderActions";
 import { handleExport } from "./chat/handleExport";
@@ -52,10 +34,7 @@ import { useVoiceTranscript } from "./hooks/useVoiceTranscript";
 import { useLatestPlanPreview } from "./hooks/useLatestPlanPreview";
 import { useProjectSlashCommands } from "./hooks/useProjectSlashCommands";
 import { useDiffTotals } from "./hooks/useDiffTotals";
-import {
-  buildChatKeyboardHandler,
-  type MentionState,
-} from "./chat/buildChatKeyboardHandler";
+import { buildChatKeyboardHandler, type MentionState } from "./chat/buildChatKeyboardHandler";
 import { slashCommandHandlers } from "./chat/slashCommandHandlers";
 
 const AGENT_LABELS: Record<string, string> = {
@@ -90,9 +69,7 @@ interface AgentChatPaneProps {
 // Codex handoff. Resolves the parent name lazily; renders nothing if the
 // parent has been deleted (cleanup is automatic).
 function BackToParentLink({ parentId }: { parentId: string }) {
-  const parent = useAgentTaskStore((s) =>
-    s.conversations.find((c) => c.id === parentId),
-  );
+  const parent = useAgentTaskStore((s) => s.conversations.find((c) => c.id === parentId));
   const selectConversation = useAgentTaskStore((s) => s.selectConversation);
   if (!parent) return null;
   return (
@@ -100,7 +77,7 @@ function BackToParentLink({ parentId }: { parentId: string }) {
       type="button"
       onClick={() => selectConversation(parentId)}
       title={`Spawned via "Hand off to Codex" from "${parent.title}"`}
-      className="flex items-center gap-1 text-[10px] text-text-muted hover:text-accent-blue bg-bg-secondary border border-bg-border rounded px-1.5 py-0.5 transition-colors"
+      className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-muted transition-colors hover:text-accent-blue"
     >
       ← back to plan
     </button>
@@ -163,12 +140,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   );
   // Live queues read from the substore — drives both the per-item cards
   // and the header status line counters.
-  const pendingPermissions = useAgentApprovalStore(
-    (s) => s.permissions.get(conversationId) ?? [],
-  );
-  const pendingEdits = useAgentApprovalStore(
-    (s) => s.edits.get(conversationId) ?? [],
-  );
+  const pendingPermissions = useAgentApprovalStore((s) => s.permissions.get(conversationId) ?? []);
+  const pendingEdits = useAgentApprovalStore((s) => s.edits.get(conversationId) ?? []);
 
   // Preview pane + settings selectors grouped to reduce subscription count.
   const preview = usePreviewPaneStore(
@@ -184,6 +157,9 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const reviewerProfile = useProfileStore((s) =>
     s.profiles.find((p) => p.id === "builtin-reviewer"),
   );
+  const memoryEvents = useMemoryStore((s) => s.events);
+  const memoryPatterns = useMemoryStore((s) => s.patterns);
+  const getMemoryItemsForSession = useMemoryStore((s) => s.getContextItemsForSession);
 
   const [input, setInput] = useState("");
   const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
@@ -194,9 +170,10 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   // chat session but not a remount.
   const [stashedDraft, setStashedDraft] = useState<string | null>(null);
   // Inline edit of a prior user message. Submit forks the conversation here.
-  const [editState, setEditState] = useState<{ id: string | null; text: string }>(
-    { id: null, text: "" },
-  );
+  const [editState, setEditState] = useState<{ id: string | null; text: string }>({
+    id: null,
+    text: "",
+  });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { messagesContainerRef, messagesEndRef, isAtBottom, unreadCount, jumpToBottom } =
@@ -210,10 +187,36 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   useLatestPlanPreview(conversation, preview.openPlanPreview);
 
   const projectPathForSlash = conversation?.projectPath ?? "";
-  const { customSlashCommands, userSkills } =
-    useProjectSlashCommands(projectPathForSlash);
+  const { customSlashCommands, userSkills } = useProjectSlashCommands(projectPathForSlash);
 
   const diffTotals = useDiffTotals(conversation);
+  const memoryBriefStats = useMemo(() => {
+    if (!conversation?.projectPath) {
+      return { patterns: 0, summaries: 0, lessons: 0, approxTokens: 0 };
+    }
+    const items = getMemoryItemsForSession({
+      sessionId: conversation.sessionId ?? conversation.id,
+      projectPath: conversation.projectPath,
+    });
+    const patterns = items.filter((item) => item.kind === "pattern").length;
+    const lessons = items.filter((item) => item.kind === "lesson").length;
+    const summaries = items.filter((item) => item.kind === "session").length;
+    const approxTokens = Math.max(
+      0,
+      Math.round(items.reduce((sum, item) => sum + item.title.length + item.reason.length, 0) / 4),
+    );
+    return { patterns, summaries, lessons, approxTokens };
+    // getContextItemsForSession reads memory state through get(); include
+    // events/patterns so counts update live while the conversation is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    conversation?.id,
+    conversation?.projectPath,
+    conversation?.sessionId,
+    getMemoryItemsForSession,
+    memoryEvents,
+    memoryPatterns,
+  ]);
 
   // Auto-resize textarea
   const resizeTextarea = useCallback(() => {
@@ -252,9 +255,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const popoverItemCount = useMemo(() => {
     if (mentionState.kind === "slash") {
       const q = mentionState.query.toLowerCase();
-      const builtins = BUILTIN_SLASH_NAMES.filter((c) =>
-        c.startsWith(q),
-      ).length;
+      const builtins = BUILTIN_SLASH_NAMES.filter((c) => c.startsWith(q)).length;
       const custom = allCustomSlashCommands.filter((c) =>
         c.name.toLowerCase().startsWith(q),
       ).length;
@@ -268,10 +269,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   if (!conversation) {
     return (
-      <div className="flex flex-col h-full bg-bg-primary items-center justify-center">
-        <span className="text-[11px] text-text-muted">
-          Conversation not found
-        </span>
+      <div className="flex h-full flex-col items-center justify-center bg-bg-primary">
+        <span className="text-[11px] text-text-muted">Conversation not found</span>
       </div>
     );
   }
@@ -280,20 +279,15 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const agentLabel = AGENT_LABELS[conversation.agent] ?? conversation.agent;
   const dotColor = AGENT_DOT_COLORS[conversation.agent] ?? "bg-text-muted";
   const folderName =
-    conversation.projectPath
-      .replace(/\\/g, "/")
-      .split("/")
-      .filter(Boolean)
-      .pop() ?? conversation.projectPath;
+    conversation.projectPath.replace(/\\/g, "/").split("/").filter(Boolean).pop() ??
+    conversation.projectPath;
 
   const isActive = conversation.status === "active";
   // "running" in the UI sense = actively streaming / waiting for the agent.
   const isRunning = isActive;
   const messages = conversation.messages;
 
-  const providerInfo = API_PROVIDERS.find(
-    (p) => p.agentCli === conversation.agent,
-  );
+  const providerInfo = API_PROVIDERS.find((p) => p.agentCli === conversation.agent);
 
   /* ----------------- popover / input handling ----------------- */
 
@@ -362,8 +356,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     if (mentionState.kind !== "slash") return;
     if (!conversation) return;
     const before = input.slice(0, mentionState.triggerIndex);
-    const afterStart =
-      mentionState.triggerIndex + 1 + mentionState.query.length;
+    const afterStart = mentionState.triggerIndex + 1 + mentionState.query.length;
     const after = input.slice(afterStart);
     const remaining = (before + after).trim();
     setInput(remaining);
@@ -428,11 +421,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     const current = conversation.model;
     if (!current) return;
     const currentSpeed = getModelSpeed(current);
-    const SPEED_ORDER: Array<"fast" | "balanced" | "thorough"> = [
-      "fast",
-      "balanced",
-      "thorough",
-    ];
+    const SPEED_ORDER: Array<"fast" | "balanced" | "thorough"> = ["fast", "balanced", "thorough"];
     const currentIdx = SPEED_ORDER.indexOf(currentSpeed);
     const targetIdx =
       direction === "up"
@@ -476,69 +465,54 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   // "N turns · M tool calls · P pending approvals".
   const turnCount = messages.filter((m) => m.role === "user").length;
-  const toolCallCount = messages.reduce(
-    (sum, m) => sum + (m.toolCalls?.length ?? 0),
-    0,
-  );
+  const toolCallCount = messages.reduce((sum, m) => sum + (m.toolCalls?.length ?? 0), 0);
   const pendingApprovalCount = pendingEdits.length + pendingPermissions.length;
   const statusLineParts: string[] = [];
-  if (turnCount > 0)
-    statusLineParts.push(`${turnCount} turn${turnCount === 1 ? "" : "s"}`);
+  if (turnCount > 0) statusLineParts.push(`${turnCount} turn${turnCount === 1 ? "" : "s"}`);
   if (toolCallCount > 0)
-    statusLineParts.push(
-      `${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`,
-    );
+    statusLineParts.push(`${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`);
   if (pendingApprovalCount > 0)
     statusLineParts.push(
       `${pendingApprovalCount} pending approval${pendingApprovalCount === 1 ? "" : "s"}`,
     );
 
   const userMsgCount = turnCount;
-  const assistantMsgCount = messages.filter(
-    (m) => m.role === "assistant",
-  ).length;
+  const assistantMsgCount = messages.filter((m) => m.role === "assistant").length;
 
   const chatContent = (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       {/* Header bar — sparkle avatar + title + status line. Standardized to
           px-3 py-2 / border-bg-border per the visual-drift audit. */}
-      <div className="flex items-center gap-2.5 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
-        <div className="w-[26px] h-[26px] shrink-0 rounded-md bg-accent-soft border border-accent-line grid place-items-center">
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3 py-2">
+        <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border border-accent-line bg-accent-soft">
           <Sparkles size={13} className="text-accent-green" />
         </div>
-        <div className="flex flex-col min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[13px] font-semibold text-text-primary truncate">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-[13px] font-semibold text-text-primary">
               {conversation.title || agentLabel}
             </span>
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
-            <span className={`text-[10px] font-medium ${status.className}`}>
-              {status.label}
-            </span>
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
+            <span className={`text-[10px] font-medium ${status.className}`}>{status.label}</span>
             {conversation.sshTarget && (
               <span
-                className="flex items-center gap-1 text-[10px] text-accent-green bg-accent-soft border border-accent-line rounded px-1.5 py-0.5"
+                className="flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent-green"
                 title={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
               >
                 <Server size={10} />
                 {conversation.sshTarget.host}
               </span>
             )}
-            <AgentHeaderBadges
-              conversationId={conversationId}
-              agent={conversation.agent}
-            />
+            <AgentHeaderBadges conversationId={conversationId} agent={conversation.agent} />
             {conversation.parentConversationId && (
               <BackToParentLink parentId={conversation.parentConversationId} />
             )}
           </div>
           <span
-            className="text-[10.5px] text-text-secondary truncate"
+            className="truncate text-[10.5px] text-text-secondary"
             title={`${userMsgCount} sent, ${assistantMsgCount} received`}
           >
-            {statusLineParts.length > 0
-              ? statusLineParts.join(" · ")
-              : `${folderName} · ready`}
+            {statusLineParts.length > 0 ? statusLineParts.join(" · ") : `${folderName} · ready`}
           </span>
         </div>
 
@@ -570,13 +544,10 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         projectPath={conversation.projectPath}
         onOpenMarkdown={handleOpenMarkdown}
       >
-        <div className="relative flex-1 flex flex-col min-h-0">
-          <div
-            ref={messagesContainerRef}
-            className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5"
-          >
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div ref={messagesContainerRef} className="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
             {conversation.mode === "api" && conversation.memoryContextEnabled && (
-              <MemoryInjectionCard />
+              <MemoryInjectionCard {...memoryBriefStats} />
             )}
 
             {messages.length === 0 && <EmptyConversationHint />}
@@ -587,9 +558,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
               editingMessageId={editState.id}
               editingText={editState.text}
               onStartEdit={(id, content) => setEditState({ id, text: content })}
-              onChangeEdit={(text) =>
-                setEditState((s) => ({ ...s, text }))
-              }
+              onChangeEdit={(text) => setEditState((s) => ({ ...s, text }))}
               onSubmitEdit={(msgId) => {
                 const text = editState.text;
                 setEditState({ id: null, text: "" });
@@ -606,7 +575,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             <button
               type="button"
               onClick={jumpToBottom}
-              className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 rounded-full bg-bg-primary border border-bg-border px-3 py-1 text-xs text-text-secondary shadow-md hover:text-text-primary hover:border-accent-green/60 transition-colors"
+              className="hover:border-accent-green/60 absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-bg-border bg-bg-primary px-3 py-1 text-xs text-text-secondary shadow-md transition-colors hover:text-text-primary"
               title="Jump to latest"
             >
               <ArrowDown size={12} />
@@ -637,16 +606,16 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         />
       )}
 
-      <div className="shrink-0 border-t border-bg-border px-3 py-2 bg-bg-primary relative">
+      <div className="relative shrink-0 border-t border-bg-border bg-bg-primary px-3 py-2">
         {historyIndex >= 0 && (
-          <div className="absolute top-1 right-3 text-[10px] text-text-muted/70 font-mono pointer-events-none select-none">
+          <div className="text-text-muted/70 pointer-events-none absolute right-3 top-1 select-none font-mono text-[10px]">
             ↑ {historyIndex + 1}/{messages.filter((m) => m.role === "user").length}
           </div>
         )}
         {stashedDraft !== null && (
-          <div className="mb-1.5 inline-flex items-center gap-1.5 text-[11px] text-text-secondary bg-bg-tertiary px-2 py-0.5 rounded">
+          <div className="mb-1.5 inline-flex items-center gap-1.5 rounded bg-bg-tertiary px-2 py-0.5 text-[11px] text-text-secondary">
             <Bookmark size={11} className="text-text-muted" />
-            <span className="truncate max-w-[260px]">
+            <span className="max-w-[260px] truncate">
               Stashed draft ({stashedDraft.length} chars)
             </span>
             <button
@@ -656,31 +625,26 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
                 setStashedDraft(null);
                 setTimeout(() => textareaRef.current?.focus(), 0);
               }}
-              className="text-text-secondary hover:text-text-primary underline"
+              className="text-text-secondary underline hover:text-text-primary"
             >
               restore
             </button>
             <button
               type="button"
               onClick={() => setStashedDraft(null)}
-              className="text-text-muted hover:text-text-primary ml-1"
+              className="ml-1 text-text-muted hover:text-text-primary"
               title="Discard stash"
             >
               <X size={11} />
             </button>
           </div>
         )}
-        <div
-          className="absolute left-3 right-3 bottom-full"
-          data-agent-pane-mention-popover
-        >
+        <div className="absolute bottom-full left-3 right-3" data-agent-pane-mention-popover>
           <MentionSourcePicker
             visible={mentionState.kind === "file"}
             projectPath={conversation.projectPath}
             query={mentionState.kind === "file" ? mentionState.query : ""}
-            highlightedIndex={
-              mentionState.kind === "file" ? mentionState.highlightedIndex : 0
-            }
+            highlightedIndex={mentionState.kind === "file" ? mentionState.highlightedIndex : 0}
             onSelect={selectFileMention}
           />
           <SlashCommandPopover
@@ -688,9 +652,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             userSkills={userSkills}
             visible={mentionState.kind === "slash"}
             query={mentionState.kind === "slash" ? mentionState.query : ""}
-            highlightedIndex={
-              mentionState.kind === "slash" ? mentionState.highlightedIndex : 0
-            }
+            highlightedIndex={mentionState.kind === "slash" ? mentionState.highlightedIndex : 0}
             onSelect={runSlashCommand}
           />
         </div>
@@ -706,16 +668,16 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             onClick={handleSelectionChange}
             placeholder="Send a message..."
             rows={1}
-            className="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-muted focus:outline-none resize-none leading-relaxed"
+            className="flex-1 resize-none bg-transparent text-xs leading-relaxed text-text-primary placeholder:text-text-muted focus:outline-none"
           />
 
           {voice.isSupported && (
             <button
               onClick={voice.isListening ? voice.stopListening : voice.startListening}
-              className={`p-1 rounded transition-colors shrink-0 ${
+              className={`shrink-0 rounded p-1 transition-colors ${
                 voice.isListening
-                  ? "bg-accent-green/20 text-accent-green animate-pulse"
-                  : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
+                  ? "bg-accent-green/20 animate-pulse text-accent-green"
+                  : "text-text-muted hover:bg-bg-hover hover:text-text-primary"
               }`}
               title={voice.isListening ? "Stop recording" : "Voice input"}
             >
@@ -731,7 +693,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           {isRunning ? (
             <button
               onClick={handleStop}
-              className="p-1 text-accent-red hover:bg-accent-red/10 rounded transition-colors shrink-0"
+              className="hover:bg-accent-red/10 shrink-0 rounded p-1 text-accent-red transition-colors"
               title="Stop turn"
             >
               <Square size={12} />
@@ -740,7 +702,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             <button
               onClick={handleSend}
               disabled={!input.trim()}
-              className="p-1 text-accent-green hover:bg-accent-green/10 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+              className="hover:bg-accent-green/10 shrink-0 rounded p-1 text-accent-green transition-colors disabled:cursor-not-allowed disabled:opacity-30"
               title="Send (Enter)"
             >
               <Send size={12} />
@@ -753,16 +715,12 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   return (
     <div className="flex h-full bg-bg-primary">
-      <div className="flex-1 min-w-0">{chatContent}</div>
+      <div className="min-w-0 flex-1">{chatContent}</div>
       {showRewind && (
         <div className="w-72 shrink-0 border-l border-bg-border">
-          <CheckpointPanel
-            conversationId={conversationId}
-            onClose={() => setShowRewind(false)}
-          />
+          <CheckpointPanel conversationId={conversationId} onClose={() => setShowRewind(false)} />
         </div>
       )}
     </div>
   );
 }
-

@@ -17,12 +17,7 @@ import { useMemoryStore } from "@/stores/memoryStore";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
-import type {
-  MemoryEvent,
-  MemoryEventType,
-  PatternCategory,
-  LearnedPattern,
-} from "@/types/memory";
+import type { MemoryEvent, MemoryEventType, PatternCategory, LearnedPattern } from "@/types/memory";
 import { relativeTime } from "@/lib/time";
 
 type Tab = "patterns" | "timeline";
@@ -36,12 +31,7 @@ const FILTERS: { key: FilterType; label: string }[] = [
   { key: "manual_note", label: "Notes" },
 ];
 
-const CATEGORY_ORDER: PatternCategory[] = [
-  "architecture",
-  "convention",
-  "preference",
-  "pitfall",
-];
+const CATEGORY_ORDER: PatternCategory[] = ["architecture", "convention", "preference", "pitfall"];
 
 const CATEGORY_META: Record<
   PatternCategory,
@@ -86,9 +76,7 @@ export function MemoryView() {
   const lastPatternRefreshAt = useMemoryStore((s) => s.lastPatternRefreshAt);
   const isLearning = useMemoryStore((s) => s.isLearning);
   const learningStatus = useMemoryStore((s) => s.learningStatus);
-  const summariesSinceLastRefresh = useMemoryStore(
-    (s) => s.summariesSinceLastRefresh,
-  );
+  const summariesSinceLastRefresh = useMemoryStore((s) => s.summariesSinceLastRefresh);
   const deleteEvent = useMemoryStore((s) => s.deleteEvent);
   const deletePattern = useMemoryStore((s) => s.deletePattern);
   const updatePattern = useMemoryStore((s) => s.updatePattern);
@@ -133,10 +121,7 @@ export function MemoryView() {
   }, [missionFilter]);
 
   const summarizedCount = useMemo(
-    () =>
-      events.filter(
-        (e) => e.type === "session_completed" && e.payload.summary !== null,
-      ).length,
+    () => events.filter((e) => e.type === "session_completed" && e.payload.summary !== null).length,
     [events],
   );
 
@@ -158,9 +143,7 @@ export function MemoryView() {
     if (filter !== "all") result = result.filter((e) => e.type === filter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter((e) =>
-        JSON.stringify(e.payload).toLowerCase().includes(q),
-      );
+      result = result.filter((e) => JSON.stringify(e.payload).toLowerCase().includes(q));
     }
     return result;
   }, [events, filter, searchQuery, matchesMissionFilter]);
@@ -184,9 +167,7 @@ export function MemoryView() {
     [projectPath, getContextForSession, patterns, events],
   );
 
-  const tokenEstimate = Math.round(
-    (injectedPreview.length || patterns.length * 32) / 4,
-  );
+  const tokenEstimate = Math.round((injectedPreview.length || patterns.length * 32) / 4);
   const captureEnabled = captureSessions || captureTasks || captureMissions;
 
   function handleRefreshPatterns() {
@@ -194,25 +175,21 @@ export function MemoryView() {
   }
 
   function handleClear() {
-    if (
-      window.confirm(
-        "Clear all memory? This removes all events and learned patterns.",
-      )
-    ) {
+    if (window.confirm("Clear all memory? This removes all events and learned patterns.")) {
       clearMemory();
     }
   }
 
   return (
-    <div className="flex flex-col h-full bg-bg-primary overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden bg-bg-primary">
       {/* Header band */}
-      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-bg-secondary border-b border-bg-border flex-shrink-0">
+      <div className="flex flex-shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3.5 py-2.5">
         <Brain size={13} className="text-accent-green" />
         <span className="text-xs font-semibold text-text-primary">Memory</span>
 
         {isLearning && (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent-soft border border-accent-line text-[10px] font-medium text-accent-green">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" />
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-accent-soft px-2 py-0.5 text-[10px] font-medium text-accent-green">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-green" />
             {learningStatus ?? "Learning..."}
           </span>
         )}
@@ -220,26 +197,20 @@ export function MemoryView() {
         <div className="flex-1" />
 
         <span className="text-[10.5px] text-text-faint">
-          <span className="text-text-muted tabular-nums">
-            {patterns.length}
-          </span>{" "}
-          patterns
+          <span className="tabular-nums text-text-muted">{patterns.length}</span> patterns
           <span className="mx-1.5 text-line-strong">·</span>
-          <span className="text-text-muted tabular-nums">{events.length}</span>{" "}
-          events
+          <span className="tabular-nums text-text-muted">{events.length}</span> events
           <span className="mx-1.5 text-line-strong">·</span>
-          <span className="text-text-muted tabular-nums">
+          <span className="tabular-nums text-text-muted">
             {formatTokenCount(tokenEstimate)}
           </span>{" "}
-          tok stored
+          tok brief
         </span>
 
         <button
           onClick={handleRefreshPatterns}
-          disabled={
-            isLearning || !projectPath || summarizedCount === 0
-          }
-          className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px] text-text-secondary hover:text-text-primary hover:bg-bg-elevated rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+          disabled={isLearning || !projectPath || summarizedCount === 0}
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary disabled:opacity-40 disabled:hover:bg-transparent"
           title="Refresh learned patterns"
         >
           <RefreshCw size={10} className={isLearning ? "animate-spin" : ""} />
@@ -248,7 +219,7 @@ export function MemoryView() {
         {(events.length > 0 || patterns.length > 0) && (
           <button
             onClick={handleClear}
-            className="p-1 text-text-muted hover:text-accent-red hover:bg-bg-elevated rounded transition-colors"
+            className="rounded p-1 text-text-muted transition-colors hover:bg-bg-elevated hover:text-accent-red"
             title="Clear all memory"
           >
             <Trash2 size={11} />
@@ -257,7 +228,7 @@ export function MemoryView() {
       </div>
 
       {/* Tab row */}
-      <div className="flex items-center gap-1 px-2.5 py-1 bg-bg-secondary border-b border-bg-border flex-shrink-0">
+      <div className="flex flex-shrink-0 items-center gap-1 border-b border-bg-border bg-bg-secondary px-2.5 py-1">
         <MemTab
           active={activeTab === "patterns"}
           onClick={() => setActiveTab("patterns")}
@@ -286,33 +257,27 @@ export function MemoryView() {
             <>Never refreshed</>
           )}
           <span className="mx-1.5 text-line-strong">·</span>
-          <span className="text-text-muted tabular-nums">
-            {summarizedCount}
-          </span>{" "}
-          summarized session{summarizedCount === 1 ? "" : "s"}
+          <span className="tabular-nums text-text-muted">{summarizedCount}</span> summarized session
+          {summarizedCount === 1 ? "" : "s"}
           {summariesSinceLastRefresh > 0 && (
             <>
               <span className="mx-1.5 text-line-strong">·</span>
-              <span className="text-text-muted tabular-nums">
-                +{summariesSinceLastRefresh}
-              </span>{" "}
-              new
+              <span className="tabular-nums text-text-muted">+{summariesSinceLastRefresh}</span> new
             </>
           )}
         </span>
       </div>
 
       {missionFilter && (
-        <div className="flex items-center gap-1.5 px-3.5 py-1.5 bg-accent-soft border-b border-accent-line text-[10.5px] text-accent-green flex-shrink-0">
+        <div className="flex flex-shrink-0 items-center gap-1.5 border-b border-accent-line bg-accent-soft px-3.5 py-1.5 text-[10.5px] text-accent-green">
           <Sparkles size={10} />
           <span>
-            Filtered to mission{" "}
-            <span className="font-mono">{missionFilter.slice(-6)}</span>
+            Filtered to mission <span className="font-mono">{missionFilter.slice(-6)}</span>
           </span>
           <span className="flex-1" />
           <button
             onClick={() => setMissionFilter(null)}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-accent-green/10 transition-colors"
+            className="hover:bg-accent-green/10 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors"
             title="Clear mission filter"
           >
             <X size={9} />
@@ -369,17 +334,17 @@ function MemTab({ active, onClick, icon, label, badge, accent }: MemTabProps) {
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded transition-colors ${
+      className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] transition-colors ${
         active
-          ? `${activeText} font-semibold bg-bg-elevated border border-line-strong`
-          : "text-text-muted font-medium hover:text-text-secondary border border-transparent"
+          ? `${activeText} border border-line-strong bg-bg-elevated font-semibold`
+          : "border border-transparent font-medium text-text-muted hover:text-text-secondary"
       }`}
     >
       {icon}
       {label}
       {badge != null && (
         <span
-          className={`text-[9px] px-1.5 rounded-full tabular-nums ${
+          className={`rounded-full px-1.5 text-[9px] tabular-nums ${
             active ? activeBadge : "bg-bg-elevated text-text-faint"
           }`}
         >
@@ -398,10 +363,7 @@ interface PatternsTabProps {
   injectedPreview: string;
   tokenEstimate: number;
   onDeletePattern: (id: string) => void;
-  onUpdatePattern: (
-    id: string,
-    updates: { pattern?: string; category?: PatternCategory },
-  ) => void;
+  onUpdatePattern: (id: string, updates: { pattern?: string; category?: PatternCategory }) => void;
   onTogglePinPattern: (id: string) => void;
 }
 
@@ -417,7 +379,7 @@ function PatternsTab({
   onTogglePinPattern,
 }: PatternsTabProps) {
   return (
-    <div className="flex-1 grid grid-cols-[1fr_280px] min-h-0 overflow-hidden">
+    <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
       {/* Left: pattern list */}
       <div className="overflow-y-auto px-3.5 py-3">
         {patternCount === 0 ? (
@@ -427,52 +389,46 @@ function PatternsTab({
             body="Open a session to start learning. Patterns are auto-extracted from session summaries."
           />
         ) : (
-          CATEGORY_ORDER.filter((c) => groupedPatterns[c]?.length).map(
-            (cat) => {
-              const meta = CATEGORY_META[cat];
-              const list = groupedPatterns[cat]!;
-              return (
-                <div key={cat} className="mb-4 last:mb-0">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${meta.dot}`}
-                    />
-                    <span className="text-[10px] font-semibold tracking-[0.06em] uppercase text-text-secondary">
-                      {meta.label}
-                    </span>
-                    <span className="text-[10px] text-text-faint tabular-nums">
-                      {list.length}
-                    </span>
-                    <div className="flex-1 h-px bg-bg-border" />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    {list.map((p) => (
-                      <PatternRow
-                        key={p.id}
-                        pattern={p}
-                        meta={meta}
-                        onDelete={() => onDeletePattern(p.id)}
-                        onUpdate={(updates) => onUpdatePattern(p.id, updates)}
-                        onTogglePin={() => onTogglePinPattern(p.id)}
-                      />
-                    ))}
-                  </div>
+          CATEGORY_ORDER.filter((c) => groupedPatterns[c]?.length).map((cat) => {
+            const meta = CATEGORY_META[cat];
+            const list = groupedPatterns[cat]!;
+            return (
+              <div key={cat} className="mb-4 last:mb-0">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+                    {meta.label}
+                  </span>
+                  <span className="text-[10px] tabular-nums text-text-faint">{list.length}</span>
+                  <div className="h-px flex-1 bg-bg-border" />
                 </div>
-              );
-            },
-          )
+                <div className="flex flex-col gap-1.5">
+                  {list.map((p) => (
+                    <PatternRow
+                      key={p.id}
+                      pattern={p}
+                      meta={meta}
+                      onDelete={() => onDeletePattern(p.id)}
+                      onUpdate={(updates) => onUpdatePattern(p.id, updates)}
+                      onTogglePin={() => onTogglePinPattern(p.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
 
       {/* Right rail */}
-      <div className="border-l border-bg-border bg-bg-secondary flex flex-col overflow-hidden">
+      <div className="flex flex-col overflow-hidden border-l border-bg-border bg-bg-secondary">
         {isLearning && (
-          <div className="px-3.5 py-3 border-b border-bg-border">
-            <div className="text-[10px] font-semibold tracking-[0.06em] uppercase text-text-secondary mb-2">
+          <div className="border-b border-bg-border px-3.5 py-3">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
               Extraction queue
             </div>
             <div className="flex items-center gap-2 py-1 text-[10.5px]">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-green" />
               <span className="font-mono text-text-secondary">
                 {learningStatus ?? "summarizing"}
               </span>
@@ -482,34 +438,30 @@ function PatternsTab({
           </div>
         )}
 
-        <div className="px-3.5 py-3 flex-1 overflow-y-auto">
-          <div className="flex items-center gap-1.5 mb-2">
+        <div className="flex-1 overflow-y-auto px-3.5 py-3">
+          <div className="mb-2 flex items-center gap-1.5">
             <Brain size={10} className="text-accent-green" />
-            <span className="text-[10px] font-semibold tracking-[0.06em] uppercase text-text-secondary">
-              Injected next session
+            <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-secondary">
+              Memory brief
             </span>
           </div>
-          <div className="text-[10px] text-text-faint leading-relaxed mb-2">
-            Top patterns prepended to system prompt when{" "}
-            <span className="font-mono text-text-muted">
-              memoryContextEnabled
-            </span>
-            .
+          <div className="mb-2 text-[10px] leading-relaxed text-text-faint">
+            Compact source brief prepended to the system prompt when{" "}
+            <span className="font-mono text-text-muted">memoryContextEnabled</span>.
           </div>
-          <div className="bg-bg-primary border border-bg-border rounded-md p-2.5 font-mono text-[10px] leading-relaxed text-text-secondary whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+          <div className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-bg-border bg-bg-primary p-2.5 font-mono text-[10px] leading-relaxed text-text-secondary">
             {injectedPreview.trim() ? (
               injectedPreview
             ) : (
               <span className="text-text-faint">
-                # No context will be injected yet.{"\n"}# Complete a few
-                sessions to start learning.
+                # No memory brief will be injected yet.{"\n"}# Complete a few sessions to start
+                learning.
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5 mt-2.5 px-2 py-1 rounded bg-accent-soft border border-accent-line text-[10px] text-accent-green">
-            <Zap size={10} />
-            ~{formatTokenCount(tokenEstimate)} tok · injects automatically ·
-            toggle per-conversation
+          <div className="mt-2.5 flex items-center gap-1.5 rounded border border-accent-line bg-accent-soft px-2 py-1 text-[10px] text-accent-green">
+            <Zap size={10} />~{formatTokenCount(tokenEstimate)} tok · compact brief · toggle
+            per-conversation
           </div>
         </div>
       </div>
@@ -529,9 +481,7 @@ function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternR
   const pct = Math.round(pattern.confidence * 100);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(pattern.pattern);
-  const [draftCategory, setDraftCategory] = useState<PatternCategory>(
-    pattern.category,
-  );
+  const [draftCategory, setDraftCategory] = useState<PatternCategory>(pattern.category);
 
   const startEdit = () => {
     setDraft(pattern.pattern);
@@ -544,8 +494,7 @@ function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternR
     if (!trimmed) return;
     onUpdate({
       pattern: trimmed,
-      category:
-        draftCategory !== pattern.category ? draftCategory : undefined,
+      category: draftCategory !== pattern.category ? draftCategory : undefined,
     });
     setEditing(false);
   };
@@ -556,9 +505,9 @@ function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternR
 
   if (editing) {
     return (
-      <div className="flex items-stretch gap-2.5 p-2.5 bg-bg-secondary border border-accent-blue/40 rounded-md">
+      <div className="border-accent-blue/40 flex items-stretch gap-2.5 rounded-md border bg-bg-secondary p-2.5">
         <div className={`w-1 self-stretch rounded-full ${meta.bar}`} />
-        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -568,15 +517,13 @@ function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternR
             }}
             rows={2}
             autoFocus
-            className="w-full resize-y bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11.5px] text-text-primary leading-snug focus:outline-none focus:border-accent-blue/60"
+            className="focus:border-accent-blue/60 w-full resize-y rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11.5px] leading-snug text-text-primary focus:outline-none"
           />
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2">
             <select
               value={draftCategory}
-              onChange={(e) =>
-                setDraftCategory(e.target.value as PatternCategory)
-              }
-              className="bg-bg-primary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
+              onChange={(e) => setDraftCategory(e.target.value as PatternCategory)}
+              className="rounded border border-bg-border bg-bg-primary px-1 py-0.5 text-[10px] text-text-secondary"
               title="Category"
             >
               {CATEGORY_ORDER.map((c) => (
@@ -585,22 +532,20 @@ function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternR
                 </option>
               ))}
             </select>
-            <span className="text-[9.5px] text-text-faint">
-              Ctrl+Enter to save · Esc to cancel
-            </span>
+            <span className="text-[9.5px] text-text-faint">Ctrl+Enter to save · Esc to cancel</span>
           </div>
         </div>
-        <div className="flex items-center gap-0.5 flex-shrink-0">
+        <div className="flex flex-shrink-0 items-center gap-0.5">
           <button
             onClick={save}
-            className="p-1 text-accent-green hover:bg-accent-green/10 rounded"
+            className="hover:bg-accent-green/10 rounded p-1 text-accent-green"
             title="Save (Ctrl+Enter)"
           >
             <Check size={11} />
           </button>
           <button
             onClick={cancel}
-            className="p-1 text-text-faint hover:text-text-primary rounded"
+            className="rounded p-1 text-text-faint hover:text-text-primary"
             title="Cancel (Esc)"
           >
             <X size={11} />
@@ -613,42 +558,37 @@ function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternR
   const isPinned = pattern.pinned === true;
   return (
     <div
-      className={`group flex items-stretch gap-2.5 p-2.5 bg-bg-secondary border rounded-md transition-colors ${
+      className={`group flex items-stretch gap-2.5 rounded-md border bg-bg-secondary p-2.5 transition-colors ${
         isPinned
           ? "border-accent-green/40 hover:border-accent-green/60"
           : "border-bg-border hover:border-line-strong"
       }`}
     >
       <div className={`w-1 self-stretch rounded-full ${meta.bar}`} />
-      <div className="flex-1 min-w-0">
-        <div className="text-[11.5px] text-text-primary leading-snug flex items-start gap-1.5">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-1.5 text-[11.5px] leading-snug text-text-primary">
           {isPinned && (
             <Star
               size={10}
-              className="text-accent-green fill-accent-green flex-shrink-0 mt-0.5"
+              className="mt-0.5 flex-shrink-0 fill-accent-green text-accent-green"
               aria-label="Pinned"
             />
           )}
           <span>{pattern.pattern}</span>
         </div>
-        <div className="flex items-center gap-2.5 mt-1.5 flex-wrap">
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <div className="w-16 h-[3px] rounded-full bg-bg-elevated overflow-hidden">
-              <div
-                className={`h-full ${meta.bar}`}
-                style={{ width: `${pct}%` }}
-              />
+        <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            <div className="h-[3px] w-16 overflow-hidden rounded-full bg-bg-elevated">
+              <div className={`h-full ${meta.bar}`} style={{ width: `${pct}%` }} />
             </div>
-            <span className="font-mono text-[9.5px] text-text-faint tabular-nums">
-              {pct}%
-            </span>
+            <span className="font-mono text-[9.5px] tabular-nums text-text-faint">{pct}%</span>
           </div>
           <span className="text-[10px] text-text-faint">
             extracted {relativeTime(pattern.extractedAt)}
           </span>
           {pattern.projectPath && (
             <span
-              className="text-[10px] text-text-faint truncate max-w-[160px]"
+              className="max-w-[160px] truncate text-[10px] text-text-faint"
               title={pattern.projectPath}
             >
               · {pattern.projectPath.split(/[/\\]/).pop() || pattern.projectPath}
@@ -657,35 +597,32 @@ function PatternRow({ pattern, meta, onDelete, onUpdate, onTogglePin }: PatternR
         </div>
       </div>
       <div
-        className={`flex items-center gap-0.5 flex-shrink-0 transition-opacity ${
+        className={`flex flex-shrink-0 items-center gap-0.5 transition-opacity ${
           isPinned ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         }`}
       >
         <button
           onClick={onTogglePin}
-          className={`p-1 rounded transition-colors ${
+          className={`rounded p-1 transition-colors ${
             isPinned
-              ? "text-accent-green hover:bg-accent-green/10"
+              ? "hover:bg-accent-green/10 text-accent-green"
               : "text-text-faint hover:text-accent-green"
           }`}
           title={isPinned ? "Unpin (currently survives eviction)" : "Pin to top"}
           aria-pressed={isPinned}
         >
-          <Star
-            size={10}
-            className={isPinned ? "fill-accent-green" : ""}
-          />
+          <Star size={10} className={isPinned ? "fill-accent-green" : ""} />
         </button>
         <button
           onClick={startEdit}
-          className="p-1 text-text-faint hover:text-accent-blue rounded"
+          className="rounded p-1 text-text-faint hover:text-accent-blue"
           title="Edit pattern"
         >
           <Edit3 size={10} />
         </button>
         <button
           onClick={onDelete}
-          className="p-1 text-text-faint hover:text-accent-red rounded"
+          className="rounded p-1 text-text-faint hover:text-accent-red"
           title="Delete pattern"
         >
           <Trash2 size={10} />
@@ -721,17 +658,17 @@ function TimelineTab({
   return (
     <>
       {/* Filter row */}
-      <div className="flex items-center gap-1 px-3.5 py-2 bg-bg-secondary border-b border-bg-border flex-shrink-0">
+      <div className="flex flex-shrink-0 items-center gap-1 border-b border-bg-border bg-bg-secondary px-3.5 py-2">
         {FILTERS.map((f) => {
           const active = filter === f.key;
           return (
             <button
               key={f.key}
               onClick={() => onFilterChange(f.key)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10.5px] rounded-full border transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10.5px] transition-colors ${
                 active
-                  ? "bg-accent-soft border-accent-line text-accent-green font-semibold"
-                  : "bg-transparent border-transparent text-text-muted hover:text-text-secondary font-medium"
+                  ? "border-accent-line bg-accent-soft font-semibold text-accent-green"
+                  : "border-transparent bg-transparent font-medium text-text-muted hover:text-text-secondary"
               }`}
             >
               {f.label}
@@ -746,28 +683,24 @@ function TimelineTab({
           );
         })}
         <div className="flex-1" />
-        <div className="flex items-center gap-1.5 bg-bg-primary border border-bg-border rounded px-2 py-0.5 min-w-[220px]">
-          <Search size={10} className="text-text-faint flex-shrink-0" />
+        <div className="flex min-w-[220px] items-center gap-1.5 rounded border border-bg-border bg-bg-primary px-2 py-0.5">
+          <Search size={10} className="flex-shrink-0 text-text-faint" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search memory..."
-            className="bg-transparent text-[10.5px] text-text-primary placeholder:text-text-faint focus:outline-none w-full"
+            className="w-full bg-transparent text-[10.5px] text-text-primary placeholder:text-text-faint focus:outline-none"
           />
         </div>
       </div>
 
       {/* Event list */}
-      <div className="flex-1 overflow-y-auto px-3.5 py-3 flex flex-col gap-2">
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-3.5 py-3">
         {events.length === 0 ? (
           <EmptyState
             icon={<Brain size={20} className="text-text-faint" />}
-            title={
-              totalEvents === 0
-                ? "No events yet"
-                : "No events match your filter"
-            }
+            title={totalEvents === 0 ? "No events yet" : "No events match your filter"}
             body={
               totalEvents === 0
                 ? captureEnabled
@@ -798,12 +731,10 @@ interface EmptyStateProps {
 
 function EmptyState({ icon, title, body }: EmptyStateProps) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center py-12 gap-2 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 py-12 text-center">
       <div className="opacity-60">{icon}</div>
       <p className="text-[11px] text-text-secondary">{title}</p>
-      <p className="text-[10px] text-text-faint max-w-[260px] leading-relaxed">
-        {body}
-      </p>
+      <p className="max-w-[260px] text-[10px] leading-relaxed text-text-faint">{body}</p>
     </div>
   );
 }

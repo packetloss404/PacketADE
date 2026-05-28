@@ -474,8 +474,28 @@ export async function gitCommit(
   projectPath: string,
   message: string,
   stageAll: boolean,
+  context?: {
+    flightId?: string | null;
+    taskId?: string | null;
+    attemptId?: string | null;
+    conversationId?: string | null;
+    sessionId?: string | null;
+  } | null,
 ): Promise<string> {
-  return invoke<string>("git_commit", { projectPath, message, stageAll });
+  return invoke<string>("git_commit", {
+    projectPath,
+    message,
+    stageAll,
+    context: context
+      ? {
+          flightId: context.flightId ?? null,
+          taskId: context.taskId ?? null,
+          attemptId: context.attemptId ?? null,
+          conversationId: context.conversationId ?? null,
+          sessionId: context.sessionId ?? null,
+        }
+      : null,
+  });
 }
 
 export async function gitPush(projectPath: string): Promise<string> {

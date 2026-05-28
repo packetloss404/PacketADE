@@ -1,13 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  ChevronRight,
-  ChevronDown,
-  Brain,
-  Sparkles,
-  Plane,
-  Clock,
-  Info,
-} from "lucide-react";
+import { ChevronRight, ChevronDown, Brain, Sparkles, Plane, Clock, Info } from "lucide-react";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { relativeTime } from "@/lib/time";
 import type { ContextItem, ContextItemKind } from "@/stores/memoryStore";
@@ -47,19 +39,14 @@ const KIND_META: Record<
   session: { label: "Session", icon: Clock, color: "text-accent-green" },
 };
 
-export function ContextPreviewChevron({
-  sessionId,
-  projectPath,
-}: ContextPreviewChevronProps) {
+export function ContextPreviewChevron({ sessionId, projectPath }: ContextPreviewChevronProps) {
   const [open, setOpen] = useState(false);
   // Subscribe to the underlying state slices so the memo recomputes when
   // memory changes — `getContextItemsForSession` reads from `get()` so a
   // bare function-ref subscription wouldn't trigger re-renders.
   const events = useMemoryStore((s) => s.events);
   const patterns = useMemoryStore((s) => s.patterns);
-  const getContextItemsForSession = useMemoryStore(
-    (s) => s.getContextItemsForSession,
-  );
+  const getContextItemsForSession = useMemoryStore((s) => s.getContextItemsForSession);
 
   const items: ContextItem[] = useMemo(() => {
     if (!projectPath) return [];
@@ -72,54 +59,71 @@ export function ContextPreviewChevron({
   if (!projectPath) return null;
 
   const count = items.length;
+  const patternCount = items.filter((item) => item.kind === "pattern").length;
+  const lessonCount = items.filter((item) => item.kind === "lesson").length;
+  const sessionCount = items.filter((item) => item.kind === "session").length;
+  const approxTokens = Math.max(
+    0,
+    Math.round(items.reduce((sum, item) => sum + item.title.length + item.reason.length, 0) / 4),
+  );
 
   return (
     <div className="text-[10.5px]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-text-muted hover:text-text-secondary transition-colors"
+        className="inline-flex items-center gap-1 text-text-muted transition-colors hover:text-text-secondary"
         title={
           count === 0
-            ? "No memory will be injected for this project yet"
-            : "Preview the memory snippets that will be prepended to the next user turn"
+            ? "No memory brief sources will be injected for this project yet"
+            : "Preview the compact memory brief that will be prepended to the next user turn"
         }
         aria-expanded={open}
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         <Brain size={10} className="text-accent-green" />
         <span>
-          Context{" "}
-          <span className="text-line-strong">·</span>{" "}
-          <span className="tabular-nums">{count}</span> memor{count === 1 ? "y" : "ies"}
+          Memory brief <span className="text-line-strong">·</span>{" "}
+          <span className="tabular-nums">{count}</span> source
+          {count === 1 ? "" : "s"}
+          {count > 0 && (
+            <>
+              <span className="text-line-strong"> · </span>
+              <span className="tabular-nums">~{approxTokens}</span> tok
+            </>
+          )}
         </span>
       </button>
 
       {open && (
-        <div className="mt-1.5 border border-bg-border rounded bg-bg-secondary px-2 py-1.5 flex flex-col gap-1 max-h-[180px] overflow-y-auto">
+        <div className="mt-1.5 flex max-h-[180px] flex-col gap-1 overflow-y-auto rounded border border-bg-border bg-bg-secondary px-2 py-1.5">
+          {count > 0 && (
+            <div className="mb-0.5 flex items-center gap-1.5 text-[9.5px] text-text-faint">
+              <span>{patternCount} patterns</span>
+              <span className="text-line-strong">·</span>
+              <span>{lessonCount} lessons</span>
+              <span className="text-line-strong">·</span>
+              <span>{sessionCount} summaries</span>
+            </div>
+          )}
           {count === 0 ? (
-            <span className="text-[10px] text-text-faint py-1">
-              # No memory will be injected yet. Complete a few sessions
-              to start learning, or pin a pattern from the Memory view.
+            <span className="py-1 text-[10px] text-text-faint">
+              # No memory brief sources yet. Complete a few sessions to start learning, or pin a
+              pattern from the Memory view.
             </span>
           ) : (
             items.map((it) => {
               const meta = KIND_META[it.kind];
               const Icon = meta.icon;
               return (
-                <div
-                  key={it.id}
-                  className="flex items-start gap-1.5 text-[10.5px] leading-snug"
-                >
+                <div key={it.id} className="flex items-start gap-1.5 text-[10.5px] leading-snug">
                   <Icon size={9} className={`${meta.color} mt-0.5 flex-shrink-0`} />
-                  <span className="flex-1 min-w-0 text-text-secondary truncate">
-                    {it.title}
-                  </span>
-                  <span className="text-[9.5px] text-text-faint flex-shrink-0">
+                  <span className="min-w-0 flex-1 truncate text-text-secondary">{it.title}</span>
+                  <span className="flex-shrink-0 text-[9.5px] text-text-faint">
                     {relativeTime(it.timestamp)}
                   </span>
                   <span
-                    className="text-text-faint hover:text-text-secondary cursor-help flex-shrink-0"
+                    className="flex-shrink-0 cursor-help text-text-faint hover:text-text-secondary"
                     title={`Why this? ${it.reason}`}
                   >
                     <Info size={9} />

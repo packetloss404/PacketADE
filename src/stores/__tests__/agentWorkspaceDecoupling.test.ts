@@ -11,6 +11,13 @@ const detachConversationsFromWorkspaceMock = vi.fn();
 const retryLastTurnMock = vi.fn();
 const saveAgentsSliceMock = vi.fn();
 const loadAgentsMdMock = vi.fn();
+const composeMemoryBriefMock = vi.fn((_scope?: unknown) => ({
+  text: "",
+  items: [],
+  charBudget: 1800,
+  truncated: false,
+  scopeKey: "D:/projects/example",
+}));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (...args: unknown[]) => listenMock(...args),
@@ -28,6 +35,7 @@ vi.mock("@/stores/memoryStore", () => ({
   useMemoryStore: {
     getState: vi.fn(() => ({
       getContextForSession: vi.fn(() => ""),
+      composeMemoryBrief: (scope: unknown) => composeMemoryBriefMock(scope),
     })),
   },
 }));
@@ -107,6 +115,13 @@ describe("agent/workspace store decoupling", () => {
     saveWorkspacesSliceMock.mockResolvedValue(undefined);
     retryLastTurnMock.mockResolvedValue(undefined);
     saveAgentsSliceMock.mockResolvedValue(undefined);
+    composeMemoryBriefMock.mockReturnValue({
+      text: "",
+      items: [],
+      charBudget: 1800,
+      truncated: false,
+      scopeKey: "D:/projects/example",
+    });
   });
 
   it("does not write workspaceId on newly-created API conversations", async () => {
@@ -205,6 +220,82 @@ describe("agent/workspace store decoupling", () => {
       false,
       null,
     );
+  });
+
+  it("injects compact local memory briefs into new API conversations", async () => {
+    composeMemoryBriefMock.mockReturnValue({
+      text: "## PacketADE Memory Brief\nLearned patterns:\n- Prefer pnpm scripts.",
+      items: [],
+      charBudget: 1800,
+      truncated: false,
+      scopeKey: "D:/projects/example",
+    });
+
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const id = await useAgentTaskStore
+      .getState()
+      .createApiConversation(
+        "api-openai",
+        "D:/projects/example",
+        "gpt-4.1",
+        "Build with memory",
+        "You are focused.",
+        false,
+        false,
+        null,
+        undefined,
+        false,
+        undefined,
+        true,
+      );
+
+    expect(composeMemoryBriefMock).toHaveBeenCalledWith({
+      kind: "local",
+      projectPath: "D:/projects/example",
+    });
+    const startCall =
+      startApiAgentSessionMock.mock.calls[startApiAgentSessionMock.mock.calls.length - 1];
+    expect(startCall?.[5]).toContain("## PacketADE Memory Brief");
+    expect(startCall?.[5]).toContain("You are focused.");
+    expect(
+      useAgentTaskStore.getState().conversations.find((c) => c.id === id)?.memoryContextEnabled,
+    ).toBe(true);
+  });
+
+  it("passes SSH scope to memory briefs without local path probing", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    await useAgentTaskStore.getState().createApiConversation(
+      "api-openai-codex",
+      "/srv/app",
+      "gpt-5-codex",
+      "Build remotely with memory enabled",
+      null,
+      false,
+      false,
+      {
+        serverId: "server-1",
+        name: "Build host",
+        host: "example.com",
+        port: 2222,
+        user: "ian",
+        remotePath: "/srv/app",
+        keyPath: "/home/ian/.ssh/id_ed25519",
+        authMethod: "key",
+        hostFingerprint: "SHA256:test",
+      },
+      undefined,
+      false,
+      undefined,
+      true,
+    );
+
+    expect(loadAgentsMdMock).not.toHaveBeenCalled();
+    expect(composeMemoryBriefMock).toHaveBeenCalledWith({
+      kind: "ssh",
+      projectPath: "/srv/app",
+      serverId: "server-1",
+      remotePath: "/srv/app",
+    });
   });
 
   it("threads SSH target config through sidecar-backed API conversations", async () => {
