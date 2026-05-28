@@ -13,6 +13,8 @@ import { useFlightStore } from "@/stores/flightStore";
 import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useGitHubStore } from "@/stores/githubStore";
+import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
+import { useMemoryStore } from "@/stores/memoryStore";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
 
 interface AsyncFlightStore {
@@ -35,26 +37,16 @@ interface AsyncFlightStore {
 }
 
 function applyAttemptsToFlight(flightId: string, attempts: Attempt[]) {
-  const flight = useFlightStore
-    .getState()
-    .flights.find((f) => f.id === flightId);
+  const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
   if (!flight) return;
   const merged = [...(flight.attempts ?? []), ...attempts];
   useFlightStore.getState().updateFlight(flightId, { attempts: merged, prompt: undefined });
 }
 
-function patchAttempt(
-  flightId: string,
-  attemptId: string,
-  patch: Partial<Attempt>,
-) {
-  const flight = useFlightStore
-    .getState()
-    .flights.find((f) => f.id === flightId);
+function patchAttempt(flightId: string, attemptId: string, patch: Partial<Attempt>) {
+  const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
   if (!flight || !flight.attempts) return;
-  const next = flight.attempts.map((a) =>
-    a.id === attemptId ? { ...a, ...patch } : a,
-  );
+  const next = flight.attempts.map((a) => (a.id === attemptId ? { ...a, ...patch } : a));
   useFlightStore.getState().updateFlight(flightId, { attempts: next });
 }
 
@@ -69,10 +61,7 @@ function patchAttempt(
  * `errorMessage`) so a flaky publish never knocks the attempt itself
  * out of its earned terminal status.
  */
-async function publishAttemptAsDraftPr(
-  flight: Flight,
-  attempt: Attempt,
-): Promise<void> {
+async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promise<void> {
   // Resolve the GitHub repo target from the user's currently-selected
   // repo. The PRModal already uses this same source-of-truth; for
   // async-Flight publish we follow the same UX contract.
@@ -113,7 +102,7 @@ async function publishAttemptAsDraftPr(
   try {
     await gitPushBranch(worktreePath, branchName, false);
   } catch (err) {
-    const msg = typeof err === "string" ? err : (err as Error)?.message ?? "push failed";
+    const msg = typeof err === "string" ? err : ((err as Error)?.message ?? "push failed");
     console.warn("publishAttemptAsDraftPr: push failed for", attempt.id, msg);
     patchAttempt(flight.id, attempt.id, {
       errorMessage: `Draft-PR publish: branch push failed — ${msg}`,
@@ -144,7 +133,7 @@ async function publishAttemptAsDraftPr(
     const pr = JSON.parse(json) as { number?: number };
     if (typeof pr.number === "number") prNumber = pr.number;
   } catch (err) {
-    const msg = typeof err === "string" ? err : (err as Error)?.message ?? "create_pr failed";
+    const msg = typeof err === "string" ? err : ((err as Error)?.message ?? "create_pr failed");
     console.warn("publishAttemptAsDraftPr: create_pr failed for", attempt.id, msg);
     patchAttempt(flight.id, attempt.id, {
       errorMessage: `Draft-PR publish: GitHub create_pr failed — ${msg}`,
@@ -170,13 +159,8 @@ async function publishAttemptAsDraftPr(
   try {
     await setAttemptDraftPr(flight.id, attempt.id, prNumber);
   } catch (err) {
-    const msg =
-      typeof err === "string" ? err : (err as Error)?.message ?? "unknown error";
-    console.warn(
-      "publishAttemptAsDraftPr: failed to persist draft PR number",
-      attempt.id,
-      err,
-    );
+    const msg = typeof err === "string" ? err : ((err as Error)?.message ?? "unknown error");
+    console.warn("publishAttemptAsDraftPr: failed to persist draft PR number", attempt.id, err);
     patchAttempt(flight.id, attempt.id, {
       draftPrNumber: undefined,
       errorMessage: `Failed to persist draft PR #${prNumber}: ${msg}`,
@@ -193,9 +177,35 @@ async function publishAttemptAsDraftPr(
 // decide to publish until the publish settles closes that window.
 const publishingAttempts = new Set<string>();
 
+function composeAsyncLaunchPrompt(
+  prompt: string,
+  flight: Flight | undefined,
+  targets: AttemptTargetSpec[],
+): string {
+  if (targets.length === 0 || targets.some((target) => target.kind !== "local")) {
+    return prompt;
+  }
+
+  const candidatePaths = [flight?.projectPath, ...targets.map((target) => target.basePath)].filter(
+    (path): path is string => Boolean(path?.trim()),
+  );
+  const normalized = new Set(candidatePaths.map((path) => path.replace(/\\/g, "/").toLowerCase()));
+  if (normalized.size !== 1) return prompt;
+
+  const [projectPath] = candidatePaths;
+  const brief = useMemoryStore.getState().composeMemoryBrief({ kind: "local", projectPath });
+  if (!brief.text.trim()) return prompt;
+  return `${brief.text}\n\n---\n\n${prompt}`;
+}
+
 export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
   launchAsync: async (flightId, prompt, targets) => {
-    const attempts = await launchFlightAsync(flightId, prompt, targets);
+    for (const target of targets) {
+      await assertCostGuardrailsAllowLaunch(target.provider, flightId);
+    }
+    const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+    const promptForLaunch = composeAsyncLaunchPrompt(prompt, flight, targets);
+    const attempts = await launchFlightAsync(flightId, promptForLaunch, targets);
 
     // For each attempt, register a frontend AgentConversation that listens to
     // the same backend event channel (apiAgent*Event(sessionId)) so AttemptTile
@@ -220,10 +230,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
           };
         }
       }
-      const projectPath =
-        a.target.kind === "local"
-          ? a.target.worktreePath
-          : a.target.worktreePath;
+      const projectPath = a.target.kind === "local" ? a.target.worktreePath : a.target.worktreePath;
       try {
         await createApi(
           a.agentConfigId as AgentCli,
@@ -234,10 +241,10 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
           false,
           false,
           sshTarget,
-          a.sessionId,    // explicitId — match backend session id
-          true,           // skipBackendStart — backend already started
-          undefined,      // allowedTools
-          undefined,      // memoryContextEnabled
+          a.sessionId, // explicitId — match backend session id
+          true, // skipBackendStart — backend already started
+          undefined, // allowedTools
+          undefined, // memoryContextEnabled
         );
       } catch (err) {
         console.warn("Failed to attach attempt listeners:", a.id, err);
@@ -245,9 +252,6 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     }
 
     // Persist the prompt + attempts onto the Flight.
-    const flight = useFlightStore
-      .getState()
-      .flights.find((f) => f.id === flightId);
     if (flight) {
       const merged = [...(flight.attempts ?? []), ...attempts];
       useFlightStore.getState().updateFlight(flightId, {
@@ -261,9 +265,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
   },
 
   cancelAttempt: async (flightId, attemptId) => {
-    const flight = useFlightStore
-      .getState()
-      .flights.find((f) => f.id === flightId);
+    const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
     const attempt = flight?.attempts?.find((a) => a.id === attemptId);
 
     await cancelFlightAttempt(flightId, attemptId);
@@ -277,9 +279,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // saved ServerConfig from serverStore (Phase 2 — was sshTargetStore).
     if (attempt && attempt.target.kind === "ssh") {
       try {
-        const server = useServerStore
-          .getState()
-          .getServer(attempt.target.targetId);
+        const server = useServerStore.getState().getServer(attempt.target.targetId);
         if (server) {
           await cleanupAttemptWorktreeSsh({
             flightId,
@@ -314,9 +314,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // current branch/worktree/etc. Errors are swallowed inside the
     // helper so they never propagate out and disturb the UI flow.
     if (status === "completed") {
-      const flight = useFlightStore
-        .getState()
-        .flights.find((f) => f.id === flightId);
+      const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
       const attempt = flight?.attempts?.find((a) => a.id === attemptId);
       if (
         flight &&

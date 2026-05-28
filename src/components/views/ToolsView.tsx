@@ -14,6 +14,11 @@ import {
   Mic,
   Key,
   Server,
+  ShieldCheck,
+  AlertTriangle,
+  ExternalLink,
+  PackageCheck,
+  RefreshCw,
   GitBranch,
   Bot,
   Brain,
@@ -125,22 +130,22 @@ export function ToolsView() {
   const setActiveView = useAppStore((s) => s.setActiveView);
 
   return (
-    <div className="flex h-full bg-bg-primary overflow-hidden">
+    <div className="flex h-full overflow-hidden bg-bg-primary">
       {/* Sidebar nav */}
-      <div className="w-44 flex-shrink-0 bg-bg-secondary border-r border-bg-border flex flex-col">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-bg-border">
+      <div className="flex w-44 flex-shrink-0 flex-col border-r border-bg-border bg-bg-secondary">
+        <div className="flex items-center gap-2 border-b border-bg-border px-4 py-3">
           <Wrench size={14} className="text-accent-amber" />
           <h2 className="text-xs font-semibold text-text-primary">Settings</h2>
         </div>
-        <div className="flex flex-col p-2 gap-0.5 overflow-y-auto">
+        <div className="flex flex-col gap-0.5 overflow-y-auto p-2">
           {SECTIONS.map((section) => (
             <button
               key={section.key}
               onClick={() => setActiveSection(section.key)}
-              className={`flex items-center gap-2 px-3 py-2 text-[11px] rounded-lg transition-colors text-left ${
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-[11px] transition-colors ${
                 activeSection === section.key
                   ? "bg-bg-elevated text-accent-green"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
               }`}
             >
               <section.icon size={12} />
@@ -153,7 +158,7 @@ export function ToolsView() {
       {/* Content area */}
       <div className="flex-1 overflow-y-auto p-4">
         {activeSection === "general" && (
-          <div className="grid grid-cols-2 gap-4 max-w-2xl">
+          <div className="grid max-w-2xl grid-cols-2 gap-4">
             <ProjectInfoCard projectPath={projectPath} gitBranch={gitBranch} />
             <ThemeSettingsCard />
             <NotificationSettingsCard />
@@ -175,7 +180,7 @@ export function ToolsView() {
         )}
 
         {activeSection === "providers" && (
-          <div className="grid grid-cols-1 gap-4 max-w-3xl">
+          <div className="grid max-w-3xl grid-cols-1 gap-4">
             <ApiKeysCard />
             <SubscriptionsCard />
             <ProviderEndpointsCard />
@@ -190,17 +195,17 @@ export function ToolsView() {
 
         {activeSection === "memory" && (
           <div className="max-w-2xl space-y-3">
-            <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-1.5">
+            <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
+              <div className="mb-1.5 flex items-center gap-2">
                 <Brain size={12} className="text-accent-green" />
                 <h3 className="text-xs font-semibold text-text-primary">Memory pane</h3>
               </div>
-              <p className="text-[11px] text-text-muted leading-relaxed">
+              <p className="text-[11px] leading-relaxed text-text-muted">
                 Browse, edit, and prune captured patterns and events.
               </p>
               <button
                 onClick={() => setActiveView("memory")}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs text-accent-green border border-accent-green/30 bg-accent-green/10 rounded hover:bg-accent-green/15 transition-colors mt-3"
+                className="border-accent-green/30 bg-accent-green/10 hover:bg-accent-green/15 mt-3 inline-flex items-center gap-1.5 rounded border px-3 py-2 text-xs text-accent-green transition-colors"
               >
                 <Brain size={12} />
                 Manage memory
@@ -223,7 +228,7 @@ export function ToolsView() {
         )}
 
         {activeSection === "issues" && (
-          <div className="grid grid-cols-2 gap-4 max-w-2xl">
+          <div className="grid max-w-2xl grid-cols-2 gap-4">
             <IssueSettingsCard ticketPrefix={ticketPrefix} setTicketPrefix={setTicketPrefix} />
             <TagListCard
               title="Epics"
@@ -249,7 +254,7 @@ export function ToolsView() {
         )}
 
         {activeSection === "mcp" && (
-          <div className="grid grid-cols-1 gap-4 max-w-2xl">
+          <div className="grid max-w-2xl grid-cols-1 gap-4">
             <McpServersCard />
             <McpProviderCard />
           </div>
@@ -303,23 +308,22 @@ function AdvancedSection({
   onOpenHistory: () => void;
   onOpenCost: () => void;
 }) {
-  const [inlineView, setInlineView] = useState<
-    null | "history" | "cost" | "prompts"
-  >(null);
+  const [inlineView, setInlineView] = useState<null | "history" | "cost" | "prompts">(null);
 
   return (
     <div className="max-w-3xl space-y-4">
+      <ReleaseTrustCard />
       <CrashViewerCard />
 
-      <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-        <h3 className="text-xs font-semibold text-text-primary mb-3 flex items-center gap-2">
+      <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
+        <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold text-text-primary">
           <Settings2 size={12} className="text-accent-blue" />
           Open in dedicated view
         </h3>
-        <p className="text-[10px] text-text-muted mb-3 leading-relaxed">
-          These surfaces used to live as their own Settings tabs; they have
-          dedicated full-page views in the toolbar. Use the jump links below
-          to switch, or expand inline if you only need a quick look.
+        <p className="mb-3 text-[10px] leading-relaxed text-text-muted">
+          These surfaces used to live as their own Settings tabs; they have dedicated full-page
+          views in the toolbar. Use the jump links below to switch, or expand inline if you only
+          need a quick look.
         </p>
         <div className="space-y-1.5">
           <JumpLink
@@ -351,7 +355,7 @@ function AdvancedSection({
 
       {inlineView === "history" && (
         <div className="h-[60vh]">
-          <Suspense fallback={<div className="text-xs text-text-muted p-4">Loading...</div>}>
+          <Suspense fallback={<div className="p-4 text-xs text-text-muted">Loading...</div>}>
             <HistoryView />
           </Suspense>
         </div>
@@ -362,6 +366,73 @@ function AdvancedSection({
         </div>
       )}
       {inlineView === "prompts" && <PromptTemplatesCard />}
+    </div>
+  );
+}
+
+function ReleaseTrustCard() {
+  const releaseItems = [
+    {
+      label: "Install channel",
+      status: "Manual GitHub Releases",
+      tone: "text-accent-amber",
+      icon: PackageCheck,
+    },
+    {
+      label: "Code signing",
+      status: "Not configured for beta builds",
+      tone: "text-text-muted",
+      icon: ShieldCheck,
+    },
+    {
+      label: "Auto-updater",
+      status: "Runbook drafted, not enabled",
+      tone: "text-text-muted",
+      icon: RefreshCw,
+    },
+    {
+      label: "Local release gates",
+      status: "lint, build, cargo check, tauri build",
+      tone: "text-accent-green",
+      icon: AlertTriangle,
+    },
+  ];
+
+  return (
+    <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-xs font-semibold text-text-primary">
+          <ShieldCheck size={12} className="text-accent-green" />
+          Release Trust
+        </h3>
+        <a
+          href="https://github.com/packetloss404/PacketADE/releases"
+          target="_blank"
+          rel="noreferrer"
+          className="hover:bg-accent-green/10 flex shrink-0 items-center gap-1 rounded px-2 py-1 text-[10px] text-accent-green transition-colors"
+        >
+          Releases
+          <ExternalLink size={10} />
+        </a>
+      </div>
+      <p className="mb-3 text-[10px] leading-relaxed text-text-muted">
+        Beta builds are installed manually. Signing certificates and the Tauri updater are planned
+        release-trust gates, not active guarantees in the current repo.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        {releaseItems.map(({ label, status, tone, icon: Icon }) => (
+          <div
+            key={label}
+            className="min-w-0 rounded-lg border border-bg-border bg-bg-primary px-3 py-2"
+          >
+            <div className="mb-1 flex items-center gap-1.5 text-[10px] text-text-muted">
+              <Icon size={10} className={tone} />
+              {label}
+            </div>
+            <div className={`text-[10px] leading-snug ${tone}`}>{status}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -383,25 +454,25 @@ function JumpLink({
   inlineOpen: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 bg-bg-primary border border-bg-border rounded-lg px-3 py-2">
-      <div className="flex items-center gap-2 min-w-0">
-        <Icon size={12} className="text-text-muted shrink-0" />
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-bg-border bg-bg-primary px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <Icon size={12} className="shrink-0 text-text-muted" />
         <div className="min-w-0">
           <div className="text-[11px] text-text-primary">{label}</div>
-          <div className="text-[10px] text-text-muted truncate">{description}</div>
+          <div className="truncate text-[10px] text-text-muted">{description}</div>
         </div>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex shrink-0 items-center gap-1">
         <button
           onClick={onInline}
-          className="px-2 py-1 text-[10px] text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+          className="rounded px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           {inlineOpen ? "Hide" : onJump ? "Preview" : "Edit"}
         </button>
         {onJump && (
           <button
             onClick={onJump}
-            className="flex items-center gap-1 px-2 py-1 text-[10px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+            className="hover:bg-accent-green/10 flex items-center gap-1 rounded px-2 py-1 text-[10px] text-accent-green transition-colors"
           >
             Open
             <ChevronRight size={11} />
@@ -444,16 +515,16 @@ function PromptTemplatesCard() {
   }
 
   return (
-    <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-xs font-semibold text-text-primary flex items-center gap-2">
+    <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-xs font-semibold text-text-primary">
           <FileText size={12} className="text-accent-amber" />
           Prompt Templates
         </h3>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowManager(true)}
-            className="flex items-center gap-1 px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+            className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
             title="Open the full template manager (edit, search, send)"
           >
             <Settings size={11} />
@@ -461,7 +532,7 @@ function PromptTemplatesCard() {
           </button>
           <button
             onClick={() => setShowNew(!showNew)}
-            className="flex items-center gap-1 px-2 py-1 text-[11px] text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+            className="hover:bg-accent-green/10 flex items-center gap-1 rounded px-2 py-1 text-[11px] text-accent-green transition-colors"
           >
             <Plus size={11} />
             New
@@ -470,18 +541,18 @@ function PromptTemplatesCard() {
       </div>
 
       {showNew && (
-        <div className="bg-bg-primary border border-bg-border rounded-lg p-3 mb-4 flex flex-col gap-2">
+        <div className="mb-4 flex flex-col gap-2 rounded-lg border border-bg-border bg-bg-primary p-3">
           <input
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Template name..."
-            className="bg-bg-secondary border border-bg-border rounded px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+            className="rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:border-accent-green focus:outline-none"
           />
           <select
             value={newCategory}
             onChange={(e) => setNewCategory(e.target.value as PromptTemplate["category"])}
-            className="bg-bg-secondary border border-bg-border rounded px-2 py-1.5 text-[11px] text-text-secondary focus:outline-none focus:border-accent-green"
+            className="rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-secondary focus:border-accent-green focus:outline-none"
           >
             {CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -494,7 +565,7 @@ function PromptTemplatesCard() {
             onChange={(e) => setNewContent(e.target.value)}
             placeholder="Template prompt content..."
             rows={4}
-            className="bg-bg-secondary border border-bg-border rounded px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green resize-none"
+            className="resize-none rounded border border-bg-border bg-bg-secondary px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:border-accent-green focus:outline-none"
           />
           <div className="flex justify-end gap-2">
             <button
@@ -505,7 +576,7 @@ function PromptTemplatesCard() {
             </button>
             <button
               onClick={handleAdd}
-              className="px-3 py-1 text-[11px] bg-accent-green/15 text-accent-green border border-accent-green/30 rounded hover:bg-accent-green/25 transition-colors"
+              className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 rounded border px-3 py-1 text-[11px] text-accent-green transition-colors"
             >
               Save
             </button>
@@ -514,7 +585,7 @@ function PromptTemplatesCard() {
       )}
 
       {templates.length === 0 ? (
-        <p className="text-[10px] text-text-muted text-center py-4">
+        <p className="py-4 text-center text-[10px] text-text-muted">
           No templates yet. Create one to reuse common prompts.
         </p>
       ) : (
@@ -522,22 +593,20 @@ function PromptTemplatesCard() {
           {templates.map((t) => (
             <div
               key={t.id}
-              className="flex items-start gap-2 bg-bg-primary border border-bg-border rounded-lg p-3"
+              className="flex items-start gap-2 rounded-lg border border-bg-border bg-bg-primary p-3"
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] font-medium text-text-primary">
-                    {t.name}
-                  </span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-amber/15 text-accent-amber">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-text-primary">{t.name}</span>
+                  <span className="bg-accent-amber/15 rounded px-1.5 py-0.5 text-[9px] text-accent-amber">
                     {t.category}
                   </span>
                 </div>
-                <p className="text-[10px] text-text-muted line-clamp-2">{t.content}</p>
+                <p className="line-clamp-2 text-[10px] text-text-muted">{t.content}</p>
               </div>
               <button
                 onClick={() => deleteTemplate(t.id)}
-                className="p-1 text-text-muted hover:text-accent-red transition-colors flex-shrink-0"
+                className="flex-shrink-0 p-1 text-text-muted transition-colors hover:text-accent-red"
               >
                 <Trash2 size={11} />
               </button>

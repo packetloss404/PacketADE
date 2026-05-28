@@ -243,6 +243,12 @@ The sidecar work is complete across the original four v2 tiers and the v3 / v4 p
 
 PacketADE is developed on Windows but is designed to ship on macOS and Linux as well. For per-platform prerequisites, supported target triples, and cross-compilation notes, see [`dev/multi-platform-build.md`](./dev/multi-platform-build.md). Builds and releases are produced locally — there is no GitHub Actions CI in this repo.
 
+### Beta Distribution Status
+
+Current beta builds are distributed through GitHub Releases and installed manually. Windows Authenticode signing, macOS Developer ID signing/notarization, and the Tauri v2 auto-updater are planned release-trust gates but are not enabled in the repo today. Until those credentials and updater manifests exist, beta users may see SmartScreen or Gatekeeper warnings on fresh downloads.
+
+Local release gates are still explicit: run `pnpm lint`, `pnpm build`, `cargo check --manifest-path src-tauri/Cargo.toml`, and `pnpm tauri build` before publishing an installer. The updater setup runbook lives in [`dev/updater-setup.md`](./dev/updater-setup.md).
+
 ### Run The Desktop App
 
 ```bash

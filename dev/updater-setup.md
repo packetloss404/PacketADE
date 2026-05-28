@@ -125,6 +125,17 @@ The `latest.json` manifest is a small signed descriptor of the form:
 Generate `latest.json` as part of the release process and upload it alongside
 the signed installer artifacts.
 
+Before uploading, run:
+
+```bash
+pnpm run release:readiness
+```
+
+The readiness check validates the manifest shape when `latest.json` is present
+in a known bundle location or pointed to by `PACKETADE_UPDATER_MANIFEST`. It
+also reports whether updater signing env vars are present. It does not read or
+print the private key contents.
+
 ### 5. Build signed releases
 
 For the release build, point Tauri at the private key via environment
@@ -237,3 +248,6 @@ requires:
 - A UI surface for the update prompt (small frontend change, deferred).
 
 Until those land, PacketADE remains a manual-install app.
+
+The release readiness script is implemented as a non-secret beta gate, but it
+does not enable automatic updates by itself.

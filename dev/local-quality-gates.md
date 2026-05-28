@@ -14,6 +14,12 @@ PacketADE intentionally has no GitHub CI workflows. Release confidence is built 
    - Run `pnpm check`.
    - It covers the complete local quality surface: preflight, Playwright, sidecar checks and smoke tests, schema validation, Rust check, and Rust tests.
 
+3. **Release readiness: beta distribution gate**
+   - Use the readiness check after `pnpm check` and after producing local Tauri bundles.
+   - Run `pnpm run release:readiness`.
+   - It reports release metadata, signing signals, updater manifest readiness, bundle artifact presence, and the required quality commands for the release handoff.
+   - Run `pnpm run release:readiness:report` when you only need a non-failing status snapshot during setup.
+
 ## Individual Gates
 
 - **Lint scripts**
@@ -46,6 +52,11 @@ PacketADE intentionally has no GitHub CI workflows. Release confidence is built 
 - **Schema check**
   - Run `pnpm check:tauri-schema` after changing shared contracts, generated types, persisted state shapes, or request/response payloads.
   - Schema failures should be fixed before any release-confidence check is considered complete.
+
+- **Release readiness**
+  - Run `pnpm run release:readiness` before publishing a beta installer.
+  - The script does not read certificate contents or secrets. It only checks for config/env signals, signed-updater manifest shape, expected bundle artifacts for the host platform, and whether the required quality-gate package scripts exist.
+  - Warnings mean distribution work is still incomplete, usually signing or updater setup. Failures mean the local release handoff is structurally blocked, such as missing artifacts, mismatched versions, or missing gate commands.
 
 ## Notes
 

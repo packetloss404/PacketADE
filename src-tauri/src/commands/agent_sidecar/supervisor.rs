@@ -369,7 +369,6 @@ impl SidecarManager {
             let session_for_wait = session_id.to_string();
             let target_for_wait = target_label.clone();
             let remote_sessions = Arc::clone(&self.remote_sessions);
-            let remote_owned_sessions = Arc::clone(&self.remote_owned_sessions);
             let owned_sessions = Arc::clone(&self.owned_sessions);
             let app_handle = self.app_handle.clone();
             tokio::spawn(async move {
@@ -378,14 +377,10 @@ impl SidecarManager {
                     let mut guard = remote_sessions.lock().await;
                     guard.remove(&session_for_wait);
                 }
-                {
-                    let mut guard = remote_owned_sessions.lock().await;
-                    guard.remove(&session_for_wait);
-                }
 
                 let still_owned = {
-                    let mut guard = owned_sessions.lock().await;
-                    guard.remove(&session_for_wait)
+                    let guard = owned_sessions.lock().await;
+                    guard.contains(&session_for_wait)
                 };
                 let message = match status {
                     Ok(exit) if exit.success() => {
@@ -1308,7 +1303,8 @@ mod remote_tests {
 
     #[test]
     fn remote_preflight_script_checks_node_sidecar_and_project() {
-        let script = remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "openai-agents");
+        let script =
+            remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "openai-agents");
         assert!(script.contains("PACKETADE_REMOTE_SIDECAR_READY"));
         assert!(script.contains("Node.js not found"));
         assert!(script.contains("Remote sidecar entry not found"));

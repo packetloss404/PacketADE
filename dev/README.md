@@ -15,7 +15,7 @@ Use these as the trust anchors before reading older plan files:
 | Remote/mobile agent access | [`remoteagents/README.md`](./remoteagents/README.md)                                                                                                   | Supersedes the older `mobile/` investigation for phone/PWA work.                                       |
 | SSH workspace parity       | [`sidecar-over-ssh-verification.md`](./sidecar-over-ssh-verification.md)                                                                               | Test and manual verification contract for subscription providers on remote workspaces.                 |
 | MCP provider transport     | [`mcp-provider-transport.md`](./mcp-provider-transport.md)                                                                                             | Implementation owner for the deferred local MCP server.                                                |
-| Build and release ops      | [`multi-platform-build.md`](./multi-platform-build.md), [`updater-setup.md`](./updater-setup.md), [`local-quality-gates.md`](./local-quality-gates.md) | Operational runbooks, not feature backlogs.                                                            |
+| Build and release ops      | [`multi-platform-build.md`](./multi-platform-build.md), [`updater-setup.md`](./updater-setup.md), [`local-quality-gates.md`](./local-quality-gates.md), [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md) | Operational runbooks, not feature backlogs.                                                            |
 | Historical plans           | [`archive/`](./archive/)                                                                                                                               | Cold storage; do not treat as current unless an active doc links to a specific artifact as background. |
 
 ## Reference
@@ -24,6 +24,7 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 
 - `local-quality-gates.md` — preflight / full-check pipeline, individual gate commands
 - `multi-platform-build.md` — macOS / Linux / Windows prerequisites + build flow + cross-compile notes
+- `beta-distribution-trust-runbook.md` — beta release trust gates, signing/updater credential checks, and release-candidate flow
 - `sidecar-over-ssh-verification.md` — test and manual checklist for Sidecar-over-SSH provider parity
 - `updater-setup.md` — runbook for wiring up the Tauri v2 auto-updater (currently not enabled)
 - `ssh-tech-debt.md` — redirect to `/backlog.md` (left for old links)

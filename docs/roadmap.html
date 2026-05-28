@@ -585,12 +585,13 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offs
       <div class="theme platform reveal" style="--delay:0.25s">
         <div class="theme-head">
           <h3>Platform &amp; distribution</h3>
-          <span class="count">4 items &middot; ops, not features</span>
+          <span class="count">5 items &middot; ops, not features</span>
         </div>
         <div class="theme-items">
+          <div class="b-item"><span class="pill p1">P1</span><div><strong>Release trust status surface</strong> &mdash; public docs and Settings should state the truth: current beta builds are manual-install; signing and updater support are planned but not active guarantees.</div></div>
           <div class="b-item"><span class="pill p2">P2</span><div><strong>Auto-updater (Tauri v2)</strong> &mdash; signing keypair + signed <code>latest.json</code> + UI prompt. Currently PacketADE is manual-install. Runbook lives in <code>dev/updater-setup.md</code>.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>macOS code signing + notarization</strong> &mdash; replaces today's <code>xattr -cr</code> Gatekeeper workaround. Requires Apple Developer ID enrollment.</div></div>
-          <div class="b-item"><span class="pill p2">P2</span><div><strong>Windows Authenticode signing</strong> &mdash; kills the SmartScreen warning on first run. EV cert is the fast path.</div></div>
+          <div class="b-item"><span class="pill p2">P2</span><div><strong>macOS code signing + notarization</strong> &mdash; replaces unsigned beta friction and the <code>xattr -cr</code> Gatekeeper workaround. Requires Apple Developer ID enrollment.</div></div>
+          <div class="b-item"><span class="pill p2">P2</span><div><strong>Windows Authenticode signing</strong> &mdash; reduces SmartScreen friction on first run. Requires a signing certificate; no cert is configured in the repo today.</div></div>
           <div class="b-item"><span class="pill p3">P3</span><div><strong>Snap / Flatpak packaging</strong> &mdash; broadens Linux reach beyond today's AppImage + DEB.</div></div>
         </div>
       </div>

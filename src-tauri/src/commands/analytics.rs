@@ -15,6 +15,8 @@ pub struct ModelUsage {
     pub output_tokens: u64,
     #[serde(rename = "costUsd")]
     pub cost_usd: f64,
+    #[serde(rename = "pricingStatus")]
+    pub pricing_status: crate::commands::pricing::PricingStatus,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -38,6 +40,12 @@ pub struct AnalyticsData {
     pub model_usage: Vec<ModelUsage>,
     #[serde(rename = "dailyCosts")]
     pub daily_costs: Vec<DailyCost>,
+    #[serde(rename = "todayCostUsd")]
+    pub today_cost_usd: f64,
+    #[serde(rename = "currentMonthCostUsd")]
+    pub current_month_cost_usd: f64,
+    #[serde(rename = "unknownPricingModelUsage")]
+    pub unknown_pricing_model_usage: Vec<ModelUsage>,
 }
 
 /// Shape of ~/.claude/cost-tally.json entries
@@ -88,6 +96,7 @@ pub fn read_usage_analytics() -> String {
         let output = entry.output_tokens.unwrap_or(0);
         let sessions = entry.sessions.unwrap_or(1);
         let source = "claude-cli".to_string();
+        let pricing_status = crate::commands::pricing::pricing_status_for(&model);
 
         total_cost += cost;
         total_sessions += sessions;
@@ -102,8 +111,10 @@ pub fn read_usage_analytics() -> String {
             input_tokens: 0,
             output_tokens: 0,
             cost_usd: 0.0,
+            pricing_status,
         });
         usage.source = source.clone();
+        usage.pricing_status = merge_pricing_status(usage.pricing_status, pricing_status);
         usage.sessions += sessions;
         usage.input_tokens += input;
         usage.output_tokens += output;
@@ -133,6 +144,7 @@ pub fn read_usage_analytics() -> String {
             let input = entry.input_tokens;
             let output = entry.output_tokens;
             let sessions: u32 = 1;
+            let pricing_status = crate::commands::pricing::pricing_status_for(&entry.model);
 
             total_cost += cost;
             total_sessions += sessions;
@@ -147,8 +159,10 @@ pub fn read_usage_analytics() -> String {
                 input_tokens: 0,
                 output_tokens: 0,
                 cost_usd: 0.0,
+                pricing_status,
             });
             usage.source = entry.source.clone();
+            usage.pricing_status = merge_pricing_status(usage.pricing_status, pricing_status);
             usage.sessions += sessions;
             usage.input_tokens += input;
             usage.output_tokens += output;
@@ -234,6 +248,7 @@ pub fn read_usage_analytics() -> String {
             }
 
             let model = latest_model.unwrap_or_else(|| "unknown".to_string());
+            let pricing_status = crate::commands::pricing::pricing_status_for(&model);
             let cost = crate::commands::pricing::calculate_cost(
                 &model,
                 latest_input,
@@ -257,8 +272,10 @@ pub fn read_usage_analytics() -> String {
                 input_tokens: 0,
                 output_tokens: 0,
                 cost_usd: 0.0,
+                pricing_status,
             });
             usage.source = source.clone();
+            usage.pricing_status = merge_pricing_status(usage.pricing_status, pricing_status);
             usage.sessions += sessions;
             usage.input_tokens += latest_input;
             usage.output_tokens += latest_output;
@@ -295,6 +312,15 @@ pub fn read_usage_analytics() -> String {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    let today = today_date_string();
+    let current_month = today.get(..7).unwrap_or("").to_string();
+    let today_cost_usd = daily_map.get(&today).copied().unwrap_or(0.0);
+    let current_month_cost_usd: f64 = daily_map
+        .iter()
+        .filter(|(date, _)| date.starts_with(&current_month))
+        .map(|(_, cost)| *cost)
+        .sum();
+
     let mut daily_costs: Vec<DailyCost> = daily_map
         .into_iter()
         .map(|(date, cost_usd)| DailyCost { date, cost_usd })
@@ -306,6 +332,15 @@ pub fn read_usage_analytics() -> String {
         daily_costs = daily_costs.split_off(daily_costs.len() - 30);
     }
 
+    let unknown_pricing_model_usage = model_usage
+        .iter()
+        .filter(|usage| {
+            usage.pricing_status == crate::commands::pricing::PricingStatus::Unknown
+                && usage.input_tokens.saturating_add(usage.output_tokens) > 0
+        })
+        .cloned()
+        .collect();
+
     let data = AnalyticsData {
         total_cost_usd: total_cost,
         total_sessions,
@@ -313,6 +348,9 @@ pub fn read_usage_analytics() -> String {
         total_output_tokens: total_output,
         model_usage,
         daily_costs,
+        today_cost_usd,
+        current_month_cost_usd,
+        unknown_pricing_model_usage,
     };
 
     serde_json::to_string(&data).unwrap_or_else(|_| empty_analytics())
@@ -347,7 +385,19 @@ fn read_cost_tally(path: &PathBuf) -> Vec<CostTallyEntry> {
 }
 
 fn empty_analytics() -> String {
-    r#"{"totalCostUsd":0,"totalSessions":0,"totalInputTokens":0,"totalOutputTokens":0,"modelUsage":[],"dailyCosts":[]}"#.to_string()
+    r#"{"totalCostUsd":0,"totalSessions":0,"totalInputTokens":0,"totalOutputTokens":0,"modelUsage":[],"dailyCosts":[],"todayCostUsd":0,"currentMonthCostUsd":0,"unknownPricingModelUsage":[]}"#.to_string()
+}
+
+fn merge_pricing_status(
+    current: crate::commands::pricing::PricingStatus,
+    next: crate::commands::pricing::PricingStatus,
+) -> crate::commands::pricing::PricingStatus {
+    use crate::commands::pricing::PricingStatus;
+    match (current, next) {
+        (PricingStatus::Unknown, _) | (_, PricingStatus::Unknown) => PricingStatus::Unknown,
+        (PricingStatus::Priced, _) | (_, PricingStatus::Priced) => PricingStatus::Priced,
+        _ => PricingStatus::Free,
+    }
 }
 
 fn collect_jsonl_files_recursive(dir: &std::path::Path, out: &mut Vec<PathBuf>) {

@@ -66,6 +66,7 @@ import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
 import { useCliOverrideStore } from "@/stores/cliOverrideStore";
+import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
 import type { GitHubRepo } from "@/types/github";
 import type {
@@ -522,11 +523,7 @@ interface AgentTaskStore {
    * model receives the truncated history on the next send and the agent runs
    * forward from that fork point. File-state rewind isn't part of this v1
    * pass — only the transcript forks. */
-  forkAndResend: (
-    id: string,
-    messageId: string,
-    newContent: string,
-  ) => Promise<void>;
+  forkAndResend: (id: string, messageId: string, newContent: string) => Promise<void>;
   saveCheckpoint: (id: string) => Promise<string | null>;
   listCheckpoints: (
     id: string,
@@ -729,11 +726,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     try {
       const sessionId = await createPtySession(
         projectPath,
-      120,
-      40,
-      launch.command,
-      launch.args.length > 0 ? launch.args : null,
-    );
+        120,
+        40,
+        launch.command,
+        launch.args.length > 0 ? launch.args : null,
+      );
 
       set((s) => ({
         conversations: s.conversations.map((c) => (c.id === id ? { ...c, sessionId } : c)),
@@ -790,6 +787,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     const provider = apiAgentProvider(agent);
     const isRemoteConversation = Boolean(sshTarget);
 
+    if (!skipBackendStart) {
+      await assertCostGuardrailsAllowLaunch(provider);
+    }
+
     // System-prompt assembly. Order (lowest in the prompt → highest):
     //   1. AGENTS.md / CLAUDE.md from the project root (the de-facto standard
     //      cross-tool instructions file).
@@ -799,11 +800,20 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     //      conflicts of intent — the user picked this profile deliberately).
     let effectiveSystemPrompt: string | null = systemPromptOverride ?? null;
 
-    if (memoryContextEnabled && !isRemoteConversation) {
-      const memoryContext = useMemoryStore.getState().getContextForSession(projectPath);
-      if (memoryContext.trim().length > 0) {
+    if (memoryContextEnabled) {
+      const memoryBrief = useMemoryStore.getState().composeMemoryBrief(
+        sshTarget
+          ? {
+              kind: "ssh",
+              projectPath,
+              serverId: sshTarget.serverId,
+              remotePath: sshTarget.remotePath,
+            }
+          : { kind: "local", projectPath },
+      );
+      if (memoryBrief.text.trim().length > 0) {
         const base = effectiveSystemPrompt ?? "";
-        effectiveSystemPrompt = `## Project memory (auto-injected from PacketADE memory layer)\n\n${memoryContext}\n\n---\n\n${base}`;
+        effectiveSystemPrompt = `${memoryBrief.text}\n\n---\n\n${base}`;
       }
     }
 
@@ -1114,12 +1124,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       if (conv.mode === "api") {
         // Failure here orphans an API session in the backend (and
         // potentially keeps billing tokens) — log so it's diagnosable.
-        void cancelApiAgentSession(id).catch(
-          logSwallowed("agentTaskStore.cancelApiSession"),
-        );
-        void closeApiAgentSession(id).catch(
-          logSwallowed("agentTaskStore.closeApiSession"),
-        );
+        void cancelApiAgentSession(id).catch(logSwallowed("agentTaskStore.cancelApiSession"));
+        void closeApiAgentSession(id).catch(logSwallowed("agentTaskStore.closeApiSession"));
         const cleanup = apiConversationCleanup.get(id);
         if (cleanup) {
           cleanup();

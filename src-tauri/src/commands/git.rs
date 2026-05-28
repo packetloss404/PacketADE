@@ -46,6 +46,33 @@ pub struct IssueFixedPayload {
     pub commit_subject: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitContextDto {
+    #[serde(default)]
+    pub flight_id: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub attempt_id: Option<String>,
+    #[serde(default)]
+    pub conversation_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+impl From<GitCommitContextDto> for git::GitCommitContext {
+    fn from(value: GitCommitContextDto) -> Self {
+        Self {
+            flight_id: value.flight_id,
+            task_id: value.task_id,
+            attempt_id: value.attempt_id,
+            conversation_id: value.conversation_id,
+            session_id: value.session_id,
+        }
+    }
+}
+
 /// v0.8.5: extract `N` from every `Fixes #N` (case-insensitive) trailer
 /// in a commit message. Accepts standalone lines like `Fixes #42`,
 /// `fixes #42`, `Fixes: #42`, and a handful of conventional synonyms
@@ -193,11 +220,13 @@ pub async fn git_commit(
     project_path: String,
     message: String,
     stage_all: bool,
+    context: Option<GitCommitContextDto>,
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         super::validate_project_path(&project_path)?;
         super::validate_input_size(&message, super::MAX_INPUT_SIZE, "Commit message")?;
-        let result = git::commit(&project_path, &message, stage_all)?;
+        let result =
+            git::commit_with_context(&project_path, &message, stage_all, context.map(Into::into))?;
 
         // v0.8.5: scan the committed message (read back from HEAD so we
         // include any auto-trailers the prepare-commit-msg hook just

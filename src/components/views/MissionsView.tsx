@@ -15,6 +15,9 @@ import {
   Brain,
   Trash2,
   X,
+  FileCheck2,
+  GitCommit,
+  ShieldCheck,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useShallow } from "zustand/react/shallow";
@@ -32,10 +35,8 @@ import { MissionSpecPane } from "@/components/missions/MissionSpecPane";
 import { JournalTab } from "@/components/missions/JournalTab";
 import { PlannerApprovalGate } from "@/components/missions/PlannerApprovalGate";
 import { relativeTime } from "@/lib/time";
-import {
-  FLIGHT_STATUS_CONFIG,
-  FLIGHT_PRIORITY_COLORS,
-} from "@/lib/flight-colors";
+import { summarizeMissionReview } from "@/lib/missionReview";
+import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
 import type {
   Flight,
   FlightPriority,
@@ -121,7 +122,10 @@ const EVENT_DOT: Record<CoordinationEventType, DesignDot> = {
 };
 
 function shortId(id: string): string {
-  const tail = id.replace(/^[a-z]+-/i, "").slice(-4).toUpperCase();
+  const tail = id
+    .replace(/^[a-z]+-/i, "")
+    .slice(-4)
+    .toUpperCase();
   return `F-${tail}`;
 }
 
@@ -191,23 +195,17 @@ function eventTimeShort(ts: number): string {
 }
 
 export function MissionsView() {
-  const {
-    flights,
-    activeFlightId,
-    setActiveFlight,
-    addFlight,
-    updateFlight,
-    computeFlightStatus,
-  } = useFlightStore(
-    useShallow((s) => ({
-      flights: s.flights,
-      activeFlightId: s.activeFlightId,
-      setActiveFlight: s.setActiveFlight,
-      addFlight: s.addFlight,
-      updateFlight: s.updateFlight,
-      computeFlightStatus: s.computeFlightStatus,
-    })),
-  );
+  const { flights, activeFlightId, setActiveFlight, addFlight, updateFlight, computeFlightStatus } =
+    useFlightStore(
+      useShallow((s) => ({
+        flights: s.flights,
+        activeFlightId: s.activeFlightId,
+        setActiveFlight: s.setActiveFlight,
+        addFlight: s.addFlight,
+        updateFlight: s.updateFlight,
+        computeFlightStatus: s.computeFlightStatus,
+      })),
+    );
   const pauseFlight = useOrchestrationStore((s) => s.pauseFlight);
   const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
   const startPlanner = useMissionPlannerStore((s) => s.startPlanner);
@@ -281,43 +279,34 @@ export function MissionsView() {
   if (flights.length === 0) {
     return (
       <>
-        <div className="flex flex-col items-center justify-center flex-1 gap-3 text-text-muted bg-bg-primary px-6">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-bg-primary px-6 text-text-muted">
           <Plane size={32} />
-          <span className="text-sm font-medium text-text-primary">
-            No missions yet
+          <span className="text-sm font-medium text-text-primary">No missions yet</span>
+          <span className="max-w-md text-center text-xs">
+            Start a conversation with the planner. Describe what you want to build, and the planner
+            will help scope it, decompose it into milestones, and run it in parallel.
           </span>
-          <span className="text-xs max-w-md text-center">
-            Start a conversation with the planner. Describe what you want to
-            build, and the planner will help scope it, decompose it into
-            milestones, and run it in parallel.
-          </span>
-          <div className="flex flex-col items-center gap-2 mt-2">
+          <div className="mt-2 flex flex-col items-center gap-2">
             <button
               onClick={handleStartMission}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-accent-green border border-accent-line bg-accent-soft rounded hover:bg-accent-green/15 transition-colors"
+              className="hover:bg-accent-green/15 flex items-center gap-2 rounded border border-accent-line bg-accent-soft px-4 py-2 text-sm font-medium text-accent-green transition-colors"
             >
               <Sparkles size={14} />
               Start a mission
             </button>
             <button
               onClick={() => setModal("async")}
-              className="text-[11px] text-text-muted hover:text-text-secondary transition-colors mt-1"
+              className="mt-1 text-[11px] text-text-muted transition-colors hover:text-text-secondary"
             >
               Or &rarr; Quick async launch (existing flow)
             </button>
           </div>
         </div>
         {modal === "async" && (
-          <LaunchAsyncFlightModal
-            onLaunched={(id) => setActiveFlight(id)}
-            onClose={closeModal}
-          />
+          <LaunchAsyncFlightModal onLaunched={(id) => setActiveFlight(id)} onClose={closeModal} />
         )}
         {modal === "multitask" && (
-          <NewFlightModal
-            onCreated={(id) => setActiveFlight(id)}
-            onClose={closeModal}
-          />
+          <NewFlightModal onCreated={(id) => setActiveFlight(id)} onClose={closeModal} />
         )}
       </>
     );
@@ -325,7 +314,7 @@ export function MissionsView() {
 
   return (
     <>
-      <div className="flex flex-1 min-h-0 bg-bg-primary">
+      <div className="flex min-h-0 flex-1 bg-bg-primary">
         <FlightSidebar
           flights={flights}
           grouped={grouped}
@@ -350,16 +339,10 @@ export function MissionsView() {
         )}
       </div>
       {modal === "async" && (
-        <LaunchAsyncFlightModal
-          onLaunched={(id) => setActiveFlight(id)}
-          onClose={closeModal}
-        />
+        <LaunchAsyncFlightModal onLaunched={(id) => setActiveFlight(id)} onClose={closeModal} />
       )}
       {modal === "multitask" && (
-        <NewFlightModal
-          onCreated={(id) => setActiveFlight(id)}
-          onClose={closeModal}
-        />
+        <NewFlightModal onCreated={(id) => setActiveFlight(id)} onClose={closeModal} />
       )}
     </>
   );
@@ -370,9 +353,7 @@ function EmptyDetail() {
     <div className="flex flex-1 items-center justify-center bg-bg-primary">
       <div className="flex flex-col items-center gap-2 text-text-muted">
         <Plane size={28} />
-        <span className="text-xs">
-          No mission selected — pick one from the left
-        </span>
+        <span className="text-xs">No mission selected — pick one from the left</span>
       </div>
     </div>
   );
@@ -411,19 +392,17 @@ function FlightSidebar({
   ];
 
   return (
-    <div className="w-[320px] flex-shrink-0 flex flex-col bg-bg-secondary border-r border-bg-border min-h-0">
-      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-line-soft">
-        <span className="text-[11px] font-semibold text-text-primary">
-          Flights
-        </span>
-        <span className="text-[10px] px-1.5 py-px rounded bg-bg-tertiary text-text-muted font-mono">
+    <div className="flex min-h-0 w-[320px] flex-shrink-0 flex-col border-r border-bg-border bg-bg-secondary">
+      <div className="flex items-center gap-1.5 border-b border-line-soft px-2.5 py-2">
+        <span className="text-[11px] font-semibold text-text-primary">Flights</span>
+        <span className="rounded bg-bg-tertiary px-1.5 py-px font-mono text-[10px] text-text-muted">
           {flights.length}
         </span>
         <span className="flex-1" />
         <button
           onClick={onToggleSearch}
-          className={`p-1 rounded hover:bg-bg-hover transition-colors ${
-            searchOpen ? "text-text-primary bg-bg-hover" : "text-text-muted"
+          className={`rounded p-1 transition-colors hover:bg-bg-hover ${
+            searchOpen ? "bg-bg-hover text-text-primary" : "text-text-muted"
           }`}
           title="Search flights"
         >
@@ -431,7 +410,7 @@ function FlightSidebar({
         </button>
         <button
           onClick={onCreate}
-          className="p-1 text-text-muted hover:text-accent-green hover:bg-bg-hover rounded transition-colors"
+          className="rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-accent-green"
           title="New flight"
         >
           <Plus size={12} />
@@ -439,14 +418,14 @@ function FlightSidebar({
       </div>
 
       {searchOpen && (
-        <div className="px-2.5 py-1.5 border-b border-line-soft">
+        <div className="border-b border-line-soft px-2.5 py-1.5">
           <input
             autoFocus
             type="text"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Filter by title, objective, id…"
-            className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-faint outline-none focus:border-accent-line"
+            className="w-full rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11px] text-text-primary outline-none placeholder:text-text-faint focus:border-accent-line"
           />
         </div>
       )}
@@ -457,7 +436,7 @@ function FlightSidebar({
           if (items.length === 0) return null;
           return (
             <div key={g.key}>
-              <div className="sticky top-0 z-10 flex items-center justify-between px-2.5 py-1.5 bg-bg-tertiary border-y border-line-soft text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+              <div className="sticky top-0 z-10 flex items-center justify-between border-y border-line-soft bg-bg-tertiary px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">
                 <span>{g.label}</span>
                 <span className="font-mono">{items.length}</span>
               </div>
@@ -477,9 +456,7 @@ function FlightSidebar({
           grouped.attention.length === 0 &&
           grouped.active.length === 0 &&
           grouped.recent.length === 0 && (
-            <div className="px-3 py-4 text-[10px] text-text-muted">
-              No flights match.
-            </div>
+            <div className="px-3 py-4 text-[10px] text-text-muted">No flights match.</div>
           )}
       </div>
     </div>
@@ -530,11 +507,7 @@ function FlightRow({
     if (liveAttempt) return true;
     for (const m of flight.milestones) {
       for (const t of m.tasks) {
-        if (
-          t.status === "running" ||
-          t.status === "queued" ||
-          t.status === "approval_needed"
-        ) {
+        if (t.status === "running" || t.status === "queued" || t.status === "approval_needed") {
           return true;
         }
       }
@@ -543,9 +516,7 @@ function FlightRow({
   }, [flight.attempts, flight.milestones]);
   // B5 — show how many persistent goals are bound to this mission so
   // users see at a glance whether long-running work is parked here.
-  const goalCount = useGoalStore(
-    (s) => s.getGoalsForMission(flight.id).length,
-  );
+  const goalCount = useGoalStore((s) => s.getGoalsForMission(flight.id).length);
 
   // v0.8-H — "N patterns extracted" chip on completed missions. We
   // count every `flight_completed` / `task_completed` event tied to
@@ -560,10 +531,7 @@ function FlightRow({
       if (e.type === "flight_completed" && e.payload.flightId === flight.id) {
         flightEvents += 1;
         lessons += e.payload.lessonsLearned.length;
-      } else if (
-        e.type === "task_completed" &&
-        e.payload.flightId === flight.id
-      ) {
+      } else if (e.type === "task_completed" && e.payload.flightId === flight.id) {
         flightEvents += 1;
       }
     }
@@ -586,37 +554,30 @@ function FlightRow({
           onSelect();
         }
       }}
-      className={`group flex flex-col gap-1 w-full px-2.5 py-2 text-left border-b border-line-soft transition-colors border-l-2 cursor-pointer ${
+      className={`group flex w-full cursor-pointer flex-col gap-1 border-b border-l-2 border-line-soft px-2.5 py-2 text-left transition-colors ${
         selected
-          ? "bg-bg-elevated border-l-accent-green"
+          ? "border-l-accent-green bg-bg-elevated"
           : "border-l-transparent hover:bg-bg-tertiary"
       }`}
     >
       <div className="flex items-center gap-1.5">
-        <span className="relative flex items-center justify-center w-2 h-2 shrink-0">
+        <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
           {pulse && (
             <span
-              className={`absolute inset-0 rounded-full ${DOT_BG[dot]} opacity-60 animate-ping`}
+              className={`absolute inset-0 rounded-full ${DOT_BG[dot]} animate-ping opacity-60`}
             />
           )}
-          <span className={`relative w-1.5 h-1.5 rounded-full ${DOT_BG[dot]}`} />
+          <span className={`relative h-1.5 w-1.5 rounded-full ${DOT_BG[dot]}`} />
         </span>
-        <span className="font-mono text-[10px] text-text-muted">
-          {shortId(flight.id)}
-        </span>
+        <span className="font-mono text-[10px] text-text-muted">{shortId(flight.id)}</span>
         <span className="flex-1" />
-        <span
-          className={`font-mono text-[10px] font-semibold ${priorityClass}`}
-        >
+        <span className={`font-mono text-[10px] font-semibold ${priorityClass}`}>
           {PRIORITY_LABEL[flight.priority]}
         </span>
         {confirming ? (
-          <span
-            className="inline-flex items-center gap-0.5"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <span className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
             <span
-              className="text-[10px] text-accent-red font-medium"
+              className="text-[10px] font-medium text-accent-red"
               title={
                 hasActiveWork
                   ? "This mission has active work — confirm to delete anyway."
@@ -631,7 +592,7 @@ function FlightRow({
                 e.stopPropagation();
                 deleteFlight(flight.id);
               }}
-              className="p-0.5 text-accent-red hover:bg-accent-red/15 rounded transition-colors"
+              className="hover:bg-accent-red/15 rounded p-0.5 text-accent-red transition-colors"
               title="Confirm delete"
               aria-label="Confirm delete mission"
             >
@@ -643,7 +604,7 @@ function FlightRow({
                 e.stopPropagation();
                 setConfirming(false);
               }}
-              className="p-0.5 text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+              className="rounded p-0.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
               title="Cancel"
               aria-label="Cancel delete"
             >
@@ -657,7 +618,7 @@ function FlightRow({
               e.stopPropagation();
               setConfirming(true);
             }}
-            className="p-0.5 text-text-muted hover:text-accent-red hover:bg-accent-red/10 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+            className="hover:bg-accent-red/10 rounded p-0.5 text-text-muted opacity-0 transition-colors hover:text-accent-red focus:opacity-100 group-hover:opacity-100"
             title={deleteTitle}
             aria-label="Delete mission"
           >
@@ -666,10 +627,8 @@ function FlightRow({
         )}
       </div>
       <span
-        className={`text-[12px] leading-snug line-clamp-2 ${
-          selected
-            ? "text-text-primary font-medium"
-            : "text-text-secondary"
+        className={`line-clamp-2 text-[12px] leading-snug ${
+          selected ? "font-medium text-text-primary" : "text-text-secondary"
         }`}
       >
         {flight.title || "Untitled"}
@@ -703,7 +662,7 @@ function FlightRow({
                 openMemoryView({ missionId: flight.id });
               }
             }}
-            className="inline-flex items-center gap-1 text-accent-green hover:text-accent-green/80 cursor-pointer rounded px-1 -mx-1 hover:bg-accent-green/10 transition-colors"
+            className="hover:text-accent-green/80 hover:bg-accent-green/10 -mx-1 inline-flex cursor-pointer items-center gap-1 rounded px-1 text-accent-green transition-colors"
             title={`${memoryHits} memory entr${memoryHits === 1 ? "y" : "ies"} extracted from this mission. Click to view in Memory.`}
           >
             <Brain size={9} />
@@ -734,9 +693,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   // E7-INTEGRATE — tab strip state. "overview" renders the existing
   // detail body (or MissionSpecPane in spec status); "journal" renders
   // the markdown journal for this mission.
-  const [activeTab, setActiveTab] = useState<"overview" | "journal">(
-    "overview",
-  );
+  const [activeTab, setActiveTab] = useState<"overview" | "journal">("overview");
   const [unreadJournal, setUnreadJournal] = useState(false);
 
   // Reset tab + unread dot when switching between missions so a new
@@ -789,9 +746,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   // appears/disappears when the planner starts/stops. We watch the runtime
   // status itself (not just `isPlannerRunning(...)`) so Zustand's referential
   // selector triggers a re-render when status flips.
-  const plannerStatus = useMissionPlannerStore(
-    (s) => s.runtimes.get(flight.id)?.status,
-  );
+  const plannerStatus = useMissionPlannerStore((s) => s.runtimes.get(flight.id)?.status);
   // E10 — surface context-compaction state next to the status pill so
   // the user understands why the planner is briefly unresponsive while
   // the conversation gets summarized + the session is swapped.
@@ -803,9 +758,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   // (The runtime status itself is preserved across the stop; the planner's
   // session is the thing that gets torn down.)
   const plannerRunning =
-    plannerStatus === "awake" ||
-    plannerStatus === "idle" ||
-    plannerStatus === "quota_paused";
+    plannerStatus === "awake" || plannerStatus === "idle" || plannerStatus === "quota_paused";
   const showStopPlanner =
     plannerRunning &&
     (status === "spec" ||
@@ -816,27 +769,25 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
 
   return (
     <div className="flex-1 overflow-y-auto bg-bg-primary">
-      <div className="flex flex-col gap-3 p-3.5 min-h-full">
+      <div className="flex min-h-full flex-col gap-3 p-3.5">
         <div className="flex items-start gap-3">
-          <div className="flex flex-col gap-1 min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-[11px] text-text-muted">
-                {shortId(flight.id)}
-              </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-[11px] text-text-muted">{shortId(flight.id)}</span>
               <span
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${cfg.bg} ${cfg.text}`}
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${cfg.bg} ${cfg.text}`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
                 {STATUS_LABEL[status]}
               </span>
               <span
-                className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded border ${PRIORITY_PILL_BG[flight.priority]} ${FLIGHT_PRIORITY_COLORS[flight.priority]}`}
+                className={`inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${PRIORITY_PILL_BG[flight.priority]} ${FLIGHT_PRIORITY_COLORS[flight.priority]}`}
               >
                 {PRIORITY_LABEL[flight.priority]}
               </span>
               {isCompacting && (
                 <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] text-accent-amber bg-accent-amber/10 border border-accent-amber/30 rounded"
+                  className="bg-accent-amber/10 border-accent-amber/30 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] text-accent-amber"
                   title="Planner context compaction in progress — summarizing the conversation and restarting the session to stay under the 200K context limit."
                 >
                   <RefreshCw size={9} className="animate-spin" />
@@ -844,20 +795,20 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
                 </span>
               )}
             </div>
-            <h2 className="text-[18px] font-semibold tracking-tight text-text-primary leading-tight">
+            <h2 className="text-[18px] font-semibold leading-tight tracking-tight text-text-primary">
               {flight.title || "Untitled mission"}
             </h2>
             {flight.objective && (
-              <p className="text-[11.5px] text-text-secondary max-w-[600px] leading-relaxed">
+              <p className="max-w-[600px] text-[11.5px] leading-relaxed text-text-secondary">
                 {flight.objective}
               </p>
             )}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex shrink-0 items-center gap-1.5">
             {canPause && (
               <button
                 onClick={onPause}
-                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-text-secondary border border-bg-border rounded hover:bg-bg-hover hover:text-text-primary transition-colors"
+                className="inline-flex items-center gap-1 rounded border border-bg-border px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
               >
                 <Pause size={11} />
                 Pause
@@ -871,12 +822,10 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
                       "Stop the autonomous planner for this mission? The mission stays alive — milestones, tasks, and in-flight executor work continue. You can restart the planner manually later.",
                     )
                   ) {
-                    void useMissionPlannerStore
-                      .getState()
-                      .stopPlanner(flight.id);
+                    void useMissionPlannerStore.getState().stopPlanner(flight.id);
                   }
                 }}
-                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-accent-red bg-bg-secondary border border-accent-red/30 rounded hover:bg-accent-red/10 transition-colors"
+                className="border-accent-red/30 hover:bg-accent-red/10 inline-flex items-center gap-1 rounded border bg-bg-secondary px-2 py-1 text-[11px] text-accent-red transition-colors"
               >
                 <Square size={11} />
                 Stop planner
@@ -885,7 +834,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
             {canResume && (
               <button
                 onClick={onResume}
-                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-text-secondary border border-bg-border rounded hover:bg-bg-hover hover:text-text-primary transition-colors"
+                className="inline-flex items-center gap-1 rounded border border-bg-border px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
               >
                 <Play size={11} />
                 Resume
@@ -894,7 +843,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
             {showApprove && (
               <button
                 onClick={onResume}
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-accent-green bg-accent-soft border border-accent-line rounded hover:bg-accent-green/20 transition-colors"
+                className="hover:bg-accent-green/20 inline-flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-2.5 py-1 text-[11px] font-medium text-accent-green transition-colors"
               >
                 <CheckCircle2 size={11} />
                 Approve &amp; merge
@@ -906,13 +855,13 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
         <PlannerApprovalGate missionId={flight.id} />
 
         {/* E7-INTEGRATE — tab strip: Overview / Journal */}
-        <div className="flex items-center gap-0 border-b border-line-soft -mx-3.5 px-3.5">
+        <div className="-mx-3.5 flex items-center gap-0 border-b border-line-soft px-3.5">
           <button
             onClick={() => setActiveTab("overview")}
-            className={`px-3 py-2 text-[11px] border-b-2 transition-colors ${
+            className={`border-b-2 px-3 py-2 text-[11px] transition-colors ${
               activeTab === "overview"
-                ? "text-text-primary border-accent-green"
-                : "text-text-muted border-transparent hover:text-text-secondary"
+                ? "border-accent-green text-text-primary"
+                : "border-transparent text-text-muted hover:text-text-secondary"
             }`}
           >
             Overview
@@ -922,16 +871,16 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
               setActiveTab("journal");
               setUnreadJournal(false);
             }}
-            className={`inline-flex items-center gap-1 px-3 py-2 text-[11px] border-b-2 transition-colors ${
+            className={`inline-flex items-center gap-1 border-b-2 px-3 py-2 text-[11px] transition-colors ${
               activeTab === "journal"
-                ? "text-text-primary border-accent-green"
-                : "text-text-muted border-transparent hover:text-text-secondary"
+                ? "border-accent-green text-text-primary"
+                : "border-transparent text-text-muted hover:text-text-secondary"
             }`}
           >
             Journal
             {unreadJournal && (
               <span
-                className="ml-0.5 w-1.5 h-1.5 rounded-full bg-accent-green inline-block"
+                className="ml-0.5 inline-block h-1.5 w-1.5 rounded-full bg-accent-green"
                 aria-label="New journal entry"
               />
             )}
@@ -943,14 +892,11 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
             <MissionSpecPane missionId={flight.id} />
           ) : (
             <>
-              <StatGrid
-                flight={flight}
-                tasks={tasks}
-                sessions={sessions}
-                dot={dot}
-              />
+              <StatGrid flight={flight} tasks={tasks} sessions={sessions} dot={dot} />
 
-              <div className="grid grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr] flex-1 min-h-[260px]">
+              <OutputReviewCard flight={flight} />
+
+              <div className="grid min-h-[260px] flex-1 grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr]">
                 <MilestonesCard flight={flight} tasks={tasks} />
                 <TimelineCard flight={flight} />
               </div>
@@ -958,6 +904,104 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
           )
         ) : (
           <JournalTab missionId={flight.id} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OutputReviewCard({ flight }: { flight: Flight }) {
+  const summary = useMemo(() => summarizeMissionReview(flight), [flight]);
+  const rows = useMemo(() => {
+    const seen = new Set<string>();
+    const out: typeof summary.files = [];
+    for (const ref of summary.files) {
+      const key = `${ref.taskId}:${ref.filePath}:${ref.relation}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(ref);
+      if (out.length >= 8) break;
+    }
+    return out;
+  }, [summary]);
+
+  const shouldRender =
+    summary.taskCount > 0 || flight.status === "review" || summary.pendingApprovalCount > 0;
+
+  if (!shouldRender) return null;
+
+  const reported = summary.reportedFileCount;
+  const owned = summary.ownedFileCount;
+  const hasFiles = rows.length > 0;
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded border border-bg-border bg-bg-secondary">
+      <div className="flex items-center gap-1.5 border-b border-line-soft px-2.5 py-2">
+        <ShieldCheck size={11} className="text-accent-amber" />
+        <span className="text-[11px] font-semibold text-text-primary">Output review</span>
+        <span className="flex-1" />
+        {summary.pendingApprovalCount > 0 ? (
+          <span className="bg-accent-amber/10 rounded px-1.5 py-0.5 text-[10px] text-accent-amber">
+            {summary.pendingApprovalCount} approval
+            {summary.pendingApprovalCount === 1 ? "" : "s"}
+          </span>
+        ) : (
+          <span className="bg-accent-green/10 rounded px-1.5 py-0.5 text-[10px] text-accent-green">
+            ready
+          </span>
+        )}
+      </div>
+      <div className="px-2.5 py-2">
+        <div className="flex flex-wrap items-center gap-2 text-[10px] text-text-muted">
+          <span className="inline-flex items-center gap-1">
+            <FileCheck2 size={10} className="text-accent-amber" />
+            {reported} reported file{reported === 1 ? "" : "s"}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <GitCommit size={10} className="text-accent-green" />
+            {owned} owned path{owned === 1 ? "" : "s"}
+          </span>
+          <span className="text-text-faint">
+            Review task output before approve/merge or commit.
+          </span>
+        </div>
+
+        {!hasFiles ? (
+          <div className="mt-2 rounded border border-dashed border-bg-border px-2 py-2 text-[11px] text-text-muted">
+            No task file output has been reported yet.
+          </div>
+        ) : (
+          <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-2">
+            {rows.map((ref) => (
+              <div
+                key={`${ref.taskId}-${ref.filePath}-${ref.relation}`}
+                className="flex min-w-0 items-center gap-1.5 rounded border border-bg-border bg-bg-primary px-2 py-1"
+                title={`${ref.taskTitle} / ${ref.filePath}`}
+              >
+                <FileCheck2
+                  size={10}
+                  className={
+                    ref.relation === "reported"
+                      ? "shrink-0 text-accent-amber"
+                      : "shrink-0 text-text-muted"
+                  }
+                />
+                <span className="truncate font-mono text-[10px] text-text-secondary">
+                  {ref.filePath}
+                </span>
+                <span className="ml-auto max-w-[160px] truncate rounded bg-bg-tertiary px-1.5 py-0.5 text-[9px] text-text-muted">
+                  {ref.taskTitle}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {summary.files.length > rows.length && (
+          <div className="mt-1.5 text-[10px] text-text-muted">
+            +{summary.files.length - rows.length} more file reference
+            {summary.files.length - rows.length === 1 ? "" : "s"}
+          </div>
         )}
       </div>
     </div>
@@ -972,11 +1016,8 @@ interface StatGridProps {
 }
 
 function StatGrid({ flight, tasks, sessions }: StatGridProps) {
-  const tasksValueClass = tasks.hasInProgress
-    ? "text-accent-green"
-    : "text-text-primary";
-  const approvalsValueClass =
-    tasks.approvals > 0 ? "text-accent-amber" : "text-text-primary";
+  const tasksValueClass = tasks.hasInProgress ? "text-accent-green" : "text-text-primary";
+  const approvalsValueClass = tasks.approvals > 0 ? "text-accent-amber" : "text-text-primary";
 
   // E8-UI — split the single "Cost" cell into Planner + Exec. The executor
   // cost is derived as `totalCost - plannerCost` so we don't need a new
@@ -1037,28 +1078,22 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
       {cells.map((c) => (
         <div
           key={c.label}
           title={c.title}
-          className="flex flex-col gap-0.5 px-2.5 py-2 bg-bg-secondary border border-bg-border rounded"
+          className="flex flex-col gap-0.5 rounded border border-bg-border bg-bg-secondary px-2.5 py-2"
         >
-          <span className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
-            {c.label}
-          </span>
+          <span className="text-[10px] uppercase tracking-[0.08em] text-text-muted">{c.label}</span>
           <span
-            className={`text-[14px] font-semibold font-mono leading-tight ${
+            className={`font-mono text-[14px] font-semibold leading-tight ${
               c.valueClass ?? "text-text-primary"
             }`}
           >
             {c.value}
           </span>
-          {c.sub && (
-            <span className="text-[9px] text-text-muted font-mono">
-              {c.sub}
-            </span>
-          )}
+          {c.sub && <span className="font-mono text-[9px] text-text-muted">{c.sub}</span>}
         </div>
       ))}
     </div>
@@ -1087,9 +1122,7 @@ function MilestonesCard({
           title: t.title,
           done: t.status === "done",
           running:
-            t.status === "running" ||
-            t.status === "queued" ||
-            t.status === "approval_needed",
+            t.status === "running" || t.status === "queued" || t.status === "approval_needed",
           agent: t.agentConfigId || "—",
         });
       }
@@ -1098,11 +1131,9 @@ function MilestonesCard({
   }, [flight.milestones]);
 
   return (
-    <div className="flex flex-col bg-bg-secondary border border-bg-border rounded overflow-hidden min-h-0">
-      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-line-soft">
-        <span className="text-[11px] font-semibold text-text-primary">
-          Milestones
-        </span>
+    <div className="flex min-h-0 flex-col overflow-hidden rounded border border-bg-border bg-bg-secondary">
+      <div className="flex items-center gap-1.5 border-b border-line-soft px-2.5 py-2">
+        <span className="text-[11px] font-semibold text-text-primary">Milestones</span>
         <span className="flex-1" />
         <span className="font-mono text-[10px] text-text-muted">
           {tasks.total > 0 ? `${tasks.done} / ${tasks.total} done` : "—"}
@@ -1110,20 +1141,15 @@ function MilestonesCard({
       </div>
       <div className="flex-1 overflow-y-auto">
         {rows.length === 0 ? (
-          <div className="px-3 py-4 text-[11px] text-text-muted">
-            No milestones defined yet.
-          </div>
+          <div className="px-3 py-4 text-[11px] text-text-muted">No milestones defined yet.</div>
         ) : (
           <div className="flex flex-col gap-1.5 p-2.5">
             {rows.map((m) => (
-              <div
-                key={m.id}
-                className="flex items-center gap-2 text-[11.5px]"
-              >
+              <div key={m.id} className="flex items-center gap-2 text-[11.5px]">
                 <span
-                  className={`relative flex items-center justify-center w-3.5 h-3.5 rounded shrink-0 ${
+                  className={`relative flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded ${
                     m.done
-                      ? "bg-accent-green border border-accent-green"
+                      ? "border border-accent-green bg-accent-green"
                       : m.running
                         ? "border border-accent-line"
                         : "border border-line-strong"
@@ -1132,22 +1158,20 @@ function MilestonesCard({
                   {m.done ? (
                     <Check size={9} className="text-bg-primary" strokeWidth={3} />
                   ) : m.running ? (
-                    <span className="relative flex w-1.5 h-1.5">
-                      <span className="absolute inset-0 rounded-full bg-accent-amber opacity-60 animate-ping" />
-                      <span className="relative w-1.5 h-1.5 rounded-full bg-accent-amber" />
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="absolute inset-0 animate-ping rounded-full bg-accent-amber opacity-60" />
+                      <span className="relative h-1.5 w-1.5 rounded-full bg-accent-amber" />
                     </span>
                   ) : null}
                 </span>
                 <span
                   className={`flex-1 truncate ${
-                    m.done
-                      ? "text-text-muted line-through"
-                      : "text-text-secondary"
+                    m.done ? "text-text-muted line-through" : "text-text-secondary"
                   }`}
                 >
                   {m.title}
                 </span>
-                <span className="text-[10px] text-text-muted shrink-0 truncate max-w-[140px]">
+                <span className="max-w-[140px] shrink-0 truncate text-[10px] text-text-muted">
                   {m.agent}
                 </span>
               </div>
@@ -1168,26 +1192,22 @@ function TimelineCard({ flight }: { flight: Flight }) {
   const live = flight.status === "active";
 
   return (
-    <div className="flex flex-col bg-bg-secondary border border-bg-border rounded overflow-hidden min-h-0">
-      <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-line-soft">
-        <span className="text-[11px] font-semibold text-text-primary">
-          Live timeline
-        </span>
+    <div className="flex min-h-0 flex-col overflow-hidden rounded border border-bg-border bg-bg-secondary">
+      <div className="flex items-center gap-1.5 border-b border-line-soft px-2.5 py-2">
+        <span className="text-[11px] font-semibold text-text-primary">Live timeline</span>
         <span className="flex-1" />
         {live ? (
-          <span className="relative flex items-center justify-center w-2 h-2">
-            <span className="absolute inset-0 rounded-full bg-accent-green opacity-60 animate-ping" />
-            <span className="relative w-1.5 h-1.5 rounded-full bg-accent-green" />
+          <span className="relative flex h-2 w-2 items-center justify-center">
+            <span className="absolute inset-0 animate-ping rounded-full bg-accent-green opacity-60" />
+            <span className="relative h-1.5 w-1.5 rounded-full bg-accent-green" />
           </span>
         ) : (
-          <span className="w-1.5 h-1.5 rounded-full bg-text-muted" />
+          <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
         )}
       </div>
       <div className="flex-1 overflow-y-auto">
         {events.length === 0 ? (
-          <div className="px-3 py-4 text-[11px] text-text-muted">
-            No timeline events yet.
-          </div>
+          <div className="px-3 py-4 text-[11px] text-text-muted">No timeline events yet.</div>
         ) : (
           <div className="flex flex-col gap-2 p-2.5 text-[11px]">
             {events.map((e) => (
@@ -1205,14 +1225,12 @@ function TimelineRow({ event }: { event: CoordinationEvent }) {
   const actor = event.agentId || (event.type === "escalation" ? "you" : "system");
   return (
     <div className="flex items-start gap-2">
-      <span className="font-mono text-[10px] text-text-muted w-[32px] shrink-0 pt-px">
+      <span className="w-[32px] shrink-0 pt-px font-mono text-[10px] text-text-muted">
         {eventTimeShort(event.timestamp)}
       </span>
-      <span
-        className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${DOT_BG[dot]}`}
-      />
+      <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${DOT_BG[dot]}`} />
       <span className="flex-1 leading-snug">
-        <span className="text-text-primary font-medium">{actor}</span>{" "}
+        <span className="font-medium text-text-primary">{actor}</span>{" "}
         <span className="text-text-secondary">{event.summary}</span>
       </span>
     </div>
