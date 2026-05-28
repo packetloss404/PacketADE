@@ -293,12 +293,7 @@ fn build_command(fixer: Fixer, base: &Path) -> Result<(Command, PathBuf), String
         Fixer::CargoFix => {
             let cwd = has_cargo(base).ok_or_else(|| "No Cargo.toml found".to_string())?;
             let mut cmd = Command::new(cargo_program);
-            cmd.args([
-                "fix",
-                "--allow-dirty",
-                "--allow-staged",
-                "--edition-idioms",
-            ]);
+            cmd.args(["fix", "--allow-dirty", "--allow-staged", "--edition-idioms"]);
             cmd.current_dir(&cwd);
             Ok((cmd, cwd))
         }

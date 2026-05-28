@@ -83,6 +83,15 @@ export class SessionRegistry {
       });
       return;
     }
+    if (req.workspace?.kind === "ssh" && process.env.PACKETADE_REMOTE_SIDECAR !== "1") {
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message:
+          "Remote SSH workspace metadata reached the local sidecar, but Sidecar-over-SSH transport is not active yet. PacketADE refused to treat the remote path as a local filesystem path.",
+      });
+      return;
+    }
     const handler = factory();
     this.sessions.set(req.sessionId, { handler, provider: req.provider });
     let startFailed = false;

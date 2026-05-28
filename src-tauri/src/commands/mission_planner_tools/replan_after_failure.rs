@@ -42,9 +42,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tracing::{info, warn};
 
 use crate::commands::mission_planner::MissionPlannerRegistry;
-use crate::core::error_classifier::{
-    self, AiErrorCategory,
-};
+use crate::core::error_classifier::{self, AiErrorCategory};
 use crate::core::flight::TaskStatus;
 use crate::core::storage;
 
@@ -79,8 +77,8 @@ pub async fn handle(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // 1. Parse args.
-    let parsed: ReplanAfterFailureArgs = serde_json::from_value(args)
-        .map_err(|e| format!("invalid args: {}", e))?;
+    let parsed: ReplanAfterFailureArgs =
+        serde_json::from_value(args).map_err(|e| format!("invalid args: {}", e))?;
     let task_id = parsed.task_id.trim();
     if task_id.is_empty() {
         return Err("invalid args: task_id must be non-empty".to_string());
@@ -119,9 +117,7 @@ pub async fn handle(
             .iter()
             .flat_map(|m| m.tasks.iter())
             .find(|t| t.id == task_id)
-            .ok_or_else(|| {
-                format!("task '{}' not found in mission '{}'", task_id, mission_id)
-            })?;
+            .ok_or_else(|| format!("task '{}' not found in mission '{}'", task_id, mission_id))?;
         error_classifier::classify_task_last_error(task)
     };
 
@@ -193,9 +189,7 @@ pub async fn handle(
                 }
             }
             flight.updated_at = now;
-            found.ok_or_else(|| {
-                format!("task '{}' not found in mission '{}'", task_id, mission_id)
-            })
+            found.ok_or_else(|| format!("task '{}' not found in mission '{}'", task_id, mission_id))
         })();
         std::future::ready(result)
     })

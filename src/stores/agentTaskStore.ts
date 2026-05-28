@@ -47,6 +47,10 @@ export interface AgentSshConfigInput {
    *  `ServerConfig.remotePath` (the server-level default). */
   remotePath: string;
   keyPath?: string | null;
+  /** ServerConfig auth method. Remote sidecar sessions need this so stale
+   *  saved passwords do not force password-auth when the server now uses key
+   *  or SSH-agent auth. */
+  authMethod?: "agent" | "key" | "password" | null;
   /** Pinned SHA256 host-key fingerprint, copied from
    *  `ServerConfig.hostFingerprint`. Forwarded to the backend so strict
    *  host-key checking applies. */
@@ -784,6 +788,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   ) => {
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
+    const isRemoteConversation = Boolean(sshTarget);
 
     // System-prompt assembly. Order (lowest in the prompt → highest):
     //   1. AGENTS.md / CLAUDE.md from the project root (the de-facto standard
@@ -794,7 +799,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     //      conflicts of intent — the user picked this profile deliberately).
     let effectiveSystemPrompt: string | null = systemPromptOverride ?? null;
 
-    if (memoryContextEnabled) {
+    if (memoryContextEnabled && !isRemoteConversation) {
       const memoryContext = useMemoryStore.getState().getContextForSession(projectPath);
       if (memoryContext.trim().length > 0) {
         const base = effectiveSystemPrompt ?? "";
@@ -804,14 +809,16 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
     // AGENTS.md prepend — async fetch, best-effort; failures are silent so a
     // missing file never blocks a launch.
-    try {
-      const agentsMd = await loadAgentsMd(projectPath);
-      if (agentsMd) {
-        const base = effectiveSystemPrompt ?? "";
-        effectiveSystemPrompt = `## Project guidance (from AGENTS.md cascade)\n\n${agentsMd}\n\n---\n\n${base}`;
+    if (!isRemoteConversation) {
+      try {
+        const agentsMd = await loadAgentsMd(projectPath);
+        if (agentsMd) {
+          const base = effectiveSystemPrompt ?? "";
+          effectiveSystemPrompt = `## Project guidance (from AGENTS.md cascade)\n\n${agentsMd}\n\n---\n\n${base}`;
+        }
+      } catch {
+        // Best-effort; absent file is the common case.
       }
-    } catch {
-      // Best-effort; absent file is the common case.
     }
 
     const now = Date.now();
@@ -903,6 +910,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
               user: sshTarget.user,
               remote_path: sshTarget.remotePath,
               key_path: sshTarget.keyPath ?? null,
+              auth_method: sshTarget.authMethod ?? null,
               // Phase 2: backend still calls this `target_id` for now. It
               // accepts the unified `ServerConfig.id`; the parallel backend
               // PR is unifying naming.
@@ -1657,6 +1665,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         user: string;
         remote_path: string;
         key_path: string | null;
+        auth_method: "agent" | "key" | "password" | null;
         target_id: string;
         host_fingerprint: string | null;
       } | null = null;
@@ -1669,6 +1678,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           user: conv.sshTarget.user,
           remote_path: conv.sshTarget.remotePath,
           key_path: server?.keyPath ?? null,
+          auth_method: server?.authMethod ?? null,
           target_id: conv.sshTarget.id,
           host_fingerprint: server?.hostFingerprint ?? null,
         };

@@ -210,7 +210,10 @@ fn rand_fraction(attempt: u32) -> f64 {
 /// Every other category — including `Auth`, `Billing`, `ContextOverflow`,
 /// `ServerError`, `NotInstalled`, and `Unknown` — counts against the cap.
 pub fn is_replan_exempt(category: &AiErrorCategory) -> bool {
-    matches!(category, AiErrorCategory::RateLimit | AiErrorCategory::Timeout)
+    matches!(
+        category,
+        AiErrorCategory::RateLimit | AiErrorCategory::Timeout
+    )
 }
 
 /// Returns the `AiErrorCategory` of the most-recent error string attached

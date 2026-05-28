@@ -28,6 +28,17 @@ It finds the entry point via the `PACKETADE_SIDECAR_PATH` environment variable
 (set by the Rust side; falls back to a known bundled location in release
 builds). No direct invocation from the CLI is expected in normal use.
 
+For local protocol confidence from the repository root, run:
+
+```bash
+pnpm sidecar:check
+```
+
+That chain includes `sidecar:remote-project-smoke`, a regression smoke that
+starts the echo provider with a POSIX remote-looking `projectPath`. It does not
+open SSH; it verifies the sidecar protocol accepts paths that are meaningful on
+a remote host and may not exist on the desktop running the test.
+
 ## Providers
 
 The factory lives in `src/session-registry.ts`. Currently wired:
@@ -85,38 +96,38 @@ emits a clean "not supported" error when a provider skips one.
 
 **stdin (requests, one per line):**
 
-| type                 | purpose                                          |
-| -------------------- | ------------------------------------------------ |
-| `start_session`      | Begin a new session with a provider              |
-| `send_message`       | Send a follow-up user message                    |
-| `permission_response`| Approve/deny a tool call                         |
-| `edit_response`      | Approve/deny a pending file edit                 |
-| `cancel`             | Interrupt in-flight generation                   |
-| `close_session`      | Tear down a session                              |
-| `set_permission_mode`| v2: switch permission/approval mode mid-session  |
-| `set_model`          | v2: swap the model without restarting the session |
-| `retry`              | v2: re-run the last turn (UI "Retry" affordance) |
+| type                   | purpose                                                       |
+| ---------------------- | ------------------------------------------------------------- |
+| `start_session`        | Begin a new session with a provider                           |
+| `send_message`         | Send a follow-up user message                                 |
+| `permission_response`  | Approve/deny a tool call                                      |
+| `edit_response`        | Approve/deny a pending file edit                              |
+| `cancel`               | Interrupt in-flight generation                                |
+| `close_session`        | Tear down a session                                           |
+| `set_permission_mode`  | v2: switch permission/approval mode mid-session               |
+| `set_model`            | v2: swap the model without restarting the session             |
+| `retry`                | v2: re-run the last turn (UI "Retry" affordance)              |
 | `cancel_pending_tools` | v4: deny parked tool/edit prompts without cancelling the turn |
-| `inject_user_turn`   | v5: inject a user/wake-trigger turn into a long-lived session |
-| `planner_tool_result` | v5: resolve an in-process Mission Planner MCP tool call |
+| `inject_user_turn`     | v5: inject a user/wake-trigger turn into a long-lived session |
+| `planner_tool_result`  | v5: resolve an in-process Mission Planner MCP tool call       |
 
 **stdout (events, one per line):**
 
-| type                 | purpose                                          |
-| -------------------- | ------------------------------------------------ |
-| `ready`              | Emitted once at startup (includes pid)           |
-| `chunk`              | Streamed assistant text                          |
-| `thinking` / `thinking_stop` | Reasoning stream                         |
-| `tool_start` / `tool_result` | Tool call lifecycle                      |
-| `permission_request` | Ask supervisor for approval                      |
-| `pending_edit`       | Ask supervisor for edit approval                 |
-| `done`               | Turn complete (includes token counts)            |
-| `error`              | Session or protocol error                        |
-| `plan_block`         | v3: structured plan/TodoWrite mirror             |
-| `tool_output_extended` | v3: tool exit code, paths, stdout/stderr       |
-| `turn_summary`       | v3: running token totals between turns           |
-| `planner_tool`       | v5: ask Rust to execute/record a planner MCP tool call |
-| `rate_limited`       | v6: provider hit a quota limit and may include retry timing |
+| type                         | purpose                                                     |
+| ---------------------------- | ----------------------------------------------------------- |
+| `ready`                      | Emitted once at startup (includes pid)                      |
+| `chunk`                      | Streamed assistant text                                     |
+| `thinking` / `thinking_stop` | Reasoning stream                                            |
+| `tool_start` / `tool_result` | Tool call lifecycle                                         |
+| `permission_request`         | Ask supervisor for approval                                 |
+| `pending_edit`               | Ask supervisor for edit approval                            |
+| `done`                       | Turn complete (includes token counts)                       |
+| `error`                      | Session or protocol error                                   |
+| `plan_block`                 | v3: structured plan/TodoWrite mirror                        |
+| `tool_output_extended`       | v3: tool exit code, paths, stdout/stderr                    |
+| `turn_summary`               | v3: running token totals between turns                      |
+| `planner_tool`               | v5: ask Rust to execute/record a planner MCP tool call      |
+| `rate_limited`               | v6: provider hit a quota limit and may include retry timing |
 
 See `src/protocol.ts` for the full TypeScript definitions — that file is the
 source of truth for the wire format.

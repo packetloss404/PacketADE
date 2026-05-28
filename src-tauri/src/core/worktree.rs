@@ -248,13 +248,7 @@ pub(crate) fn render_trailer_format(
 /// can't smuggle extra trailers in.
 fn sanitize_trailer_value(s: &str) -> String {
     s.chars()
-        .map(|c| {
-            if c.is_control() || c == '\'' {
-                ' '
-            } else {
-                c
-            }
-        })
+        .map(|c| if c.is_control() || c == '\'' { ' ' } else { c })
         .collect::<String>()
         .trim()
         .to_string()
@@ -305,9 +299,13 @@ async fn install_prepare_commit_msg_hook(
     // Resolve the hooks dir for this worktree. `git rev-parse --git-path
     // hooks` returns the worktree-scoped hooks directory if it exists,
     // falling back to `.git/hooks`.
-    let (stdout, _, code) = run_local_git(worktree_path, &["rev-parse", "--git-path", "hooks"]).await?;
+    let (stdout, _, code) =
+        run_local_git(worktree_path, &["rev-parse", "--git-path", "hooks"]).await?;
     if code != 0 {
-        return Err(format!("git rev-parse --git-path hooks failed (exit {})", code));
+        return Err(format!(
+            "git rev-parse --git-path hooks failed (exit {})",
+            code
+        ));
     }
     let rel = stdout.trim();
     if rel.is_empty() {
@@ -898,7 +896,10 @@ mod tests {
 
     #[test]
     fn worktree_path_strips_trailing_slashes() {
-        assert_eq!(worktree_path("/repo", "a").unwrap(), "/repo/.pkt-worktrees/a");
+        assert_eq!(
+            worktree_path("/repo", "a").unwrap(),
+            "/repo/.pkt-worktrees/a"
+        );
         assert_eq!(
             worktree_path("/repo/", "a").unwrap(),
             "/repo/.pkt-worktrees/a"
@@ -1059,8 +1060,16 @@ mod tests {
         // lines into the commit message.
         let attack = "foo'\n\rRun-By: evil";
         let cleaned = sanitize_trailer_value(attack);
-        assert!(!cleaned.contains('\''), "single-quote leaked: {:?}", cleaned);
+        assert!(
+            !cleaned.contains('\''),
+            "single-quote leaked: {:?}",
+            cleaned
+        );
         assert!(!cleaned.contains('\n'), "newline leaked: {:?}", cleaned);
-        assert!(!cleaned.contains('\r'), "carriage return leaked: {:?}", cleaned);
+        assert!(
+            !cleaned.contains('\r'),
+            "carriage return leaked: {:?}",
+            cleaned
+        );
     }
 }

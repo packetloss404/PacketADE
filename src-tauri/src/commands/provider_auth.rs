@@ -394,11 +394,7 @@ pub async fn sign_out_provider(provider: String) -> Result<u32, String> {
             Ok(_) => removed += 1,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
-                return Err(format!(
-                    "Failed to remove {}: {}",
-                    path.display(),
-                    e
-                ));
+                return Err(format!("Failed to remove {}: {}", path.display(), e));
             }
         }
     }

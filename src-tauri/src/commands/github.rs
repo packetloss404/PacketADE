@@ -322,10 +322,7 @@ pub async fn github_get_authenticated_user(
         .as_str()
         .ok_or_else(|| "GitHub /user response missing 'login'".to_string())?
         .to_string();
-    let avatar_url = parsed["avatar_url"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let avatar_url = parsed["avatar_url"].as_str().unwrap_or("").to_string();
     Ok(GhUser { login, avatar_url })
 }
 
@@ -557,8 +554,8 @@ pub async fn github_list_issue_comments(
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     let body = github_response_text(resp).await?;
-    let arr: Vec<serde_json::Value> = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse comments: {}", e))?;
+    let arr: Vec<serde_json::Value> =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse comments: {}", e))?;
     Ok(arr.iter().map(parse_comment).collect())
 }
 
@@ -588,8 +585,8 @@ pub async fn github_post_issue_comment(
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     let text = github_response_text(resp).await?;
-    let v: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse comment: {}", e))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("Failed to parse comment: {}", e))?;
     Ok(parse_comment(&v))
 }
 
@@ -816,7 +813,7 @@ pub async fn github_list_issues_page(
                 "items": filtered,
                 "has_more": has_more,
             }))
-                .map_err(|e| format!("Failed to serialize issues: {}", e))
+            .map_err(|e| format!("Failed to serialize issues: {}", e))
         }
         Err(_) => Ok(body),
     }
@@ -1019,8 +1016,8 @@ async fn fetch_commit_messages(
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     let body = github_response_text(resp).await?;
-    let arr: Vec<serde_json::Value> = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse commits: {}", e))?;
+    let arr: Vec<serde_json::Value> =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse commits: {}", e))?;
     let mut msgs: Vec<String> = arr
         .iter()
         .filter_map(|v| {
@@ -1132,11 +1129,13 @@ pub async fn github_ai_pr_description(
 
     let linked_refs: Vec<crate::core::github_ai_prompts::LinkedIssueInput<'_>> = linked_inputs
         .iter()
-        .map(|(n, t, b)| crate::core::github_ai_prompts::LinkedIssueInput {
-            number: *n,
-            title: t.as_str(),
-            body: b.as_str(),
-        })
+        .map(
+            |(n, t, b)| crate::core::github_ai_prompts::LinkedIssueInput {
+                number: *n,
+                title: t.as_str(),
+                body: b.as_str(),
+            },
+        )
         .collect();
 
     let user_turn = crate::core::github_ai_prompts::pr_description_user_turn(
@@ -1174,6 +1173,7 @@ pub async fn github_ai_pr_description(
             Some(false),
             serde_json::Value::Null,
             serde_json::Value::Null,
+            None,
             None,
             None,
             None,
@@ -1237,8 +1237,8 @@ pub async fn github_ai_pr_review(
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     let pr_body_text = github_response_text(pr_resp).await?;
-    let pr_json: serde_json::Value = serde_json::from_str(&pr_body_text)
-        .map_err(|e| format!("Failed to parse PR: {}", e))?;
+    let pr_json: serde_json::Value =
+        serde_json::from_str(&pr_body_text).map_err(|e| format!("Failed to parse PR: {}", e))?;
     let pr_title = pr_json
         .get("title")
         .and_then(|x| x.as_str())
@@ -1267,18 +1267,10 @@ pub async fn github_ai_pr_review(
         .map_err(|e| format!("Request failed: {}", e))?;
     let diff_raw = github_response_text(diff_resp).await?;
 
-    let (diff_text, truncated, original) =
-        truncate_for_model(&diff_raw, PR_REVIEW_DIFF_CAP_BYTES);
+    let (diff_text, truncated, original) = truncate_for_model(&diff_raw, PR_REVIEW_DIFF_CAP_BYTES);
 
     let user_turn = crate::core::github_ai_prompts::pr_review_user_turn(
-        &owner,
-        &repo,
-        pr_number,
-        &pr_title,
-        &pr_body,
-        &diff_text,
-        truncated,
-        original,
+        &owner, &repo, pr_number, &pr_title, &pr_body, &diff_text, truncated, original,
     );
 
     let manager = std::sync::Arc::clone(&*sidecar);
@@ -1307,6 +1299,7 @@ pub async fn github_ai_pr_review(
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -1315,12 +1308,7 @@ pub async fn github_ai_pr_review(
         return Err(format!("Failed to start AI PR review session: {}", e));
     }
 
-    spawn_oneshot_cleanup(
-        manager,
-        session_id.clone(),
-        receiver,
-        "github_ai_pr_review",
-    );
+    spawn_oneshot_cleanup(manager, session_id.clone(), receiver, "github_ai_pr_review");
 
     info!(
         owner = %owner,
@@ -1374,8 +1362,8 @@ pub async fn github_list_branches(
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     let body = github_response_text(resp).await?;
-    let raw: Vec<serde_json::Value> = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse branches: {}", e))?;
+    let raw: Vec<serde_json::Value> =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse branches: {}", e))?;
 
     let mut out: Vec<GitHubBranch> = Vec::with_capacity(raw.len());
     for b in raw {
@@ -1657,10 +1645,7 @@ fn render_activity_block(
         for iss in closed_issues {
             let num = iss.get("number").and_then(|v| v.as_u64()).unwrap_or(0);
             let title = iss.get("title").and_then(|v| v.as_str()).unwrap_or("");
-            let closed_at = iss
-                .get("closed_at")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let closed_at = iss.get("closed_at").and_then(|v| v.as_str()).unwrap_or("");
             out.push_str(&format!("- #{} (closed {}): {}\n", num, closed_at, title));
         }
         out.push('\n');
@@ -1676,10 +1661,7 @@ fn render_activity_block(
                 .and_then(|u| u.get("login"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("?");
-            let updated_at = pr
-                .get("updated_at")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let updated_at = pr.get("updated_at").and_then(|v| v.as_str()).unwrap_or("");
             out.push_str(&format!(
                 "- PR #{} by @{} (last touched {}): {}\n",
                 num, user, updated_at, title
@@ -1697,10 +1679,7 @@ fn render_activity_block(
                 .and_then(|a| a.get("login"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("?");
-            let created_at = ev
-                .get("created_at")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let created_at = ev.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
             let what = match kind {
                 "IssueCommentEvent" | "IssuesEvent" => ev
                     .pointer("/payload/issue/title")
@@ -1895,8 +1874,7 @@ pub async fn github_ai_catch_up(
     let handle = app_handle.clone();
     let sid = session_id.clone();
     tokio::spawn(async move {
-        let (tx, mut rx) =
-            tokio::sync::mpsc::channel::<crate::core::llm_types::StreamChunk>(64);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::core::llm_types::StreamChunk>(64);
         let provider_task =
             tokio::spawn(async move { provider.stream_chat(&api_key, request, tx).await });
 
@@ -2053,12 +2031,8 @@ pub async fn github_ai_triage(
     let issues_block = serde_json::to_string_pretty(&issue_payloads)
         .map_err(|e| format!("Failed to render issues block: {}", e))?;
 
-    let (system_prompt, user_turn) = crate::core::github_ai_prompts::triage_prompt(
-        &owner,
-        &repo,
-        &label_names,
-        &issues_block,
-    );
+    let (system_prompt, user_turn) =
+        crate::core::github_ai_prompts::triage_prompt(&owner, &repo, &label_names, &issues_block);
 
     super::validate_input_size(&user_turn, super::MAX_INPUT_SIZE, "Triage user turn")?;
 
@@ -2205,8 +2179,8 @@ pub async fn github_merge_pr(
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     let body = github_response_text(resp).await?;
-    let v: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("Failed to parse merge response: {}", e))?;
+    let v: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse merge response: {}", e))?;
     Ok(GitHubMergeResult {
         sha: v
             .get("sha")
@@ -2430,12 +2404,7 @@ fn duration_ms_between(started: Option<&str>, completed: Option<&str>) -> Option
 /// Roll up bucket counts into a single combined state. Mirrors the docstring
 /// in PrCheckPill: failure-class wins, then pending-class, then success,
 /// then neutral, then "none" for empty.
-fn rollup_combined_state(
-    total: i64,
-    passing: i64,
-    failing: i64,
-    pending: i64,
-) -> &'static str {
+fn rollup_combined_state(total: i64, passing: i64, failing: i64, pending: i64) -> &'static str {
     if total == 0 {
         return "none";
     }
@@ -2536,8 +2505,7 @@ pub async fn github_get_pr_checks(
             .and_then(|a| a.get("name"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let duration_ms =
-            duration_ms_between(started_at.as_deref(), completed_at.as_deref());
+        let duration_ms = duration_ms_between(started_at.as_deref(), completed_at.as_deref());
         runs.push(GitHubCheckRunDto {
             id,
             name,
@@ -2576,10 +2544,7 @@ pub async fn github_get_pr_checks(
             .and_then(|v| v.as_str())
             .unwrap_or("status")
             .to_string();
-        let state = s
-            .get("state")
-            .and_then(|v| v.as_str())
-            .unwrap_or("pending");
+        let state = s.get("state").and_then(|v| v.as_str()).unwrap_or("pending");
         // Flatten legacy state into the modern (status, conclusion) pair.
         let (mapped_status, mapped_conclusion): (&str, Option<&str>) = match state {
             "success" => ("completed", Some("success")),
@@ -2599,8 +2564,7 @@ pub async fn github_get_pr_checks(
             .get("updated_at")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let duration_ms =
-            duration_ms_between(created_at.as_deref(), updated_at.as_deref());
+        let duration_ms = duration_ms_between(created_at.as_deref(), updated_at.as_deref());
         runs.push(GitHubCheckRunDto {
             id,
             name: context,
@@ -2625,10 +2589,9 @@ pub async fn github_get_pr_checks(
         }
         match r.conclusion.as_deref() {
             Some("success") => passing += 1,
-            Some("failure")
-            | Some("cancelled")
-            | Some("timed_out")
-            | Some("action_required") => failing += 1,
+            Some("failure") | Some("cancelled") | Some("timed_out") | Some("action_required") => {
+                failing += 1
+            }
             _ => {}
         }
     }
@@ -2739,9 +2702,7 @@ fn parse_pr_review(v: &serde_json::Value) -> PullRequestReview {
 fn parse_pr_review_comment(v: &serde_json::Value) -> PullRequestReviewComment {
     PullRequestReviewComment {
         id: v.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
-        pull_request_review_id: v
-            .get("pull_request_review_id")
-            .and_then(|x| x.as_u64()),
+        pull_request_review_id: v.get("pull_request_review_id").and_then(|x| x.as_u64()),
         in_reply_to_id: v.get("in_reply_to_id").and_then(|x| x.as_u64()),
         user: parse_review_user(v.get("user")),
         body: v
@@ -2754,10 +2715,7 @@ fn parse_pr_review_comment(v: &serde_json::Value) -> PullRequestReviewComment {
             .and_then(|x| x.as_str())
             .unwrap_or("")
             .to_string(),
-        line: v
-            .get("line")
-            .and_then(|x| x.as_u64())
-            .map(|n| n as u32),
+        line: v.get("line").and_then(|x| x.as_u64()).map(|n| n as u32),
         original_line: v
             .get("original_line")
             .and_then(|x| x.as_u64())
@@ -2802,8 +2760,8 @@ pub async fn github_list_pr_reviews(
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     let body = github_response_text(resp).await?;
-    let arr: Vec<serde_json::Value> = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse PR reviews: {}", e))?;
+    let arr: Vec<serde_json::Value> =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse PR reviews: {}", e))?;
     Ok(arr.iter().map(parse_pr_review).collect())
 }
 

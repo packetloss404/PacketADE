@@ -15,13 +15,10 @@ import { useServerStore } from "@/stores/serverStore";
 import { useAppStore } from "@/stores/appStore";
 import { isSshUri, makeSshUri, parseSshUri } from "@/lib/ssh-uri";
 import type { ServerConfig } from "@/types/server";
-import { SSH_NOT_SUPPORTED_TOOLTIP } from "./utils";
 
 interface ProjectPickerProps {
   selectedRepo: string | null;
   setSelectedRepo: (uri: string) => void;
-  /** Sidecar providers reject SSH; we dim & tooltip-block remote selections. */
-  sshDisabled: boolean;
 }
 
 type RecentItem =
@@ -31,7 +28,6 @@ type RecentItem =
 export function ProjectPicker({
   selectedRepo,
   setSelectedRepo,
-  sshDisabled,
 }: ProjectPickerProps) {
   const repos = useGitHubStore((s) => s.repos);
   const projectHistory = useProjectHistoryStore((s) => s.projects);
@@ -39,8 +35,6 @@ export function ProjectPicker({
   const servers = useServerStore((s) => s.servers);
   const updateServer = useServerStore((s) => s.updateServer);
   const setActiveView = useAppStore((s) => s.setActiveView);
-
-  const sshDisabledTitle = sshDisabled ? SSH_NOT_SUPPORTED_TOOLTIP : undefined;
 
   const recentItems: RecentItem[] = useMemo(() => {
     const localSeen = new Set<string>();
@@ -125,15 +119,15 @@ export function ProjectPicker({
               selectedRepo ? "text-text-primary" : "text-text-muted"
             }`}
             title={
-              sshDisabled && selectedRepo && isSshUri(selectedRepo)
-                ? SSH_NOT_SUPPORTED_TOOLTIP
+              selectedRepo && isSshUri(selectedRepo)
+                ? "Remote SSH project"
                 : undefined
             }
           >
             {selectedRepo && isSshUri(selectedRepo) ? (
               <Server
                 size={12}
-                className={sshDisabled ? "text-text-muted" : "text-accent-green"}
+                className="text-accent-green"
               />
             ) : (
               <Monitor size={12} className="text-text-muted" />
@@ -162,15 +156,9 @@ export function ProjectPicker({
           ) : (
             <DropdownItem
               key={`ssh:${item.server.id}`}
-              onClick={() => {
-                if (sshDisabled) return;
-                handleSelectSsh(item.server);
-              }}
+              onClick={() => handleSelectSsh(item.server)}
             >
-              <span
-                className={sshDisabled ? "opacity-50 cursor-not-allowed block" : "block"}
-                title={sshDisabledTitle}
-              >
+              <span className="block">
                 <RecentRow
                   icon={<Server size={12} className="text-accent-green" />}
                   label={item.server.name}
@@ -192,15 +180,9 @@ export function ProjectPicker({
           </span>
         </DropdownItem>
         <DropdownItem
-          onClick={() => {
-            if (sshDisabled) return;
-            handleOpenServersView();
-          }}
+          onClick={handleOpenServersView}
         >
-          <span
-            className={`flex items-center gap-1.5 text-text-secondary ${sshDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-            title={sshDisabledTitle}
-          >
+          <span className="flex items-center gap-1.5 text-text-secondary">
             <Server size={12} />
             {servers.length === 0 ? "Configure servers…" : "Manage servers…"}
           </span>
@@ -211,7 +193,7 @@ export function ProjectPicker({
           across projects, so the path is per-conversation, not stored on
           the server config. Seeded from `ServerConfig.remotePath` on first
           pick; edits re-encode into `selectedRepo`. */}
-      {selectedSshUri && selectedServer && !sshDisabled && (
+      {selectedSshUri && selectedServer && (
         <div className="mt-2 flex items-center gap-1.5 text-[11px]">
           <Server size={11} className="text-accent-green shrink-0" />
           <span className="text-text-muted shrink-0">

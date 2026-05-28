@@ -16,7 +16,6 @@ import { isSshUri } from "@/lib/ssh-uri";
 import {
   COMPOSER_HELP_TEXT,
   SLASH_POPOVER_LIMIT,
-  isSidecarAgent,
   templateSlug,
   type AgentMode,
   type ComposerMode,
@@ -80,11 +79,6 @@ export function AgentInputArea({
   const setAgentInputText = useAgentTaskStore((s) => s.setAgentInputText);
   const selectedRepo = useAgentTaskStore((s) => s.selectedRepo);
   const setSelectedRepo = useAgentTaskStore((s) => s.setSelectedRepo);
-
-  // Sidecar (OAuth) providers route through the Node sidecar, which doesn't
-  // speak SSH. The backend rejects ssh_config for these providers, so we
-  // gate the SSH affordances in the UI to match.
-  const sshDisabled = isSidecarAgent(selectedAgent);
 
   const { staged, addFiles, removeStaged, clear: clearStaged } =
     useAttachmentStaging();
@@ -393,7 +387,6 @@ export function AgentInputArea({
         <ProjectPicker
           selectedRepo={selectedRepo}
           setSelectedRepo={setSelectedRepo}
-          sshDisabled={sshDisabled}
         />
 
         {/* v0.8-H — preview of memory snippets injected into the next user

@@ -2,7 +2,9 @@
 //! set of sidecar-owned sessions. Implements spawn / restart / IO pumping.
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -21,8 +23,21 @@ use super::status::{
     current_time_rfc3339, load_lifetime_stats, save_lifetime_stats, SidecarState, SidecarStatus,
     SidecarStatusInner,
 };
-use super::{MAX_RESTARTS_IN_WINDOW, RESTART_WINDOW, SIDECAR_STATUS_EVENT};
+use super::{
+    EXPECTED_PROTOCOL_VERSION, MAX_RESTARTS_IN_WINDOW, RESTART_WINDOW, SIDECAR_STATUS_EVENT,
+};
 use crate::commands::shared::hide_window_async;
+use crate::commands::ssh_keys;
+use crate::core::execution::{sh_quote, SshConfig};
+
+const REMOTE_SIDECAR_TIMEOUT_SECS: u64 = 25;
+const REMOTE_PATH_SETUP: &str = r#"export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/.opencode/bin:$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node/" 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH" 2>/dev/null;"#;
+
+#[derive(Clone)]
+pub(super) struct RemoteSidecarSession {
+    writer_tx: mpsc::UnboundedSender<String>,
+    target_label: String,
+}
 
 /// Per-session waiter state for [`SidecarManager::wait_for_oneshot`].
 ///
@@ -68,6 +83,14 @@ pub struct SidecarManager {
     /// Sessions with no registered waiter incur a single hash-map lookup
     /// per event — zero behavioural change for the streaming path.
     pub(super) oneshot_waiters: Arc<Mutex<HashMap<String, OneshotWaiter>>>,
+    /// Session ids whose provider is running over SSH. This remains set even
+    /// during brief route teardown windows so a remote session can never fall
+    /// back to the local sidecar process.
+    pub(super) remote_owned_sessions: Arc<Mutex<HashSet<String>>>,
+    /// SSH-backed sidecars keyed by session id. Local sidecar sessions keep
+    /// using `writer_tx`; remote sessions get a dedicated SSH process so
+    /// local and remote conversations cannot steal each other's stdin.
+    pub(super) remote_sessions: Arc<Mutex<HashMap<String, RemoteSidecarSession>>>,
 }
 
 impl SidecarManager {
@@ -87,6 +110,8 @@ impl SidecarManager {
             owned_sessions: Arc::new(Mutex::new(HashSet::new())),
             status: Mutex::new(inner),
             oneshot_waiters: Arc::new(Mutex::new(HashMap::new())),
+            remote_owned_sessions: Arc::new(Mutex::new(HashSet::new())),
+            remote_sessions: Arc::new(Mutex::new(HashMap::new())),
         });
 
         // Spawn the child + reader/writer tasks in the background. If the
@@ -201,6 +226,193 @@ impl SidecarManager {
         tx.send(line)
             .map_err(|_| "sidecar writer channel closed".to_string())?;
         Ok(())
+    }
+
+    /// Serialize `value` and route it to the sidecar stream that owns
+    /// `session_id`. SSH sessions get their dedicated process; all other
+    /// sessions fall back to the app-wide local sidecar writer.
+    pub(super) async fn send_json_for_session(
+        &self,
+        session_id: &str,
+        value: Value,
+    ) -> Result<(), String> {
+        let remote = {
+            let guard = self.remote_sessions.lock().await;
+            guard.get(session_id).cloned()
+        };
+        if let Some(remote) = remote {
+            let line = serde_json::to_string(&value)
+                .map_err(|e| format!("serialize remote sidecar request: {}", e))?;
+            remote
+                .writer_tx
+                .send(line)
+                .map_err(|_| format!("remote sidecar writer closed for {}", remote.target_label))?;
+            return Ok(());
+        }
+
+        let is_remote_owned = {
+            let guard = self.remote_owned_sessions.lock().await;
+            guard.contains(session_id)
+        };
+        if is_remote_owned {
+            return Err(format!(
+                "Remote sidecar route is unavailable for session {}",
+                session_id
+            ));
+        }
+
+        self.send_json(value).await
+    }
+
+    pub(super) async fn close_remote_session(&self, session_id: &str) {
+        let removed = {
+            let mut guard = self.remote_sessions.lock().await;
+            guard.remove(session_id)
+        };
+        if let Some(remote) = removed {
+            info!(
+                session_id = %session_id,
+                target = %remote.target_label,
+                "closed SSH sidecar route"
+            );
+            drop(remote);
+        }
+        let mut remote_owned = self.remote_owned_sessions.lock().await;
+        remote_owned.remove(session_id);
+    }
+
+    /// Spawn a dedicated Node sidecar through SSH for one remote API-agent
+    /// session. The remote host must be Unix-like, have Node.js on PATH (or
+    /// `PACKETADE_REMOTE_NODE_PATH` set in this PacketADE process), and have
+    /// the built sidecar available at
+    /// `~/.packetade/agent-sidecar/dist/index.js` (or
+    /// `PACKETADE_REMOTE_SIDECAR_PATH` set in this PacketADE process).
+    pub(super) fn spawn_remote_sidecar_for_session<'a>(
+        &'a self,
+        session_id: &'a str,
+        provider: &'a str,
+        config: &'a SshConfig,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            validate_remote_sidecar_target(config)?;
+            reject_remote_password_auth(config)?;
+            remote_sidecar_preflight(config, provider.as_ref()).await?;
+
+            let mut cmd = Command::new("ssh");
+            cmd.args(config.ssh_args(false))
+                .arg(remote_sidecar_launch_script(config))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            hide_window_async(&mut cmd);
+
+            let mut child = cmd.spawn().map_err(|e| {
+                format!(
+                    "Failed to spawn SSH sidecar for {}: {}",
+                    remote_target_label(config),
+                    e
+                )
+            })?;
+            let child_pid = child.id();
+
+            let stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| "SSH sidecar stdin was not piped".to_string())?;
+            let stdout = child
+                .stdout
+                .take()
+                .ok_or_else(|| "SSH sidecar stdout was not piped".to_string())?;
+            let stderr = child
+                .stderr
+                .take()
+                .ok_or_else(|| "SSH sidecar stderr was not piped".to_string())?;
+
+            let (writer_tx, writer_rx) = mpsc::unbounded_channel::<String>();
+            let target_label = remote_target_label(config);
+            {
+                let mut remote_owned = self.remote_owned_sessions.lock().await;
+                remote_owned.insert(session_id.to_string());
+            }
+            {
+                let mut guard = self.remote_sessions.lock().await;
+                guard.insert(
+                    session_id.to_string(),
+                    RemoteSidecarSession {
+                        writer_tx,
+                        target_label: target_label.clone(),
+                    },
+                );
+            }
+
+            let writer_handle = tokio::spawn(writer_loop(stdin, writer_rx));
+            let reader_mgr = self
+                .app_handle
+                .try_state::<Arc<SidecarManager>>()
+                .map(|state| state.inner().clone())
+                .ok_or_else(|| "SidecarManager state is unavailable".to_string())?;
+            let reader_session_id = session_id.to_string();
+            let reader_handle = tokio::spawn(async move {
+                let reader_future: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> =
+                    Box::pin(reader_mgr.remote_reader_loop(reader_session_id, stdout));
+                reader_future.await;
+            });
+            let stderr_handle = tokio::spawn(stderr_loop(stderr));
+
+            info!(
+                session_id = %session_id,
+                pid = ?child_pid,
+                target = %target_label,
+                "SSH sidecar spawned"
+            );
+
+            let session_for_wait = session_id.to_string();
+            let target_for_wait = target_label.clone();
+            let remote_sessions = Arc::clone(&self.remote_sessions);
+            let remote_owned_sessions = Arc::clone(&self.remote_owned_sessions);
+            let owned_sessions = Arc::clone(&self.owned_sessions);
+            let app_handle = self.app_handle.clone();
+            tokio::spawn(async move {
+                let status = child.wait().await;
+                {
+                    let mut guard = remote_sessions.lock().await;
+                    guard.remove(&session_for_wait);
+                }
+                {
+                    let mut guard = remote_owned_sessions.lock().await;
+                    guard.remove(&session_for_wait);
+                }
+
+                let still_owned = {
+                    let mut guard = owned_sessions.lock().await;
+                    guard.remove(&session_for_wait)
+                };
+                let message = match status {
+                    Ok(exit) if exit.success() => {
+                        format!("SSH sidecar for {} exited", target_for_wait)
+                    }
+                    Ok(exit) => format!("SSH sidecar for {} exited with {}", target_for_wait, exit),
+                    Err(e) => format!("SSH sidecar for {} wait failed: {}", target_for_wait, e),
+                };
+                if still_owned {
+                    warn!(session_id = %session_for_wait, error = %message);
+                    let _ = app_handle.emit(
+                        &error_event(&session_for_wait),
+                        ErrorPayload {
+                            message: message.clone(),
+                        },
+                    );
+                } else {
+                    info!(session_id = %session_for_wait, target = %target_for_wait, %message);
+                }
+
+                let _ = reader_handle.await;
+                let _ = stderr_handle.await;
+                let _ = writer_handle.await;
+            });
+
+            Ok(())
+        })
     }
 
     /// Spawn-and-supervise loop. Runs the child, then restarts it if it dies,
@@ -600,35 +812,132 @@ impl SidecarManager {
         }
     }
 
+    /// Remote sidecars are per-session transports. Their `ready` handshake is
+    /// useful for protocol diagnostics, but it should not mutate the app-wide
+    /// local sidecar status chip or lifetime counters.
+    async fn remote_reader_loop(
+        self: Arc<Self>,
+        session_id: String,
+        stdout: tokio::process::ChildStdout,
+    ) {
+        let mut reader = BufReader::new(stdout).lines();
+        loop {
+            match reader.next_line().await {
+                Ok(Some(line)) => {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    match serde_json::from_str::<Value>(&line) {
+                        Ok(value) => {
+                            let event_type =
+                                value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            if event_type == "ready" {
+                                let protocol_version = value
+                                    .get("protocolVersion")
+                                    .and_then(|v| v.as_u64())
+                                    .map(|v| v as u32);
+                                if let Some(proto) = protocol_version {
+                                    if proto != EXPECTED_PROTOCOL_VERSION {
+                                        warn!(
+                                            session_id = %session_id,
+                                            expected = EXPECTED_PROTOCOL_VERSION,
+                                            got = proto,
+                                            "remote sidecar protocol version mismatch"
+                                        );
+                                    }
+                                }
+                                info!(
+                                    session_id = %session_id,
+                                    version = ?value.get("version").and_then(|v| v.as_str()),
+                                    protocol_version = ?protocol_version,
+                                    "remote sidecar ready"
+                                );
+                                continue;
+                            }
+                            if event_type == "error" {
+                                let message = value
+                                    .get("message")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown remote sidecar error")
+                                    .to_string();
+                                let _ = self.app_handle.emit(
+                                    &error_event(&session_id),
+                                    ErrorPayload {
+                                        message: message.clone(),
+                                    },
+                                );
+                                self.forget_owned_session(&session_id).await;
+                                self.close_remote_session(&session_id).await;
+                                let mut waiters = self.oneshot_waiters.lock().await;
+                                if let Some(mut waiter) = waiters.remove(&session_id) {
+                                    if let Some(sender) = waiter.sender.take() {
+                                        let _ = sender.send(Err(message));
+                                    }
+                                }
+                                continue;
+                            }
+                            self.handle_event(value).await;
+                        }
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                line = %super::handler::truncate(&line, 500),
+                                "remote sidecar emitted malformed JSON"
+                            );
+                        }
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    warn!(error = %e, "remote sidecar stdout read error");
+                    break;
+                }
+            }
+        }
+    }
+
     /// Emit `api-agent:error:*` on every currently-owned session when the
     /// sidecar dies unrecoverably.
     async fn fan_out_crash_error(&self) {
-        let sessions: Vec<String> = {
-            let guard = self.owned_sessions.lock().await;
+        let remote_owned: HashSet<String> = {
+            let guard = self.remote_owned_sessions.lock().await;
             guard.iter().cloned().collect()
         };
-        for session_id in sessions {
+        let sessions: Vec<String> = {
+            let guard = self.owned_sessions.lock().await;
+            guard
+                .iter()
+                .filter(|session_id| !remote_owned.contains(*session_id))
+                .cloned()
+                .collect()
+        };
+        for session_id in &sessions {
             let _ = self.app_handle.emit(
-                &error_event(&session_id),
+                &error_event(session_id),
                 ErrorPayload {
                     message: "Sidecar crashed and could not restart".to_string(),
                 },
             );
         }
         let mut guard = self.owned_sessions.lock().await;
-        guard.clear();
+        guard.retain(|session_id| remote_owned.contains(session_id));
 
         // E10-SUMMARIZE — also resolve any outstanding one-shot waiters
         // with the crash error so awaiters don't hang forever after a
         // hard sidecar failure.
         let mut waiters = self.oneshot_waiters.lock().await;
-        let drained: Vec<(String, OneshotWaiter)> = waiters.drain().collect();
+        let drained: Vec<(String, OneshotWaiter)> = sessions
+            .iter()
+            .filter_map(|session_id| {
+                waiters
+                    .remove(session_id)
+                    .map(|waiter| (session_id.clone(), waiter))
+            })
+            .collect();
         drop(waiters);
         for (_sid, mut waiter) in drained {
             if let Some(sender) = waiter.sender.take() {
-                let _ = sender.send(Err(
-                    "Sidecar crashed and could not restart".to_string(),
-                ));
+                let _ = sender.send(Err("Sidecar crashed and could not restart".to_string()));
             }
         }
     }
@@ -800,4 +1109,243 @@ fn resolve_bundled_node_path(app_handle: &AppHandle) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn load_ssh_password(config: &SshConfig) -> Option<String> {
+    config
+        .target_id
+        .as_deref()
+        .and_then(|id| ssh_keys::load_ssh_password(id).ok().flatten())
+        .filter(|pw| !pw.is_empty())
+}
+
+fn reject_remote_password_auth(config: &SshConfig) -> Result<(), String> {
+    let explicit_password = config
+        .auth_method
+        .as_deref()
+        .map(|method| method.eq_ignore_ascii_case("password"))
+        .unwrap_or(false);
+    let legacy_password = config.auth_method.is_none() && load_ssh_password(config).is_some();
+    if explicit_password || legacy_password {
+        return Err(
+            "Remote sidecar execution requires key or SSH-agent authentication. Password-auth SSH targets cannot be used because stdin is reserved for the sidecar JSON protocol.".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn remote_target_label(config: &SshConfig) -> String {
+    format!("{}@{}:{}", config.user, config.host, config.remote_path)
+}
+
+fn validate_remote_sidecar_target(config: &SshConfig) -> Result<(), String> {
+    let remote_path = config.remote_path.trim();
+    if remote_path.is_empty() {
+        return Err("Remote workspace path is empty".to_string());
+    }
+    if !remote_path.starts_with('/') {
+        return Err(format!(
+            "Sidecar-over-SSH currently requires a Unix-style absolute remote path; got '{}'",
+            remote_path
+        ));
+    }
+    if remote_path.contains('\0') {
+        return Err("Remote workspace path may not contain NUL bytes".to_string());
+    }
+    Ok(())
+}
+
+fn remote_node_assignment() -> String {
+    match std::env::var("PACKETADE_REMOTE_NODE_PATH")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        Some(path) => format!("NODE_BIN={};", sh_quote(path.trim())),
+        None => "NODE_BIN=${PACKETADE_REMOTE_NODE_PATH:-node};".to_string(),
+    }
+}
+
+fn remote_sidecar_assignment() -> String {
+    match std::env::var("PACKETADE_REMOTE_SIDECAR_PATH")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        Some(path) => format!("SIDECAR_ENTRY={};", sh_quote(path.trim())),
+        None => {
+            "SIDECAR_ENTRY=${PACKETADE_REMOTE_SIDECAR_PATH:-$HOME/.packetade/agent-sidecar/dist/index.js};"
+                .to_string()
+        }
+    }
+}
+
+fn remote_auth_preflight(provider: &str) -> &'static str {
+    match provider {
+        "claude-oauth" => {
+            r#"if [ ! -s "$HOME/.claude/.credentials.json" ] && [ ! -s "$HOME/.claude/credentials.json" ]; then echo "PACKETADE_PREFLIGHT_ERROR Claude OAuth is not signed in on the SSH host. Run claude login on the remote host." >&2; exit 96; fi"#
+        }
+        "openai-codex" => {
+            r#"if [ ! -s "$HOME/.codex/auth.json" ]; then echo "PACKETADE_PREFLIGHT_ERROR Codex OAuth is not signed in on the SSH host. Run codex login on the remote host." >&2; exit 97; fi"#
+        }
+        _ => "",
+    }
+}
+
+fn remote_sidecar_preflight_script(config: &SshConfig, provider: &str) -> String {
+    let project_path = sh_quote(config.remote_path.trim());
+    let auth_preflight = remote_auth_preflight(provider);
+    format!(
+        r#"{path_setup}
+OS_NAME=$(uname -s 2>/dev/null || echo unknown)
+case "$OS_NAME" in Linux*|Darwin*|FreeBSD*) ;; *) echo "PACKETADE_PREFLIGHT_ERROR unsupported remote OS: $OS_NAME. Sidecar-over-SSH currently requires a Unix-like host with POSIX sh." >&2; exit 91;; esac
+{node_assignment}
+{sidecar_assignment}
+PROJECT_PATH={project_path}
+if ! command -v "$NODE_BIN" >/dev/null 2>&1 && [ ! -x "$NODE_BIN" ]; then echo "PACKETADE_PREFLIGHT_ERROR Node.js not found on remote host. Install Node.js or set PACKETADE_REMOTE_NODE_PATH." >&2; exit 92; fi
+if [ ! -f "$SIDECAR_ENTRY" ]; then echo "PACKETADE_PREFLIGHT_ERROR Remote sidecar entry not found at $SIDECAR_ENTRY. Copy agent-sidecar to ~/.packetade/agent-sidecar or set PACKETADE_REMOTE_SIDECAR_PATH." >&2; exit 93; fi
+if [ ! -d "$PROJECT_PATH" ]; then echo "PACKETADE_PREFLIGHT_ERROR Remote workspace path does not exist: $PROJECT_PATH" >&2; exit 94; fi
+case "$PROJECT_PATH" in /*) ;; *) echo "PACKETADE_PREFLIGHT_ERROR Remote workspace path must be Unix-style absolute: $PROJECT_PATH" >&2; exit 95;; esac
+{auth_preflight}
+echo PACKETADE_REMOTE_SIDECAR_READY
+"#,
+        path_setup = REMOTE_PATH_SETUP,
+        node_assignment = remote_node_assignment(),
+        sidecar_assignment = remote_sidecar_assignment(),
+        project_path = project_path,
+        auth_preflight = auth_preflight,
+    )
+}
+
+fn remote_sidecar_launch_script(config: &SshConfig) -> String {
+    let project_path = sh_quote(config.remote_path.trim());
+    format!(
+        r#"{path_setup}
+{node_assignment}
+{sidecar_assignment}
+PROJECT_PATH={project_path}
+cd "$PROJECT_PATH" || exit 94
+PACKETADE_REMOTE_SIDECAR=1 exec "$NODE_BIN" "$SIDECAR_ENTRY"
+"#,
+        path_setup = REMOTE_PATH_SETUP,
+        node_assignment = remote_node_assignment(),
+        sidecar_assignment = remote_sidecar_assignment(),
+        project_path = project_path,
+    )
+}
+
+async fn remote_sidecar_preflight(config: &SshConfig, provider: &str) -> Result<(), String> {
+    let mut cmd = Command::new("ssh");
+    cmd.args(config.ssh_args(false))
+        .arg(remote_sidecar_preflight_script(config, provider))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    hide_window_async(&mut cmd);
+
+    let child = cmd.spawn().map_err(|e| {
+        format!(
+            "Failed to spawn SSH preflight for {}: {}",
+            remote_target_label(config),
+            e
+        )
+    })?;
+
+    let output = tokio::time::timeout(
+        Duration::from_secs(REMOTE_SIDECAR_TIMEOUT_SECS),
+        child.wait_with_output(),
+    )
+    .await
+    .map_err(|_| {
+        format!(
+            "SSH sidecar preflight timed out for {}",
+            remote_target_label(config)
+        )
+    })?
+    .map_err(|e| format!("SSH sidecar preflight failed: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}{}", stdout, stderr);
+    if output.status.success() && stdout.contains("PACKETADE_REMOTE_SIDECAR_READY") {
+        return Ok(());
+    }
+
+    let message = combined
+        .lines()
+        .find_map(|line| line.strip_prefix("PACKETADE_PREFLIGHT_ERROR "))
+        .map(str::to_string)
+        .or_else(|| {
+            combined
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .map(|line| line.trim().to_string())
+        })
+        .unwrap_or_else(|| format!("SSH preflight exited with {}", output.status));
+    Err(message)
+}
+
+#[cfg(test)]
+mod remote_tests {
+    use super::*;
+
+    fn sample_cfg(remote_path: &str) -> SshConfig {
+        SshConfig {
+            host: "example.com".to_string(),
+            port: 22,
+            user: "alice".to_string(),
+            remote_path: remote_path.to_string(),
+            key_path: None,
+            auth_method: Some("agent".to_string()),
+            target_id: Some("srv-1".to_string()),
+            host_fingerprint: Some("SHA256:test".to_string()),
+        }
+    }
+
+    #[test]
+    fn remote_target_rejects_windows_paths() {
+        let err = validate_remote_sidecar_target(&sample_cfg("C:\\repo")).unwrap_err();
+        assert!(err.contains("Unix-style absolute"));
+    }
+
+    #[test]
+    fn remote_preflight_script_checks_node_sidecar_and_project() {
+        let script = remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "openai-agents");
+        assert!(script.contains("PACKETADE_REMOTE_SIDECAR_READY"));
+        assert!(script.contains("Node.js not found"));
+        assert!(script.contains("Remote sidecar entry not found"));
+        assert!(script.contains("PROJECT_PATH='/home/alice/project'"));
+    }
+
+    #[test]
+    fn remote_preflight_script_checks_remote_oauth_for_subscription_providers() {
+        let claude_script =
+            remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "claude-oauth");
+        assert!(claude_script.contains("Claude OAuth is not signed in on the SSH host"));
+
+        let codex_script =
+            remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "openai-codex");
+        assert!(codex_script.contains("Codex OAuth is not signed in on the SSH host"));
+
+        let api_script =
+            remote_sidecar_preflight_script(&sample_cfg("/home/alice/project"), "openai-agents");
+        assert!(!api_script.contains("OAuth is not signed in"));
+    }
+
+    #[test]
+    fn remote_password_auth_uses_explicit_auth_method_before_keyring_fallback() {
+        let mut cfg = sample_cfg("/home/alice/project");
+        cfg.auth_method = Some("password".to_string());
+        assert!(reject_remote_password_auth(&cfg)
+            .unwrap_err()
+            .contains("Password-auth"));
+
+        cfg.auth_method = Some("key".to_string());
+        assert!(reject_remote_password_auth(&cfg).is_ok());
+    }
+
+    #[test]
+    fn remote_launch_script_execs_node_sidecar_in_project() {
+        let script = remote_sidecar_launch_script(&sample_cfg("/home/alice/project"));
+        assert!(script.contains("cd \"$PROJECT_PATH\""));
+        assert!(script.contains("PACKETADE_REMOTE_SIDECAR=1 exec \"$NODE_BIN\" \"$SIDECAR_ENTRY\""));
+    }
 }

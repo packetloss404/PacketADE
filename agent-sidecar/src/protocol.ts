@@ -60,6 +60,23 @@ export type ResumeMessage = {
 
 export type PermissionMode = "auto" | "ask_for_risky" | "allow_all" | "deny_all";
 
+export type WorkspaceRef =
+  | {
+      kind: "local";
+      projectPath: string;
+    }
+  | {
+      kind: "ssh";
+      serverId?: string | null;
+      host: string;
+      port: number;
+      user: string;
+      remotePath: string;
+      keyPath?: string | null;
+      authMethod?: "agent" | "key" | "password" | null;
+      hostFingerprint?: string | null;
+    };
+
 export type StartSessionRequest = {
   type: "start_session";
   sessionId: string;
@@ -94,6 +111,10 @@ export type StartSessionRequest = {
    * by `openai-codex` so PacketADE can honor a user-pinned Codex binary
    * instead of relying on PATH resolution. */
   commandPath?: string;
+  /** Structured workspace metadata. `projectPath` remains for v1/v6
+   * compatibility with local sidecars; remote launches use this object to
+   * avoid treating an SSH path as a local filesystem path. */
+  workspace?: WorkspaceRef;
 };
 
 export type SendMessageRequest = {

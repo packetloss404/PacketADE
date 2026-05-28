@@ -69,23 +69,6 @@ export const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
   { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama"] },
 ];
 
-/** Sidecar-routed providers — the backend rejects ssh_config for these
- * because the Node sidecar always runs provider work locally. Keep this
- * list in sync with the SIDECAR_PROVIDERS table in
- * `src-tauri/src/commands/agent_sidecar.rs`. */
-const SIDECAR_AGENTS: readonly AgentCli[] = [
-  "api-claude-oauth" as AgentCli,
-  "api-openai-codex" as AgentCli,
-  "api-openai-agents" as AgentCli,
-];
-
-export function isSidecarAgent(agent: AgentCli): boolean {
-  return SIDECAR_AGENTS.includes(agent);
-}
-
-export const SSH_NOT_SUPPORTED_TOOLTIP =
-  "Sidecar providers don't support remote SSH yet";
-
 /**
  * Slugify a template name to its slash-command form, e.g. "Code Review"
  * becomes "code-review". Matches the kebab-case slug used by the in-chat

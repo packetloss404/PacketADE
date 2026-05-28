@@ -3,9 +3,7 @@ use std::sync::{Arc, Mutex};
 use tracing::warn;
 
 use crate::api::{OrchestratorSnapshotDto, PersistedStateDto, TaskSpawnRequestDto};
-use crate::commands::mission_planner::{
-    MissionPlannerRegistry, PlannerWakeEvent, WakeTrigger,
-};
+use crate::commands::mission_planner::{MissionPlannerRegistry, PlannerWakeEvent, WakeTrigger};
 use crate::commands::pty::SharedPtyManager;
 use crate::core::flight::Flight;
 use crate::core::orchestrator::{Orchestrator, TaskSpawnRequest};

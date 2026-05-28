@@ -33,6 +33,8 @@ pub enum AttemptTargetSpec {
         user: String,
         #[serde(default)]
         key_path: Option<String>,
+        #[serde(default)]
+        auth_method: Option<String>,
         /// Pinned SHA256 host-key fingerprint, copied from the saved
         /// `ServerConfig.hostFingerprint`. When present, the per-attempt
         /// `SshConfig` uses strict host-key checking against the
@@ -135,6 +137,7 @@ fn build_ssh_config_from_spec(spec: &AttemptTargetSpec) -> Option<SshConfig> {
         port,
         user,
         key_path,
+        auth_method,
         host_fingerprint,
         base_path,
         ..
@@ -146,6 +149,7 @@ fn build_ssh_config_from_spec(spec: &AttemptTargetSpec) -> Option<SshConfig> {
             user: user.clone(),
             remote_path: base_path.clone(),
             key_path: key_path.clone(),
+            auth_method: auth_method.clone(),
             target_id: Some(target_id.clone()),
             // Phase 2: propagate the saved `ServerConfig.hostFingerprint`
             // from the picker through the spec so flight attempts pin
@@ -321,6 +325,7 @@ pub async fn launch_flight_async(
             None,        // permission_mode — default auto
             Some(false), // approve_writes
             None,        // command_path
+            None,        // workspace — derived from ssh_config/local project_path
         )
         .await
         {
@@ -424,6 +429,7 @@ pub async fn cleanup_attempt_worktree_ssh(
         key_path,
         target_id: Some(target_id),
         host_fingerprint,
+        auth_method: None,
     };
     let _ = (flight_id, attempt_id.clone());
     worktree::remove_remote_worktree(&cfg, &base_path, &attempt_id).await

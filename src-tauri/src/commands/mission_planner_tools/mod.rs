@@ -62,9 +62,7 @@ pub async fn dispatch(
     // (`complete_mission` removes the planner session from the registry on
     // its success path) still have a mission_id to journal under after
     // they return.
-    let mission_id_at_dispatch = registry
-        .mission_id_for_sidecar_session(session_id)
-        .await;
+    let mission_id_at_dispatch = registry.mission_id_for_sidecar_session(session_id).await;
 
     if current > cap {
         let err_msg = format!(
@@ -86,15 +84,7 @@ pub async fn dispatch(
         // entries, never `ToolCall`.)
         if let Some(ref mission_id) = mission_id_at_dispatch {
             if name != "request_user_approval" {
-                journal_tool_call(
-                    app,
-                    mission_id,
-                    name,
-                    &args,
-                    None,
-                    Some(&err_msg),
-                )
-                .await;
+                journal_tool_call(app, mission_id, name, &args, None, Some(&err_msg)).await;
             }
         }
         return Err(err_msg);
@@ -106,7 +96,9 @@ pub async fn dispatch(
         "update_task" => update_task::handle(app, session_id, args.clone()).await,
         "mark_task_blocked" => mark_task_blocked::handle(app, session_id, args.clone()).await,
         "replan_after_failure" => replan_after_failure::handle(app, session_id, args.clone()).await,
-        "request_user_approval" => request_user_approval::handle(app, session_id, args.clone()).await,
+        "request_user_approval" => {
+            request_user_approval::handle(app, session_id, args.clone()).await
+        }
         "complete_mission" => complete_mission::handle(app, session_id, args.clone()).await,
         // `spawn_helper_planner` remains a v1.1 stub (see backlog); accept
         // the call but return a clear deferral message so the planner can
@@ -138,29 +130,13 @@ pub async fn dispatch(
         if name != "request_user_approval" {
             match &outcome {
                 Ok(v) => {
-                    journal_tool_call(
-                        app,
-                        mission_id,
-                        name,
-                        &args,
-                        Some(v),
-                        None,
-                    )
-                    .await;
+                    journal_tool_call(app, mission_id, name, &args, Some(v), None).await;
                 }
                 Err(e) if e.starts_with("invalid args:") => {
                     // Skip — args-parse failure, not a real tool call.
                 }
                 Err(e) => {
-                    journal_tool_call(
-                        app,
-                        mission_id,
-                        name,
-                        &args,
-                        None,
-                        Some(e.as_str()),
-                    )
-                    .await;
+                    journal_tool_call(app, mission_id, name, &args, None, Some(e.as_str())).await;
                 }
             }
         }
@@ -192,12 +168,10 @@ async fn journal_tool_call(
     let (outcome_tag, outcome_line) = match (result, error) {
         (Some(v), _) => {
             let preview = match v {
-                serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
-                    truncate(
-                        &serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()),
-                        180,
-                    )
-                }
+                serde_json::Value::Object(_) | serde_json::Value::Array(_) => truncate(
+                    &serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()),
+                    180,
+                ),
                 serde_json::Value::String(s) => truncate(s, 180),
                 other => other.to_string(),
             };

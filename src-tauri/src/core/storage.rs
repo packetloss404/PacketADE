@@ -379,14 +379,13 @@ pub fn toggle_pinned_pattern(pattern_id: &str) -> Result<Option<bool>, String> {
         let Some(obj) = entry.as_object_mut() else {
             continue;
         };
-        let Some(id_val) = obj.get("id") else { continue };
+        let Some(id_val) = obj.get("id") else {
+            continue;
+        };
         if id_val.as_str() != Some(pattern_id) {
             continue;
         }
-        let current = obj
-            .get("pinned")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let current = obj.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false);
         let next = !current;
         obj.insert("pinned".to_string(), serde_json::Value::Bool(next));
         found = Some(next);

@@ -100,8 +100,7 @@ pub async fn generate_ideas(
     };
 
     let (tx, mut rx) = mpsc::channel::<StreamChunk>(64);
-    let provider_task =
-        tokio::spawn(async move { llm.stream_chat(&api_key, request, tx).await });
+    let provider_task = tokio::spawn(async move { llm.stream_chat(&api_key, request, tx).await });
 
     let mut accumulated = String::new();
     let mut error: Option<String> = None;

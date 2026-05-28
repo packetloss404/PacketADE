@@ -33,11 +33,7 @@ struct Args {
     reason: String,
 }
 
-pub async fn handle(
-    app: &AppHandle,
-    session_id: &str,
-    args: Value,
-) -> Result<Value, String> {
+pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Value, String> {
     let parsed: Args = serde_json::from_value(args)
         .map_err(|e| format!("mark_task_blocked: invalid args: {}", e))?;
 

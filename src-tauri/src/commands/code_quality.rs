@@ -724,6 +724,7 @@ pub async fn code_quality_ai_explain(
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -864,10 +865,8 @@ pub async fn code_quality_ai_summarize(
         })
         .collect();
 
-    let user_turn = crate::core::code_quality_ai_prompts::summarize_run_user_turn(
-        &project_name,
-        &check_inputs,
-    );
+    let user_turn =
+        crate::core::code_quality_ai_prompts::summarize_run_user_turn(&project_name, &check_inputs);
 
     let manager = std::sync::Arc::clone(&*sidecar);
     let session_id = session_id_override
@@ -891,6 +890,7 @@ pub async fn code_quality_ai_summarize(
             Some(false),
             serde_json::Value::Null,
             serde_json::Value::Null,
+            None,
             None,
             None,
             None,
@@ -1094,8 +1094,7 @@ mod tests {
 
     #[test]
     fn read_file_context_handles_missing_file_gracefully() {
-        let (window, truncated, original) =
-            read_file_context("/__does_not_exist__/x.ts", 10, 30);
+        let (window, truncated, original) = read_file_context("/__does_not_exist__/x.ts", 10, 30);
         assert_eq!(window, "");
         assert!(!truncated);
         assert_eq!(original, 0);

@@ -282,21 +282,13 @@ pub fn wake_user_message(
 ) -> String {
     match trigger {
         WakeTrigger::Decomposition => render_decomposition(mission_snapshot),
-        WakeTrigger::TaskCompleted(task_id) => {
-            render_task_completed(task_id, mission_snapshot)
-        }
+        WakeTrigger::TaskCompleted(task_id) => render_task_completed(task_id, mission_snapshot),
         WakeTrigger::TaskFailed(task_id) => {
             render_task_failed(task_id, journal_tail, mission_snapshot)
         }
-        WakeTrigger::ApprovalGateReached(reason) => {
-            render_approval_gate(reason, mission_snapshot)
-        }
-        WakeTrigger::CollisionDetected(task_ids) => {
-            render_collision(task_ids, mission_snapshot)
-        }
-        WakeTrigger::UserMessageInJournal(text) => {
-            render_user_message(text, mission_snapshot)
-        }
+        WakeTrigger::ApprovalGateReached(reason) => render_approval_gate(reason, mission_snapshot),
+        WakeTrigger::CollisionDetected(task_ids) => render_collision(task_ids, mission_snapshot),
+        WakeTrigger::UserMessageInJournal(text) => render_user_message(text, mission_snapshot),
         WakeTrigger::QuotaExhausted => render_quota_exhausted(),
     }
 }
@@ -307,12 +299,10 @@ pub fn wake_user_message(
 
 fn render_decomposition(snapshot: &Value) -> String {
     let title = str_field(snapshot, "title").unwrap_or_else(|| "(not set)".to_string());
-    let objective =
-        str_field(snapshot, "objective").unwrap_or_else(|| "(not set)".to_string());
+    let objective = str_field(snapshot, "objective").unwrap_or_else(|| "(not set)".to_string());
     let project_path =
         str_field(snapshot, "projectPath").unwrap_or_else(|| "(not set)".to_string());
-    let workspace_id =
-        str_field(snapshot, "workspaceId").unwrap_or_else(|| "(local)".to_string());
+    let workspace_id = str_field(snapshot, "workspaceId").unwrap_or_else(|| "(local)".to_string());
 
     let milestones = milestones_array(snapshot);
     let milestone_count = milestones.map(|m| m.len()).unwrap_or(0);
@@ -511,9 +501,7 @@ fn render_task_failed(task_id: &str, journal_tail: &str, snapshot: &Value) -> St
     let exempt = task
         .and_then(|t| t.get("replanExempt").or_else(|| t.get("replan_exempt")))
         .and_then(|v| v.as_bool())
-        .unwrap_or_else(|| {
-            matches!(category.as_str(), "rate_limit" | "network" | "timeout")
-        });
+        .unwrap_or_else(|| matches!(category.as_str(), "rate_limit" | "network" | "timeout"));
 
     let category_block = if exempt {
         format!(
@@ -808,10 +796,7 @@ fn collect_pending_tasks(snapshot: &Value, exclude_task_id: &str) -> Vec<(String
                         .get("id")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
-                    let status = task
-                        .get("status")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let status = task.get("status").and_then(|v| v.as_str()).unwrap_or("");
                     let id = match id {
                         Some(i) if i != exclude_task_id => i,
                         _ => continue,
@@ -958,10 +943,7 @@ mod tests {
                 && msg.contains("request_user_approval"),
             "should mention all three failure-handling tools"
         );
-        assert!(
-            msg.contains("/3"),
-            "should mention replan cap of 3"
-        );
+        assert!(msg.contains("/3"), "should mention replan cap of 3");
     }
 
     #[test]
@@ -1338,8 +1320,14 @@ mod tests {
             &snapshot,
         );
         assert!(msg.contains("task-1"), "should mention completed task id");
-        assert!(msg.contains("First task"), "should mention completed task title");
-        assert!(msg.contains("Wrote three files."), "should mention result summary");
+        assert!(
+            msg.contains("First task"),
+            "should mention completed task title"
+        );
+        assert!(
+            msg.contains("Wrote three files."),
+            "should mention result summary"
+        );
         assert!(
             msg.contains("a.rs") && msg.contains("b.rs"),
             "should mention files changed"
@@ -1408,8 +1396,7 @@ mod tests {
             msg
         );
         assert!(
-            msg.contains("free-form user message")
-                || msg.contains("resolution of approval"),
+            msg.contains("free-form user message") || msg.contains("resolution of approval"),
             "should include a context line"
         );
     }
@@ -1432,10 +1419,7 @@ mod tests {
             "should label approval-resolution context; got: {}",
             msg
         );
-        assert!(
-            msg.contains("Option B"),
-            "should include the user's choice"
-        );
+        assert!(msg.contains("Option B"), "should include the user's choice");
     }
 
     #[test]
@@ -1459,10 +1443,7 @@ mod tests {
             ]
         });
         let msg = wake_user_message(
-            &WakeTrigger::CollisionDetected(vec![
-                "task-a".to_string(),
-                "task-b".to_string(),
-            ]),
+            &WakeTrigger::CollisionDetected(vec!["task-a".to_string(), "task-b".to_string()]),
             "",
             &snapshot,
         );
@@ -1481,8 +1462,7 @@ mod tests {
     fn wake_user_message_for_quota_exhausted_tells_planner_to_stop() {
         let msg = wake_user_message(&WakeTrigger::QuotaExhausted, "", &json!({}));
         assert!(
-            msg.to_lowercase().contains("rate-limit")
-                || msg.to_lowercase().contains("rate limit"),
+            msg.to_lowercase().contains("rate-limit") || msg.to_lowercase().contains("rate limit"),
             "quota body should mention the rate limit"
         );
         assert!(
@@ -1504,7 +1484,11 @@ mod tests {
             WakeTrigger::QuotaExhausted,
         ] {
             let msg = wake_user_message(&trigger, "", &json!({}));
-            assert!(!msg.is_empty(), "body should never be empty for {:?}", trigger);
+            assert!(
+                !msg.is_empty(),
+                "body should never be empty for {:?}",
+                trigger
+            );
         }
     }
 }
@@ -1536,11 +1520,7 @@ mod e4_content_tests {
             "request_user_approval",
             "complete_mission",
         ] {
-            assert!(
-                p.contains(tool),
-                "system prompt missing tool '{}'",
-                tool
-            );
+            assert!(p.contains(tool), "system prompt missing tool '{}'", tool);
         }
     }
 
@@ -1602,9 +1582,8 @@ mod e4_content_tests {
         // The async-return rule for request_user_approval is critical —
         // if the model thinks it should block on the answer, the whole
         // approval gate breaks.
-        let has_async_marker = p.contains("async")
-            || p.contains("immediate")
-            || p.contains("pending_approval");
+        let has_async_marker =
+            p.contains("async") || p.contains("immediate") || p.contains("pending_approval");
         let has_dont_block = p.contains("don't block")
             || p.contains("do not block")
             || p.contains("doesn't block")
@@ -1645,9 +1624,8 @@ mod e4_content_tests {
     fn system_prompt_marks_complete_mission_as_terminal() {
         let p = spec_mode_system_prompt().to_lowercase();
         let has_complete = p.contains("complete_mission");
-        let has_terminal_ish = p.contains("terminal")
-            || p.contains("only when all milestones")
-            || p.contains("final");
+        let has_terminal_ish =
+            p.contains("terminal") || p.contains("only when all milestones") || p.contains("final");
         assert!(
             has_complete && has_terminal_ish,
             "system prompt should mark complete_mission as terminal / final"

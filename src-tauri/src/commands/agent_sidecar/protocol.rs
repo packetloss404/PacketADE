@@ -5,6 +5,7 @@
 use serde_json::{json, Value};
 
 use super::supervisor::SidecarManager;
+use crate::core::execution::SshConfig;
 
 impl SidecarManager {
     /// Forward a start_session request to the sidecar.
@@ -40,7 +41,112 @@ impl SidecarManager {
         approve_writes: Option<bool>,
         mcp_kind: Option<String>,
         command_path: Option<String>,
+        workspace: Option<Value>,
     ) -> Result<(), String> {
+        self.forward_start_inner(
+            session_id,
+            provider,
+            model,
+            system_prompt,
+            allowed_tools,
+            mcp_servers,
+            project_path,
+            initial_message,
+            api_key,
+            resume,
+            thinking_enabled,
+            plan_mode,
+            attachments,
+            resume_messages,
+            permission_mode,
+            approve_writes,
+            mcp_kind,
+            command_path,
+            workspace,
+            None,
+        )
+        .await
+    }
+
+    /// Forward a start_session request through a dedicated SSH-backed
+    /// sidecar. Used when a sidecar provider targets a remote workspace.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn forward_start_ssh(
+        &self,
+        session_id: String,
+        provider: String,
+        model: String,
+        system_prompt: String,
+        allowed_tools: Vec<String>,
+        mcp_servers: Value,
+        project_path: String,
+        initial_message: String,
+        api_key: Option<String>,
+        resume: Option<String>,
+        thinking_enabled: Option<bool>,
+        plan_mode: Option<bool>,
+        attachments: Value,
+        resume_messages: Value,
+        permission_mode: Option<String>,
+        approve_writes: Option<bool>,
+        mcp_kind: Option<String>,
+        command_path: Option<String>,
+        workspace: Option<Value>,
+        ssh_config: SshConfig,
+    ) -> Result<(), String> {
+        self.forward_start_inner(
+            session_id,
+            provider,
+            model,
+            system_prompt,
+            allowed_tools,
+            mcp_servers,
+            project_path,
+            initial_message,
+            api_key,
+            resume,
+            thinking_enabled,
+            plan_mode,
+            attachments,
+            resume_messages,
+            permission_mode,
+            approve_writes,
+            mcp_kind,
+            command_path,
+            workspace,
+            Some(ssh_config),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn forward_start_inner(
+        &self,
+        session_id: String,
+        provider: String,
+        model: String,
+        system_prompt: String,
+        allowed_tools: Vec<String>,
+        mcp_servers: Value,
+        project_path: String,
+        initial_message: String,
+        api_key: Option<String>,
+        resume: Option<String>,
+        thinking_enabled: Option<bool>,
+        plan_mode: Option<bool>,
+        attachments: Value,
+        resume_messages: Value,
+        permission_mode: Option<String>,
+        approve_writes: Option<bool>,
+        mcp_kind: Option<String>,
+        command_path: Option<String>,
+        workspace: Option<Value>,
+        ssh_config: Option<SshConfig>,
+    ) -> Result<(), String> {
+        if let Some(config) = ssh_config.as_ref() {
+            self.spawn_remote_sidecar_for_session(&session_id, &provider, config)
+                .await?;
+        }
         {
             let mut sessions = self.owned_sessions.lock().await;
             sessions.insert(session_id.clone());
@@ -65,10 +171,17 @@ impl SidecarManager {
             "approveWrites": approve_writes,
             "mcpKind": mcp_kind,
             "commandPath": command_path,
+            "workspace": workspace.unwrap_or_else(|| {
+                json!({
+                    "kind": "local",
+                    "projectPath": project_path,
+                })
+            }),
         });
-        let result = self.send_json(req).await;
+        let result = self.send_json_for_session(&session_id, req).await;
         if result.is_err() {
             self.forget_owned_session(&session_id).await;
+            self.close_remote_session(&session_id).await;
         }
         result
     }
@@ -117,7 +230,7 @@ impl SidecarManager {
             "trigger": trigger,
             "maxOutputTokens": max_output_tokens,
         });
-        self.send_json(req).await
+        self.send_json_for_session(session_id, req).await
     }
 
     /// Forward a `planner_tool_result` envelope to the sidecar (v5).
@@ -149,7 +262,7 @@ impl SidecarManager {
             "result": result,
             "error": error,
         });
-        self.send_json(req).await
+        self.send_json_for_session(session_id, req).await
     }
 
     /// Forward a send_message request for an existing sidecar session.
@@ -165,9 +278,10 @@ impl SidecarManager {
             "content": content,
             "attachments": attachments,
         });
-        let result = self.send_json(req).await;
+        let result = self.send_json_for_session(&session_id, req).await;
         if result.is_err() {
             self.forget_owned_session(&session_id).await;
+            self.close_remote_session(&session_id).await;
         }
         result
     }
@@ -185,7 +299,7 @@ impl SidecarManager {
             "toolUseId": tool_use_id,
             "decision": decision,
         });
-        self.send_json(req).await
+        self.send_json_for_session(&session_id, req).await
     }
 
     /// Forward a pending-edit approval/rejection to the sidecar. v3:
@@ -204,7 +318,7 @@ impl SidecarManager {
             "approved": approved,
             "mergedContent": merged_content,
         });
-        self.send_json(req).await
+        self.send_json_for_session(&session_id, req).await
     }
 
     /// Forward a permission-mode change to the sidecar. Slice C's routing layer
@@ -221,7 +335,7 @@ impl SidecarManager {
             "sessionId": session_id,
             "mode": mode,
         });
-        self.send_json(req).await
+        self.send_json_for_session(&session_id, req).await
     }
 
     /// Forward a model swap to the sidecar. Providers that can't hot-swap
@@ -232,7 +346,7 @@ impl SidecarManager {
             "sessionId": session_id,
             "model": model,
         });
-        self.send_json(req).await
+        self.send_json_for_session(&session_id, req).await
     }
 
     /// Forward a retry / regenerate-last-turn request to the sidecar.
@@ -241,7 +355,7 @@ impl SidecarManager {
             "type": "retry",
             "sessionId": session_id,
         });
-        self.send_json(req).await
+        self.send_json_for_session(&session_id, req).await
     }
 
     /// Forward a cancel request to the sidecar. Does not remove the session
@@ -252,7 +366,7 @@ impl SidecarManager {
             "type": "cancel",
             "sessionId": session_id,
         });
-        self.send_json(req).await
+        self.send_json_for_session(&session_id, req).await
     }
 
     /// F8: drain any parked permission/edit prompts as denied without
@@ -263,7 +377,7 @@ impl SidecarManager {
             "type": "cancel_pending_tools",
             "sessionId": session_id,
         });
-        self.send_json(req).await
+        self.send_json_for_session(&session_id, req).await
     }
 
     /// Forward a close request and remove from owned sessions.
@@ -272,8 +386,9 @@ impl SidecarManager {
             "type": "close_session",
             "sessionId": session_id,
         });
-        let result = self.send_json(req).await;
+        let result = self.send_json_for_session(&session_id, req).await;
         self.forget_owned_session(&session_id).await;
+        self.close_remote_session(&session_id).await;
         result
     }
 }
