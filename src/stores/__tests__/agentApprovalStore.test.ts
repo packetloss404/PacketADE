@@ -243,4 +243,20 @@ describe("agentApprovalStore", () => {
     expect(result.permissions).toEqual([perm]);
     expect(result.edits).toEqual([edit]);
   });
+
+  it("getPendingForConversation reuses stable empty queue references", async () => {
+    const {
+      EMPTY_PENDING_EDITS,
+      EMPTY_PENDING_PERMISSIONS,
+      useAgentApprovalStore,
+    } = await import("@/stores/agentApprovalStore");
+
+    const first = useAgentApprovalStore.getState().getPendingForConversation("missing-conv");
+    const second = useAgentApprovalStore.getState().getPendingForConversation("missing-conv");
+
+    expect(first.permissions).toBe(EMPTY_PENDING_PERMISSIONS);
+    expect(first.edits).toBe(EMPTY_PENDING_EDITS);
+    expect(second.permissions).toBe(first.permissions);
+    expect(second.edits).toBe(first.edits);
+  });
 });
