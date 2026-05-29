@@ -1,10 +1,18 @@
 import { create } from "zustand";
 import { generateId as genId } from "@/lib/storage";
 import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
-import type { Flight, FlightStatus, Milestone, Task, TaskHandoff, CoordinationEvent } from "@/types/flight";
+import type {
+  Flight,
+  FlightStatus,
+  Milestone,
+  Task,
+  TaskHandoff,
+  CoordinationEvent,
+} from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
 import { useRoutingStore } from "@/stores/routingStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { claimedPathsOverlap } from "@/lib/pathCollisions";
 
 type FlightState = {
   flights: Flight[];
@@ -127,7 +135,12 @@ interface FlightStore {
   addTask: (
     flightId: string,
     milestoneId: string,
-    task: Pick<Task, "title" | "description" | "type" | "dependsOn"> & { agentConfigId?: string; model?: string; role?: Task["role"]; ownedPaths?: string[] },
+    task: Pick<Task, "title" | "description" | "type" | "dependsOn"> & {
+      agentConfigId?: string;
+      model?: string;
+      role?: Task["role"];
+      ownedPaths?: string[];
+    },
   ) => string;
   updateTask: (
     flightId: string,
@@ -138,7 +151,12 @@ interface FlightStore {
   deleteTask: (flightId: string, milestoneId: string, taskId: string) => void;
 
   // Handoff & blocked
-  appendHandoff: (flightId: string, milestoneId: string, taskId: string, handoff: TaskHandoff) => void;
+  appendHandoff: (
+    flightId: string,
+    milestoneId: string,
+    taskId: string,
+    handoff: TaskHandoff,
+  ) => void;
   setTaskBlocked: (flightId: string, milestoneId: string, taskId: string, reason: string) => void;
 
   // Session linking
@@ -165,7 +183,10 @@ interface FlightStore {
   checkFileCollisions: (flightId: string, milestoneId: string, taskId: string) => string[];
 
   // Coordination log
-  addCoordinationEvent: (flightId: string, event: Omit<CoordinationEvent, "id" | "timestamp">) => void;
+  addCoordinationEvent: (
+    flightId: string,
+    event: Omit<CoordinationEvent, "id" | "timestamp">,
+  ) => void;
   getCoordinationLog: (flightId: string) => CoordinationEvent[];
 
   // Computed status
@@ -180,7 +201,9 @@ interface FlightStore {
    * pick up approval prompts from API agents, not just PTY-orchestrated ones.
    * Returns null for free-standing chats (no bound task).
    */
-  findTaskBySessionId: (sessionId: string) => { flight: Flight; milestone: Milestone; task: Task } | null;
+  findTaskBySessionId: (
+    sessionId: string,
+  ) => { flight: Flight; milestone: Milestone; task: Task } | null;
   hydrateFromBackend: (persisted?: Awaited<ReturnType<typeof loadPersistedState>>) => Promise<void>;
   reconcileLiveSessions: (liveSessionIds: string[]) => void;
 }
@@ -381,7 +404,10 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
 
     // Auto-create coordination events on task status transitions
     if (prevTask && updates.status && updates.status !== prevTask.status) {
-      const statusEventMap: Record<string, { type: CoordinationEvent["type"]; verb: string } | undefined> = {
+      const statusEventMap: Record<
+        string,
+        { type: CoordinationEvent["type"]; verb: string } | undefined
+      > = {
         running: { type: "task_started", verb: "started" },
         done: { type: "task_completed", verb: "completed" },
         failed: { type: "task_failed", verb: "failed" },
@@ -430,7 +456,16 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             return {
               ...t,
               handoffLog,
-              result: { ...(t.result ?? { exitCode: null, summary: "", filesChanged: [], errors: [], duration: 0 }), handoff },
+              result: {
+                ...(t.result ?? {
+                  exitCode: null,
+                  summary: "",
+                  filesChanged: [],
+                  errors: [],
+                  duration: 0,
+                }),
+                handoff,
+              },
             };
           });
           return { ...m, tasks };
@@ -576,11 +611,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     const conflicts: string[] = [];
     for (const other of activeTasks) {
       for (const path of thisTask.ownedPaths) {
-        if (
-          other.ownedPaths!.some(
-            (op) => op === path || path.startsWith(op + "/") || op.startsWith(path + "/"),
-          )
-        ) {
+        if (other.ownedPaths!.some((op) => claimedPathsOverlap(op, path))) {
           conflicts.push(`${path} (owned by "${other.title}")`);
         }
       }

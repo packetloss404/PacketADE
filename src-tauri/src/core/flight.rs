@@ -272,6 +272,10 @@ pub struct Task {
     pub completed_at: Option<u64>,
     pub cost: f64,
     pub tokens: u64,
+    /// File/path claims used by Mission Planner collision gates. Paths are
+    /// usually repo-relative and optional for legacy/manual tasks.
+    #[serde(default)]
+    pub owned_paths: Vec<String>,
     /// Number of times the planner has called `replan_after_failure` for
     /// this task. RateLimit/Network failures (per E5) do NOT increment.
     /// Mirrored from `MissionPlannerSession.replans_per_task` whenever
@@ -544,6 +548,7 @@ mod tests {
             completed_at: None,
             cost: 0.0,
             tokens: 0,
+            owned_paths: Vec::new(),
             replan_count: 0,
         }
     }

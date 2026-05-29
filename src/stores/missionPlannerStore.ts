@@ -25,13 +25,7 @@ import { useFlightStore } from "@/stores/flightStore";
 // no localStorage persistence (cold-start spec flips active planners to
 // `paused` and requires user resume).
 
-export type PlannerStatus =
-  | "idle"
-  | "awake"
-  | "paused"
-  | "quota_paused"
-  | "completed"
-  | "failed";
+export type PlannerStatus = "idle" | "awake" | "paused" | "quota_paused" | "completed" | "failed";
 
 export interface PlannerTranscriptEntry {
   role: "user" | "assistant" | "system";
@@ -109,11 +103,7 @@ interface MissionPlannerStore {
   stopPlanner(missionId: string): Promise<void>;
   pausePlanner(missionId: string): Promise<void>;
   resumePlanner(missionId: string): Promise<void>;
-  injectTurn(
-    missionId: string,
-    content: string,
-    source: "user" | "wake_trigger",
-  ): Promise<void>;
+  injectTurn(missionId: string, content: string, source: "user" | "wake_trigger"): Promise<void>;
   /**
    * E3-LAUNCH — transition a mission from `spec` to `planning`, then poke
    * the planner with the `[LAUNCH]` sentinel so it begins decomposition.
@@ -128,11 +118,13 @@ interface MissionPlannerStore {
    * approval from local state on success. On failure the approval stays
    * pending so the user can retry; the error is rethrown.
    */
-  resolveApproval(
-    missionId: string,
-    approvalId: string,
-    choice: string,
-  ): Promise<void>;
+  resolveApproval(missionId: string, approvalId: string, choice: string): Promise<void>;
+  /**
+   * E2 continuity — hydrate unresolved approvals from persisted state without
+   * requiring a live planner runtime. Used by the Mission detail approval gate
+   * after cold start / view remount.
+   */
+  hydratePendingApprovals(missionId: string): Promise<void>;
   /** Returns pending approvals for `missionId`, sorted oldest-first. */
   getPendingApprovals(missionId: string): MissionApprovalRequest[];
 }
@@ -171,12 +163,40 @@ function appendTranscript(
   return next;
 }
 
+function mergePendingApprovals(
+  pendingApprovals: Map<string, MissionApprovalRequest[]>,
+  missionId: string,
+  approvals: MissionApprovalRequest[],
+  preserveExistingMissing: boolean,
+): Map<string, MissionApprovalRequest[]> {
+  const updated = new Map(pendingApprovals);
+  const current = updated.get(missionId) ?? [];
+  const byId = new Map<string, MissionApprovalRequest>();
+
+  for (const approval of approvals) {
+    byId.set(approval.id, approval);
+  }
+  if (preserveExistingMissing) {
+    for (const approval of current) {
+      if (!byId.has(approval.id)) {
+        byId.set(approval.id, approval);
+      }
+    }
+  }
+
+  const merged = [...byId.values()].sort((a, b) => a.awaitingSince - b.awaitingSince);
+  if (merged.length === 0) {
+    updated.delete(missionId);
+  } else {
+    updated.set(missionId, merged);
+  }
+  return updated;
+}
+
 async function installListeners(
   missionId: string,
   plannerSessionId: string,
-  set: (
-    updater: (state: MissionPlannerStore) => Partial<MissionPlannerStore>,
-  ) => void,
+  set: (updater: (state: MissionPlannerStore) => Partial<MissionPlannerStore>) => void,
 ): Promise<void> {
   const existing = listenerCleanup.get(missionId);
   if (existing) {
@@ -184,46 +204,40 @@ async function installListeners(
     listenerCleanup.delete(missionId);
   }
 
-  const chunkUnlisten = await listen<string>(
-    apiAgentChunkEvent(plannerSessionId),
-    (event) => {
-      set((s) => {
-        const current = s.runtimes.get(missionId);
-        if (!current) return {};
-        const transcript = current.transcript.slice();
-        const last = transcript[transcript.length - 1];
-        if (last && last.role === "assistant" && current.isStreaming) {
-          transcript[transcript.length - 1] = {
-            ...last,
-            content: last.content + event.payload,
-          };
-        } else {
-          transcript.push({
-            role: "assistant",
-            content: event.payload,
-            ts: Date.now(),
-          });
-        }
-        const runtimes = new Map(s.runtimes);
-        runtimes.set(missionId, {
-          ...current,
-          transcript,
-          isStreaming: true,
-          status: current.status === "idle" ? "awake" : current.status,
+  const chunkUnlisten = await listen<string>(apiAgentChunkEvent(plannerSessionId), (event) => {
+    set((s) => {
+      const current = s.runtimes.get(missionId);
+      if (!current) return {};
+      const transcript = current.transcript.slice();
+      const last = transcript[transcript.length - 1];
+      if (last && last.role === "assistant" && current.isStreaming) {
+        transcript[transcript.length - 1] = {
+          ...last,
+          content: last.content + event.payload,
+        };
+      } else {
+        transcript.push({
+          role: "assistant",
+          content: event.payload,
+          ts: Date.now(),
         });
-        return { runtimes };
+      }
+      const runtimes = new Map(s.runtimes);
+      runtimes.set(missionId, {
+        ...current,
+        transcript,
+        isStreaming: true,
+        status: current.status === "idle" ? "awake" : current.status,
       });
-    },
-  );
+      return { runtimes };
+    });
+  });
 
-  const doneUnlisten = await listen<unknown>(
-    apiAgentDoneEvent(plannerSessionId),
-    () => {
-      set((s) => ({
-        runtimes: patchRuntime(s.runtimes, missionId, { isStreaming: false }),
-      }));
-    },
-  );
+  const doneUnlisten = await listen<unknown>(apiAgentDoneEvent(plannerSessionId), () => {
+    set((s) => ({
+      runtimes: patchRuntime(s.runtimes, missionId, { isStreaming: false }),
+    }));
+  });
 
   const toolStartUnlisten = await listen<{ id: string; name: string; input?: unknown }>(
     apiAgentToolStartEvent(plannerSessionId),
@@ -248,13 +262,8 @@ async function installListeners(
         runtimes.set(missionId, {
           ...current,
           lastToolCall: { tool: toolName, args, ts },
-          awaitingLaunchKickoff: wasAwaitingKickoff
-            ? false
-            : current.awaitingLaunchKickoff,
-          transcript: [
-            ...current.transcript,
-            { role: "system", content: `tool: ${toolName}`, ts },
-          ],
+          awaitingLaunchKickoff: wasAwaitingKickoff ? false : current.awaitingLaunchKickoff,
+          transcript: [...current.transcript, { role: "system", content: `tool: ${toolName}`, ts }],
         });
         return { runtimes };
       });
@@ -353,15 +362,9 @@ async function installListeners(
         isStreaming: false,
       }),
     }));
-    const flight = useFlightStore
-      .getState()
-      .flights.find((f) => f.id === missionId);
+    const flight = useFlightStore.getState().flights.find((f) => f.id === missionId);
     const missionTitle = flight?.title ?? "Mission";
-    void notifyMissionPlannerRateLimited(
-      missionId,
-      missionTitle,
-      waitSeconds,
-    );
+    void notifyMissionPlannerRateLimited(missionId, missionTitle, waitSeconds);
   });
 
   // FIX 3 — generic status-changed event emitted by
@@ -414,23 +417,20 @@ async function installListeners(
   ] as const;
   const flightEventUnlistens: UnlistenFn[] = [];
   for (const kind of flightEventKinds) {
-    const unlisten = await listen(
-      `mission-planner:${kind}:${missionId}`,
-      () => {
-        // Best-effort re-read; surface failures to the console so we can
-        // diagnose schema-drift issues without crashing the planner UI.
-        void useFlightStore
-          .getState()
-          .hydrateFromBackend()
-          .catch((err) => {
-            console.warn(
-              `Failed to hydrate flightStore after mission-planner:${kind}`,
-              missionId,
-              err,
-            );
-          });
-      },
-    );
+    const unlisten = await listen(`mission-planner:${kind}:${missionId}`, () => {
+      // Best-effort re-read; surface failures to the console so we can
+      // diagnose schema-drift issues without crashing the planner UI.
+      void useFlightStore
+        .getState()
+        .hydrateFromBackend()
+        .catch((err) => {
+          console.warn(
+            `Failed to hydrate flightStore after mission-planner:${kind}`,
+            missionId,
+            err,
+          );
+        });
+    });
     flightEventUnlistens.push(unlisten);
   }
 
@@ -565,21 +565,13 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
         // resolving and this hydration call returning, and replacing the
         // map outright would drop those entries on the floor.
         set((s) => {
-          const updated = new Map(s.pendingApprovals);
-          const current = updated.get(missionId) ?? [];
-          const currentNotInExisting = current.filter(
-            (c) => !existing.some((e) => e.id === c.id),
-          );
-          updated.set(missionId, [...existing, ...currentNotInExisting]);
-          return { pendingApprovals: updated };
+          return {
+            pendingApprovals: mergePendingApprovals(s.pendingApprovals, missionId, existing, true),
+          };
         });
       }
     } catch (err) {
-      console.warn(
-        "Failed to hydrate pending approvals for mission",
-        missionId,
-        err,
-      );
+      console.warn("Failed to hydrate pending approvals for mission", missionId, err);
     }
 
     return plannerSessionId;
@@ -754,6 +746,13 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
       }
       throw err;
     }
+  },
+
+  hydratePendingApprovals: async (missionId) => {
+    const existing = await invokeGetMissionApprovals(missionId);
+    set((s) => ({
+      pendingApprovals: mergePendingApprovals(s.pendingApprovals, missionId, existing, false),
+    }));
   },
 
   getPendingApprovals: (missionId) => {

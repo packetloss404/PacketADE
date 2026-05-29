@@ -1,10 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import {
-  useMissionPlannerStore,
-  type MissionApprovalRequest,
-} from "@/stores/missionPlannerStore";
+import { useMissionPlannerStore, type MissionApprovalRequest } from "@/stores/missionPlannerStore";
 import { relativeTime } from "@/lib/time";
 
 interface PlannerApprovalGateProps {
@@ -27,7 +24,14 @@ interface PlannerApprovalGateProps {
  */
 export function PlannerApprovalGate({ missionId }: PlannerApprovalGateProps) {
   const approvals = useMissionPlannerStore((s) => s.pendingApprovals.get(missionId));
+  const hydratePendingApprovals = useMissionPlannerStore((s) => s.hydratePendingApprovals);
   const resolveApproval = useMissionPlannerStore((s) => s.resolveApproval);
+
+  useEffect(() => {
+    void hydratePendingApprovals(missionId).catch((err) => {
+      console.warn("Failed to hydrate mission planner approvals", missionId, err);
+    });
+  }, [hydratePendingApprovals, missionId]);
 
   const oldest = useMemo<MissionApprovalRequest | null>(() => {
     if (!approvals || approvals.length === 0) return null;
@@ -77,24 +81,19 @@ function ApprovalCard({ approval, queued, onResolve }: ApprovalCardProps) {
   }
 
   return (
-    <div className="flex flex-col gap-2 px-3 py-2.5 bg-accent-amber/10 border border-accent-amber/30 rounded">
+    <div className="bg-accent-amber/10 border-accent-amber/30 flex flex-col gap-2 rounded border px-3 py-2.5">
       <div className="flex items-start gap-2">
-        <AlertTriangle
-          size={14}
-          className="text-accent-amber shrink-0 mt-0.5"
-        />
-        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
+        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-accent-amber" />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-amber">
               Planner needs you
             </span>
-            <span className="text-[10px] text-text-muted font-mono">
+            <span className="font-mono text-[10px] text-text-muted">
               asked {relativeTime(approval.awaitingSince)}
             </span>
             {queued > 0 && (
-              <span className="text-[10px] text-text-muted">
-                · {queued} more queued
-              </span>
+              <span className="text-[10px] text-text-muted">· {queued} more queued</span>
             )}
           </div>
           <div className="text-xs text-text-primary">
@@ -105,7 +104,7 @@ function ApprovalCard({ approval, queued, onResolve }: ApprovalCardProps) {
           type="button"
           onClick={() => void handleResolve("dismissed")}
           disabled={busy}
-          className="p-1 text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="shrink-0 rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
           title="Dismiss (planner proceeds with default)"
         >
           <X size={12} />
@@ -120,7 +119,7 @@ function ApprovalCard({ approval, queued, onResolve }: ApprovalCardProps) {
               type="button"
               onClick={() => void handleResolve(opt)}
               disabled={busy}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-accent-green bg-accent-soft border border-accent-line rounded hover:bg-accent-green/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="hover:bg-accent-green/20 inline-flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-2 py-1 text-[11px] font-medium text-accent-green transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy && <Loader2 size={12} className="animate-spin" />}
               {opt}
@@ -147,12 +146,12 @@ function ApprovalCard({ approval, queued, onResolve }: ApprovalCardProps) {
               onChange={(e) => setFreeText(e.target.value)}
               placeholder="Type your answer, or press Acknowledge…"
               disabled={busy}
-              className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-faint outline-none focus:border-accent-line disabled:opacity-50"
+              className="flex-1 rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11px] text-text-primary outline-none placeholder:text-text-faint focus:border-accent-line disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={busy}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-accent-green bg-accent-soft border border-accent-line rounded hover:bg-accent-green/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="hover:bg-accent-green/20 inline-flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-2 py-1 text-[11px] font-medium text-accent-green transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy && <Loader2 size={12} className="animate-spin" />}
               {freeText.trim() ? "Send" : "Acknowledge"}
@@ -161,9 +160,7 @@ function ApprovalCard({ approval, queued, onResolve }: ApprovalCardProps) {
         </div>
       )}
 
-      {error && (
-        <div className="pl-[22px] text-[10px] text-accent-red">{error}</div>
-      )}
+      {error && <div className="pl-[22px] text-[10px] text-accent-red">{error}</div>}
     </div>
   );
 }

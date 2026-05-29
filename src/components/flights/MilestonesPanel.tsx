@@ -1,8 +1,16 @@
 import { useMemo, useState } from "react";
-import { ListChecks, AlertTriangle, ChevronDown, ChevronRight, FileText, ArrowRight } from "lucide-react";
+import {
+  ListChecks,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  ArrowRight,
+} from "lucide-react";
 import type { Flight, Milestone, Task, TaskHandoff } from "@/types/flight";
 import { TASK_ROLE_CONFIG } from "@/lib/flight-colors";
 import { useFlightStore } from "@/stores/flightStore";
+import { claimedPathsOverlap } from "@/lib/pathCollisions";
 
 interface MilestonesPanelProps {
   flight: Flight;
@@ -10,17 +18,17 @@ interface MilestonesPanelProps {
 
 export function MilestonesPanel({ flight }: MilestonesPanelProps) {
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-bg-border bg-bg-secondary">
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2 border-b border-bg-border bg-bg-secondary px-3 py-2">
         <ListChecks size={12} className="text-accent-green" />
-        <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
           Milestones
         </span>
         <span className="text-[10px] text-text-muted">({flight.milestones.length})</span>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {flight.milestones.length === 0 ? (
-          <p className="text-[10px] text-text-muted py-1">No milestones defined yet.</p>
+          <p className="py-1 text-[10px] text-text-muted">No milestones defined yet.</p>
         ) : (
           <div className="space-y-2">
             {flight.milestones.map((m) => (
@@ -44,16 +52,16 @@ function MilestoneItem({ milestone }: { milestone: Milestone }) {
   const doneCount = milestone.tasks.filter((t) => t.status === "done").length;
 
   return (
-    <div className="border border-bg-border rounded bg-bg-elevated">
-      <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-bg-border">
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor}`} />
-        <span className="text-xs text-text-primary flex-1 truncate">{milestone.title}</span>
+    <div className="rounded border border-bg-border bg-bg-elevated">
+      <div className="flex items-center gap-2 border-b border-bg-border px-2.5 py-1.5">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusColor}`} />
+        <span className="flex-1 truncate text-xs text-text-primary">{milestone.title}</span>
         <span className="text-[10px] text-text-muted">
           {doneCount}/{milestone.tasks.length}
         </span>
       </div>
       {milestone.tasks.length === 0 ? (
-        <p className="text-[10px] text-text-muted px-2.5 py-1.5">No tasks.</p>
+        <p className="px-2.5 py-1.5 text-[10px] text-text-muted">No tasks.</p>
       ) : (
         <div className="divide-y divide-bg-border">
           {milestone.tasks.map((t) => (
@@ -101,11 +109,7 @@ function TaskRow({ task }: { task: Task }) {
     const conflicts: string[] = [];
     for (const other of activeTasks) {
       for (const path of thisTask.ownedPaths) {
-        if (
-          other.ownedPaths!.some(
-            (op) => op === path || path.startsWith(op + "/") || op.startsWith(path + "/"),
-          )
-        ) {
+        if (other.ownedPaths!.some((op) => claimedPathsOverlap(op, path))) {
           conflicts.push(`${path} (owned by "${other.title}")`);
         }
       }
@@ -117,41 +121,49 @@ function TaskRow({ task }: { task: Task }) {
   return (
     <div className="px-2.5 py-1">
       <div className="flex items-center gap-2">
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[task.status] ?? "bg-text-muted"}`} />
-        <span className="text-[11px] text-text-secondary truncate flex-1">{task.title}</span>
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusColor[task.status] ?? "bg-text-muted"}`}
+        />
+        <span className="flex-1 truncate text-[11px] text-text-secondary">{task.title}</span>
         {hasCollisions && (
           <span title={collisions.join("\n")}>
-            <AlertTriangle size={10} className="text-accent-red shrink-0" />
+            <AlertTriangle size={10} className="shrink-0 text-accent-red" />
           </span>
         )}
-        <span className={`text-[9px] px-1 py-0.5 rounded ${TASK_ROLE_CONFIG[task.role ?? "builder"].color} bg-current/10`}>
+        <span
+          className={`rounded px-1 py-0.5 text-[9px] ${TASK_ROLE_CONFIG[task.role ?? "builder"].color} bg-current/10`}
+        >
           {TASK_ROLE_CONFIG[task.role ?? "builder"].label}
         </span>
         <span className="text-[9px] text-text-muted">{task.agentConfigId}</span>
-        <span className="text-[10px] text-text-muted uppercase">{task.type}</span>
+        <span className="text-[10px] uppercase text-text-muted">{task.type}</span>
       </div>
 
       {hasCollisions && (
-        <div className="flex items-start gap-1.5 mt-1 ml-3.5 px-2 py-1 rounded bg-accent-red/10 border border-accent-red/30">
-          <AlertTriangle size={10} className="text-accent-red shrink-0 mt-0.5" />
+        <div className="bg-accent-red/10 border-accent-red/30 ml-3.5 mt-1 flex items-start gap-1.5 rounded border px-2 py-1">
+          <AlertTriangle size={10} className="mt-0.5 shrink-0 text-accent-red" />
           <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-accent-red font-medium">File ownership collision</span>
+            <span className="text-[10px] font-medium text-accent-red">
+              File ownership collision
+            </span>
             {collisions.map((c, i) => (
-              <span key={i} className="text-[9px] text-accent-red/80">{c}</span>
+              <span key={i} className="text-accent-red/80 text-[9px]">
+                {c}
+              </span>
             ))}
           </div>
         </div>
       )}
 
       {isBlocked && (
-        <div className="flex items-start gap-1.5 mt-1 ml-3.5 px-2 py-1 rounded bg-accent-amber/10 border border-accent-amber/30">
-          <AlertTriangle size={10} className="text-accent-amber shrink-0 mt-0.5" />
+        <div className="bg-accent-amber/10 border-accent-amber/30 ml-3.5 mt-1 flex items-start gap-1.5 rounded border px-2 py-1">
+          <AlertTriangle size={10} className="mt-0.5 shrink-0 text-accent-amber" />
           <span className="text-[10px] text-accent-amber">{task.blockedReason}</span>
         </div>
       )}
 
       {hasHandoffLog && (
-        <div className="mt-1 ml-3.5">
+        <div className="ml-3.5 mt-1">
           <button
             onClick={() => setHandoffExpanded(!handoffExpanded)}
             className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary"
@@ -174,9 +186,9 @@ function TaskRow({ task }: { task: Task }) {
 
 function HandoffEntry({ handoff, index }: { handoff: TaskHandoff; index: number }) {
   return (
-    <div className="border border-bg-border rounded bg-bg-secondary px-2 py-1.5">
-      <div className="flex items-center gap-1.5 mb-0.5">
-        <span className="text-[9px] text-text-muted font-mono">#{index + 1}</span>
+    <div className="rounded border border-bg-border bg-bg-secondary px-2 py-1.5">
+      <div className="mb-0.5 flex items-center gap-1.5">
+        <span className="font-mono text-[9px] text-text-muted">#{index + 1}</span>
         <span className="text-[10px] text-text-secondary">{handoff.summary}</span>
       </div>
       <div className="flex items-center gap-3 text-[9px] text-text-muted">

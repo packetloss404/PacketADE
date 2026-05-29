@@ -66,7 +66,7 @@ export type TaskDto = { id: string, milestoneId: string, flightId: string, title
  * `MissionPlannerRegistry::bump_replan_count`. Read by
  * `render_task_failed` for the budget header (`replanCount / 3`).
  */
-replanCount: number, };
+replanCount: number, ownedPaths?: Array<string>, };
 
 export type MilestoneDto = { id: string, flightId: string, title: string, description: string, order: number, status: MilestoneStatusDto, tasks: Array<TaskDto>, validationCriteria: Array<string>, };
 

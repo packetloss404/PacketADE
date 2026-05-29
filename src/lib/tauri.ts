@@ -752,6 +752,7 @@ export async function launchFlightAsync(
   flightId: string,
   prompt: string,
   targets: AttemptTargetSpec[],
+  options: { allowPathCollisions?: boolean } = {},
 ): Promise<Attempt[]> {
   const dtoTargets = targets.map((t) => {
     if (t.kind === "local") {
@@ -782,7 +783,12 @@ export async function launchFlightAsync(
   });
   const dtoAttempts = await invoke<PersistedStateDto["flights"][number]["attempts"]>(
     "launch_flight_async",
-    { flightId, prompt, targets: dtoTargets },
+    {
+      flightId,
+      prompt,
+      targets: dtoTargets,
+      allowPathCollisions: options.allowPathCollisions ?? false,
+    },
   );
   return dtoAttempts.map(fromDtoAttempt);
 }
@@ -1123,6 +1129,7 @@ function fromDtoTask(
     completedAt: task.completedAt,
     cost: task.cost,
     tokens: task.tokens,
+    ownedPaths: task.ownedPaths ?? [],
     // Mission Planner replan counter — surfaced from the DTO so renderers
     // can show `N / 3` budget headroom in the failure-wake body.
     replanCount: task.replanCount,
@@ -1168,6 +1175,7 @@ function toDtoTask(
     completedAt: task.completedAt,
     cost: task.cost,
     tokens: task.tokens,
+    ownedPaths: task.ownedPaths ?? [],
     // Mission Planner replan counter — mirrored from the registry on each
     // `bump_replan_count`. Default to 0 for legacy tasks that predate E5.
     replanCount: task.replanCount ?? 0,
@@ -2735,9 +2743,17 @@ export async function getMissionApprovals(missionId: string): Promise<MissionApp
   return invoke<MissionApprovalRequestDto[]>("get_mission_approvals", { missionId });
 }
 
+export interface MissionJournalRead {
+  markdown: string;
+  totalBytes: number;
+  returnedBytes: number;
+  truncated: boolean;
+}
+
 // E7 — mission journal read access. `getMissionJournal` returns the raw
-// markdown source for the mission's append-only journal (or an empty
-// string if no activity has been recorded yet). `getMissionJournalPath`
+// markdown source for compatibility with older consumers. `getMissionJournalTail`
+// is the JournalTab path: it returns a bounded latest slice plus byte metadata
+// so append events do not reload/render unbounded full files. `getMissionJournalPath`
 // returns the absolute path of the journal file on disk — used by the
 // JournalTab's Export button so the user can locate the file in any
 // markdown viewer.
@@ -2747,6 +2763,13 @@ export async function getMissionApprovals(missionId: string): Promise<MissionApp
 // component owns its own listener.
 export async function getMissionJournal(missionId: string): Promise<string> {
   return invoke<string>("get_mission_journal", { missionId });
+}
+
+export async function getMissionJournalTail(
+  missionId: string,
+  maxBytes?: number,
+): Promise<MissionJournalRead> {
+  return invoke<MissionJournalRead>("get_mission_journal_tail", { missionId, maxBytes });
 }
 
 export async function getMissionJournalPath(missionId: string): Promise<string> {

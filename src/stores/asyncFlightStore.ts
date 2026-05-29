@@ -16,6 +16,33 @@ import { useGitHubStore } from "@/stores/githubStore";
 import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
+import { claimedPathsOverlap, normalizeClaimedPath } from "@/lib/pathCollisions";
+
+export interface AsyncLaunchOptions {
+  allowPathCollisions?: boolean;
+}
+
+export type AsyncLaunchPathCollision =
+  | {
+      kind: "duplicate_target";
+      path: string;
+      message: string;
+    }
+  | {
+      kind: "active_attempt";
+      path: string;
+      message: string;
+      flightId: string;
+      attemptId: string;
+    }
+  | {
+      kind: "task_owned_path";
+      path: string;
+      message: string;
+      flightId: string;
+      taskId: string;
+      otherTaskId: string;
+    };
 
 interface AsyncFlightStore {
   /** Launch N parallel attempts on a Flight. Persists Attempts on the Flight. */
@@ -23,6 +50,7 @@ interface AsyncFlightStore {
     flightId: string,
     prompt: string,
     targets: AttemptTargetSpec[],
+    options?: AsyncLaunchOptions,
   ) => Promise<Attempt[]>;
 
   /** Cancel a single attempt: closes the API session, removes worktree, marks Cancelled. */
@@ -176,6 +204,181 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
 // duplicate draft PR. Holding the attempt id here from the moment we
 // decide to publish until the publish settles closes that window.
 const publishingAttempts = new Set<string>();
+const ACTIVE_ATTEMPT_STATUSES: ReadonlySet<AttemptStatus> = new Set([
+  "queued",
+  "provisioning",
+  "running",
+]);
+
+type ClaimRoot = {
+  scope: string;
+  path: string;
+  displayPath: string;
+  branch: string;
+  caseSensitive: boolean;
+};
+
+function targetClaimRoot(target: AttemptTargetSpec): ClaimRoot | null {
+  const caseSensitive = target.kind === "ssh";
+  const path = normalizeClaimedPath(target.basePath, { caseSensitive });
+  if (!path) return null;
+  const branch = target.baseBranch.trim().toLowerCase() || "main";
+  if (target.kind === "local") {
+    return {
+      scope: "local",
+      path,
+      displayPath: target.basePath,
+      branch,
+      caseSensitive,
+    };
+  }
+  return {
+    scope: `ssh:${target.targetId || `${target.user}@${target.host}:${target.port}`}`,
+    path,
+    displayPath: `${target.targetId || target.host}:${target.basePath}`,
+    branch,
+    caseSensitive,
+  };
+}
+
+function attemptClaimRoot(attempt: Attempt): ClaimRoot | null {
+  const caseSensitive = attempt.target.kind === "ssh";
+  const path = normalizeClaimedPath(attempt.target.basePath, { caseSensitive });
+  if (!path) return null;
+  const branch = attempt.baseBranch.trim().toLowerCase() || "main";
+  if (attempt.target.kind === "local") {
+    return {
+      scope: "local",
+      path,
+      displayPath: attempt.target.basePath,
+      branch,
+      caseSensitive,
+    };
+  }
+  return {
+    scope: `ssh:${attempt.target.targetId}`,
+    path,
+    displayPath: `${attempt.target.targetId}:${attempt.target.basePath}`,
+    branch,
+    caseSensitive,
+  };
+}
+
+function claimRootsOverlap(left: ClaimRoot, right: ClaimRoot): boolean {
+  return (
+    left.scope === right.scope &&
+    left.branch === right.branch &&
+    claimedPathsOverlap(left.path, right.path, {
+      caseSensitive: left.caseSensitive || right.caseSensitive,
+    })
+  );
+}
+
+function getFlightTasks(flight: Flight) {
+  return flight.milestones.flatMap((milestone) => milestone.tasks);
+}
+
+export function findAsyncLaunchPathCollisions(
+  flightId: string | null,
+  targets: AttemptTargetSpec[],
+  flights = useFlightStore.getState().flights,
+): AsyncLaunchPathCollision[] {
+  const collisions: AsyncLaunchPathCollision[] = [];
+  const targetRoots = targets
+    .map((target, index) => ({ index, root: targetClaimRoot(target) }))
+    .filter((entry): entry is { index: number; root: ClaimRoot } => Boolean(entry.root));
+
+  for (let i = 0; i < targetRoots.length; i += 1) {
+    for (let j = i + 1; j < targetRoots.length; j += 1) {
+      const left = targetRoots[i];
+      const right = targetRoots[j];
+      if (!claimRootsOverlap(left.root, right.root)) continue;
+      collisions.push({
+        kind: "duplicate_target",
+        path: left.root.displayPath,
+        message: `Selected targets ${left.index + 1} and ${right.index + 1} both claim ${left.root.displayPath} on ${left.root.branch}.`,
+      });
+    }
+  }
+
+  for (const flight of flights) {
+    for (const attempt of flight.attempts ?? []) {
+      if (!ACTIVE_ATTEMPT_STATUSES.has(attempt.status)) continue;
+      const existingRoot = attemptClaimRoot(attempt);
+      if (!existingRoot) continue;
+      for (const { root } of targetRoots) {
+        if (!claimRootsOverlap(root, existingRoot)) continue;
+        collisions.push({
+          kind: "active_attempt",
+          path: root.displayPath,
+          flightId: flight.id,
+          attemptId: attempt.id,
+          message: `Attempt ${attempt.id} is already ${attempt.status} on ${existingRoot.displayPath} (${existingRoot.branch}).`,
+        });
+      }
+    }
+  }
+
+  if (flightId) {
+    const flight = flights.find((entry) => entry.id === flightId);
+    const activeTasks = flight
+      ? getFlightTasks(flight).filter(
+          (task) =>
+            (task.status === "queued" || task.status === "running") &&
+            (task.ownedPaths?.length ?? 0) > 0,
+        )
+      : [];
+    for (let i = 0; i < activeTasks.length; i += 1) {
+      for (let j = i + 1; j < activeTasks.length; j += 1) {
+        const left = activeTasks[i];
+        const right = activeTasks[j];
+        for (const leftPath of left.ownedPaths ?? []) {
+          const rightPath = (right.ownedPaths ?? []).find((path) =>
+            claimedPathsOverlap(leftPath, path),
+          );
+          if (!rightPath) continue;
+          collisions.push({
+            kind: "task_owned_path",
+            path: leftPath,
+            flightId,
+            taskId: left.id,
+            otherTaskId: right.id,
+            message: `Task "${left.title}" and "${right.title}" both claim ${leftPath} / ${rightPath}.`,
+          });
+        }
+      }
+    }
+  }
+
+  return collisions;
+}
+
+export function formatAsyncLaunchPathCollisionMessage(
+  collisions: AsyncLaunchPathCollision[],
+): string {
+  const preview = collisions
+    .slice(0, 5)
+    .map((collision) => `- ${collision.message}`)
+    .join("\n");
+  const more = collisions.length > 5 ? `\n- ${collisions.length - 5} more conflict(s)` : "";
+  return [
+    "Async Mission launch blocked because active executor work already claims the same path.",
+    preview + more,
+    "Cancel, complete, or block/serialize the conflicting work before launching.",
+  ].join("\n");
+}
+
+export function assertAsyncLaunchPathGate(
+  flightId: string | null,
+  targets: AttemptTargetSpec[],
+  options: AsyncLaunchOptions = {},
+): void {
+  if (options.allowPathCollisions) return;
+  const collisions = findAsyncLaunchPathCollisions(flightId, targets);
+  if (collisions.length > 0) {
+    throw new Error(formatAsyncLaunchPathCollisionMessage(collisions));
+  }
+}
 
 function composeAsyncLaunchPrompt(
   prompt: string,
@@ -199,13 +402,16 @@ function composeAsyncLaunchPrompt(
 }
 
 export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
-  launchAsync: async (flightId, prompt, targets) => {
+  launchAsync: async (flightId, prompt, targets, options = {}) => {
+    assertAsyncLaunchPathGate(flightId, targets, options);
     for (const target of targets) {
       await assertCostGuardrailsAllowLaunch(target.provider, flightId);
     }
     const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
     const promptForLaunch = composeAsyncLaunchPrompt(prompt, flight, targets);
-    const attempts = await launchFlightAsync(flightId, promptForLaunch, targets);
+    const attempts = await launchFlightAsync(flightId, promptForLaunch, targets, {
+      allowPathCollisions: options.allowPathCollisions,
+    });
 
     // For each attempt, register a frontend AgentConversation that listens to
     // the same backend event channel (apiAgent*Event(sessionId)) so AttemptTile

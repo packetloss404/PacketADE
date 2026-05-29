@@ -67,7 +67,283 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-async fn append_attempt(flight_id: &str, attempt: &Attempt) -> Result<(), String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PathClaim {
+    scope: String,
+    path: String,
+    display_path: String,
+    branch: String,
+    case_sensitive: bool,
+}
+
+fn normalize_claimed_path(path: &str, case_sensitive: bool) -> String {
+    let mut normalized = String::with_capacity(path.len());
+    let mut previous_was_slash = false;
+    for ch in path.trim().replace('\\', "/").chars() {
+        if ch == '/' {
+            if !previous_was_slash {
+                normalized.push(ch);
+            }
+            previous_was_slash = true;
+        } else {
+            if case_sensitive {
+                normalized.push(ch);
+            } else {
+                normalized.push(ch.to_ascii_lowercase());
+            }
+            previous_was_slash = false;
+        }
+    }
+    while normalized.ends_with('/') {
+        normalized.pop();
+    }
+    normalized
+        .strip_prefix("./")
+        .unwrap_or(&normalized)
+        .to_string()
+}
+
+fn claimed_paths_overlap(left: &str, right: &str, case_sensitive: bool) -> bool {
+    let a = normalize_claimed_path(left, case_sensitive);
+    let b = normalize_claimed_path(right, case_sensitive);
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    a == b || a.starts_with(&(b.clone() + "/")) || b.starts_with(&(a.clone() + "/"))
+}
+
+fn normalize_branch(branch: &str) -> String {
+    let branch = branch.trim().to_ascii_lowercase();
+    if branch.is_empty() {
+        "main".to_string()
+    } else {
+        branch
+    }
+}
+
+fn target_spec_claim(spec: &AttemptTargetSpec) -> Option<PathClaim> {
+    match spec {
+        AttemptTargetSpec::Local {
+            base_path,
+            base_branch,
+            ..
+        } => {
+            let path = normalize_claimed_path(base_path, false);
+            if path.is_empty() {
+                return None;
+            }
+            Some(PathClaim {
+                scope: "local".to_string(),
+                path,
+                display_path: base_path.clone(),
+                branch: normalize_branch(base_branch),
+                case_sensitive: false,
+            })
+        }
+        AttemptTargetSpec::Ssh {
+            target_id,
+            host,
+            port,
+            user,
+            base_path,
+            base_branch,
+            ..
+        } => {
+            let path = normalize_claimed_path(base_path, true);
+            if path.is_empty() {
+                return None;
+            }
+            let scope = if target_id.trim().is_empty() {
+                format!("ssh:{}@{}:{}", user, host, port)
+            } else {
+                format!("ssh:{}", target_id)
+            };
+            let display_target = if target_id.trim().is_empty() {
+                format!("{}@{}:{}", user, host, port)
+            } else {
+                target_id.clone()
+            };
+            Some(PathClaim {
+                scope,
+                path,
+                display_path: format!("{}:{}", display_target, base_path),
+                branch: normalize_branch(base_branch),
+                case_sensitive: true,
+            })
+        }
+    }
+}
+
+fn attempt_claim(attempt: &Attempt) -> Option<PathClaim> {
+    let (scope, base_path, case_sensitive) = match &attempt.target {
+        AttemptTarget::Local { base_path, .. } => ("local".to_string(), base_path.clone(), false),
+        AttemptTarget::Ssh {
+            target_id,
+            base_path,
+            ..
+        } => (format!("ssh:{}", target_id), base_path.clone(), true),
+    };
+    let path = normalize_claimed_path(&base_path, case_sensitive);
+    if path.is_empty() {
+        return None;
+    }
+    Some(PathClaim {
+        scope,
+        path,
+        display_path: base_path,
+        branch: normalize_branch(&attempt.base_branch),
+        case_sensitive,
+    })
+}
+
+fn claims_overlap(left: &PathClaim, right: &PathClaim) -> bool {
+    left.scope == right.scope
+        && left.branch == right.branch
+        && claimed_paths_overlap(
+            &left.path,
+            &right.path,
+            left.case_sensitive || right.case_sensitive,
+        )
+}
+
+fn validate_target_identities(targets: &[AttemptTargetSpec]) -> Result<(), String> {
+    for (index, target) in targets.iter().enumerate() {
+        if let AttemptTargetSpec::Ssh { target_id, .. } = target {
+            if target_id.trim().is_empty() {
+                return Err(format!(
+                    "path_collision: target {} is missing ssh target_id; save/select the SSH server before launching",
+                    index + 1
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_target_claims(targets: &[AttemptTargetSpec]) -> Result<(), String> {
+    let claims: Vec<(usize, PathClaim)> = targets
+        .iter()
+        .enumerate()
+        .filter_map(|(index, target)| target_spec_claim(target).map(|claim| (index, claim)))
+        .collect();
+
+    for i in 0..claims.len() {
+        for j in (i + 1)..claims.len() {
+            let (left_index, left) = &claims[i];
+            let (right_index, right) = &claims[j];
+            if claims_overlap(left, right) {
+                return Err(format!(
+                    "path_collision: selected targets {} and {} both claim {} on {}",
+                    left_index + 1,
+                    right_index + 1,
+                    left.display_path,
+                    left.branch
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_target_claims_against_active_attempts(
+    targets: &[AttemptTargetSpec],
+) -> Result<(), String> {
+    let target_claims: Vec<(usize, PathClaim)> = targets
+        .iter()
+        .enumerate()
+        .filter_map(|(index, target)| target_spec_claim(target).map(|claim| (index, claim)))
+        .collect();
+    let state = storage::load_state();
+
+    for flight in &state.flights {
+        for existing in &flight.attempts {
+            if !is_active_attempt(existing.status) {
+                continue;
+            }
+            let Some(existing_claim) = attempt_claim(existing) else {
+                continue;
+            };
+            for (target_index, target_claim) in &target_claims {
+                if claims_overlap(target_claim, &existing_claim) {
+                    return Err(format!(
+                        "path_collision: target {} claims {} but attempt {} is already {:?} on {} ({})",
+                        target_index + 1,
+                        target_claim.display_path,
+                        existing.id,
+                        existing.status,
+                        existing_claim.display_path,
+                        existing_claim.branch
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn is_active_attempt(status: AttemptStatus) -> bool {
+    matches!(
+        status,
+        AttemptStatus::Queued | AttemptStatus::Provisioning | AttemptStatus::Running
+    )
+}
+
+fn active_attempt_collision_message(incoming: &Attempt, existing: &Attempt) -> Option<String> {
+    if !is_active_attempt(existing.status) {
+        return None;
+    }
+    let incoming_claim = attempt_claim(incoming)?;
+    let existing_claim = attempt_claim(existing)?;
+    if !claims_overlap(&incoming_claim, &existing_claim) {
+        return None;
+    }
+    Some(format!(
+        "path_collision: attempt {} is already {:?} on {} ({})",
+        existing.id, existing.status, existing_claim.display_path, existing_claim.branch
+    ))
+}
+
+async fn cleanup_unpersisted_attempt(
+    spec: &AttemptTargetSpec,
+    target: &AttemptTarget,
+    attempt_id: &str,
+) {
+    match target {
+        AttemptTarget::Local { base_path, .. } => {
+            if let Err(e) = worktree::remove_local_worktree(base_path, attempt_id).await {
+                warn!(
+                    attempt = %attempt_id,
+                    error = %e,
+                    "Local worktree cleanup after rejected attempt failed"
+                );
+            }
+        }
+        AttemptTarget::Ssh { base_path, .. } => {
+            let Some(cfg) = build_ssh_config_from_spec(spec) else {
+                warn!(
+                    attempt = %attempt_id,
+                    "SSH worktree cleanup after rejected attempt skipped: missing SSH config"
+                );
+                return;
+            };
+            if let Err(e) = worktree::remove_remote_worktree(&cfg, base_path, attempt_id).await {
+                warn!(
+                    attempt = %attempt_id,
+                    error = %e,
+                    "SSH worktree cleanup after rejected attempt failed"
+                );
+            }
+        }
+    }
+}
+
+async fn append_attempt(
+    flight_id: &str,
+    attempt: &Attempt,
+    allow_path_collisions: bool,
+) -> Result<(), String> {
     // v0.8 race-fix: use `with_state_lock` so concurrent async writers
     // (e.g. multiple `launch_flight_async` invocations or interleaving with
     // `mark_attempt_status`) can't lose each other's mutations via the old
@@ -76,6 +352,22 @@ async fn append_attempt(flight_id: &str, attempt: &Attempt) -> Result<(), String
     let attempt = attempt.clone();
     storage::with_state_lock(move |state| {
         let result: Result<(), String> = (|| {
+            if !state.flights.iter().any(|f| f.id == flight_id) {
+                return Err(format!("Flight '{}' not found", flight_id));
+            }
+            if !allow_path_collisions {
+                for existing_flight in &state.flights {
+                    for existing in &existing_flight.attempts {
+                        if existing.id == attempt.id {
+                            continue;
+                        }
+                        if let Some(message) = active_attempt_collision_message(&attempt, existing)
+                        {
+                            return Err(message);
+                        }
+                    }
+                }
+            }
             let flight = state
                 .flights
                 .iter_mut()
@@ -169,9 +461,16 @@ pub async fn launch_flight_async(
     flight_id: String,
     prompt: String,
     targets: Vec<AttemptTargetSpec>,
+    allow_path_collisions: Option<bool>,
 ) -> Result<Vec<Attempt>, String> {
     if targets.is_empty() {
         return Err("At least one target is required".to_string());
+    }
+    let allow_path_collisions = allow_path_collisions.unwrap_or(false);
+    validate_target_identities(&targets)?;
+    if !allow_path_collisions {
+        validate_target_claims(&targets)?;
+        validate_target_claims_against_active_attempts(&targets)?;
     }
 
     // v0.8: capture the mission title so the worktree's auto-trailer
@@ -296,8 +595,9 @@ pub async fn launch_flight_async(
             draft_pr_number: None,
         };
 
-        if let Err(e) = append_attempt(&flight_id, &attempt).await {
+        if let Err(e) = append_attempt(&flight_id, &attempt, allow_path_collisions).await {
             warn!(error = %e, "Failed to persist Attempt; aborting");
+            cleanup_unpersisted_attempt(&spec, &attempt.target, &attempt_id).await;
             return Err(e);
         }
 
@@ -558,4 +858,106 @@ pub async fn mark_attempt_status(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn local_spec(path: &str) -> AttemptTargetSpec {
+        AttemptTargetSpec::Local {
+            base_path: path.to_string(),
+            base_branch: "main".to_string(),
+            agent_config_id: "api-claude".to_string(),
+            provider: "claude".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
+        }
+    }
+
+    fn ssh_spec(target_id: &str, path: &str) -> AttemptTargetSpec {
+        AttemptTargetSpec::Ssh {
+            target_id: target_id.to_string(),
+            host: "example.test".to_string(),
+            port: 22,
+            user: "ian".to_string(),
+            key_path: None,
+            auth_method: None,
+            host_fingerprint: None,
+            base_path: path.to_string(),
+            base_branch: "main".to_string(),
+            agent_config_id: "api-claude".to_string(),
+            provider: "claude".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
+        }
+    }
+
+    fn local_attempt(id: &str, path: &str, status: AttemptStatus) -> Attempt {
+        Attempt {
+            id: id.to_string(),
+            flight_id: "flight-1".to_string(),
+            target: AttemptTarget::Local {
+                base_path: path.to_string(),
+                worktree_path: format!("{}/.git/packetade-worktrees/{}", path, id),
+            },
+            agent_config_id: "api-claude".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
+            provider: "claude".to_string(),
+            branch: format!("packetade/{}", id),
+            base_branch: "main".to_string(),
+            session_id: id.to_string(),
+            status,
+            started_at: Some(1),
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+            error_message: None,
+            draft_pr_number: None,
+        }
+    }
+
+    #[test]
+    fn validate_target_claims_blocks_duplicate_roots() {
+        let result = validate_target_claims(&[local_spec("D:\\Repo"), local_spec("d:/repo/src")]);
+
+        assert!(result
+            .expect_err("duplicate target roots should be rejected")
+            .contains("path_collision"),);
+    }
+
+    #[test]
+    fn validate_target_identities_rejects_blank_ssh_target_id() {
+        let result = validate_target_identities(&[ssh_spec("", "/repo")]);
+
+        assert!(result
+            .expect_err("blank SSH target id should be rejected")
+            .contains("target_id"));
+    }
+
+    #[test]
+    fn ssh_claims_are_case_sensitive() {
+        let upper = target_spec_claim(&ssh_spec("server-1", "/repo/Foo")).unwrap();
+        let lower = target_spec_claim(&ssh_spec("server-1", "/repo/foo")).unwrap();
+
+        assert!(!claims_overlap(&upper, &lower));
+    }
+
+    #[test]
+    fn active_attempt_collision_blocks_running_same_root() {
+        let incoming = local_attempt("att-new", "d:/repo", AttemptStatus::Provisioning);
+        let existing = local_attempt("att-running", "D:\\Repo\\src", AttemptStatus::Running);
+
+        let message = active_attempt_collision_message(&incoming, &existing)
+            .expect("overlapping running attempt should collide");
+
+        assert!(message.contains("att-running"));
+        assert!(message.contains("path_collision"));
+    }
+
+    #[test]
+    fn active_attempt_collision_ignores_completed_attempts() {
+        let incoming = local_attempt("att-new", "d:/repo", AttemptStatus::Provisioning);
+        let existing = local_attempt("att-done", "D:\\Repo", AttemptStatus::Completed);
+
+        assert!(active_attempt_collision_message(&incoming, &existing).is_none());
+    }
 }

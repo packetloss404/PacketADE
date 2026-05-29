@@ -9,7 +9,8 @@
 //!   "title": string,
 //!   "prompt": string,
 //!   "agent_id": string,
-//!   "target_spec": AttemptTargetSpec
+//!   "target_spec": AttemptTargetSpec,
+//!   "claimed_paths": string[]
 //! }
 //! ```
 //!
@@ -87,6 +88,73 @@ fn total_tasks_for_flight(flight: &crate::core::flight::Flight) -> usize {
     flight.milestones.iter().map(|m| m.tasks.len()).sum()
 }
 
+fn sanitize_claimed_paths(paths: &[String]) -> Vec<String> {
+    let mut cleaned = Vec::new();
+    for path in paths {
+        let normalized = normalize_claimed_path(path);
+        if normalized.is_empty() || cleaned.iter().any(|existing| existing == &normalized) {
+            continue;
+        }
+        cleaned.push(normalized);
+    }
+    cleaned
+}
+
+fn normalize_claimed_path(path: &str) -> String {
+    let mut normalized = path.trim().replace('\\', "/").replace("//", "/");
+    while normalized.contains("//") {
+        normalized = normalized.replace("//", "/");
+    }
+    while normalized.ends_with('/') {
+        normalized.pop();
+    }
+    normalized
+        .strip_prefix("./")
+        .unwrap_or(&normalized)
+        .to_string()
+}
+
+fn claimed_paths_overlap(left: &str, right: &str) -> bool {
+    let a = normalize_claimed_path(left);
+    let b = normalize_claimed_path(right);
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    a == b || a.starts_with(&(b.clone() + "/")) || b.starts_with(&(a.clone() + "/"))
+}
+
+fn active_owned_path_collision(
+    flight: &crate::core::flight::Flight,
+    incoming_paths: &[String],
+) -> Option<String> {
+    if incoming_paths.is_empty() {
+        return None;
+    }
+    for milestone in &flight.milestones {
+        for task in &milestone.tasks {
+            if !matches!(task.status, TaskStatus::Queued | TaskStatus::Running) {
+                continue;
+            }
+            if task.owned_paths.is_empty() {
+                continue;
+            }
+            for incoming in incoming_paths {
+                if let Some(existing) = task
+                    .owned_paths
+                    .iter()
+                    .find(|existing| claimed_paths_overlap(incoming, existing))
+                {
+                    return Some(format!(
+                        "path_collision: task '{}' already claims '{}' while new task claims '{}'. Serialize the work with dependencies or ask for approval before launching overlapping paths.",
+                        task.id, existing, incoming
+                    ));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Build the canonical "task ceiling reached" error string. The exact
 /// wording is part of the planner's UX contract: the system prompt
 /// (`core::mission_planner_prompts::spec_mode_system_prompt`) teaches the
@@ -109,6 +177,14 @@ struct CreateTaskArgs {
     prompt: String,
     agent_id: String,
     target_spec: AttemptTargetSpec,
+    #[serde(
+        default,
+        alias = "claimedPaths",
+        alias = "claimed_paths",
+        alias = "ownedPaths",
+        alias = "owned_paths"
+    )]
+    claimed_paths: Vec<String>,
 }
 
 fn now_ms() -> u64 {
@@ -247,6 +323,7 @@ pub async fn handle(
     let title = parsed.title.clone();
     let prompt = parsed.prompt.clone();
     let milestone_id = parsed.milestone_id.clone();
+    let claimed_paths = sanitize_claimed_paths(&parsed.claimed_paths);
 
     // The closure runs synchronously and returns a `Ready` future; the
     // `with_state_lock` signature is `FnOnce(&mut PersistedState) -> Fut`
@@ -258,6 +335,7 @@ pub async fn handle(
     let milestone_id_for_persist = milestone_id.clone();
     let mission_id_for_persist = mission_id.clone();
     let validated_agent_id_for_persist = validated_agent_id.clone();
+    let claimed_paths_for_persist = claimed_paths.clone();
     storage::with_state_lock(move |state| {
         let result: Result<(), String> = (|| {
             let flight = state
@@ -281,6 +359,10 @@ pub async fn handle(
             let total_tasks = total_tasks_for_flight(flight);
             if total_tasks >= TASK_CEILING {
                 return Err(task_ceiling_error_message(total_tasks));
+            }
+
+            if let Some(message) = active_owned_path_collision(flight, &claimed_paths_for_persist) {
+                return Err(message);
             }
 
             let milestone = flight
@@ -315,6 +397,7 @@ pub async fn handle(
                 completed_at: None,
                 cost: 0.0,
                 tokens: 0,
+                owned_paths: claimed_paths_for_persist.clone(),
                 // E5: new tasks start at 0 replans. `replan_after_failure`
                 // will bump this when (and only when) the error is not
                 // exempt per `is_replan_exempt`.
@@ -338,6 +421,7 @@ pub async fn handle(
             "milestoneId": milestone_id,
             "title": title,
             "agentId": validated_agent_id,
+            "claimedPaths": claimed_paths,
             "createdAt": now_ms(),
         }),
     );
@@ -405,6 +489,7 @@ pub async fn handle(
             mission_id_for_spawn.clone(),
             prompt_for_spawn,
             vec![attempt_spec_for_spawn],
+            Some(true),
         )
         .await;
 
@@ -734,6 +819,7 @@ mod tests {
             completed_at: None,
             cost: 0.0,
             tokens: 0,
+            owned_paths: Vec::new(),
             replan_count: 0,
         }
     }
@@ -861,5 +947,28 @@ mod tests {
             total < TASK_CEILING,
             "59 tasks must be under the ceiling guard so the 60th create_task succeeds"
         );
+    }
+
+    #[test]
+    fn active_owned_path_collision_blocks_overlapping_running_tasks() {
+        let mut flight = fixture_flight_with_tasks(1);
+        flight.milestones[0].tasks[0].status = FlightTaskStatus::Running;
+        flight.milestones[0].tasks[0].owned_paths = vec!["src/features".to_string()];
+
+        let collision =
+            active_owned_path_collision(&flight, &["src/features/button.tsx".to_string()])
+                .expect("nested claimed path should collide");
+
+        assert!(collision.starts_with("path_collision:"));
+        assert!(collision.contains("src/features"));
+    }
+
+    #[test]
+    fn active_owned_path_collision_allows_disjoint_paths_in_same_repo() {
+        let mut flight = fixture_flight_with_tasks(1);
+        flight.milestones[0].tasks[0].status = FlightTaskStatus::Running;
+        flight.milestones[0].tasks[0].owned_paths = vec!["src/features".to_string()];
+
+        assert!(active_owned_path_collision(&flight, &["docs/plan.md".to_string()]).is_none());
     }
 }

@@ -412,6 +412,7 @@ pub fn run() {
             commands::mission_planner::get_mission_approvals,
             // Mission Planner — journal read access (E7)
             commands::mission_planner::get_mission_journal,
+            commands::mission_planner::get_mission_journal_tail,
             commands::mission_planner::get_mission_journal_path,
         ])
         .run(tauri::generate_context!())
