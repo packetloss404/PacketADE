@@ -18,11 +18,11 @@ without turning PacketADE into a cloud-only coding agent.
 
 ## Now
 
-| ID | Track | Priority | Status | Canonical Plan |
-|---|---|---:|---|---|
-| R0 | Remote Agents: PWA + Packet Cloud relay | P0 | Planning complete; ready for implementation split | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) |
-| R1 | Docs and planning consolidation | P1 | In progress | [`dev/README.md`](./dev/README.md) |
-| R2 | Distribution readiness: signing + updater | P1 | Blocked on signing certificates | [`dev/updater-setup.md`](./dev/updater-setup.md), [`dev/multi-platform-build.md`](./dev/multi-platform-build.md) |
+| ID  | Track                                     | Priority | Status                                            | Canonical Plan                                                                                                   |
+| --- | ----------------------------------------- | -------: | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| R0  | Remote Agents: PWA + Packet Cloud relay   |       P0 | Planning complete; ready for implementation split | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                     |
+| R1  | Docs and planning consolidation           |       P1 | In progress                                       | [`dev/README.md`](./dev/README.md)                                                                               |
+| R2  | Distribution readiness: signing + updater |       P1 | Blocked on signing certificates                   | [`dev/updater-setup.md`](./dev/updater-setup.md), [`dev/multi-platform-build.md`](./dev/multi-platform-build.md) |
 
 ### Remote Agents Acceptance Shape
 
@@ -36,18 +36,21 @@ gate before any external beta.
 
 ## Next
 
-| ID | Track | Priority | Status | Notes |
-|---|---|---:|---|---|
-| N1 | Sidecar-over-SSH | P1 | Open | Biggest remaining remote-workspace gap for subscription providers. Tracked in [`backlog.md`](./backlog.md). |
-| N2 | Swarm orchestration escalation | P2 | Partial | Auto-reassignment remains deferred. See [`dev/bridgemind/swarm-orchestration-plan.md`](./dev/bridgemind/swarm-orchestration-plan.md). |
-| N3 | PacketADE MCP provider transport | P2 | Deferred | Frontend provider config exists; Rust transport is deferred. See [`dev/mcp-provider-transport.md`](./dev/mcp-provider-transport.md). |
-| N4 | Git review packet integration | P2 | Partial | Workspace GitDashboard exists; review packet and mission approval ties need wiring. See [`dev/zen-workspace/features-git-workspace.md`](./dev/zen-workspace/features-git-workspace.md). |
-| N5 | Cost alerts | P2 | Not started | Budget and alert workflows on top of Cost Dashboard / LiveSpendChip. See [`dev/moat/cost-dashboard-plan.md`](./dev/moat/cost-dashboard-plan.md). |
+| ID  | Track                            | Priority | Status      | Notes                                                                                                                                                                                   |
+| --- | -------------------------------- | -------: | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N1  | Sidecar-over-SSH                 |       P1 | Open        | Biggest remaining remote-workspace gap for subscription providers. Tracked in [`backlog.md`](./backlog.md).                                                                             |
+| N2  | Swarm orchestration escalation   |       P2 | Partial     | Auto-reassignment remains deferred. See [`dev/bridgemind/swarm-orchestration-plan.md`](./dev/bridgemind/swarm-orchestration-plan.md).                                                   |
+| N3  | PacketADE MCP provider transport |       P2 | Deferred    | Frontend provider config exists; Rust transport is deferred. See [`dev/mcp-provider-transport.md`](./dev/mcp-provider-transport.md).                                                    |
+| N4  | Git review packet integration    |       P2 | Partial     | Workspace GitDashboard exists; review packet and mission approval ties need wiring. See [`dev/zen-workspace/features-git-workspace.md`](./dev/zen-workspace/features-git-workspace.md). |
+| N5  | Cost alerts                      |       P2 | Not started | Budget and alert workflows on top of Cost Dashboard / LiveSpendChip. See [`dev/moat/cost-dashboard-plan.md`](./dev/moat/cost-dashboard-plan.md).                                        |
 
 ## Later
 
 - Codex CLI app-server transport (A6): revisit when PacketADE needs long-lived
   app-server capabilities that `codex exec` cannot provide.
+- Send to Monitor / multi-monitor operations: paused after planning while the
+  current feature and bug-check pass runs. See
+  [`dev/send-to-monitor-plan.md`](./dev/send-to-monitor-plan.md).
 - Native iOS / TestFlight for Remote Agents: evaluate after the PWA relay,
   auth, push, and mobile UX prove useful.
 - Plugin system: community manifest format after distribution and updater work
