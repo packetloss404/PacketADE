@@ -11,6 +11,9 @@ import type {
   PendingEdit,
 } from "@/types/agent-conversation";
 
+export const EMPTY_PENDING_PERMISSIONS: PendingPermission[] = [];
+export const EMPTY_PENDING_EDITS: PendingEdit[] = [];
+
 /**
  * Approval-queue substore split out of agentTaskStore. Owns the ephemeral
  * permission / write-edit prompt queues that wake up the Toolbar Bell and
@@ -53,8 +56,8 @@ function maybeResolveTaskApproval(
   conversationId: string,
   state: { permissions: Map<string, PendingPermission[]>; edits: Map<string, PendingEdit[]> },
 ): void {
-  const perms = state.permissions.get(conversationId) ?? [];
-  const edits = state.edits.get(conversationId) ?? [];
+  const perms = state.permissions.get(conversationId) ?? EMPTY_PENDING_PERMISSIONS;
+  const edits = state.edits.get(conversationId) ?? EMPTY_PENDING_EDITS;
   if (perms.length > 0 || edits.length > 0) return;
   const hit = findTaskForConversation(conversationId);
   if (!hit) return;
@@ -186,8 +189,8 @@ export const useAgentApprovalStore = create<AgentApprovalState>((set, get) => ({
   },
 
   getPendingForConversation: (conversationId) => ({
-    permissions: get().permissions.get(conversationId) ?? [],
-    edits: get().edits.get(conversationId) ?? [],
+    permissions: get().permissions.get(conversationId) ?? EMPTY_PENDING_PERMISSIONS,
+    edits: get().edits.get(conversationId) ?? EMPTY_PENDING_EDITS,
   }),
 
   clearConversation: (conversationId) => {

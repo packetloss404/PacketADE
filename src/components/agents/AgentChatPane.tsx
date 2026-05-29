@@ -15,7 +15,11 @@ import { SpecPanel } from "./SpecPanel";
 import { deriveMode, flagsForMode, nextMode } from "./agentModeChipUtils";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
+import {
+  EMPTY_PENDING_EDITS,
+  EMPTY_PENDING_PERMISSIONS,
+  useAgentApprovalStore,
+} from "@/stores/agentApprovalStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
@@ -140,8 +144,12 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   );
   // Live queues read from the substore — drives both the per-item cards
   // and the header status line counters.
-  const pendingPermissions = useAgentApprovalStore((s) => s.permissions.get(conversationId) ?? []);
-  const pendingEdits = useAgentApprovalStore((s) => s.edits.get(conversationId) ?? []);
+  const pendingPermissions = useAgentApprovalStore(
+    (s) => s.permissions.get(conversationId) ?? EMPTY_PENDING_PERMISSIONS,
+  );
+  const pendingEdits = useAgentApprovalStore(
+    (s) => s.edits.get(conversationId) ?? EMPTY_PENDING_EDITS,
+  );
 
   // Preview pane + settings selectors grouped to reduce subscription count.
   const preview = usePreviewPaneStore(
