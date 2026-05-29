@@ -66,6 +66,7 @@ mod tests {
                         completed_at: None,
                         cost: 0.5,
                         tokens: 1000,
+                        owned_paths: Vec::new(),
                         replan_count: 0,
                     }],
                     validation_criteria: vec!["Tests pass".to_string()],

@@ -16,8 +16,8 @@
 //! This module only owns the types + storage helpers.
 
 use serde::{Deserialize, Serialize};
-use std::io::Write;
-use std::path::PathBuf;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 
 // === Types ===
 
@@ -59,6 +59,18 @@ pub struct JournalEntry {
     /// rendered directly in the markdown body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+}
+
+/// Bounded read result for UI consumers that only need the latest journal
+/// context. `truncated=true` means `markdown` is a tail slice, not the full
+/// archive on disk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalRead {
+    pub markdown: String,
+    pub total_bytes: u64,
+    pub returned_bytes: u64,
+    pub truncated: bool,
 }
 
 // === Storage location ===
@@ -210,6 +222,69 @@ pub fn read_journal(mission_id: &str) -> Result<String, String> {
         return Ok(String::new());
     }
     std::fs::read_to_string(&path).map_err(|e| format!("failed to read journal {:?}: {}", path, e))
+}
+
+/// Read at most `max_bytes` from the end of a mission's journal. Large files
+/// are snapped to the next journal-entry marker when possible so the UI does
+/// not start rendering in the middle of a markdown block.
+pub fn read_journal_tail(mission_id: &str, max_bytes: u64) -> Result<JournalRead, String> {
+    let path = journal_path(mission_id);
+    read_journal_tail_from_path(&path, max_bytes)
+}
+
+fn read_journal_tail_from_path(path: &Path, max_bytes: u64) -> Result<JournalRead, String> {
+    if !path.exists() {
+        return Ok(JournalRead {
+            markdown: String::new(),
+            total_bytes: 0,
+            returned_bytes: 0,
+            truncated: false,
+        });
+    }
+
+    let metadata =
+        std::fs::metadata(path).map_err(|e| format!("failed to stat journal {:?}: {}", path, e))?;
+    let total_bytes = metadata.len();
+    let max_bytes = max_bytes.max(1);
+
+    if total_bytes <= max_bytes {
+        let markdown = std::fs::read_to_string(path)
+            .map_err(|e| format!("failed to read journal {:?}: {}", path, e))?;
+        return Ok(JournalRead {
+            returned_bytes: markdown.as_bytes().len() as u64,
+            markdown,
+            total_bytes,
+            truncated: false,
+        });
+    }
+
+    let start = total_bytes.saturating_sub(max_bytes);
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| format!("failed to open journal {:?}: {}", path, e))?;
+    file.seek(SeekFrom::Start(start))
+        .map_err(|e| format!("failed to seek journal {:?}: {}", path, e))?;
+
+    let mut bytes = Vec::with_capacity(max_bytes as usize);
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("failed to read journal tail {:?}: {}", path, e))?;
+
+    let markdown = snap_tail_to_readable_boundary(String::from_utf8_lossy(&bytes).into_owned());
+    Ok(JournalRead {
+        returned_bytes: markdown.as_bytes().len() as u64,
+        markdown,
+        total_bytes,
+        truncated: true,
+    })
+}
+
+fn snap_tail_to_readable_boundary(markdown: String) -> String {
+    if let Some(idx) = markdown.find("<!-- entry ") {
+        return markdown[idx..].to_string();
+    }
+    if let Some(idx) = markdown.find('\n') {
+        return markdown[idx + 1..].to_string();
+    }
+    markdown
 }
 
 // === Tests ===
@@ -430,5 +505,63 @@ mod tests {
         );
         let text = read_journal(&mission_id).expect("read should not error on missing file");
         assert_eq!(text, "");
+    }
+
+    #[test]
+    fn read_journal_tail_returns_full_file_under_cap() {
+        let path = std::env::temp_dir().join(format!(
+            "packetade-journal-tail-small-{}.md",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let text = "<!-- entry id:e1 kind:system_note ts:1 -->\n## 1 — system\n\nsmall\n\n";
+        std::fs::write(&path, text).expect("write temp journal");
+
+        let read = read_journal_tail_from_path(&path, 4096).expect("read journal tail");
+        assert_eq!(read.markdown, text);
+        assert_eq!(read.total_bytes, text.as_bytes().len() as u64);
+        assert_eq!(read.returned_bytes, text.as_bytes().len() as u64);
+        assert!(!read.truncated);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn read_journal_tail_truncates_to_latest_entry_boundary() {
+        let path = std::env::temp_dir().join(format!(
+            "packetade-journal-tail-large-{}.md",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let latest =
+            "<!-- entry id:new kind:planner_message ts:2 -->\n## 2 — **planner**\n\nlatest\n\n";
+        let text = format!(
+            "{}{}",
+            "older context that should not render\n".repeat(80),
+            latest
+        );
+        std::fs::write(&path, &text).expect("write temp journal");
+
+        let read = read_journal_tail_from_path(&path, latest.as_bytes().len() as u64 + 12)
+            .expect("read journal tail");
+        assert!(read.truncated);
+        assert_eq!(read.total_bytes, text.as_bytes().len() as u64);
+        assert!(read.returned_bytes <= latest.as_bytes().len() as u64);
+        assert!(
+            read.markdown.starts_with("<!-- entry id:new"),
+            "tail should snap to the latest entry marker, got: {}",
+            read.markdown
+        );
+        assert!(read.markdown.contains("latest"));
+        assert!(
+            !read.markdown.contains("older context"),
+            "bounded tail should not include pre-boundary content"
+        );
+
+        let _ = std::fs::remove_file(path);
     }
 }

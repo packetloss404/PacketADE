@@ -6,11 +6,15 @@ release of the Mission Planner work-stream
 
 Status: **active manual acceptance runbook**. Current open Mission Planner work
 belongs in [`../backlog.md`](../backlog.md); the locked design remains reference.
+For the dedicated reliability sprint, pair this manual runbook with
+[`mission-planner-reliability-continuity-pack.md`](./mission-planner-reliability-continuity-pack.md).
 
 - **Time budget**: 15–20 minutes end-to-end.
 - **Mode**: real Claude Sonnet 4.6 OAuth (`api-claude-oauth`). No mocks.
 - **Scope**: validates the headline acceptance test plus three regression
   guards (stop hygiene, approval gate, journal export).
+  The continuity pack adds cold-start approval hydration, rate-limit replay,
+  journal scale, compaction, and async collision gates.
 
 If any **Pass / fail criteria** in §7 are missed, the build does not ship.
 
@@ -28,20 +32,20 @@ All boxes must be ticked **before** opening the app.
     wait for the badge to flip — `auth_watcher` should pick it up within
     ~2 seconds.
 - [ ] The test workspace has **zero existing missions** in the Missions
-  view, OR you are running against a fresh workspace
-  (`%USERPROFILE%\.packetade\workspaces\<fresh-id>\`). Existing missions
-  hide the empty-state CTA we need to verify.
+      view, OR you are running against a fresh workspace
+      (`%USERPROFILE%\.packetade\workspaces\<fresh-id>\`). Existing missions
+      hide the empty-state CTA we need to verify.
 - [ ] The app is running, either:
   - Dev: `pnpm tauri dev` from `D:\projects\PacketADE`, **or**
   - Release: a freshly installed build from `pnpm tauri build` artifacts.
 - [ ] Browser devtools console is open (right-click → Inspect, Console
-  tab). You will watch for red errors throughout.
+      tab). You will watch for red errors throughout.
 - [ ] The sidecar log directory exists and is writable:
-  `%USERPROFILE%\.packetade\logs\`. Leave a `Get-Content -Wait` tail
-  open on the newest `sidecar-*.log` in a side terminal — most
-  troubleshooting starts here.
+      `%USERPROFILE%\.packetade\logs\`. Leave a `Get-Content -Wait` tail
+      open on the newest `sidecar-*.log` in a side terminal — most
+      troubleshooting starts here.
 - [ ] You have ~10 minutes of uninterrupted attention; the headline test
-  alone can take ~5 minutes once the planner starts decomposing.
+      alone can take ~5 minutes once the planner starts decomposing.
 
 ---
 
@@ -52,7 +56,7 @@ This is the §"Acceptance — the headline test" in
 sign-off is done.
 
 - [ ] **2.1** Click the **Missions** icon in the left sidebar (or use the
-  view shortcut if you have one bound). The `MissionsView` mounts.
+      view shortcut if you have one bound). The `MissionsView` mounts.
 - [ ] **2.2** Verify the empty state:
   - A single large **Start a mission** CTA is centered in the pane.
   - A smaller **Quick async launch** link sits below it.
@@ -60,7 +64,7 @@ sign-off is done.
   - _Expected: this is the new spec-mode empty state, not the legacy
     `LaunchAsyncFlightModal` button._
 - [ ] **2.3** Click **Start a mission**. Within ~1 second the
-  `FlightDetailPane` mounts and shows a `MissionSpecPane` chat surface.
+      `FlightDetailPane` mounts and shows a `MissionSpecPane` chat surface.
   - The mission appears in the sidebar with status pill `spec`.
 - [ ] **2.4** Within **5 seconds**, one of:
   - A "Planner is starting…" indicator appears and then disappears, OR
@@ -74,7 +78,7 @@ sign-off is done.
   Press **Cmd/Ctrl+Enter** to submit. The user message appears in the
   chat history.
 - [ ] **2.6** The planner replies conversationally (1–3 paragraphs).
-  Common shapes:
+      Common shapes:
   - A clarifying question (where in the UI? does it persist?), OR
   - A short confirmation + a single clarifying question.
   - _Expected: it does **not** start calling `create_milestone` yet —
@@ -85,25 +89,25 @@ sign-off is done.
   ```
   Submit.
 - [ ] **2.8** The planner acknowledges the spec, usually summarising it
-  back. The **Launch mission** button in the header should now be
-  enabled (per E3 — disabled until the planner has spec context).
+      back. The **Launch mission** button in the header should now be
+      enabled (per E3 — disabled until the planner has spec context).
 - [ ] **2.9** Click **Launch mission**. Start a stopwatch (or note the
-  wall-clock time).
+      wall-clock time).
 - [ ] **2.10** Within **30 seconds** of clicking Launch, all of the
-  following must be visible in the `FlightDetailPane`:
+      following must be visible in the `FlightDetailPane`:
   - [ ] Mission status pill transitions: `spec → planning → active`.
-    (You may not catch `planning` if decomposition is fast; that's fine
-    as long as you end on `active`.)
+        (You may not catch `planning` if decomposition is fast; that's fine
+        as long as you end on `active`.)
   - [ ] `MilestonesCard` shows **2–4** milestone cards with titles +
-    goals.
+        goals.
   - [ ] **4–10** task rows total across those milestones, each with a
-    prompt visible (truncated is OK).
+        prompt visible (truncated is OK).
   - [ ] At least **one** task is in `running` state and shows an
-    executor session id (short hash) attached.
+        executor session id (short hash) attached.
   - [ ] The **Journal** tab badge increments; clicking into it shows
-    chronological entries: a `user_message`, one or more
-    `planner_message`, and multiple `tool_call` entries
-    (`create_milestone`, `create_task`, …).
+        chronological entries: a `user_message`, one or more
+        `planner_message`, and multiple `tool_call` entries
+        (`create_milestone`, `create_task`, …).
   - [ ] The `StatGrid` shows:
     - **Planner cost**: non-zero, typically **$0.10–$0.50**.
     - **Exec cost**: may be **$0.00** if executors haven't fired their
@@ -119,25 +123,25 @@ If all 6 sub-bullets of 2.10 fire within 30s, Test 1 **passes**.
 Validates the kill-switch and that mission state survives a planner stop.
 
 - [ ] **3.1** With the Test 1 mission still in `active`, click **Stop
-  planner** in the `FlightDetailPane` header.
+      planner** in the `FlightDetailPane` header.
 - [ ] **3.2** A `window.confirm` dialog appears. Click **OK**.
 - [ ] **3.3** Within ~2 seconds:
   - [ ] The **Compacting** pill (if it was visible) clears.
   - [ ] The planner session is removed from the sidecar registry — the
-    tail on `sidecar-*.log` should show a `close_session` event for the
-    planner session id.
+        tail on `sidecar-*.log` should show a `close_session` event for the
+        planner session id.
   - [ ] The Stop planner button disappears or transitions to
-    **Start planner** (depending on whether mission is terminal).
+        **Start planner** (depending on whether mission is terminal).
 - [ ] **3.4** Mission state survives:
   - [ ] All milestones still listed.
   - [ ] All tasks still listed, with their executor sessions still
-    running (their session pills don't go grey).
+        running (their session pills don't go grey).
   - [ ] The Journal tab still shows the prior entries.
 - [ ] **3.5** _(Optional)_ Click **Start planner** (or reload the app
-  and reopen the mission). The planner re-attaches and emits a
-  `planner_message` acknowledging resume. Cold-start spec behaviour:
-  per the locked spec, missions in `active` on app restart flip to
-  `paused` and require a manual resume — that's expected.
+      and reopen the mission). The planner re-attaches and emits a
+      `planner_message` acknowledging resume. Cold-start spec behaviour:
+      per the locked spec, missions in `active` on app restart flip to
+      `paused` and require a manual resume — that's expected.
 
 Test 2 **passes** if 3.3 and 3.4 both hold.
 
@@ -149,7 +153,7 @@ Validates `request_user_approval` and the `<PlannerApprovalGate>`
 banner.
 
 - [ ] **4.1** Return to the Missions view. Click **Start a mission**
-  again to begin a fresh mission.
+      again to begin a fresh mission.
 - [ ] **4.2** Type the deliberately-oversized prompt:
   ```
   Refactor the entire codebase from React to Vue, build full e2e Playwright tests
@@ -159,17 +163,17 @@ banner.
   scope; that's fine).
 - [ ] **4.3** Click **Launch mission**.
 - [ ] **4.4** Within ~60 seconds, the `<PlannerApprovalGate>` banner
-  should appear, citing a reason near the 60-task ceiling — the
-  planner is calling `request_user_approval` with a question like
-  *"Scope likely exceeds the 60-task ceiling — proceed in phases or
-  reduce scope?"* with selectable options.
+      should appear, citing a reason near the 60-task ceiling — the
+      planner is calling `request_user_approval` with a question like
+      _"Scope likely exceeds the 60-task ceiling — proceed in phases or
+      reduce scope?"_ with selectable options.
   - _Expected event chain: planner emits `tool_call:request_user_approval`
     → Rust returns sentinel `pending_approval:<id>` → banner mounts._
 - [ ] **4.5** Click one of the options (recommend "Reduce scope" to keep
-  the test bounded).
+      the test bounded).
 - [ ] **4.6** The banner clears, and within ~10s a new
-  `planner_message` appears acknowledging the choice. Mission status
-  remains `active` or transitions to `active` if it was `planning`.
+      `planner_message` appears acknowledging the choice. Mission status
+      remains `active` or transitions to `active` if it was `planning`.
 
 Test 3 **passes** if the banner renders **and** clicking an option
 visibly unblocks the planner.
@@ -182,20 +186,20 @@ Validates the on-disk journal artifact.
 
 - [ ] **5.1** Open the Test 1 mission. Click the **Journal** tab.
 - [ ] **5.2** Entries are ordered chronologically (oldest first) and
-  each row shows a kind marker:
+      each row shows a kind marker:
   - `user_message`, `planner_message`, `tool_call`, `tool_result`,
     `wake_trigger` should all be represented after Test 1.
 - [ ] **5.3** Click **Export**. A toast or inline notice confirms the
-  path was copied to clipboard. Expected path shape:
-  `~/.packetade/missions/<shortId>_<mission_id>.md` (or
-  `%USERPROFILE%\.packetade\missions\<shortId>_<mission_id>.md` on Windows).
+      path was copied to clipboard. Expected path shape:
+      `~/.packetade/missions/<shortId>_<mission_id>.md` (or
+      `%USERPROFILE%\.packetade\missions\<shortId>_<mission_id>.md` on Windows).
 - [ ] **5.4** Paste the path into a terminal (or your file explorer)
-  and open the file in any markdown viewer (VS Code preview, Obsidian,
-  glow, etc.).
+      and open the file in any markdown viewer (VS Code preview, Obsidian,
+      glow, etc.).
   - [ ] The file opens without parse errors.
   - [ ] Headings render (mission title, milestones).
   - [ ] Conversation entries are readable; tool calls render as fenced
-    blocks with the tool name + args.
+        blocks with the tool name + args.
 
 Test 4 **passes** if the file is on disk, the path is on the clipboard,
 and the markdown is human-readable.
@@ -209,12 +213,12 @@ Common failure modes encountered during dogfooding.
 ### "Planner is starting…" never advances
 
 - **Sidecar didn't start.** Check `~/.packetade/logs/sidecar-*.log` for
-  the most recent entry. If you see *"node entrypoint not found"* the
+  the most recent entry. If you see _"node entrypoint not found"_ the
   resource-dir resolution failed — fall back to `pnpm tauri dev` and
   retry.
 - **OAuth expired.** Look for `401 Unauthorized` in the sidecar log.
   Re-run `claude login` from a terminal and wait for the auth badge to
-  flip to **ready** before re-clicking *Start a mission*.
+  flip to **ready** before re-clicking _Start a mission_.
 - **Protocol-version mismatch.** Sidecar log warns
   `protocol version mismatch: expected 6, got N` (or a later expected version
   if the protocol has advanced again). Rebuild the sidecar:
@@ -242,8 +246,8 @@ that's working as intended.
 
 The planner may have decided the scope was achievable without an
 approval call. Re-prompt with more explicit scope-bloat language, e.g.
-*"Do all of the above as a single mission with no phasing and no scope
-cuts."* If after two attempts the gate still doesn't fire, file an
+_"Do all of the above as a single mission with no phasing and no scope
+cuts."_ If after two attempts the gate still doesn't fire, file an
 issue tagged `mission-planner/approval-gate`.
 
 ### StatGrid Exec cell stuck at $0.00
@@ -286,18 +290,18 @@ auto-resume after the backoff window, file an issue.
 Sign-off requires **all** of the following:
 
 - [ ] **Test 1** (happy path) passes within 30 seconds of clicking
-  Launch, with all 6 sub-checks in §2.10 green.
+      Launch, with all 6 sub-checks in §2.10 green.
 - [ ] **Test 2** (stop hygiene) leaves the mission in a recoverable
-  state — milestones and tasks survive, executor sessions keep
-  running.
+      state — milestones and tasks survive, executor sessions keep
+      running.
 - [ ] **Test 3** (approval gate) renders `<PlannerApprovalGate>` and
-  clicking an option visibly resumes the planner.
+      clicking an option visibly resumes the planner.
 - [ ] **Test 4** (journal export) produces a readable markdown file
-  on disk at `~/.packetade/missions/<shortId>_<mission_id>.md`.
+      on disk at `~/.packetade/missions/<shortId>_<mission_id>.md`.
 - [ ] **Zero red errors** in the browser devtools console across all
-  four tests.
+      four tests.
 - [ ] **Zero Rust panics** in the sidecar/Tauri stderr (`backend log`
-  or the dev terminal running `pnpm tauri dev`).
+      or the dev terminal running `pnpm tauri dev`).
 
 If any one of these fails, do not sign off. Capture the symptom + the
 relevant log excerpt and proceed to §8.

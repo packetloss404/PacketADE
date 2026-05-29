@@ -36,7 +36,7 @@ use tracing::{info, warn};
 
 use crate::commands::agent_sidecar::SidecarManager;
 use crate::core::flight::{FlightStatus, PlannerStatus as FlightPlannerStatus};
-use crate::core::mission_journal::{append_journal, JournalEntry, JournalKind};
+use crate::core::mission_journal::{append_journal, JournalEntry, JournalKind, JournalRead};
 use crate::core::mission_planner_prompts::{spec_mode_system_prompt, wake_user_message};
 use crate::core::storage::{self, PersistedState};
 
@@ -473,6 +473,15 @@ impl MissionPlannerSession {
 pub struct MissionPlannerRegistry {
     sessions: Mutex<HashMap<String, MissionPlannerSession>>,
     wake_tx: Mutex<Option<mpsc::UnboundedSender<PlannerWakeEvent>>>,
+    /// Continuity buffer for wake events that arrive while the target
+    /// planner is temporarily unavailable (for example quota-paused, not
+    /// yet re-started after cold-start recovery, or before the wake
+    /// consumer has installed its sender).
+    ///
+    /// Coalesced by mission id to match the live debounce behavior: the
+    /// newest wake wins, because dispatch builds a fresh mission snapshot
+    /// at replay time.
+    pending_wakes: Mutex<HashMap<String, PlannerWakeEvent>>,
     /// E7-HOOKS: per-sidecar-session chunk buffer used to aggregate the
     /// planner's streamed text into a single `PlannerMessage` journal entry
     /// when the turn finishes. Keyed by sidecar session id; appended on
@@ -489,8 +498,21 @@ impl MissionPlannerRegistry {
     /// Install the wake-bus sender. Called once at app startup from
     /// [`spawn_wake_consumer`].
     pub async fn install_wake_sender(&self, tx: mpsc::UnboundedSender<PlannerWakeEvent>) {
-        let mut guard = self.wake_tx.lock().await;
-        *guard = Some(tx);
+        {
+            let mut guard = self.wake_tx.lock().await;
+            *guard = Some(tx.clone());
+        }
+
+        let replay = {
+            let mut pending = self.pending_wakes.lock().await;
+            pending.drain().map(|(_, event)| event).collect::<Vec<_>>()
+        };
+        for event in replay {
+            if let Err(e) = tx.send(event.clone()) {
+                warn!(error = %e, "mission planner wake channel send failed during install replay");
+                self.queue_wake_for_replay(event).await;
+            }
+        }
     }
 
     /// Send a wake event onto the bus. Safe to call from any orchestration
@@ -503,15 +525,40 @@ impl MissionPlannerRegistry {
         };
         match tx {
             Some(tx) => {
-                if let Err(e) = tx.send(event) {
+                if let Err(e) = tx.send(event.clone()) {
                     warn!(error = %e, "mission planner wake channel send failed");
+                    self.queue_wake_for_replay(event).await;
                 }
             }
             None => {
-                // Pre-setup. Not an error — orchestration tests fire wakes
-                // without a wake consumer registered.
+                // Pre-setup. Keep the newest wake so startup ordering
+                // doesn't drop a planner transition before the consumer
+                // installs its sender.
+                self.queue_wake_for_replay(event).await;
             }
         }
+    }
+
+    /// Store a wake for later replay. The latest wake for a mission wins,
+    /// mirroring the live wake consumer's coalescing behavior.
+    pub async fn queue_wake_for_replay(&self, event: PlannerWakeEvent) {
+        let mut pending = self.pending_wakes.lock().await;
+        pending.insert(event.mission_id.clone(), event);
+    }
+
+    /// Drain and enqueue a pending wake for a mission. Returns `true` when
+    /// a wake was found and queued onto the live bus (or re-buffered because
+    /// the bus is not yet ready).
+    pub async fn replay_pending_wake(&self, mission_id: &str) -> bool {
+        let event = {
+            let mut pending = self.pending_wakes.lock().await;
+            pending.remove(mission_id)
+        };
+        let Some(event) = event else {
+            return false;
+        };
+        self.send_wake(event).await;
+        true
     }
 
     /// Look up a session by mission id and return a clone.
@@ -985,6 +1032,18 @@ impl MissionPlannerRegistry {
                     mission_id = %mission_clone,
                     "resuming planner after quota window: status QuotaPaused -> Idle"
                 );
+                if !registry.replay_pending_wake(&mission_clone).await {
+                    registry
+                        .send_wake(PlannerWakeEvent {
+                            mission_id: mission_clone.clone(),
+                            trigger: WakeTrigger::QuotaExhausted,
+                            payload: serde_json::json!({
+                                "retryAfterSeconds": wait_secs,
+                                "quotaLease": captured_lease,
+                            }),
+                        })
+                        .await;
+                }
             }
         });
     }
@@ -1583,13 +1642,17 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
     // Skip dispatch if the planner is paused/quota-paused/completed/failed.
     let session = match registry.get_by_mission(&event.mission_id).await {
         Some(s) => s,
-        None => return,
+        None => {
+            registry.queue_wake_for_replay(event).await;
+            return;
+        }
     };
     match session.status {
-        PlannerStatus::Paused
-        | PlannerStatus::QuotaPaused
-        | PlannerStatus::Completed
-        | PlannerStatus::Failed => {
+        PlannerStatus::QuotaPaused => {
+            registry.queue_wake_for_replay(event).await;
+            return;
+        }
+        PlannerStatus::Paused | PlannerStatus::Completed | PlannerStatus::Failed => {
             return;
         }
         PlannerStatus::Idle | PlannerStatus::Awake => {}
@@ -1599,6 +1662,7 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         Some(s) => s,
         None => {
             warn!("SidecarManager not managed; cannot dispatch planner wake");
+            registry.queue_wake_for_replay(event).await;
             return;
         }
     };
@@ -1651,6 +1715,7 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
             error = %e,
             "failed to inject wake turn into planner sidecar"
         );
+        registry.queue_wake_for_replay(event).await;
         return;
     }
 
@@ -1928,7 +1993,16 @@ pub async fn start_mission_planner(
                 );
                 return Ok(existing.id);
             }
-            PlannerStatus::Idle | PlannerStatus::Awake | PlannerStatus::QuotaPaused => {
+            PlannerStatus::Idle | PlannerStatus::Awake => {
+                if registry.replay_pending_wake(&mission_id).await {
+                    info!(
+                        mission_id = %mission_id,
+                        "replayed pending mission planner wake for existing session"
+                    );
+                }
+                return Ok(existing.id);
+            }
+            PlannerStatus::QuotaPaused => {
                 return Ok(existing.id);
             }
         }
@@ -2038,6 +2112,13 @@ pub async fn start_mission_planner(
     registry
         .set_compaction_listener(&mission_id, event_id)
         .await;
+
+    if registry.replay_pending_wake(&mission_id).await {
+        info!(
+            mission_id = %mission_id,
+            "replayed pending mission planner wake after start"
+        );
+    }
 
     info!(mission_id = %mission_id, planner_session = %session_id, "started mission planner");
     Ok(session_id)
@@ -2167,6 +2248,12 @@ pub async fn resume_mission_planner(
             mission_id = %mission_id,
             error = %e,
             "resume_mission_planner: failed to persist Idle on Flight DTO"
+        );
+    }
+    if registry.replay_pending_wake(&mission_id).await {
+        info!(
+            mission_id = %mission_id,
+            "replayed pending mission planner wake after resume"
         );
     }
     info!(mission_id = %mission_id, "resumed mission planner");
@@ -2428,13 +2515,7 @@ pub async fn resolve_mission_approval(
     // need to nudge the consumer with the right trigger discriminant
     // and a payload carrying the approval id + choice so the prompt
     // builder doesn't have to re-scan state.
-    let registry = app_handle
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
-
-    // If there's no active planner for this mission, the resolution is
-    // still persisted — the planner will pick it up if/when it resumes.
-    if registry.get_by_mission(&mission_id).await.is_some() {
+    if let Some(registry) = app_handle.try_state::<MissionPlannerRegistry>() {
         registry
             .send_wake(PlannerWakeEvent {
                 mission_id: mission_id.clone(),
@@ -2448,6 +2529,12 @@ pub async fn resolve_mission_approval(
                 }),
             })
             .await;
+    } else {
+        warn!(
+            mission_id = %mission_id,
+            approval_id = %approval_id,
+            "mission planner registry not managed; approval resolution persisted without wake"
+        );
     }
 
     info!(
@@ -2476,13 +2563,46 @@ pub async fn get_mission_approvals(
     mission_id: String,
 ) -> Result<Vec<crate::api::MissionApprovalRequestDto>, String> {
     let state = storage::load_state();
-    let approvals: Vec<crate::api::MissionApprovalRequestDto> = state
-        .mission_approvals
-        .into_iter()
-        .filter(|a| a.mission_id == mission_id && !a.resolved)
-        .map(Into::into)
-        .collect();
+    let approvals: Vec<crate::api::MissionApprovalRequestDto> =
+        unresolved_approvals_for_mission(&state, &mission_id)
+            .into_iter()
+            .map(Into::into)
+            .collect();
     Ok(approvals)
+}
+
+pub(crate) fn unresolved_approvals_for_mission(
+    state: &PersistedState,
+    mission_id: &str,
+) -> Vec<crate::core::flight::MissionApprovalRequest> {
+    state
+        .mission_approvals
+        .iter()
+        .filter(|a| a.mission_id == mission_id && !a.resolved)
+        .cloned()
+        .collect()
+}
+
+pub(crate) fn mission_id_for_persisted_planner_session(
+    state: &PersistedState,
+    sidecar_session_id: &str,
+) -> Option<String> {
+    state
+        .flights
+        .iter()
+        .find(|flight| flight.planner_session_id.as_deref() == Some(sidecar_session_id))
+        .map(|flight| flight.id.clone())
+}
+
+#[cfg(test)]
+pub(crate) fn unresolved_approval_count_by_mission(
+    state: &PersistedState,
+) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    for approval in state.mission_approvals.iter().filter(|a| !a.resolved) {
+        *counts.entry(approval.mission_id.clone()).or_insert(0) += 1;
+    }
+    counts
 }
 
 // ---------------------------------------------------------------------------
@@ -2490,18 +2610,40 @@ pub async fn get_mission_approvals(
 // ---------------------------------------------------------------------------
 //
 // `get_mission_journal` returns the raw markdown text of a mission's
-// append-only journal. The JournalTab renders it verbatim via
-// `MarkdownRenderer`. On a mission with no recorded activity the file
-// doesn't exist yet — `read_journal` returns `Ok("")` in that case so
-// the UI can render its own empty state.
+// append-only journal. It is kept for compatibility with older consumers;
+// the JournalTab uses `get_mission_journal_tail` so large append-only files
+// do not get reloaded in full after every append event.
+//
+// `get_mission_journal_tail` returns a bounded tail slice plus byte metadata.
+// On a mission with no recorded activity the file doesn't exist yet —
+// `read_journal_tail` returns an empty payload in that case so the UI can
+// render its own empty state.
 //
 // `get_mission_journal_path` resolves the on-disk path so the Export
 // button can show the user where the file lives (and a future
 // "Reveal in Finder" command can call straight into the OS shell).
 
+const DEFAULT_MISSION_JOURNAL_TAIL_BYTES: u64 = 128 * 1024;
+const MAX_MISSION_JOURNAL_TAIL_BYTES: u64 = 512 * 1024;
+const MIN_MISSION_JOURNAL_TAIL_BYTES: u64 = 4 * 1024;
+
 #[tauri::command]
 pub async fn get_mission_journal(mission_id: String) -> Result<String, String> {
     crate::core::mission_journal::read_journal(&mission_id)
+}
+
+#[tauri::command]
+pub async fn get_mission_journal_tail(
+    mission_id: String,
+    max_bytes: Option<u64>,
+) -> Result<JournalRead, String> {
+    let max_bytes = max_bytes
+        .unwrap_or(DEFAULT_MISSION_JOURNAL_TAIL_BYTES)
+        .clamp(
+            MIN_MISSION_JOURNAL_TAIL_BYTES,
+            MAX_MISSION_JOURNAL_TAIL_BYTES,
+        );
+    crate::core::mission_journal::read_journal_tail(&mission_id, max_bytes)
 }
 
 #[tauri::command]
@@ -2849,6 +2991,77 @@ mod tests {
         // `forward_inject_user_turn` — this is the load-bearing assertion
         // that the bug fix actually fires `kind="launch"`.
         assert_eq!(received.trigger.kind_str(), "launch");
+    }
+
+    #[tokio::test]
+    async fn continuity_send_wake_buffers_until_sender_is_installed() {
+        let registry = MissionPlannerRegistry::default();
+        registry
+            .send_wake(PlannerWakeEvent {
+                mission_id: "mission-buffered".to_string(),
+                trigger: WakeTrigger::TaskCompleted("task-old".to_string()),
+                payload: serde_json::json!({ "generation": 1 }),
+            })
+            .await;
+        registry
+            .send_wake(PlannerWakeEvent {
+                mission_id: "mission-buffered".to_string(),
+                trigger: WakeTrigger::TaskFailed("task-new".to_string()),
+                payload: serde_json::json!({ "generation": 2 }),
+            })
+            .await;
+
+        {
+            let pending = registry.pending_wakes.lock().await;
+            assert_eq!(
+                pending.len(),
+                1,
+                "pending wake buffer should coalesce by mission id"
+            );
+        }
+
+        let (tx, mut rx) = mpsc::unbounded_channel::<PlannerWakeEvent>();
+        registry.install_wake_sender(tx).await;
+
+        let received = rx
+            .recv()
+            .await
+            .expect("installing sender should replay buffered wake");
+        assert_eq!(received.mission_id, "mission-buffered");
+        assert!(matches!(received.trigger, WakeTrigger::TaskFailed(_)));
+        assert_eq!(received.payload["generation"], 2);
+    }
+
+    #[tokio::test]
+    async fn continuity_replay_pending_wake_drains_to_wake_bus_once() {
+        let registry = MissionPlannerRegistry::default();
+        let (tx, mut rx) = mpsc::unbounded_channel::<PlannerWakeEvent>();
+        registry.install_wake_sender(tx).await;
+        registry
+            .queue_wake_for_replay(PlannerWakeEvent {
+                mission_id: "mission-replay".to_string(),
+                trigger: WakeTrigger::ApprovalGateReached("task-approval".to_string()),
+                payload: serde_json::json!({ "taskId": "task-approval" }),
+            })
+            .await;
+
+        assert!(
+            registry.replay_pending_wake("mission-replay").await,
+            "first replay should find a buffered wake"
+        );
+        let received = rx
+            .recv()
+            .await
+            .expect("replayed wake should be delivered to wake bus");
+        assert_eq!(received.mission_id, "mission-replay");
+        assert!(matches!(
+            received.trigger,
+            WakeTrigger::ApprovalGateReached(_)
+        ));
+        assert!(
+            !registry.replay_pending_wake("mission-replay").await,
+            "second replay should be a no-op after draining"
+        );
     }
 
     // -------------------------------------------------------------------
@@ -3360,7 +3573,7 @@ mod tests {
 #[cfg(test)]
 mod e6_integration {
     use super::*;
-    use crate::core::flight::{Flight, FlightPriority};
+    use crate::core::flight::{Flight, FlightPriority, MissionApprovalRequest};
 
     /// Build a Flight with the minimum field set so tests can mutate just
     /// the `status` / `planner_*` fields they care about.
@@ -3401,6 +3614,19 @@ mod e6_integration {
         let mut state = PersistedState::default();
         state.flights = flights;
         state
+    }
+
+    fn approval(id: &str, mission_id: &str, resolved: bool) -> MissionApprovalRequest {
+        MissionApprovalRequest {
+            id: id.to_string(),
+            mission_id: mission_id.to_string(),
+            question: format!("Question {}", id),
+            options: vec!["yes".to_string(), "no".to_string()],
+            awaiting_since: 10,
+            resolved,
+            resolution: resolved.then(|| "yes".to_string()),
+            resolved_at: resolved.then_some(20),
+        }
     }
 
     /// An Active mission whose planner was Awake at last shutdown — the
@@ -3735,6 +3961,55 @@ mod e6_integration {
             Some(FlightPlannerStatus::Completed),
             "Done mission's planner state untouched"
         );
+    }
+
+    #[test]
+    fn continuity_cold_start_keeps_unresolved_approvals_discoverable() {
+        let mut state = state_with(vec![make_flight(
+            "m-needs-approval",
+            FlightStatus::Active,
+            Some(FlightPlannerStatus::Awake),
+            Some("sidecar-needs-approval"),
+        )]);
+        state
+            .mission_approvals
+            .push(approval("appr-pending", "m-needs-approval", false));
+        state
+            .mission_approvals
+            .push(approval("appr-resolved", "m-needs-approval", true));
+        state
+            .mission_approvals
+            .push(approval("appr-other", "m-other", false));
+
+        let n = compute_cold_start_paused(&mut state);
+        assert_eq!(n, 1);
+
+        let approvals = unresolved_approvals_for_mission(&state, "m-needs-approval");
+        assert_eq!(approvals.len(), 1);
+        assert_eq!(approvals[0].id, "appr-pending");
+
+        let counts = unresolved_approval_count_by_mission(&state);
+        assert_eq!(counts.get("m-needs-approval"), Some(&1));
+        assert_eq!(counts.get("m-other"), Some(&1));
+    }
+
+    #[test]
+    fn continuity_persisted_planner_session_lookup_supports_approval_fallback() {
+        let state = state_with(vec![
+            make_flight(
+                "m-fallback",
+                FlightStatus::Active,
+                Some(FlightPlannerStatus::Idle),
+                Some("sidecar-fallback"),
+            ),
+            make_flight("m-clean", FlightStatus::Active, None, None),
+        ]);
+
+        assert_eq!(
+            mission_id_for_persisted_planner_session(&state, "sidecar-fallback").as_deref(),
+            Some("m-fallback")
+        );
+        assert!(mission_id_for_persisted_planner_session(&state, "missing-sidecar").is_none());
     }
 
     /// Defensive: calling the helper on an empty state must be a no-op

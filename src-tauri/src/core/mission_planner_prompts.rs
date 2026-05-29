@@ -102,7 +102,7 @@ A milestone is a coherent phase of work (e.g. "Schema migration", "Frontend rewr
 
 Returns `{ milestoneId: string }`. Keep the returned id; you will need it for `create_task`.
 
-### `create_task(milestone_id, title, prompt, agent_id, target_spec)`
+### `create_task(milestone_id, title, prompt, agent_id, target_spec, claimed_paths?)`
 
 A task is a single unit of executable work an agent runs in an isolated worktree. Aim for **4–10 tasks per mission total**, each scoped to **5–30 min** of executor work.
 
@@ -110,6 +110,10 @@ A task is a single unit of executable work an agent runs in an isolated worktree
 - `title` (string, ≤160 chars) — short label for the task tile.
 - `prompt` (string, non-empty) — **the verbatim instruction the executor agent will receive.** Write it as if you were the human handing the work off. Include exact file paths, expected outputs, constraints, definition of done. The executor never sees your spec-mode conversation; the prompt must stand alone.
 - `agent_id` (string) — the executor agent. Default to `"claude-code"` unless the user specifically asked for a different agent. Unknown ids fall back to `claude-code` with a warning.
+- `claimed_paths` (string[], strongly recommended) — repo-relative files or
+  directories this task is expected to edit, e.g. `["src/features/auth", "src/lib/api.ts"]`.
+  The dispatcher uses these claims to block overlapping queued/running tasks
+  before two agents mutate the same surface. Use exact paths from the prompt.
 - `target_spec` (object) — where the agent runs. Default shape:
   ```json
   {

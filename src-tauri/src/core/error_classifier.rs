@@ -348,6 +348,7 @@ mod e5_exemption_tests {
             completed_at: None,
             cost: 0.0,
             tokens: 0,
+            owned_paths: Vec::new(),
             replan_count: 0,
         }
     }

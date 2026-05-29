@@ -2,7 +2,11 @@ import { useMemo, useState } from "react";
 import { GitPullRequest, Rocket, Sparkles } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useFlightStore } from "@/stores/flightStore";
-import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
+import {
+  findAsyncLaunchPathCollisions,
+  formatAsyncLaunchPathCollisionMessage,
+  useAsyncFlightStore,
+} from "@/stores/asyncFlightStore";
 import { useGitHubStore } from "@/stores/githubStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -46,11 +50,9 @@ function pickedToSpec(p: PickedTarget): AttemptTargetSpec {
   };
 }
 
-export function LaunchAsyncFlightModal({
-  onClose,
-  onLaunched,
-}: LaunchAsyncFlightModalProps) {
+export function LaunchAsyncFlightModal({ onClose, onLaunched }: LaunchAsyncFlightModalProps) {
   const addFlight = useFlightStore((s) => s.addFlight);
+  const flights = useFlightStore((s) => s.flights);
   const launchAsync = useAsyncFlightStore((s) => s.launchAsync);
   const activeWorkspace = useWorkspaceStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
@@ -58,9 +60,7 @@ export function LaunchAsyncFlightModal({
   const projectPath = useLayoutStore((s) => s.projectPath);
   // v0.8: pre-check the publish toggle if the user opted into that default
   // via Settings → GitHub.
-  const defaultPublishAttemptsAsPrs = useGitHubStore(
-    (s) => s.defaultPublishAttemptsAsPrs,
-  );
+  const defaultPublishAttemptsAsPrs = useGitHubStore((s) => s.defaultPublishAttemptsAsPrs);
 
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
@@ -70,25 +70,38 @@ export function LaunchAsyncFlightModal({
   // v0.8-G: per-attempt draft-PR publish toggle. When enabled, the
   // asyncFlightStore pipeline pushes each attempt's branch and opens a
   // draft GitHub PR once it reaches a terminal state.
-  const [publishAsPrs, setPublishAsPrs] = useState(
-    defaultPublishAttemptsAsPrs,
-  );
+  const [publishAsPrs, setPublishAsPrs] = useState(defaultPublishAttemptsAsPrs);
 
   const promptShort = useMemo(
     () => (prompt.length > 60 ? prompt.slice(0, 57) + "…" : prompt),
     [prompt],
   );
 
+  const targetSpecs = useMemo(() => picked.map(pickedToSpec), [picked]);
+  const launchCollisions = useMemo(
+    () => findAsyncLaunchPathCollisions(null, targetSpecs, flights),
+    [flights, targetSpecs],
+  );
+  const collisionMessage = useMemo(
+    () =>
+      launchCollisions.length > 0 ? formatAsyncLaunchPathCollisionMessage(launchCollisions) : null,
+    [launchCollisions],
+  );
+
   const canLaunch =
-    prompt.trim().length > 0 && picked.length > 0 && !launching;
+    prompt.trim().length > 0 && picked.length > 0 && launchCollisions.length === 0 && !launching;
 
   async function handleLaunch() {
     if (!canLaunch) return;
     setLaunching(true);
     setError(null);
     try {
+      if (collisionMessage) {
+        setError(collisionMessage);
+        return;
+      }
       const flight = addFlight({
-        title: (title.trim() || promptShort || "Untitled flight"),
+        title: title.trim() || promptShort || "Untitled flight",
         objective: prompt.trim(),
         priority: "medium" as FlightPriority,
         projectPath: activeWorkspace?.projectPath || projectPath || "",
@@ -105,13 +118,12 @@ export function LaunchAsyncFlightModal({
       // written the flight, surfacing as "Flight not found" warnings that
       // were silently swallowed.
 
-      const targets = picked.map(pickedToSpec);
-      await launchAsync(flight.id, prompt.trim(), targets);
+      await launchAsync(flight.id, prompt.trim(), targetSpecs);
 
       onLaunched?.(flight.id);
       onClose();
     } catch (e) {
-      setError(typeof e === "string" ? e : (e as Error)?.message ?? "Launch failed");
+      setError(typeof e === "string" ? e : ((e as Error)?.message ?? "Launch failed"));
     } finally {
       setLaunching(false);
     }
@@ -133,14 +145,14 @@ export function LaunchAsyncFlightModal({
         <button
           onClick={onClose}
           disabled={launching}
-          className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+          className="px-3 py-1.5 text-xs text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={() => void handleLaunch()}
           disabled={!canLaunch}
-          className="flex items-center gap-1.5 px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="bg-accent-green/15 border-accent-green/30 hover:bg-accent-green/25 flex items-center gap-1.5 rounded border px-4 py-1.5 text-xs font-medium text-accent-green transition-colors disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Rocket size={11} />
           Launch {picked.length || ""} {picked.length === 1 ? "agent" : "agents"}
@@ -157,33 +169,31 @@ export function LaunchAsyncFlightModal({
       width="w-[820px] max-w-[92vw]"
       footer={footer}
     >
-      <div className="px-5 py-4 flex flex-col gap-4" onKeyDown={handleKeyDown}>
+      <div className="flex flex-col gap-4 px-5 py-4" onKeyDown={handleKeyDown}>
         {/* Prompt */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11px] font-medium text-text-secondary">
-            Prompt
-          </label>
+          <label className="text-[11px] font-medium text-text-secondary">Prompt</label>
           <textarea
             autoFocus
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="What should the agents work on? Each agent runs the same prompt independently."
             rows={4}
-            className="w-full bg-bg-primary text-xs text-text-primary placeholder:text-text-muted px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50 resize-none"
+            className="focus:border-accent-green/50 w-full resize-none rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary outline-none placeholder:text-text-muted"
           />
         </div>
 
         {/* Title (optional) */}
         <div className="flex flex-col gap-1.5">
           <label className="text-[11px] font-medium text-text-secondary">
-            Title <span className="text-text-muted font-normal">(optional)</span>
+            Title <span className="font-normal text-text-muted">(optional)</span>
           </label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder={promptShort || "Auto-generated from prompt"}
-            className="w-full bg-bg-primary text-xs text-text-primary placeholder:text-text-muted px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
+            className="focus:border-accent-green/50 w-full rounded border border-bg-border bg-bg-primary px-3 py-2 text-xs text-text-primary outline-none placeholder:text-text-muted"
           />
         </div>
 
@@ -191,7 +201,7 @@ export function LaunchAsyncFlightModal({
         <MultiTargetPicker picked={picked} onChange={setPicked} />
 
         {/* v0.8-G: publish attempts as draft PRs */}
-        <label className="flex items-start gap-2 cursor-pointer group">
+        <label className="group flex cursor-pointer items-start gap-2">
           <input
             type="checkbox"
             checked={publishAsPrs}
@@ -203,15 +213,21 @@ export function LaunchAsyncFlightModal({
               <GitPullRequest size={11} className="text-accent-purple" />
               Publish attempts as draft PRs
             </span>
-            <span className="text-[10px] text-text-muted leading-snug">
-              After each attempt, push the branch and open a draft PR on GitHub.
-              Lets you review attempts via your normal PR flow.
+            <span className="text-[10px] leading-snug text-text-muted">
+              After each attempt, push the branch and open a draft PR on GitHub. Lets you review
+              attempts via your normal PR flow.
             </span>
           </div>
         </label>
 
+        {collisionMessage && (
+          <div className="bg-accent-amber/10 border-accent-amber/30 whitespace-pre-wrap rounded border px-3 py-2 text-[11px] text-accent-amber">
+            {collisionMessage}
+          </div>
+        )}
+
         {error && (
-          <div className="text-[11px] text-accent-red bg-accent-red/10 border border-accent-red/30 rounded px-3 py-2">
+          <div className="bg-accent-red/10 border-accent-red/30 rounded border px-3 py-2 text-[11px] text-accent-red">
             {error}
           </div>
         )}

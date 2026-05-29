@@ -440,6 +440,9 @@ pub struct TaskDto {
     /// `render_task_failed` for the budget header (`replanCount / 3`).
     #[serde(default)]
     pub replan_count: u32,
+    #[serde(default)]
+    #[ts(optional)]
+    pub owned_paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1286,6 +1289,11 @@ impl From<core_flight::Task> for TaskDto {
             completed_at: value.completed_at,
             cost: value.cost,
             tokens: value.tokens,
+            owned_paths: if value.owned_paths.is_empty() {
+                None
+            } else {
+                Some(value.owned_paths)
+            },
             replan_count: value.replan_count,
         }
     }
@@ -1314,6 +1322,7 @@ impl From<TaskDto> for core_flight::Task {
             completed_at: value.completed_at,
             cost: value.cost,
             tokens: value.tokens,
+            owned_paths: value.owned_paths.unwrap_or_default(),
             replan_count: value.replan_count,
         }
     }
@@ -1751,6 +1760,7 @@ mod tests {
                         completed_at: None,
                         cost: 0.0,
                         tokens: 0,
+                        owned_paths: None,
                         replan_count: 0,
                     }],
                     validation_criteria: Vec::new(),
@@ -1905,6 +1915,7 @@ mod tests {
             completed_at: None,
             cost: 0.0,
             tokens: 0,
+            owned_paths: Vec::new(),
             replan_count: 0,
         };
         task.replan_count = 2;

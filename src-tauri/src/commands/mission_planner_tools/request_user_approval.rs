@@ -33,7 +33,9 @@ use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::warn;
 
-use crate::commands::mission_planner::MissionPlannerRegistry;
+use crate::commands::mission_planner::{
+    mission_id_for_persisted_planner_session, MissionPlannerRegistry,
+};
 use crate::core::flight::MissionApprovalRequest;
 use crate::core::storage;
 
@@ -79,18 +81,7 @@ pub async fn handle(
 
     // 2. Resolve mission_id from session_id via the registry reverse-lookup
     //    (see `update_task.rs` for the reference pattern).
-    let registry = app
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
-    let mission_id = registry
-        .mission_id_for_sidecar_session(session_id)
-        .await
-        .ok_or_else(|| {
-            format!(
-                "no active planner session found for sidecar session '{}'",
-                session_id
-            )
-        })?;
+    let mission_id = resolve_mission_id_for_sidecar_session(app, session_id).await?;
 
     // 3. Build the new approval request.
     let approval_id = format!("appr_{}", uuid::Uuid::new_v4());
@@ -181,4 +172,23 @@ fn now_millis() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or_default()
+}
+
+async fn resolve_mission_id_for_sidecar_session(
+    app: &AppHandle,
+    session_id: &str,
+) -> Result<String, String> {
+    if let Some(registry) = app.try_state::<MissionPlannerRegistry>() {
+        if let Some(mission_id) = registry.mission_id_for_sidecar_session(session_id).await {
+            return Ok(mission_id);
+        }
+    }
+
+    let state = storage::load_state();
+    mission_id_for_persisted_planner_session(&state, session_id).ok_or_else(|| {
+        format!(
+            "no active or persisted planner session found for sidecar session '{}'",
+            session_id
+        )
+    })
 }
