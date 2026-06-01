@@ -118,6 +118,15 @@ bridge.
 - **P3 — Windows-OpenSSH remote hosts.** `ssh_check_remote_path` and the
   remote git commands use POSIX `[ -e ... ]` / `git -C` — fine on Unix
   remotes, breaks on Windows OpenSSH targets.
+- **P3 — Remote file tools require `realpath` (fail-closed).** The symlink-
+  escape confinement added to the remote read/list/grep/write_file scripts
+  (`src-tauri/src/core/tool_runtime_ssh.rs::confine_prelude`) resolves paths
+  with `realpath` and FAILS CLOSED (exit 9 → error) when the remote lacks it.
+  This deepens the POSIX-sh dependency: remotes without `realpath` (some
+  BusyBox builds, Windows OpenSSH) lose the file tools entirely. Follow-up:
+  a portable fallback (`command -v realpath || readlink -f` probe) and/or a
+  Windows-OpenSSH-aware remote tool layer. Pairs with the Windows-OpenSSH
+  item above. `bash` is intentionally left unconfined on both transports.
 
 ## Agents pane
 
