@@ -2,9 +2,9 @@ use serde::Serialize;
 use std::fs;
 use std::future::Future;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::{info, warn};
 
@@ -142,10 +142,25 @@ impl Default for PersistedState {
     }
 }
 
-/// Get the PacketADE data directory (~/.packetade/)
+/// Get the PacketADE data directory (~/.packetade/).
+///
+/// Resolves the SAME directory for both reads and writes so a failed startup
+/// migration can't strand the user on an empty new dir while their data sits
+/// in the legacy dir:
+/// - prefer the new dir if it already exists,
+/// - otherwise fall back to the legacy dir if it exists,
+/// - otherwise return the new dir (fresh install).
 pub fn data_dir() -> PathBuf {
     let home = home_dir().unwrap_or_else(|| ".".to_string());
-    PathBuf::from(home).join(crate::core::brand::DATA_DIR_NAME)
+    let new_dir = PathBuf::from(&home).join(crate::core::brand::DATA_DIR_NAME);
+    if new_dir.exists() {
+        return new_dir;
+    }
+    let legacy_dir = PathBuf::from(&home).join(crate::core::brand::LEGACY_DATA_DIR_NAME);
+    if legacy_dir.exists() {
+        return legacy_dir;
+    }
+    new_dir
 }
 
 /// Ensure the data directory exists.
@@ -163,18 +178,107 @@ pub fn ensure_data_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Derive the sibling `.bak` path for a primary file, matching the exact
+/// extension-mangling that `write_with_backup` uses (`<ext>.bak`).
+fn backup_path_for(path: &Path) -> PathBuf {
+    path.with_extension(format!(
+        "{}.bak",
+        path.extension().and_then(|ext| ext.to_str()).unwrap_or("json")
+    ))
+}
+
+/// Derive the sibling `.tmp` path for a primary file, matching the exact
+/// extension-mangling that `write_with_backup` uses (`<ext>.tmp`). A `.tmp`
+/// may survive on disk if a crash hit between the fsync and the rename-in.
+fn tmp_path_for(path: &Path) -> PathBuf {
+    path.with_extension(format!(
+        "{}.tmp",
+        path.extension().and_then(|ext| ext.to_str()).unwrap_or("json")
+    ))
+}
+
+/// Quarantine a corrupt primary file by renaming it out of the way BEFORE any
+/// recovery or save runs. This is mandatory: if the corrupt primary stays in
+/// place, the next `write_with_backup` would copy it into `.bak` and destroy
+/// the last good backup. After a successful rename `path.exists()` is false,
+/// so the backup step is skipped and the good `.bak` survives. Best-effort:
+/// on failure (e.g. a Windows sharing violation) we warn and continue rather
+/// than panic or block startup, mirroring the migration warn-and-continue style.
+fn quarantine_corrupt(path: &Path) {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let quarantine = path.with_extension(format!(
+        "{}.corrupt-{}",
+        path.extension().and_then(|ext| ext.to_str()).unwrap_or("json"),
+        ts
+    ));
+    match fs::rename(path, &quarantine) {
+        Ok(()) => warn!(
+            "Quarantined corrupt {:?} -> {:?}; attempting recovery",
+            path, quarantine
+        ),
+        Err(e) => warn!(
+            "Failed to quarantine corrupt {:?}: {} — continuing recovery",
+            path, e
+        ),
+    }
+}
+
+/// Read + parse a sibling file (`.bak` or `.tmp`) as `T`. Returns `Some` only
+/// on a clean parse; any read or parse error yields `None` (the ladder simply
+/// falls through to the next candidate).
+fn try_recover<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
+    let content = fs::read_to_string(path).ok()?;
+    serde_json::from_str::<T>(&content).ok()
+}
+
 pub fn load_state() -> PersistedState {
     let path = data_dir().join(STATE_FILENAME);
+
+    // 1. Primary: clean read+parse wins immediately.
     match fs::read_to_string(&path) {
         Ok(content) => match serde_json::from_str::<PersistedState>(&content) {
-            Ok(state) => state,
+            Ok(state) => return state,
             Err(e) => {
-                warn!("Failed to parse {:?}: {}, using default state", path, e);
-                PersistedState::default()
+                // 2. Primary parsed-but-corrupt: quarantine FIRST (before any
+                // recovery/return) so the next save can't clobber the good .bak.
+                warn!("Failed to parse {:?}: {}, attempting recovery", path, e);
+                quarantine_corrupt(&path);
             }
         },
-        Err(_) => PersistedState::default(),
+        Err(_) => {
+            // File-missing: fall through to .bak/.tmp. Genuine first run (no
+            // primary, no .bak, no .tmp) stays fast and silent → default.
+        }
     }
+
+    // Recovery is intentionally READ-ONLY. `load_state` is called from many
+    // sites that do NOT hold STATE_LOCK (get_state, git, flight_attempts,
+    // orchestration, worktree, …); re-persisting here would issue an unlocked
+    // `write_with_backup` that can race a locked writer on the shared `.tmp`
+    // and land a stale snapshot over fresh state — a lost update. We return the
+    // recovered value and let the next lock-held save reconcile the primary
+    // (the locked writer's own internal `load_state` returns the same recovered
+    // value and writes it back properly under STATE_LOCK).
+
+    // 3. Backup sibling (.bak).
+    let backup_path = backup_path_for(&path);
+    if let Some(state) = try_recover::<PersistedState>(&backup_path) {
+        warn!("Recovered state from backup {:?}", backup_path);
+        return state;
+    }
+
+    // 4. Orphaned tmp (.tmp) — a complete fsynced write that never renamed in.
+    let tmp_path = tmp_path_for(&path);
+    if let Some(state) = try_recover::<PersistedState>(&tmp_path) {
+        warn!("Recovered state from orphaned tmp {:?}", tmp_path);
+        return state;
+    }
+
+    // 5. Nothing recoverable → default.
+    PersistedState::default()
 }
 
 fn save_state_inner(state: &PersistedState) -> Result<(), String> {
@@ -404,19 +508,46 @@ fn provider_settings_path() -> PathBuf {
 
 fn load_provider_runtime_settings() -> ProviderRuntimeSettings {
     let path = provider_settings_path();
+
+    // 1. Primary: clean read+parse wins immediately.
     match fs::read_to_string(&path) {
         Ok(content) => match serde_json::from_str::<ProviderRuntimeSettings>(&content) {
-            Ok(settings) => settings,
+            Ok(settings) => return settings,
             Err(e) => {
+                // 2. Corrupt primary: quarantine FIRST so the next save can't
+                // copy the corrupt file into .bak and destroy the good backup.
                 warn!(
-                    "Failed to parse provider settings {:?}: {}, using defaults",
+                    "Failed to parse provider settings {:?}: {}, attempting recovery",
                     path, e
                 );
-                ProviderRuntimeSettings::default()
+                quarantine_corrupt(&path);
             }
         },
-        Err(_) => ProviderRuntimeSettings::default(),
+        Err(_) => {
+            // File-missing: fall through to .bak/.tmp. Genuine first run stays
+            // fast and silent → defaults.
+        }
     }
+
+    // 3. Backup sibling (.bak). Recovery is read-only (same rationale as
+    // load_state): this is reached from unlocked read paths, so we return the
+    // recovered value and let the next lock-held save reconcile the primary
+    // rather than issuing an unlocked write that could race a writer.
+    let backup_path = backup_path_for(&path);
+    if let Some(settings) = try_recover::<ProviderRuntimeSettings>(&backup_path) {
+        warn!("Recovered provider settings from backup {:?}", backup_path);
+        return settings;
+    }
+
+    // 4. Orphaned tmp (.tmp).
+    let tmp_path = tmp_path_for(&path);
+    if let Some(settings) = try_recover::<ProviderRuntimeSettings>(&tmp_path) {
+        warn!("Recovered provider settings from orphaned tmp {:?}", tmp_path);
+        return settings;
+    }
+
+    // 5. Nothing recoverable → defaults.
+    ProviderRuntimeSettings::default()
 }
 
 fn save_provider_runtime_settings(settings: &ProviderRuntimeSettings) -> Result<(), String> {
@@ -516,10 +647,10 @@ fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {
             .map_err(|e| format!("Failed to write backup {:?}: {}", backup_path, e))?;
     }
 
-    if path.exists() {
-        fs::remove_file(path).map_err(|e| format!("Failed to replace {:?}: {}", path, e))?;
-    }
-
+    // Atomically replace the destination. std::fs::rename replaces an existing
+    // destination on all platforms (Windows uses MOVEFILE_REPLACE_EXISTING), so
+    // we must NOT pre-remove `path` — doing so opens a crash window where
+    // neither the primary nor the renamed tmp exists on disk.
     fs::rename(&tmp_path, path).map_err(|e| format!("Failed to replace {:?}: {}", path, e))?;
 
     Ok(())
