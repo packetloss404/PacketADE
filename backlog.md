@@ -61,6 +61,15 @@ bridge.
   password-auth servers the probe fails unless the FE retrieves the password
   first. Fix: pull from keyring by `target_id` when auth method is
   `password` and no inline password is supplied.
+- **P3 — Rust bash/ssh tools orphan grandchildren on timeout.** The
+  abnormal-termination PR added `kill_on_drop(true)` to `tool_runtime.rs`
+  (`execute_bash`) and `tool_runtime_ssh.rs` (`ssh_run`), but that only reaps
+  the direct child (the `sh -c` / `cmd /C` shell or the local `ssh` client) —
+  not the grandchildren it spawned (build, `node`, dev server) or the remote
+  process. The sidecar bash tool now does a full process-group / `taskkill /T`
+  kill (`agent-sidecar/src/providers/openai-agents.ts::killTree`); the Rust
+  paths should reach parity (POSIX process-group kill, Windows `taskkill /T`,
+  and `ssh -tt`/`RequestTTY` so the remote command gets SIGHUP on disconnect).
 - **P2 — Password-auth migration silently downgrades to "agent".**
   `src/lib/sshTargetMigration.ts:67-70` forces
   `authMethod: keyPath ? "key" : "agent"`. Legacy users with

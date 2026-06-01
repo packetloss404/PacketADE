@@ -68,6 +68,10 @@ impl McpClient {
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
+        // Reap the child if the `initialize` handshake fails (timeout / garbage
+        // output / closed stdout) and `spawn()` returns Err, or on pool
+        // teardown; dropping the `Child` then terminates the OS process.
+        cmd.kill_on_drop(true);
 
         #[cfg(target_os = "windows")]
         {
