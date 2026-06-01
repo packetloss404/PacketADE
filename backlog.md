@@ -556,6 +556,17 @@ hardening passes worth doing when context allows.
 
 ### Storage / orchestration / prompts
 
+- **P3 — `core/migration.rs` cross-volume copy fallback can strand the
+  user on a partial `new_dir`.** The copy-fallback added with the storage
+  durability work copies the legacy dir to the new dir when `rename` fails
+  (cross-volume), and on copy failure best-effort `remove_dir_all`s the
+  partial copy. But if that cleanup also fails — or the process crashes
+  mid-copy — a partially-populated `new_dir` survives; the next startup's
+  `data_dir()` prefers `new_dir` (`.exists()`) and reads an empty/missing
+  `state.v1.json` instead of the intact legacy dir. Legacy data is never
+  deleted so nothing is lost, but the app shows empty. Harden by copying to
+  a temp dir then atomically renaming it into place, and verify/log the
+  cleanup result instead of discarding it with `let _`.
 - **P3 — `core/orchestrator.rs:415` `unwrap()` after `is_none()` guard
   in the `tick()` hot loop.** Idiomatic `if let Some(agent) = ... {}
   else { continue; }` reads cleaner and removes the hazard signal.
