@@ -778,7 +778,18 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     if (this.planMode || this.permissionMode === "deny_all") return false;
     if (this.permissionMode === "allow_all") return false;
     if (this.autoAllowedTools.has(name)) return false;
-    return this.permissionMode === "ask_for_risky";
+    // When approveWrites is on, write_file runs its own pending_edit diff
+    // round-trip (see writeFile / waitForEdit) which is the single approval
+    // gate for that tool. Suppress the SDK-level permission prompt here so the
+    // user isn't prompted twice for the same write. Mirrors anthropic.ts, where
+    // the PreToolUse diff hook owns approval for write tools under approveWrites
+    // and non-write tools still flow through the normal permission prompt.
+    if (name === "write_file" && this.approveWrites) return false;
+    // 'auto' (the default mode) now gates risky tools the same as
+    // 'ask_for_risky': pause for an explicit approval before running.
+    return (
+      this.permissionMode === "ask_for_risky" || this.permissionMode === "auto"
+    );
   }
 
   private async resolveInsideProject(

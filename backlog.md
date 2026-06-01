@@ -119,6 +119,18 @@ bridge.
   remote git commands use POSIX `[ -e ... ]` / `git -C` — fine on Unix
   remotes, breaks on Windows OpenSSH targets.
 
+## Agents pane
+
+- **P3 — AgentModeChip "Default" label is now inaccurate for OpenAI Agents.**
+  The shared chip (`src/components/agents/AgentModeChip.tsx`,
+  `agentModeChipUtils.ts` `deriveMode`) labels `permissionMode: "auto"` (no
+  approveWrites) as "Default — full tools, no per-tool prompts". After the
+  approval-gating fix, an `api-openai-agents` session in `auto` now DOES
+  prompt before `bash`/`write_file`. The chip is shared across all API
+  providers and only OpenAI Agents changed, so the fix needs provider-aware
+  labeling (or a tooltip note) rather than a blanket relabel. Make the chip
+  truthful per provider.
+
 ## Platform & distribution (from `dev/`)
 
 Deferred items called out in `dev/multi-platform-build.md` and
