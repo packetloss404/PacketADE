@@ -26,6 +26,49 @@ use tracing::{debug, info, warn};
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 
+/// Classified failure from the JSON-RPC request chokepoint.
+///
+/// The distinction drives connection eviction: `Connection` errors mean the
+/// transport/child process is broken (write/flush failure, EOF on stdout,
+/// request timeout, or a failed spawn/handshake) and the pooled client should
+/// be evicted and respawned. `Protocol` errors come from a *live* server — a
+/// JSON-RPC `error` object or a malformed-but-readable payload — and must NOT
+/// trigger eviction, since the connection is still healthy.
+#[derive(Debug, Clone)]
+pub enum McpError {
+    /// Transport/process is broken; the client should be evicted.
+    Connection(String),
+    /// A live server returned an error or unexpected payload; keep the client.
+    Protocol(String),
+}
+
+impl McpError {
+    /// True for transport/process failures that warrant evicting the pooled
+    /// client. False for live-server protocol errors.
+    pub fn is_connection(&self) -> bool {
+        matches!(self, McpError::Connection(_))
+    }
+}
+
+impl std::fmt::Display for McpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            McpError::Connection(msg) | McpError::Protocol(msg) => f.write_str(msg),
+        }
+    }
+}
+
+impl std::error::Error for McpError {}
+
+/// Lossy conversion so existing `String`-returning boundaries keep working;
+/// the connection/protocol distinction is dropped here, so map at the call
+/// site (not via `?`/`.into()`) when eviction decisions depend on it.
+impl From<McpError> for String {
+    fn from(e: McpError) -> String {
+        e.to_string()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolInfo {
     pub name: String,
@@ -54,7 +97,7 @@ impl McpClient {
         command: &str,
         args: &[String],
         env: &HashMap<String, String>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, McpError> {
         info!(server = %server_name, cmd = %command, "Spawning MCP server");
 
         // Resolve `.cmd` wrappers on Windows for npm-installed binaries.
@@ -68,24 +111,26 @@ impl McpClient {
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
+        // Reap the child if the `initialize` handshake fails (timeout / garbage
+        // output / closed stdout) and `spawn()` returns Err, or on pool
+        // teardown; dropping the `Child` then terminates the OS process.
+        cmd.kill_on_drop(true);
 
         #[cfg(target_os = "windows")]
         {
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Failed to spawn MCP server '{}': {}", server_name, e))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            McpError::Connection(format!("Failed to spawn MCP server '{}': {}", server_name, e))
+        })?;
 
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| format!("MCP server '{}' has no stdin", server_name))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| format!("MCP server '{}' has no stdout", server_name))?;
+        let stdin = child.stdin.take().ok_or_else(|| {
+            McpError::Connection(format!("MCP server '{}' has no stdin", server_name))
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            McpError::Connection(format!("MCP server '{}' has no stdout", server_name))
+        })?;
 
         // Drain stderr in the background so the child doesn't block on a
         // full pipe; surface it as warn-level traces for debugging.
@@ -130,34 +175,36 @@ impl McpClient {
     }
 
     /// Discover the server's tools via `tools/list`.
-    pub async fn list_tools(&mut self) -> Result<Vec<McpToolInfo>, String> {
+    pub async fn list_tools(&mut self) -> Result<Vec<McpToolInfo>, McpError> {
         let resp = self.request("tools/list", json!({})).await?;
-        let tools_val = resp
-            .get("tools")
-            .ok_or_else(|| "tools/list response missing 'tools' array".to_string())?;
+        let tools_val = resp.get("tools").ok_or_else(|| {
+            McpError::Protocol("tools/list response missing 'tools' array".to_string())
+        })?;
         let tools: Vec<McpToolInfo> = serde_json::from_value(tools_val.clone())
-            .map_err(|e| format!("Invalid tools/list payload: {}", e))?;
+            .map_err(|e| McpError::Protocol(format!("Invalid tools/list payload: {}", e)))?;
         Ok(tools)
     }
 
     /// Invoke a tool via `tools/call`. Joins all text content blocks from
     /// the response into a single string.
-    pub async fn call_tool(&mut self, name: &str, arguments: &Value) -> Result<String, String> {
+    pub async fn call_tool(&mut self, name: &str, arguments: &Value) -> Result<String, McpError> {
         let params = json!({
             "name": name,
             "arguments": arguments,
         });
         let resp = self.request("tools/call", params).await?;
 
-        // Surface server-reported errors explicitly.
+        // Surface server-reported errors explicitly. A tool `isError` result is
+        // a SUCCESSFUL protocol response describing a tool-level failure on a
+        // live server — classify as Protocol so it never evicts the client.
         if let Some(is_error) = resp.get("isError").and_then(|v| v.as_bool()) {
             if is_error {
                 let text = extract_text_content(&resp);
-                return Err(if text.is_empty() {
+                return Err(McpError::Protocol(if text.is_empty() {
                     format!("MCP tool '{}' reported an error", name)
                 } else {
                     text
-                });
+                }));
             }
         }
 
@@ -184,7 +231,7 @@ impl McpClient {
     }
 
     /// Send a JSON-RPC request and wait for the matching response.
-    async fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+    async fn request(&mut self, method: &str, params: Value) -> Result<Value, McpError> {
         let id = self.next_id;
         self.next_id += 1;
 
@@ -206,12 +253,12 @@ impl McpClient {
                     .stdout
                     .read_line(&mut line)
                     .await
-                    .map_err(|e| format!("MCP read error: {}", e))?;
+                    .map_err(|e| McpError::Connection(format!("MCP read error: {}", e)))?;
                 if n == 0 {
-                    return Err(format!(
+                    return Err(McpError::Connection(format!(
                         "MCP server '{}' closed stdout unexpectedly",
                         self.server_name
-                    ));
+                    )));
                 }
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
@@ -234,7 +281,12 @@ impl McpClient {
                         .get("message")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown JSON-RPC error");
-                    return Err(format!("MCP error from '{}': {}", self.server_name, msg));
+                    // A JSON-RPC error object means the server is alive and
+                    // responded — protocol-level, never evict.
+                    return Err(McpError::Protocol(format!(
+                        "MCP error from '{}': {}",
+                        self.server_name, msg
+                    )));
                 }
                 return Ok(val.get("result").cloned().unwrap_or(Value::Null));
             }
@@ -243,15 +295,15 @@ impl McpClient {
         tokio::time::timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS), read_fut)
             .await
             .map_err(|_| {
-                format!(
+                McpError::Connection(format!(
                     "MCP server '{}' timed out responding to '{}'",
                     self.server_name, method
-                )
+                ))
             })?
     }
 
     /// Send a JSON-RPC notification (no id, no response expected).
-    async fn notify(&mut self, method: &str, params: Value) -> Result<(), String> {
+    async fn notify(&mut self, method: &str, params: Value) -> Result<(), McpError> {
         let msg = json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -260,18 +312,19 @@ impl McpClient {
         self.write_message(&msg).await
     }
 
-    async fn write_message(&mut self, msg: &Value) -> Result<(), String> {
-        let mut line = serde_json::to_string(msg)
-            .map_err(|e| format!("Failed to serialize MCP message: {}", e))?;
+    async fn write_message(&mut self, msg: &Value) -> Result<(), McpError> {
+        let mut line = serde_json::to_string(msg).map_err(|e| {
+            McpError::Connection(format!("Failed to serialize MCP message: {}", e))
+        })?;
         line.push('\n');
         self.stdin
             .write_all(line.as_bytes())
             .await
-            .map_err(|e| format!("MCP write error: {}", e))?;
+            .map_err(|e| McpError::Connection(format!("MCP write error: {}", e)))?;
         self.stdin
             .flush()
             .await
-            .map_err(|e| format!("MCP flush error: {}", e))?;
+            .map_err(|e| McpError::Connection(format!("MCP flush error: {}", e)))?;
         Ok(())
     }
 }
@@ -439,22 +492,104 @@ impl McpConnectionPool {
         Ok(arc)
     }
 
+    /// Evict a dead client from the pool so the next call respawns it.
+    ///
+    /// Briefly locks the singleton pool and removes the mapping for
+    /// `server_name` ONLY IF the currently-mapped entry is the same `Arc` as
+    /// `stale` (`Arc::ptr_eq`). The guard matters because another caller may
+    /// have already detected the failure, evicted, and respawned a healthy
+    /// replacement under the same name; without the identity check we'd wipe
+    /// that fresh client and cause needless churn. The pool lock is never held
+    /// across a spawn or shutdown. Dropping the removed `Arc` lets
+    /// `kill_on_drop` reap the dead child once all outstanding guards release.
+    ///
+    /// Private by design: every caller still holds its own live clone of
+    /// `stale` (`client`), so the `Arc` dropped here is only a refcount
+    /// decrement — never the last reference. That keeps the `kill_on_drop`
+    /// child-reap (which registers an async kill) out of the pool-lock
+    /// critical section. Do not widen visibility without preserving that
+    /// invariant.
+    async fn evict(server_name: &str, stale: &Arc<Mutex<McpClient>>) {
+        let mut pool = Self::instance().lock().await;
+        if let Some(current) = pool.clients.get(server_name) {
+            if Arc::ptr_eq(current, stale) {
+                pool.clients.remove(server_name);
+                debug!(server = %server_name, "Evicted dead MCP client from pool");
+            }
+        }
+    }
+
     /// Public convenience: list tools for a single named server.
+    ///
+    /// `tools/list` is idempotent, so a connection-level failure (dead child,
+    /// EOF, timeout) is recoverable: we evict the stale client and retry once
+    /// against a freshly spawned one. Protocol-level errors come from a live
+    /// server and are surfaced as-is without eviction or retry.
     pub async fn list_tools_for_server(name: &str) -> Result<Vec<McpToolInfo>, String> {
         let client = Self::get_or_spawn(name).await?;
-        let mut guard = client.lock().await;
-        guard.list_tools().await
+        let first = {
+            let mut guard = client.lock().await;
+            guard.list_tools().await
+            // guard dropped here, releasing the inner client Mutex before we
+            // ever touch the outer pool lock in evict().
+        };
+        match first {
+            Ok(tools) => Ok(tools),
+            Err(e) if e.is_connection() => {
+                // Transport/process is dead: drop the dead client (ptr_eq
+                // guarded so we don't wipe a healthy replacement) and retry
+                // once with a fresh spawn.
+                Self::evict(name, &client).await;
+                let fresh = Self::get_or_spawn(name).await?;
+                let second = {
+                    let mut guard = fresh.lock().await;
+                    guard.list_tools().await
+                };
+                match second {
+                    Ok(tools) => Ok(tools),
+                    // The replacement also died: evict it too (we do not retry
+                    // again — retry-once) so the next call respawns cleanly
+                    // rather than re-hitting a dead cached client.
+                    Err(e) if e.is_connection() => {
+                        Self::evict(name, &fresh).await;
+                        Err(String::from(e))
+                    }
+                    Err(e) => Err(String::from(e)),
+                }
+            }
+            Err(e) => Err(String::from(e)),
+        }
     }
 
     /// Public convenience: invoke a tool on a named server.
+    ///
+    /// `tools/call` may be side-effecting, so we DO NOT auto-retry: a failure
+    /// mid-request could mean the tool already executed on the server, and
+    /// re-issuing would risk double-executing a mutating operation. On a
+    /// connection-level error we still evict the dead client (the user's next
+    /// call respawns a fresh one, which is what fixes the permanent-outage
+    /// bug) and then surface the error. Protocol-level errors / tool `isError`
+    /// results come from a live server and never evict.
     pub async fn call_tool_on_server(
         server: &str,
         tool: &str,
         args: &Value,
     ) -> Result<String, String> {
         let client = Self::get_or_spawn(server).await?;
-        let mut guard = client.lock().await;
-        guard.call_tool(tool, args).await
+        let result = {
+            let mut guard = client.lock().await;
+            guard.call_tool(tool, args).await
+            // guard dropped here, releasing the inner client Mutex before we
+            // ever touch the outer pool lock in evict().
+        };
+        match result {
+            Ok(out) => Ok(out),
+            Err(e) if e.is_connection() => {
+                Self::evict(server, &client).await;
+                Err(String::from(e))
+            }
+            Err(e) => Err(String::from(e)),
+        }
     }
 }
 

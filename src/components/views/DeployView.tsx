@@ -35,7 +35,6 @@ export function DeployView() {
     addConfig,
     removeConfig,
     startRun,
-    finishRun,
     setActiveRunId,
     clearValidation,
   } = useDeployStore();
@@ -55,15 +54,6 @@ export function DeployView() {
       await startRun(config);
     },
     [startRun, clearValidation]
-  );
-
-  const handleExit = useCallback(
-    (code: number) => {
-      if (activeRunId) {
-        finishRun(activeRunId, code === 0 ? "success" : "failed");
-      }
-    },
-    [activeRunId, finishRun]
   );
 
   async function handleAddConfig(config: DeployConfig) {
@@ -266,10 +256,7 @@ export function DeployView() {
                 )}
               </div>
               {activeRun.sessionId ? (
-                <DeployTerminal
-                  sessionId={activeRun.sessionId}
-                  onExit={handleExit}
-                />
+                <DeployTerminal sessionId={activeRun.sessionId} />
               ) : (
                 <RunOutputViewer run={activeRun} />
               )}

@@ -61,6 +61,15 @@ bridge.
   password-auth servers the probe fails unless the FE retrieves the password
   first. Fix: pull from keyring by `target_id` when auth method is
   `password` and no inline password is supplied.
+- **P3 — Rust bash/ssh tools orphan grandchildren on timeout.** The
+  abnormal-termination PR added `kill_on_drop(true)` to `tool_runtime.rs`
+  (`execute_bash`) and `tool_runtime_ssh.rs` (`ssh_run`), but that only reaps
+  the direct child (the `sh -c` / `cmd /C` shell or the local `ssh` client) —
+  not the grandchildren it spawned (build, `node`, dev server) or the remote
+  process. The sidecar bash tool now does a full process-group / `taskkill /T`
+  kill (`agent-sidecar/src/providers/openai-agents.ts::killTree`); the Rust
+  paths should reach parity (POSIX process-group kill, Windows `taskkill /T`,
+  and `ssh -tt`/`RequestTTY` so the remote command gets SIGHUP on disconnect).
 - **P2 — Password-auth migration silently downgrades to "agent".**
   `src/lib/sshTargetMigration.ts:67-70` forces
   `authMethod: keyPath ? "key" : "agent"`. Legacy users with
@@ -109,6 +118,27 @@ bridge.
 - **P3 — Windows-OpenSSH remote hosts.** `ssh_check_remote_path` and the
   remote git commands use POSIX `[ -e ... ]` / `git -C` — fine on Unix
   remotes, breaks on Windows OpenSSH targets.
+- **P3 — Remote file tools require `realpath` (fail-closed).** The symlink-
+  escape confinement added to the remote read/list/grep/write_file scripts
+  (`src-tauri/src/core/tool_runtime_ssh.rs::confine_prelude`) resolves paths
+  with `realpath` and FAILS CLOSED (exit 9 → error) when the remote lacks it.
+  This deepens the POSIX-sh dependency: remotes without `realpath` (some
+  BusyBox builds, Windows OpenSSH) lose the file tools entirely. Follow-up:
+  a portable fallback (`command -v realpath || readlink -f` probe) and/or a
+  Windows-OpenSSH-aware remote tool layer. Pairs with the Windows-OpenSSH
+  item above. `bash` is intentionally left unconfined on both transports.
+
+## Agents pane
+
+- **P3 — AgentModeChip "Default" label is now inaccurate for OpenAI Agents.**
+  The shared chip (`src/components/agents/AgentModeChip.tsx`,
+  `agentModeChipUtils.ts` `deriveMode`) labels `permissionMode: "auto"` (no
+  approveWrites) as "Default — full tools, no per-tool prompts". After the
+  approval-gating fix, an `api-openai-agents` session in `auto` now DOES
+  prompt before `bash`/`write_file`. The chip is shared across all API
+  providers and only OpenAI Agents changed, so the fix needs provider-aware
+  labeling (or a tooltip note) rather than a blanket relabel. Make the chip
+  truthful per provider.
 
 ## Platform & distribution (from `dev/`)
 
@@ -547,6 +577,17 @@ hardening passes worth doing when context allows.
 
 ### Storage / orchestration / prompts
 
+- **P3 — `core/migration.rs` cross-volume copy fallback can strand the
+  user on a partial `new_dir`.** The copy-fallback added with the storage
+  durability work copies the legacy dir to the new dir when `rename` fails
+  (cross-volume), and on copy failure best-effort `remove_dir_all`s the
+  partial copy. But if that cleanup also fails — or the process crashes
+  mid-copy — a partially-populated `new_dir` survives; the next startup's
+  `data_dir()` prefers `new_dir` (`.exists()`) and reads an empty/missing
+  `state.v1.json` instead of the intact legacy dir. Legacy data is never
+  deleted so nothing is lost, but the app shows empty. Harden by copying to
+  a temp dir then atomically renaming it into place, and verify/log the
+  cleanup result instead of discarding it with `let _`.
 - **P3 — `core/orchestrator.rs:415` `unwrap()` after `is_none()` guard
   in the `tick()` hot loop.** Idiomatic `if let Some(agent) = ... {}
   else { continue; }` reads cleaner and removes the hazard signal.

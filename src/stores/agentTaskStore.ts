@@ -886,9 +886,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       selectedConversationId: id,
     }));
 
+    // Hoisted above the try so the catch can clear streaming on this exact
+    // placeholder by id (the backend start may reject before any event fires).
+    const assistantMsgId = generateId("msg");
     try {
       // Create a streaming assistant message
-      const assistantMsgId = generateId("msg");
       set((s) => ({
         conversations: s.conversations.map((c) =>
           c.id === id
@@ -948,12 +950,31 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           apiAgentCommandPath(agent),
         );
       }
-    } catch {
+    } catch (e) {
+      // `startApiAgentSession` rejected before any `api-agent:*` event could
+      // fire, so the streaming placeholder would otherwise spin forever.
+      // Mirror the `api-agent:error` listener: fail the conversation, clear
+      // streaming on the specific placeholder, and surface the error text.
+      logSwallowed("agentTaskStore.createApiConversation")(e);
+      let failed: AgentConversation | undefined;
       set((s) => ({
-        conversations: s.conversations.map((c) =>
-          c.id === id ? { ...c, status: "failed", updatedAt: Date.now() } : c,
-        ),
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const next: AgentConversation = {
+            ...c,
+            status: "failed" as const,
+            updatedAt: Date.now(),
+            messages: c.messages.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, isStreaming: false, content: m.content + `\n\nError: ${e}` }
+                : m,
+            ),
+          };
+          failed = next;
+          return next;
+        }),
       }));
+      if (failed) scheduleSave(failed);
     }
 
     return id;
@@ -1462,6 +1483,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
   retryLastTurn: async (id, newModel) => {
     // Truncate messages locally: drop the last assistant message (and any trailing tool outputs).
+    const retryMsgId = generateId("msg");
     let updated: AgentConversation | undefined;
     set((s) => ({
       conversations: s.conversations.map((c) => {
@@ -1476,7 +1498,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         }
         // Append a fresh streaming assistant shell.
         msgs.push({
-          id: generateId("msg"),
+          id: retryMsgId,
           role: "assistant",
           content: "",
           timestamp: Date.now(),
@@ -1495,7 +1517,36 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     }));
     // Reset transient streaming state — a retry restarts the turn.
     useAgentStreamingStore.getState().clearThinking(id);
-    await tauriRetryLastTurn(id, newModel);
+    try {
+      await tauriRetryLastTurn(id, newModel);
+    } catch (e) {
+      // The backend rejected the retry start (rate limit, session gone,
+      // sidecar down) — so no `api-agent:done`/`error` event will ever
+      // arrive to clear the streaming shell we just pushed. Mirror the
+      // `api-agent:error` listener: fail the conversation, clear streaming
+      // on the specific shell, and surface the error in its content.
+      let failed: AgentConversation | undefined;
+      set((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const messages = c.messages.map((m) =>
+            m.id === retryMsgId
+              ? { ...m, isStreaming: false, content: m.content + `\n\nError: ${e}` }
+              : m,
+          );
+          const next: AgentConversation = {
+            ...c,
+            messages,
+            status: "failed" as const,
+            updatedAt: Date.now(),
+          };
+          failed = next;
+          return next;
+        }),
+      }));
+      if (failed) scheduleSave(failed);
+      return;
+    }
     if (updated) scheduleSave(updated);
   },
 

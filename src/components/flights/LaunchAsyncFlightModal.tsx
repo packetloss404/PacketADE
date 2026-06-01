@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { GitPullRequest, Rocket, Sparkles } from "lucide-react";
+import { AlertTriangle, GitPullRequest, Rocket, Sparkles } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { useAppStore } from "@/stores/appStore";
 import { useFlightStore } from "@/stores/flightStore";
 import {
   findAsyncLaunchPathCollisions,
@@ -58,6 +59,7 @@ export function LaunchAsyncFlightModal({ onClose, onLaunched }: LaunchAsyncFligh
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
   );
   const projectPath = useLayoutStore((s) => s.projectPath);
+  const setActiveView = useAppStore((s) => s.setActiveView);
   // v0.8: pre-check the publish toggle if the user opted into that default
   // via Settings → GitHub.
   const defaultPublishAttemptsAsPrs = useGitHubStore((s) => s.defaultPublishAttemptsAsPrs);
@@ -88,8 +90,36 @@ export function LaunchAsyncFlightModal({ onClose, onLaunched }: LaunchAsyncFligh
     [launchCollisions],
   );
 
+  // #8a: block launches that target SSH servers without a pinned host key.
+  // Without a fingerprint the backend falls back to StrictHostKeyChecking=
+  // accept-new (TOFU), which is MITM-able on first connect. Mirror the gate
+  // in WorkspaceCreationModal (same `!server.hostFingerprint` falsy check —
+  // hostFingerprint is `string | undefined`). The realistic trigger is
+  // legacy-migrated servers that predate fingerprint capture. Local targets
+  // stay launchable; only unpinned SSH picks block.
+  const unpinnedTargets = useMemo(
+    () => picked.filter((p) => p.kind === "ssh" && !p.server.hostFingerprint),
+    [picked],
+  );
+  const unpinnedMessage = useMemo(() => {
+    if (unpinnedTargets.length === 0) return null;
+    const names = unpinnedTargets
+      .map((p) => (p.kind === "ssh" ? p.server.name : p.label))
+      .join(", ");
+    return `Host key not verified for: ${names}. Verify on the Servers page before launching.`;
+  }, [unpinnedTargets]);
+
+  function handleOpenServersView() {
+    setActiveView("tools");
+    onClose();
+  }
+
   const canLaunch =
-    prompt.trim().length > 0 && picked.length > 0 && launchCollisions.length === 0 && !launching;
+    prompt.trim().length > 0 &&
+    picked.length > 0 &&
+    launchCollisions.length === 0 &&
+    unpinnedTargets.length === 0 &&
+    !launching;
 
   async function handleLaunch() {
     if (!canLaunch) return;
@@ -219,6 +249,22 @@ export function LaunchAsyncFlightModal({ onClose, onLaunched }: LaunchAsyncFligh
             </span>
           </div>
         </label>
+
+        {unpinnedMessage && (
+          <div className="bg-accent-amber/10 border-accent-amber/30 flex items-start gap-2 rounded border px-3 py-2 text-[11px] text-accent-amber">
+            <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <span>{unpinnedMessage}</span>
+              <button
+                type="button"
+                onClick={handleOpenServersView}
+                className="mt-1 block underline hover:text-accent-amber"
+              >
+                Open Servers settings →
+              </button>
+            </div>
+          </div>
+        )}
 
         {collisionMessage && (
           <div className="bg-accent-amber/10 border-accent-amber/30 whitespace-pre-wrap rounded border px-3 py-2 text-[11px] text-accent-amber">

@@ -220,6 +220,36 @@ fn validate_target_identities(targets: &[AttemptTargetSpec]) -> Result<(), Strin
     Ok(())
 }
 
+/// Security boundary (#8a): refuse to launch an async/agent attempt against an
+/// SSH target whose host key has not been pinned. `core/execution.rs` falls back
+/// to `StrictHostKeyChecking=accept-new` (TOFU) when `host_fingerprint` is None,
+/// which is acceptable for the *interactive* PTY/workspace path but is a silent
+/// MITM window for the non-interactive async launch path. Fail closed here,
+/// before any connection (or worktree provisioning) is attempted, so every async
+/// SSH attempt is covered. Local (non-SSH) targets are ignored.
+fn validate_ssh_pinning(targets: &[AttemptTargetSpec]) -> Result<(), String> {
+    for target in targets {
+        if let AttemptTargetSpec::Ssh {
+            host,
+            host_fingerprint,
+            ..
+        } = target
+        {
+            let pinned = host_fingerprint
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|fp| !fp.is_empty());
+            if !pinned {
+                return Err(format!(
+                    "Refusing to launch against {}: host key not verified. Pin it on the Servers page first.",
+                    host
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_target_claims(targets: &[AttemptTargetSpec]) -> Result<(), String> {
     let claims: Vec<(usize, PathClaim)> = targets
         .iter()
@@ -468,6 +498,8 @@ pub async fn launch_flight_async(
     }
     let allow_path_collisions = allow_path_collisions.unwrap_or(false);
     validate_target_identities(&targets)?;
+    // #8a: fail closed on unpinned SSH targets before any connection/provisioning.
+    validate_ssh_pinning(&targets)?;
     if !allow_path_collisions {
         validate_target_claims(&targets)?;
         validate_target_claims_against_active_attempts(&targets)?;
@@ -541,6 +573,13 @@ pub async fn launch_flight_async(
                     model,
                     ..
                 } => {
+                    // #8a defense-in-depth: re-enforce host-key pinning at the
+                    // connection boundary so this remains fail-closed even if a
+                    // future caller reaches the build site without the upfront
+                    // `validate_ssh_pinning` gate. `build_ssh_config_from_spec`
+                    // copies `host_fingerprint` verbatim and `core/execution.rs`
+                    // would otherwise TOFU-fallback to `accept-new`.
+                    validate_ssh_pinning(std::slice::from_ref(&spec))?;
                     let cfg =
                         build_ssh_config_from_spec(&spec).ok_or("Failed to build SshConfig")?;
                     let path =
