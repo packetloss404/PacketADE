@@ -801,19 +801,30 @@ export class OpenAICodexProvider implements ProviderHandler {
       return;
     }
 
+    // `stream_error` is a transient mid-stream event: Codex's own upstream SSE
+    // request dropped and it retries internally within the SAME running child,
+    // then continues and ends normally with `task_complete` / exit 0. It is NOT
+    // terminal — the authoritative completion is the `child.on("exit")` handler
+    // above (done on exit 0/null, error on non-zero). Treating it as a hard
+    // error here would latch `doneEmitted` and suppress the real result,
+    // surfacing a spurious failure on a turn that actually recovered.
+    if (typeStr === "stream_error") {
+      logStderr(`codex transient stream_error (retrying): ${stringifyUnknown(payload)}`);
+      return;
+    }
+
     // Task started / session configured / etc. — log and ignore.
     if (
       typeStr === "task_started" ||
       typeStr === "session_configured" ||
-      typeStr === "session_start" ||
-      typeStr === "stream_error"
+      typeStr === "session_start"
     ) {
       logStderr(`codex lifecycle event: ${typeStr}`);
       return;
     }
 
-    // Explicit error event from Codex.
-    if (typeStr === "error" || typeStr === "stream_error") {
+    // Explicit, terminal error event from Codex.
+    if (typeStr === "error") {
       const message =
         pickString(payload, "message", "error", "reason") ?? stringifyUnknown(payload);
       if (!this.doneEmitted) {
