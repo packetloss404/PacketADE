@@ -472,6 +472,9 @@ async fn execute_bash(args: &serde_json::Value, project_path: &str) -> Result<St
     cmd.current_dir(project_path);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
+    // Reap the child if we bail out on the timeout below instead of leaving it
+    // running; dropping the `Child` then terminates the OS process.
+    cmd.kill_on_drop(true);
 
     #[cfg(target_os = "windows")]
     {

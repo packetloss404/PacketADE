@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Folder, Server, X, Check } from "lucide-react";
+import { Folder, Server, X, Check, AlertTriangle } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useServerStore } from "@/stores/serverStore";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
@@ -84,6 +84,11 @@ export function MultiTargetPicker({
   }
 
   function toggleSsh(server: ServerConfig) {
+    // #8a (defense in depth): never admit an SSH server without a pinned
+    // host key. Same `!server.hostFingerprint` falsy check the launch gate
+    // and WorkspaceCreationModal use. Protects any future caller of this
+    // picker even if their launch surface forgets to gate.
+    if (!server.hostFingerprint) return;
     const key = `ssh:${server.id}`;
     if (isPicked(key)) {
       onChange(picked.filter((p) => p.key !== key));
@@ -148,6 +153,24 @@ export function MultiTargetPicker({
           {sshServers.map((server) => {
             const key = `ssh:${server.id}`;
             const selected = isPicked(key);
+            // #8a: unpinned servers (no host fingerprint) render disabled in
+            // an amber state — the user must verify the host key on the
+            // Servers page before they can target it.
+            const unpinned = !server.hostFingerprint;
+            if (unpinned) {
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  disabled
+                  title="Host key not verified — pin it on the Servers page"
+                  className="flex items-center gap-1.5 px-2 py-1 text-[11px] rounded border bg-accent-amber/5 text-accent-amber border-accent-amber/30 cursor-not-allowed opacity-70"
+                >
+                  <AlertTriangle size={11} />
+                  {server.name}
+                </button>
+              );
+            }
             return (
               <button
                 key={key}

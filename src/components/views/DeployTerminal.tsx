@@ -8,7 +8,14 @@ import "@xterm/xterm/css/xterm.css";
 
 interface DeployTerminalProps {
   sessionId: string | null;
-  onExit?: (code: number) => void;
+  /**
+   * Notification that the PTY emitted its exit event. Carries NO status —
+   * run success/failed is determined solely by deployStore's deploy:exit
+   * listener (the authority for the true numeric exit code). Use this only
+   * for terminal-local concerns (e.g. rendering/teardown), never to derive
+   * a deploy result.
+   */
+  onExit?: () => void;
 }
 
 export function DeployTerminal({ sessionId, onExit }: DeployTerminalProps) {
@@ -95,10 +102,12 @@ export function DeployTerminal({ sessionId, onExit }: DeployTerminalProps) {
       unlisten = u;
     });
 
-    // Listen for exit
+    // Listen for PTY exit. This is a terminal-closed notification only — it
+    // does NOT carry or fabricate a deploy status. deployStore's
+    // deploy:exit listener owns the true exit code and run state transition.
     let unlistenExit: UnlistenFn | null = null;
     listen<string>(ptyExitEvent(sessionId), () => {
-      onExit?.(0);
+      onExit?.();
     }).then((u) => {
       unlistenExit = u;
     });

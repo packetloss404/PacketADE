@@ -5,7 +5,7 @@
 // is the BYOK OpenAI Agents SDK path and translates SDK runs into PacketADE's
 // existing sidecar protocol.
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { promises as fsPromises } from "node:fs";
 import path from "node:path";
 import {
@@ -111,6 +111,38 @@ function numberField(value: unknown, ...keys: string[]): number {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Terminate a spawned shell *and its descendants*. A bare `child.kill()` only
+ * signals the shell (`shell: true`), leaving the actual command (build, node,
+ * etc.) running as an orphan that holds the project dir / ports. On POSIX the
+ * child is a process-group leader (spawned `detached: true`), so we signal the
+ * whole group via the negative PID. On Windows there are no process groups, so
+ * we use `taskkill /T /F` to walk and kill the tree. All paths are wrapped so a
+ * race where the child already exited never throws.
+ */
+function killTree(child: ChildProcess): void {
+  const pid = child.pid;
+  if (pid == null) return;
+  if (process.platform === "win32") {
+    try {
+      const tk = spawn("taskkill", ["/T", "/F", "/PID", String(pid)], { windowsHide: true });
+      // A taskkill launch failure (e.g. ENOENT) surfaces asynchronously via the
+      // child's `error` event, not as a throw; without a listener Node escalates
+      // it to an unhandled exception that would crash the sidecar.
+      tk.on("error", (err) => logStderr(`taskkill failed for pid ${pid}: ${errorMessage(err)}`));
+    } catch (err) {
+      logStderr(`taskkill failed for pid ${pid}: ${errorMessage(err)}`);
+    }
+    return;
+  }
+  try {
+    // Negative PID => signal the entire process group (child is the leader).
+    process.kill(-pid, "SIGKILL");
+  } catch (err) {
+    logStderr(`group kill failed for pid ${pid}: ${errorMessage(err)}`);
+  }
 }
 
 function truncateToLimit(text: string, maxBytes: number): string {
@@ -746,7 +778,18 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     if (this.planMode || this.permissionMode === "deny_all") return false;
     if (this.permissionMode === "allow_all") return false;
     if (this.autoAllowedTools.has(name)) return false;
-    return this.permissionMode === "ask_for_risky";
+    // When approveWrites is on, write_file runs its own pending_edit diff
+    // round-trip (see writeFile / waitForEdit) which is the single approval
+    // gate for that tool. Suppress the SDK-level permission prompt here so the
+    // user isn't prompted twice for the same write. Mirrors anthropic.ts, where
+    // the PreToolUse diff hook owns approval for write tools under approveWrites
+    // and non-write tools still flow through the normal permission prompt.
+    if (name === "write_file" && this.approveWrites) return false;
+    // 'auto' (the default mode) now gates risky tools the same as
+    // 'ask_for_risky': pause for an explicit approval before running.
+    return (
+      this.permissionMode === "ask_for_risky" || this.permissionMode === "auto"
+    );
   }
 
   private async resolveInsideProject(
@@ -870,14 +913,24 @@ export class OpenAIAgentsProvider implements ProviderHandler {
         cwd: this.projectPath,
         shell: true,
         windowsHide: true,
+        // POSIX: make the shell a process-group leader so killTree can signal
+        // the whole group (the shell + the command it spawned). No-op semantics
+        // on Windows, where killTree falls back to `taskkill /T`.
+        detached: process.platform !== "win32",
       });
       let stdout = "";
       let stderr = "";
       let timedOut = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill();
+        killTree(child);
       }, timeoutSecs * 1000);
+      // If the run is cancelled/closed, tear down the shell + descendants too —
+      // otherwise the orphaned command keeps holding the project dir / ports.
+      const onAbort = (): void => {
+        killTree(child);
+      };
+      this.abort?.signal.addEventListener("abort", onAbort, { once: true });
       child.stdout?.on("data", (chunk: Buffer) => {
         stdout += chunk.toString("utf8");
         if (stdout.length > MAX_OUTPUT_SIZE * 2) {
@@ -890,9 +943,14 @@ export class OpenAIAgentsProvider implements ProviderHandler {
           stderr = stderr.slice(0, MAX_OUTPUT_SIZE * 2);
         }
       });
-      child.on("error", reject);
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        this.abort?.signal.removeEventListener("abort", onAbort);
+        reject(err);
+      });
       child.on("close", (code) => {
         clearTimeout(timer);
+        this.abort?.signal.removeEventListener("abort", onAbort);
         resolve({ code, stdout, stderr, timedOut });
       });
     });

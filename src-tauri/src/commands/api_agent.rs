@@ -1313,6 +1313,10 @@ async fn run_agent_loop(
         loop {
             tokio::select! {
                 _ = &mut cancel_rx => {
+                    // Abort the detached stream task so the provider's
+                    // `stream_chat` stops holding the upstream HTTP connection
+                    // and pushing into the now-dropped mpsc channel.
+                    stream_handle.abort();
                     let _ = app_handle.emit(
                         &done_event(session_id),
                         DonePayload {
