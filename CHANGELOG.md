@@ -7,6 +7,36 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [0.9.4] - 2026-06-01
+
+### Fixed — two-team code review remediation (8 peer-reviewed fixes)
+
+A two-team subagent review of the whole codebase surfaced one recurring theme: the weak link is failure-path and async-lifecycle discipline, not architecture. Eight fixes shipped, each **sanity-checked against the code before implementation** and **peer-reviewed after**. The review gate caught two would-be regressions before they landed — a Codex `stream_error` false positive (the finding was wrong) and a `write_file` symlink fail-open (a reviewer-caught hole in the fix itself). Full report in [`dev/code-review-2026-05-31.md`](./dev/code-review-2026-05-31.md).
+
+#### Resource & lifecycle
+
+- **Reap orphaned processes/tasks on abnormal termination** (`53e6d46`): added `kill_on_drop(true)` to the tool-runtime bash/ssh/gh spawns and the MCP handshake spawn (`tool_runtime.rs`, `tool_runtime_ssh.rs`, `tool_pull_request.rs`, `mcp_client.rs`) so a timed-out child is reaped instead of orphaned; `api_agent.rs` aborts the detached provider stream task on cancel (was leaking the upstream HTTP connection and pushing into a closed channel); the Node sidecar bash tool now kills the whole process group/tree (POSIX detached + negative-PID SIGKILL, Windows `taskkill /T`) instead of SIGTERM to the shell alone.
+- **Evict dead MCP clients from the connection pool** (`85d9206`): `McpConnectionPool` had no eviction, so once a cached server's child died every later `tools/list` / `tools/call` failed until restart — and via `resolve_mcp_name`'s `?`, one dead server broke *all* tool calls. Connection-level errors now evict (`Arc::ptr_eq`-guarded so a healthy respawn isn't wiped); `list_tools` retries once, `call_tool` evicts without retry to avoid double-executing a mutating tool.
+
+#### Data durability
+
+- **Persisted-state storage hardened** (`60cb763`): `data_dir()` falls back to the legacy dir so a failed migration can't strand the user on an empty new dir; `migrate_data_dir()` adds a cross-volume copy fallback; `write_with_backup` drops the pre-remove crash window (relies on atomic rename); and `load_state` / `load_provider_runtime_settings` gained a read-only recovery ladder (quarantine corrupt → `.bak` → `.tmp` → default) so a parse error or torn write no longer silently resets to empty and then overwrites the recoverable data on the next save.
+
+#### Correctness & contract
+
+- **api-agent terminal-event contract** (`6602d88`): `retryLastTurn` and `createApiConversation` now clear the streaming bubble on a backend-start rejection (previously spun forever, reachable automatically via auto-failover); the Codex `stream_error` event is documented as transient/non-terminal (the `child.on("exit")` handler is authoritative) rather than mis-surfaced as a hard failure.
+- **Deploy run status truthfulness** (`e2eeaf1`): `deploy:exit:{id}` (the real numeric code) is now the single source of truth — removed the fabricated `onExit(0)` that could flash a failed deploy as success and mis-correlate to the selected (wrong) run; `finishRun` is idempotent and the exit listener attaches before invoke so a fast deploy's exit can't be missed.
+
+#### Security
+
+- **OpenAI Agents risky-tool approval** (`c8e671c`): the default `auto` mode now requires approval before `bash` / `write_file` (previously ran unconfined shell with no prompt by default), coordinated with `approveWrites` so write_file isn't double-prompted; covered by an offline gating test wired into `sidecar:check`.
+- **SSH host-key pinning on async launch** (`140309c`): the async agent launcher now refuses unpinned hosts (UI gate mirroring `WorkspaceCreationModal` plus a fail-closed backend check in `flight_attempts.rs`), closing a silent TOFU / MITM-on-first-connect window. The interactive PTY accept-new fallback is intentionally unchanged.
+- **Remote SSH file-tool confinement** (`40c3b2f`): the read/list/grep/write_file remote scripts now `realpath`-resolve the target and reject paths that escape the workspace (fail-closed if the remote lacks `realpath`), matching the local symlink defense; write_file also confines a pre-existing symlinked leaf, not just its parent.
+
+#### Process
+
+- Each finding was verified against the actual code before any implementation (catching the `stream_error` false positive), implemented by paired/sequenced subagents on disjoint scopes, and peer-reviewed by two reviewers per change (catching the write_file fail-open leaf). Deferred follow-ups — Codex's matching permissive default, the `AgentModeChip` "Default" label, remote `realpath` portability, and the cross-volume migration partial-copy edge — are recorded in [`backlog.md`](./backlog.md).
+
 ## [0.9.3] - 2026-05-17
 
 ### Fixed — `core/` library audit closeout + 3 surgical high-priority fixes
