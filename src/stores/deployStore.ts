@@ -111,6 +111,32 @@ export const useDeployStore = create<DeployStore>((set, get) => ({
       activeRunId: id,
     }));
 
+    // Attach event listeners on the client-minted run id BEFORE invoking the
+    // backend. A near-instant deploy could otherwise emit deploy:exit:${id}
+    // before the listener exists and be missed, leaving the run stuck
+    // 'running'. The id is already minted above, so listeners can bind to it
+    // ahead of the invoke.
+    const listeners: UnlistenFn[] = [];
+
+    const unlistenOutput = await listen<string>(`deploy:output:${id}`, (event) => {
+      get().appendOutput(id, event.payload);
+    });
+    listeners.push(unlistenOutput);
+
+    // Listen for deploy exit — sole authority for success/failed via the real
+    // numeric exit code. finishRun is idempotent, so a late event can never
+    // regress an already-finished run.
+    const unlistenExit = await listen<number>(`deploy:exit:${id}`, (event) => {
+      // Fail-closed: a malformed/non-numeric payload is treated as failure
+      // (exit 1) rather than silently passing as success.
+      const exitCode = typeof event.payload === "number" ? event.payload : 1;
+      get().finishRun(id, exitCode === 0 ? "success" : "failed");
+      cleanupListeners(id);
+    });
+    listeners.push(unlistenExit);
+
+    activeListeners.set(id, listeners);
+
     // Launch the deploy via backend
     try {
       const sessionId = await runDeploy(projectPath, config.command, id);
@@ -121,41 +147,32 @@ export const useDeployStore = create<DeployStore>((set, get) => ({
           r.id === id ? { ...r, sessionId } : r
         ),
       }));
-
-      // Listen for deploy output events (plain text capture)
-      const listeners: UnlistenFn[] = [];
-
-      const unlistenOutput = await listen<string>(`deploy:output:${id}`, (event) => {
-        get().appendOutput(id, event.payload);
-      });
-      listeners.push(unlistenOutput);
-
-      // Listen for deploy exit
-      const unlistenExit = await listen<number>(`deploy:exit:${id}`, (event) => {
-        const exitCode = typeof event.payload === "number" ? event.payload : 1;
-        get().finishRun(id, exitCode === 0 ? "success" : "failed");
-        cleanupListeners(id);
-      });
-      listeners.push(unlistenExit);
-
-      activeListeners.set(id, listeners);
     } catch (e) {
+      // Backend never launched — tear down the listeners we attached up front
+      // so they don't leak, append the error output, then transition the run
+      // to failed through finishRun (the single terminal-state writer; its
+      // idempotency guard applies here too).
+      cleanupListeners(id);
       set((s) => ({
         runs: s.runs.map((r) =>
-          r.id === id
-            ? { ...r, status: "failed" as DeployStatus, finishedAt: Date.now(), output: [...r.output, `Error: ${String(e)}`] }
-            : r
+          r.id === id ? { ...r, output: [...r.output, `Error: ${String(e)}`] } : r
         ),
         error: `Deploy failed to start: ${String(e)}`,
       }));
+      get().finishRun(id, "failed");
     }
   },
 
   finishRun: (runId, status) => {
     set((s) => ({
-      runs: s.runs.map((r) =>
-        r.id === runId ? { ...r, status, finishedAt: Date.now() } : r
-      ),
+      runs: s.runs.map((r) => {
+        if (r.id !== runId) return r;
+        // Idempotent: once a run has reached a terminal state, never regress it.
+        // The real numeric exit code from deploy:exit is the sole authority, and
+        // late/duplicate events (or a stale fallback) must not overwrite it.
+        if (r.status !== "running" || r.finishedAt !== null) return r;
+        return { ...r, status, finishedAt: Date.now() };
+      }),
     }));
   },
 
