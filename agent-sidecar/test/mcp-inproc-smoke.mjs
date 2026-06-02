@@ -36,6 +36,22 @@
 import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { createMissionPlannerMcpServer, PLANNER_MCP_KEY } from "../dist/mcp/mission-planner-server.js";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+// Live test: requires Anthropic auth (OAuth creds file or ANTHROPIC_API_KEY).
+// In an environment with neither (e.g. CI), SKIP cleanly (exit 0) instead of
+// failing — this is what makes the smoke safe to wire into the offline
+// `sidecar:check` gate while still exercising the real path on an
+// authenticated dev machine.
+if (
+  !existsSync(join(homedir(), ".claude", ".credentials.json")) &&
+  !process.env.ANTHROPIC_API_KEY
+) {
+  console.log("[mcp-inproc-smoke] [skip] no Anthropic auth available; skipping live test");
+  process.exit(0);
+}
 
 const TIMEOUT_MS = 90_000;
 

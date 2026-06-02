@@ -31,11 +31,25 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join } from "node:path";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Live test: requires Anthropic auth (OAuth creds file or ANTHROPIC_API_KEY).
+// In an environment with neither (e.g. CI), SKIP cleanly (exit 0) instead of
+// failing — this is what makes the smoke safe to wire into the offline
+// `sidecar:check` gate while still exercising the real path on an
+// authenticated dev machine.
+const hasAnthropicAuth =
+  existsSync(join(homedir(), ".claude", ".credentials.json")) ||
+  Boolean(process.env.ANTHROPIC_API_KEY);
+if (!hasAnthropicAuth) {
+  console.log("[multi-turn-smoke] [skip] no Anthropic auth available; skipping live test");
+  process.exit(0);
+}
 
 const SESSION_ID = "anthropic-multi-turn-smoke";
 const TURN_TIMEOUT_MS = 60_000;
