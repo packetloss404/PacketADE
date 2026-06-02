@@ -235,7 +235,15 @@ fn try_recover<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
 }
 
 pub fn load_state() -> PersistedState {
-    let path = data_dir().join(STATE_FILENAME);
+    load_state_from(&data_dir())
+}
+
+/// Recovery ladder over a specific data directory. `load_state` is a thin
+/// wrapper that resolves `data_dir()` and delegates here; splitting the
+/// directory out keeps the ladder testable with an injected tempdir without
+/// changing any runtime behavior.
+fn load_state_from(dir: &Path) -> PersistedState {
+    let path = dir.join(STATE_FILENAME);
 
     // 1. Primary: clean read+parse wins immediately.
     match fs::read_to_string(&path) {
@@ -654,4 +662,231 @@ fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {
     fs::rename(&tmp_path, path).map_err(|e| format!("Failed to replace {:?}: {}", path, e))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Create a fresh, unique tempdir for one test and return its path.
+    /// Mirrors the `std::env::temp_dir()` + nanosecond-suffix convention used
+    /// elsewhere in this crate (no extra dev-dependency required).
+    fn unique_temp_dir(tag: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("packetade-storage-{}-{}", tag, nanos));
+        fs::create_dir_all(&dir).expect("create unique temp dir");
+        dir
+    }
+
+    /// Build a recognizable non-default state so we can prove which source the
+    /// ladder recovered from. `marker` is encoded both in `version` and in a
+    /// single `ServerConfig` name so equality is unambiguous.
+    fn marked_state(marker: u32, label: &str) -> PersistedState {
+        let mut state = PersistedState::default();
+        state.version = marker;
+        state.servers = vec![ServerConfig {
+            id: format!("srv-{}", marker),
+            name: label.to_string(),
+            host: "example.test".to_string(),
+            port: 2222,
+            username: "tester".to_string(),
+            auth_method: "agent".to_string(),
+            key_path: None,
+            remote_path: None,
+            last_connected_at: None,
+            installed_agents: Vec::new(),
+            host_fingerprint: None,
+        }];
+        state
+    }
+
+    fn write_json(path: &Path, state: &PersistedState) {
+        let json = serde_json::to_string_pretty(state).expect("serialize marked state");
+        fs::write(path, json).expect("write state json");
+    }
+
+    /// Assert recovered state matches the marker we encoded (version + server).
+    fn assert_marker(state: &PersistedState, marker: u32, label: &str) {
+        assert_eq!(state.version, marker, "version marker should match source");
+        assert_eq!(state.servers.len(), 1, "marker state has exactly one server");
+        assert_eq!(state.servers[0].name, label, "server name marker should match source");
+    }
+
+    fn corrupt_file_count(dir: &Path) -> usize {
+        fs::read_dir(dir)
+            .expect("read temp dir")
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .map(|n| n.contains(".corrupt-"))
+                    .unwrap_or(false)
+            })
+            .count()
+    }
+
+    // 1. Valid primary → loads it.
+    #[test]
+    fn valid_primary_loads_directly() {
+        let dir = unique_temp_dir("valid-primary");
+        let primary = dir.join(STATE_FILENAME);
+        write_json(&primary, &marked_state(42, "primary-state"));
+
+        let loaded = load_state_from(&dir);
+        assert_marker(&loaded, 42, "primary-state");
+        assert_eq!(corrupt_file_count(&dir), 0, "clean parse must not quarantine");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // 2. Corrupt primary + good .bak → returns .bak AND primary is quarantined.
+    #[test]
+    fn corrupt_primary_falls_back_to_bak_and_quarantines() {
+        let dir = unique_temp_dir("corrupt-then-bak");
+        let primary = dir.join(STATE_FILENAME);
+        let bak = backup_path_for(&primary);
+
+        fs::write(&primary, b"{ this is not valid json ::::").expect("write corrupt primary");
+        write_json(&bak, &marked_state(77, "bak-state"));
+
+        let loaded = load_state_from(&dir);
+        assert_marker(&loaded, 77, "bak-state");
+
+        // The corrupt primary must have been quarantined: a *.corrupt-* file now
+        // exists, and the primary path no longer holds the corrupt bytes.
+        assert_eq!(corrupt_file_count(&dir), 1, "corrupt primary should be quarantined");
+        assert!(
+            !primary.exists(),
+            "primary should have been renamed away by quarantine"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // 3. Missing primary + good .bak → returns .bak, no quarantine file created.
+    #[test]
+    fn missing_primary_uses_bak_without_quarantine() {
+        let dir = unique_temp_dir("missing-then-bak");
+        let primary = dir.join(STATE_FILENAME);
+        let bak = backup_path_for(&primary);
+        write_json(&bak, &marked_state(88, "bak-only-state"));
+
+        let loaded = load_state_from(&dir);
+        assert_marker(&loaded, 88, "bak-only-state");
+        assert_eq!(
+            corrupt_file_count(&dir),
+            0,
+            "missing primary must NOT create a quarantine file"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // 4. Missing primary + missing .bak + good .tmp → returns .tmp.
+    #[test]
+    fn missing_primary_and_bak_uses_tmp() {
+        let dir = unique_temp_dir("missing-then-tmp");
+        let primary = dir.join(STATE_FILENAME);
+        let tmp = tmp_path_for(&primary);
+        write_json(&tmp, &marked_state(99, "tmp-state"));
+
+        let loaded = load_state_from(&dir);
+        assert_marker(&loaded, 99, "tmp-state");
+        assert_eq!(corrupt_file_count(&dir), 0, "no quarantine for missing primary");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // 5. Corrupt primary + NO .bak + NO .tmp → default AND corrupt file preserved.
+    #[test]
+    fn corrupt_primary_without_siblings_returns_default_but_preserves_corrupt() {
+        let dir = unique_temp_dir("corrupt-no-siblings");
+        let primary = dir.join(STATE_FILENAME);
+        let corrupt_bytes = b"<<<not json at all>>>";
+        fs::write(&primary, corrupt_bytes).expect("write corrupt primary");
+
+        let loaded = load_state_from(&dir);
+        // Default state: version 1, no servers — distinct from any marker we set.
+        let default = PersistedState::default();
+        assert_eq!(loaded.version, default.version, "should be default version");
+        assert!(loaded.servers.is_empty(), "default has no servers");
+
+        // Corrupt bytes are preserved under a *.corrupt-* name (not deleted).
+        assert_eq!(corrupt_file_count(&dir), 1, "corrupt primary must be preserved, not deleted");
+        assert!(!primary.exists(), "primary path no longer holds corrupt bytes");
+        // The quarantined file must hold the ORIGINAL corrupt bytes verbatim —
+        // "preserved" means recoverable for forensics, not merely renamed-then-emptied.
+        let quarantined = fs::read_dir(&dir)
+            .expect("read dir")
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.contains(".corrupt-")))
+            .expect("a quarantine file exists");
+        assert_eq!(
+            fs::read(&quarantined).expect("read quarantine file"),
+            corrupt_bytes,
+            "quarantine file must preserve the original corrupt bytes"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // 6. Genuine first run (nothing on disk) → default, silently (no quarantine).
+    #[test]
+    fn first_run_returns_default_silently() {
+        let dir = unique_temp_dir("first-run");
+
+        let loaded = load_state_from(&dir);
+        let default = PersistedState::default();
+        assert_eq!(loaded.version, default.version);
+        assert!(loaded.servers.is_empty());
+        assert!(loaded.flights.is_empty());
+        assert_eq!(corrupt_file_count(&dir), 0, "first run must not quarantine anything");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // 7. Durability: after a corrupt-load quarantine, a subsequent
+    // write_with_backup(primary, ...) must NOT clobber the still-good .bak.
+    // This proves the quarantine-first ordering protects the backup.
+    #[test]
+    fn quarantine_first_ordering_protects_backup_on_next_write() {
+        let dir = unique_temp_dir("durability");
+        let primary = dir.join(STATE_FILENAME);
+        let bak = backup_path_for(&primary);
+
+        // Good backup on disk; corrupt primary.
+        write_json(&bak, &marked_state(123, "protected-bak"));
+        fs::write(&primary, b"corrupt!!! not json").expect("write corrupt primary");
+
+        // Load triggers quarantine of the corrupt primary and recovers from .bak.
+        let recovered = load_state_from(&dir);
+        assert_marker(&recovered, 123, "protected-bak");
+        assert!(!primary.exists(), "primary was quarantined, so it is absent");
+
+        // Now simulate the next lock-held save writing back the recovered state.
+        // Because the primary was quarantined (absent), write_with_backup must
+        // SKIP the backup-copy step (it only copies when `path.exists()`), so the
+        // good .bak survives untouched rather than being overwritten by corrupt
+        // primary bytes.
+        let json = serde_json::to_string_pretty(&recovered).expect("serialize recovered");
+        write_with_backup(&primary, &json).expect("write_with_backup should succeed");
+
+        // Primary now holds the recovered (good) state.
+        let primary_after =
+            serde_json::from_str::<PersistedState>(&fs::read_to_string(&primary).unwrap())
+                .expect("primary should be valid json after save");
+        assert_marker(&primary_after, 123, "protected-bak");
+
+        // The .bak must still be the good backup we wrote — never clobbered by
+        // the corrupt primary bytes.
+        let bak_after = serde_json::from_str::<PersistedState>(&fs::read_to_string(&bak).unwrap())
+            .expect("bak should still be valid json (not corrupt bytes)");
+        assert_marker(&bak_after, 123, "protected-bak");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
