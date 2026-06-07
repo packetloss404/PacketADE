@@ -607,3 +607,105 @@ hardening passes worth doing when context allows.
 - **P3 — `IssueCommentList.tsx` duplicate `timeAgo` helper.**
   Surface caught during the v0.9.1 T2c dedup pass; not addressed
   because it lives outside the GitHubView surface that owned T2c.
+
+## Triple-agent review 2026-06-07 (83 confirmed findings)
+
+Full report, evidence, and fix detail: [`dev/code-review-2026-06-07.md`](./dev/code-review-2026-06-07.md).
+Methodology: 10 area + 10 lens reviewers → 59 canonical (52 confirmed / 6 refuted / 1
+uncertain) → gap-fill refill of 5 subsystems → 37 G-findings through a 3-vote panel (31
+confirmed / 6 refuted). Severities below are **post-debate**. Priority map: high→P1,
+medium→P2, low→P3. Two duplicate pairs merged: **F26≡G04**, **F36≡G32**. As each ships it
+moves to `CHANGELOG.md`. Some items overlap pre-existing backlog entries above (e.g. F21,
+F34, G17, G19) — dedupe on fix.
+
+### P1 — confirmed high
+
+- **F02 — one invalid UTF-8 byte freezes a terminal forever** (unbounded `pending`) — `core/pty.rs:55-76`. Use `Utf8Error::error_len()`.
+- **F13 — deploy run stuck "running" forever on EIO** — `commands/deploy.rs:288-325`. Dedicated wait thread; break loop on EIO.
+- **F19 — MCP write clobbers shared `~/.claude/settings.json` on parse failure** — `commands/mcp.rs:42-55,139,167`. Bail Err on parse; atomic write.
+- **F20 — MCP server edit drops `disabled`/`type`/`url`/`headers` (corrupts SSE/HTTP)** — `commands/mcp.rs:148-160`. Read-modify-merge.
+- **F40 — `web_fetch` is an unrestricted SSRF primitive** — `core/tool_web.rs:38-98`. Block private/link-local IPs; re-validate after redirects.
+- **F50 — duplicate pane IDs collide after hydration** — `stores/workspaceStore.ts`. `crypto.randomUUID()` or reconcile `wsCounter`.
+- **F53 — cross-arch build bundles the wrong native sidecar binary** — `scripts/prune-sidecar.js:171-193`. Target-aware prune + release-gate assert.
+- **G01 — sidecar + grandchildren orphaned on app exit** (no `kill_on_drop`/shutdown) — `agent_sidecar/supervisor.rs:559-573`, `lib.rs:418`.
+- **G02 — sidecar restart silently bricks live sessions** (no error fan-out, stale ownership) — `agent_sidecar/supervisor.rs:419-512`.
+- **G09 — Codex `respondPermission` writes to a stdin `codex exec` ignores → turn hangs** — `providers/openai-codex.ts:895-929`.
+- **G16 — OpenAI-compat parallel tool calls collapse/cross-contaminate (`index` ignored)** — `core/llm_openai_compat.rs:226-343`. _(panel severity split)_
+- **G23 — orchestrated PTY task success uses exit reason, not exit code → failures = Done** — `useTerminalSession.ts:290-293`, `pty.rs:334`.
+- **G25 — async attempt has no terminal transition on done/error → stuck running** — `flights/AttemptTile.tsx:59-92`.
+- **G33 — Stop with a queued message re-sends it (cancel emits `done` → drain)** — `agentTaskStore.ts:1227-1249`, `apiAgentListeners.ts:216-261`.
+
+### P2 — confirmed medium
+
+- **F01 — `kill_pty`/`kill_sessions` leak zombie children on Unix** — `commands/pty.rs:393-410,117-128,329-331`.
+- **F06 — keyring password forwarded to remote stdin on ControlMaster-reused SSH** — `core/tool_runtime_ssh.rs:106-138`.
+- **F09 — keyring migration deletes legacy cred even when new write fails** — `api_keys.rs:55-61`, `ssh_keys.rs:38-44`.
+- **F10 — Gemini key migration deletes localStorage in `finally` even when keyring throws** — `tools/GeminiApiKeyCard.tsx:24-33`.
+- **F11 — password auth writes to ssh stdin OpenSSH doesn't read** — `core/tool_runtime_ssh.rs:128-138`.
+- **F16 — leading-edge auth-watcher debounce drops the authoritative cred write** — `auth_watcher.rs:201-211`.
+- **F23 — `DeployConfig.env` typed end-to-end but never applied to the command** — `deploy.rs:9-15,220-264`.
+- **F24 — deploy runs cannot be cancelled (no kill handle / `kill_deploy`)** — `deploy.rs:266-327`.
+- **F28 — `send`/`retry` overwrite the in-process cancel sender, cancelling a running turn** — `api_agent.rs:701-724,1015-1037`.
+- **F32 — failed API `sendMessage` leaves the bubble spinning forever** — `agentTaskStore.ts:1072-1098`.
+- **F33 — orchestration scheduler silently swallows backend tick failures** — `orchestrationSchedulerStore.ts:47`.
+- **F34 — `update_task` `target_spec` reported landed but silently dropped** — `mission_planner_tools/update_task.rs:135-144`. _(see existing P3 entry)_
+- **F38 — `useVoiceInput` never stops recognition/native recording on unmount** — `hooks/useVoiceInput.ts:63-153`.
+- **F44 — `migrateLegacyStorage` mutates localStorage while iterating by index → loses keys** — `lib/storage-migration.ts:19-31`.
+- **F46 — streamed UTF-8 multibyte corrupted when split across chunks (both streamers)** — `llm_anthropic.rs:213`, `llm_openai_compat.rs:234`.
+- **F48 — FlightDetail unlink clears `issue.flightId` but not `flight.issueIds`** — `flights/FlightDetail.tsx:173`.
+- **F49 — flight status never recomputes when an issue changes** — `FlightList.tsx`, `MissionsView.tsx`.
+- **F51 — `flightStore.hydrateFromBackend()` clobbers in-flight optimistic mutations** — `flightStore.ts:688-698`.
+- **F52 — `issueStore` localStorage-authoritative, never hydrated, lossy backend mirror** — `issueStore.ts:203-237`. Minimal fix: reconcile `flightStore.issueIds` on hydrate.
+- **F55 — `FlightStatus` contract test asserts a hand-kept length, missing `spec`** — `__tests__/contract.test.ts:167-180`.
+- **F56 — SSH-target→serverStore migration untested, deletes legacy keys before save lands** — `lib/sshTargetMigration.ts:80-106`.
+- **G03 — `truncate()` panics on a multibyte UTF-8 boundary, killing the reader loop** — `agent_sidecar/handler.rs:933-939`.
+- **G08 — Codex cancel surfaces a spurious `error` banner instead of clean cancellation** — `providers/openai-codex.ts:458-483`. _(panel: high→medium)_
+- **G10 — Codex `agent_message_delta` + `agent_message` duplicate assistant text** — `providers/openai-codex.ts:543-560`.
+- **G11 — Anthropic `respondEdit` resolves ALL pending edits on one response** — `providers/anthropic.ts:1029-1071`.
+- **G17 — token/cost always zero for MiniMax & Ollama (`include_usage` gated)** — `llm_openai_compat.rs:178-180`. _(see existing P3 entry)_
+- **G18 — empty assistant message persisted → Anthropic 400s the next turn** — `api_agent.rs:1429-1460`.
+- **G24 — backend-initiated PTY kill reported to frontend as successful completion** — `orchestration.rs:131-136,190-195`.
+- **G26 — worktree leak when API session fails to start after attempt persisted** — `flight_attempts.rs:646-685`.
+- **F36/G32 — `deleteConversation` leaks all 12 api-agent listeners for done/failed convs** — `agentTaskStore.ts:1142-1182`. _(panel: high→medium)_
+
+### P3 — confirmed low
+
+- **F03** onSessionEnded double-fire on kill — `useTerminalSession.ts:406-425`.
+- **F04** transcript-replay dedupe unsound — `useTerminalSession.ts:245-319`.
+- **F05** `resolve_windows_command` fabricates `.cmd` on `where` failure — `pty.rs:82-84`.
+- **F12** remote `mkdir -p` before symlink confine — `tool_runtime_ssh.rs:255-266`.
+- **F15** `write_with_backup` no fsync of backup/parent — `core/storage.rs:651-662`.
+- **F17** first-ever login badge miss (non-recursive $HOME watch) — `auth_watcher.rs:84-128`.
+- **F18** locked cred store reported as "missing key" — `api_keys.rs:119-123`.
+- **F21** MCP writes non-atomic — `commands/mcp.rs:167-168,195-197`. _(see existing P3 entry)_
+- **F22** DeployTerminal misses early output — `deploy.rs:288-305`.
+- **F25** deploy output array unbounded in memory — `deployStore.ts:110,179-185`.
+- **F26/G04** `owns_session()` `try_lock` misroutes follow-up messages → dropped — `supervisor.rs:131-145`. _(panel: med→low)_
+- **F27** `cancel_pending_tools` drains across all in-process sessions — `api_agent.rs:941-968`.
+- **F29** `provider_stats` lost-update race — `provider_stats.rs:134-157`.
+- **F35** usage/cost write failures `let _ =` swallowed ×4 — `api_agent.rs:1248,1348,1492,2002`.
+- **F37** `close_api_agent_session` orphans pending oneshots — `api_agent.rs:1042-1072`.
+- **F39** DeployTerminal listener leak on fast unmount — `DeployTerminal.tsx:92-119`.
+- **F41** commit-trailer template → shell injection in generated hook — `core/worktree.rs:351-375`.
+- **F42** Whisper model download has no checksum/signature — `dictation/models.rs:125-212`.
+- **F43** `active_form` snake_case vs `activeForm` (blank in-progress todos) — `agent_sidecar/events.rs:115-124`.
+- **F47** final SSE line without trailing newline dropped — `llm_anthropic.rs:215`, `llm_openai_compat.rs:237`.
+- **F54** `release-gate.mjs` hardcodes the Windows Node triple — `scripts/release-gate.mjs:105-109`.
+- **F57** SSH pinning branch in `baseSshArgs` untested — `lib/ssh.ts:19-63`.
+- **F58** Mission Planner rate-limit backoff clamp untested — `mission_planner.rs:910-912`.
+- **G05** sessions forgotten on transient writer-closed error during restart — `agent_sidecar/protocol.rs:181-186,281-286`. _(panel: med→low)_
+- **G06** cancelled sidecar sessions leak ownership + remote ssh procs — `agent_sidecar/protocol.rs:361-370`.
+- **G07** unbounded writer channel + stdout line buffer (no backpressure/cap) — `supervisor.rs:598,679,779-808`.
+- **G13** Codex `tool_result` can carry empty `toolUseId`, orphaning it — `providers/openai-codex.ts:623-645`.
+- **G14** `rate_limited` + `error` race two `drain_chunk_buffer` tasks (fragile) — `anthropic.ts:689-703`, `handler.rs:668-749`.
+- **G15** `injectUserTurn` `maxOutputTokens` accepted but silently dropped — `anthropic.ts:943-958`.
+- **G20** cancellation during tool execution not honored until next iteration — `api_agent.rs:1217-1219,1938`.
+- **G21** Anthropic non-stream HTTP error double-surfaces — `api_agent.rs:1408-1426`.
+- **G29** scheduler ignores flight priority → starvation — `orchestrator.rs:384-450`.
+- **G30** attempt user-message display diverges from prompt sent — `asyncFlightStore.ts:411-454`.
+- **G31** orphaned running task permanently consumes a parallel slot — `orchestrationSchedulerStore.ts:142-160`.
+- **G34** auto-failover system notice deleted by `retryLastTurn` truncation — `apiAgentListeners.ts:281-298`. _(panel: med→low)_
+- **G35** late tool-result after turn end silently dropped — `apiAgentListeners.ts:156-189`.
+- **G36** done notification + queue drain fire even on user cancel — `apiAgentListeners.ts:251-265`.
+
+**Refuted (do not action):** F07, F08, F14, F30, F31, F45 (F-series) · G12, G19, G22, G27, G28, G37 (G-series). Reasons in the report §1.
