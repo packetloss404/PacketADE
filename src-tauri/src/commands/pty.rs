@@ -92,13 +92,48 @@ pub struct PtySessionInfo {
     pub alive: bool,
 }
 
+/// Payload for the scoped `pty:exit:{session_id}` event.
+///
+/// Historically this event carried only the session id string. It now
+/// carries the captured child exit code and a `terminated` flag so the
+/// frontend can score orchestrated task completion against the REAL
+/// outcome (non-zero exit → failure) and distinguish a backend-initiated
+/// kill (flight pause/cancel) from a natural exit.
+///
+/// Backward compatibility: listeners that ignore the payload (or only used
+/// the old bare-string session id) keep working — the new fields are
+/// additive and optional on the TS side.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PtyExitPayload {
+    /// Session id — same value the event was historically keyed by.
+    pub session_id: String,
+    /// Child process exit code, when it could be captured. `None` when the
+    /// child status couldn't be read (e.g. it was force-killed and reaped
+    /// elsewhere). `0` means success; non-zero means the agent failed.
+    pub exit_code: Option<i32>,
+    /// True when the session was killed by an orchestrator action
+    /// (flight pause/cancel via `kill_sessions`), so the frontend must NOT
+    /// score it as a successful task completion.
+    pub terminated: bool,
+}
+
+/// Shared handle to the spawned child so the reader thread can capture the
+/// exit code after the read loop ends, while the manager can still kill it.
+type SharedChild = Arc<Mutex<Box<dyn PtyChild + Send>>>;
+
 /// Internal state for one PTY session
 struct PtySession {
     info: PtySessionInfo,
-    child: Box<dyn PtyChild + Send>,
+    child: SharedChild,
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
     kill_flag: Arc<std::sync::atomic::AtomicBool>,
+    /// Set ONLY when an orchestrator action (flight pause/cancel) kills the
+    /// session via `kill_sessions`. The reader thread reads this to mark the
+    /// emitted `pty:exit` payload `terminated`, so a backend kill isn't
+    /// mis-scored as task success.
+    orchestrator_killed: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Manages all PTY sessions
@@ -114,15 +149,25 @@ impl PtyManager {
     }
 
     /// Kill multiple PTY sessions by ID. Skips missing sessions.
+    ///
+    /// Invoked by orchestrator flight pause/cancel. Sets `orchestrator_killed`
+    /// so the reader thread tags the resulting `pty:exit` payload as
+    /// `terminated`, preventing the frontend from scoring the kill as a
+    /// successful task completion.
     pub fn kill_sessions(&mut self, session_ids: &[String]) {
         for session_id in session_ids {
             if let Some(mut session) = self.sessions.remove(session_id) {
                 info!(session_id = %session_id, "Killing PTY session (flight cleanup)");
                 session
+                    .orchestrator_killed
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                session
                     .kill_flag
                     .store(true, std::sync::atomic::Ordering::Relaxed);
                 session.info.alive = false;
-                let _ = session.child.kill();
+                if let Ok(mut child) = session.child.lock() {
+                    let _ = child.kill();
+                }
             }
         }
     }
@@ -254,6 +299,7 @@ pub fn create_pty_session(
     })?;
 
     let pid = child.process_id();
+    let child: SharedChild = Arc::new(Mutex::new(child));
 
     let writer = pair
         .master
@@ -266,6 +312,7 @@ pub fn create_pty_session(
         .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
 
     let kill_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let orchestrator_killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let info = PtySessionInfo {
         id: session_id.clone(),
@@ -276,10 +323,11 @@ pub fn create_pty_session(
 
     let session = PtySession {
         info: info.clone(),
-        child,
+        child: child.clone(),
         writer,
         master: pair.master,
         kill_flag: kill_flag.clone(),
+        orchestrator_killed: orchestrator_killed.clone(),
     };
 
     {
@@ -291,6 +339,7 @@ pub fn create_pty_session(
     let sid = session_id.clone();
     let app_handle = app.clone();
     let mgr_ref = manager.inner().clone();
+    let exit_child = child.clone();
 
     thread::spawn(move || {
         let mut buf = [0u8; 8192];
@@ -330,8 +379,28 @@ pub fn create_pty_session(
             mgr.sessions.remove(&sid);
         }
 
-        info!(session_id = %sid, "PTY session exited");
-        if let Err(e) = app_handle.emit(&pty_exit_event(&sid), &sid) {
+        // Capture the child exit code now that the read loop has ended. The
+        // child may already have been reaped by an explicit `kill()`, in
+        // which case `wait()` errors and we report `None`.
+        let exit_code = match exit_child.lock() {
+            Ok(mut child) => match child.wait() {
+                Ok(status) => Some(status.exit_code() as i32),
+                Err(e) => {
+                    warn!(session_id = %sid, error = %e, "Failed to read PTY child exit status");
+                    None
+                }
+            },
+            Err(_) => None,
+        };
+        let terminated = orchestrator_killed.load(std::sync::atomic::Ordering::Relaxed);
+
+        info!(session_id = %sid, exit_code = ?exit_code, terminated, "PTY session exited");
+        let payload = PtyExitPayload {
+            session_id: sid.clone(),
+            exit_code,
+            terminated,
+        };
+        if let Err(e) = app_handle.emit(&pty_exit_event(&sid), &payload) {
             warn!(session_id = %sid, error = %e, "Failed to emit scoped pty exit");
         }
     });
@@ -399,8 +468,10 @@ pub fn kill_pty(manager: State<'_, SharedPtyManager>, session_id: String) -> Res
             .kill_flag
             .store(true, std::sync::atomic::Ordering::Relaxed);
         session.info.alive = false;
-        if let Err(e) = session.child.kill() {
-            warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
+        if let Ok(mut child) = session.child.lock() {
+            if let Err(e) = child.kill() {
+                warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
+            }
         }
     } else {
         return Err(format!("PTY session {} not found", session_id));
@@ -431,29 +502,32 @@ pub fn kill_pty_and_wait(
     );
     let mut mgr = lock_mutex(&manager)?;
     info!(session_id = %session_id, "Killing PTY session and waiting for exit");
-    if let Some(mut session) = mgr.sessions.remove(&session_id) {
+    if let Some(session) = mgr.sessions.remove(&session_id) {
         session
             .kill_flag
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        session.info.alive = false;
-        if let Err(e) = session.child.kill() {
-            warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
+        let child = session.child.clone();
+        if let Ok(mut c) = child.lock() {
+            if let Err(e) = c.kill() {
+                warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
+            }
         }
         drop(mgr);
 
         let start = std::time::Instant::now();
         loop {
-            match session.child.try_wait() {
-                Ok(Some(_)) => return Ok(true),
-                Ok(None) if start.elapsed() < timeout => {
+            // The reader thread may also wait/reap this child concurrently.
+            // `Ok(Some)` = exited; `Err` after a kill means the reader thread
+            // already reaped it, so the child is gone either way — both count
+            // as a successful exit. Only a live child (`Ok(None)`) keeps us
+            // polling until the timeout.
+            match child.lock().ok().map(|mut c| c.try_wait()) {
+                Some(Ok(Some(_))) | Some(Err(_)) | None => return Ok(true),
+                Some(Ok(None)) if start.elapsed() < timeout => {
                     std::thread::sleep(std::time::Duration::from_millis(25));
                 }
-                Ok(None) => {
+                Some(Ok(None)) => {
                     warn!(session_id = %session_id, ?timeout, "PTY kill timed out");
-                    return Ok(false);
-                }
-                Err(e) => {
-                    warn!(session_id = %session_id, error = %e, "Failed waiting for PTY child process");
                     return Ok(false);
                 }
             }

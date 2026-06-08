@@ -24,6 +24,21 @@ vi.mock("@/lib/tauri", () => ({
   createPtySession: vi.fn(),
   writePty: vi.fn(),
   killPty: vi.fn(),
+  parsePtyExitPayload: vi.fn((payload: unknown) => {
+    if (payload && typeof payload === "object") {
+      const p = payload as { sessionId?: unknown; exitCode?: unknown; terminated?: unknown };
+      return {
+        sessionId: typeof p.sessionId === "string" ? p.sessionId : "",
+        exitCode: typeof p.exitCode === "number" ? p.exitCode : null,
+        terminated: p.terminated === true,
+      };
+    }
+    return {
+      sessionId: typeof payload === "string" ? payload : "",
+      exitCode: null,
+      terminated: false,
+    };
+  }),
   readPtyTranscript: vi.fn().mockResolvedValue({ data: "" }),
   listPtySessions: vi.fn().mockResolvedValue([{ id: "sess-1", alive: true }]),
 }));

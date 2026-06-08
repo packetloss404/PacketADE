@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use tracing::info;
+use tracing::{info, warn};
 
 use super::shared::hide_window;
 use crate::core::brand::DEPLOY_CONFIG_FILENAMES;
@@ -278,18 +278,26 @@ pub fn run_deploy(
         .try_clone_reader()
         .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
 
-    // Spawn reader thread — same pattern as create_pty_session but standalone
-    // (deploy commands don't go through the PTY manager allowlist)
+    // Spawn reader + wait threads — same pattern as create_pty_session
+    // (deploy commands don't go through the PTY manager allowlist). The
+    // child.wait() lives in its own thread so a non-broken-pipe read error
+    // (e.g. EIO on PTY teardown) can never strand the run by blocking the
+    // exit emission: the reader loop breaks on EIO / repeated errors and the
+    // wait thread always reaches a terminal status.
     let sid = session_id.clone();
     let rid = run_id.clone();
-    let app_handle = app.clone();
+    let reader_app = app.clone();
     let master = pair.master;
 
     thread::spawn(move || {
-        // Keep writer and child alive for the duration of the process
+        // Keep writer and master alive for the duration of the read loop.
         let _writer = writer;
-        let mut _child = child;
         let _master = master;
+
+        // Bound the loop: bail after too many consecutive non-broken-pipe
+        // errors so we never spin forever on a wedged reader (EIO etc.).
+        const MAX_CONSECUTIVE_ERRORS: u32 = 50;
+        let mut consecutive_errors: u32 = 0;
 
         let mut buf = [0u8; 8192];
         let mut pending: Vec<u8> = Vec::new();
@@ -297,31 +305,65 @@ pub fn run_deploy(
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
+                    consecutive_errors = 0;
                     let data = crate::core::pty::decode_terminal_chunk(&buf[..n], &mut pending);
                     // Emit on both the standard pty:output channel (for DeployTerminal xterm)
                     // and a deploy-specific channel (for output capture in store)
-                    let _ = app_handle.emit(&format!("pty:output:{}", sid), &data);
-                    let _ = app_handle.emit(&format!("deploy:output:{}", rid), &data);
+                    let _ = reader_app.emit(&format!("pty:output:{}", sid), &data);
+                    let _ = reader_app.emit(&format!("deploy:output:{}", rid), &data);
                 }
                 Err(e) => {
                     let err_str = e.to_string();
+                    // Treat broken-pipe and EIO (raised when the slave end of
+                    // the PTY is gone) as clean end-of-stream: the child has
+                    // exited, so stop reading and let the wait thread report.
                     if err_str.contains("broken pipe")
                         || err_str.contains("The pipe has been ended")
                         || e.kind() == std::io::ErrorKind::BrokenPipe
+                        || e.raw_os_error() == Some(5) // EIO
                     {
+                        break;
+                    }
+                    consecutive_errors += 1;
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                        warn!(
+                            session_id = %sid,
+                            run_id = %rid,
+                            error = %err_str,
+                            "Deploy reader giving up after repeated read errors"
+                        );
                         break;
                     }
                     thread::sleep(std::time::Duration::from_millis(10));
                 }
             }
         }
+    });
 
-        // Try to get exit status
-        let exit_code = _child.wait().map(|status| status.exit_code()).unwrap_or(1);
+    // Wait for the child in a dedicated thread so the exit status is always
+    // emitted, even if the reader loop bailed early on an I/O error.
+    let wait_sid = session_id.clone();
+    let wait_rid = run_id.clone();
+    let wait_app = app;
 
-        info!(session_id = %sid, run_id = %rid, exit_code = exit_code, "Deploy PTY session exited");
-        let _ = app_handle.emit(&format!("pty:exit:{}", sid), &sid);
-        let _ = app_handle.emit(&format!("deploy:exit:{}", rid), exit_code);
+    thread::spawn(move || {
+        let mut child = child;
+        let exit_code = match child.wait() {
+            Ok(status) => status.exit_code(),
+            Err(e) => {
+                warn!(
+                    session_id = %wait_sid,
+                    run_id = %wait_rid,
+                    error = %e,
+                    "Failed waiting for deploy child exit"
+                );
+                1
+            }
+        };
+
+        info!(session_id = %wait_sid, run_id = %wait_rid, exit_code = exit_code, "Deploy PTY session exited");
+        let _ = wait_app.emit(&format!("pty:exit:{}", wait_sid), &wait_sid);
+        let _ = wait_app.emit(&format!("deploy:exit:{}", wait_rid), exit_code);
     });
 
     Ok(session_id)
