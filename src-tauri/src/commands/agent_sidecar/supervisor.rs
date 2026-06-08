@@ -467,6 +467,20 @@ impl SidecarManager {
                 }
             }
 
+            // The child is gone. Whether or not we're going to restart, the
+            // respawned Node process has no memory of the sessions this one was
+            // serving — so any in-flight owned session is now stranded
+            // mid-stream and later messages would get "No active session".
+            // Tell the frontend to restart those conversations and clear our
+            // local ownership set / resolve any oneshot waiters. The give-up
+            // branch below re-runs this with the terminal message; because this
+            // clears `owned_sessions`, that second call finds nothing left to
+            // emit (no double-emission).
+            self.fan_out_crash_error(
+                "Sidecar restarted — please resend your message to continue this conversation.",
+            )
+            .await;
+
             // Prune restart times outside the window, then check the rate limit.
             let now = Instant::now();
             restart_times.retain(|t| now.duration_since(*t) < RESTART_WINDOW);
@@ -475,7 +489,8 @@ impl SidecarManager {
                     "agent sidecar exceeded {} restarts in {:?}; giving up",
                     MAX_RESTARTS_IN_WINDOW, RESTART_WINDOW
                 );
-                self.fan_out_crash_error().await;
+                self.fan_out_crash_error("Sidecar crashed and could not restart")
+                    .await;
                 // Clear the writer channel so future forward_* calls fail fast
                 // with a clear error.
                 {
@@ -891,9 +906,18 @@ impl SidecarManager {
         }
     }
 
-    /// Emit `api-agent:error:*` on every currently-owned session when the
-    /// sidecar dies unrecoverably.
-    async fn fan_out_crash_error(&self) {
+    /// Emit `api-agent:error:*` on every currently-owned **local** session,
+    /// clear those sessions, and resolve any outstanding one-shot waiters with
+    /// the same `message`. Remote (SSH-backed) sessions are left untouched —
+    /// they have their own dedicated process and exit handling.
+    ///
+    /// Called on every local-sidecar child exit (with a recoverable message so
+    /// the frontend can restart those conversations against the freshly
+    /// respawned process, which has no memory of prior sessions) and again in
+    /// the give-up branch (with the terminal message). Because this clears
+    /// `owned_sessions`, the second call after a restart-loop exhaustion finds
+    /// nothing left to emit, so there is no double-emission.
+    async fn fan_out_crash_error(&self, message: &str) {
         let remote_owned: HashSet<String> = {
             let guard = self.remote_owned_sessions.lock().await;
             guard.iter().cloned().collect()
@@ -906,20 +930,24 @@ impl SidecarManager {
                 .cloned()
                 .collect()
         };
+        if sessions.is_empty() {
+            return;
+        }
         for session_id in &sessions {
             let _ = self.app_handle.emit(
                 &error_event(session_id),
                 ErrorPayload {
-                    message: "Sidecar crashed and could not restart".to_string(),
+                    message: message.to_string(),
                 },
             );
         }
         let mut guard = self.owned_sessions.lock().await;
         guard.retain(|session_id| remote_owned.contains(session_id));
+        drop(guard);
 
         // E10-SUMMARIZE — also resolve any outstanding one-shot waiters
         // with the crash error so awaiters don't hang forever after a
-        // hard sidecar failure.
+        // sidecar exit.
         let mut waiters = self.oneshot_waiters.lock().await;
         let drained: Vec<(String, OneshotWaiter)> = sessions
             .iter()
@@ -932,7 +960,7 @@ impl SidecarManager {
         drop(waiters);
         for (_sid, mut waiter) in drained {
             if let Some(sender) = waiter.sender.take() {
-                let _ = sender.send(Err("Sidecar crashed and could not restart".to_string()));
+                let _ = sender.send(Err(message.to_string()));
             }
         }
     }

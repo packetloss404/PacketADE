@@ -1,0 +1,1405 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Single-file PacketADE planning rundown for all active plans outside Remote Agents."
+    />
+    <title>PacketADE Other Plans Rundown</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d1013;
+        --panel: #13191f;
+        --panel-2: #182129;
+        --panel-3: #202b34;
+        --line: #2b3944;
+        --line-soft: rgba(255, 255, 255, 0.1);
+        --text: #eef4f2;
+        --muted: #9eafb2;
+        --soft: #c8d3d1;
+        --green: #42d184;
+        --cyan: #58c8e8;
+        --amber: #f0bb62;
+        --red: #ff7a78;
+        --blue: #8cb6ff;
+        --ink: #07100d;
+        --shadow: 0 18px 46px rgba(0, 0, 0, 0.3);
+        --radius: 8px;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 16px;
+        line-height: 1.55;
+      }
+
+      a {
+        color: inherit;
+        text-decoration-color: rgba(88, 200, 232, 0.5);
+        text-underline-offset: 3px;
+      }
+
+      a:hover {
+        color: var(--cyan);
+      }
+
+      code {
+        padding: 0.12rem 0.34rem;
+        border: 1px solid rgba(66, 209, 132, 0.16);
+        border-radius: 5px;
+        background: rgba(66, 209, 132, 0.1);
+        color: #d8fbe7;
+        font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+        font-size: 0.88em;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 14px clamp(18px, 4vw, 56px);
+        border-bottom: 1px solid var(--line-soft);
+        background: rgba(13, 16, 19, 0.92);
+        backdrop-filter: blur(16px);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 230px;
+        font-weight: 900;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 7px;
+        background: var(--green);
+        color: var(--ink);
+        font-size: 13px;
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .nav a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 7px 10px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .nav a:hover {
+        border-color: var(--line);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+        gap: clamp(24px, 5vw, 54px);
+        align-items: stretch;
+        padding: clamp(42px, 8vw, 84px) clamp(18px, 4vw, 56px) 38px;
+        border-bottom: 1px solid var(--line-soft);
+        background:
+          linear-gradient(145deg, rgba(66, 209, 132, 0.08), transparent 42%),
+          linear-gradient(335deg, rgba(140, 182, 255, 0.08), transparent 44%),
+          var(--bg);
+      }
+
+      .kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 5px 9px;
+        border: 1px solid rgba(66, 209, 132, 0.3);
+        border-radius: 999px;
+        background: rgba(66, 209, 132, 0.1);
+        color: #cdfde2;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        margin: 0;
+        letter-spacing: 0;
+        line-height: 1.08;
+      }
+
+      h1 {
+        max-width: 930px;
+        margin-top: 20px;
+        font-size: clamp(42px, 7vw, 76px);
+      }
+
+      .hero p {
+        max-width: 850px;
+        margin: 22px 0 0;
+        color: var(--soft);
+        font-size: clamp(17px, 2vw, 21px);
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 28px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 10px 14px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 900;
+        text-decoration: none;
+      }
+
+      .button.primary {
+        border-color: rgba(66, 209, 132, 0.65);
+        background: var(--green);
+        color: var(--ink);
+      }
+
+      .hero-panel {
+        display: grid;
+        gap: 14px;
+        align-content: start;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(19, 25, 31, 0.9);
+        box-shadow: var(--shadow);
+      }
+
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .stat {
+        padding: 14px;
+        border: 1px solid var(--line-soft);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.035);
+      }
+
+      .stat strong {
+        display: block;
+        color: var(--green);
+        font-size: 26px;
+        line-height: 1;
+      }
+
+      .stat span {
+        display: block;
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 30px;
+        width: min(1480px, 100%);
+        margin: 0 auto;
+        padding: 34px clamp(18px, 4vw, 56px) 70px;
+      }
+
+      .toc {
+        position: sticky;
+        top: 76px;
+        align-self: start;
+        max-height: calc(100vh - 100px);
+        overflow: auto;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+      }
+
+      .toc h2 {
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .toc a {
+        display: block;
+        padding: 8px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        color: var(--soft);
+        font-size: 13px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .toc a:first-of-type {
+        border-top: 0;
+      }
+
+      .content {
+        display: grid;
+        gap: 28px;
+      }
+
+      .section {
+        padding: clamp(22px, 4vw, 34px);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-start;
+        margin-bottom: 18px;
+      }
+
+      .section-label {
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .section h2 {
+        margin-top: 7px;
+        font-size: clamp(28px, 4vw, 42px);
+      }
+
+      .section-lede {
+        max-width: 800px;
+        margin: 12px 0 0;
+        color: var(--soft);
+        font-size: 17px;
+      }
+
+      .source-pill {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 6px 9px;
+        border: 1px solid rgba(88, 200, 232, 0.32);
+        border-radius: 999px;
+        background: rgba(88, 200, 232, 0.08);
+        color: #cbf4ff;
+        font-size: 12px;
+        font-weight: 900;
+        text-decoration: none;
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .grid.four {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .card {
+        padding: 16px;
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+      }
+
+      .card h3 {
+        margin-bottom: 8px;
+        font-size: 17px;
+      }
+
+      .card p {
+        margin: 0;
+        color: var(--soft);
+      }
+
+      .card ul,
+      .section ul,
+      .section ol {
+        margin: 10px 0 0;
+        padding-left: 20px;
+        color: var(--soft);
+      }
+
+      .card li,
+      .section li {
+        margin: 6px 0;
+      }
+
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        min-height: 27px;
+        padding: 5px 8px;
+        border: 1px solid var(--line-soft);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .tag.done {
+        border-color: rgba(66, 209, 132, 0.34);
+        color: #ceffe4;
+      }
+
+      .tag.partial {
+        border-color: rgba(240, 187, 98, 0.36);
+        color: #ffe0a5;
+      }
+
+      .tag.defer {
+        border-color: rgba(255, 122, 120, 0.34);
+        color: #ffc9c9;
+      }
+
+      .callout {
+        margin-top: 18px;
+        padding: 16px;
+        border-left: 4px solid var(--green);
+        border-radius: 0 7px 7px 0;
+        background: rgba(66, 209, 132, 0.08);
+        color: #dffbed;
+      }
+
+      .callout strong {
+        color: #ffffff;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid var(--line-soft);
+        vertical-align: top;
+        text-align: left;
+      }
+
+      th {
+        color: var(--muted);
+        background: var(--panel-3);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .track-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .track {
+        display: grid;
+        grid-template-columns: 160px minmax(0, 1fr) minmax(220px, 0.45fr);
+        gap: 14px;
+        align-items: stretch;
+        padding: 14px;
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+      }
+
+      .track-meta {
+        display: grid;
+        align-content: center;
+        gap: 8px;
+        padding: 12px;
+        border: 1px solid rgba(66, 209, 132, 0.22);
+        border-radius: 7px;
+        background: rgba(66, 209, 132, 0.07);
+      }
+
+      .track-meta strong {
+        color: var(--green);
+        font-size: 14px;
+        text-transform: uppercase;
+      }
+
+      .track-meta span {
+        color: var(--soft);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .track h3 {
+        margin-bottom: 6px;
+        font-size: 18px;
+      }
+
+      .track p {
+        margin: 0;
+        color: var(--soft);
+      }
+
+      .next {
+        color: #ffe0a5;
+        font-size: 14px;
+      }
+
+      details {
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+      }
+
+      summary {
+        cursor: pointer;
+        padding: 14px 16px;
+        color: #ffffff;
+        font-weight: 900;
+      }
+
+      details > div {
+        padding: 0 16px 16px;
+        color: var(--soft);
+      }
+
+      .footer {
+        padding: 30px clamp(18px, 4vw, 56px) 44px;
+        border-top: 1px solid var(--line-soft);
+        color: var(--muted);
+        text-align: center;
+      }
+
+      @media (max-width: 1120px) {
+        .hero,
+        .page {
+          grid-template-columns: 1fr;
+        }
+
+        .toc {
+          position: static;
+          max-height: none;
+        }
+
+        .grid.four {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 780px) {
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .nav {
+          justify-content: flex-start;
+        }
+
+        .hero,
+        .page {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        .grid.two,
+        .grid.three,
+        .grid.four,
+        .stat-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .track {
+          grid-template-columns: 1fr;
+        }
+
+        .section-header {
+          flex-direction: column;
+        }
+
+        h1 {
+          font-size: 40px;
+        }
+      }
+
+      @media print {
+        :root {
+          color-scheme: light;
+        }
+
+        body {
+          background: #ffffff;
+          color: #111111;
+        }
+
+        .topbar,
+        .toc,
+        .hero-actions {
+          display: none;
+        }
+
+        .hero,
+        .section,
+        .card,
+        .track,
+        details {
+          box-shadow: none;
+          background: #ffffff;
+          color: #111111;
+        }
+
+        .page {
+          display: block;
+          padding: 0;
+        }
+
+        .section {
+          break-inside: avoid;
+          margin: 18px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">PA</span>
+        <span>Other Plans Rundown</span>
+      </div>
+      <nav class="nav" aria-label="Page sections">
+        <a href="#portfolio">Portfolio</a>
+        <a href="#active">Active</a>
+        <a href="#release">Release Ops</a>
+        <a href="#product">Product</a>
+        <a href="#debt">Debt</a>
+        <a href="#history">History</a>
+        <a href="#review">Review</a>
+        <a href="#sources">Sources</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div>
+        <span class="kicker">Planning review - generated 2026-05-27</span>
+        <h1>The rest of PacketADE's planning surface, in one place.</h1>
+        <p>
+          This single-file HTML covers every active or reference-worthy plan outside
+          Remote Agents: Mission Planner follow-ups, SSH and remote workspaces, MCP
+          provider transport, swarm orchestration, cost analytics, workspace UX, release
+          operations, local quality gates, GitHub/Memory deferrals, and backend audit
+          hardening.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#review">Start review</a>
+          <a class="button" href="./remoteagents/remote-agents-master-plan.html">Remote Agents plan</a>
+          <a class="button" href="../ROADMAP.md">Roadmap</a>
+          <a class="button" href="../backlog.md">Backlog</a>
+        </div>
+      </div>
+
+      <aside class="hero-panel" aria-label="Portfolio snapshot">
+        <div class="stat-grid">
+          <div class="stat">
+            <strong>8</strong>
+            <span>main non-Remote-Agents tracks</span>
+          </div>
+          <div class="stat">
+            <strong>3</strong>
+            <span>release/readiness runbooks</span>
+          </div>
+          <div class="stat">
+            <strong>P1</strong>
+            <span>sidecar-over-SSH is the sharpest next gap</span>
+          </div>
+          <div class="stat">
+            <strong>v6</strong>
+            <span>live sidecar protocol reference</span>
+          </div>
+        </div>
+        <div class="tag-list">
+          <span class="tag done">Mission Planner v1 shipped</span>
+          <span class="tag partial">Swarm escalation partial</span>
+          <span class="tag partial">MCP provider frontend done</span>
+          <span class="tag defer">Updater blocked on signing</span>
+        </div>
+      </aside>
+    </section>
+
+    <main class="page">
+      <aside class="toc" aria-label="Table of contents">
+        <h2>Contents</h2>
+        <a href="#portfolio">1. Portfolio Snapshot</a>
+        <a href="#active">2. Active Feature Plans</a>
+        <a href="#mission">3. Mission Planner</a>
+        <a href="#mcp">4. MCP Provider</a>
+        <a href="#swarm">5. Swarm Orchestration</a>
+        <a href="#workspace">6. Workspace UX</a>
+        <a href="#cost">7. Cost Dashboard</a>
+        <a href="#release">8. Release Ops</a>
+        <a href="#sidecar">9. Sidecar</a>
+        <a href="#product">10. GitHub And Memory</a>
+        <a href="#debt">11. Debt And Audit</a>
+        <a href="#history">12. Superseded/Archive</a>
+        <a href="#review">13. Review Checklist</a>
+        <a href="#sources">14. Source Map</a>
+      </aside>
+
+      <div class="content">
+        <section class="section" id="portfolio">
+          <div class="section-header">
+            <div>
+              <div class="section-label">01 - Portfolio snapshot</div>
+              <h2>What matters besides Remote Agents</h2>
+              <p class="section-lede">
+                The rest of the planning surface is mostly about making PacketADE safer,
+                shippable, and more composable around the features already built.
+              </p>
+            </div>
+            <a class="source-pill" href="./README.md">dev/README.md</a>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Track</th>
+                <th>Status</th>
+                <th>What it wants next</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Mission Planner</td>
+                <td>v1 shipped; runbook active; v1.1 backlog remains.</td>
+                <td>Use the runbook for sign-off; pull v1.1 items from backlog by priority.</td>
+                <td><a href="./mission-planner-plan.md">mission-planner-plan.md</a></td>
+              </tr>
+              <tr>
+                <td>SSH and remote workspaces</td>
+                <td>Phases 1-3 shipped; several P1/P2 gaps remain.</td>
+                <td>Sidecar-over-SSH, consumer sweep, remote git writes, MCP over SSH.</td>
+                <td><a href="../backlog.md">backlog.md</a></td>
+              </tr>
+              <tr>
+                <td>MCP provider transport</td>
+                <td>Frontend settings/types done; Rust server deferred.</td>
+                <td>Build local HTTP/SSE MCP server when external agents need PacketADE state.</td>
+                <td><a href="./mcp-provider-transport.md">mcp-provider-transport.md</a></td>
+              </tr>
+              <tr>
+                <td>Swarm orchestration</td>
+                <td>Roles, owned paths, collision checks, feed done; escalation partial.</td>
+                <td>Structured escalation, auto-reassignment suggestions, review routing.</td>
+                <td><a href="./bridgemind/swarm-orchestration-plan.md">swarm-orchestration-plan.md</a></td>
+              </tr>
+              <tr>
+                <td>Cost dashboard</td>
+                <td>Dashboard and analytics unification done.</td>
+                <td>Budget thresholds, alerts, per-flight rollups, pricing table maintenance.</td>
+                <td><a href="./moat/cost-dashboard-plan.md">cost-dashboard-plan.md</a></td>
+              </tr>
+              <tr>
+                <td>Workspace UX</td>
+                <td>Git dashboard and prompt library mostly done.</td>
+                <td>Review packet ties, flight approval links, command palette prompt access.</td>
+                <td><a href="./zen-workspace/features-git-workspace.md">workspace plans</a></td>
+              </tr>
+              <tr>
+                <td>Release operations</td>
+                <td>Runbooks exist; updater and signing are deferred.</td>
+                <td>Acquire signing certs, wire updater, keep local quality gates green.</td>
+                <td><a href="./updater-setup.md">updater-setup.md</a></td>
+              </tr>
+              <tr>
+                <td>GitHub and Memory</td>
+                <td>v0.8 shipped; follow-ups live in backlog.</td>
+                <td>PR comments, notifications, RAG/memory brief, richer GitHub loops.</td>
+                <td><a href="./v0.8-github-and-memory.md">v0.8 plan</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="section" id="active">
+          <div class="section-header">
+            <div>
+              <div class="section-label">02 - Active plan stack</div>
+              <h2>The non-Remote-Agents tracks</h2>
+              <p class="section-lede">
+                This is the clean planning order after the docs consolidation. Backlog is
+                the live task register; these docs explain why and how.
+              </p>
+            </div>
+            <a class="source-pill" href="../backlog.md">backlog.md</a>
+          </div>
+
+          <div class="track-list">
+            <article class="track">
+              <div class="track-meta">
+                <strong>P1</strong>
+                <span>Remote workspace gap</span>
+              </div>
+              <div>
+                <h3>Sidecar-over-SSH</h3>
+                <p>
+                  The sidecar protocol is transport-agnostic. The gap is launching
+                  subscription providers against remote codebases by swapping local
+                  Node for an SSH-executed sidecar entrypoint.
+                </p>
+              </div>
+              <div class="next">Next action: design and implement the SSH sidecar launch path in the supervisor.</div>
+            </article>
+
+            <article class="track">
+              <div class="track-meta">
+                <strong>P2</strong>
+                <span>Workflow polish</span>
+              </div>
+              <div>
+                <h3>Swarm escalation</h3>
+                <p>
+                  Roles, ownership, collision checks, and coordination feed are present.
+                  The remaining plan is turning blocked work into explicit supervision
+                  and reassignment flow.
+                </p>
+              </div>
+              <div class="next">Next action: define escalation triggers and route them to review/human attention.</div>
+            </article>
+
+            <article class="track">
+              <div class="track-meta">
+                <strong>P2</strong>
+                <span>Integration layer</span>
+              </div>
+              <div>
+                <h3>PacketADE as MCP provider</h3>
+                <p>
+                  PacketADE manages MCP clients today. The deferred plan turns PacketADE
+                  itself into a local MCP server exposing flights, tasks, workspaces,
+                  review packets, and memory to external tools.
+                </p>
+              </div>
+              <div class="next">Next action: wait for external-agent demand, then build read-only local server first.</div>
+            </article>
+
+            <article class="track">
+              <div class="track-meta">
+                <strong>P2/P3</strong>
+                <span>Release readiness</span>
+              </div>
+              <div>
+                <h3>Distribution, updater, quality gates</h3>
+                <p>
+                  Local builds are documented across Windows, macOS, and Linux. Updater
+                  enablement is blocked on signing keypair, hosted manifest, release
+                  assets, and a small UI prompt.
+                </p>
+              </div>
+              <div class="next">Next action: acquire signing assets and decide release-hosting path.</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="mission">
+          <div class="section-header">
+            <div>
+              <div class="section-label">03 - Mission Planner</div>
+              <h2>Locked v1 design, live runbook, v1.1 backlog</h2>
+              <p class="section-lede">
+                Mission Planner moved PacketADE missions from launch-modal friction to a
+                conversational spec mode with a long-lived planner agent.
+              </p>
+            </div>
+            <a class="source-pill" href="./mission-planner-plan.md">mission-planner-plan.md</a>
+          </div>
+
+          <div class="grid three">
+            <article class="card">
+              <h3>What shipped</h3>
+              <ul>
+                <li>One long-lived Claude OAuth planner session per Mission.</li>
+                <li>Spec chat, launch transition, milestones, tasks, journal.</li>
+                <li>Seven real planner tools through in-process MCP.</li>
+                <li>Wake-trigger injection through sidecar protocol v6.</li>
+                <li>Planner/executor cost display and context compaction.</li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>Acceptance runbook</h3>
+              <ul>
+                <li>Happy path: dark-mode toggle mission populates within ~30 seconds.</li>
+                <li>Stop/restart hygiene keeps mission state recoverable.</li>
+                <li>Approval gate appears for oversized scope.</li>
+                <li>Journal export produces readable markdown.</li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>v1.1 follow-ups</h3>
+              <ul>
+                <li>Helper planner escalation.</li>
+                <li>Milestone gating and collision detection on async attempts.</li>
+                <li>Crash-resilient planner sessions.</li>
+                <li>Journal incremental fetch and file size caps.</li>
+                <li>Rate-limit and cost-split polish.</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="callout">
+            <strong>Review stance:</strong> treat
+            <a href="./mission-planner-v1-acceptance-runbook.md">the runbook</a> as the
+            release gate and <a href="../backlog.md">backlog.md</a> as the live source
+            for open work. The locked design is still required reading before touching
+            Mission Planner internals.
+          </div>
+        </section>
+
+        <section class="section" id="mcp">
+          <div class="section-header">
+            <div>
+              <div class="section-label">04 - MCP provider</div>
+              <h2>PacketADE as a local context provider</h2>
+              <p class="section-lede">
+                The MCP provider plan is strategically valuable, but deliberately deferred
+                until external agents need PacketADE as a shared local context layer.
+              </p>
+            </div>
+            <a class="source-pill" href="./mcp-provider-transport.md">mcp-provider-transport.md</a>
+          </div>
+
+          <div class="grid two">
+            <article class="card">
+              <h3>Phase 2 local server</h3>
+              <p>
+                Build a localhost HTTP/SSE JSON-RPC server, default port
+                <code>3100</code>, with read-only resources for project metadata,
+                flights, tasks, memory patterns, workspaces, and pending review packets.
+              </p>
+              <div class="tag-list">
+                <span class="tag partial">Frontend already done</span>
+                <span class="tag defer">Rust transport deferred</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Safe workflow tools</h3>
+              <p>
+                Add low-risk tools after read-only resources: get active flight, list
+                runnable tasks, read task details, append handoff, request review, mark
+                blocked, read memory context, and list workspaces.
+              </p>
+              <div class="tag-list">
+                <span class="tag done">Local-only default</span>
+                <span class="tag done">Per-tool permissions</span>
+                <span class="tag done">Audit trail required</span>
+              </div>
+            </article>
+          </div>
+
+          <details style="margin-top: 14px">
+            <summary>Good first MCP provider slice</summary>
+            <div>
+              Start with <code>packetade.get_active_project</code>,
+              <code>packetade.list_flights</code>, <code>packetade.get_flight</code>,
+              <code>packetade.list_tasks</code>, and
+              <code>packetade.get_memory_context</code>. That proves external agents can
+              consume PacketADE planning context without scraping local files.
+            </div>
+          </details>
+        </section>
+
+        <section class="section" id="swarm">
+          <div class="section-header">
+            <div>
+              <div class="section-label">05 - Swarm orchestration</div>
+              <h2>Make multi-agent work legible and safer</h2>
+              <p class="section-lede">
+                The plan does not replace the Flight/Mission model. It strengthens the
+                existing orchestration core with roles, ownership, and coordination.
+              </p>
+            </div>
+            <a class="source-pill" href="./bridgemind/swarm-orchestration-plan.md">swarm-orchestration-plan.md</a>
+          </div>
+
+          <div class="grid four">
+            <article class="card">
+              <h3>Phase 1</h3>
+              <p>Task roles: coordinator, builder, reviewer, scout. Role badges are done.</p>
+              <span class="tag done">Done</span>
+            </article>
+            <article class="card">
+              <h3>Phase 2</h3>
+              <p>Owned paths and pre-launch collision detection. Implemented in the scheduler path.</p>
+              <span class="tag done">Done</span>
+            </article>
+            <article class="card">
+              <h3>Phase 3</h3>
+              <p>Coordination feed and task handoff log for visible swarm behavior.</p>
+              <span class="tag done">Done</span>
+            </article>
+            <article class="card">
+              <h3>Phase 4</h3>
+              <p>Escalation, auto-reassignment suggestions, structured blocked workflows.</p>
+              <span class="tag partial">Partial</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="workspace">
+          <div class="section-header">
+            <div>
+              <div class="section-label">06 - Workspace UX</div>
+              <h2>Git review and prompts as operational tools</h2>
+              <p class="section-lede">
+                Workspace UX planning mostly points to tightening the bridge between
+                agent output, git review, missions, and reusable prompts.
+              </p>
+            </div>
+            <a class="source-pill" href="./zen-workspace/features-git-workspace.md">workspace plans</a>
+          </div>
+
+          <div class="grid two">
+            <article class="card">
+              <h3>Git workspace surface</h3>
+              <ul>
+                <li>Branch display and changed files are done.</li>
+                <li>Stage, unstage, stage all, and commit flow are done.</li>
+                <li>Review packet and Mission approval ties remain partial.</li>
+                <li>Best next move: make git review part of the agent workflow itself.</li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>Prompt library</h3>
+              <ul>
+                <li>Prompt storage, presets, search, terminal send, and chat send are done.</li>
+                <li>Command palette integration is not started.</li>
+                <li>Best next move: make prompts quick-launch assets available during active work.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="cost">
+          <div class="section-header">
+            <div>
+              <div class="section-label">07 - Cost dashboard</div>
+              <h2>Analytics works; alerts are the next user value</h2>
+              <p class="section-lede">
+                The dashboard is implemented and unified around backend analytics. The
+                remaining plan is budget awareness and better attribution.
+              </p>
+            </div>
+            <a class="source-pill" href="./moat/cost-dashboard-plan.md">cost-dashboard-plan.md</a>
+          </div>
+
+          <div class="grid three">
+            <article class="card">
+              <h3>Works today</h3>
+              <p>
+                API agent usage, Claude cost tally, and Codex session logs aggregate
+                through <code>read_usage_analytics</code> and <code>analyticsStore</code>.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Known gaps</h3>
+              <p>
+                Mixed cost sources, unknown models pricing to zero, partial per-flight
+                rollup, no caps/alerts, and no per-user attribution.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Recommended next</h3>
+              <p>
+                Add budget thresholds and visible alerts. Decide whether they are global,
+                per-provider, per-flight, or all three.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="release">
+          <div class="section-header">
+            <div>
+              <div class="section-label">08 - Release operations</div>
+              <h2>Builds are documented; signing is the blocker</h2>
+              <p class="section-lede">
+                Release readiness is now mostly an operations track: native build
+                runbooks, signing credentials, updater manifest hosting, and local checks.
+              </p>
+            </div>
+            <a class="source-pill" href="./multi-platform-build.md">multi-platform-build.md</a>
+          </div>
+
+          <div class="grid three">
+            <article class="card">
+              <h3>Multi-platform builds</h3>
+              <ul>
+                <li>Windows x64: EXE plus NSIS installer.</li>
+                <li>macOS x64/ARM64: app plus DMG.</li>
+                <li>Linux x64/ARM64: AppImage plus DEB.</li>
+                <li>Node 24.15.0 sidecar runtime fetched per target triple.</li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>Updater runbook</h3>
+              <ul>
+                <li>Tauri updater is not enabled today.</li>
+                <li>Use full-installer updates, not diff patches.</li>
+                <li>Requires signing keypair, HTTPS manifest, release assets, and UI prompt.</li>
+                <li>Keep private key offline.</li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>Local quality gates</h3>
+              <ul>
+                <li><code>pnpm preflight</code> for fast confidence.</li>
+                <li><code>pnpm check</code> for release confidence.</li>
+                <li>Includes Playwright, sidecar checks, schema validation, Rust check/tests.</li>
+                <li>No GitHub Actions CI is expected.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="sidecar">
+          <div class="section-header">
+            <div>
+              <div class="section-label">09 - Sidecar reference</div>
+              <h2>The sidecar is a shipped foundation, not a fresh plan</h2>
+              <p class="section-lede">
+                The Node sidecar is the bridge for subscription providers, OpenAI Agents
+                SDK, Mission Planner, and the normalized <code>api-agent:*</code> event
+                vocabulary.
+              </p>
+            </div>
+            <a class="source-pill" href="../agent-sidecar/README.md">agent-sidecar/README.md</a>
+          </div>
+
+          <div class="grid three">
+            <article class="card">
+              <h3>Providers</h3>
+              <p>
+                Echo, Claude OAuth, OpenAI Codex, and OpenAI Agents SDK are routed
+                through the sidecar; API-key providers mostly run in Rust.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Protocol v6</h3>
+              <p>
+                v6 adds typed <code>rate_limited</code> events for Mission Planner quota
+                pause. Earlier versions added model switching, retry, attachments, edits,
+                cancel-pending-tools, and wake-trigger injection.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Bundling</h3>
+              <p>
+                Production builds package the sidecar, pruned production dependencies,
+                and pinned Node runtime as Tauri resources/external binary.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="product">
+          <div class="section-header">
+            <div>
+              <div class="section-label">10 - GitHub and Memory</div>
+              <h2>v0.8 shipped; follow-ups live in backlog</h2>
+              <p class="section-lede">
+                The v0.8 plan is historical now, but it is still useful as a map of the
+                GitHub and Memory surfaces that were intentionally deferred.
+              </p>
+            </div>
+            <a class="source-pill" href="./v0.8-github-and-memory.md">v0.8-github-and-memory.md</a>
+          </div>
+
+          <div class="grid two">
+            <article class="card">
+              <h3>GitHub follow-ups</h3>
+              <ul>
+                <li>Authored PR line comments and reply threads.</li>
+                <li>Notifications inbox with mark-as-read and source links.</li>
+                <li>Issue to Mission auto-mirroring.</li>
+                <li>Releases, gists, Actions runs view.</li>
+                <li>Native <code>gh</code> CLI device-flow auth.</li>
+                <li>SSH attempt draft-PR publishing.</li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>Memory follow-ups</h3>
+              <ul>
+                <li>Embedding/RAG over memory.</li>
+                <li>Pre-execution memory brief for executor sessions.</li>
+                <li>Recurring-error detector.</li>
+                <li>"Ask your project" memory chat.</li>
+                <li>Manual capture affordances across more surfaces.</li>
+                <li>Export/import, digest, date filters, provenance links.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="debt">
+          <div class="section-header">
+            <div>
+              <div class="section-label">11 - Debt and audit follow-ups</div>
+              <h2>The backlog is the live ledger</h2>
+              <p class="section-lede">
+                Several lower-level hardening items came out of the v0.9.2/v0.9.3 Rust
+                audits. They are important, but should be picked deliberately by risk and
+                blast radius.
+              </p>
+            </div>
+            <a class="source-pill" href="../backlog.md">backlog.md</a>
+          </div>
+
+          <div class="grid four">
+            <article class="card">
+              <h3>LLM provider stack</h3>
+              <p>Backpressure handling, malformed tool args, finish_reason behavior, brand constants, usage gating.</p>
+            </article>
+            <article class="card">
+              <h3>Tool runtime</h3>
+              <p>Web fetch size caps, untrusted-content envelopes, tool loop dedupe, temp file cleanup.</p>
+            </article>
+            <article class="card">
+              <h3>MCP/workspace/runtime</h3>
+              <p>Worktree clean guards, MCP name cache, atomic config writes, PTY error visibility.</p>
+            </article>
+            <article class="card">
+              <h3>Storage/orchestration/prompts</h3>
+              <p>Orchestrator cleanup, Mission Planner prompt module extraction, missing targeted tests.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="history">
+          <div class="section-header">
+            <div>
+              <div class="section-label">12 - Superseded and archived context</div>
+              <h2>Keep the old docs, but read them with labels</h2>
+              <p class="section-lede">
+                The docs cleanup made this less spooky: active docs are in
+                <code>dev/</code>, completed docs live in <code>dev/archive/</code>, and
+                phone/PWA work moved to Remote Agents.
+              </p>
+            </div>
+            <a class="source-pill" href="./mobile/README.md">mobile/README.md</a>
+          </div>
+
+          <div class="grid three">
+            <article class="card">
+              <h3>Mobile folder</h3>
+              <p>
+                Superseded by Remote Agents. Keep it as May 2026 research/background for
+                PWA, iOS, relay, and mobile UX decisions.
+              </p>
+            </article>
+            <article class="card">
+              <h3>v0.8 plan</h3>
+              <p>
+                Historical. GitHub and Memory shipped; reopened/deferred work belongs in
+                the backlog.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Archive</h3>
+              <p>
+                Completed planning docs for moat, BridgeMind, QuadCode, Zen Workspace,
+                VibeToText, and earlier positioning live under <code>dev/archive/</code>.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="review">
+          <div class="section-header">
+            <div>
+              <div class="section-label">13 - Review checklist</div>
+              <h2>Questions for the next planning pass</h2>
+              <p class="section-lede">
+                This is the practical owner review list for the non-Remote-Agents plan
+                surface.
+              </p>
+            </div>
+            <a class="source-pill" href="../ROADMAP.md">ROADMAP.md</a>
+          </div>
+
+          <div class="grid two">
+            <article class="card">
+              <h3>Priority calls</h3>
+              <ol>
+                <li>Should sidecar-over-SSH be the next P1 after Remote Agents foundations?</li>
+                <li>Do we want updater/signing work before wider beta, or after Remote Agents private alpha?</li>
+                <li>Should Mission Planner v1.1 hardening be batched or pulled one item at a time?</li>
+                <li>Is MCP provider transport still deferred until an external-tool use case appears?</li>
+              </ol>
+            </article>
+            <article class="card">
+              <h3>Product calls</h3>
+              <ol>
+                <li>Where should git review packets meet Mission approval flow?</li>
+                <li>Are cost alerts global enough for v1, or should per-flight budgets come first?</li>
+                <li>Should Memory RAG support Mission Planner first, executor sessions first, or both?</li>
+                <li>Which audit follow-ups are release blockers versus hygiene?</li>
+              </ol>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="sources">
+          <div class="section-header">
+            <div>
+              <div class="section-label">14 - Source map</div>
+              <h2>Canonical docs behind this rundown</h2>
+              <p class="section-lede">
+                This page is a readable review layer. The documents below remain the
+                implementation sources of truth.
+              </p>
+            </div>
+            <a class="source-pill" href="./README.md">dev/README.md</a>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Document</th>
+                <th>Role in this page</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="../ROADMAP.md">ROADMAP.md</a></td>
+                <td>Current Now/Next/Later priorities and release path.</td>
+              </tr>
+              <tr>
+                <td><a href="../backlog.md">backlog.md</a></td>
+                <td>Live task ledger for SSH, platform, Mission Planner v1.1, GitHub, Memory, and audits.</td>
+              </tr>
+              <tr>
+                <td><a href="./README.md">dev/README.md</a></td>
+                <td>Planning ownership, active docs, reference docs, archive structure.</td>
+              </tr>
+              <tr>
+                <td><a href="./mission-planner-plan.md">mission-planner-plan.md</a>, <a href="./mission-planner-v1-acceptance-runbook.md">mission-planner-v1-acceptance-runbook.md</a>, <a href="./mission-planner-spike-retro.md">mission-planner-spike-retro.md</a></td>
+                <td>Mission Planner locked design, spike proof, and manual sign-off criteria.</td>
+              </tr>
+              <tr>
+                <td><a href="./mcp-provider-transport.md">mcp-provider-transport.md</a>, <a href="./bridgemind/packetade-mcp-server-plan.md">packetade-mcp-server-plan.md</a></td>
+                <td>MCP provider transport and product positioning.</td>
+              </tr>
+              <tr>
+                <td><a href="./bridgemind/swarm-orchestration-plan.md">swarm-orchestration-plan.md</a></td>
+                <td>Roles, file ownership, collision checks, coordination feed, escalation.</td>
+              </tr>
+              <tr>
+                <td><a href="./moat/cost-dashboard-plan.md">cost-dashboard-plan.md</a></td>
+                <td>Cost dashboard status, known gaps, budget alert recommendation.</td>
+              </tr>
+              <tr>
+                <td><a href="./zen-workspace/features-git-workspace.md">features-git-workspace.md</a>, <a href="./zen-workspace/features-prompt-library.md">features-prompt-library.md</a></td>
+                <td>Workspace-scoped git review and prompt-library follow-ups.</td>
+              </tr>
+              <tr>
+                <td><a href="./multi-platform-build.md">multi-platform-build.md</a>, <a href="./updater-setup.md">updater-setup.md</a>, <a href="./local-quality-gates.md">local-quality-gates.md</a></td>
+                <td>Release operations, updater setup, local validation ladder.</td>
+              </tr>
+              <tr>
+                <td><a href="../agent-sidecar/README.md">agent-sidecar/README.md</a></td>
+                <td>Sidecar provider, protocol, and production-bundling reference.</td>
+              </tr>
+              <tr>
+                <td><a href="./mobile/README.md">mobile/README.md</a>, <a href="./v0.8-github-and-memory.md">v0.8-github-and-memory.md</a></td>
+                <td>Superseded mobile research and historical GitHub/Memory implementation plan.</td>
+              </tr>
+              <tr>
+                <td><a href="./remoteagents/remote-agents-master-plan.html">remote-agents-master-plan.html</a></td>
+                <td>Companion page for the current flagship Remote Agents plan, intentionally not duplicated here.</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      PacketADE planning rundown. Remote Agents has its own master page; this file covers the rest.
+    </footer>
+  </body>
+</html>

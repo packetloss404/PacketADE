@@ -18,7 +18,11 @@
 //! error so the planner routes through `mark_task_blocked` or
 //! `replan_after_failure` instead.
 //!
-//! Returns `{ "ok": true, "updated_fields": string[] }` on success.
+//! Returns `{ "ok": true, "updated_fields": string[],
+//! "deferred_fields": string[] }` on success. `deferred_fields` lists
+//! patch keys we accepted but could NOT persist on the Task model yet
+//! (currently just `target_spec`) — the planner must treat these as
+//! *not landed* rather than applied.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -72,11 +76,11 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
     // across Tauri IO.
     let mission_id_for_closure = mission_id.clone();
     let task_id_for_closure = parsed.task_id.clone();
-    let updated_fields = storage::with_state_lock(move |state| {
+    let (updated_fields, deferred_fields) = storage::with_state_lock(move |state| {
         let mission_id = mission_id_for_closure;
         let task_id = task_id_for_closure;
         let patch_obj = patch_obj;
-        let result: Result<Vec<String>, String> = (move || {
+        let result: Result<(Vec<String>, Vec<String>), String> = (move || {
             let flight = state
                 .flights
                 .iter_mut()
@@ -91,6 +95,7 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
                 .ok_or_else(|| "task not found".to_string())?;
 
             let mut updated_fields: Vec<String> = Vec::new();
+            let mut deferred_fields: Vec<String> = Vec::new();
 
             for (key, value) in patch_obj.into_iter() {
                 match key.as_str() {
@@ -127,20 +132,18 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
                     // `target_spec` carries the async-attempts AttemptTargetSpec
                     // shape. There's no dedicated field on Task yet (the
                     // attempt-launcher reads the per-attempt target directly off
-                    // `Flight::attempts`), so we accept and ack the patch but
-                    // don't have a place to land it on the Task. Surface this
-                    // via the updated_fields list so the planner sees its patch
-                    // landed; the launch-time wiring (E4+) will pick the target
-                    // up at attempt-creation time.
+                    // `Flight::attempts`), so we have nowhere to land it on the
+                    // Task model. We must NOT report it in `updated_fields` —
+                    // doing so would tell the planner the change persisted when
+                    // it silently dropped. Instead we surface it in
+                    // `deferred_fields` so the planner knows the patch was
+                    // accepted-but-not-applied. The launch-time wiring (E4+) will
+                    // pick the target up at attempt-creation time once Task gains
+                    // a field to hold it.
                     "target_spec" => {
-                        // Best-effort: persist as a structured metadata blob on
-                        // the task model in a future task-DTO bump. For now,
-                        // emit it on the mission event so the UI / journal can
-                        // record the planner's intent without breaking DTO
-                        // serialization.
-                        updated_fields.push("target_spec".to_string());
-                        // (No mutation — see comment above.)
-                        // We still attach it to the emitted event payload below.
+                        deferred_fields.push("target_spec".to_string());
+                        // No mutation — see comment above. Field is intentionally
+                        // not persisted.
                         let _ = value;
                     }
                     "status" => match value.as_str() {
@@ -170,7 +173,7 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
             }
 
             flight.updated_at = now_millis();
-            Ok(updated_fields)
+            Ok((updated_fields, deferred_fields))
         })();
         std::future::ready(result)
     })
@@ -187,12 +190,14 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
             "missionId": mission_id,
             "taskId": parsed.task_id,
             "updatedFields": updated_fields.clone(),
+            "deferredFields": deferred_fields.clone(),
         }),
     );
 
     Ok(serde_json::json!({
         "ok": true,
         "updated_fields": updated_fields,
+        "deferred_fields": deferred_fields,
     }))
 }
 

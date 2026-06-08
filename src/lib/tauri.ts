@@ -106,6 +106,47 @@ export async function killPty(sessionId: string): Promise<void> {
   return invoke("kill_pty", { sessionId });
 }
 
+/**
+ * Payload for the scoped `pty:exit:{sessionId}` event.
+ *
+ * Historically this event carried only the bare session-id string; the
+ * fields below are additive. Listeners that only used the old shape (or
+ * ignore the payload entirely) keep working. `exitCode` is `null` when the
+ * backend couldn't read the child's status; `0` is success, non-zero is a
+ * failed agent. `terminated` is `true` when an orchestrator action (flight
+ * pause/cancel) killed the session, so it must NOT be scored as a
+ * successful task completion.
+ */
+export interface PtyExitPayload {
+  sessionId: string;
+  exitCode: number | null;
+  terminated: boolean;
+}
+
+/**
+ * Normalize a `pty:exit` event payload across the old (bare session-id
+ * string) and new ({@link PtyExitPayload}) shapes. Callers that care about
+ * the real outcome should use the returned `exitCode` / `terminated`;
+ * callers that only need to know the session ended can ignore them.
+ */
+export function parsePtyExitPayload(payload: unknown): PtyExitPayload {
+  if (payload && typeof payload === "object") {
+    const p = payload as Partial<PtyExitPayload>;
+    return {
+      sessionId: typeof p.sessionId === "string" ? p.sessionId : "",
+      exitCode: typeof p.exitCode === "number" ? p.exitCode : null,
+      terminated: p.terminated === true,
+    };
+  }
+  // Legacy bare-string payload (session id) — outcome is unknown, treat as
+  // a clean exit so existing success heuristics are preserved.
+  return {
+    sessionId: typeof payload === "string" ? payload : "",
+    exitCode: null,
+    terminated: false,
+  };
+}
+
 // Code quality
 export interface CrashEntry {
   timestamp: string;

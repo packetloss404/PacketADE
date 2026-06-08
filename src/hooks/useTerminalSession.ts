@@ -6,6 +6,7 @@ import {
   createPtySession,
   killPty,
   listPtySessions,
+  parsePtyExitPayload,
   readPtyTranscript,
   writePty,
 } from "@/lib/tauri";
@@ -246,6 +247,11 @@ export function useTerminalSession({
       let buffered = "";
       let exitWhileBuffering = false;
       let sessionFinished = false;
+      // Real exit outcome carried by the pty:exit event. Defaults assume a
+      // clean exit; the listener overwrites these when the backend reports
+      // an exit code or an orchestrator-initiated kill.
+      let exitCode: number | null = null;
+      let exitTerminated = false;
       const finishSession = () => {
         if (sessionFinished) return;
         if (buffering) {
@@ -288,7 +294,12 @@ export function useTerminalSession({
         }
 
         if (taskId) {
-          const success = !wasRequested;
+          // A task succeeds only when nobody asked it to stop AND the real
+          // exit outcome was clean: not an orchestrator kill (flight
+          // pause/cancel) and a zero / unknown exit code. A non-zero exit
+          // code means the agent process failed and must be scored as such.
+          const cleanExit = exitCode === null || exitCode === 0;
+          const success = !wasRequested && !exitTerminated && cleanExit;
           void useOrchestrationStateStore.getState().onTaskComplete(taskId, success);
         }
       };
@@ -301,7 +312,12 @@ export function useTerminalSession({
         }
       });
 
-      const exitUnlisten = await listen<string>(ptyExitEvent(sessionId), finishSession);
+      const exitUnlisten = await listen<unknown>(ptyExitEvent(sessionId), (event) => {
+        const parsed = parsePtyExitPayload(event.payload);
+        exitCode = parsed.exitCode;
+        exitTerminated = parsed.terminated;
+        finishSession();
+      });
 
       unlistenersRef.current = [outputUnlisten, exitUnlisten];
       if (sessionFinished) {

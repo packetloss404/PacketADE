@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { orchestrationTick } from "@/lib/tauri";
 import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import { useOrchestrationStateStore, type RunningTask } from "@/stores/orchestrationStateStore";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
 import { logSwallowed } from "@/lib/logSwallowed";
@@ -34,6 +35,41 @@ interface SchedulerState {
 
 let loopInterval: ReturnType<typeof setInterval> | null = null;
 
+/**
+ * Consecutive `orchestrationTick()` rejections. Reset to 0 on any successful
+ * tick (even an empty request list counts as healthy — the backend answered).
+ * A persistently failing backend (Rust panic, IPC dropped, scheduler poisoned)
+ * would otherwise spin this 1s loop forever, swallowing every error. We track
+ * the streak and, once it crosses `MAX_CONSECUTIVE_TICK_FAILURES`, surface a
+ * desktop notification and pause the loop so the failure is visible rather
+ * than silently looping. The loop restarts on the next `launchFlight` /
+ * `resumeFlight`, which is the user's natural retry path.
+ */
+let consecutiveTickFailures = 0;
+const MAX_CONSECUTIVE_TICK_FAILURES = 5;
+
+/**
+ * Surface a persistently-failing scheduler backend as a desktop notification.
+ * Mirrors the gating used by the canonical helpers in `lib/notifications.ts`
+ * (we can't reuse those directly — none of them models "the dispatch loop's
+ * backend is down"). Reuses the `onSessionError` preference because a stalled
+ * scheduler is a session-level failure the user already opted into hearing
+ * about. Best-effort: notification failures route through `logSwallowed`.
+ */
+function notifySchedulerStalled(failures: number): void {
+  try {
+    const prefs = useNotificationStore.getState();
+    if (!prefs.enabled || !prefs.onSessionError) return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    new Notification("Orchestration paused", {
+      body: `The mission scheduler backend failed ${failures} times in a row — the dispatch loop was paused. Resume a mission to retry.`,
+      tag: "orchestration-scheduler-stalled",
+    });
+  } catch (err) {
+    logSwallowed("orchestration.notifySchedulerStalled")(err);
+  }
+}
+
 export const useOrchestrationSchedulerStore = create<SchedulerState>((set, get) => ({
   loopRunning: false,
 
@@ -44,7 +80,30 @@ export const useOrchestrationSchedulerStore = create<SchedulerState>((set, get) 
     if (available <= 0) return;
 
     const flightStore = useFlightStore.getState();
-    const requests = await orchestrationTick().catch(() => []);
+
+    let requests: Awaited<ReturnType<typeof orchestrationTick>>;
+    try {
+      requests = await orchestrationTick();
+    } catch (err) {
+      // Backend tick rejected (Rust panic, IPC dropped, scheduler poisoned).
+      // Previously a bare `.catch(() => [])` dropped this on the floor and the
+      // 1s loop spun forever. Route it through `logSwallowed` and count the
+      // streak; once it crosses the threshold we notify and pause so a
+      // persistently failing backend is visible.
+      consecutiveTickFailures += 1;
+      logSwallowed(
+        `orchestration.tick (consecutive failure #${consecutiveTickFailures})`,
+      )(err);
+      if (consecutiveTickFailures >= MAX_CONSECUTIVE_TICK_FAILURES) {
+        notifySchedulerStalled(consecutiveTickFailures);
+        get().stopLoop();
+        consecutiveTickFailures = 0;
+      }
+      return;
+    }
+    // Healthy tick (the backend answered, even with an empty queue) — clear
+    // any accumulated failure streak.
+    consecutiveTickFailures = 0;
 
     for (const request of requests.slice(0, available)) {
       const flight = flightStore.flights.find((entry) => entry.id === request.flightId);
@@ -162,6 +221,9 @@ export const useOrchestrationSchedulerStore = create<SchedulerState>((set, get) 
 
   startLoop: () => {
     if (loopInterval) return;
+    // Fresh start (or a user-driven retry after a stall) — clear any leftover
+    // failure streak so the threshold is measured from this point on.
+    consecutiveTickFailures = 0;
     set({ loopRunning: true });
     loopInterval = setInterval(() => {
       void get().tick();
