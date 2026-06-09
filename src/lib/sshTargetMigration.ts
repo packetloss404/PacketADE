@@ -8,14 +8,16 @@
  *
  * IDs are preserved so any persisted `AgentConversation.sshTarget.id`
  * references survive the move. The migration is idempotent: it skips any
- * legacy record whose id already exists in `serverStore.servers`, removes
- * the legacy localStorage key on completion, and logs the count.
+ * legacy record whose id already exists in `serverStore.servers`. Legacy
+ * localStorage keys are removed only after the merged `serverStore` slice
+ * has been confirmed by the backend save call.
  */
 
 import { useServerStore } from "@/stores/serverStore";
 import type { ServerConfig } from "@/types/server";
 import { loadFromStorage, removeFromStorage } from "@/lib/storage";
 import { logSwallowed } from "@/lib/logSwallowed";
+import { getSshPasswordExists, saveServersSlice } from "@/lib/tauri";
 
 const LEGACY_STORAGE_KEY = "packetade:ssh-targets";
 // Older builds used the pre-rename prefix; check both for safety.
@@ -32,15 +34,44 @@ interface LegacySshTarget {
   createdAt?: number;
   lastUsed?: number | null;
   hostFingerprint?: string;
+  authMethod?: "agent" | "key" | "password";
 }
 
 function loadLegacyTargets(): LegacySshTarget[] {
-  const fromPackdade = loadFromStorage<LegacySshTarget[]>(LEGACY_STORAGE_KEY, []);
-  if (fromPackdade.length > 0) return fromPackdade;
-  return loadFromStorage<LegacySshTarget[]>(LEGACY_PACKETCODE_KEY, []);
+  const seen = new Set<string>();
+  const merged: LegacySshTarget[] = [];
+
+  for (const target of [
+    ...loadFromStorage<LegacySshTarget[]>(LEGACY_STORAGE_KEY, []),
+    ...loadFromStorage<LegacySshTarget[]>(LEGACY_PACKETCODE_KEY, []),
+  ]) {
+    if (seen.has(target.id)) continue;
+    seen.add(target.id);
+    merged.push(target);
+  }
+
+  return merged;
 }
 
-export function migrateSshTargetsToServers(): { migrated: number; skipped: number } {
+export interface SshTargetMigrationResult {
+  migrated: number;
+  skipped: number;
+}
+
+async function inferAuthMethod(t: LegacySshTarget): Promise<ServerConfig["authMethod"]> {
+  if (t.keyPath) return "key";
+  if (t.authMethod === "password") return "password";
+  if (t.authMethod === "agent") return "agent";
+
+  try {
+    return (await getSshPasswordExists(t.id)) ? "password" : "agent";
+  } catch (e) {
+    logSwallowed("sshTargetMigration.getSshPasswordExists")(e);
+    return "agent";
+  }
+}
+
+async function runSshTargetMigration(): Promise<SshTargetMigrationResult> {
   const legacy = loadLegacyTargets();
   if (legacy.length === 0) {
     // Nothing to do — but still scrub any empty array left behind.
@@ -65,9 +96,7 @@ export function migrateSshTargetsToServers(): { migrated: number; skipped: numbe
       host: t.host,
       port: typeof t.port === "number" ? t.port : 22,
       username: t.user,
-      // SshTarget had keyPath OR password-via-keyring; default to key-based
-      // when we have a key, otherwise fall back to the OS ssh-agent.
-      authMethod: t.keyPath ? "key" : "agent",
+      authMethod: await inferAuthMethod(t),
       keyPath: t.keyPath,
       remotePath: t.remotePath,
       lastConnectedAt: t.lastUsed ?? undefined,
@@ -77,28 +106,37 @@ export function migrateSshTargetsToServers(): { migrated: number; skipped: numbe
     existingIds.add(t.id);
   }
 
-  if (toAdd.length > 0) {
-    // Use a single set() so we only emit one serverStore notification and
-    // sync to backend once. updateServer/addServer would also work but
-    // each one persists via saveServersSlice — wasteful for a batch.
-    useServerStore.setState((s) => ({
-      servers: [...s.servers, ...toAdd],
-    }));
-    // Re-trigger backend sync now that the merged list is settled.
-    // Use updateServer on the first migrated row to nudge syncToBackend —
-    // or just call hydrateFromBackend which is read-only. Instead, prefer
-    // a direct save: the addServer path uses syncToBackend internally, but
-    // calling it via setState above bypassed that. Re-fetch and persist.
-    try {
-      // Lazy import keeps bootstrap.ts free of the tauri sync wiring.
-      void import("@/lib/tauri").then(({ saveServersSlice }) =>
-        saveServersSlice(useServerStore.getState().servers).catch(
-          logSwallowed("sshTargetMigration.saveServers"),
-        ),
-      );
-    } catch {
-      // ignore — backend will catch up on the next add/update.
+  const latestServers = useServerStore.getState().servers;
+  const latestIds = new Set(latestServers.map((s) => s.id));
+  const dedupedToAdd = toAdd.filter((server) => {
+    if (latestIds.has(server.id)) {
+      skipped++;
+      return false;
     }
+    latestIds.add(server.id);
+    return true;
+  });
+  const mergedServers =
+    dedupedToAdd.length > 0 ? [...latestServers, ...dedupedToAdd] : latestServers;
+
+  if (legacy.length > 0) {
+    try {
+      await saveServersSlice(mergedServers);
+    } catch (e) {
+      logSwallowed("sshTargetMigration.saveServers")(e);
+      return { migrated: dedupedToAdd.length, skipped };
+    }
+  }
+
+  if (dedupedToAdd.length > 0) {
+    // Use a single set() so we only emit one serverStore notification and
+    // avoid triggering one backend save per migrated row. The save above is
+    // already confirmed, so this in-memory update won't orphan legacy data.
+    useServerStore.setState((s) => {
+      const currentIds = new Set(s.servers.map((server) => server.id));
+      const additions = dedupedToAdd.filter((server) => !currentIds.has(server.id));
+      return additions.length > 0 ? { servers: [...s.servers, ...additions] } : s;
+    });
   }
 
   // Clear the legacy keys so the migration never runs again.
@@ -106,8 +144,17 @@ export function migrateSshTargetsToServers(): { migrated: number; skipped: numbe
   removeFromStorage(LEGACY_PACKETCODE_KEY);
 
   console.info(
-    `[ssh-migration] migrated ${toAdd.length} legacy SshTarget(s) to serverStore (skipped ${skipped} duplicates)`,
+    `[ssh-migration] migrated ${dedupedToAdd.length} legacy SshTarget(s) to serverStore (skipped ${skipped} duplicates)`,
   );
 
-  return { migrated: toAdd.length, skipped };
+  return { migrated: dedupedToAdd.length, skipped };
+}
+
+export async function migrateSshTargetsToServers(): Promise<SshTargetMigrationResult> {
+  try {
+    return await runSshTargetMigration();
+  } catch (e) {
+    logSwallowed("sshTargetMigration")(e);
+    return { migrated: 0, skipped: 0 };
+  }
 }

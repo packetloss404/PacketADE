@@ -46,12 +46,19 @@ fn confine_prelude(base_q: &str, tgt_q: &str, mode: ConfineTarget) -> String {
     // command fails and we exit EXIT_NO_REALPATH (fail closed). The trailing
     // slash on both the base and the candidate prevents "/workspace-evil"
     // from matching "/workspace".
-    let base_line = format!("__base=$(realpath -- {base}) || exit {nr}\n", base = base_q, nr = EXIT_NO_REALPATH);
+    let base_line = format!(
+        "__base=$(realpath -- {base}) || exit {nr}\n",
+        base = base_q,
+        nr = EXIT_NO_REALPATH
+    );
     match mode {
         ConfineTarget::Existing => format!(
             "{base}__rp=$(realpath -- {tgt}) || exit {nr}\n\
              case \"$__rp/\" in \"$__base\"/*) : ;; *) exit {esc};; esac\n",
-            base = base_line, tgt = tgt_q, nr = EXIT_NO_REALPATH, esc = EXIT_ESCAPE,
+            base = base_line,
+            tgt = tgt_q,
+            nr = EXIT_NO_REALPATH,
+            esc = EXIT_ESCAPE,
         ),
         // Resolve the parent (the leaf may not exist yet), AND — if the leaf
         // already exists — resolve the leaf itself. A pre-existing symlinked
@@ -67,7 +74,10 @@ fn confine_prelude(base_q: &str, tgt_q: &str, mode: ConfineTarget) -> String {
              __rpl=$(realpath -- {tgt}) || exit {nr}\n\
              case \"$__rpl/\" in \"$__base\"/*) : ;; *) exit {esc};; esac\n\
              fi\n",
-            base = base_line, tgt = tgt_q, nr = EXIT_NO_REALPATH, esc = EXIT_ESCAPE,
+            base = base_line,
+            tgt = tgt_q,
+            nr = EXIT_NO_REALPATH,
+            esc = EXIT_ESCAPE,
         ),
     }
 }
@@ -77,10 +87,12 @@ fn confine_prelude(base_q: &str, tgt_q: &str, mode: ConfineTarget) -> String {
 /// the generic case).
 fn confinement_error(code: i32) -> Option<String> {
     match code {
-        EXIT_ESCAPE => Some("Path escapes the workspace (resolved outside via symlink)".to_string()),
-        EXIT_NO_REALPATH => Some(
-            "Remote host lacks 'realpath'; cannot verify workspace confinement".to_string(),
-        ),
+        EXIT_ESCAPE => {
+            Some("Path escapes the workspace (resolved outside via symlink)".to_string())
+        }
+        EXIT_NO_REALPATH => {
+            Some("Remote host lacks 'realpath'; cannot verify workspace confinement".to_string())
+        }
         _ => None,
     }
 }
@@ -189,7 +201,11 @@ pub async fn execute_read_file(
          if [ \"$sz\" -gt {max} ]; then echo \"ERR:too_large:$sz\" >&2; exit 3; fi\n\
          cat -- \"$p\"\n",
         q = sh_quote(&full),
-        confine = confine_prelude(&sh_quote(&config.remote_path), "\"$p\"", ConfineTarget::Existing),
+        confine = confine_prelude(
+            &sh_quote(&config.remote_path),
+            "\"$p\"",
+            ConfineTarget::Existing
+        ),
         max = MAX_FILE_SIZE,
     );
 
@@ -260,7 +276,11 @@ pub async fn execute_write_file(
          {content}\n\
          {eof}\n",
         q = sh_quote(&full),
-        confine = confine_prelude(&sh_quote(&config.remote_path), "\"$p\"", ConfineTarget::Parent),
+        confine = confine_prelude(
+            &sh_quote(&config.remote_path),
+            "\"$p\"",
+            ConfineTarget::Parent
+        ),
         eof = eof,
         content = content,
     );
@@ -310,7 +330,11 @@ pub async fn execute_list_directory(
            fi\n\
          done | sort\n",
         q = sh_quote(&full),
-        confine = confine_prelude(&sh_quote(&config.remote_path), "\"$p\"", ConfineTarget::Existing),
+        confine = confine_prelude(
+            &sh_quote(&config.remote_path),
+            "\"$p\"",
+            ConfineTarget::Existing
+        ),
     );
 
     let output = ssh_run(config, &script, 30).await?;
@@ -400,7 +424,11 @@ pub async fn execute_grep(args: &serde_json::Value, config: &SshConfig) -> Resul
     let mut cmd = format!(
         "p={q}\n{confine}",
         q = sh_quote(&full),
-        confine = confine_prelude(&sh_quote(&config.remote_path), "\"$p\"", ConfineTarget::Existing),
+        confine = confine_prelude(
+            &sh_quote(&config.remote_path),
+            "\"$p\"",
+            ConfineTarget::Existing
+        ),
     );
     cmd.push_str(
         "grep -rEn --color=never \
@@ -454,7 +482,10 @@ mod tests {
             s.contains("if [ -e \"$p\" ] || [ -L \"$p\" ]; then"),
             "existing-leaf branch present"
         );
-        assert!(s.contains("__rpl=$(realpath -- \"$p\")"), "leaf is realpath-resolved");
+        assert!(
+            s.contains("__rpl=$(realpath -- \"$p\")"),
+            "leaf is realpath-resolved"
+        );
         // base + parent + leaf each fail closed when realpath is missing.
         assert_eq!(
             s.matches(&format!("exit {}", EXIT_NO_REALPATH)).count(),

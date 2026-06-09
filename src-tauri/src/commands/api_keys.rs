@@ -38,6 +38,62 @@ fn legacy_keyring_entry(provider: &str) -> Option<keyring::Entry> {
     keyring::Entry::new(LEGACY_KEYRING_SERVICE, &format!("api-key-{}", provider)).ok()
 }
 
+fn migrate_legacy_api_key(
+    provider: &str,
+    key: String,
+    write_new: impl FnOnce(&str) -> keyring::Result<()>,
+    delete_legacy: impl FnOnce() -> keyring::Result<()>,
+) -> Result<String, String> {
+    if let Err(e) = write_new(&key) {
+        warn!(
+            provider = %provider,
+            error = %e,
+            "Failed to migrate API key from legacy keyring service; keeping legacy credential"
+        );
+        return Ok(key);
+    }
+
+    match delete_legacy() {
+        Ok(()) | Err(keyring::Error::NoEntry) => {
+            info!(provider = %provider, "Migrated API key from legacy keyring service");
+        }
+        Err(e) => {
+            warn!(
+                provider = %provider,
+                error = %e,
+                "Failed to delete legacy API key after migration"
+            );
+        }
+    }
+
+    Ok(key)
+}
+
+fn delete_api_key_credentials(
+    provider: &str,
+    delete_current: impl FnOnce() -> keyring::Result<()>,
+    delete_legacy: impl FnOnce() -> keyring::Result<()>,
+) -> Result<(), String> {
+    let mut first_error: Option<keyring::Error> = None;
+
+    for result in [delete_current(), delete_legacy()] {
+        match result {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(e) if first_error.is_none() => {
+                first_error = Some(e);
+            }
+            Err(_) => {}
+        }
+    }
+
+    if let Some(e) = first_error {
+        return Err(format!("Failed to delete API key: {}", e));
+    }
+
+    info!(provider = %provider, "API key deleted");
+    Ok(())
+}
+
 /// Load an API key for a provider. Internal only — not exposed to frontend.
 pub fn load_api_key(provider: &str) -> Result<String, String> {
     if provider == "ollama" {
@@ -54,10 +110,12 @@ pub fn load_api_key(provider: &str) -> Result<String, String> {
             // Fall back to the legacy "packetcode" keyring service and migrate on success.
             if let Some(legacy) = legacy_keyring_entry(provider) {
                 if let Ok(key) = legacy.get_password() {
-                    let _ = entry.set_password(&key);
-                    let _ = legacy.delete_credential();
-                    info!(provider = %provider, "Migrated API key from legacy keyring service");
-                    return Ok(key);
+                    return migrate_legacy_api_key(
+                        provider,
+                        key,
+                        |key| entry.set_password(key),
+                        || legacy.delete_credential(),
+                    );
                 }
             }
             Err(format!(
@@ -131,17 +189,82 @@ pub async fn delete_api_key(provider: String) -> Result<(), String> {
         return Ok(());
     }
 
-    let entry = match keyring_entry(&provider) {
-        Some(e) => e,
-        None => return Ok(()),
-    };
+    let entry = keyring_entry(&provider);
+    let legacy = legacy_keyring_entry(&provider);
 
-    match entry.delete_credential() {
-        Ok(()) => {
-            info!(provider = %provider, "API key deleted");
-            Ok(())
-        }
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("Failed to delete API key: {}", e)),
+    delete_api_key_credentials(
+        &provider,
+        || match entry {
+            Some(entry) => entry.delete_credential(),
+            None => Ok(()),
+        },
+        || match legacy {
+            Some(legacy) => legacy.delete_credential(),
+            None => Ok(()),
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn legacy_api_key_migration_deletes_only_after_new_write_succeeds() {
+        let write_completed = Cell::new(false);
+        let delete_observed_write = Cell::new(false);
+
+        let result = migrate_legacy_api_key(
+            "openai",
+            "sk-test".to_string(),
+            |key| {
+                assert_eq!(key, "sk-test");
+                write_completed.set(true);
+                Ok(())
+            },
+            || {
+                delete_observed_write.set(write_completed.get());
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.as_deref(), Ok("sk-test"));
+        assert!(delete_observed_write.get());
+    }
+
+    #[test]
+    fn legacy_api_key_migration_returns_legacy_when_new_write_fails() {
+        let delete_called = Cell::new(false);
+
+        let result = migrate_legacy_api_key(
+            "openai",
+            "sk-test".to_string(),
+            |_| Err(keyring::Error::Invalid("password".into(), "denied".into())),
+            || {
+                delete_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.as_deref(), Ok("sk-test"));
+        assert!(!delete_called.get());
+    }
+
+    #[test]
+    fn delete_api_key_credentials_deletes_legacy_when_current_is_missing() {
+        let legacy_deleted = Cell::new(false);
+
+        let result = delete_api_key_credentials(
+            "openai",
+            || Err(keyring::Error::NoEntry),
+            || {
+                legacy_deleted.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(result.is_ok());
+        assert!(legacy_deleted.get());
     }
 }

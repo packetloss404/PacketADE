@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { PersistedState } from "@/lib/tauri";
 
 // Mock tauri functions
 vi.mock("@/lib/tauri", () => ({
@@ -36,11 +37,37 @@ vi.mock("@/stores/routingStore", () => ({
 }));
 
 import { useFlightStore } from "@/stores/flightStore";
+import { useIssueStore } from "@/stores/issueStore";
+
+function makePersistedState(
+  flights: ReturnType<typeof useFlightStore.getState>["flights"],
+): PersistedState {
+  return {
+    version: 1,
+    flights,
+    agents: [],
+    issues: [],
+    settings: { maxParallelSessions: 3, milestoneGating: true, projectPath: "." },
+    ui: {},
+    workspaces: [],
+    memoryEvents: [],
+    memoryPatterns: [],
+    servers: [],
+  };
+}
+
+function setMockIssues(issues: Array<{ id: string; flightId: string | null }>) {
+  vi.mocked(useIssueStore.getState).mockReturnValue({
+    issues,
+    assignToFlight: vi.fn(),
+  } as unknown as ReturnType<typeof useIssueStore.getState>);
+}
 
 describe("flightStore", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    setMockIssues([]);
     useFlightStore.setState({
       flights: [],
       activeFlightId: null,
@@ -236,6 +263,53 @@ describe("flightStore", () => {
 
     const status = useFlightStore.getState().computeFlightStatus(flight.id);
     expect(status).toBe("draft");
+  });
+
+  it("reconciles mission issueIds from issue flight assignments", () => {
+    const flight = useFlightStore.getState().addFlight({
+      title: "Linked Flight",
+      objective: "Link test",
+      priority: "medium",
+      projectPath: ".",
+    });
+    const otherFlight = useFlightStore.getState().addFlight({
+      title: "Other Flight",
+      objective: "Other link test",
+      priority: "medium",
+      projectPath: ".",
+      issueIds: ["stale_issue"],
+    });
+
+    setMockIssues([
+      { id: "issue_1", flightId: flight.id },
+      { id: "issue_2", flightId: flight.id },
+      { id: "issue_3", flightId: null },
+      { id: "issue_4", flightId: "missing_flight" },
+    ]);
+
+    useFlightStore.getState().reconcileIssueLinks({ persist: false, touchUpdatedAt: false });
+
+    const flights = useFlightStore.getState().flights;
+    expect(flights.find((f) => f.id === flight.id)?.issueIds).toEqual(["issue_1", "issue_2"]);
+    expect(flights.find((f) => f.id === otherFlight.id)?.issueIds).toEqual([]);
+  });
+
+  it("reconciles issue links after backend hydration", async () => {
+    const backendFlight = {
+      ...useFlightStore.getState().addFlight({
+        title: "Backend Flight",
+        objective: "Hydrate link test",
+        priority: "medium",
+        projectPath: ".",
+      }),
+      issueIds: [],
+    };
+    setMockIssues([{ id: "issue_hydrated", flightId: backendFlight.id }]);
+    useFlightStore.setState({ flights: [], activeFlightId: null });
+
+    await useFlightStore.getState().hydrateFromBackend(makePersistedState([backendFlight]));
+
+    expect(useFlightStore.getState().flights[0].issueIds).toEqual(["issue_hydrated"]);
   });
 
   it("getFlightProgress counts done tasks", () => {

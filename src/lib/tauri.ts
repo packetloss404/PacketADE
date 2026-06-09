@@ -954,6 +954,7 @@ export type PersistedState = {
   version: number;
   flights: Flight[];
   agents: AgentConfig[];
+  issues: Issue[];
   settings: PersistedSettings;
   ui: PersistedUi;
   workspaces: Workspace[];
@@ -1265,6 +1266,73 @@ function toDtoAttempt(a: Attempt): PersistedStateDto["flights"][number]["attempt
   };
 }
 
+type PersistedIssueDto = {
+  id?: string;
+  ticket_id?: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  labels?: string[];
+  epic?: string | null;
+  session_id?: string | null;
+  flight_id?: string | null;
+  acceptance_criteria?: Array<{ id?: string; text?: string; checked?: boolean }>;
+  blocked_by?: string[];
+  blocks?: string[];
+  created_at?: number;
+  updated_at?: number;
+};
+
+function fromDtoIssue(raw: unknown): Issue {
+  const issue = (raw ?? {}) as PersistedIssueDto;
+  return {
+    id: issue.id ?? "",
+    ticketId: issue.ticket_id ?? "",
+    title: issue.title ?? "",
+    description: issue.description ?? "",
+    status: (issue.status ?? "todo") as Issue["status"],
+    priority: (issue.priority ?? "medium") as Issue["priority"],
+    labels: issue.labels ?? [],
+    epic: issue.epic ?? null,
+    sessionId: issue.session_id ?? undefined,
+    flightId: issue.flight_id ?? null,
+    acceptanceCriteria: (issue.acceptance_criteria ?? []).map((criterion) => ({
+      id: criterion.id ?? "",
+      text: criterion.text ?? "",
+      checked: Boolean(criterion.checked),
+    })),
+    blockedBy: issue.blocked_by ?? [],
+    blocks: issue.blocks ?? [],
+    createdAt: issue.created_at ?? Date.now(),
+    updatedAt: issue.updated_at ?? Date.now(),
+  };
+}
+
+function toDtoIssue(issue: Issue): PersistedIssueDto {
+  return {
+    id: issue.id,
+    ticket_id: issue.ticketId,
+    title: issue.title,
+    description: issue.description,
+    status: issue.status,
+    priority: issue.priority,
+    labels: issue.labels,
+    epic: issue.epic,
+    session_id: issue.sessionId ?? null,
+    flight_id: issue.flightId,
+    acceptance_criteria: issue.acceptanceCriteria.map((criterion) => ({
+      id: criterion.id,
+      text: criterion.text,
+      checked: criterion.checked,
+    })),
+    blocked_by: issue.blockedBy,
+    blocks: issue.blocks,
+    created_at: issue.createdAt,
+    updated_at: issue.updatedAt,
+  };
+}
+
 function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
   return {
     id: flight.id,
@@ -1415,6 +1483,7 @@ function fromDtoPersistedState(state: PersistedStateDto): PersistedState {
     version: state.version,
     flights: state.flights.map(fromDtoFlight),
     agents: state.agents.map(fromDtoAgent),
+    issues: (state.issues ?? []).map(fromDtoIssue),
     settings: {
       maxParallelSessions: state.settings.maxParallelSessions,
       milestoneGating: state.settings.milestoneGating,
@@ -1471,6 +1540,7 @@ function toDtoPersistedState(state: PersistedState): PersistedStateDto {
     version: state.version,
     flights: state.flights.map(toDtoFlight),
     agents: state.agents.map(toDtoAgent),
+    issues: state.issues.map(toDtoIssue),
     settings: {
       maxParallelSessions: state.settings.maxParallelSessions,
       milestoneGating: state.settings.milestoneGating,
@@ -1530,27 +1600,7 @@ export async function saveWorkspacesSlice(workspaces: Workspace[]): Promise<void
  * backend counterpart and aren't needed for the `Fixes #N` lookup.
  */
 export async function saveIssuesSlice(issues: Issue[]): Promise<void> {
-  const payload = issues.map((i) => ({
-    id: i.id,
-    ticket_id: i.ticketId,
-    title: i.title,
-    description: i.description,
-    status: i.status,
-    priority: i.priority,
-    labels: i.labels,
-    epic: i.epic,
-    session_id: i.sessionId ?? null,
-    flight_id: i.flightId,
-    acceptance_criteria: i.acceptanceCriteria.map((c) => ({
-      id: c.id,
-      text: c.text,
-      checked: c.checked,
-    })),
-    blocked_by: i.blockedBy,
-    blocks: i.blocks,
-    created_at: i.createdAt,
-    updated_at: i.updatedAt,
-  }));
+  const payload = issues.map(toDtoIssue);
   return invoke("save_issues_slice", { issues: payload });
 }
 

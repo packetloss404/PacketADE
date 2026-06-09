@@ -15,10 +15,15 @@ export function migrateLegacyStorage(): void {
   try {
     if (localStorage.getItem(GUARD_KEY)) return;
 
-    let migrated = 0;
+    const keys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (!key || !key.startsWith(LEGACY_STORAGE_PREFIX)) continue;
+      if (key) keys.push(key);
+    }
+
+    let migrated = 0;
+    for (const key of keys) {
+      if (!key.startsWith(LEGACY_STORAGE_PREFIX)) continue;
 
       const newKey = STORAGE_PREFIX + key.slice(LEGACY_STORAGE_PREFIX.length);
       if (localStorage.getItem(newKey) !== null) continue; // don't clobber

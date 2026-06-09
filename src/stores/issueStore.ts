@@ -114,6 +114,7 @@ interface IssueStore {
   addEpic: (epic: string) => void;
   addLabel: (label: string) => void;
   setTicketPrefix: (prefix: string) => void;
+  hydrateFromBackend: (issues?: Issue[]) => void;
   getIssuesByStatus: (status: IssueStatus) => Issue[];
   getColumns: () => typeof STATUS_COLUMNS;
 
@@ -205,6 +206,34 @@ function loadState(): IssueState {
   return { ...parsed, issues: (parsed.issues || []).map(migrateIssue) };
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function deriveNextTicketNum(issues: Issue[], ticketPrefix: string, fallback: number): number {
+  const pattern = new RegExp(`^${escapeRegExp(ticketPrefix)}-(\\d+)$`);
+  const maxTicketNum = issues.reduce((max, issue) => {
+    const match = pattern.exec(issue.ticketId);
+    if (!match) return max;
+    return Math.max(max, Number.parseInt(match[1], 10));
+  }, 0);
+  return Math.max(fallback, maxTicketNum + 1);
+}
+
+function mergeBackendIssueWithLocalExtras(issue: Issue, local?: Issue): Issue {
+  const migrated = migrateIssue(issue);
+  if (!local) return migrated;
+
+  return {
+    ...migrated,
+    comments: local.comments ?? migrated.comments,
+    assignee: local.assignee ?? migrated.assignee,
+    workspaceId: local.workspaceId,
+    sentToWorkspaceAt: local.sentToWorkspaceAt,
+    specImportBatchId: local.specImportBatchId,
+  };
+}
+
 /**
  * v0.8.5 (CRITICAL FIX 2): mirror the issue array into the Rust
  * `PersistedState.issues` slice so the `git_commit` backend's
@@ -234,6 +263,26 @@ function saveState(state: IssueState) {
   syncIssuesToBackend(state.issues);
 }
 
+let issueFlightReconcileQueued = false;
+
+export async function reconcileIssueFlightLinks(): Promise<void> {
+  try {
+    const { useFlightStore } = await import("@/stores/flightStore");
+    useFlightStore.getState().reconcileIssueLinks();
+  } catch (err) {
+    logSwallowed("issueStore.reconcileIssueFlightLinks")(err);
+  }
+}
+
+function queueIssueFlightReconciliation() {
+  if (issueFlightReconcileQueued) return;
+  issueFlightReconcileQueued = true;
+  void Promise.resolve().then(async () => {
+    issueFlightReconcileQueued = false;
+    await reconcileIssueFlightLinks();
+  });
+}
+
 const initial = loadState();
 
 export const useIssueStore = create<IssueStore>((set, get) => ({
@@ -259,11 +308,20 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     };
     set(newState);
     saveState(newState);
+    if (newIssue.flightId) queueIssueFlightReconciliation();
     return newIssue;
   },
 
   updateIssue: (id, updates) => {
+    const updatesFlightId = Object.prototype.hasOwnProperty.call(updates, "flightId");
+    let changedFlightLink = false;
+
     set((s) => {
+      if (updatesFlightId) {
+        const existing = s.issues.find((i) => i.id === id);
+        changedFlightLink = Boolean(existing && existing.flightId !== updates.flightId);
+      }
+
       const issues = s.issues.map((i) =>
         i.id === id ? { ...i, ...updates, updatedAt: Date.now() } : i,
       );
@@ -276,10 +334,15 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
       });
       return { issues };
     });
+
+    if (changedFlightLink) queueIssueFlightReconciliation();
   },
 
   deleteIssue: (id) => {
+    let removedLinkedIssue = false;
+
     set((s) => {
+      removedLinkedIssue = s.issues.some((i) => i.id === id && i.flightId !== null);
       // Also remove this issue from any blockedBy/blocks arrays
       const issues = s.issues
         .filter((i) => i.id !== id)
@@ -297,6 +360,8 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
       });
       return { issues };
     });
+
+    if (removedLinkedIssue) queueIssueFlightReconciliation();
   },
 
   moveIssue: (id, status) => {
@@ -346,6 +411,40 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
       });
       return { ticketPrefix: prefix };
     });
+  },
+
+  hydrateFromBackend: (backendIssues = []) => {
+    const state = get();
+
+    if (backendIssues.length === 0) {
+      if (state.issues.length > 0) {
+        syncIssuesToBackend(state.issues);
+      }
+      return;
+    }
+
+    const localById = new Map(state.issues.map((issue) => [issue.id, issue]));
+    const backendIds = new Set(backendIssues.map((issue) => issue.id));
+    const issues = backendIssues.map((issue) =>
+      mergeBackendIssueWithLocalExtras(issue, localById.get(issue.id)),
+    );
+    for (const issue of state.issues) {
+      if (!backendIds.has(issue.id)) {
+        issues.push(migrateIssue(issue));
+      }
+    }
+    const nextState: IssueState = {
+      issues,
+      nextTicketNum: deriveNextTicketNum(issues, state.ticketPrefix, state.nextTicketNum),
+      ticketPrefix: state.ticketPrefix,
+      epics: state.epics,
+      labels: state.labels,
+    };
+
+    set(nextState);
+    saveToStorage("packetade:issues", nextState);
+    syncIssuesToBackend(issues);
+    queueIssueFlightReconciliation();
   },
 
   getIssuesByStatus: (status) => get().issues.filter((i) => i.status === status),

@@ -122,7 +122,10 @@ impl McpClient {
         }
 
         let mut child = cmd.spawn().map_err(|e| {
-            McpError::Connection(format!("Failed to spawn MCP server '{}': {}", server_name, e))
+            McpError::Connection(format!(
+                "Failed to spawn MCP server '{}': {}",
+                server_name, e
+            ))
         })?;
 
         let stdin = child.stdin.take().ok_or_else(|| {
@@ -313,9 +316,8 @@ impl McpClient {
     }
 
     async fn write_message(&mut self, msg: &Value) -> Result<(), McpError> {
-        let mut line = serde_json::to_string(msg).map_err(|e| {
-            McpError::Connection(format!("Failed to serialize MCP message: {}", e))
-        })?;
+        let mut line = serde_json::to_string(msg)
+            .map_err(|e| McpError::Connection(format!("Failed to serialize MCP message: {}", e)))?;
         line.push('\n');
         self.stdin
             .write_all(line.as_bytes())

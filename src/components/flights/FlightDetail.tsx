@@ -120,6 +120,7 @@ function ApprovalBanner({ flight }: { flight: Flight }) {
 function LinkedIssuesPanel({ flight }: { flight: Flight }) {
   const issues = useIssueStore((s) => s.issues);
   const assignToFlight = useIssueStore((s) => s.assignToFlight);
+  const removeIssueFromFlight = useFlightStore((s) => s.removeIssueFromFlight);
   const moveIssue = useIssueStore((s) => s.moveIssue);
   const setActiveView = useAppStore((s) => s.setActiveView);
 
@@ -170,7 +171,10 @@ function LinkedIssuesPanel({ flight }: { flight: Flight }) {
             <LinkedIssueRow
               key={i.id}
               issue={i}
-              onUnlink={() => assignToFlight(i.id, null)}
+              onUnlink={() => {
+                assignToFlight(i.id, null);
+                removeIssueFromFlight(flight.id, i.id);
+              }}
               onChangeStatus={(status) => moveIssue(i.id, status)}
             />
           ))
