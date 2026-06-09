@@ -659,6 +659,9 @@ pub struct PersistedStateDto {
     pub version: u32,
     pub flights: Vec<FlightDto>,
     pub agents: Vec<AgentConfigDto>,
+    #[serde(default)]
+    #[ts(type = "any[]")]
+    pub issues: Vec<core_flight::Issue>,
     pub settings: OrchestratorSettingsDto,
     pub ui: PersistedUiStateDto,
     #[serde(default)]
@@ -1545,6 +1548,7 @@ impl From<core_storage::PersistedState> for PersistedStateDto {
             version: value.version,
             flights: value.flights.into_iter().map(Into::into).collect(),
             agents: value.agents.into_iter().map(Into::into).collect(),
+            issues: value.issues,
             settings: value.settings.into(),
             ui: value.ui.into(),
             workspaces: value.workspaces.into_iter().map(Into::into).collect(),
@@ -1561,9 +1565,9 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
             version: value.version,
             flights: value.flights.into_iter().map(Into::into).collect(),
             agents: value.agents.into_iter().map(Into::into).collect(),
+            issues: value.issues,
             settings: value.settings.into(),
             ui: value.ui.into(),
-            issues: Vec::new(),
             workspaces: value.workspaces.into_iter().map(Into::into).collect(),
             retrospectives: Vec::new(),
             memory_events: value.memory_events,
@@ -1782,6 +1786,7 @@ mod tests {
                 publish_attempts_as_prs: false,
             }],
             agents: Vec::new(),
+            issues: Vec::new(),
             settings: OrchestratorSettingsDto {
                 max_parallel_sessions: 3,
                 milestone_gating: true,

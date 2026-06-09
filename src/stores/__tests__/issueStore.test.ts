@@ -1,8 +1,21 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+const mockReconcileIssueLinks = vi.hoisted(() => vi.fn());
+
+vi.mock("@/stores/flightStore", () => ({
+  useFlightStore: {
+    getState: () => ({
+      reconcileIssueLinks: mockReconcileIssueLinks,
+    }),
+  },
+}));
+
 import { useIssueStore, type IssueStatus } from "../issueStore";
 
 /** Helper to get current store state outside of React */
 const store = () => useIssueStore.getState();
+
+const flushMicrotasks = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** Minimal input for creating an issue */
 function makeIssue(overrides: Record<string, unknown> = {}) {
@@ -23,6 +36,7 @@ function makeIssue(overrides: Record<string, unknown> = {}) {
 describe("issueStore", () => {
   beforeEach(() => {
     localStorage.clear();
+    mockReconcileIssueLinks.mockClear();
     // Reset the Zustand store to default state
     useIssueStore.setState({
       issues: [],
@@ -162,16 +176,96 @@ describe("issueStore", () => {
   // assignToFlight / unassign
   // ---------------------------------------------------------------------------
   describe("assignToFlight", () => {
-    it("sets flightId on an issue", () => {
+    it("sets flightId on an issue", async () => {
       const issue = store().addIssue(makeIssue());
       store().assignToFlight(issue.id, "flight_abc");
       expect(store().issues[0].flightId).toBe("flight_abc");
+      await flushMicrotasks();
+      expect(mockReconcileIssueLinks).toHaveBeenCalledTimes(1);
     });
 
-    it("clears flightId when passed null", () => {
+    it("clears flightId when passed null", async () => {
       const issue = store().addIssue(makeIssue({ flightId: "flight_abc" }));
+      await flushMicrotasks();
+      mockReconcileIssueLinks.mockClear();
+
       store().assignToFlight(issue.id, null);
       expect(store().issues[0].flightId).toBeNull();
+      await flushMicrotasks();
+      expect(mockReconcileIssueLinks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // hydrateFromBackend
+  // ---------------------------------------------------------------------------
+  describe("hydrateFromBackend", () => {
+    it("hydrates backend issues while preserving local-only issue metadata", async () => {
+      const localIssue = store().addIssue(makeIssue({ title: "Local", flightId: "old_flight" }));
+      store().addIssueComment(localIssue.id, "Keep this note", "user");
+      store().updateIssue(localIssue.id, {
+        assignee: "ian",
+        workspaceId: "workspace-1",
+        sentToWorkspaceAt: 123,
+        specImportBatchId: "batch-1",
+      });
+      await flushMicrotasks();
+      mockReconcileIssueLinks.mockClear();
+
+      store().hydrateFromBackend([
+        {
+          ...store().issues[0],
+          ticketId: "PKT-007",
+          title: "Backend",
+          flightId: "flight_backend",
+          comments: undefined,
+          assignee: undefined,
+          workspaceId: undefined,
+          sentToWorkspaceAt: undefined,
+          specImportBatchId: undefined,
+        },
+      ]);
+
+      expect(store().issues[0]).toEqual(
+        expect.objectContaining({
+          ticketId: "PKT-007",
+          title: "Backend",
+          flightId: "flight_backend",
+          assignee: "ian",
+          workspaceId: "workspace-1",
+          sentToWorkspaceAt: 123,
+          specImportBatchId: "batch-1",
+        }),
+      );
+      expect(store().issues[0].comments?.[0]?.body).toBe("Keep this note");
+      expect(store().nextTicketNum).toBe(8);
+      await flushMicrotasks();
+      expect(mockReconcileIssueLinks).toHaveBeenCalledTimes(1);
+    });
+
+    it("preserves local-only issues when backend has a stale non-empty issue slice", async () => {
+      const localOnly = store().addIssue(makeIssue({ title: "Local only", flightId: "flight_local" }));
+      const shared = store().addIssue(makeIssue({ title: "Local shared", flightId: "flight_old" }));
+      await flushMicrotasks();
+      mockReconcileIssueLinks.mockClear();
+
+      store().hydrateFromBackend([
+        {
+          ...shared,
+          title: "Backend shared",
+          flightId: "flight_backend",
+        },
+      ]);
+
+      expect(store().issues.map((issue) => issue.id)).toEqual([shared.id, localOnly.id]);
+      expect(store().issues.find((issue) => issue.id === shared.id)).toEqual(
+        expect.objectContaining({ title: "Backend shared", flightId: "flight_backend" }),
+      );
+      expect(store().issues.find((issue) => issue.id === localOnly.id)).toEqual(
+        expect.objectContaining({ title: "Local only", flightId: "flight_local" }),
+      );
+      await flushMicrotasks();
+      expect(mockReconcileIssueLinks).toHaveBeenCalledTimes(1);
     });
   });
 

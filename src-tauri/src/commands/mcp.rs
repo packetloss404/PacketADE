@@ -1,7 +1,9 @@
 use serde::Serialize;
+use serde_json::Map;
 use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 use tracing::warn;
 
 #[derive(Clone, Serialize)]
@@ -15,6 +17,8 @@ pub struct McpServerConfig {
 pub struct McpServerEntry {
     pub name: String,
     pub config: McpServerConfig,
+    #[serde(rename = "rawConfig")]
+    pub raw_config: Value,
     pub scope: String, // "global" or "project"
     pub disabled: bool,
 }
@@ -39,19 +43,79 @@ fn project_mcp_path(project_path: &str) -> PathBuf {
     PathBuf::from(project_path).join(".mcp.json")
 }
 
-fn read_json_file(path: &PathBuf) -> Value {
+fn empty_json_object() -> Value {
+    Value::Object(Default::default())
+}
+
+fn read_json_file(path: &Path) -> Value {
     match fs::read_to_string(path) {
         Ok(content) => match serde_json::from_str(&content) {
             Ok(v) => v,
             Err(e) => {
-                // Corrupt JSON would otherwise present as an empty config; surface it so
-                // users can spot a malformed mcp-servers.json instead of silent reset.
+                // List/read remains best-effort, but mutation paths use the
+                // strict parser below so malformed config is never overwritten.
                 warn!(path = %path.display(), error = %e, "MCP config JSON parse failed; using empty config");
-                Value::Object(Default::default())
+                empty_json_object()
             }
         },
-        Err(_) => Value::Object(Default::default()),
+        Err(_) => empty_json_object(),
     }
+}
+
+fn read_json_file_for_write(path: &Path) -> Result<Value, String> {
+    match fs::read_to_string(path) {
+        Ok(content) => serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse MCP config {}: {}", path.display(), e)),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(empty_json_object()),
+        Err(e) => Err(format!(
+            "Failed to read MCP config {}: {}",
+            path.display(),
+            e
+        )),
+    }
+}
+
+fn mcp_servers_object(json: &mut Value) -> Result<&mut Map<String, Value>, String> {
+    let root = json
+        .as_object_mut()
+        .ok_or_else(|| "MCP config root must be a JSON object".to_string())?;
+    let servers = root
+        .entry("mcpServers".to_string())
+        .or_insert_with(empty_json_object);
+    servers
+        .as_object_mut()
+        .ok_or_else(|| "mcpServers is not an object".to_string())
+}
+
+fn upsert_mcp_server(
+    servers: &mut Map<String, Value>,
+    name: String,
+    command: String,
+    args: Vec<String>,
+    env: std::collections::HashMap<String, String>,
+) {
+    let mut server = match servers.remove(&name) {
+        Some(Value::Object(existing)) => existing,
+        _ => Map::new(),
+    };
+
+    server.insert("command".to_string(), Value::String(command));
+    server.insert(
+        "args".to_string(),
+        Value::Array(args.into_iter().map(Value::String).collect()),
+    );
+    server.insert("env".to_string(), serde_json::json!(env));
+
+    servers.insert(name, Value::Object(server));
+}
+
+fn write_pretty_json(path: &Path, json: &Value) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let pretty = serde_json::to_string_pretty(json).map_err(|e| e.to_string())?;
+    fs::write(path, pretty).map_err(|e| e.to_string())
 }
 
 fn extract_servers(json: &Value, scope: &str) -> Vec<McpServerEntry> {
@@ -97,6 +161,7 @@ fn extract_servers(json: &Value, scope: &str) -> Vec<McpServerEntry> {
             McpServerEntry {
                 name: name.clone(),
                 config: McpServerConfig { command, args, env },
+                raw_config: val.clone(),
                 scope: scope.to_string(),
                 disabled,
             }
@@ -136,36 +201,10 @@ pub async fn write_mcp_server(
         project_mcp_path(&project_path)
     };
 
-    let mut json = read_json_file(&file_path);
-
-    // Ensure mcpServers object exists
-    if json.get("mcpServers").is_none() {
-        json.as_object_mut()
-            .ok_or("Invalid JSON structure")?
-            .insert("mcpServers".to_string(), Value::Object(Default::default()));
-    }
-
-    let server_val = serde_json::json!({
-        "command": command,
-        "args": args,
-        "env": env,
-    });
-
-    json.as_object_mut()
-        .ok_or("Invalid JSON structure")?
-        .get_mut("mcpServers")
-        .ok_or("Missing mcpServers key")?
-        .as_object_mut()
-        .ok_or("mcpServers is not an object")?
-        .insert(name, server_val);
-
-    // Ensure parent directory exists
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-
-    let pretty = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-    fs::write(&file_path, pretty).map_err(|e| e.to_string())?;
+    let mut json = read_json_file_for_write(&file_path)?;
+    let servers = mcp_servers_object(&mut json)?;
+    upsert_mcp_server(servers, name, command, args, env);
+    write_pretty_json(&file_path, &json)?;
 
     Ok(())
 }
@@ -182,7 +221,7 @@ pub async fn delete_mcp_server(
         project_mcp_path(&project_path)
     };
 
-    let mut json = read_json_file(&file_path);
+    let mut json = read_json_file_for_write(&file_path)?;
 
     if let Some(servers) = json
         .as_object_mut()
@@ -192,8 +231,153 @@ pub async fn delete_mcp_server(
         servers.remove(&name);
     }
 
-    let pretty = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-    fs::write(&file_path, pretty).map_err(|e| e.to_string())?;
+    write_pretty_json(&file_path, &json)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::HashMap;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_project_dir(test_name: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "packetade-mcp-{}-{}-{}",
+            test_name,
+            std::process::id(),
+            suffix
+        ));
+        fs::create_dir_all(&dir).expect("create temp project dir");
+        dir
+    }
+
+    #[tokio::test]
+    async fn write_mcp_server_returns_err_and_preserves_malformed_project_file() {
+        let project_dir = temp_project_dir("parse-failure");
+        let mcp_path = project_dir.join(".mcp.json");
+        let malformed = r#"{"mcpServers":{"broken":"#;
+        fs::write(&mcp_path, malformed).expect("write malformed json");
+
+        let result = write_mcp_server(
+            project_dir.to_string_lossy().into_owned(),
+            "server".to_string(),
+            "node".to_string(),
+            vec!["server.js".to_string()],
+            HashMap::new(),
+            "project".to_string(),
+        )
+        .await;
+
+        assert!(result
+            .expect_err("malformed JSON must reject writes")
+            .contains("Failed to parse MCP config"),);
+        assert_eq!(
+            fs::read_to_string(&mcp_path).expect("read mcp file"),
+            malformed
+        );
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[tokio::test]
+    async fn delete_mcp_server_returns_err_and_preserves_malformed_project_file() {
+        let project_dir = temp_project_dir("delete-parse-failure");
+        let mcp_path = project_dir.join(".mcp.json");
+        let malformed = r#"{"mcpServers":{"broken":"#;
+        fs::write(&mcp_path, malformed).expect("write malformed json");
+
+        let result = delete_mcp_server(
+            project_dir.to_string_lossy().into_owned(),
+            "server".to_string(),
+            "project".to_string(),
+        )
+        .await;
+
+        assert!(result
+            .expect_err("malformed JSON must reject deletes")
+            .contains("Failed to parse MCP config"),);
+        assert_eq!(
+            fs::read_to_string(&mcp_path).expect("read mcp file"),
+            malformed
+        );
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
+
+    #[tokio::test]
+    async fn write_mcp_server_preserves_existing_server_fields() {
+        let project_dir = temp_project_dir("round-trip");
+        let mcp_path = project_dir.join(".mcp.json");
+        fs::write(
+            &mcp_path,
+            serde_json::to_string_pretty(&json!({
+                "uiSetting": "keep",
+                "mcpServers": {
+                    "remote": {
+                        "type": "sse",
+                        "url": "https://example.com/mcp",
+                        "headers": {
+                            "Authorization": "Bearer token"
+                        },
+                        "disabled": true,
+                        "customField": {
+                            "nested": true
+                        },
+                        "command": "old-command",
+                        "args": ["old"],
+                        "env": {
+                            "OLD": "1"
+                        }
+                    },
+                    "untouched": {
+                        "command": "keep-command"
+                    }
+                }
+            }))
+            .expect("serialize fixture"),
+        )
+        .expect("write fixture");
+
+        let mut env = HashMap::new();
+        env.insert("NEW".to_string(), "2".to_string());
+
+        write_mcp_server(
+            project_dir.to_string_lossy().into_owned(),
+            "remote".to_string(),
+            "new-command".to_string(),
+            vec!["--flag".to_string()],
+            env,
+            "project".to_string(),
+        )
+        .await
+        .expect("write server");
+
+        let saved: Value =
+            serde_json::from_str(&fs::read_to_string(&mcp_path).expect("read saved mcp config"))
+                .expect("parse saved mcp config");
+        let remote = saved
+            .get("mcpServers")
+            .and_then(|servers| servers.get("remote"))
+            .expect("remote server");
+
+        assert_eq!(saved["uiSetting"], "keep");
+        assert_eq!(remote["type"], "sse");
+        assert_eq!(remote["url"], "https://example.com/mcp");
+        assert_eq!(remote["headers"]["Authorization"], "Bearer token");
+        assert_eq!(remote["disabled"], true);
+        assert_eq!(remote["customField"]["nested"], true);
+        assert_eq!(remote["command"], "new-command");
+        assert_eq!(remote["args"], json!(["--flag"]));
+        assert_eq!(remote["env"], json!({ "NEW": "2" }));
+        assert_eq!(saved["mcpServers"]["untouched"]["command"], "keep-command");
+
+        let _ = fs::remove_dir_all(project_dir);
+    }
 }

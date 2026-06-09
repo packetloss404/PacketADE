@@ -183,7 +183,9 @@ pub fn ensure_data_dir() -> Result<PathBuf, String> {
 fn backup_path_for(path: &Path) -> PathBuf {
     path.with_extension(format!(
         "{}.bak",
-        path.extension().and_then(|ext| ext.to_str()).unwrap_or("json")
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("json")
     ))
 }
 
@@ -193,7 +195,9 @@ fn backup_path_for(path: &Path) -> PathBuf {
 fn tmp_path_for(path: &Path) -> PathBuf {
     path.with_extension(format!(
         "{}.tmp",
-        path.extension().and_then(|ext| ext.to_str()).unwrap_or("json")
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("json")
     ))
 }
 
@@ -211,7 +215,9 @@ fn quarantine_corrupt(path: &Path) {
         .unwrap_or(0);
     let quarantine = path.with_extension(format!(
         "{}.corrupt-{}",
-        path.extension().and_then(|ext| ext.to_str()).unwrap_or("json"),
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("json"),
         ts
     ));
     match fs::rename(path, &quarantine) {
@@ -550,7 +556,10 @@ fn load_provider_runtime_settings() -> ProviderRuntimeSettings {
     // 4. Orphaned tmp (.tmp).
     let tmp_path = tmp_path_for(&path);
     if let Some(settings) = try_recover::<ProviderRuntimeSettings>(&tmp_path) {
-        warn!("Recovered provider settings from orphaned tmp {:?}", tmp_path);
+        warn!(
+            "Recovered provider settings from orphaned tmp {:?}",
+            tmp_path
+        );
         return settings;
     }
 
@@ -711,8 +720,15 @@ mod tests {
     /// Assert recovered state matches the marker we encoded (version + server).
     fn assert_marker(state: &PersistedState, marker: u32, label: &str) {
         assert_eq!(state.version, marker, "version marker should match source");
-        assert_eq!(state.servers.len(), 1, "marker state has exactly one server");
-        assert_eq!(state.servers[0].name, label, "server name marker should match source");
+        assert_eq!(
+            state.servers.len(),
+            1,
+            "marker state has exactly one server"
+        );
+        assert_eq!(
+            state.servers[0].name, label,
+            "server name marker should match source"
+        );
     }
 
     fn corrupt_file_count(dir: &Path) -> usize {
@@ -737,7 +753,11 @@ mod tests {
 
         let loaded = load_state_from(&dir);
         assert_marker(&loaded, 42, "primary-state");
-        assert_eq!(corrupt_file_count(&dir), 0, "clean parse must not quarantine");
+        assert_eq!(
+            corrupt_file_count(&dir),
+            0,
+            "clean parse must not quarantine"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -757,7 +777,11 @@ mod tests {
 
         // The corrupt primary must have been quarantined: a *.corrupt-* file now
         // exists, and the primary path no longer holds the corrupt bytes.
-        assert_eq!(corrupt_file_count(&dir), 1, "corrupt primary should be quarantined");
+        assert_eq!(
+            corrupt_file_count(&dir),
+            1,
+            "corrupt primary should be quarantined"
+        );
         assert!(
             !primary.exists(),
             "primary should have been renamed away by quarantine"
@@ -795,7 +819,11 @@ mod tests {
 
         let loaded = load_state_from(&dir);
         assert_marker(&loaded, 99, "tmp-state");
-        assert_eq!(corrupt_file_count(&dir), 0, "no quarantine for missing primary");
+        assert_eq!(
+            corrupt_file_count(&dir),
+            0,
+            "no quarantine for missing primary"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -815,15 +843,26 @@ mod tests {
         assert!(loaded.servers.is_empty(), "default has no servers");
 
         // Corrupt bytes are preserved under a *.corrupt-* name (not deleted).
-        assert_eq!(corrupt_file_count(&dir), 1, "corrupt primary must be preserved, not deleted");
-        assert!(!primary.exists(), "primary path no longer holds corrupt bytes");
+        assert_eq!(
+            corrupt_file_count(&dir),
+            1,
+            "corrupt primary must be preserved, not deleted"
+        );
+        assert!(
+            !primary.exists(),
+            "primary path no longer holds corrupt bytes"
+        );
         // The quarantined file must hold the ORIGINAL corrupt bytes verbatim —
         // "preserved" means recoverable for forensics, not merely renamed-then-emptied.
         let quarantined = fs::read_dir(&dir)
             .expect("read dir")
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.contains(".corrupt-")))
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.contains(".corrupt-"))
+            })
             .expect("a quarantine file exists");
         assert_eq!(
             fs::read(&quarantined).expect("read quarantine file"),
@@ -844,7 +883,11 @@ mod tests {
         assert_eq!(loaded.version, default.version);
         assert!(loaded.servers.is_empty());
         assert!(loaded.flights.is_empty());
-        assert_eq!(corrupt_file_count(&dir), 0, "first run must not quarantine anything");
+        assert_eq!(
+            corrupt_file_count(&dir),
+            0,
+            "first run must not quarantine anything"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -865,7 +908,10 @@ mod tests {
         // Load triggers quarantine of the corrupt primary and recovers from .bak.
         let recovered = load_state_from(&dir);
         assert_marker(&recovered, 123, "protected-bak");
-        assert!(!primary.exists(), "primary was quarantined, so it is absent");
+        assert!(
+            !primary.exists(),
+            "primary was quarantined, so it is absent"
+        );
 
         // Now simulate the next lock-held save writing back the recovered state.
         // Because the primary was quarantined (absent), write_with_backup must

@@ -62,6 +62,7 @@ function makePersistedState(flights: Flight[]): PersistedState {
     version: 1,
     flights,
     agents: [],
+    issues: [],
     settings: {
       maxParallelSessions: 3,
       milestoneGating: true,

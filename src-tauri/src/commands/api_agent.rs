@@ -14,6 +14,7 @@ use crate::core::llm_system_prompt::build_system_prompt;
 use crate::core::llm_types::*;
 use crate::core::tool_runtime;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -294,6 +295,190 @@ fn build_start_history(
     messages
 }
 
+fn build_assistant_history_message(
+    text_content: &str,
+    tool_calls: &[ToolCall],
+) -> Option<ChatMessage> {
+    if tool_calls.is_empty() {
+        if text_content.trim().is_empty() {
+            return None;
+        }
+
+        return Some(ChatMessage {
+            role: ChatRole::Assistant,
+            content: MessageContent::text(text_content),
+        });
+    }
+
+    let mut blocks = Vec::new();
+    if !text_content.is_empty() {
+        blocks.push(ContentBlock::Text {
+            text: text_content.to_string(),
+        });
+    }
+    for tc in tool_calls {
+        blocks.push(ContentBlock::ToolUse {
+            id: tc.id.clone(),
+            name: tc.name.clone(),
+            arguments: tc.arguments.clone(),
+        });
+    }
+
+    Some(ChatMessage {
+        role: ChatRole::Assistant,
+        content: MessageContent::Blocks(blocks),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::mcp::{McpServerConfig, McpServerEntry};
+    use std::collections::HashMap;
+
+    #[test]
+    fn build_assistant_history_message_skips_blank_turn_without_tools() {
+        assert!(build_assistant_history_message("", &[]).is_none());
+        assert!(build_assistant_history_message(" \n\t", &[]).is_none());
+    }
+
+    #[test]
+    fn build_assistant_history_message_keeps_text_turn_without_tools() {
+        let message = build_assistant_history_message("done", &[]).unwrap();
+
+        assert_eq!(message.role, ChatRole::Assistant);
+        match message.content {
+            MessageContent::Text(text) => assert_eq!(text, "done"),
+            MessageContent::Blocks(_) => panic!("expected text content"),
+        }
+    }
+
+    #[test]
+    fn build_assistant_history_message_keeps_tool_turn_without_text() {
+        let tool_calls = vec![ToolCall {
+            id: "toolu_1".to_string(),
+            name: "read_file".to_string(),
+            arguments: serde_json::json!({ "path": "README.md" }),
+        }];
+
+        let message = build_assistant_history_message("", &tool_calls).unwrap();
+
+        assert_eq!(message.role, ChatRole::Assistant);
+        match message.content {
+            MessageContent::Blocks(blocks) => {
+                assert_eq!(blocks.len(), 1);
+                match &blocks[0] {
+                    ContentBlock::ToolUse {
+                        id,
+                        name,
+                        arguments,
+                    } => {
+                        assert_eq!(id, "toolu_1");
+                        assert_eq!(name, "read_file");
+                        assert_eq!(arguments["path"], "README.md");
+                    }
+                    _ => panic!("expected tool use block"),
+                }
+            }
+            MessageContent::Text(_) => panic!("expected block content"),
+        }
+    }
+
+    #[test]
+    fn mcp_entry_config_for_sidecar_preserves_non_stdio_server_shape() {
+        let entry = McpServerEntry {
+            name: "remote".to_string(),
+            config: McpServerConfig {
+                command: String::new(),
+                args: Vec::new(),
+                env: HashMap::new(),
+            },
+            raw_config: serde_json::json!({
+                "type": "sse",
+                "url": "https://example.test/mcp",
+                "headers": { "Authorization": "Bearer token" },
+                "disabled": false
+            }),
+            scope: "project".to_string(),
+            disabled: false,
+        };
+
+        let config = mcp_entry_config_for_sidecar(entry);
+
+        assert_eq!(
+            config.get("type").and_then(serde_json::Value::as_str),
+            Some("sse")
+        );
+        assert_eq!(
+            config.get("url").and_then(serde_json::Value::as_str),
+            Some("https://example.test/mcp")
+        );
+        assert!(config.contains_key("headers"));
+        assert!(!config.contains_key("disabled"));
+        assert!(!config.contains_key("command"));
+    }
+
+    #[test]
+    fn mcp_entry_config_for_sidecar_keeps_stdio_fallback_fields() {
+        let mut env = HashMap::new();
+        env.insert("TOKEN".to_string(), "secret".to_string());
+        let entry = McpServerEntry {
+            name: "local".to_string(),
+            config: McpServerConfig {
+                command: "node".to_string(),
+                args: vec!["server.js".to_string()],
+                env,
+            },
+            raw_config: serde_json::json!({}),
+            scope: "global".to_string(),
+            disabled: false,
+        };
+
+        let config = mcp_entry_config_for_sidecar(entry);
+
+        assert_eq!(
+            config.get("type").and_then(serde_json::Value::as_str),
+            Some("stdio")
+        );
+        assert_eq!(
+            config.get("command").and_then(serde_json::Value::as_str),
+            Some("node")
+        );
+        assert_eq!(config["args"][0], "server.js");
+        assert_eq!(config["env"]["TOKEN"], "secret");
+    }
+
+    #[test]
+    fn merge_mcp_entries_for_sidecar_project_disabled_shadows_global() {
+        let global = McpServerEntry {
+            name: "danger".to_string(),
+            config: McpServerConfig {
+                command: "node".to_string(),
+                args: vec!["danger.js".to_string()],
+                env: HashMap::new(),
+            },
+            raw_config: serde_json::json!({ "command": "node", "args": ["danger.js"] }),
+            scope: "global".to_string(),
+            disabled: false,
+        };
+        let project_disabled = McpServerEntry {
+            name: "danger".to_string(),
+            config: McpServerConfig {
+                command: String::new(),
+                args: Vec::new(),
+                env: HashMap::new(),
+            },
+            raw_config: serde_json::json!({ "disabled": true }),
+            scope: "project".to_string(),
+            disabled: true,
+        };
+
+        let merged = merge_mcp_entries_for_sidecar(vec![global, project_disabled], None);
+
+        assert!(!merged.contains_key("danger"));
+    }
+}
+
 /// Fire all SessionEnd hooks (best-effort; failures logged).
 async fn fire_session_end_hooks(hooks_list: &[crate::core::hooks::HookConfig], session_id: &str) {
     for hook in hooks_list
@@ -348,10 +533,15 @@ struct ErrorPayload {
 ///     "args": ["--flag"],
 ///     "env": { "TOKEN": "..." }
 ///   }
+/// },
+/// "http-server": {
+///   "type": "sse",
+///   "url": "https://example.test/mcp",
+///   "headers": { "Authorization": "Bearer ..." }
 /// }
 /// ```
-/// This matches Claude Code's CLI config format and the shape most Agent SDKs
-/// expect for stdio MCP transports. `env` is omitted when empty.
+/// This preserves Claude/Codex MCP server shapes rather than coercing every
+/// entry into stdio. `disabled` is consumed locally and not forwarded.
 ///
 /// Failures reading either scope are logged to stderr; we fall back to
 /// whichever scope succeeded (or an empty object if both fail). We never
@@ -365,7 +555,7 @@ async fn build_mcp_config_for_sidecar(
     filter: Option<&[String]>,
 ) -> serde_json::Value {
     use crate::commands::mcp;
-    use serde_json::{json, Map, Value};
+    use serde_json::{Map, Value};
 
     // `read_mcp_servers` concatenates global entries first, then project
     // entries, so inserting into a map in the returned order naturally lets
@@ -381,32 +571,64 @@ async fn build_mcp_config_for_sidecar(
         }
     };
 
+    Value::Object(merge_mcp_entries_for_sidecar(entries, filter))
+}
+
+fn merge_mcp_entries_for_sidecar(
+    entries: Vec<crate::commands::mcp::McpServerEntry>,
+    filter: Option<&[String]>,
+) -> Map<String, Value> {
     let mut merged: Map<String, Value> = Map::new();
     for entry in entries {
-        if entry.disabled {
-            continue;
-        }
         if let Some(allowed) = filter {
             if !allowed.iter().any(|name| name == &entry.name) {
                 continue;
             }
         }
-        let mut obj = Map::new();
-        obj.insert("type".to_string(), Value::String("stdio".to_string()));
-        obj.insert("command".to_string(), Value::String(entry.config.command));
-        obj.insert(
-            "args".to_string(),
-            Value::Array(entry.config.args.into_iter().map(Value::String).collect()),
-        );
-        if !entry.config.env.is_empty() {
-            obj.insert("env".to_string(), json!(entry.config.env));
+        let name = entry.name.clone();
+        if entry.disabled {
+            merged.remove(&name);
+            continue;
         }
+        let obj = mcp_entry_config_for_sidecar(entry);
         // Later (project-scope) insertions overwrite earlier (global-scope)
         // ones with the same key — Rust's `Map::insert` replaces the value.
-        merged.insert(entry.name, Value::Object(obj));
+        merged.insert(name, Value::Object(obj));
     }
 
-    Value::Object(merged)
+    merged
+}
+
+fn mcp_entry_config_for_sidecar(entry: crate::commands::mcp::McpServerEntry) -> Map<String, Value> {
+    let mut obj = match entry.raw_config {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    };
+    obj.remove("disabled");
+
+    let type_is_stdio = obj
+        .get("type")
+        .and_then(Value::as_str)
+        .map(|transport| transport == "stdio")
+        .unwrap_or(true);
+
+    if type_is_stdio {
+        obj.entry("type".to_string())
+            .or_insert_with(|| Value::String("stdio".to_string()));
+        if !entry.config.command.is_empty() {
+            obj.entry("command".to_string())
+                .or_insert_with(|| Value::String(entry.config.command));
+        }
+        obj.entry("args".to_string()).or_insert_with(|| {
+            Value::Array(entry.config.args.into_iter().map(Value::String).collect())
+        });
+        if !entry.config.env.is_empty() {
+            obj.entry("env".to_string())
+                .or_insert_with(|| serde_json::json!(entry.config.env));
+        }
+    }
+
+    obj
 }
 
 /// Start a new API agent session.
@@ -1449,34 +1671,7 @@ async fn run_agent_loop(
             return Err("LLM returned an error".to_string());
         }
 
-        // Build the assistant message with content blocks
-        let assistant_msg = if tool_calls.is_empty() {
-            ChatMessage {
-                role: ChatRole::Assistant,
-                content: MessageContent::text(&text_content),
-            }
-        } else {
-            let mut blocks = Vec::new();
-            if !text_content.is_empty() {
-                blocks.push(ContentBlock::Text {
-                    text: text_content.clone(),
-                });
-            }
-            for tc in &tool_calls {
-                blocks.push(ContentBlock::ToolUse {
-                    id: tc.id.clone(),
-                    name: tc.name.clone(),
-                    arguments: tc.arguments.clone(),
-                });
-            }
-            ChatMessage {
-                role: ChatRole::Assistant,
-                content: MessageContent::Blocks(blocks),
-            }
-        };
-
-        // Append assistant message to history
-        {
+        if let Some(assistant_msg) = build_assistant_history_message(&text_content, &tool_calls) {
             let mut histories = state.histories.lock().await;
             if let Some(history) = histories.get_mut(session_id) {
                 history.push(assistant_msg);

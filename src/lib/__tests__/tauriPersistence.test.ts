@@ -41,6 +41,7 @@ function makePersistedStateDto(overrides: Partial<PersistedStateDto> = {}): Pers
     version: 1,
     flights: [],
     agents: [],
+    issues: [],
     settings: {
       maxParallelSessions: 3,
       milestoneGating: true,

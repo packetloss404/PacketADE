@@ -23,12 +23,18 @@ export function GeminiApiKeyCard() {
 
       if (legacySaved) {
         try {
+          if (await getApiKeyExists(GEMINI_PROVIDER)) {
+            localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
+            localStorage.removeItem(LEGACY_GEMINI_API_KEY_STORAGE_KEY);
+            if (!cancelled) setGeminiKeySaved(true);
+            return;
+          }
+
           await setApiKey(GEMINI_PROVIDER, legacySaved);
-        } catch (error) {
-          console.warn("Failed to migrate Gemini API key to keyring", error);
-        } finally {
           localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
           localStorage.removeItem(LEGACY_GEMINI_API_KEY_STORAGE_KEY);
+        } catch (error) {
+          console.warn("Failed to migrate Gemini API key to keyring", error);
         }
       }
 

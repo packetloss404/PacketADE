@@ -8,6 +8,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useServerStore } from "@/stores/serverStore";
+import { useIssueStore } from "@/stores/issueStore";
 import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
 
 /**
@@ -23,12 +24,13 @@ export async function initializeApp(): Promise<void> {
     useWorkspaceStore.getState().hydrateFromBackend(state.workspaces);
     useMemoryStore.getState().hydrateFromBackend(state);
     useServerStore.getState().hydrateFromBackend(state.servers);
+    useIssueStore.getState().hydrateFromBackend(state.issues);
 
     // Phase 2: one-time migration of legacy SshTarget records from
     // localStorage into the unified `serverStore`. Runs after hydration so
     // it can merge alongside backend-persisted ServerConfig entries.
     try {
-      migrateSshTargetsToServers();
+      await migrateSshTargetsToServers();
     } catch (e) {
       console.warn("[bootstrap] SshTarget migration failed:", e);
     }

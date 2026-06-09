@@ -166,6 +166,17 @@ G34 (auto-failover notice truncated, _panel: med→low_) · G35 · G36
 F19, F20 (shared settings.json), F09, F10, F44, F56 (migration delete-before-confirm),
 F48/F52 (state authority), G18 (poisoned Anthropic history).
 
+Status 2026-06-09 worktree: implemented, pending final validation/release, for F19, F20, F09,
+F10, F44, F48, F52, F56, and G18. MCP write/delete paths now reject malformed configs, preserve
+existing server fields, and forward preserved non-stdio server shapes to sidecar sessions;
+key/Gemini/SSH migrations keep legacy data until the replacement save succeeds; legacy localStorage
+prefix migration snapshots keys before mutation; SSH target migration merges both legacy namespaces;
+FlightDetail unlink updates both issue and flight stores; backend `PersistedState.issues` now
+hydrates `issueStore` before Mission reconciliation; empty assistant text-only turns are skipped
+while tool-use turns remain valid. F52 caveat: `flight.issueIds` remains a derived frontend cache,
+not an independent Rust-side Mission issue-link model. F19 caveat: atomic MCP file writes remain
+tracked separately as F21/P3.
+
 **Batch B — "It silently failed" (orchestration trust):**
 G23, G24 (exit-code vs exit-reason), G25 (stuck attempts), F13 (stuck deploy), F33/F34
 (swallowed failures), G02 (sidecar restart bricks sessions).

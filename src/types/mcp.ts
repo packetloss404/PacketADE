@@ -7,6 +7,7 @@ export interface McpServerConfig {
 export interface McpServerEntry {
   name: string;
   config: McpServerConfig;
+  rawConfig?: Record<string, unknown>;
   scope: "global" | "project";
   disabled: boolean;
 }

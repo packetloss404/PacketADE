@@ -627,6 +627,19 @@ truthfulness fix (`target_spec` is returned in `deferred_fields`, not `updated_f
 Task-level `target_spec` persistence remains future work. Keep these in the review ledger until
 the Batch B branch is validated and moved to `CHANGELOG.md`.
 
+**Batch A worktree status (2026-06-09, not yet shipped):** Current code now has implementations
+for F19, F20, F09, F10, F44, F48, F52, F56, and G18. Covered scope: MCP writes/deletes reject
+malformed JSON instead of clobbering it, preserve existing server fields, and forward preserved
+non-stdio server shapes to sidecar sessions; key/Gemini/SSH migrations keep legacy data until the
+replacement save succeeds; legacy localStorage prefix migration snapshots keys before mutation; SSH
+target migration merges both legacy namespaces; FlightDetail unlink updates both issue and flight
+stores; backend `PersistedState.issues` now hydrates `issueStore` before Mission reconciliation;
+empty assistant text-only turns are skipped while tool-use turns remain valid. F52's remaining caveat:
+`flight.issueIds` is still treated as a derived frontend cache, so a durable Rust-side independent
+Mission issue-link model remains future work. F19's remaining caveat: atomic MCP file writes are still
+tracked separately as F21/P3. Keep these items in the review ledger until the Batch A branch is
+validated and moved to `CHANGELOG.md`.
+
 ### P1 — confirmed high
 
 - **F02 — one invalid UTF-8 byte freezes a terminal forever** (unbounded `pending`) — `core/pty.rs:55-76`. Use `Utf8Error::error_len()`.

@@ -107,6 +107,44 @@ function computeStatus(flight: Flight): FlightStatus {
   );
 }
 
+function sameIds(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function reconcileIssueIdsFromIssues(
+  flights: Flight[],
+  touchUpdatedAt: boolean,
+): { flights: Flight[]; changed: boolean } {
+  if (flights.length === 0) return { flights, changed: false };
+
+  const flightIds = new Set(flights.map((flight) => flight.id));
+  const issueIdsByFlight = new Map<string, string[]>();
+
+  for (const issue of useIssueStore.getState().issues) {
+    if (!issue.flightId || !flightIds.has(issue.flightId)) continue;
+    const issueIds = issueIdsByFlight.get(issue.flightId) ?? [];
+    if (!issueIds.includes(issue.id)) {
+      issueIds.push(issue.id);
+    }
+    issueIdsByFlight.set(issue.flightId, issueIds);
+  }
+
+  let changed = false;
+  const now = touchUpdatedAt ? Date.now() : null;
+  const reconciled = flights.map((flight) => {
+    const issueIds = issueIdsByFlight.get(flight.id) ?? [];
+    if (sameIds(flight.issueIds, issueIds)) return flight;
+    changed = true;
+    return {
+      ...flight,
+      issueIds,
+      updatedAt: now ?? flight.updatedAt,
+    };
+  });
+
+  return { flights: reconciled, changed };
+}
+
 // === Store ===
 
 interface FlightStore {
@@ -204,6 +242,8 @@ interface FlightStore {
   findTaskBySessionId: (
     sessionId: string,
   ) => { flight: Flight; milestone: Milestone; task: Task } | null;
+  // `issueIds` is a legacy frontend cache; Rust flights do not round-trip it.
+  reconcileIssueLinks: (options?: { persist?: boolean; touchUpdatedAt?: boolean }) => void;
   hydrateFromBackend: (persisted?: Awaited<ReturnType<typeof loadPersistedState>>) => Promise<void>;
   reconcileLiveSessions: (liveSessionIds: string[]) => void;
 }
@@ -685,6 +725,20 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     return null;
   },
 
+  reconcileIssueLinks: (options = {}) => {
+    const persist = options.persist ?? true;
+    const touchUpdatedAt = options.touchUpdatedAt ?? true;
+
+    set((s) => {
+      const { flights, changed } = reconcileIssueIdsFromIssues(s.flights, touchUpdatedAt);
+      if (!changed) return s;
+      if (persist) {
+        saveState({ flights, activeFlightId: s.activeFlightId });
+      }
+      return { flights };
+    });
+  },
+
   hydrateFromBackend: async (persisted) => {
     try {
       const state = persisted ?? (await loadPersistedState());
@@ -692,6 +746,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
         flights: state.flights,
         activeFlightId: state.ui.selectedFlightId ?? null,
       });
+      get().reconcileIssueLinks({ persist: false, touchUpdatedAt: false });
     } catch (err) {
       console.warn("[flightStore.hydrate] swallowed error:", err);
     }
