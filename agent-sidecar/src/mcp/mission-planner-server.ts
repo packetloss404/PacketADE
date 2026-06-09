@@ -212,7 +212,10 @@ export function createMissionPlannerMcpServer(
     [
       "Update fields on an existing task. Patch keys may include: title,",
       "prompt, agent_id, target_spec, status (only set to 'cancelled' or",
-      "'queued' — other status transitions are owned by the executor). To",
+      "'queued' — other status transitions are owned by the executor).",
+      "target_spec is accepted for forward compatibility but may be returned",
+      "in deferred_fields when it could not be persisted; treat that retarget",
+      "as not landed. To",
       "mark a task blocked use mark_task_blocked instead. Unknown patch",
       "keys are silently dropped (with a warning) — only whitelisted keys mutate.",
     ].join(" "),

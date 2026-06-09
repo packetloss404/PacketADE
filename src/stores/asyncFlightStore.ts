@@ -17,6 +17,10 @@ import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
 import { claimedPathsOverlap, normalizeClaimedPath } from "@/lib/pathCollisions";
+import {
+  detachAttemptTerminalListeners,
+  syncAsyncAttemptTerminalListeners,
+} from "@/stores/asyncAttemptTerminalListeners";
 
 export interface AsyncLaunchOptions {
   allowPathCollisions?: boolean;
@@ -64,11 +68,22 @@ interface AsyncFlightStore {
   ) => Promise<void>;
 }
 
-function applyAttemptsToFlight(flightId: string, attempts: Attempt[]) {
-  const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
-  if (!flight) return;
-  const merged = [...(flight.attempts ?? []), ...attempts];
-  useFlightStore.getState().updateFlight(flightId, { attempts: merged, prompt: undefined });
+function applyAttemptsToFlightLocal(flightId: string, attempts: Attempt[], prompt: string) {
+  useFlightStore.setState((state) => ({
+    flights: state.flights.map((flight) => {
+      if (flight.id !== flightId) return flight;
+      const attemptsById = new Map((flight.attempts ?? []).map((attempt) => [attempt.id, attempt]));
+      for (const attempt of attempts) {
+        attemptsById.set(attempt.id, attempt);
+      }
+      return {
+        ...flight,
+        attempts: Array.from(attemptsById.values()),
+        prompt: flight.prompt ?? prompt,
+        updatedAt: Date.now(),
+      };
+    }),
+  }));
 }
 
 function patchAttempt(flightId: string, attemptId: string, patch: Partial<Attempt>) {
@@ -413,6 +428,32 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       allowPathCollisions: options.allowPathCollisions,
     });
 
+    const flightsWithAttempts = useFlightStore.getState().flights.map((currentFlight) => {
+      if (currentFlight.id !== flightId) return currentFlight;
+      return {
+        ...currentFlight,
+        attempts: [...(currentFlight.attempts ?? []), ...attempts],
+        prompt: currentFlight.prompt ?? prompt,
+        updatedAt: Date.now(),
+      };
+    });
+
+    // Register terminal listeners before mutating local state so a very fast
+    // `api-agent:done/error` event cannot land between backend start and the
+    // listener install. The backend already persisted the attempts, so this
+    // local projection deliberately avoids saving and clobbering a fresher
+    // backend terminal status.
+    await syncAsyncAttemptTerminalListeners(flightsWithAttempts);
+    await useFlightStore
+      .getState()
+      .hydrateFromBackend()
+      .catch((err) => console.warn("Failed to hydrate async launch attempts:", err));
+    const latestFlight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+    const latestAttempts = attempts.map(
+      (attempt) => latestFlight?.attempts?.find((current) => current.id === attempt.id) ?? attempt,
+    );
+    applyAttemptsToFlightLocal(flightId, latestAttempts, prompt);
+
     // For each attempt, register a frontend AgentConversation that listens to
     // the same backend event channel (apiAgent*Event(sessionId)) so AttemptTile
     // can render the live stream. The backend has already started the session;
@@ -457,16 +498,6 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       }
     }
 
-    // Persist the prompt + attempts onto the Flight.
-    if (flight) {
-      const merged = [...(flight.attempts ?? []), ...attempts];
-      useFlightStore.getState().updateFlight(flightId, {
-        attempts: merged,
-        prompt: flight.prompt ?? prompt,
-      });
-    } else {
-      applyAttemptsToFlight(flightId, attempts);
-    }
     return attempts;
   },
 
@@ -479,6 +510,9 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       status: "cancelled",
       completedAt: Date.now(),
     });
+    if (attempt) {
+      detachAttemptTerminalListeners(attempt.sessionId);
+    }
 
     // SSH worktree cleanup is deferred from the backend cancel because it
     // doesn't have full ServerConfig info — issue it from here using the
@@ -513,6 +547,11 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
         ? { completedAt: Date.now() }
         : {}),
     });
+    if (status === "completed" || status === "failed" || status === "cancelled") {
+      const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+      const attempt = flight?.attempts?.find((a) => a.id === attemptId);
+      if (attempt) detachAttemptTerminalListeners(attempt.sessionId);
+    }
 
     // v0.8-G: post-attempt publish hook. Fire only when the attempt
     // transitions to `completed` AND the parent Flight has opted in.

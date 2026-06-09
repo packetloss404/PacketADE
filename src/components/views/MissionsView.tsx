@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Plane,
   Search,
   Plus,
@@ -23,6 +24,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useShallow } from "zustand/react/shallow";
 import { useFlightStore } from "@/stores/flightStore";
 import { useGoalStore } from "@/stores/goalStore";
+import { useOrchestrationSchedulerStore } from "@/stores/orchestrationSchedulerStore";
 import { useOrchestrationStateStore as useOrchestrationStore } from "@/stores/orchestrationStateStore";
 import { useMissionPlannerStore } from "@/stores/missionPlannerStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -208,6 +210,8 @@ export function MissionsView() {
     );
   const pauseFlight = useOrchestrationStore((s) => s.pauseFlight);
   const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
+  const schedulerLastError = useOrchestrationSchedulerStore((s) => s.lastError);
+  const restartSchedulerLoop = useOrchestrationSchedulerStore((s) => s.startLoop);
   const startPlanner = useMissionPlannerStore((s) => s.startPlanner);
   const activeWorkspace = useWorkspaceStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
@@ -327,16 +331,35 @@ export function MissionsView() {
           onCreate={() => setModal("async")}
           computeStatus={computeFlightStatus}
         />
-        {selectedFlight ? (
-          <FlightDetailPane
-            flight={selectedFlight}
-            status={computeFlightStatus(selectedFlight.id)}
-            onPause={() => void pauseFlight(selectedFlight.id)}
-            onResume={() => void resumeFlight(selectedFlight.id)}
-          />
-        ) : (
-          <EmptyDetail />
-        )}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {schedulerLastError && (
+            <div
+              role="alert"
+              className="border-accent-amber/25 bg-accent-amber/10 mx-3.5 mt-3 flex items-center gap-2 rounded border px-2.5 py-2 text-[11px] text-accent-amber"
+            >
+              <AlertTriangle size={12} className="shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{schedulerLastError}</span>
+              <button
+                onClick={restartSchedulerLoop}
+                className="border-accent-amber/30 hover:bg-accent-amber/10 inline-flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium transition-colors"
+                title="Resume mission scheduler"
+              >
+                <RefreshCw size={10} />
+                Retry
+              </button>
+            </div>
+          )}
+          {selectedFlight ? (
+            <FlightDetailPane
+              flight={selectedFlight}
+              status={computeFlightStatus(selectedFlight.id)}
+              onPause={() => void pauseFlight(selectedFlight.id)}
+              onResume={() => void resumeFlight(selectedFlight.id)}
+            />
+          ) : (
+            <EmptyDetail />
+          )}
+        </div>
       </div>
       {modal === "async" && (
         <LaunchAsyncFlightModal onLaunched={(id) => setActiveFlight(id)} onClose={closeModal} />

@@ -69,6 +69,7 @@
               "completed_at": null,
               "cost": 0.5,
               "tokens": 1000,
+              "owned_paths": [],
               "replan_count": 0
             }
           ],

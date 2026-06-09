@@ -19,6 +19,7 @@ import {
   triggerPlannerDecomposition as invokeTriggerPlannerDecomposition,
 } from "@/lib/tauri";
 import { notifyMissionPlannerRateLimited } from "@/lib/notifications";
+import { syncAsyncAttemptTerminalListeners } from "@/stores/asyncAttemptTerminalListeners";
 import { useFlightStore } from "@/stores/flightStore";
 
 // E1 — frontend runtime for Mission Planner sessions. Ephemeral by design:
@@ -423,6 +424,7 @@ async function installListeners(
       void useFlightStore
         .getState()
         .hydrateFromBackend()
+        .then(() => syncAsyncAttemptTerminalListeners())
         .catch((err) => {
           console.warn(
             `Failed to hydrate flightStore after mission-planner:${kind}`,
@@ -460,6 +462,7 @@ async function installListeners(
       void useFlightStore
         .getState()
         .hydrateFromBackend()
+        .then(() => syncAsyncAttemptTerminalListeners())
         .catch((err) => {
           console.warn(
             "Failed to hydrate flightStore after mission-planner:compaction-completed",

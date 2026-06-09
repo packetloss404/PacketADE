@@ -149,6 +149,24 @@ fn pending_edit_event(session_id: &str) -> String {
     format!("api-agent:pending-edit:{}", session_id)
 }
 
+async fn mark_attempt_reviewing_for_session(session_id: &str) {
+    let _ = crate::commands::flight_attempts::update_attempt_status_by_session(
+        session_id,
+        crate::core::flight::AttemptStatus::Reviewing,
+        None,
+    )
+    .await;
+}
+
+async fn mark_attempt_failed_for_session(session_id: &str, message: String) {
+    let _ = crate::commands::flight_attempts::update_attempt_status_by_session(
+        session_id,
+        crate::core::flight::AttemptStatus::Failed,
+        Some(message),
+    )
+    .await;
+}
+
 #[derive(Clone, Serialize)]
 struct ToolStartPayload {
     id: String,
@@ -643,6 +661,7 @@ pub async fn start_api_agent_session(
 
         if let Err(e) = &result {
             warn!(session_id = %session_id_clone, error = %e, "Agent loop error");
+            mark_attempt_failed_for_session(&session_id_clone, e.clone()).await;
             let _ = app_handle.emit(
                 &error_event(&session_id_clone),
                 ErrorPayload { message: e.clone() },
@@ -713,6 +732,7 @@ pub async fn send_api_agent_message(
 
         if let Err(e) = &result {
             warn!(session_id = %session_id_clone, error = %e, "Agent loop error");
+            mark_attempt_failed_for_session(&session_id_clone, e.clone()).await;
             let _ = app_handle.emit(
                 &error_event(&session_id_clone),
                 ErrorPayload { message: e.clone() },
@@ -1026,6 +1046,7 @@ pub async fn retry_last_turn(
 
         if let Err(e) = &result {
             warn!(session_id = %session_id_clone, error = %e, "Retry loop error");
+            mark_attempt_failed_for_session(&session_id_clone, e.clone()).await;
             let _ = app_handle.emit(
                 &error_event(&session_id_clone),
                 ErrorPayload { message: e.clone() },
@@ -1217,6 +1238,7 @@ async fn run_agent_loop(
     for iteration in 0..MAX_TOOL_ITERATIONS {
         // Check cancellation
         if cancel_rx.try_recv().is_ok() {
+            mark_attempt_reviewing_for_session(session_id).await;
             let _ = app_handle.emit(
                 &done_event(session_id),
                 DonePayload {
@@ -1317,6 +1339,7 @@ async fn run_agent_loop(
                     // `stream_chat` stops holding the upstream HTTP connection
                     // and pushing into the now-dropped mpsc channel.
                     stream_handle.abort();
+                    mark_attempt_reviewing_for_session(session_id).await;
                     let _ = app_handle.emit(
                         &done_event(session_id),
                         DonePayload {
@@ -1406,6 +1429,7 @@ async fn run_agent_loop(
                             let _ = app_handle.emit(&thinking_stop_event(session_id), ());
                         }
                         Some(StreamChunk::Error { message }) => {
+                            mark_attempt_failed_for_session(session_id, message.clone()).await;
                             let _ = app_handle.emit(
                                 &error_event(session_id),
                                 ErrorPayload { message },
@@ -1461,6 +1485,7 @@ async fn run_agent_loop(
 
         // If no tool calls, we're done
         if tool_calls.is_empty() {
+            mark_attempt_reviewing_for_session(session_id).await;
             let _ = app_handle.emit(
                 &done_event(session_id),
                 DonePayload {
@@ -1971,6 +1996,7 @@ async fn run_agent_loop(
 
     // Hit max iterations
     warn!(session_id = %session_id, "Agent loop hit max iterations ({})", MAX_TOOL_ITERATIONS);
+    mark_attempt_reviewing_for_session(session_id).await;
     let _ = app_handle.emit(
         &done_event(session_id),
         DonePayload {

@@ -5,7 +5,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tracing::{info, warn};
 
-use portable_pty::{native_pty_system, Child as PtyChild, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{
+    native_pty_system, Child as PtyChild, ChildKiller as PtyChildKiller, CommandBuilder, MasterPty,
+    PtySize,
+};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
@@ -118,14 +121,25 @@ pub struct PtyExitPayload {
     pub terminated: bool,
 }
 
+fn is_terminal_pty_read_error(error: &std::io::Error) -> bool {
+    let err_str = error.to_string();
+    err_str.contains("broken pipe")
+        || err_str.contains("The pipe has been ended")
+        || error.kind() == std::io::ErrorKind::BrokenPipe
+        // Unix PTYs commonly report EIO once the slave side closes.
+        || error.raw_os_error() == Some(5)
+}
+
 /// Shared handle to the spawned child so the reader thread can capture the
 /// exit code after the read loop ends, while the manager can still kill it.
 type SharedChild = Arc<Mutex<Box<dyn PtyChild + Send>>>;
+type SharedChildKiller = Arc<Mutex<Box<dyn PtyChildKiller + Send + Sync>>>;
 
 /// Internal state for one PTY session
 struct PtySession {
     info: PtySessionInfo,
     child: SharedChild,
+    killer: SharedChildKiller,
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
     kill_flag: Arc<std::sync::atomic::AtomicBool>,
@@ -158,17 +172,70 @@ impl PtyManager {
         for session_id in session_ids {
             if let Some(mut session) = self.sessions.remove(session_id) {
                 info!(session_id = %session_id, "Killing PTY session (flight cleanup)");
-                session
-                    .orchestrator_killed
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-                session
-                    .kill_flag
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 session.info.alive = false;
-                if let Ok(mut child) = session.child.lock() {
-                    let _ = child.kill();
+                if let Err(e) = signal_pty_kill(
+                    session_id,
+                    session.kill_flag.as_ref(),
+                    Some(session.orchestrator_killed.as_ref()),
+                    &session.killer,
+                ) {
+                    warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
                 }
             }
+        }
+    }
+}
+
+fn signal_pty_kill(
+    session_id: &str,
+    kill_flag: &std::sync::atomic::AtomicBool,
+    orchestrator_killed: Option<&std::sync::atomic::AtomicBool>,
+    killer: &SharedChildKiller,
+) -> std::io::Result<()> {
+    if let Some(orchestrator_killed) = orchestrator_killed {
+        orchestrator_killed.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let mut killer = killer.lock().map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("PTY child killer mutex poisoned for session {}", session_id),
+        )
+    })?;
+    killer.kill()
+}
+
+fn wait_for_pty_child_exit(
+    session_id: &str,
+    child: &SharedChild,
+    timeout: std::time::Duration,
+) -> bool {
+    let start = std::time::Instant::now();
+    loop {
+        // The reader thread owns the blocking `wait()` used to capture the
+        // exit code for `PtyExitPayload`. Avoid blocking behind that same
+        // mutex here; otherwise kill_pty_and_wait can hang instead of timing
+        // out when the reader is already waiting.
+        match child.try_lock() {
+            Ok(mut child) => match child.try_wait() {
+                Ok(Some(_)) | Err(_) => return true,
+                Ok(None) if start.elapsed() < timeout => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Ok(None) => {
+                    warn!(session_id = %session_id, ?timeout, "PTY kill timed out");
+                    return false;
+                }
+            },
+            Err(std::sync::TryLockError::WouldBlock) if start.elapsed() < timeout => {
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                warn!(session_id = %session_id, ?timeout, "PTY kill timed out waiting for child handle");
+                return false;
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => return true,
         }
     }
 }
@@ -298,6 +365,7 @@ pub fn create_pty_session(
         )
     })?;
 
+    let killer: SharedChildKiller = Arc::new(Mutex::new(child.clone_killer()));
     let pid = child.process_id();
     let child: SharedChild = Arc::new(Mutex::new(child));
 
@@ -324,6 +392,7 @@ pub fn create_pty_session(
     let session = PtySession {
         info: info.clone(),
         child: child.clone(),
+        killer,
         writer,
         master: pair.master,
         kill_flag: kill_flag.clone(),
@@ -360,12 +429,7 @@ pub fn create_pty_session(
                     }
                 }
                 Err(e) => {
-                    // On Windows, ERROR_BROKEN_PIPE means the child exited
-                    let err_str = e.to_string();
-                    if err_str.contains("broken pipe")
-                        || err_str.contains("The pipe has been ended")
-                        || e.kind() == std::io::ErrorKind::BrokenPipe
-                    {
+                    if is_terminal_pty_read_error(&e) {
                         break;
                     }
                     // Transient errors — retry
@@ -464,14 +528,14 @@ pub fn kill_pty(manager: State<'_, SharedPtyManager>, session_id: String) -> Res
     let mut mgr = lock_mutex(&manager)?;
     if let Some(mut session) = mgr.sessions.remove(&session_id) {
         info!(session_id = %session_id, "Killing PTY session");
-        session
-            .kill_flag
-            .store(true, std::sync::atomic::Ordering::Relaxed);
         session.info.alive = false;
-        if let Ok(mut child) = session.child.lock() {
-            if let Err(e) = child.kill() {
-                warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
-            }
+        if let Err(e) = signal_pty_kill(
+            &session_id,
+            session.kill_flag.as_ref(),
+            None,
+            &session.killer,
+        ) {
+            warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
         }
     } else {
         return Err(format!("PTY session {} not found", session_id));
@@ -502,36 +566,20 @@ pub fn kill_pty_and_wait(
     );
     let mut mgr = lock_mutex(&manager)?;
     info!(session_id = %session_id, "Killing PTY session and waiting for exit");
-    if let Some(session) = mgr.sessions.remove(&session_id) {
-        session
-            .kill_flag
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        let child = session.child.clone();
-        if let Ok(mut c) = child.lock() {
-            if let Err(e) = c.kill() {
-                warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
-            }
+    if let Some(mut session) = mgr.sessions.remove(&session_id) {
+        session.info.alive = false;
+        if let Err(e) = signal_pty_kill(
+            &session_id,
+            session.kill_flag.as_ref(),
+            None,
+            &session.killer,
+        ) {
+            warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
         }
+        let child = session.child.clone();
         drop(mgr);
 
-        let start = std::time::Instant::now();
-        loop {
-            // The reader thread may also wait/reap this child concurrently.
-            // `Ok(Some)` = exited; `Err` after a kill means the reader thread
-            // already reaped it, so the child is gone either way — both count
-            // as a successful exit. Only a live child (`Ok(None)`) keeps us
-            // polling until the timeout.
-            match child.lock().ok().map(|mut c| c.try_wait()) {
-                Some(Ok(Some(_))) | Some(Err(_)) | None => return Ok(true),
-                Some(Ok(None)) if start.elapsed() < timeout => {
-                    std::thread::sleep(std::time::Duration::from_millis(25));
-                }
-                Some(Ok(None)) => {
-                    warn!(session_id = %session_id, ?timeout, "PTY kill timed out");
-                    return Ok(false);
-                }
-            }
-        }
+        Ok(wait_for_pty_child_exit(&session_id, &child, timeout))
     } else {
         Ok(false)
     }
@@ -998,5 +1046,148 @@ pub async fn ssh_check_remote_path(
                 };
             Err(msg.to_string())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use portable_pty::ExitStatus;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    #[derive(Debug)]
+    struct FakeKiller {
+        killed: Arc<AtomicBool>,
+    }
+
+    impl PtyChildKiller for FakeKiller {
+        fn kill(&mut self) -> std::io::Result<()> {
+            self.killed.store(true, Ordering::Relaxed);
+            Ok(())
+        }
+
+        fn clone_killer(&self) -> Box<dyn PtyChildKiller + Send + Sync> {
+            Box::new(Self {
+                killed: self.killed.clone(),
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct FakeChild {
+        exited: Arc<AtomicBool>,
+        try_wait_calls: Arc<AtomicUsize>,
+    }
+
+    impl PtyChildKiller for FakeChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            self.exited.store(true, Ordering::Relaxed);
+            Ok(())
+        }
+
+        fn clone_killer(&self) -> Box<dyn PtyChildKiller + Send + Sync> {
+            Box::new(FakeKiller {
+                killed: self.exited.clone(),
+            })
+        }
+    }
+
+    impl PtyChild for FakeChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
+            self.try_wait_calls.fetch_add(1, Ordering::Relaxed);
+            if self.exited.load(Ordering::Relaxed) {
+                Ok(Some(ExitStatus::with_exit_code(7)))
+            } else {
+                Ok(None)
+            }
+        }
+
+        fn wait(&mut self) -> std::io::Result<ExitStatus> {
+            Ok(ExitStatus::with_exit_code(7))
+        }
+
+        fn process_id(&self) -> Option<u32> {
+            Some(123)
+        }
+
+        #[cfg(windows)]
+        fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> {
+            None
+        }
+    }
+
+    fn shared_fake_child(exited: bool) -> (SharedChild, Arc<AtomicUsize>) {
+        let try_wait_calls = Arc::new(AtomicUsize::new(0));
+        let child = FakeChild {
+            exited: Arc::new(AtomicBool::new(exited)),
+            try_wait_calls: try_wait_calls.clone(),
+        };
+        (Arc::new(Mutex::new(Box::new(child))), try_wait_calls)
+    }
+
+    #[test]
+    fn pty_exit_payload_serializes_exit_code_and_terminated() {
+        let payload = PtyExitPayload {
+            session_id: "session-1".to_string(),
+            exit_code: Some(42),
+            terminated: true,
+        };
+
+        let value = serde_json::to_value(payload).expect("serialize payload");
+
+        assert_eq!(value["sessionId"], "session-1");
+        assert_eq!(value["exitCode"], 42);
+        assert_eq!(value["terminated"], true);
+    }
+
+    #[test]
+    fn terminal_pty_read_error_detects_broken_pipe_and_eio() {
+        let broken = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe");
+        assert!(is_terminal_pty_read_error(&broken));
+
+        let eio = std::io::Error::from_raw_os_error(5);
+        assert!(is_terminal_pty_read_error(&eio));
+    }
+
+    #[test]
+    fn signal_pty_kill_marks_orchestrator_terminated_and_uses_killer() {
+        let kill_flag = AtomicBool::new(false);
+        let orchestrator_killed = AtomicBool::new(false);
+        let killed = Arc::new(AtomicBool::new(false));
+        let killer: SharedChildKiller = Arc::new(Mutex::new(Box::new(FakeKiller {
+            killed: killed.clone(),
+        })));
+
+        signal_pty_kill("session-1", &kill_flag, Some(&orchestrator_killed), &killer)
+            .expect("signal kill");
+
+        assert!(kill_flag.load(Ordering::Relaxed));
+        assert!(orchestrator_killed.load(Ordering::Relaxed));
+        assert!(killed.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn wait_for_pty_child_exit_reports_completed_child() {
+        let (child, try_wait_calls) = shared_fake_child(true);
+
+        assert!(wait_for_pty_child_exit(
+            "session-1",
+            &child,
+            std::time::Duration::from_millis(50),
+        ));
+        assert_eq!(try_wait_calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn wait_for_pty_child_exit_times_out_when_reader_holds_child_lock() {
+        let (child, try_wait_calls) = shared_fake_child(false);
+        let _reader_wait_guard = child.lock().expect("lock child");
+
+        assert!(!wait_for_pty_child_exit(
+            "session-1",
+            &child,
+            std::time::Duration::from_millis(5),
+        ));
+        assert_eq!(try_wait_calls.load(Ordering::Relaxed), 0);
     }
 }

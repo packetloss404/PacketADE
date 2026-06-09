@@ -181,7 +181,7 @@ Deferred items called out in `dev/multi-platform-build.md` and
 - **P3 — Predictive quota awareness.** v1 quota safety is reactive:
   catches `RateLimitError` and pauses. If `@anthropic-ai/claude-agent-sdk`
   ever exposes the `anthropic-ratelimit-*` response headers, switch to
-  predictive — pause *before* the cap.
+  predictive — pause _before_ the cap.
 - **P3 — Subscription-% display for OAuth planner cost.** Currently no
   public Anthropic endpoint surfaces Claude.ai subscription usage. E8
   partially addresses this by surfacing the cumulative planner token
@@ -221,9 +221,11 @@ Deferred items called out in `dev/multi-platform-build.md` and
   `Milestone.description` and `dependencies` in `Milestone.validation_criteria`
   because no proper fields exist. Add `goal: String` and `dependencies: Vec<String>`
   to `Milestone` and migrate.
-- **P3 — `update_task` `target_spec` patch acked-but-not-persisted.**
-  Handler accepts the key, reports it in `updated_fields`, but no Task field
-  carries it. Either persist on the Task or reject the key.
+- **P3 — Persist Task-level `target_spec`.** Batch B made
+  `update_task(target_spec)` truthful by reporting the key in
+  `deferred_fields` instead of `updated_fields`, but the Task model still has
+  no durable target override. Add a Task field + DTO migration if planners
+  need post-create retargeting.
 - **P3 — `update_task` re-queue doesn't re-launch attempt.** A planner that
   flips a task back to Queued has no way to actually re-run it. Either
   reject the Queued transition or wire it to spawn a new attempt.
@@ -407,6 +409,7 @@ Deferred items called out in `dev/multi-platform-build.md` and
   unrelated to mission planner work and have been excluded from
   every mission-planner commit. Land them in their own
   chore/cleanup commit when convenient.
+
 ## GitHub pane v0.9+ (from v0.8 deferrals)
 
 - **P2 — Authored PR line comments + reply threads.** v0.8 shipped read-only
@@ -499,7 +502,7 @@ hardening passes worth doing when context allows.
 - **P3 — `llm_openai_compat.rs:349-352` finish_reason "stop" branch
   flushes tool_use.** May emit a spurious `ToolUseEnd` for an
   incomplete/malformed tool stream — `stop` typically means the
-  assistant message ended *without* a tool call. Verify intent.
+  assistant message ended _without_ a tool call. Verify intent.
 - **P3 — Brand violation in `core/llm_system_prompt.rs:57`.**
   `BASE_SYSTEM_PROMPT` hardcodes `"PacketADE"` instead of using
   `brand::APP_NAME`. Switch to `format!`.
@@ -617,6 +620,12 @@ confirmed / 6 refuted). Severities below are **post-debate**. Priority map: high
 medium→P2, low→P3. Two duplicate pairs merged: **F26≡G04**, **F36≡G32**. As each ships it
 moves to `CHANGELOG.md`. Some items overlap pre-existing backlog entries above (e.g. F21,
 F34, G17, G19) — dedupe on fix.
+
+**Batch B worktree status (2026-06-08, not yet shipped):** Current code now has implementations
+for the "It silently failed" batch: F13, G23, G24, G25, F33, F34, and G02. F34 is closed as a
+truthfulness fix (`target_spec` is returned in `deferred_fields`, not `updated_fields`); actual
+Task-level `target_spec` persistence remains future work. Keep these in the review ledger until
+the Batch B branch is validated and moved to `CHANGELOG.md`.
 
 ### P1 — confirmed high
 

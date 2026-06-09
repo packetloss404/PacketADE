@@ -247,9 +247,10 @@ export function useTerminalSession({
       let buffered = "";
       let exitWhileBuffering = false;
       let sessionFinished = false;
-      // Real exit outcome carried by the pty:exit event. Defaults assume a
-      // clean exit; the listener overwrites these when the backend reports
-      // an exit code or an orchestrator-initiated kill.
+      // Real exit outcome carried by the pty:exit event. If the session
+      // disappears before we see that event, task sessions fail closed rather
+      // than silently recording a crashed/killed process as successful.
+      let sawExitPayload = false;
       let exitCode: number | null = null;
       let exitTerminated = false;
       const finishSession = () => {
@@ -294,11 +295,12 @@ export function useTerminalSession({
         }
 
         if (taskId) {
-          // A task succeeds only when nobody asked it to stop AND the real
-          // exit outcome was clean: not an orchestrator kill (flight
-          // pause/cancel) and a zero / unknown exit code. A non-zero exit
-          // code means the agent process failed and must be scored as such.
-          const cleanExit = exitCode === null || exitCode === 0;
+          // A task succeeds only when nobody asked it to stop AND we observed
+          // a terminal event whose outcome was clean: not an orchestrator kill
+          // (flight pause/cancel) and a zero / legacy-unknown exit code. If the
+          // session merely vanished from listPtySessions before the exit event,
+          // fail closed.
+          const cleanExit = sawExitPayload && (exitCode === null || exitCode === 0);
           const success = !wasRequested && !exitTerminated && cleanExit;
           void useOrchestrationStateStore.getState().onTaskComplete(taskId, success);
         }
@@ -314,6 +316,7 @@ export function useTerminalSession({
 
       const exitUnlisten = await listen<unknown>(ptyExitEvent(sessionId), (event) => {
         const parsed = parsePtyExitPayload(event.payload);
+        sawExitPayload = true;
         exitCode = parsed.exitCode;
         exitTerminated = parsed.terminated;
         finishSession();
