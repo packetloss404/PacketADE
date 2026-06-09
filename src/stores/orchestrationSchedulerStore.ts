@@ -27,6 +27,8 @@ import { logSwallowed } from "@/lib/logSwallowed";
 interface SchedulerState {
   /** Whether the scheduling loop is running */
   loopRunning: boolean;
+  /** Last scheduler-loop failure visible to UI/tests after the loop stalls. */
+  lastError: string | null;
 
   tick: () => Promise<void>;
   startLoop: () => void;
@@ -46,7 +48,7 @@ let loopInterval: ReturnType<typeof setInterval> | null = null;
  * `resumeFlight`, which is the user's natural retry path.
  */
 let consecutiveTickFailures = 0;
-const MAX_CONSECUTIVE_TICK_FAILURES = 5;
+export const MAX_CONSECUTIVE_TICK_FAILURES = 5;
 
 /**
  * Surface a persistently-failing scheduler backend as a desktop notification.
@@ -72,6 +74,7 @@ function notifySchedulerStalled(failures: number): void {
 
 export const useOrchestrationSchedulerStore = create<SchedulerState>((set, get) => ({
   loopRunning: false,
+  lastError: null,
 
   tick: async () => {
     const stateStore = useOrchestrationStateStore.getState();
@@ -91,13 +94,13 @@ export const useOrchestrationSchedulerStore = create<SchedulerState>((set, get) 
       // streak; once it crosses the threshold we notify and pause so a
       // persistently failing backend is visible.
       consecutiveTickFailures += 1;
-      logSwallowed(
-        `orchestration.tick (consecutive failure #${consecutiveTickFailures})`,
-      )(err);
+      logSwallowed(`orchestration.tick (consecutive failure #${consecutiveTickFailures})`)(err);
       if (consecutiveTickFailures >= MAX_CONSECUTIVE_TICK_FAILURES) {
+        set({
+          lastError: `Mission scheduler backend failed ${consecutiveTickFailures} times in a row; dispatch loop paused.`,
+        });
         notifySchedulerStalled(consecutiveTickFailures);
         get().stopLoop();
-        consecutiveTickFailures = 0;
       }
       return;
     }
@@ -224,7 +227,7 @@ export const useOrchestrationSchedulerStore = create<SchedulerState>((set, get) 
     // Fresh start (or a user-driven retry after a stall) — clear any leftover
     // failure streak so the threshold is measured from this point on.
     consecutiveTickFailures = 0;
-    set({ loopRunning: true });
+    set({ loopRunning: true, lastError: null });
     loopInterval = setInterval(() => {
       void get().tick();
 
@@ -243,6 +246,7 @@ export const useOrchestrationSchedulerStore = create<SchedulerState>((set, get) 
       clearInterval(loopInterval);
       loopInterval = null;
     }
+    consecutiveTickFailures = 0;
     set({ loopRunning: false });
   },
 }));

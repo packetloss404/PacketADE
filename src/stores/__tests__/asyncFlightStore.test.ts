@@ -1,28 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AttemptTargetSpec } from "@/lib/tauri";
 import type { Attempt, Flight, Task } from "@/types/flight";
+import { apiAgentDoneEvent, apiAgentErrorEvent } from "@/lib/events";
+
+type TauriListener = (event: { payload?: { message?: string } }) => void;
 
 const mocks = vi.hoisted(() => ({
   launchFlightAsync: vi.fn(),
   assertCostGuardrailsAllowLaunch: vi.fn(),
   createApiConversation: vi.fn(),
+  loadPersistedState: vi.fn(),
+  markAttemptStatus: vi.fn(),
+  notifyAttemptCompleted: vi.fn(),
+  conversations: [] as Array<{
+    id: string;
+    messages: Array<{ role: string; content: string; isStreaming?: boolean }>;
+  }>,
+  listeners: new Map<string, TauriListener>(),
+  listen: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: mocks.listen,
 }));
 
 vi.mock("@/lib/tauri", () => ({
   launchFlightAsync: mocks.launchFlightAsync,
   cancelFlightAttempt: vi.fn().mockResolvedValue(undefined),
   cleanupAttemptWorktreeSsh: vi.fn().mockResolvedValue(undefined),
-  markAttemptStatus: vi.fn().mockResolvedValue(undefined),
+  markAttemptStatus: mocks.markAttemptStatus,
   gitPushBranch: vi.fn().mockResolvedValue(undefined),
   githubCreatePr: vi.fn().mockResolvedValue(JSON.stringify({ number: 1 })),
   setAttemptDraftPr: vi.fn().mockResolvedValue(undefined),
-  loadPersistedState: vi.fn().mockResolvedValue({
-    version: 1,
-    flights: [],
-    agents: [],
-    settings: { maxParallelSessions: 3, milestoneGating: true, projectPath: "." },
-    ui: {},
-  }),
+  loadPersistedState: mocks.loadPersistedState,
   saveFlightsSlice: vi.fn().mockResolvedValue(undefined),
   saveUiSlice: vi.fn().mockResolvedValue(undefined),
 }));
@@ -34,9 +44,14 @@ vi.mock("@/stores/costGuardrailStore", () => ({
 vi.mock("@/stores/agentTaskStore", () => ({
   useAgentTaskStore: {
     getState: () => ({
+      conversations: mocks.conversations,
       createApiConversation: mocks.createApiConversation,
     }),
   },
+}));
+
+vi.mock("@/lib/notifications", () => ({
+  notifyAttemptCompleted: mocks.notifyAttemptCompleted,
 }));
 
 vi.mock("@/stores/serverStore", () => ({
@@ -169,9 +184,26 @@ function task(overrides: Partial<Task> = {}): Task {
 describe("asyncFlightStore collision gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.listeners.clear();
+    mocks.conversations = [];
     mocks.launchFlightAsync.mockResolvedValue([]);
     mocks.assertCostGuardrailsAllowLaunch.mockResolvedValue(undefined);
     mocks.createApiConversation.mockResolvedValue(undefined);
+    mocks.loadPersistedState.mockImplementation(async () => ({
+      version: 1,
+      flights: useFlightStore.getState().flights,
+      agents: [],
+      settings: { maxParallelSessions: 3, milestoneGating: true, projectPath: "." },
+      ui: {},
+    }));
+    mocks.markAttemptStatus.mockResolvedValue(undefined);
+    mocks.notifyAttemptCompleted.mockResolvedValue(undefined);
+    mocks.listen.mockImplementation((eventName: string, callback: TauriListener) => {
+      mocks.listeners.set(eventName, callback);
+      return Promise.resolve(() => {
+        mocks.listeners.delete(eventName);
+      });
+    });
     useFlightStore.setState({ flights: [], activeFlightId: null });
   });
 
@@ -260,13 +292,181 @@ describe("asyncFlightStore collision gate", () => {
     });
 
     await expect(
-      useAsyncFlightStore
-        .getState()
-        .launchAsync("new-flight", "Do it", [localTarget("d:/repo")], {
-          allowPathCollisions: true,
-        }),
+      useAsyncFlightStore.getState().launchAsync("new-flight", "Do it", [localTarget("d:/repo")], {
+        allowPathCollisions: true,
+      }),
     ).resolves.toEqual([]);
 
     expect(mocks.launchFlightAsync).toHaveBeenCalledOnce();
+  });
+
+  it("moves an async attempt to reviewing on api-agent:done without requiring AttemptTile to be mounted", async () => {
+    const launchedAttempt = attempt({ id: "att-done", sessionId: "session-done" });
+    mocks.launchFlightAsync.mockResolvedValue([launchedAttempt]);
+    mocks.conversations = [
+      {
+        id: "session-done",
+        messages: [
+          {
+            role: "assistant",
+            content: "Finished normally, no sentinel marker here.",
+            isStreaming: false,
+          },
+        ],
+      },
+    ];
+    useFlightStore.setState({ flights: [flight()], activeFlightId: null });
+
+    await useAsyncFlightStore.getState().launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
+    await vi.waitFor(() => {
+      expect(mocks.listeners.has(apiAgentDoneEvent("session-done"))).toBe(true);
+    });
+
+    mocks.listeners.get(apiAgentDoneEvent("session-done"))?.({ payload: {} });
+
+    await vi.waitFor(() => {
+      expect(mocks.markAttemptStatus).toHaveBeenCalledWith("flight-1", "att-done", "reviewing");
+      expect(
+        useFlightStore
+          .getState()
+          .flights.find((f) => f.id === "flight-1")
+          ?.attempts?.find((a) => a.id === "att-done")?.status,
+      ).toBe("reviewing");
+    });
+    expect(mocks.notifyAttemptCompleted).toHaveBeenCalledWith("Mission", "local");
+    await vi.waitFor(() => {
+      expect(mocks.listeners.has(apiAgentDoneEvent("session-done"))).toBe(false);
+      expect(mocks.listeners.has(apiAgentErrorEvent("session-done"))).toBe(false);
+    });
+  });
+
+  it("moves an async attempt to failed with error text on api-agent:error without UI mount", async () => {
+    const launchedAttempt = attempt({ id: "att-error", sessionId: "session-error" });
+    mocks.launchFlightAsync.mockResolvedValue([launchedAttempt]);
+    useFlightStore.setState({ flights: [flight()], activeFlightId: null });
+
+    await useAsyncFlightStore.getState().launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
+    await vi.waitFor(() => {
+      expect(mocks.listeners.has(apiAgentErrorEvent("session-error"))).toBe(true);
+    });
+
+    mocks.listeners.get(apiAgentErrorEvent("session-error"))?.({
+      payload: { message: "sidecar disconnected" },
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.markAttemptStatus).toHaveBeenCalledWith("flight-1", "att-error", "failed");
+      const current = useFlightStore
+        .getState()
+        .flights.find((f) => f.id === "flight-1")
+        ?.attempts?.find((a) => a.id === "att-error");
+      expect(current?.status).toBe("failed");
+      expect(current?.errorMessage).toBe("sidecar disconnected");
+    });
+  });
+
+  it("preserves a backend fast-start failure returned by launchFlightAsync", async () => {
+    const failedAttempt = attempt({
+      id: "att-fast-fail",
+      sessionId: "session-fast-fail",
+      status: "failed",
+      errorMessage: "Session start failed: sidecar unavailable",
+      completedAt: 2,
+    });
+    mocks.launchFlightAsync.mockResolvedValue([failedAttempt]);
+    useFlightStore.setState({ flights: [flight()], activeFlightId: null });
+
+    await useAsyncFlightStore.getState().launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
+
+    const current = useFlightStore
+      .getState()
+      .flights.find((f) => f.id === "flight-1")
+      ?.attempts?.find((a) => a.id === "att-fast-fail");
+    expect(current?.status).toBe("failed");
+    expect(current?.errorMessage).toBe("Session start failed: sidecar unavailable");
+    expect(mocks.listeners.has(apiAgentDoneEvent("session-fast-fail"))).toBe(false);
+    expect(mocks.listeners.has(apiAgentErrorEvent("session-fast-fail"))).toBe(false);
+  });
+
+  it("uses the refreshed backend terminal status when an attempt finishes before listeners are ready", async () => {
+    const optimisticAttempt = attempt({
+      id: "att-instant-done",
+      sessionId: "session-instant-done",
+      status: "running",
+    });
+    const persistedAttempt = {
+      ...optimisticAttempt,
+      status: "reviewing" as const,
+    };
+    mocks.launchFlightAsync.mockResolvedValue([optimisticAttempt]);
+    mocks.loadPersistedState.mockResolvedValue({
+      version: 1,
+      flights: [flight({ attempts: [persistedAttempt] })],
+      agents: [],
+      settings: { maxParallelSessions: 3, milestoneGating: true, projectPath: "." },
+      ui: {},
+    });
+    useFlightStore.setState({ flights: [flight()], activeFlightId: null });
+
+    await useAsyncFlightStore.getState().launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
+
+    const current = useFlightStore
+      .getState()
+      .flights.find((f) => f.id === "flight-1")
+      ?.attempts?.find((a) => a.id === "att-instant-done");
+    expect(current?.status).toBe("reviewing");
+    expect(mocks.markAttemptStatus).not.toHaveBeenCalledWith(
+      "flight-1",
+      "att-instant-done",
+      "reviewing",
+    );
+  });
+
+  it("registers terminal listeners for planner-hydrated active attempts", async () => {
+    const hydratedAttempt = attempt({
+      id: "att-hydrated",
+      sessionId: "session-hydrated",
+      status: "running",
+    });
+
+    useFlightStore.setState({
+      flights: [flight({ attempts: [hydratedAttempt] })],
+      activeFlightId: "flight-1",
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.listeners.has(apiAgentDoneEvent("session-hydrated"))).toBe(true);
+      expect(mocks.listeners.has(apiAgentErrorEvent("session-hydrated"))).toBe(true);
+    });
+  });
+
+  it("handles sentinel completions at store level without double notification", async () => {
+    const launchedAttempt = attempt({ id: "att-sentinel", sessionId: "session-sentinel" });
+    mocks.launchFlightAsync.mockResolvedValue([launchedAttempt]);
+    mocks.conversations = [
+      {
+        id: "session-sentinel",
+        messages: [
+          {
+            role: "assistant",
+            content: "Work complete. <PACKETCODE_DONE>",
+            isStreaming: true,
+          },
+        ],
+      },
+    ];
+    useFlightStore.setState({ flights: [flight()], activeFlightId: null });
+
+    await useAsyncFlightStore.getState().launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
+    await vi.waitFor(() => {
+      expect(mocks.listeners.has(apiAgentDoneEvent("session-sentinel"))).toBe(true);
+    });
+
+    mocks.listeners.get(apiAgentDoneEvent("session-sentinel"))?.({ payload: {} });
+
+    await vi.waitFor(() => {
+      expect(mocks.markAttemptStatus).toHaveBeenCalledWith("flight-1", "att-sentinel", "reviewing");
+    });
+    expect(mocks.notifyAttemptCompleted).toHaveBeenCalledTimes(1);
   });
 });

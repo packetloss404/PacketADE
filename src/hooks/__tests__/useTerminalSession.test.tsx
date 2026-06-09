@@ -20,28 +20,20 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 
-vi.mock("@/lib/tauri", () => ({
-  createPtySession: vi.fn(),
-  writePty: vi.fn(),
-  killPty: vi.fn(),
-  parsePtyExitPayload: vi.fn((payload: unknown) => {
-    if (payload && typeof payload === "object") {
-      const p = payload as { sessionId?: unknown; exitCode?: unknown; terminated?: unknown };
-      return {
-        sessionId: typeof p.sessionId === "string" ? p.sessionId : "",
-        exitCode: typeof p.exitCode === "number" ? p.exitCode : null,
-        terminated: p.terminated === true,
-      };
-    }
-    return {
-      sessionId: typeof payload === "string" ? payload : "",
-      exitCode: null,
-      terminated: false,
-    };
-  }),
-  readPtyTranscript: vi.fn().mockResolvedValue({ data: "" }),
-  listPtySessions: vi.fn().mockResolvedValue([{ id: "sess-1", alive: true }]),
-}));
+vi.mock("@/lib/tauri", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+
+  return {
+    ...actual,
+    createPtySession: vi.fn(),
+    writePty: vi.fn(),
+    killPty: vi.fn(),
+    readPtyTranscript: vi.fn().mockResolvedValue({ data: "" }),
+    listPtySessions: vi
+      .fn()
+      .mockResolvedValue([{ id: "sess-1", project_path: "/project-a", pid: 1234, alive: true }]),
+  };
+});
 
 const attachSessionToTask = vi.fn();
 const onTaskApprovalNeeded = vi.fn();
@@ -71,10 +63,17 @@ vi.mock("@/lib/notifications", () => ({
   notifySessionError: vi.fn(),
 }));
 
-import { createPtySession, killPty, writePty } from "@/lib/tauri";
+import {
+  createPtySession,
+  killPty,
+  listPtySessions,
+  parsePtyExitPayload,
+  writePty,
+} from "@/lib/tauri";
 
 const mockCreatePtySession = vi.mocked(createPtySession);
 const mockKillPty = vi.mocked(killPty);
+const mockListPtySessions = vi.mocked(listPtySessions);
 const mockWritePty = vi.mocked(writePty);
 
 function createTerminalRef() {
@@ -152,6 +151,9 @@ describe("useTerminalSession", () => {
 
     mockCreatePtySession.mockResolvedValue("sess-1");
     mockKillPty.mockResolvedValue(undefined);
+    mockListPtySessions.mockResolvedValue([
+      { id: "sess-1", project_path: "/project-a", pid: 1234, alive: true },
+    ]);
     mockWritePty.mockResolvedValue(undefined);
     attachSessionToTask.mockReset();
     onTaskApprovalNeeded.mockReset();
@@ -195,14 +197,68 @@ describe("useTerminalSession", () => {
     unmount();
   });
 
-  it("marks an exited task as complete when the session ends naturally", async () => {
+  it("parses legacy and structured PTY exit payloads", () => {
+    expect(parsePtyExitPayload("sess-1")).toEqual({
+      sessionId: "sess-1",
+      exitCode: null,
+      terminated: false,
+    });
+    expect(parsePtyExitPayload({ sessionId: "sess-1", exitCode: 2, terminated: true })).toEqual({
+      sessionId: "sess-1",
+      exitCode: 2,
+      terminated: true,
+    });
+  });
+
+  it("marks an exited task as complete when the session exits naturally", async () => {
     const { unmount } = await startHook();
 
     await act(async () => {
-      listeners[ptyExitEvent("sess-1")]?.({ payload: "sess-1" });
+      listeners[ptyExitEvent("sess-1")]?.({
+        payload: { sessionId: "sess-1", exitCode: 0, terminated: false },
+      });
     });
 
     expect(onTaskComplete).toHaveBeenCalledWith("task-1", true);
+
+    unmount();
+  });
+
+  it("marks a non-zero PTY exit code as unsuccessful task completion", async () => {
+    const { unmount } = await startHook();
+
+    await act(async () => {
+      listeners[ptyExitEvent("sess-1")]?.({
+        payload: { sessionId: "sess-1", exitCode: 2, terminated: false },
+      });
+    });
+
+    expect(onTaskComplete).toHaveBeenCalledWith("task-1", false);
+
+    unmount();
+  });
+
+  it("marks an orchestrator-terminated PTY exit as unsuccessful task completion", async () => {
+    const { unmount } = await startHook();
+
+    await act(async () => {
+      listeners[ptyExitEvent("sess-1")]?.({
+        payload: { sessionId: "sess-1", exitCode: null, terminated: true },
+      });
+    });
+
+    expect(onTaskComplete).toHaveBeenCalledWith("task-1", false);
+
+    unmount();
+  });
+
+  it("fails task completion when the session disappears before a PTY exit payload arrives", async () => {
+    mockListPtySessions.mockResolvedValueOnce([]);
+
+    const { unmount } = await startHook();
+
+    expect(onTaskComplete).toHaveBeenCalledWith("task-1", false);
+    expect(mockWritePty).not.toHaveBeenCalled();
 
     unmount();
   });

@@ -136,10 +136,12 @@ Mutate fields on an existing task. The dispatcher whitelists allowed patch keys:
 - `title` (string) — rename the task.
 - `prompt` (string) — rewrite the executor's instruction.
 - `agent_id` (string) — change which agent runs it.
-- `target_spec` (object) — change the execution target.
+- `target_spec` (object) — accepted for forward compatibility but not
+  persisted on the Task model yet. If returned in `deferred_fields`, treat the
+  retarget as **not landed** and choose another coordination strategy.
 - `status` — **only** `"cancelled"` (abort this task) or `"queued"` (re-queue a previously cancelled task). All other status values are owned by the executor and the dispatcher will reject them with a clear error directing you to `mark_task_blocked` or `replan_after_failure`.
 
-Unknown patch keys are silently dropped. Returns `{ ok: true, updated_fields: string[] }`.
+Unknown patch keys are silently dropped. Returns `{ ok: true, updated_fields: string[], deferred_fields: string[] }`.
 
 ### `mark_task_blocked(task_id, reason)`
 
@@ -650,10 +652,10 @@ fn render_collision(task_ids: &[String], snapshot: &Value) -> String {
          \n\
          These tasks can't run in parallel because they'd write the same\n\
          files. Options:\n\
-         1. Re-target one or more tasks via update_task(target_spec: ...)\n\
-            so they run sequentially or on different files.\n\
-         2. Merge into a single task via mark_task_blocked + create_task with\n\
+         1. Merge into a single task via mark_task_blocked + create_task with\n\
             the combined work.\n\
+         2. Cancel or block one task and create a replacement task with a\n\
+            different target_spec.\n\
          3. Escalate via request_user_approval if you can't decide."
     )
 }
@@ -1457,7 +1459,9 @@ mod tests {
             "collision body should include the claimed paths"
         );
         assert!(
-            msg.contains("update_task") && msg.contains("mark_task_blocked"),
+            msg.contains("mark_task_blocked")
+                && msg.contains("create_task")
+                && msg.contains("request_user_approval"),
             "should suggest the resolution tools"
         );
     }

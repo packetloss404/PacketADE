@@ -320,6 +320,10 @@ fn is_active_attempt(status: AttemptStatus) -> bool {
     )
 }
 
+fn should_apply_attempt_status(current: AttemptStatus, next: AttemptStatus) -> bool {
+    next != AttemptStatus::Running || is_active_attempt(current)
+}
+
 fn active_attempt_collision_message(incoming: &Attempt, existing: &Attempt) -> Option<String> {
     if !is_active_attempt(existing.status) {
         return None;
@@ -373,6 +377,7 @@ async fn append_attempt(
     flight_id: &str,
     attempt: &Attempt,
     allow_path_collisions: bool,
+    prompt: Option<String>,
 ) -> Result<(), String> {
     // v0.8 race-fix: use `with_state_lock` so concurrent async writers
     // (e.g. multiple `launch_flight_async` invocations or interleaving with
@@ -403,6 +408,9 @@ async fn append_attempt(
                 .iter_mut()
                 .find(|f| f.id == flight_id)
                 .ok_or_else(|| format!("Flight '{}' not found", flight_id))?;
+            if flight.prompt.is_none() {
+                flight.prompt = prompt;
+            }
             flight.attempts.push(attempt);
             flight.updated_at = now_ms();
             Ok(())
@@ -434,6 +442,9 @@ async fn update_attempt_status(
                 .iter_mut()
                 .find(|a| a.id == attempt_id)
                 .ok_or_else(|| format!("Attempt '{}' not found", attempt_id))?;
+            if !should_apply_attempt_status(attempt.status, status) {
+                return Ok(());
+            }
             attempt.status = status;
             if matches!(
                 status,
@@ -448,6 +459,51 @@ async fn update_attempt_status(
             Ok(())
         })();
         std::future::ready(result)
+    })
+    .await
+}
+
+fn apply_attempt_status_by_session(
+    state: &mut storage::PersistedState,
+    session_id: &str,
+    status: AttemptStatus,
+    error: Option<String>,
+) -> bool {
+    for flight in &mut state.flights {
+        if let Some(attempt) = flight
+            .attempts
+            .iter_mut()
+            .find(|attempt| attempt.session_id == session_id)
+        {
+            if !is_active_attempt(attempt.status) {
+                return false;
+            }
+            attempt.status = status;
+            if matches!(
+                status,
+                AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Cancelled
+            ) {
+                attempt.completed_at = Some(now_ms());
+            }
+            if let Some(message) = error {
+                attempt.error_message = Some(message);
+            }
+            flight.updated_at = now_ms();
+            return true;
+        }
+    }
+    false
+}
+
+pub async fn update_attempt_status_by_session(
+    session_id: &str,
+    status: AttemptStatus,
+    error: Option<String>,
+) -> Result<bool, String> {
+    let session_id = session_id.to_string();
+    storage::with_state_lock(move |state| {
+        let updated = apply_attempt_status_by_session(state, &session_id, status, error);
+        std::future::ready(Ok(updated))
     })
     .await
 }
@@ -634,7 +690,14 @@ pub async fn launch_flight_async(
             draft_pr_number: None,
         };
 
-        if let Err(e) = append_attempt(&flight_id, &attempt, allow_path_collisions).await {
+        if let Err(e) = append_attempt(
+            &flight_id,
+            &attempt,
+            allow_path_collisions,
+            Some(prompt.clone()),
+        )
+        .await
+        {
             warn!(error = %e, "Failed to persist Attempt; aborting");
             cleanup_unpersisted_attempt(&spec, &attempt.target, &attempt_id).await;
             return Err(e);
@@ -643,7 +706,7 @@ pub async fn launch_flight_async(
         // Hand off to the existing API agent session machinery. session_id is
         // shared with the agentTaskStore conversation id on the frontend so
         // the AttemptTile can subscribe to streaming events.
-        match start_api_agent_session(
+        let (final_status, final_error) = match start_api_agent_session(
             app_handle.clone(),
             state.clone(),
             sidecar.clone(),
@@ -672,17 +735,20 @@ pub async fn launch_flight_async(
                 let _ =
                     update_attempt_status(&flight_id, &attempt_id, AttemptStatus::Running, None)
                         .await;
+                (AttemptStatus::Running, None)
             }
             Err(e) => {
+                let message = format!("Session start failed: {}", e);
                 let _ = update_attempt_status(
                     &flight_id,
                     &attempt_id,
                     AttemptStatus::Failed,
-                    Some(format!("Session start failed: {}", e)),
+                    Some(message.clone()),
                 )
                 .await;
+                (AttemptStatus::Failed, Some(message))
             }
-        }
+        };
 
         info!(
             flight = %flight_id,
@@ -690,10 +756,38 @@ pub async fn launch_flight_async(
             agent = %agent_config_id,
             "Launched async attempt"
         );
-        launched.push(attempt);
+        launched.push(Attempt {
+            status: final_status,
+            completed_at: if matches!(
+                final_status,
+                AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Cancelled
+            ) {
+                Some(now_ms())
+            } else {
+                None
+            },
+            error_message: final_error,
+            ..attempt
+        });
     }
 
-    Ok(launched)
+    let latest_state = storage::load_state();
+    if let Some(flight) = latest_state.flights.iter().find(|f| f.id == flight_id) {
+        let latest_attempts = launched
+            .iter()
+            .map(|attempt| {
+                flight
+                    .attempts
+                    .iter()
+                    .find(|current| current.id == attempt.id)
+                    .cloned()
+                    .unwrap_or_else(|| attempt.clone())
+            })
+            .collect();
+        Ok(latest_attempts)
+    } else {
+        Ok(launched)
+    }
 }
 
 #[tauri::command]
@@ -902,6 +996,7 @@ pub async fn mark_attempt_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::flight::{Flight, FlightPriority, FlightStatus};
 
     fn local_spec(path: &str) -> AttemptTargetSpec {
         AttemptTargetSpec::Local {
@@ -954,6 +1049,34 @@ mod tests {
         }
     }
 
+    fn flight_with_attempt(attempt: Attempt) -> Flight {
+        Flight {
+            id: "flight-1".to_string(),
+            title: "Mission".to_string(),
+            objective: "Do work".to_string(),
+            status: FlightStatus::Active,
+            priority: FlightPriority::Medium,
+            project_path: "D:/repo".to_string(),
+            workspace_id: None,
+            git_branch: None,
+            milestones: Vec::new(),
+            linked_session_ids: Vec::new(),
+            created_at: 1,
+            updated_at: 1,
+            completed_at: None,
+            total_cost: 0.0,
+            total_tokens: 0,
+            prompt: None,
+            attempts: vec![attempt],
+            planner_session_id: None,
+            planner_status: None,
+            planner_cost: None,
+            planner_tokens: None,
+            planner_provider: None,
+            publish_attempts_as_prs: false,
+        }
+    }
+
     #[test]
     fn validate_target_claims_blocks_duplicate_roots() {
         let result = validate_target_claims(&[local_spec("D:\\Repo"), local_spec("d:/repo/src")]);
@@ -998,5 +1121,86 @@ mod tests {
         let existing = local_attempt("att-done", "D:\\Repo", AttemptStatus::Completed);
 
         assert!(active_attempt_collision_message(&incoming, &existing).is_none());
+    }
+
+    #[test]
+    fn startup_running_status_does_not_regress_terminal_or_reviewing_attempts() {
+        assert!(should_apply_attempt_status(
+            AttemptStatus::Provisioning,
+            AttemptStatus::Running
+        ));
+        assert!(!should_apply_attempt_status(
+            AttemptStatus::Reviewing,
+            AttemptStatus::Running
+        ));
+        assert!(!should_apply_attempt_status(
+            AttemptStatus::Failed,
+            AttemptStatus::Running
+        ));
+    }
+
+    #[test]
+    fn apply_attempt_status_by_session_moves_active_attempt_to_reviewing() {
+        let mut state = storage::PersistedState::default();
+        state.flights = vec![flight_with_attempt(local_attempt(
+            "session-1",
+            "D:\\Repo",
+            AttemptStatus::Running,
+        ))];
+
+        let updated = apply_attempt_status_by_session(
+            &mut state,
+            "session-1",
+            AttemptStatus::Reviewing,
+            None,
+        );
+
+        assert!(updated);
+        let attempt = &state.flights[0].attempts[0];
+        assert_eq!(attempt.status, AttemptStatus::Reviewing);
+        assert!(attempt.completed_at.is_none());
+    }
+
+    #[test]
+    fn apply_attempt_status_by_session_does_not_clobber_cancelled_attempt() {
+        let mut state = storage::PersistedState::default();
+        let mut attempt = local_attempt("session-1", "D:\\Repo", AttemptStatus::Cancelled);
+        attempt.completed_at = Some(123);
+        state.flights = vec![flight_with_attempt(attempt)];
+
+        let updated = apply_attempt_status_by_session(
+            &mut state,
+            "session-1",
+            AttemptStatus::Reviewing,
+            None,
+        );
+
+        assert!(!updated);
+        let attempt = &state.flights[0].attempts[0];
+        assert_eq!(attempt.status, AttemptStatus::Cancelled);
+        assert_eq!(attempt.completed_at, Some(123));
+    }
+
+    #[test]
+    fn apply_attempt_status_by_session_records_error_on_failed_attempt() {
+        let mut state = storage::PersistedState::default();
+        state.flights = vec![flight_with_attempt(local_attempt(
+            "session-1",
+            "D:\\Repo",
+            AttemptStatus::Provisioning,
+        ))];
+
+        let updated = apply_attempt_status_by_session(
+            &mut state,
+            "session-1",
+            AttemptStatus::Failed,
+            Some("provider failed".to_string()),
+        );
+
+        assert!(updated);
+        let attempt = &state.flights[0].attempts[0];
+        assert_eq!(attempt.status, AttemptStatus::Failed);
+        assert!(attempt.completed_at.is_some());
+        assert_eq!(attempt.error_message.as_deref(), Some("provider failed"));
     }
 }

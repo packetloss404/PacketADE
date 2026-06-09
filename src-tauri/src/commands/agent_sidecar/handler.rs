@@ -294,6 +294,12 @@ impl SidecarManager {
                     .get("resumeToken")
                     .and_then(|v| v.as_str())
                     .map(String::from);
+                let _ = crate::commands::flight_attempts::update_attempt_status_by_session(
+                    &session_id,
+                    crate::core::flight::AttemptStatus::Reviewing,
+                    None,
+                )
+                .await;
                 let _ = self.app_handle.emit(
                     &done_event(&session_id),
                     DonePayload {
@@ -671,6 +677,12 @@ impl SidecarManager {
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown sidecar error")
                     .to_string();
+                let _ = crate::commands::flight_attempts::update_attempt_status_by_session(
+                    &session_id,
+                    crate::core::flight::AttemptStatus::Failed,
+                    Some(message.clone()),
+                )
+                .await;
                 let _ = self.app_handle.emit(
                     &error_event(&session_id),
                     ErrorPayload {

@@ -32,6 +32,8 @@ use crate::core::execution::{sh_quote, SshConfig};
 
 const REMOTE_SIDECAR_TIMEOUT_SECS: u64 = 25;
 const REMOTE_PATH_SETUP: &str = r#"export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/.opencode/bin:$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node/" 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH" 2>/dev/null;"#;
+const SIDECAR_RESTART_RECOVERABLE_ERROR: &str =
+    "Sidecar restarted — please resend your message to continue this conversation.";
 
 #[derive(Clone)]
 pub(super) struct RemoteSidecarSession {
@@ -370,6 +372,8 @@ impl SidecarManager {
             let target_for_wait = target_label.clone();
             let remote_sessions = Arc::clone(&self.remote_sessions);
             let owned_sessions = Arc::clone(&self.owned_sessions);
+            let remote_owned_sessions = Arc::clone(&self.remote_owned_sessions);
+            let oneshot_waiters = Arc::clone(&self.oneshot_waiters);
             let app_handle = self.app_handle.clone();
             tokio::spawn(async move {
                 let status = child.wait().await;
@@ -379,8 +383,12 @@ impl SidecarManager {
                 }
 
                 let still_owned = {
-                    let guard = owned_sessions.lock().await;
-                    guard.contains(&session_for_wait)
+                    let mut guard = owned_sessions.lock().await;
+                    guard.remove(&session_for_wait)
+                };
+                {
+                    let mut guard = remote_owned_sessions.lock().await;
+                    guard.remove(&session_for_wait);
                 };
                 let message = match status {
                     Ok(exit) if exit.success() => {
@@ -397,6 +405,12 @@ impl SidecarManager {
                             message: message.clone(),
                         },
                     );
+                    let mut waiters = oneshot_waiters.lock().await;
+                    if let Some(mut waiter) = waiters.remove(&session_for_wait) {
+                        if let Some(sender) = waiter.sender.take() {
+                            let _ = sender.send(Err(message.clone()));
+                        }
+                    }
                 } else {
                     info!(session_id = %session_for_wait, target = %target_for_wait, %message);
                 }
@@ -476,10 +490,8 @@ impl SidecarManager {
             // branch below re-runs this with the terminal message; because this
             // clears `owned_sessions`, that second call finds nothing left to
             // emit (no double-emission).
-            self.fan_out_crash_error(
-                "Sidecar restarted — please resend your message to continue this conversation.",
-            )
-            .await;
+            self.fan_out_crash_error(SIDECAR_RESTART_RECOVERABLE_ERROR)
+                .await;
 
             // Prune restart times outside the window, then check the rate limit.
             let now = Instant::now();
@@ -918,50 +930,73 @@ impl SidecarManager {
     /// `owned_sessions`, the second call after a restart-loop exhaustion finds
     /// nothing left to emit, so there is no double-emission.
     async fn fan_out_crash_error(&self, message: &str) {
-        let remote_owned: HashSet<String> = {
-            let guard = self.remote_owned_sessions.lock().await;
-            guard.iter().cloned().collect()
-        };
-        let sessions: Vec<String> = {
-            let guard = self.owned_sessions.lock().await;
-            guard
-                .iter()
-                .filter(|session_id| !remote_owned.contains(*session_id))
-                .cloned()
-                .collect()
-        };
-        if sessions.is_empty() {
-            return;
-        }
-        for session_id in &sessions {
-            let _ = self.app_handle.emit(
-                &error_event(session_id),
-                ErrorPayload {
-                    message: message.to_string(),
-                },
-            );
-        }
-        let mut guard = self.owned_sessions.lock().await;
-        guard.retain(|session_id| remote_owned.contains(session_id));
-        drop(guard);
+        fan_out_crash_error_to_local_sessions(
+            &self.owned_sessions,
+            &self.remote_owned_sessions,
+            &self.oneshot_waiters,
+            message,
+            |event, payload| {
+                let _ = self.app_handle.emit(&event, payload);
+            },
+        )
+        .await;
+    }
+}
 
-        // E10-SUMMARIZE — also resolve any outstanding one-shot waiters
-        // with the crash error so awaiters don't hang forever after a
-        // sidecar exit.
-        let mut waiters = self.oneshot_waiters.lock().await;
-        let drained: Vec<(String, OneshotWaiter)> = sessions
+async fn fan_out_crash_error_to_local_sessions<F>(
+    owned_sessions: &Arc<Mutex<HashSet<String>>>,
+    remote_owned_sessions: &Arc<Mutex<HashSet<String>>>,
+    oneshot_waiters: &Arc<Mutex<HashMap<String, OneshotWaiter>>>,
+    message: &str,
+    mut emit_error: F,
+) where
+    F: FnMut(String, ErrorPayload) + Send,
+{
+    let remote_owned: HashSet<String> = {
+        let guard = remote_owned_sessions.lock().await;
+        guard.iter().cloned().collect()
+    };
+    let sessions: Vec<String> = {
+        let guard = owned_sessions.lock().await;
+        guard
             .iter()
-            .filter_map(|session_id| {
-                waiters
-                    .remove(session_id)
-                    .map(|waiter| (session_id.clone(), waiter))
-            })
-            .collect();
-        drop(waiters);
-        for (_sid, mut waiter) in drained {
-            if let Some(sender) = waiter.sender.take() {
-                let _ = sender.send(Err(message.to_string()));
-            }
+            .filter(|session_id| !remote_owned.contains(*session_id))
+            .cloned()
+            .collect()
+    };
+    if sessions.is_empty() {
+        return;
+    }
+    for session_id in &sessions {
+        emit_error(
+            error_event(session_id),
+            ErrorPayload {
+                message: message.to_string(),
+            },
+        );
+    }
+    drop(emit_error);
+
+    let mut guard = owned_sessions.lock().await;
+    guard.retain(|session_id| remote_owned.contains(session_id));
+    drop(guard);
+
+    // E10-SUMMARIZE — also resolve any outstanding one-shot waiters
+    // with the crash error so awaiters don't hang forever after a
+    // sidecar exit.
+    let mut waiters = oneshot_waiters.lock().await;
+    let drained: Vec<(String, OneshotWaiter)> = sessions
+        .iter()
+        .filter_map(|session_id| {
+            waiters
+                .remove(session_id)
+                .map(|waiter| (session_id.clone(), waiter))
+        })
+        .collect();
+    drop(waiters);
+    for (_sid, mut waiter) in drained {
+        if let Some(sender) = waiter.sender.take() {
+            let _ = sender.send(Err(message.to_string()));
         }
     }
 }
@@ -1304,6 +1339,130 @@ async fn remote_sidecar_preflight(config: &SshConfig, provider: &str) -> Result<
         })
         .unwrap_or_else(|| format!("SSH preflight exited with {}", output.status));
     Err(message)
+}
+
+#[cfg(test)]
+mod supervisor_tests {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
+    use tokio::sync::{oneshot, Mutex};
+
+    fn waiter() -> (OneshotWaiter, oneshot::Receiver<Result<String, String>>) {
+        let (tx, rx) = oneshot::channel();
+        (
+            OneshotWaiter {
+                buffer: String::new(),
+                sender: Some(tx),
+            },
+            rx,
+        )
+    }
+
+    #[tokio::test]
+    async fn fan_out_crash_error_emits_recoverable_errors_for_local_sessions_only() {
+        let owned_sessions = Arc::new(Mutex::new(
+            ["local-a", "local-b", "remote-a"]
+                .into_iter()
+                .map(String::from)
+                .collect::<HashSet<_>>(),
+        ));
+        let remote_owned_sessions = Arc::new(Mutex::new(
+            ["remote-a"]
+                .into_iter()
+                .map(String::from)
+                .collect::<HashSet<_>>(),
+        ));
+
+        let (local_a_waiter, local_a_rx) = waiter();
+        let (local_b_waiter, local_b_rx) = waiter();
+        let (remote_waiter, _remote_rx) = waiter();
+        let (orphan_waiter, _orphan_rx) = waiter();
+        let oneshot_waiters = Arc::new(Mutex::new(HashMap::from([
+            ("local-a".to_string(), local_a_waiter),
+            ("local-b".to_string(), local_b_waiter),
+            ("remote-a".to_string(), remote_waiter),
+            ("orphan-a".to_string(), orphan_waiter),
+        ])));
+
+        let mut emitted = Vec::new();
+        fan_out_crash_error_to_local_sessions(
+            &owned_sessions,
+            &remote_owned_sessions,
+            &oneshot_waiters,
+            SIDECAR_RESTART_RECOVERABLE_ERROR,
+            |event, payload| emitted.push((event, payload.message)),
+        )
+        .await;
+
+        emitted.sort();
+        assert_eq!(
+            emitted,
+            vec![
+                (
+                    "api-agent:error:local-a".to_string(),
+                    SIDECAR_RESTART_RECOVERABLE_ERROR.to_string(),
+                ),
+                (
+                    "api-agent:error:local-b".to_string(),
+                    SIDECAR_RESTART_RECOVERABLE_ERROR.to_string(),
+                ),
+            ]
+        );
+        assert_eq!(
+            owned_sessions.lock().await.clone(),
+            ["remote-a"]
+                .into_iter()
+                .map(String::from)
+                .collect::<HashSet<_>>()
+        );
+        assert_eq!(
+            remote_owned_sessions.lock().await.clone(),
+            ["remote-a"]
+                .into_iter()
+                .map(String::from)
+                .collect::<HashSet<_>>()
+        );
+        assert_eq!(
+            local_a_rx.await.unwrap(),
+            Err(SIDECAR_RESTART_RECOVERABLE_ERROR.to_string())
+        );
+        assert_eq!(
+            local_b_rx.await.unwrap(),
+            Err(SIDECAR_RESTART_RECOVERABLE_ERROR.to_string())
+        );
+
+        {
+            let waiters = oneshot_waiters.lock().await;
+            assert!(!waiters.contains_key("local-a"));
+            assert!(!waiters.contains_key("local-b"));
+            assert!(waiters
+                .get("remote-a")
+                .and_then(|waiter| waiter.sender.as_ref())
+                .is_some());
+            assert!(waiters
+                .get("orphan-a")
+                .and_then(|waiter| waiter.sender.as_ref())
+                .is_some());
+        }
+
+        fan_out_crash_error_to_local_sessions(
+            &owned_sessions,
+            &remote_owned_sessions,
+            &oneshot_waiters,
+            "Sidecar crashed and could not restart",
+            |event, payload| emitted.push((event, payload.message)),
+        )
+        .await;
+        assert_eq!(emitted.len(), 2);
+        assert_eq!(
+            owned_sessions.lock().await.clone(),
+            ["remote-a"]
+                .into_iter()
+                .map(String::from)
+                .collect::<HashSet<_>>()
+        );
+    }
 }
 
 #[cfg(test)]

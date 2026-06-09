@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Folder,
   GitPullRequest,
@@ -13,14 +13,12 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
 import { useGitHubStore } from "@/stores/githubStore";
-import { apiAgentDoneEvent, apiAgentErrorEvent } from "@/lib/events";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import { notifyAttemptCompleted, notifyAttemptFailed } from "@/lib/notifications";
+import { notifyAttemptFailed } from "@/lib/notifications";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
 import type { AgentMessage } from "@/types/agent-conversation";
 
@@ -42,7 +40,6 @@ const STATUS_META: Record<
   cancelled: { label: "Cancelled", color: "text-text-muted", icon: Square },
 };
 
-const SENTINEL_DONE = "<PACKETCODE_DONE>";
 const EMPTY_MESSAGES: AgentMessage[] = [];
 
 export function AttemptTile({ flight, attempt }: AttemptTileProps) {
@@ -58,123 +55,7 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
   const [expanded, setExpanded] = useState(false);
   const messages = conversation?.messages ?? EMPTY_MESSAGES;
 
-  // Detect the agent's "done" sentinel and flip status to reviewing.
-  const lastAssistantMsg = useMemo(
-    () => [...messages].reverse().find((m) => m.role === "assistant"),
-    [messages],
-  );
-  const sentinelDetected = !!(
-    lastAssistantMsg &&
-    !lastAssistantMsg.isStreaming &&
-    lastAssistantMsg.content.includes(SENTINEL_DONE)
-  );
-
   const attemptLabel = attempt.target.kind === "ssh" ? attempt.target.targetId : "local";
-
-  useEffect(() => {
-    if (sentinelDetected && (attempt.status === "running" || attempt.status === "provisioning")) {
-      void setAttemptStatus(flight.id, attempt.id, "reviewing");
-      void notifyAttemptCompleted(flight.title, attemptLabel);
-    }
-  }, [
-    sentinelDetected,
-    attempt.status,
-    attempt.id,
-    flight.id,
-    flight.title,
-    attemptLabel,
-    setAttemptStatus,
-  ]);
-
-  // Map the attempt conversation's terminal api-agent events onto attempt
-  // status. Without this, an attempt that finishes WITHOUT emitting the
-  // SENTINEL_DONE marker (the only other auto-transition) stays stuck in
-  // "running" forever — holding its session + worktree and blocking future
-  // launches on the same path. Both backends (in-process LlmProvider + Node
-  // sidecar) emit `api-agent:done`/`api-agent:error` on the session channel,
-  // so subscribing here covers every provider.
-  //
-  // - `api-agent:done`  → flip a still-active attempt to "reviewing" (unless
-  //   the sentinel already drove it there; we re-check fresh state at event
-  //   time so we don't fight the sentinel effect or stomp Accept/Reject).
-  // - `api-agent:error` → mark it "failed", which runs backend cleanup.
-  const sessionId = attempt.sessionId;
-  const attemptId = attempt.id;
-  const flightId = flight.id;
-  const flightTitle = flight.title;
-  useEffect(() => {
-    let cancelled = false;
-    const unlisteners: UnlistenFn[] = [];
-
-    function currentAttemptStatus(): AttemptStatus | undefined {
-      return useFlightStore
-        .getState()
-        .flights.find((f) => f.id === flightId)
-        ?.attempts?.find((a) => a.id === attemptId)?.status;
-    }
-
-    function sentinelInConversation(): boolean {
-      const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === sessionId);
-      const lastAssistant = [...(conv?.messages ?? [])]
-        .reverse()
-        .find((m) => m.role === "assistant");
-      return !!lastAssistant && !lastAssistant.isStreaming && lastAssistant.content.includes(SENTINEL_DONE);
-    }
-
-    void (async () => {
-      const doneUnlisten = await listen(apiAgentDoneEvent(sessionId), () => {
-        const status = currentAttemptStatus();
-        if (status !== "running" && status !== "provisioning") return;
-        // The sentinel effect already owns the sentinel path; only handle the
-        // no-sentinel finish here so we don't double-notify.
-        if (sentinelInConversation()) return;
-        void setAttemptStatus(flightId, attemptId, "reviewing");
-        void notifyAttemptCompleted(flightTitle, attemptLabel);
-      });
-      if (cancelled) {
-        doneUnlisten();
-      } else {
-        unlisteners.push(doneUnlisten);
-      }
-
-      const errorUnlisten = await listen<{ message?: string }>(
-        apiAgentErrorEvent(sessionId),
-        (event) => {
-          const status = currentAttemptStatus();
-          if (status !== "running" && status !== "provisioning") return;
-          // setAttemptStatus("failed") runs backend worktree cleanup; the
-          // failed-transition notify is handled by the effect below.
-          void setAttemptStatus(flightId, attemptId, "failed");
-          const message = event.payload?.message;
-          if (message) {
-            const fresh = useFlightStore.getState().flights.find((f) => f.id === flightId);
-            if (fresh?.attempts) {
-              const nextAttempts = fresh.attempts.map((a) =>
-                a.id === attemptId ? { ...a, errorMessage: message } : a,
-              );
-              updateFlight(flightId, { attempts: nextAttempts });
-            }
-          }
-        },
-      );
-      if (cancelled) {
-        errorUnlisten();
-      } else {
-        unlisteners.push(errorUnlisten);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      for (const u of unlisteners) {
-        try {
-          u();
-        } catch {
-          // best-effort detach
-        }
-      }
-    };
-  }, [sessionId, attemptId, flightId, flightTitle, attemptLabel, setAttemptStatus, updateFlight]);
 
   // Notify on transition into "failed" (whether from backend or UI rejection).
   useEffect(() => {
@@ -433,7 +314,7 @@ function DraftPrLink({ prNumber }: { prNumber: number }) {
   );
   if (!href) {
     return (
-      <span className="inline-flex items-center gap-1 rounded border border-accent-purple/30 bg-accent-purple/10 px-1.5 py-0.5 text-[10px] text-accent-purple">
+      <span className="border-accent-purple/30 bg-accent-purple/10 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] text-accent-purple">
         {inner}
       </span>
     );
@@ -443,7 +324,7 @@ function DraftPrLink({ prNumber }: { prNumber: number }) {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-1 rounded border border-accent-purple/30 bg-accent-purple/10 px-1.5 py-0.5 text-[10px] text-accent-purple hover:bg-accent-purple/20"
+      className="border-accent-purple/30 bg-accent-purple/10 hover:bg-accent-purple/20 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] text-accent-purple"
       title={`Open PR #${prNumber} on GitHub`}
     >
       {inner}

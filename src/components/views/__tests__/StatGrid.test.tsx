@@ -37,7 +37,7 @@
  * renders and the heavy mock surface can be retired.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { Flight } from "@/types/flight";
 
 // === Hoisted shared state ===
@@ -58,6 +58,10 @@ const mocks = vi.hoisted(() => {
     orchestrationState: {
       pauseFlight: vi.fn(),
       resumeFlight: vi.fn(),
+    },
+    schedulerState: {
+      lastError: null as string | null,
+      startLoop: vi.fn(),
     },
     plannerState: {
       startPlanner: vi.fn(),
@@ -93,6 +97,15 @@ vi.mock("@/stores/orchestrationStateStore", () => ({
       selector ? selector(mocks.orchestrationState) : mocks.orchestrationState,
     ),
     { getState: vi.fn(() => mocks.orchestrationState) },
+  ),
+}));
+
+vi.mock("@/stores/orchestrationSchedulerStore", () => ({
+  useOrchestrationSchedulerStore: Object.assign(
+    vi.fn((selector?: (s: typeof mocks.schedulerState) => unknown) =>
+      selector ? selector(mocks.schedulerState) : mocks.schedulerState,
+    ),
+    { getState: vi.fn(() => mocks.schedulerState) },
   ),
 }));
 
@@ -219,6 +232,8 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [];
     mocks.flightState.activeFlightId = null;
     mocks.flightState.computeFlightStatus = vi.fn(() => "active" as const);
+    mocks.schedulerState.lastError = null;
+    mocks.schedulerState.startLoop = vi.fn();
     mocks.goalState.getGoalsForMission = vi.fn(() => []);
   });
 
@@ -382,5 +397,19 @@ describe("StatGrid cost cells (E8 cost split)", () => {
 
     // formatTokens(50_000) -> "50.0k"
     expect(valueInCell(statCell("Tokens"))).toBe("50.0k");
+  });
+
+  it("surfaces scheduler stalls in the mission pane and lets the user retry", () => {
+    const flight = makeFlight();
+    mocks.flightState.flights = [flight];
+    mocks.flightState.activeFlightId = flight.id;
+    mocks.schedulerState.lastError =
+      "Mission scheduler backend failed 3 times in a row; dispatch loop paused.";
+
+    render(<MissionsView />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Mission scheduler backend failed");
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(mocks.schedulerState.startLoop).toHaveBeenCalledOnce();
   });
 });

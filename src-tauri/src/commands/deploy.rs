@@ -6,6 +6,36 @@ use tracing::{info, warn};
 use super::shared::hide_window;
 use crate::core::brand::DEPLOY_CONFIG_FILENAMES;
 
+const DEPLOY_READER_MAX_CONSECUTIVE_ERRORS: u32 = 50;
+
+#[derive(Debug, PartialEq, Eq)]
+enum DeployReaderErrorDisposition {
+    EndOfStream,
+    Retry,
+    GiveUp,
+}
+
+fn classify_deploy_reader_error(
+    error: &std::io::Error,
+    consecutive_errors: u32,
+) -> DeployReaderErrorDisposition {
+    let err_text = error.to_string().to_ascii_lowercase();
+
+    if err_text.contains("broken pipe")
+        || err_text.contains("the pipe has been ended")
+        || error.kind() == std::io::ErrorKind::BrokenPipe
+        || error.raw_os_error() == Some(5)
+    {
+        return DeployReaderErrorDisposition::EndOfStream;
+    }
+
+    if consecutive_errors >= DEPLOY_READER_MAX_CONSECUTIVE_ERRORS {
+        return DeployReaderErrorDisposition::GiveUp;
+    }
+
+    DeployReaderErrorDisposition::Retry
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DeployConfig {
     pub name: String,
@@ -296,7 +326,6 @@ pub fn run_deploy(
 
         // Bound the loop: bail after too many consecutive non-broken-pipe
         // errors so we never spin forever on a wedged reader (EIO etc.).
-        const MAX_CONSECUTIVE_ERRORS: u32 = 50;
         let mut consecutive_errors: u32 = 0;
 
         let mut buf = [0u8; 8192];
@@ -314,25 +343,23 @@ pub fn run_deploy(
                 }
                 Err(e) => {
                     let err_str = e.to_string();
-                    // Treat broken-pipe and EIO (raised when the slave end of
-                    // the PTY is gone) as clean end-of-stream: the child has
-                    // exited, so stop reading and let the wait thread report.
-                    if err_str.contains("broken pipe")
-                        || err_str.contains("The pipe has been ended")
-                        || e.kind() == std::io::ErrorKind::BrokenPipe
-                        || e.raw_os_error() == Some(5) // EIO
-                    {
-                        break;
-                    }
                     consecutive_errors += 1;
-                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                        warn!(
-                            session_id = %sid,
-                            run_id = %rid,
-                            error = %err_str,
-                            "Deploy reader giving up after repeated read errors"
-                        );
-                        break;
+                    match classify_deploy_reader_error(&e, consecutive_errors) {
+                        // Treat broken-pipe and EIO (raised when the slave end
+                        // of the PTY is gone) as clean end-of-stream: the
+                        // child has exited, so stop reading and let the wait
+                        // thread report.
+                        DeployReaderErrorDisposition::EndOfStream => break,
+                        DeployReaderErrorDisposition::GiveUp => {
+                            warn!(
+                                session_id = %sid,
+                                run_id = %rid,
+                                error = %err_str,
+                                "Deploy reader giving up after repeated read errors"
+                            );
+                            break;
+                        }
+                        DeployReaderErrorDisposition::Retry => {}
                     }
                     thread::sleep(std::time::Duration::from_millis(10));
                 }
@@ -367,4 +394,51 @@ pub fn run_deploy(
     });
 
     Ok(session_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        classify_deploy_reader_error, DeployReaderErrorDisposition,
+        DEPLOY_READER_MAX_CONSECUTIVE_ERRORS,
+    };
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn deploy_reader_stops_on_broken_pipe_errors() {
+        let by_kind = Error::new(ErrorKind::BrokenPipe, "transport closed");
+        assert_eq!(
+            classify_deploy_reader_error(&by_kind, 1),
+            DeployReaderErrorDisposition::EndOfStream
+        );
+
+        let by_message = Error::new(ErrorKind::Other, "The pipe has been ended");
+        assert_eq!(
+            classify_deploy_reader_error(&by_message, 1),
+            DeployReaderErrorDisposition::EndOfStream
+        );
+    }
+
+    #[test]
+    fn deploy_reader_stops_on_eio_teardown() {
+        let error = Error::from_raw_os_error(5);
+        assert_eq!(
+            classify_deploy_reader_error(&error, 1),
+            DeployReaderErrorDisposition::EndOfStream
+        );
+    }
+
+    #[test]
+    fn deploy_reader_bounds_repeated_unknown_errors() {
+        let error = Error::new(ErrorKind::Other, "transient read failure");
+
+        assert_eq!(
+            classify_deploy_reader_error(&error, DEPLOY_READER_MAX_CONSECUTIVE_ERRORS - 1),
+            DeployReaderErrorDisposition::Retry
+        );
+        assert_eq!(
+            classify_deploy_reader_error(&error, DEPLOY_READER_MAX_CONSECUTIVE_ERRORS),
+            DeployReaderErrorDisposition::GiveUp
+        );
+    }
 }

@@ -30,7 +30,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tracing::warn;
 
 use crate::commands::mission_planner::MissionPlannerRegistry;
-use crate::core::flight::TaskStatus;
+use crate::core::flight::{Task, TaskStatus};
 use crate::core::storage;
 
 #[derive(Debug, Deserialize)]
@@ -94,84 +94,7 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
                 .find_map(|m| m.tasks.iter_mut().find(|t| t.id == task_id))
                 .ok_or_else(|| "task not found".to_string())?;
 
-            let mut updated_fields: Vec<String> = Vec::new();
-            let mut deferred_fields: Vec<String> = Vec::new();
-
-            for (key, value) in patch_obj.into_iter() {
-                match key.as_str() {
-                    "title" => match value.as_str() {
-                        Some(s) => {
-                            task.title = s.to_string();
-                            updated_fields.push("title".to_string());
-                        }
-                        None => return Err("update_task: 'title' must be a string".to_string()),
-                    },
-                    // The Task struct stores the executor prompt under
-                    // `description` — that field is what the async-attempts
-                    // launcher feeds into the agent session. The planner-facing
-                    // alias is `prompt`, which is what the locked-design spec
-                    // uses.
-                    "prompt" => match value.as_str() {
-                        Some(s) => {
-                            task.description = s.to_string();
-                            updated_fields.push("prompt".to_string());
-                        }
-                        None => return Err("update_task: 'prompt' must be a string".to_string()),
-                    },
-                    "agent_id" => match value.as_str() {
-                        Some(s) => {
-                            task.agent_config_id = s.to_string();
-                            updated_fields.push("agent_id".to_string());
-                        }
-                        None => {
-                            return Err(
-                                "update_task: 'agent_id' must be a string".to_string(),
-                            )
-                        }
-                    },
-                    // `target_spec` carries the async-attempts AttemptTargetSpec
-                    // shape. There's no dedicated field on Task yet (the
-                    // attempt-launcher reads the per-attempt target directly off
-                    // `Flight::attempts`), so we have nowhere to land it on the
-                    // Task model. We must NOT report it in `updated_fields` —
-                    // doing so would tell the planner the change persisted when
-                    // it silently dropped. Instead we surface it in
-                    // `deferred_fields` so the planner knows the patch was
-                    // accepted-but-not-applied. The launch-time wiring (E4+) will
-                    // pick the target up at attempt-creation time once Task gains
-                    // a field to hold it.
-                    "target_spec" => {
-                        deferred_fields.push("target_spec".to_string());
-                        // No mutation — see comment above. Field is intentionally
-                        // not persisted.
-                        let _ = value;
-                    }
-                    "status" => match value.as_str() {
-                        Some("cancelled") => {
-                            task.status = TaskStatus::Cancelled;
-                            updated_fields.push("status".to_string());
-                        }
-                        Some("queued") => {
-                            task.status = TaskStatus::Queued;
-                            updated_fields.push("status".to_string());
-                        }
-                        _ => {
-                            return Err(
-                                "status field is owned by the executor; use mark_task_blocked or replan_after_failure instead"
-                                    .to_string(),
-                            );
-                        }
-                    },
-                    other => {
-                        warn!(
-                            tool = "update_task",
-                            field = %other,
-                            "ignoring unknown patch key (planner may send extra metadata)"
-                        );
-                    }
-                }
-            }
-
+            let (updated_fields, deferred_fields) = apply_patch_to_task(task, patch_obj)?;
             flight.updated_at = now_millis();
             Ok((updated_fields, deferred_fields))
         })();
@@ -201,9 +124,167 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
     }))
 }
 
+fn apply_patch_to_task(
+    task: &mut Task,
+    patch_obj: serde_json::Map<String, Value>,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    let mut updated_fields: Vec<String> = Vec::new();
+    let mut deferred_fields: Vec<String> = Vec::new();
+
+    for (key, value) in patch_obj.into_iter() {
+        match key.as_str() {
+            "title" => match value.as_str() {
+                Some(s) => {
+                    task.title = s.to_string();
+                    updated_fields.push("title".to_string());
+                }
+                None => return Err("update_task: 'title' must be a string".to_string()),
+            },
+            // The Task struct stores the executor prompt under `description`
+            // because that field is what the async-attempts launcher feeds
+            // into the agent session. The planner-facing alias is `prompt`.
+            "prompt" => match value.as_str() {
+                Some(s) => {
+                    task.description = s.to_string();
+                    updated_fields.push("prompt".to_string());
+                }
+                None => return Err("update_task: 'prompt' must be a string".to_string()),
+            },
+            "agent_id" => match value.as_str() {
+                Some(s) => {
+                    task.agent_config_id = s.to_string();
+                    updated_fields.push("agent_id".to_string());
+                }
+                None => return Err("update_task: 'agent_id' must be a string".to_string()),
+            },
+            // `target_spec` carries the async-attempts AttemptTargetSpec
+            // shape. There's no dedicated field on Task yet (the
+            // attempt-launcher reads the per-attempt target directly off
+            // `Flight::attempts`), so we have nowhere to land it on the Task
+            // model. We must NOT report it in `updated_fields` — doing so
+            // would tell the planner the change persisted when it silently
+            // dropped. Instead we surface it in `deferred_fields` so the
+            // planner knows the patch was accepted-but-not-applied. The
+            // launch-time wiring (E4+) will pick the target up at
+            // attempt-creation time once Task gains a field to hold it.
+            "target_spec" => {
+                deferred_fields.push("target_spec".to_string());
+                // No mutation — see comment above. Field is intentionally
+                // not persisted.
+                let _ = value;
+            }
+            "status" => match value.as_str() {
+                Some("cancelled") => {
+                    task.status = TaskStatus::Cancelled;
+                    updated_fields.push("status".to_string());
+                }
+                Some("queued") => {
+                    task.status = TaskStatus::Queued;
+                    updated_fields.push("status".to_string());
+                }
+                _ => {
+                    return Err(
+                        "status field is owned by the executor; use mark_task_blocked or replan_after_failure instead"
+                            .to_string(),
+                    );
+                }
+            },
+            other => {
+                warn!(
+                    tool = "update_task",
+                    field = %other,
+                    "ignoring unknown patch key (planner may send extra metadata)"
+                );
+            }
+        }
+    }
+
+    Ok((updated_fields, deferred_fields))
+}
+
 fn now_millis() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::flight::{ReviewPacket, TaskResult, TaskType};
+
+    fn fixture_task() -> Task {
+        Task {
+            id: "task_1".to_string(),
+            milestone_id: "ms_1".to_string(),
+            flight_id: "mission_1".to_string(),
+            title: "Old title".to_string(),
+            description: "Old prompt".to_string(),
+            order: 0,
+            status: TaskStatus::Queued,
+            task_type: TaskType::Implementation,
+            agent_config_id: "old-agent".to_string(),
+            agent_args: None,
+            model: None,
+            depends_on: Vec::new(),
+            session_id: None,
+            result: None::<TaskResult>,
+            review_packet: None::<ReviewPacket>,
+            created_at: 0,
+            started_at: None,
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+            owned_paths: Vec::new(),
+            replan_count: 0,
+        }
+    }
+
+    fn patch_object(value: Value) -> serde_json::Map<String, Value> {
+        match value {
+            Value::Object(map) => map,
+            _ => panic!("test patch must be a JSON object"),
+        }
+    }
+
+    #[test]
+    fn target_spec_is_deferred_while_patch_fields_persist() {
+        let mut task = fixture_task();
+        let patch = patch_object(serde_json::json!({
+            "title": "New title",
+            "prompt": "New executor prompt",
+            "agent_id": "codex-cli",
+            "status": "cancelled",
+            "target_spec": {
+                "kind": "local",
+                "basePath": "D:/projects/PacketADE",
+                "baseBranch": "main",
+                "agentConfigId": "codex-cli",
+                "provider": "codex-oauth",
+                "model": "gpt-5"
+            }
+        }));
+
+        let (updated_fields, deferred_fields) =
+            apply_patch_to_task(&mut task, patch).expect("patch should apply");
+
+        assert_eq!(deferred_fields, vec!["target_spec".to_string()]);
+        assert!(
+            !updated_fields.iter().any(|field| field == "target_spec"),
+            "target_spec must not be reported as persisted"
+        );
+        for expected in ["title", "prompt", "agent_id", "status"] {
+            assert!(
+                updated_fields.iter().any(|field| field == expected),
+                "{expected} should be reported in updated_fields"
+            );
+        }
+        assert_eq!(updated_fields.len(), 4);
+
+        assert_eq!(task.title, "New title");
+        assert_eq!(task.description, "New executor prompt");
+        assert_eq!(task.agent_config_id, "codex-cli");
+        assert_eq!(task.status, TaskStatus::Cancelled);
+    }
 }
