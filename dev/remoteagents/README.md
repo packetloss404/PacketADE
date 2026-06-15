@@ -1,7 +1,7 @@
 # PacketADE Remote Agents
 
 Status: planning package for implementation
-Last updated: 2026-05-26
+Last updated: 2026-06-15
 
 This directory is the canonical implementation brief for **PacketADE Remote Agents**: a cloud-relayed, PWA-first way to use PacketADE Agents from a phone while the desktop app keeps ownership of providers, models, secrets, workspaces, MCP config, permissions, and execution.
 
@@ -30,7 +30,7 @@ PacketADE is not a cloud-only coding agent. Its advantage is that the desktop al
 - the shared `api-agent:*` event contract in `src/lib/events.ts`
 - conversation UX and persistence in `src/stores/agentTaskStore.ts`
 - approval queues in `src/stores/agentApprovalStore.ts`
-- local/SSH execution context, MCP config, profiles, memory, Missions, and issue/workspace state
+- local/SSH execution context, MCP config, profiles, memory, Flights, and issue/workspace state
 
 The remote feature should project that desktop capability to mobile without duplicating provider setup in the cloud.
 

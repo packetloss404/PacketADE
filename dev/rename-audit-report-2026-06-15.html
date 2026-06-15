@@ -1,0 +1,2064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PacketADE — Mission→Flight Rename Audit &amp; Plan (2026-06-15)</title>
+<style>
+  :root {
+    --bg-0: #0b0e14;
+    --bg-1: #11151d;
+    --bg-2: #161b25;
+    --bg-3: #1d2430;
+    --border: #283041;
+    --text-0: #e6e9ef;
+    --text-1: #aab2c0;
+    --text-2: #767f90;
+    --accent: #6ea8fe;
+    --accent-dim: #3d5a8a;
+
+    --c-blocker: #ef4444;
+    --c-high: #f97316;
+    --c-medium: #f59e0b;
+    --c-low: #64748b;
+    --c-nit: #6b7280;
+    --c-pass: #22c55e;
+    --c-fail: #ef4444;
+    --c-env: #3b82f6;
+
+    --nav-w: 248px;
+    --topbar-h: 60px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg-0);
+    color: var(--text-0);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--topbar-h);
+    display: flex;
+    align-items: center;
+    padding: 0 28px;
+    background: rgba(11, 14, 20, 0.86);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
+  }
+  .topbar h1 {
+    font-size: 16px;
+    font-weight: 650;
+    margin: 0;
+    letter-spacing: 0.01em;
+    color: var(--text-0);
+  }
+  .topbar .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 12px;
+    flex: 0 0 auto;
+    box-shadow: 0 0 0 4px rgba(110, 168, 254, 0.15);
+  }
+
+  /* ---------- Layout ---------- */
+  .layout {
+    display: flex;
+    padding-top: var(--topbar-h);
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* ---------- Side nav ---------- */
+  .sidenav {
+    position: sticky;
+    top: var(--topbar-h);
+    align-self: flex-start;
+    width: var(--nav-w);
+    flex: 0 0 var(--nav-w);
+    height: calc(100vh - var(--topbar-h));
+    overflow-y: auto;
+    padding: 28px 16px 40px;
+    border-right: 1px solid var(--border);
+  }
+  .sidenav .nav-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-2);
+    padding: 0 12px;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+  .sidenav a {
+    display: block;
+    padding: 9px 12px;
+    margin: 2px 0;
+    border-radius: 8px;
+    color: var(--text-1);
+    text-decoration: none;
+    font-size: 14px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .sidenav a:hover {
+    background: var(--bg-2);
+    color: var(--text-0);
+  }
+  .sidenav a .num {
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+    margin-right: 8px;
+    font-size: 12px;
+  }
+
+  /* ---------- Main ---------- */
+  main {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 32px 48px 96px;
+  }
+
+  section {
+    scroll-margin-top: calc(var(--topbar-h) + 16px);
+    margin-bottom: 56px;
+    padding-bottom: 40px;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-of-type { border-bottom: none; }
+
+  section > h2 {
+    font-size: 26px;
+    font-weight: 680;
+    margin: 0 0 24px;
+    letter-spacing: -0.01em;
+    padding-bottom: 14px;
+    border-bottom: 2px solid var(--accent-dim);
+    display: inline-block;
+  }
+
+  h3 { font-size: 18px; font-weight: 640; margin: 32px 0 12px; }
+  h4 { font-size: 15px; font-weight: 640; margin: 24px 0 8px; color: var(--text-0); }
+
+  p { margin: 12px 0; color: var(--text-1); }
+
+  a { color: var(--accent); }
+
+  code {
+    font-family: "SF Mono", "JetBrains Mono", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+    background: var(--bg-2);
+    padding: 2px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    color: #d4b8ff;
+  }
+  pre {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  pre code { background: none; border: none; padding: 0; color: var(--text-0); }
+
+  ul, ol { color: var(--text-1); padding-left: 24px; }
+  li { margin: 5px 0; }
+
+  /* ---------- Badges ---------- */
+  .rpt-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+    line-height: 1.4;
+    white-space: nowrap;
+    vertical-align: middle;
+    border: 1px solid transparent;
+  }
+  .rpt-blocker { background: rgba(239,68,68,0.16);  color: #fca5a5; border-color: rgba(239,68,68,0.4); }
+  .rpt-high    { background: rgba(249,115,22,0.16); color: #fdba74; border-color: rgba(249,115,22,0.4); }
+  .rpt-medium  { background: rgba(245,158,11,0.16); color: #fcd34d; border-color: rgba(245,158,11,0.4); }
+  .rpt-low     { background: rgba(100,116,139,0.18);color: #cbd5e1; border-color: rgba(100,116,139,0.45); }
+  .rpt-nit     { background: rgba(107,114,128,0.18);color: #d1d5db; border-color: rgba(107,114,128,0.4); }
+  .rpt-pass    { background: rgba(34,197,94,0.16);  color: #86efac; border-color: rgba(34,197,94,0.4); }
+  .rpt-fail    { background: rgba(239,68,68,0.16);  color: #fca5a5; border-color: rgba(239,68,68,0.4); }
+  .rpt-env     { background: rgba(59,130,246,0.16); color: #93c5fd; border-color: rgba(59,130,246,0.4); }
+
+  /* ---------- Tables ---------- */
+  .rpt-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .rpt-table thead th {
+    position: sticky;
+    top: var(--topbar-h);
+    background: var(--bg-3);
+    color: var(--text-0);
+    text-align: left;
+    font-weight: 640;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    z-index: 5;
+  }
+  .rpt-table td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-1);
+    vertical-align: top;
+  }
+  .rpt-table tbody tr:nth-child(odd)  { background: var(--bg-1); }
+  .rpt-table tbody tr:nth-child(even) { background: var(--bg-2); }
+  .rpt-table tbody tr:hover { background: var(--bg-3); }
+  .rpt-table tr:last-child td { border-bottom: none; }
+
+  /* ---------- Callouts ---------- */
+  .rpt-callout {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 18px 0;
+    color: var(--text-1);
+  }
+  .rpt-callout.warn { border-left-color: var(--c-high); }
+  .rpt-callout.danger { border-left-color: var(--c-blocker); }
+  .rpt-callout.ok { border-left-color: var(--c-pass); }
+  .rpt-callout > :first-child { margin-top: 0; }
+  .rpt-callout > :last-child { margin-bottom: 0; }
+
+  /* ---------- Cards ---------- */
+  .rpt-card {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin: 16px 0;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset;
+  }
+  .rpt-card > :first-child { margin-top: 0; }
+  .rpt-card > :last-child { margin-bottom: 0; }
+  .rpt-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+
+  /* ---------- Empty state ---------- */
+  .empty {
+    color: var(--text-2);
+    font-style: italic;
+    background: var(--bg-1);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 28px;
+    text-align: center;
+  }
+
+  /* ---------- Footer ---------- */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 28px 48px;
+    color: var(--text-2);
+    font-size: 13px;
+    text-align: center;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 900px) {
+    .layout { flex-direction: column; }
+    .sidenav {
+      position: static;
+      width: 100%;
+      flex: none;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 16px;
+    }
+    .sidenav .nav-label { width: 100%; }
+    .sidenav a { padding: 7px 10px; }
+    main { padding: 24px 20px 72px; }
+    .rpt-table thead th { position: static; }
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <span class="dot" aria-hidden="true"></span>
+    <h1>PacketADE — Mission→Flight Rename Audit &amp; Plan (2026-06-15)</h1>
+  </header>
+
+  <div class="layout">
+    <nav class="sidenav" aria-label="Section navigation">
+      <div class="nav-label">Contents</div>
+      <a href="#exec"><span class="num">01</span>Executive Summary</a>
+      <a href="#code"><span class="num">02</span>Code Audit</a>
+      <a href="#planning"><span class="num">03</span>Planning</a>
+      <a href="#debate"><span class="num">04</span>Debate</a>
+      <a href="#roadmap"><span class="num">05</span>Roadmap</a>
+      <a href="#research"><span class="num">06</span>Research</a>
+    </nav>
+
+    <main>
+      <section id="exec">
+        <h2>Executive Summary</h2>
+        <section class="rpt-section rpt-exec-summary">
+  <header class="rpt-section-header">
+    <h2 class="rpt-h2">Executive Summary &amp; Overall Verdict</h2>
+    <p class="rpt-subtitle">Audit of the <strong>Mission &rarr; Flight</strong> rename / refactor &mdash; combined code-correctness and documentation-ecosystem review. <span class="rpt-meta">Report date: 2026-06-15</span></p>
+  </header>
+
+  <!-- TOP-LINE VERDICT -->
+  <div class="rpt-callout rpt-callout-verdict rpt-pass">
+    <div class="rpt-verdict-row">
+      <span class="rpt-badge rpt-pass rpt-badge-lg">SHIP</span>
+      <span class="rpt-verdict-text">Safe to commit &mdash; one quick doc fix recommended first</span>
+    </div>
+    <p class="rpt-verdict-headline">The Mission &rarr; Flight rename is <strong>functionally complete and correct</strong>; only cosmetic doc/comment/naming residue remains. The single finding worth fixing before commit is a stale public-README path that contradicts the &ldquo;README verified against code&rdquo; claim.</p>
+  </div>
+
+  <!-- KEY NUMBERS -->
+  <h3 class="rpt-h3">Key Numbers</h3>
+  <div class="rpt-stat-grid">
+    <div class="rpt-stat">
+      <span class="rpt-stat-num">0</span>
+      <span class="rpt-stat-label">behavioral / contract / build defects</span>
+    </div>
+    <div class="rpt-stat">
+      <span class="rpt-stat-num">0</span>
+      <span class="rpt-stat-label">strong &ldquo;Mission&rdquo; symbols remaining (repo-wide scan)</span>
+    </div>
+    <div class="rpt-stat">
+      <span class="rpt-stat-num">1</span>
+      <span class="rpt-stat-label">must-fix (stale README path)</span>
+    </div>
+    <div class="rpt-stat">
+      <span class="rpt-stat-num">4</span>
+      <span class="rpt-stat-label">residual items &mdash; all cosmetic / doc-only</span>
+    </div>
+    <div class="rpt-stat">
+      <span class="rpt-stat-num">419</span>
+      <span class="rpt-stat-label">Rust tests passed (0 failed, 13 ignored)</span>
+    </div>
+    <div class="rpt-stat">
+      <span class="rpt-stat-num">5</span>
+      <span class="rpt-stat-label">intentional serde aliases preserved (across 4 files)</span>
+    </div>
+  </div>
+
+  <!-- GREEN GATES -->
+  <h3 class="rpt-h3">Verification Gates</h3>
+  <table class="rpt-table">
+    <thead>
+      <tr><th>Gate</th><th>Result</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>cargo test</code> (Rust unit + contract)</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>419 passed / 0 failed / 13 ignored (MSVC host)</td></tr>
+      <tr><td><code>tsc --noEmit</code></td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>Exit 0 &mdash; no type errors</td></tr>
+      <tr><td>Sidecar <code>tsc</code></td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>Exit 0</td></tr>
+      <tr><td>Schema regen</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>Byte-identical after rename</td></tr>
+      <tr><td><code>eslint src</code></td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>0 errors (1 pre-existing react-refresh warning, unrelated)</td></tr>
+      <tr><td>flight-planner-wiring-smoke</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>13 / 13</td></tr>
+      <tr><td>openai-agents-gating-smoke</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>23 / 23</td></tr>
+      <tr><td>Vitest (rollup)</td><td><span class="rpt-badge rpt-env">BLOCKED-ENV</span></td><td>Windows-installed node_modules under WSL2 lack linux-native rollup &mdash; not a code defect</td></tr>
+      <tr><td>Live Claude-SDK / codex sidecar smokes</td><td><span class="rpt-badge rpt-env">BLOCKED-ENV</span></td><td>Missing linux-x64 native CLI binary &mdash; not a code defect</td></tr>
+    </tbody>
+  </table>
+
+  <!-- WHAT CHANGED -->
+  <h3 class="rpt-h3">What Changed</h3>
+  <ul class="rpt-list">
+    <li><strong>UI / IPC / schema rename:</strong> Mission Planner &rarr; Flight Planner, MissionsView &rarr; FlightsView, Mission Control &rarr; Flight Control (schema regen byte-identical).</li>
+    <li><strong>Data-model ids:</strong> <code>mission_id</code> &rarr; <code>flight_id</code>, <code>missionId</code> &rarr; <code>flightId</code>.</li>
+    <li><strong>Full eradication:</strong> <code>MissionApprovalRequest</code> &rarr; <code>FlightApprovalRequest</code>; <code>components/missions/*</code> merged into <code>components/flights/</code> (<code>MissionSpecPane</code> &rarr; <code>FlightSpecPane</code>); MCP tool <code>complete_mission</code> &rarr; <code>complete_flight</code>; file renames <code>core/mission_journal.rs</code> &rarr; <code>flight_journal.rs</code>, <code>lib/missionReview.ts</code> &rarr; <code>flightReview.ts</code>, sidecar <code>mission-planner-server.ts</code> &rarr; <code>flight-planner-server.ts</code>, <code>commands/mission_planner*.rs</code> &rarr; <code>flight_planner*.rs</code>.</li>
+    <li><strong>Intentionally preserved back-compat:</strong> 5 <code>#[serde(alias="missionId")]</code> attrs across 4 files; <code>issueStore.ts</code> + <code>goalStore.ts</code> legacy read shims; on-disk <code>~/.packetade/missions/</code> journal dir literal.</li>
+  </ul>
+
+  <!-- WHAT WAS VERIFIED -->
+  <h3 class="rpt-h3">What Was Verified</h3>
+  <div class="rpt-callout rpt-callout-info">
+    <p>Consolidated <strong>10 code auditors + 1 test report</strong>, with load-bearing claims independently re-verified by Read/grep:</p>
+    <ul class="rpt-list">
+      <li>Repo-wide scan for strong Mission identifiers (<code>MissionsView</code>, <code>complete_mission</code>, <code>MissionApproval</code>, <code>MissionSpecPane</code>, <code>mission_planner</code>, &ldquo;Mission Planner/Control&rdquo;) across <code>src/</code>, <code>src-tauri/src/</code>, <code>agent-sidecar/src/</code>, <code>src/generated/</code> returns <strong>ZERO hits</strong> (excluding permission/commission/submission) &mdash; eradication is genuinely complete.</li>
+      <li>Exactly <strong>5</strong> <code>#[serde(alias="missionId")]</code> on the expected fields &mdash; matches documented intentional back-compat; correctly NOT flagged.</li>
+      <li>On-disk journal dir literal <code>join("missions")</code> preserved (<code>flight_journal.rs:82</code>) &mdash; intentional, correctly preserved.</li>
+      <li><strong>No false positives:</strong> no auditor wrongly flagged serde aliases, store shims, or the on-disk path as leftover residue.</li>
+    </ul>
+  </div>
+
+  <!-- MUST FIX -->
+  <h3 class="rpt-h3">The One Recommended Fix Before Commit</h3>
+  <table class="rpt-table">
+    <thead>
+      <tr><th>Severity</th><th>Finding</th><th>Location</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="rpt-badge rpt-high">MEDIUM</span></td>
+        <td>README still lists the renamed file <code>MissionsView</code> in the <code>views/</code> directory tree. This directly undercuts the stated &ldquo;README verified against code&rdquo; deliverable. Two related lowercase &ldquo;mission control&rdquo; leftovers best fixed in the same one-line-each pass. Trivial fix.</td>
+        <td><code>README.md:314</code> (also <code>:20</code>, <code>:106</code>)</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="rpt-note">The lone medium-severity finding is a README path string. There are <strong>zero findings at medium-or-above touching behavior, IPC contract, serialization, or build</strong>.</p>
+
+  <!-- NICE TO HAVE -->
+  <h3 class="rpt-h3">Residual Cosmetic Items (ship now or trivial follow-up)</h3>
+  <ul class="rpt-list rpt-list-checked">
+    <li><span class="rpt-badge rpt-low">NIT</span> Rename file-private constants <code>DEFAULT/MAX/MIN_MISSION_JOURNAL_TAIL_BYTES</code> &rarr; <code>*_FLIGHT_*</code> (<code>flight_planner.rs:2628-2646</code>). Not serialized, not IPC, compiles clean &mdash; purely cosmetic. (Deduped: reported by 4 auditors as one item.)</li>
+    <li><span class="rpt-badge rpt-low">DOC</span> Fix <code>JournalTab.tsx:31</code> doc comment over-renamed to <code>flights/</code> dir; real dir is the deliberately-retained <code>missions/</code>. Comment-only.</li>
+    <li><span class="rpt-badge rpt-low">DOC</span> Update <code>anthropic-multi-turn-smoke.mjs</code> comments referencing &ldquo;Mission Planner E1&rdquo; and a nonexistent doc path. Comment-only, no behavioral impact.</li>
+    <li><span class="rpt-badge rpt-low">DOC</span> <code>docs/index.html</code> &ldquo;Missions&rdquo; branding is pure CRLF/line-ending churn, outside README-only scope &mdash; explicitly <strong>NOT a regression</strong>.</li>
+  </ul>
+
+  <!-- ENVIRONMENTAL CAVEATS -->
+  <h3 class="rpt-h3">Environmental Caveats</h3>
+  <div class="rpt-callout rpt-callout-warn rpt-env">
+    <ul class="rpt-list">
+      <li>Vitest and the live Claude-SDK / codex sidecar smokes are <span class="rpt-badge rpt-env">BLOCKED-ENV</span> only: Windows-installed <code>node_modules</code> under WSL2 lack linux-native rollup + CLI binaries. Environmental, <strong>not code defects</strong>. The Windows host is the gate-execution environment.</li>
+      <li>The <code>ts-rs</code> doc-test &ldquo;failed to parse serde attribute&rdquo; warning is the benign expected output of the intentional <code>missionId</code> alias &mdash; <strong>not a failure</strong>.</li>
+    </ul>
+  </div>
+
+  <!-- BOTTOM LINE -->
+  <div class="rpt-callout rpt-callout-verdict rpt-pass">
+    <h3 class="rpt-h3 rpt-h3-inline">Bottom Line</h3>
+    <p>The rename is <strong>safe to commit</strong>. The four residual items are all cosmetic/doc-only with zero behavioral or contract risk. The README fix (must-fix) is recommended for this commit since it directly contradicts a stated deliverable; the other three can ship now or be swept in a trivial follow-up.</p>
+  </div>
+</section>
+      </section>
+
+      <section id="code">
+        <h2>Code Audit</h2>
+        <section class="rpt-section">
+  <h2 class="rpt-h2">Code Audit &amp; Test Results</h2>
+
+  <div class="rpt-callout rpt-callout-pass">
+    <p class="rpt-callout-title"><span class="rpt-badge rpt-pass">VERDICT</span> SHIP with one quick doc fix recommended</p>
+    <p class="rpt-prose">The Mission&nbsp;&rarr;&nbsp;Flight rename is functionally complete and correct; only cosmetic doc/comment/naming residue remains. The single finding worth fixing before commit is a stale public-README path that contradicts the &ldquo;README verified against code&rdquo; claim.</p>
+  </div>
+
+  <p class="rpt-prose rpt-meta">Consolidated from <strong>10 code auditors + 1 test report</strong>, with load-bearing claims independently re-verified by Read/grep. A repo-wide scan for strong Mission identifiers across <code>src/</code>, <code>src-tauri/src/</code>, <code>agent-sidecar/src/</code>, and <code>src/generated/</code> returns <strong>zero hits</strong> (after excluding permission/commission/submission) &mdash; the rename eradication is genuinely complete. Exactly 5 <code>#[serde(alias="missionId")]</code> attributes and the on-disk <code>join("missions")</code> journal-dir literal are confirmed present and correctly classified as intentional back-compat, not leftovers.</p>
+
+  <!-- ============ PER-AREA VERDICTS ============ -->
+  <h3 class="rpt-h3">Per-Area Verdicts (10-Area Audit)</h3>
+  <table class="rpt-table">
+    <thead>
+      <tr>
+        <th>Audit Area</th>
+        <th>Verdict</th>
+        <th>Summary</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>rust-core-types</code></td>
+        <td><span class="rpt-badge rpt-pass">CLEAN</span></td>
+        <td>All 5 <code>#[serde(alias="missionId")]</code> back-compat aliases present, each on the correct persisted <code>flight_id</code> field (never on <code>id</code>). <code>FlightApprovalRequest</code>/<code>Dto</code> renamed cleanly with symmetric 8-field From impls. On-disk <code>join("missions")</code> literal preserved (flight_journal.rs:82). No stray <code>mission_id</code>/<code>missionId</code> or stale old-name references. No defects.</td>
+      </tr>
+      <tr>
+        <td><code>rust-flight-planner</code></td>
+        <td><span class="rpt-badge rpt-high">MINOR</span></td>
+        <td><code>complete_mission&rarr;complete_flight</code> rename consistent across tool def, dispatch arm, MCP id, handler, prompts and tests. Shutdown ordering sound; event uses <code>flightId</code>. One consistency gap: three internal byte-size constants retain old <code>MISSION_</code> naming (1 nit).</td>
+      </tr>
+      <tr>
+        <td><code>rust-planner-support</code></td>
+        <td><span class="rpt-badge rpt-pass">CLEAN</span></td>
+        <td>Four in-scope files audited (costs, compaction, prompts, orchestration). Renamed helpers and all call sites match arity/signature incl. the E10 token split. <code>WakeTrigger</code> has 7 variants, all matched exhaustively; the prompt&rsquo;s &ldquo;seven MCP tools&rdquo; claim is correct. No leftover Mission references. No defects.</td>
+      </tr>
+      <tr>
+        <td><code>rust-ipc</code></td>
+        <td><span class="rpt-badge rpt-high">MINOR</span></td>
+        <td>IPC contract consistent across all three sides: 12 <code>flight_planner</code> Tauri commands registered in <code>lib.rs</code> with matching <code>invoke()</code> wrappers in <code>tauri.ts</code> (correct command-name strings; snake_case&rarr;camelCase mapping clean). Reported the same constant-trio nit (deduped).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="rpt-prose rpt-note"><span class="rpt-badge rpt-env">NOTE</span> Across all reporting areas there are <strong>zero findings at medium-or-above severity that touch behavior</strong>. No auditor reported a correctness, IPC-contract, serialization, or build defect. The lone &ldquo;medium&rdquo; item is the README path string. The remaining audit areas converged on the same cosmetic/doc-only residue captured in the consolidated lists below; the constant-trio nit was reported by 4 auditors and deduped to a single item.</p>
+
+  <!-- ============ MUST-FIX ============ -->
+  <h3 class="rpt-h3">Consolidated Must-Fix List</h3>
+  <div class="rpt-finding">
+    <p class="rpt-finding-head">
+      <span class="rpt-badge rpt-high">MEDIUM</span>
+      <strong>README still lists the renamed file <code>MissionsView</code> in the <code>views/</code> directory tree</strong>
+    </p>
+    <p class="rpt-prose"><code>README.md</code> line 314 reads: <em>&ldquo;views/&nbsp;&nbsp;# First-class application views (MissionsView, WorkspaceView, AgentsView, &hellip;)&rdquo;</em>. <code>MissionsView.tsx</code> was renamed to <code>FlightsView.tsx</code> in this changeset (confirmed: <code>src/components/views/FlightsView.tsx</code> exists, no <code>MissionsView</code> anywhere in <code>src/</code>). This is the one finding that materially undercuts a stated deliverable: the brief asserts the README was &ldquo;fully refreshed/verified against code,&rdquo; yet this is a now-incorrect path in public docs. Trivial fix, verified via Read. Two related lowercase &ldquo;mission control&rdquo; leftovers at lines 20 and 106 (line 106 sits directly under the renamed &ldquo;Flight Control&rdquo; header at line 104) are best fixed in the same one-line-each pass.</p>
+    <p class="rpt-loc"><span class="rpt-pill">location</span> <code>/mnt/d/projects/PacketADE/README.md:314 (also :20, :106)</code></p>
+  </div>
+
+  <!-- ============ NICE-TO-HAVE ============ -->
+  <h3 class="rpt-h3">Nice-to-Have (Cosmetic / Doc-Only)</h3>
+  <table class="rpt-table">
+    <thead>
+      <tr>
+        <th>Severity</th>
+        <th>Item</th>
+        <th>Location</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="rpt-badge rpt-low">NIT</span></td>
+        <td>Rename the three private constants <code>DEFAULT/MAX/MIN_MISSION_JOURNAL_TAIL_BYTES</code> (and their 3 use sites) to <code>*_FLIGHT_JOURNAL_TAIL_BYTES</code>. File-private byte-size limits, not serialized, not IPC, compiles clean &mdash; purely cosmetic. Reported by 4 auditors as the same item (deduped). NOT part of the intentional back-compat set.</td>
+        <td><code>flight_planner.rs:2628-2630 / 2643-2646</code></td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-low">NIT</span></td>
+        <td>Fix the <code>JournalTab.tsx:31</code> doc comment: over-renamed to <code>~/.packetade/flights/&hellip;</code> but the real on-disk dir is the deliberately-retained <code>~/.packetade/missions/</code> (flight_journal.rs:82 joins &ldquo;missions&rdquo;). Comment-only; would mislead a dev locating journal files. The filename portion is accurate.</td>
+        <td><code>JournalTab.tsx:31</code></td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-low">NIT</span></td>
+        <td>Update sidecar smoke comments: lines 3 and 7 still say &ldquo;Mission Planner E1&rdquo; and reference the now-nonexistent <code>dev/mission-planner-spike-retro.md</code> (only <code>dev/flight-planner-spike-retro.md</code> exists). Comment-only, no behavioral impact.</td>
+        <td><code>agent-sidecar/test/anthropic-multi-turn-smoke.mjs:3,7</code></td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-env">NON-REGRESSION</span></td>
+        <td>Optional separate docs pass: <code>docs/index.html</code> retains &ldquo;Missions&rdquo; marketing branding. Confirmed to be pure CRLF/line-ending diff churn, untouched by this rename and outside the declared README-only doc scope &mdash; explicitly NOT a regression.</td>
+        <td><code>docs/index.html (~652/685/689/750/827/1378)</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============ FALSE-POSITIVE GUARD ============ -->
+  <div class="rpt-callout rpt-callout-env">
+    <p class="rpt-callout-title"><span class="rpt-badge rpt-env">FALSE-POSITIVE / NON-DEFECT GUARD</span></p>
+    <p class="rpt-prose">No auditor wrongly flagged the intentional back-compat (serde aliases, store shims at <code>goalStore.ts:18</code> / <code>issueStore.ts:170</code>, the on-disk <code>missions/</code> path) as leftover &mdash; all correctly excluded. The <code>docs/index.html</code> &ldquo;Missions&rdquo; branding is correctly classified as pre-existing line-ending churn, not a regression. The ts-rs doc-test &ldquo;failed to parse serde attribute&rdquo; warning is the benign expected output of the intentional <code>missionId</code> alias, not a failure.</p>
+  </div>
+
+  <!-- ============ TEST RUNNER RESULTS ============ -->
+  <h3 class="rpt-h3">Test-Runner Results</h3>
+  <p class="rpt-prose">All runnable suites green. Vitest and the live Claude-SDK/codex sidecar smokes are <strong>blocked-env only</strong> (Windows-installed <code>node_modules</code> under WSL2 lack linux-native rollup + CLI binaries) &mdash; environmental, not code defects.</p>
+
+  <table class="rpt-table">
+    <thead>
+      <tr>
+        <th>Suite</th>
+        <th>Status</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>cargo.exe test</code> (Rust unit + contract)</td>
+        <td><span class="rpt-badge rpt-pass">PASS</span></td>
+        <td>419 passed; 0 failed; 13 ignored; 0 measured (Windows MSVC). Doc-tests emitted a benign ts-rs warning on the intentional <code>#[serde(alias="missionId")]</code> &mdash; not a failure.</td>
+      </tr>
+      <tr>
+        <td><code>flight-planner-wiring-smoke.mjs</code></td>
+        <td><span class="rpt-badge rpt-pass">PASS</span></td>
+        <td>13 pass, 0 fail. All checks green incl. pinned_key_constant, factory_shape_*, tools_registered_*, create_milestone/create_task envelopes + bridged content, sequential_no_deadlock, rejection_surfaces, protocol_version_floor (v6).</td>
+      </tr>
+      <tr>
+        <td><code>openai-agents-gating-smoke.mjs</code></td>
+        <td><span class="rpt-badge rpt-pass">PASS</span></td>
+        <td>All 23 assertions pass (provider gating; auto / ask_for_risky / allow_all / deny_all / planMode for bash + write_file; allow_always non-reprompt; non-risky read/list/grep).</td>
+      </tr>
+      <tr>
+        <td><code>tsc --noEmit</code></td>
+        <td><span class="rpt-badge rpt-pass">PASS</span></td>
+        <td>Exit 0, no type errors. Re-confirms the rename&rsquo;s FE/IPC type surface (<code>FlightApprovalRequest</code>, <code>flightId</code>, <code>FlightSpecPane</code>, &hellip;) compiles cleanly.</td>
+      </tr>
+      <tr>
+        <td><code>eslint src</code></td>
+        <td><span class="rpt-badge rpt-pass">PASS</span></td>
+        <td>Exit 0, 0 errors. Single warning: <code>src/components/views/github/shared.tsx:31</code> react-refresh/only-export-components &mdash; pre-existing and unrelated to the rename.</td>
+      </tr>
+      <tr>
+        <td><code>registry-smoke.mjs</code> <span class="rpt-pill">bonus</span></td>
+        <td><span class="rpt-badge rpt-pass">PASS</span></td>
+        <td>openai-agents pass; bogus-provider pass (Unknown provider rejected as expected). Provider registry logic intact.</td>
+      </tr>
+      <tr>
+        <td><code>session-ordering-smoke.mjs</code> <span class="rpt-pill">bonus</span></td>
+        <td><span class="rpt-badge rpt-pass">PASS</span></td>
+        <td>Pure-logic smoke; output <code>[session-ordering-smoke] PASS</code>.</td>
+      </tr>
+      <tr>
+        <td>Vitest (<code>pnpm exec vitest run</code>)</td>
+        <td><span class="rpt-badge rpt-env">BLOCKED-ENV</span></td>
+        <td>Cannot run under WSL: <em>Cannot find module @rollup/rollup-linux-x64-gnu &hellip; MODULE_NOT_FOUND</em>. node_modules were installed on Windows so the rollup linux-native optional binary is absent. Environmental, not a code defect.</td>
+      </tr>
+      <tr>
+        <td>Live sidecar smokes (mcp-inproc, echo, protocol-v6, remote-project-path)</td>
+        <td><span class="rpt-badge rpt-env">BLOCKED-ENV</span></td>
+        <td>All fail with the same root cause: <em>Native CLI binary for linux-x64 not found</em> (Claude Agent SDK). echo/protocol-v6/remote-project-path time out waiting for ready/done because the sidecar cannot spawn the missing linux-native CLI; mcp-inproc throws the explicit native-binary error. Windows-node_modules-under-WSL limitation, not a code defect.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="rpt-callout rpt-callout-pass">
+    <p class="rpt-callout-title"><span class="rpt-badge rpt-pass">BOTTOM LINE</span></p>
+    <p class="rpt-prose">The rename is safe to commit. The four residual items are all cosmetic/doc-only with zero behavioral or contract risk. The README fix (must-fix) should go in this commit since it directly contradicts a stated deliverable; the other three can ship now or be swept in a trivial follow-up.</p>
+  </div>
+</section>
+      </section>
+
+      <section id="planning">
+        <h2>Planning</h2>
+        <section class="rpt-section rpt-planning-audit">
+  <header class="rpt-section-header">
+    <h2 class="rpt-section-title">Project Planning Audit</h2>
+    <p class="rpt-section-lede">
+      The Mission&nbsp;&rarr;&nbsp;Flight rename is <strong>code-complete and verified</strong>
+      (cargo / tsc / eslint / schema-regen / wiring-smoke all green). The entire outstanding
+      surface is <strong>documentation reconciliation</strong> across the <code>dev/</code> tree:
+      a missing CHANGELOG entry, stale date stamps, stale code-symbol references, two broken
+      automated-gate commands, and one stale <em>&ldquo;Cost alerts: Not started&rdquo;</em> claim that
+      contradicts the shipped guardrail engine.
+    </p>
+    <div class="rpt-badge-row">
+      <span class="rpt-badge rpt-pass">Code: SHIP</span>
+      <span class="rpt-badge rpt-env">Doc reconciliation only</span>
+      <span class="rpt-badge rpt-high">0 behavior/contract defects</span>
+      <span class="rpt-badge rpt-pass">14 doc files applied</span>
+    </div>
+  </header>
+
+  <!-- ============ AT-A-GLANCE ============ -->
+  <div class="rpt-callout rpt-callout-info">
+    <h3 class="rpt-callout-title">Audit altitude</h3>
+    <p>
+      This is the planning/doc-ecosystem half of a two-altitude audit. The code audit found the
+      rename source genuinely clean; this pass verifies whether the <code>dev/</code> planning corpus,
+      public docs, and gate scripts <em>tell the truth</em> about that code. Items below are grouped
+      by <code>dev/</code> area into three buckets: <strong>Done</strong> since the last audit,
+      <strong>Stale</strong> (now contradicts code), and <strong>Missing</strong> (should exist but doesn't yet).
+    </p>
+  </div>
+
+  <table class="rpt-table rpt-summary-table">
+    <caption class="rpt-table-caption">Per-area status roll-up</caption>
+    <thead>
+      <tr>
+        <th scope="col">Area</th>
+        <th scope="col">Done</th>
+        <th scope="col">Stale</th>
+        <th scope="col">Missing</th>
+        <th scope="col">Worst severity</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>README.md</code> (public root)</td>
+        <td>3 one-line edits applied</td>
+        <td>MissionsView path, 2&times; lowercase &ldquo;mission control&rdquo;</td>
+        <td>&mdash;</td>
+        <td><span class="rpt-badge rpt-high">medium</span></td>
+      </tr>
+      <tr>
+        <td><code>CHANGELOG.md</code></td>
+        <td>Entry + LF normalization applied</td>
+        <td>Was CRLF-flipped (1181-line noise)</td>
+        <td>Rename history entry (now added)</td>
+        <td><span class="rpt-badge rpt-pass">resolved</span></td>
+      </tr>
+      <tr>
+        <td><code>ROADMAP.md</code></td>
+        <td>Date + N5 status fixed</td>
+        <td>Date 2026-05-27; &ldquo;Cost alerts: Not started&rdquo;</td>
+        <td>Cost guardrails in Shipped Foundation</td>
+        <td><span class="rpt-badge rpt-high">medium</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/</code> (index)</td>
+        <td>Date + reliability-pack index entry</td>
+        <td>Date 2026-05-28</td>
+        <td>code-review-*.md indexing note</td>
+        <td><span class="rpt-badge rpt-env">low</span></td>
+      </tr>
+      <tr>
+        <td><code>backlog.md</code></td>
+        <td>~7 symbols re-pointed; back-compat note added</td>
+        <td>Stale Mission symbols; complete_flight item body</td>
+        <td>Back-compat removal-criteria; BACKLOG/backlog casing</td>
+        <td><span class="rpt-badge rpt-env">low</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/</code> Flight Planner pack</td>
+        <td>2 gate cmds + paths fixed</td>
+        <td>2 broken gate cmds (false-green)</td>
+        <td>WSL2 environment note</td>
+        <td><span class="rpt-badge rpt-blocker">false-green risk</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/</code> Flight Planner v1 docs</td>
+        <td>Runbook updated; plan errata applied</td>
+        <td>MissionSpecPane, components/missions/*, journal shape</td>
+        <td>&mdash;</td>
+        <td><span class="rpt-badge rpt-env">low (gated)</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/moat/</code></td>
+        <td>cost-dashboard status &rarr; Partial</td>
+        <td>&ldquo;Cost alerts: Not started&rdquo;; date 2026-04-15</td>
+        <td>&mdash;</td>
+        <td><span class="rpt-badge rpt-high">medium</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/bridgemind/</code></td>
+        <td>Store-split + handoff-log pointers; dates</td>
+        <td>orchestrationStore; CoordinationFeed; dates 2026-04-*</td>
+        <td>mcp-server cross-link to transport doc</td>
+        <td><span class="rpt-badge rpt-env">low</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/remoteagents/</code></td>
+        <td>3 Missions&rarr;Flights prose fixes; Decision Log scaffold</td>
+        <td>&ldquo;Missions&rdquo; prose (L33, L17, L90)</td>
+        <td>Sprint-0 Decision Log (now scaffolded)</td>
+        <td><span class="rpt-badge rpt-env">low</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============ DONE SINCE LAST AUDIT ============ -->
+  <h3 class="rpt-subhead">Done since last audit <span class="rpt-badge rpt-pass">applied</span></h3>
+  <p class="rpt-note">
+    The apply phase shipped the load-bearing doc-correctness items &mdash; those needed to commit the
+    working tree cleanly and those carrying real risk. Verified facts (no backlog items were
+    <em>closed</em> by the rename itself, since renames are cosmetic to open work).
+  </p>
+
+  <div class="rpt-card-grid">
+    <article class="rpt-card rpt-card-pass">
+      <h4 class="rpt-card-title"><code>README.md</code> &mdash; 3 stale Mission strings removed</h4>
+      <p>Line 20 &ldquo;master-detail mission control&rdquo; rephrased; line 106 &ldquo;flight's mission control&rdquo;
+      &rarr; &ldquo;flight control&rdquo; (under the Flight Control header); line 314 views/ tree
+      <code>MissionsView</code> &rarr; <code>FlightsView</code>. LF endings preserved.</p>
+    </article>
+    <article class="rpt-card rpt-card-pass">
+      <h4 class="rpt-card-title"><code>CHANGELOG.md</code> &mdash; entry + LF normalization</h4>
+      <p>Normalized CRLF&rarr;LF (killing 1181-line spurious diff that masked 8 real
+      <code>mission-planner-*.md</code> &rarr; <code>flight-planner-*.md</code> reference renames), then added one
+      <code>[Unreleased] - 2026-06-15</code> entry. Diff now 17 added + 4 changed lines.</p>
+    </article>
+    <article class="rpt-card rpt-card-pass">
+      <h4 class="rpt-card-title"><code>ROADMAP.md</code> &mdash; date + N5 corrected</h4>
+      <p>Date &rarr; 2026-06-15; N5 Cost alerts <span class="rpt-badge rpt-env">Not started</span> &rarr;
+      <span class="rpt-badge rpt-high">Partial</span> with shipped-threshold evidence; cost guardrails added to
+      Shipped Foundation; R2 signing-cert row reconfirmed.</p>
+    </article>
+    <article class="rpt-card rpt-card-pass">
+      <h4 class="rpt-card-title">Flight Planner reliability pack &mdash; false-green gates fixed</h4>
+      <p>Two broken gate commands re-pointed: <code>cargo test mission_journal</code> &rarr; <code>flight_journal</code>;
+      vitest <code>components/missions/__tests__</code> &rarr; <code>components/flights/__tests__</code>.
+      WSL2 environment note added; BACKLOG link casing normalized.</p>
+    </article>
+    <article class="rpt-card rpt-card-pass">
+      <h4 class="rpt-card-title"><code>backlog.md</code> &mdash; ~7 symbols re-pointed</h4>
+      <p><code>mission_approvals&rarr;flight_approvals</code>, <code>complete_mission&rarr;complete_flight</code>,
+      <code>get_mission_approvals&rarr;get_flight_approvals</code>, <code>MissionSpecPane&rarr;FlightSpecPane</code>,
+      <code>mission_journal::journal_path&rarr;flight_journal::journal_path</code>,
+      <code>resolve_mission_approval&rarr;resolve_flight_approval</code>, <code>get_by_mission&rarr;get_by_flight</code>.
+      Intentional back-compat subsection added.</p>
+    </article>
+    <article class="rpt-card rpt-card-pass">
+      <h4 class="rpt-card-title"><code>JournalTab.tsx:31</code> &mdash; doc comment corrected</h4>
+      <p>Both the dir <em>and</em> filename token were wrong:
+      <code>~/.packetade/flights/F-&lt;shortId&gt;_&lt;flight_id&gt;.md</code> &rarr;
+      <code>~/.packetade/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> (verified vs flight_journal.rs:82/:124).</p>
+    </article>
+    <article class="rpt-card rpt-card-pass">
+      <h4 class="rpt-card-title"><code>dev/moat/cost-dashboard-plan.md</code></h4>
+      <p>Cost alerts row &rarr; Partial; Known-Gaps conclusion reframed to alert/notification UX
+      (thresholds shipped in <code>costGuardrails.ts</code>); status date &rarr; 2026-06-15.</p>
+    </article>
+    <article class="rpt-card rpt-card-pass">
+      <h4 class="rpt-card-title"><code>dev/bridgemind/</code> + <code>dev/remoteagents/</code></h4>
+      <p>swarm-orchestration store-split + MilestonesPanel handoff-log pointers; mcp-server cross-link;
+      3 Missions&rarr;Flights prose fixes; Sprint-0 Decision Log scaffold added to 09-open-decisions.md.</p>
+    </article>
+  </div>
+
+  <div class="rpt-callout rpt-callout-warn">
+    <h4 class="rpt-callout-title">Two decisions executed as cleanup (not findings)</h4>
+    <ul class="rpt-tight-list">
+      <li><strong>Reverted <code>dev/archive/*</code></strong> &mdash; 21 files were pure-EOL churn accidentally
+      swept by the rename tooling into a do-not-edit zone. <code>git checkout -- dev/archive/</code>; 0 remaining modified.</li>
+      <li><strong>Locked v1 design doc deferred</strong> &mdash; <code>flight-planner-plan.md</code> is an ADR-style
+      frozen record; only a hand-reviewed errata pass ran (paths + inner <code>mission-planner</code> literal),
+      explicitly excluding the correct external <code>createSdkMcpServer</code> SDK API from any sweep.</li>
+    </ul>
+  </div>
+
+  <!-- ============ STALE ============ -->
+  <h3 class="rpt-subhead">Stale &mdash; doc now contradicts code <span class="rpt-badge rpt-high">found</span></h3>
+  <table class="rpt-table rpt-findings-table">
+    <thead>
+      <tr>
+        <th scope="col">Severity</th>
+        <th scope="col">Area / File</th>
+        <th scope="col">What was stale</th>
+        <th scope="col">Why it matters</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="rpt-badge rpt-high">medium</span></td>
+        <td><code>README.md:314</code></td>
+        <td><code>MissionsView</code> listed in the views/ directory tree; file is now <code>FlightsView.tsx</code></td>
+        <td>The lone item that materially undercuts a stated deliverable (&ldquo;README verified against code&rdquo;) &mdash; an incorrect path in public docs.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-high">medium</span></td>
+        <td><code>ROADMAP.md</code> N5 &amp; <code>cost-dashboard-plan.md</code></td>
+        <td>&ldquo;Cost alerts: Not started&rdquo;</td>
+        <td>Contradicts the shipped guardrail engine (<code>costGuardrails.ts</code> + <code>costGuardrailStore.ts</code>, launch gate, LiveSpendChip). Moderator-confirmed.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-blocker">false-green</span></td>
+        <td>Flight Planner reliability pack (~180, ~183, ~210)</td>
+        <td>Two gate commands still referenced <code>mission_journal</code> / <code>components/missions/__tests__</code></td>
+        <td>Commands selected zero tests / errored on a missing path &mdash; a real false-green CI risk, not cosmetic.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-env">low</span></td>
+        <td><code>backlog.md</code> (~217&ndash;359)</td>
+        <td>~7 stale Mission code symbols + a wrong <code>complete_flight</code> schema-strictness claim</td>
+        <td>Item body said serde-default; Rust actually declares <code>summary: String</code> (required). Restated as &ldquo;zod min(1) vs Rust accepts empty&rdquo;.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-env">low</span></td>
+        <td><code>JournalTab.tsx:31</code></td>
+        <td>Comment over-renamed to <code>flights/</code> dir + wrong filename token order</td>
+        <td>Would misdirect a dev locating journal files; real dir is the retained <code>missions/</code>.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-env">low</span></td>
+        <td>Date stamps (ROADMAP, dev/README, 2&times; bridgemind, moat)</td>
+        <td>2026-05-27 / 05-28 / 04-28 / 04-15</td>
+        <td>Misrepresent currency of the planning corpus; bumped to 2026-06-15.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-env">low</span></td>
+        <td><code>swarm-orchestration-plan.md</code></td>
+        <td><code>orchestrationStore.ts</code> (split); &ldquo;CoordinationFeed in FlightDetail&rdquo; (no such component)</td>
+        <td>Pointers to nonexistent symbols; real handoff-log lives in <code>MilestonesPanel.tsx</code>.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-env">low</span></td>
+        <td><code>remoteagents/README.md:33</code>, <code>01-product-scope.md:17/:90</code></td>
+        <td>&ldquo;Missions&rdquo; in prose</td>
+        <td>Terminology drift from the rename; prose-only, no behavior.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-env">low (gated)</span></td>
+        <td><code>flight-planner-plan.md</code> / v1 runbook</td>
+        <td><code>mission-planner-server.ts</code>, <code>MissionSpecPane</code>, <code>components/missions/*</code>, journal shape</td>
+        <td>Locked-doc symbol sweep gated on freeze-vs-refresh decision; runbook (operational) safe to update now.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-badge rpt-env">cosmetic</span></td>
+        <td><code>flight_planner.rs:2628&ndash;2646</code></td>
+        <td>3 private constants <code>*_MISSION_JOURNAL_TAIL_BYTES</code></td>
+        <td>File-private byte limits, not serialized, not IPC &mdash; purely a leftover-naming nit. Deferred to backlog.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============ MISSING ============ -->
+  <h3 class="rpt-subhead">Missing &mdash; should exist but didn't <span class="rpt-badge rpt-high">gap</span></h3>
+  <div class="rpt-card-grid">
+    <article class="rpt-card">
+      <h4 class="rpt-card-title">CHANGELOG rename entry</h4>
+      <p>No history entry for the Mission&rarr;Flight rename + README refresh existed. <span class="rpt-badge rpt-pass">Added</span> as
+      <code>[Unreleased] - 2026-06-15</code> (six bullets incl. the 3 preserved back-compat surfaces + verification line).</p>
+    </article>
+    <article class="rpt-card">
+      <h4 class="rpt-card-title">Back-compat removal-criteria note</h4>
+      <p>No deprecation/removal policy anywhere for the 5 serde aliases (4 files) + 2 store read shims +
+      <code>join("missions")</code> dir. <span class="rpt-badge rpt-pass">Added</span> a deliberate-retention subsection with
+      two removal classes and criteria placeholder.</p>
+    </article>
+    <article class="rpt-card">
+      <h4 class="rpt-card-title">WSL2 gate-environment note</h4>
+      <p>Reliability pack never documented that Linux-native vitest (rollup) and live sidecar/Claude-CLI/codex
+      smokes cannot run under WSL2 with Windows-installed <code>node_modules</code>. <span class="rpt-badge rpt-pass">Added</span>; Windows is the gate host.</p>
+    </article>
+    <article class="rpt-card">
+      <h4 class="rpt-card-title">Reliability pack in <code>dev/README.md</code> index</h4>
+      <p>The pack wasn't indexed in the Flight Planner doc set. <span class="rpt-badge rpt-pass">Added</span> next to the v1 acceptance runbook.</p>
+    </article>
+    <article class="rpt-card">
+      <h4 class="rpt-card-title">Remote Agents Decision Log</h4>
+      <p>The three BLOCKING Sprint-0 decisions (auth build-vs-buy, payload-encryption gate, code location) had
+      no recording slot. <span class="rpt-badge rpt-pass">Scaffolded</span> in <code>09-open-decisions.md</code>, all marked Open.</p>
+    </article>
+    <article class="rpt-card rpt-card-open">
+      <h4 class="rpt-card-title">Still genuinely open (deferred to backlog)</h4>
+      <p><code>read_journal_after()</code> incremental fetch (absent); <code>now_millis()</code> dedup across 6
+      flight_planner_tools files; F58 rate-limit backoff coverage; BACKLOG/backlog casing standardization;
+      Remote Agents sequencing entry. Not doc edits &mdash; real code debt.</p>
+    </article>
+  </div>
+
+  <!-- ============ NON-DEFECTS ============ -->
+  <div class="rpt-callout rpt-callout-info">
+    <h4 class="rpt-callout-title">Correctly classified non-defects (false-positive guard)</h4>
+    <ul class="rpt-tight-list">
+      <li>The 5 <code>#[serde(alias="missionId")]</code> attrs (across 4 files), the <code>issueStore.ts</code> /
+      <code>goalStore.ts</code> read shims, and the on-disk <code>data_dir().join("missions")</code> dir are
+      <strong>intentional back-compat</strong> &mdash; never flagged as leftovers.</li>
+      <li><code>docs/index.html</code> &ldquo;Missions&rdquo; branding is pre-existing CRLF line-ending churn, outside the
+      README-only doc scope &mdash; <strong>not a regression</strong>.</li>
+      <li>The ts-rs doc-test &ldquo;failed to parse serde attribute&rdquo; warning is the benign expected output of the
+      intentional <code>missionId</code> alias, <strong>not a failure</strong>.</li>
+    </ul>
+  </div>
+
+  <!-- ============ OPEN RESEARCH QUESTIONS ============ -->
+  <h3 class="rpt-subhead">Open research questions for the owner</h3>
+  <table class="rpt-table rpt-questions-table">
+    <thead>
+      <tr>
+        <th scope="col">#</th>
+        <th scope="col">Question</th>
+        <th scope="col">Recommendation / default</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>Ship as <code>0.9.5</code> version bump or <code>[Unreleased]</code>?</td>
+        <td><span class="rpt-badge rpt-high">Override default</span> &rarr; cut <strong>0.9.5</strong> (repo has no [Unreleased] section; prior 0.9.2&ndash;0.9.4 set the dated-milestone precedent). Owner call. Applied as [Unreleased] only because the apply phase was scoped to CHANGELOG-only and couldn't bump the 3 version files.</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>Freeze vs refresh locked v1 docs?</td>
+        <td><strong>Freeze the design semantics</strong>; allow narrow hand-reviewed errata for internal pointers only. Exclude <code>createSdkMcpServer</code> (correct external API) from any sweep.</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Journal filename: trim to spec <code>&lt;shortId&gt;.md</code> or bless <code>F-&lt;tail&gt;_&lt;flight_id&gt;.md</code>?</td>
+        <td><strong>Amend the spec</strong> to bless the collision-resistant F-prefix form; do not trim the code.</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><code>complete_flight</code> empty-summary: harden Rust or relax zod?</td>
+        <td><strong>Harden Rust</strong> to reject empty (match zod min(1)). Rust is the real trust boundary; fix the empty-summary test. Severity low but real latent divergence.</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>Back-compat removal timeline?</td>
+        <td>No timeline exists; shims are lazy read-fallbacks, <strong>not date-expirable</strong>. Class A (aliases + store shims) removable only after a one-shot eager migration ships + 1 release; Class B (<code>join("missions")</code>) is the live path &mdash; keep until a deliberate dir migration.</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>N5 cost-alerts: distinct surface or already shipped?</td>
+        <td><strong>Keep Partial</strong> &mdash; shipped UI is a passive chip + hard launch gate; the proactive cost notification doesn't exist yet (<code>notifications.ts</code> has no cost notify).</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td>Index <code>code-review-*.md</code> in dev/README?</td>
+        <td>Default: <strong>note as intentionally unindexed</strong> point-in-time artifacts unless owner says enumerate.</td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td>Remote Agents still the flagship next initiative?</td>
+        <td>Roadmap-owner confirmation needed before Sprint-0 scaffolding; the Decision Log scaffold is harmless regardless.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="rpt-callout rpt-callout-pass">
+    <h4 class="rpt-callout-title">Bottom line</h4>
+    <p>
+      The working tree is <strong>safe to commit/release</strong>. The planning audit closed the load-bearing doc gaps
+      (README, CHANGELOG, broken gates, N5 status, backlog symbols) in this pass; the residual symbol sweeps on
+      locked v1 docs are queued behind the freeze-vs-refresh decision, and the genuine code debt (read_journal_after,
+      now_millis dedup, F58 coverage) is correctly parked in <code>backlog.md</code> rather than treated as doc edits.
+    </p>
+  </div>
+</section>
+      </section>
+
+      <section id="debate">
+        <h2>Debate</h2>
+        <section class="rpt-section rpt-debate">
+  <header class="rpt-section-head">
+    <h2 class="rpt-h2">Cross-Team Debate &amp; Decisions</h2>
+    <p class="rpt-lede">
+      Two audits looked at the same Mission&nbsp;&rarr;&nbsp;Flight rename from different altitudes: the
+      <strong>Code</strong> view audited source correctness, the <strong>Planning</strong> view audited the
+      doc/planning ecosystem. The moderated room reconciled four explicit conflicts and locked a set of
+      apply-phase decisions. The throughline: the rename is verified clean and safe to commit; the open work
+      is doc reconciliation, not code repair.
+    </p>
+  </header>
+
+  <!-- ============================ AGREEMENTS ============================ -->
+  <div class="rpt-block">
+    <h3 class="rpt-h3">Points of Agreement</h3>
+    <p class="rpt-note">Both teams (and the moderator, on the load-bearing claims) converged on the following.</p>
+    <table class="rpt-table rpt-table-agreements">
+      <thead>
+        <tr>
+          <th scope="col">#</th>
+          <th scope="col">Agreed Finding</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>
+            <strong>Rename is code-complete and correct.</strong> Repo-wide scan for strong Mission identifiers
+            (<code>MissionsView</code> / <code>complete_mission</code> / <code>MissionApproval</code> /
+            <code>MissionSpecPane</code> / <code>MissionReview</code> / <code>mission_planner</code> /
+            <code>MissionPlanner</code> / "Mission Planner" / "Mission Control") across <code>src/</code>,
+            <code>src-tauri/src/</code>, <code>agent-sidecar/src/</code>, <code>src/generated/</code> returns
+            <strong>ZERO</strong> hits (excluding permission/commission/submission). Moderator re-verified.
+          </td>
+          <td><span class="rpt-badge rpt-pass">Verified</span></td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>
+            <strong>All verification gates green; safe to commit.</strong> cargo check 0, tsc&nbsp;--noEmit 0,
+            sidecar tsc 0, schema regen byte-identical, eslint 0 errors, flight-planner-wiring-smoke 13/13,
+            openai-agents-gating-smoke 23/23, Rust 419 passed.
+          </td>
+          <td><span class="rpt-badge rpt-pass">Verified</span></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>
+            <strong>Intentional back-compat must NOT be flagged as leftover.</strong> 5
+            <code>#[serde(alias="missionId")]</code> attrs (api/mod.rs:232, flight_planner.rs:311 &amp; :337,
+            flight.rs:480, flight_journal.rs:51), the <code>issueStore.ts</code> + <code>goalStore.ts</code>
+            legacy read shims, and the on-disk <code>data_dir().join("missions")</code> literal at
+            flight_journal.rs:82. Moderator-confirmed.
+          </td>
+          <td><span class="rpt-badge rpt-pass">Verified</span></td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>
+            <strong>Vitest + live sidecar smokes are environmental, not code defects.</strong> Windows-installed
+            <code>node_modules</code> under WSL2 lack Linux-native binaries; Windows is the gate-execution host.
+          </td>
+          <td><span class="rpt-badge rpt-env">Blocked-Env</span></td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>
+            <strong>A CHANGELOG.md history-only entry is needed</strong> for the rename + README refresh
+            (Code implicitly via the "undercut deliverable" framing; Planning explicitly).
+          </td>
+          <td><span class="rpt-badge rpt-high">Action</span></td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>
+            <strong>ROADMAP N5 "Cost alerts: Not started" is stale</strong> and contradicts the shipped guardrail
+            engine (<code>costGuardrails.ts</code>, <code>costGuardrailStore.ts</code> confirmed). Should move to
+            "Partial"; same fix in <code>dev/moat/cost-dashboard-plan.md</code>.
+          </td>
+          <td><span class="rpt-badge rpt-high">Action</span></td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td>
+            <strong>Two broken automated-gate commands</strong> in
+            <code>dev/flight-planner-reliability-continuity-pack.md</code>
+            (<code>cargo test ... mission_journal</code>&nbsp;&rarr;&nbsp;<code>flight_journal</code>; vitest
+            <code>missions/__tests__</code>&nbsp;&rarr;&nbsp;<code>flights/__tests__</code>) carry false-green
+            risk and must be re-pointed.
+          </td>
+          <td><span class="rpt-badge rpt-high">Action</span></td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td>
+            <strong>Journal filename drift acknowledged.</strong> Code emits <code>F-&lt;tail&gt;_&lt;flight_id&gt;.md</code>,
+            which drifts from the locked v1 spec's <code>&lt;shortId&gt;.md</code>; docs should align to code or
+            explicitly note the drift.
+          </td>
+          <td><span class="rpt-badge rpt-env">Doc Drift</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============================ CONFLICTS ============================ -->
+  <div class="rpt-block">
+    <h3 class="rpt-h3">Explicit Conflicts &mdash; Code View vs Planning View vs Resolution</h3>
+    <p class="rpt-note">Four points of disagreement surfaced in the moderated room. Each is resolved below.</p>
+
+    <!-- Conflict 1 -->
+    <article class="rpt-conflict">
+      <header class="rpt-conflict-head">
+        <span class="rpt-pill rpt-pill-topic">Conflict 1</span>
+        <h4 class="rpt-h4">Scope of work before commit: minimal vs full doc reconciliation</h4>
+      </header>
+      <table class="rpt-table rpt-table-conflict">
+        <tbody>
+          <tr>
+            <th scope="row"><span class="rpt-pill rpt-pill-code">Code View</span></th>
+            <td>
+              <strong>SHIP now.</strong> The rename source is clean; only the stale README path (plus two
+              lowercase "mission control" leftovers) materially undercuts a stated deliverable. Everything else
+              is cosmetic/doc-only and can be a trivial follow-up.
+            </td>
+          </tr>
+          <tr>
+            <th scope="row"><span class="rpt-pill rpt-pill-plan">Planning View</span></th>
+            <td>
+              Code is done but the doc ecosystem is not: missing CHANGELOG entry, three stale date stamps,
+              ~7 stale code-symbol references in <code>backlog.md</code>, stale symbols across the
+              flight-planner/bridgemind/remoteagents doc set, two broken gate commands, and a stale
+              "Cost alerts: Not started" claim. Proposes three sprints.
+            </td>
+          </tr>
+          <tr class="rpt-resolution-row">
+            <th scope="row"><span class="rpt-pill rpt-pill-resolve">Resolution</span></th>
+            <td>
+              <span class="rpt-badge rpt-pass">Both Right</span>
+              Not actually contradictory &mdash; different altitudes. Code audited source correctness; Planning
+              audited the doc ecosystem. This apply phase ships the doc-correctness items that are
+              <strong>(a)</strong> load-bearing for a clean commit and <strong>(b)</strong> carry real risk:
+              README path fixes, the CHANGELOG entry, the broken gate commands, the ROADMAP/cost-dashboard N5
+              status, and the backlog symbol re-points. The broader low-risk prose sweeps are
+              <em>queued, gated on the freeze-vs-refresh decision</em>. Planning's Sprint&nbsp;3 deep code debt
+              (<code>read_journal_after</code>, <code>now_millis</code> dedup, F58 coverage) is
+              <strong>OUT of scope</strong> for a doc-reconciliation pass &mdash; real backlog items, not doc edits.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </article>
+
+    <!-- Conflict 2 -->
+    <article class="rpt-conflict">
+      <header class="rpt-conflict-head">
+        <span class="rpt-pill rpt-pill-topic">Conflict 2</span>
+        <h4 class="rpt-h4">CHANGELOG.md diff is "100% CRLF&rarr;LF normalization"</h4>
+      </header>
+      <table class="rpt-table rpt-table-conflict">
+        <tbody>
+          <tr>
+            <th scope="row"><span class="rpt-pill rpt-pill-code">Code View</span></th>
+            <td>
+              Did not analyze the CHANGELOG diff in detail; treated <code>docs/index.html</code> as the EOL-churn
+              case and classified it as pre-existing, not a regression.
+            </td>
+          </tr>
+          <tr>
+            <th scope="row"><span class="rpt-pill rpt-pill-plan">Planning View</span></th>
+            <td>
+              Asserts the working-tree CHANGELOG.md diff is "100% CRLF&rarr;LF normalization with no content
+              change" and asks separately whether to keep or revert the EOL flip.
+            </td>
+          </tr>
+          <tr class="rpt-resolution-row">
+            <th scope="row"><span class="rpt-pill rpt-pill-resolve">Resolution</span></th>
+            <td>
+              <span class="rpt-badge rpt-fail">Planning Inverted</span>
+              Moderator verified Planning's claim is <strong>factually inverted and incomplete</strong>: the
+              working copy is now CRLF (614-char lines) while HEAD was LF, so the flip is
+              <strong>LF&rarr;CRLF</strong>, not CRLF&rarr;LF. More importantly it is NOT pure EOL &mdash;
+              <strong>8 genuine content lines change</strong> (the
+              <code>mission-planner-*.md</code>&nbsp;&rarr;&nbsp;<code>flight-planner-*.md</code> body
+              references). <strong>Decision:</strong> normalize the whole file back to LF so the diff shows ONLY
+              the intentional 8-line renames plus the new entry, eliminating ~1181 lines of spurious churn.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </article>
+
+    <!-- Conflict 3 -->
+    <article class="rpt-conflict">
+      <header class="rpt-conflict-head">
+        <span class="rpt-pill rpt-pill-topic">Conflict 3</span>
+        <h4 class="rpt-h4">dev/archive/* files modified by the rename pass</h4>
+      </header>
+      <table class="rpt-table rpt-table-conflict">
+        <tbody>
+          <tr>
+            <th scope="row"><span class="rpt-pill rpt-pill-code">Code View</span></th>
+            <td>Did not address archive edits.</td>
+          </tr>
+          <tr>
+            <th scope="row"><span class="rpt-pill rpt-pill-plan">Planning View</span></th>
+            <td>
+              Flags ~20 <code>dev/archive/*</code> files as MODIFIED; asks whether the edits were intentional for
+              global eradication or should be reverted; defers to an owner.
+            </td>
+          </tr>
+          <tr class="rpt-resolution-row">
+            <th scope="row"><span class="rpt-pill rpt-pill-resolve">Resolution</span></th>
+            <td>
+              <span class="rpt-badge rpt-pass">Decided, Not Open</span>
+              Moderator verified the archive diffs are <strong>pure EOL churn</strong> (zero content change under
+              <code>--ignore-all-space --ignore-blank-lines</code>; 21 files, all the 96-ins/96-del whitespace
+              pattern). No Mission&rarr;Flight content edits. <strong>Decision:</strong> revert all
+              <code>dev/archive/*</code> changes via <code>git checkout -- dev/archive/</code> &mdash; accidental
+              churn in a do-not-edit zone. This is a decision, not an open question.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </article>
+
+    <!-- Conflict 4 -->
+    <article class="rpt-conflict">
+      <header class="rpt-conflict-head">
+        <span class="rpt-pill rpt-pill-topic">Conflict 4</span>
+        <h4 class="rpt-h4">Number of serde aliases (5 vs 4)</h4>
+      </header>
+      <table class="rpt-table rpt-table-conflict">
+        <tbody>
+          <tr>
+            <th scope="row"><span class="rpt-pill rpt-pill-code">Code View</span></th>
+            <td>States exactly 5 <code>#[serde(alias="missionId")]</code> across 5 files.</td>
+          </tr>
+          <tr>
+            <th scope="row"><span class="rpt-pill rpt-pill-plan">Planning View</span></th>
+            <td>States 5 serde alias attrs.</td>
+          </tr>
+          <tr class="rpt-resolution-row">
+            <th scope="row"><span class="rpt-pill rpt-pill-resolve">Resolution</span></th>
+            <td>
+              <span class="rpt-badge rpt-pass">Count Correct, Enumeration Off</span>
+              Both say 5; the count is right but Code's file enumeration is slightly off. Moderator confirmed
+              <strong>5 alias lines across 4 FILES</strong>: api/mod.rs:232, flight_planner.rs:311 AND :337 (two
+              in one file), flight.rs:480, flight_journal.rs:51. <strong>Decision:</strong> use
+              "5 attrs across 4 files" in the CHANGELOG/backlog note to pre-empt a future auditor "discrepancy".
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </article>
+  </div>
+
+  <!-- ============================ DECISIONS ============================ -->
+  <div class="rpt-block">
+    <h3 class="rpt-h3">Final Decisions from the Moderated Room</h3>
+    <div class="rpt-callout rpt-callout-info">
+      <strong>Headline:</strong> The working tree is safe to commit/release. This apply phase performs
+      <em>doc reconciliation only</em> &mdash; no source-code edits except an optional cosmetic private-constant
+      rename, which is deferred to backlog (not done now).
+    </div>
+
+    <table class="rpt-table rpt-table-decisions">
+      <thead>
+        <tr>
+          <th scope="col">#</th>
+          <th scope="col">Decision</th>
+          <th scope="col">Disposition</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>D1</td>
+          <td>Commit/release the working tree; apply phase does doc reconciliation only (no source edits beyond the deferred cosmetic constant rename).</td>
+          <td><span class="rpt-badge rpt-pass">Apply</span></td>
+        </tr>
+        <tr>
+          <td>D2</td>
+          <td>Revert all <code>dev/archive/*</code> modifications (accidental pure-EOL churn; archive is do-not-edit). <code>git checkout -- dev/archive/</code></td>
+          <td><span class="rpt-badge rpt-pass">Apply</span></td>
+        </tr>
+        <tr>
+          <td>D3</td>
+          <td>Normalize CHANGELOG.md back to LF when editing, so the committed diff is ONLY the 8 doc-reference rename lines + the new entry, not 1181 lines of LF&rarr;CRLF flip.</td>
+          <td><span class="rpt-badge rpt-pass">Apply</span></td>
+        </tr>
+        <tr>
+          <td>D4</td>
+          <td>Default the new CHANGELOG entry to <code>## [Unreleased] - 2026-06-15</code> UNLESS the owner confirms a 0.9.5 cut now. Do not bump package.json / Cargo.toml / tauri.conf.json speculatively.</td>
+          <td><span class="rpt-badge rpt-env">Owner Call</span></td>
+        </tr>
+        <tr>
+          <td>D5</td>
+          <td>Fix README leftovers in this pass: line 314 <code>MissionsView</code>&rarr;<code>FlightsView</code> in the views/ tree; line 20 and line 106 lowercase "mission control"&rarr;"flight control". Directly undercut the "README verified against code" deliverable.</td>
+          <td><span class="rpt-badge rpt-pass">Apply</span></td>
+        </tr>
+        <tr>
+          <td>D6</td>
+          <td>Fix the two broken gate commands in <code>dev/flight-planner-reliability-continuity-pack.md</code> now &mdash; false-green test gates are a real risk, not cosmetic.</td>
+          <td><span class="rpt-badge rpt-pass">Apply</span></td>
+        </tr>
+        <tr>
+          <td>D7</td>
+          <td>Fix the <code>JournalTab.tsx:31</code> doc comment: wrong on directory <em>and</em> filename token. Correct to <code>~/.packetade/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> (real dir is retained <code>missions/</code>; code emits F-prefix form).</td>
+          <td><span class="rpt-badge rpt-pass">Apply</span></td>
+        </tr>
+        <tr>
+          <td>D8</td>
+          <td>Re-point the ~7 stale Mission&rarr;Flight symbols in <code>backlog.md</code> and correct the <code>complete_flight</code> schema-strictness item body (Rust is <code>summary: String</code> required, no serde default; restate residual as "zod <code>summary.min(1)</code> vs Rust accepts empty string").</td>
+          <td><span class="rpt-badge rpt-pass">Apply</span></td>
+        </tr>
+        <tr>
+          <td>D9</td>
+          <td>Update ROADMAP N5 and <code>dev/moat/cost-dashboard-plan.md</code> "Cost alerts: Not started" &rarr; "Partial"; reframe remaining gap as alert/notification UX (thresholds already shipped).</td>
+          <td><span class="rpt-badge rpt-pass">Apply</span></td>
+        </tr>
+        <tr>
+          <td>D10</td>
+          <td>Defer to backlog (NOT this pass): private-constant rename <code>DEFAULT/MAX/MIN_MISSION_JOURNAL_TAIL_BYTES</code>&rarr;<code>*_FLIGHT_*</code>; <code>read_journal_after</code> incremental fetch; <code>now_millis()</code> dedup; F58 rate-limit backoff coverage; BACKLOG.md-vs-backlog.md casing standardization.</td>
+          <td><span class="rpt-badge rpt-env">Deferred</span></td>
+        </tr>
+        <tr>
+          <td>D11</td>
+          <td>Gate the flight-planner v1 doc-set symbol sweep on the freeze-vs-refresh decision: the operational runbook is safe to update now; the locked design plan is gated.</td>
+          <td><span class="rpt-badge rpt-env">Gated</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="rpt-callout rpt-callout-warn">
+      <strong>False-positive guard held:</strong> No auditor wrongly flagged the intentional back-compat (serde
+      aliases, store shims, on-disk <code>missions/</code> path) as leftover, and the <code>docs/index.html</code>
+      "Missions" branding was correctly classified as pre-existing line-ending churn &mdash; explicitly NOT a
+      regression. The lone medium-severity item is the README path string.
+    </div>
+  </div>
+</section>
+      </section>
+
+      <section id="roadmap">
+        <h2>Roadmap</h2>
+        <section class="rpt-section">
+  <h2 class="rpt-h2">Updated Roadmap, Sprints &amp; Doc Changes</h2>
+
+  <div class="rpt-callout rpt-pass">
+    <strong>Context.</strong> The Mission&nbsp;&rarr;&nbsp;Flight rename is code-complete and verified
+    (cargo 0, tsc 0, sidecar tsc 0, schema regen byte-identical, eslint 0,
+    flight-planner-wiring-smoke 13/13, Rust 419 passed). The only outstanding work in this audit is
+    <em>doc reconciliation</em> &mdash; making the documentation match the already-merged code so the
+    working tree commits cleanly and the next audit starts from truth. There were
+    <strong>zero</strong> behavioral, IPC-contract, serialization, or build defects at medium-or-above
+    severity; the lone &ldquo;medium&rdquo; was a stale README path string.
+  </div>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">1. Roadmap Status Changes</h3>
+  <p class="rpt-p">
+    Two roadmap-level corrections were applied because shipped reality had outrun the docs. The date
+    stamp was advanced to <code>2026-06-15</code> and the cost-alerts line was reclassified.
+  </p>
+
+  <table class="rpt-table">
+    <thead>
+      <tr><th>Item</th><th>Before</th><th>After</th><th>Status</th><th>Rationale</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>ROADMAP.md</code> line 3 &mdash; Last updated</td>
+        <td>2026-05-27</td>
+        <td>2026-06-15 (post Mission&nbsp;&rarr;&nbsp;Flight rename / v0.9.4 state)</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+        <td>Stale stamp predated the rename.</td>
+      </tr>
+      <tr>
+        <td><strong>N5 &mdash; Cost alerts</strong></td>
+        <td><span class="rpt-badge rpt-fail">Not started</span></td>
+        <td><span class="rpt-badge rpt-high">Partial</span></td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+        <td>
+          Budget thresholds (daily / global-monthly / session / per-provider / per-flight) + warning
+          thresholds + 24h overrides shipped in <code>src/lib/costGuardrails.ts</code> and
+          <code>src/stores/costGuardrailStore.ts</code>, wired into the launch gate
+          (<code>assertCostGuardrailsAllowLaunch</code> in <code>agentTaskStore</code> +
+          <code>asyncFlightStore</code>) and surfaced in <code>LiveSpendChip</code> /
+          <code>CostDashboardView</code>. <em>Remaining:</em> proactive alert/notification UX
+          (toast/push on approaching limit) &mdash; a distinct surface that does not yet exist.
+        </td>
+      </tr>
+      <tr>
+        <td>Shipped Foundation paragraph</td>
+        <td>cost analytics</td>
+        <td>cost analytics + cost guardrails / budget thresholds</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+        <td>Credit the shipped guardrail engine.</td>
+      </tr>
+      <tr>
+        <td>R2 &mdash; Blocked on signing certificates</td>
+        <td colspan="2"><em>Reconfirm against v0.9.4 trust / SSH host-key-pinning work; keep or annotate remaining blockers.</em></td>
+        <td><span class="rpt-badge rpt-env">Review</span></td>
+        <td>Verify what is still genuinely blocked.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="rpt-callout rpt-env">
+    <strong>Research-gated:</strong> N5 stays <em>Partial</em> (not <em>Shipped</em>). The shipped UI
+    is a passive toolbar chip + hard launch gate, <em>not</em> an alert. The proactive cost
+    notification that defines a &ldquo;cost alert&rdquo; does not exist yet
+    (<code>notifications.ts</code> has no cost <code>notify</code>/<code>toast</code> call). Recommended
+    next step: add <code>notifyCostThreshold</code> reusing the notify pattern, fired from the 30s
+    guardrail eval on <code>ok&rarr;warning</code> and <code>warning&rarr;limit</code> transitions, plus a
+    <code>NotificationSettingsCard</code> toggle.
+  </div>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">2. The Next 1&ndash;3 Sprints</h3>
+  <p class="rpt-p">
+    Three sequenced, 2026-06-15 sprints &mdash; recorded in <code>dev/sprints-2026-06-15.md</code> &mdash;
+    move from paper-trail reconciliation to closing residual Flight Planner code debt. Sprints 1&ndash;2
+    are doc-correctness; Sprint 3 is genuine code work plus the Remote Agents kickoff gate.
+  </p>
+
+  <div class="rpt-sprint">
+    <h4 class="rpt-h4">Sprint 1 &mdash; Ship the rename&rsquo;s paper trail (docs reconciliation)
+      <span class="rpt-badge rpt-pass">Mostly applied</span></h4>
+    <p class="rpt-p"><strong>Goal:</strong> Make the docs match the already-merged code so the working
+      tree can be committed/released cleanly and the next audit starts from truth.</p>
+    <ul class="rpt-list">
+      <li>Add the single dated <code>CHANGELOG.md</code> entry (Mission&nbsp;&rarr;&nbsp;Flight rename +
+        README refresh + preserved back-compat + verification line); decide 0.9.5 bump vs
+        <code>[Unreleased]</code> and, if bumping, update <code>package.json</code> +
+        <code>Cargo.toml</code> + <code>tauri.conf.json</code>.</li>
+      <li>Bump stale date stamps: ROADMAP, dev/README, both bridgemind docs, cost-dashboard-plan
+        &rarr; 2026-06-15.</li>
+      <li>Index <code>flight-planner-reliability-continuity-pack.md</code> in dev/README; decide whether
+        the dated <code>code-review-*.md</code> files are indexed or noted as intentionally unindexed.</li>
+      <li>Correct ROADMAP N5 <em>Not started&nbsp;&rarr;&nbsp;Partial</em>; mirror in cost-dashboard-plan.</li>
+      <li>Re-point the ~7 stale Mission&nbsp;&rarr;&nbsp;Flight symbols in <code>backlog.md</code> and add the
+        intentional-back-compat note; fix the <code>complete_flight</code> schema-strictness item body
+        (Rust is <code>summary: String</code>, no serde default).</li>
+    </ul>
+  </div>
+
+  <div class="rpt-sprint">
+    <h4 class="rpt-h4">Sprint 2 &mdash; Fix broken gates &amp; stale symbols in the Flight Planner doc set
+      <span class="rpt-badge rpt-pass">Partly applied</span></h4>
+    <p class="rpt-p"><strong>Goal:</strong> Eliminate false-green automated-gate risk and bring the
+      renamed flight-planner / bridgemind / remoteagents docs in line with the code.</p>
+    <ul class="rpt-list">
+      <li><span class="rpt-badge rpt-high">Risk fix</span> Repair the two broken gate commands in
+        <code>flight-planner-reliability-continuity-pack.md</code>
+        (<code>cargo test &hellip; mission_journal&nbsp;&rarr;&nbsp;flight_journal</code>; vitest
+        <code>missions/__tests__&nbsp;&rarr;&nbsp;flights/__tests__</code>), re-run on a Windows host, add the
+        WSL2 environment note, normalize BACKLOG link casing.</li>
+      <li>Sweep code-symbol references in <code>flight-planner-plan.md</code> and the v1 acceptance
+        runbook &mdash; <em>gated</em> on the freeze-vs-refresh decision for the locked v1 design doc.</li>
+      <li>Fix <code>swarm-orchestration-plan.md</code> stale pointers (orchestrationStore split;
+        CoordinationFeed&nbsp;&rarr;&nbsp;MilestonesPanel handoff log); add the mcp-server-plan cross-link +
+        tool-name confirmation.</li>
+      <li>Fix the 3 stale Missions&nbsp;&rarr;&nbsp;Flights references in <code>dev/remoteagents/</code>.</li>
+      <li>Resolve E3 cold-start approval-hydration: verify <code>FlightSpecPane</code> mount installs
+        hydration for a paused/reloaded flight, then close or file the gap.</li>
+    </ul>
+  </div>
+
+  <div class="rpt-sprint">
+    <h4 class="rpt-h4">Sprint 3 &mdash; Close residual Flight Planner code debt + unblock Remote Agents
+      <span class="rpt-badge rpt-blocker">Code work &mdash; out of scope for doc pass</span></h4>
+    <p class="rpt-p"><strong>Goal:</strong> Burn down genuinely-open Flight Planner reliability items and
+      clear the Sprint-0 decision gate for the next flagship initiative.</p>
+    <ul class="rpt-list">
+      <li>Implement <code>read_journal_after(flight_id, last_entry_id)</code> incremental fetch
+        (currently absent &mdash; grep confirms no symbol).</li>
+      <li>Extract a shared <code>now_millis()</code> helper for the 6 <code>flight_planner_tools</code>
+        files; remove duplication.</li>
+      <li>Add F58 coverage for the rate-limit backoff clamp
+        (<code>flight_planner.rs:910-912</code>); confirm a quota-pause/replay journal breadcrumb exists.</li>
+      <li>Run the v1 acceptance runbook + manual addendum on a Windows host; complete or explicitly
+        waive the Definition-of-Done checkboxes.</li>
+      <li>Hold the Remote Agents Sprint-0 kickoff: lock auth provider, encryption launch gate, and code
+        location in <code>09-open-decisions.md</code> Decision Log; only then scaffold behind a
+        compile-off <code>remoteAgents.enabled</code> flag.</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">3. Applied Doc / CHANGELOG / Backlog Updates</h3>
+  <p class="rpt-p">
+    The apply phase performed <strong>doc reconciliation only</strong> &mdash; no source-code edits
+    (the cosmetic private-constant rename was deferred to backlog). Below is what actually landed in the
+    working tree.
+  </p>
+
+  <table class="rpt-table">
+    <thead>
+      <tr><th>File</th><th>Change</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>README.md</code></td>
+        <td>3 one-line edits: L20 &ldquo;master-detail mission control for flights&rdquo; &rarr;
+          &ldquo;master-detail flight control surface&rdquo;; L106 &ldquo;mission control on the right&rdquo;
+          &rarr; &ldquo;flight control on the right&rdquo;; L314 views/ tree
+          <code>MissionsView&nbsp;&rarr;&nbsp;FlightsView</code>.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>CHANGELOG.md</code></td>
+        <td>Normalized CRLF&nbsp;&rarr;&nbsp;LF (eliminated spurious 1181-line diff, exposing the 8 real
+          in-body <code>.md</code> reference renames) and inserted one history-only entry
+          <code>## [Unreleased] - 2026-06-15</code> &mdash; <em>Changed &mdash; Mission &rarr; Flight rename
+          + README refresh</em>. Net diff: 17 added + 4 changed lines.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>ROADMAP.md</code></td>
+        <td>Date bump; N5 Not started&nbsp;&rarr;&nbsp;Partial + notes; cost guardrails added to Shipped
+          Foundation.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/README.md</code></td>
+        <td>Date bump; indexed <code>flight-planner-reliability-continuity-pack.md</code>; one-line note
+          that dated <code>code-review-*.md</code> files are intentionally unindexed.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>backlog.md</code></td>
+        <td>Re-pointed ~7 stale symbols; corrected the <code>complete_flight</code> item body; added a
+          new audit-record section, a single authoritative intentional-back-compat section, a deferred
+          private-constant nit, and a Remote Agents sequencing note.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>src/components/flights/JournalTab.tsx</code></td>
+        <td>L31 doc comment <code>~/.packetade/flights/F-&lt;shortId&gt;_&lt;flight_id&gt;.md</code> &rarr;
+          code-accurate <code>~/.packetade/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> (dir +
+          filename token both corrected). Comment-only.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/flight-planner-reliability-continuity-pack.md</code></td>
+        <td>Broken gate commands re-pointed to <code>flight_journal</code> /
+          <code>flights/__tests__</code>; WSL2 environment note added; BACKLOG link casing normalized.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/flight-planner-v1-acceptance-runbook.md</code></td>
+        <td>MissionSpecPane&nbsp;&rarr;&nbsp;FlightSpecPane; <code>flight-planner/approval-gate</code> tag;
+          journal-path wording aligned to <code>F-&lt;TAIL&gt;_&lt;flight_id&gt;.md</code>.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/flight-planner-plan.md</code></td>
+        <td>6 hand-reviewed errata edits (paths, MissionSpecPane, inner literal
+          <code>mission-planner&nbsp;&rarr;&nbsp;flight-planner</code>; load-bearing <code>serverKey "planner"</code>
+          and external <code>createSdkMcpServer</code> API preserved). Done as a deliberate errata pass,
+          not the blanket sweep.</td>
+        <td><span class="rpt-badge rpt-pass">Applied (errata)</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/moat/cost-dashboard-plan.md</code></td>
+        <td>Date bump; Cost alerts Not started&nbsp;&rarr;&nbsp;Partial; Known-Gaps conclusion reframed
+          (budget thresholds now shipped).</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/bridgemind/swarm-orchestration-plan.md</code></td>
+        <td>orchestrationStore split reference; CoordinationFeed&nbsp;&rarr;&nbsp;MilestonesPanel handoff log;
+          role-badge styling pointer; date bumps. Code pointers verified against source.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/bridgemind/packetade-mcp-server-plan.md</code></td>
+        <td>Date bump; <code>get_active_flight</code> tool-naming confirmed; cross-link to
+          <code>mcp-provider-transport.md</code> so &ldquo;Frontend only&rdquo; rows do not read as unstarted.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/remoteagents/README.md</code></td>
+        <td>L33 Missions&nbsp;&rarr;&nbsp;Flights; date bump.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/remoteagents/01-product-scope.md</code></td>
+        <td>L17 / L90 Mission&nbsp;&rarr;&nbsp;Flight prose fixes.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/remoteagents/09-open-decisions.md</code></td>
+        <td>Added dated Decision Log scaffold for the three Sprint-0 BLOCKING kickoff decisions (auth
+          provider, payload encryption, code location), each marked Open.</td>
+        <td><span class="rpt-badge rpt-pass">Applied</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/sprints-2026-06-15.md</code></td>
+        <td>New file: the three sequenced 2026-06-15 sprints above, in dev/ doc style with goals, items,
+          and exit checkpoints.</td>
+        <td><span class="rpt-badge rpt-pass">Created</span></td>
+      </tr>
+      <tr>
+        <td><code>dev/archive/*</code> (~21 files)</td>
+        <td>Reverted via <code>git checkout -- dev/archive/</code> &mdash; accidental pure-EOL churn from
+          the rename tooling sweeping a do-not-edit zone (0 content change under
+          <code>--ignore-all-space</code>).</td>
+        <td><span class="rpt-badge rpt-env">Reverted</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">4. CHANGELOG Entry &mdash; Authoritative Form</h3>
+  <p class="rpt-p">
+    Added one history-only entry at the very top, above <code>## [0.9.4] - 2026-06-01</code>.
+    Shipped as <code>## [Unreleased] - 2026-06-15</code> because the apply task was constrained to edit
+    only <code>CHANGELOG.md</code> and the three version manifests
+    (<code>package.json</code> / <code>Cargo.toml</code> / <code>tauri.conf.json</code>, all still
+    <code>0.9.4</code>) could not be bumped in the same pass.
+  </p>
+  <div class="rpt-callout rpt-high">
+    <strong>Open research question (owner call):</strong> Cut as <code>0.9.5</code> instead of
+    <code>[Unreleased]</code>? Repo convention argues for it &mdash; the CHANGELOG has
+    <em>no</em> <code>[Unreleased]</code> section historically (every entry is a dated versioned
+    heading), and by its own header it is &ldquo;history, not a task list&rdquo; with in-flight work
+    delegated to backlog/ROADMAP. Prior milestones 0.9.2&ndash;0.9.4 set the precedent of assigning a
+    dated version to a verified-but-untagged milestone. <strong>Recommendation:</strong> override the
+    default &mdash; bump all three manifests <code>0.9.4&nbsp;&rarr;&nbsp;0.9.5</code> in one commit and retitle the
+    heading. No git tag needed (repo tags stop at v0.5.0). Final call belongs to the owner.
+  </div>
+  <p class="rpt-p"><strong>Entry body</strong> &mdash; heading <em>Changed &mdash; Mission &rarr; Flight
+    rename + README refresh</em>, six bullets:</p>
+  <ol class="rpt-list">
+    <li>README.md refreshed &amp; verified against code (46 ins / 35 del).</li>
+    <li>UI/IPC/generated-schema rename: Mission Planner&nbsp;&rarr;&nbsp;Flight Planner,
+      MissionsView&nbsp;&rarr;&nbsp;FlightsView, Mission Control&nbsp;&rarr;&nbsp;Flight Control
+      (schema regen byte-identical).</li>
+    <li>Data-model ids: <code>mission_id&nbsp;&rarr;&nbsp;flight_id</code>,
+      <code>missionId&nbsp;&rarr;&nbsp;flightId</code>.</li>
+    <li>Full eradication: MissionApprovalRequest&nbsp;&rarr;&nbsp;FlightApprovalRequest;
+      <code>components/missions/*&nbsp;&rarr;&nbsp;components/flights/</code> with
+      MissionSpecPane&nbsp;&rarr;&nbsp;FlightSpecPane; MCP <code>complete_mission&nbsp;&rarr;&nbsp;complete_flight</code>;
+      file renames <code>mission_journal.rs&nbsp;&rarr;&nbsp;flight_journal.rs</code>,
+      <code>missionReview.ts&nbsp;&rarr;&nbsp;flightReview.ts</code>,
+      <code>mission-planner-server.ts&nbsp;&rarr;&nbsp;flight-planner-server.ts</code>,
+      <code>mission_planner*.rs&nbsp;&rarr;&nbsp;flight_planner*.rs</code> + <code>flight_planner_tools/</code>.</li>
+    <li>Intentionally preserved back-compat: 5 <code>#[serde(alias="missionId")]</code> attrs across
+      4 files, issueStore.ts + goalStore.ts legacy read shims, on-disk
+      <code>~/.packetade/missions/</code> journal dir literal.</li>
+    <li>Verification: cargo 0, tsc 0, sidecar tsc 0, schema identical, eslint 0,
+      flight-planner-wiring-smoke 13/13.</li>
+  </ol>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">5. Intentional Back-Compat &mdash; Removal Criteria</h3>
+  <p class="rpt-p">
+    Recorded in <code>backlog.md</code> as a single authoritative section. These are <strong>not</strong>
+    leftovers and must never be flagged as such. Critically, they are <strong>not</strong> on a calendar
+    clock &mdash; removal is gated on a code action, not a date, because the shims are lazy read-fallbacks
+    with no eager migration pass.
+  </p>
+  <table class="rpt-table">
+    <thead>
+      <tr><th>Surface</th><th>Class</th><th>Removal criterion</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>5 <code>#[serde(alias="missionId")]</code> attrs (api/mod.rs:232, flight_planner.rs:311
+          &amp; :337, flight.rs:480, flight_journal.rs:51) + issueStore.ts / goalStore.ts read shims</td>
+        <td><span class="rpt-badge rpt-high">Class A &mdash; lazy</span></td>
+        <td>Remove only after a one-shot eager migration rewrites all persisted records with canonical
+          <code>flightId</code> keys, plus one release cycle. Earliest safe target: the 1.0.0 cut.
+          Without the eager pass, removal silently drops the flight binding on any record never re-saved.</td>
+      </tr>
+      <tr>
+        <td><code>data_dir().join("missions")</code> at flight_journal.rs:82</td>
+        <td><span class="rpt-badge rpt-env">Class B &mdash; live path</span></td>
+        <td>Not an expirable shim &mdash; it is the live canonical journal dir (read+write). Effectively
+          permanent unless a deliberate <code>missions/&nbsp;&rarr;&nbsp;flights/</code> directory migration is built
+          (copy + legacy-read fallback, mirroring storage.rs <code>data_dir()</code>); even then keep the
+          legacy-read fallback one extra major version.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">6. Open Research Questions Gating the Doc Plan</h3>
+  <p class="rpt-p">These owner decisions determine whether deferred/gated edits proceed.</p>
+  <table class="rpt-table">
+    <thead>
+      <tr><th>Question</th><th>Recommendation / Default</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>0.9.5 version bump vs <code>[Unreleased]</code>?</td>
+        <td>Recommend <strong>0.9.5</strong> (override default); applied as <code>[Unreleased]</code>
+          pending owner sign-off.</td>
+      </tr>
+      <tr>
+        <td>Freeze vs refresh the locked v1 design docs?</td>
+        <td>Do <strong>not</strong> run the blanket sweep. Freeze <code>spike-retro.md</code> entirely;
+          hand-reviewed errata only on <code>flight-planner-plan.md</code> (applied). Exclude
+          <code>createSdkMcpServer</code> &mdash; it is a correct external SDK API, not a stale symbol.</td>
+      </tr>
+      <tr>
+        <td>Journal filename: <code>F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> vs spec
+          <code>&lt;shortId&gt;.md</code>?</td>
+        <td><strong>Amend the spec</strong> to bless the F-prefix form; do not trim the code.</td>
+      </tr>
+      <tr>
+        <td><code>complete_flight</code> empty-summary contract?</td>
+        <td><strong>Harden Rust</strong> to reject empty (match zod <code>.min(1).max(2000)</code>); do
+          not relax zod. Rust is the real trust boundary. Severity LOW but real latent divergence.</td>
+      </tr>
+      <tr>
+        <td>Back-compat removal timeline?</td>
+        <td>None exists today; pre-1.0. File backlog item: build eager migration pass, gate Class-A
+          removal on it + one release.</td>
+      </tr>
+      <tr>
+        <td>N5 cost-alerts scope?</td>
+        <td>Distinct notification surface &mdash; keep <strong>Partial</strong>.</td>
+      </tr>
+      <tr>
+        <td>Index dated <code>code-review-*.md</code> files?</td>
+        <td>Default: note them as intentionally unindexed point-in-time artifacts (applied).</td>
+      </tr>
+      <tr>
+        <td><code>BACKLOG.md</code> vs <code>backlog.md</code> casing?</td>
+        <td>Standardize on lowercase <code>backlog.md</code>; deferred to backlog (CI link-breakage risk).</td>
+      </tr>
+      <tr>
+        <td>Remote Agents priority?</td>
+        <td>Confirm it is still the flagship next-after-Flight-Planner before Sprint-0 scaffolding
+          investment; Decision Log scaffold added regardless.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">7. Deferred to Backlog (NOT done this pass)</h3>
+  <ul class="rpt-list">
+    <li>Private-constant rename
+      <code>DEFAULT/MAX/MIN_MISSION_JOURNAL_TAIL_BYTES&nbsp;&rarr;&nbsp;*_FLIGHT_*</code>
+      (flight_planner.rs:2628&ndash;2646) &mdash; cosmetic, file-private, not serialized.</li>
+    <li><code>read_journal_after(flight_id, last_entry_id)</code> incremental fetch &mdash; unimplemented.</li>
+    <li><code>now_millis()</code> dedup across the 6 <code>flight_planner_tools</code> files.</li>
+    <li>F58 rate-limit backoff-clamp coverage (flight_planner.rs:910&ndash;912).</li>
+    <li><code>BACKLOG.md</code> vs <code>backlog.md</code> filename-casing standardization.</li>
+    <li>Eager Mission&nbsp;&rarr;&nbsp;Flight on-disk migration pass (gates Class-A back-compat removal).</li>
+  </ul>
+
+  <div class="rpt-callout rpt-pass">
+    <strong>Bottom line.</strong> Doc reconciliation for committing the working tree cleanly is applied:
+    README leftovers, the CHANGELOG entry, the two false-green gate commands, the ROADMAP/cost-dashboard
+    N5 status, and the backlog symbol re-points. Low-risk prose fixes landed across remoteagents and
+    bridgemind. The locked v1 design doc got a deliberate hand-reviewed errata pass (not the blanket
+    sweep). Real code debt (Sprint 3) is correctly queued in backlog, not forced into a doc pass.
+  </div>
+</section>
+      </section>
+
+      <section id="research">
+        <h2>Research</h2>
+        <section class="rpt-section">
+  <header class="rpt-section-head">
+    <h2 class="rpt-h2">Research Findings &amp; Appendix</h2>
+    <p class="rpt-lede">Eleven open research questions surfaced during the Mission&nbsp;&rarr;&nbsp;Flight rename audit. Six were investigated with repo evidence and external sources and carry a firm recommendation; the remainder are owner-gated decisions captured for the apply phase. The appendix below preserves the raw notable code findings verbatim from the per-area auditors.</p>
+    <div class="rpt-meta-row">
+      <span class="rpt-badge rpt-env">Audit date: 2026-06-15</span>
+      <span class="rpt-badge rpt-pass">11 research questions</span>
+      <span class="rpt-badge rpt-pass">6 answered with sources</span>
+      <span class="rpt-badge rpt-high">5 owner-gated</span>
+    </div>
+  </header>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">1. Research Q&amp;A (with sources)</h3>
+
+  <div class="rpt-callout rpt-callout-info">
+    <strong>How to read this.</strong> Each card states the question, the investigated answer, a concrete recommendation, and the sources consulted (repo files and external references). Recommendations marked <span class="rpt-pill rpt-env">owner call</span> remain the owner's decision even where a default is proposed.
+  </div>
+
+  <!-- Q1 -->
+  <article class="rpt-qa">
+    <div class="rpt-qa-head">
+      <span class="rpt-pill rpt-blocker">Q1</span>
+      <h4 class="rpt-h4">Release intent: ship as 0.9.5 or record under <code>[Unreleased]</code>?</h4>
+    </div>
+    <p class="rpt-q"><strong>Question.</strong> Ship the rename + README refresh as version 0.9.5 (bump <code>package.json</code> / <code>Cargo.toml</code> / <code>tauri.conf.json</code> from 0.9.4) or record it under <code>[Unreleased] - 2026-06-15</code>? Default chosen: <code>[Unreleased]</code> unless owner says otherwise.</p>
+    <div class="rpt-answer">
+      <p><span class="rpt-badge rpt-high">Recommendation</span> <strong>Override the default &mdash; cut as 0.9.5.</strong> The repo convention beats the generic spec here.</p>
+      <ul class="rpt-list">
+        <li><code>CHANGELOG.md</code> has <strong>zero</strong> <code>[Unreleased]</code> section and never has &mdash; every entry is a dated, versioned heading (0.9.4, 0.9.3, 0.9.2). Introducing <code>[Unreleased]</code> would be a convention change, not an application of it.</li>
+        <li>The CHANGELOG header delegates in-flight work elsewhere ("Outstanding work lives in backlog.md"; "This file is history, not a task list"). An <code>[Unreleased]</code> bucket belongs in <code>backlog.md</code>/<code>ROADMAP.md</code> per this project's split.</li>
+        <li>Prior milestones were committed <em>with</em> their version bump (commit <code>0e5c090</code> "Bump version to 0.9.4"); the three version files move together. Recording the rename without bumping leaves them frozen at a number whose entry describes different work &mdash; a version/content mismatch.</li>
+        <li>Git tags stop at <code>v0.5.0</code> and there is no release automation, so 0.9.x headings mark <em>verified milestones</em>, not tagged binary cuts. The usual "are we building a binary?" blocker does not apply.</li>
+        <li>SemVer angle (secondary): in 0.y.z anything may change; a patch bump to 0.9.5 is the spec-compliant choice for an internal no-behavior-change rename.</li>
+      </ul>
+      <div class="rpt-callout rpt-callout-warn"><strong>Note on apply phase:</strong> the entry was ultimately shipped as <code>[Unreleased] - 2026-06-15</code> because the apply task was constrained to edit <em>only</em> CHANGELOG.md and a 0.9.5 heading requires the three manifest bumps. The version-bump decision remains open for the owner.</div>
+      <p class="rpt-sources"><strong>Sources:</strong> keepachangelog.com/en/1.1.0 &middot; semver.org &middot; github.com/semver/semver#333 &middot; <code>/mnt/d/projects/PacketADE/CHANGELOG.md</code> &middot; git log <code>0e5c090</code>; tags stop at <code>v0.5.0</code>; no <code>.github/workflows</code> release automation</p>
+    </div>
+  </article>
+
+  <!-- Q2 -->
+  <article class="rpt-qa">
+    <div class="rpt-qa-head">
+      <span class="rpt-pill rpt-high">Q2</span>
+      <h4 class="rpt-h4">Locked v1 docs: refresh stale symbols or freeze for historical accuracy?</h4>
+    </div>
+    <p class="rpt-q"><strong>Question.</strong> Should stale code symbols in <code>flight-planner-plan.md</code> and <code>flight-planner-spike-retro.md</code> be refreshed to current names or frozen, and should the v1-design-doc symbol sweep run on them?</p>
+    <div class="rpt-answer">
+      <p><span class="rpt-badge rpt-high">Recommendation</span> <strong>Freeze the decisions; do NOT run a blanket sweep.</strong> Treat both as ADR-style records.</p>
+      <ul class="rpt-list">
+        <li>Both are locked decision records (plan = "Locked Design v1", locked 2026-05-14; retro = GO spike retro). ADR convention: accepted records are immutable except typo/broken-link errata; meaning changes go in a new record (AWS Prescriptive Guidance).</li>
+        <li><strong>Load-bearing distinction:</strong> <code>createSdkMcpServer</code> must NOT be swept &mdash; it is the <em>current</em> public claude-agent-sdk API (live at <code>flight-planner-server.ts:36</code> import, <code>:292</code> call). Only its inner literal value <code>"mission-planner"</code> is stale. A naive sweep would corrupt a correct external reference.</li>
+        <li>Genuine internal stale symbols are confined to the plan doc (~6 pointers: <code>mission-planner-server.ts</code> at :136/:160; <code>missions/</code> folder + <code>MissionSpecPane</code> at :164/:165/:189; literal <code>mission-planner</code> at :128). The spike-retro's only hit (line 35) is the correct SDK API &mdash; freeze it entirely.</li>
+      </ul>
+      <p><strong>Action.</strong> Optionally do a hand-reviewed errata pass on the ~6 plan-doc pointers + append a one-line 2026-06-15 change-history note ("pointers refreshed, no design semantics changed", mirroring the 2026-05-27 precedent). Exclude <code>createSdkMcpServer</code> from any sweep filter.</p>
+      <p class="rpt-sources"><strong>Sources:</strong> <code>dev/README.md:51</code> &middot; <code>dev/flight-planner-plan.md</code> (lines 128/136/160/164/165/189) &middot; <code>dev/flight-planner-spike-retro.md:35</code> &middot; <code>agent-sidecar/src/mcp/flight-planner-server.ts:36,292</code> &middot; AWS ADR process + best-practices docs &middot; cloud.google.com architecture ADRs &middot; github.com/joelparkerhenderson/architecture-decision-record &middot; icepanel.io ADR blog</p>
+    </div>
+  </article>
+
+  <!-- Q3 -->
+  <article class="rpt-qa">
+    <div class="rpt-qa-head">
+      <span class="rpt-pill rpt-high">Q3</span>
+      <h4 class="rpt-h4">Journal filename convention: trim to spec or amend the spec?</h4>
+    </div>
+    <p class="rpt-q"><strong>Question.</strong> Code emits <code>F-&lt;tail&gt;_&lt;flight_id&gt;.md</code> but the locked spec says <code>&lt;shortId&gt;.md</code>. Trim filename to spec, or amend spec to bless the F-prefix form?</p>
+    <div class="rpt-answer">
+      <p><span class="rpt-badge rpt-high">Recommendation</span> <strong>Amend the spec to bless the F-prefix form; do not trim the code.</strong> The collision-resistant on-disk identity is the source of truth.</p>
+      <p class="rpt-sources"><strong>Sources:</strong> <code>flight_journal.rs</code> &middot; <code>manual.html</code> &middot; <code>backlog.md</code></p>
+    </div>
+  </article>
+
+  <!-- Q4 -->
+  <article class="rpt-qa">
+    <div class="rpt-qa-head">
+      <span class="rpt-pill rpt-high">Q4</span>
+      <h4 class="rpt-h4"><code>complete_flight</code> summary contract: harden Rust or relax zod?</h4>
+    </div>
+    <p class="rpt-q"><strong>Question.</strong> Reject empty <code>summary</code> at the Rust boundary (match zod <code>min(1)</code>) or relax zod to allow empty?</p>
+    <div class="rpt-answer">
+      <p><span class="rpt-badge rpt-high">Recommendation</span> <strong>Harden Rust to reject empty; do NOT relax zod.</strong></p>
+      <ul class="rpt-list">
+        <li>zod enforces <code>min(1).max(2000)</code> at <code>flight-planner-server.ts:141-143</code>; Rust's serde-default <code>String</code> accepts empty at <code>complete_flight.rs:32-36</code> (and test 193-197 wrongly OKs empty).</li>
+        <li>Rust is the real trust boundary and must revalidate. Action: trim summary, <code>Err</code> if empty or over 2000; fix the empty-summary test to expect rejection; keep zod as the UX layer.</li>
+      </ul>
+      <p><span class="rpt-pill rpt-high">Severity LOW</span> but a real latent divergence.</p>
+      <p class="rpt-sources"><strong>Sources:</strong> developsec &middot; csa &middot; zod</p>
+    </div>
+  </article>
+
+  <!-- Q5 -->
+  <article class="rpt-qa">
+    <div class="rpt-qa-head">
+      <span class="rpt-pill rpt-high">Q5</span>
+      <h4 class="rpt-h4">Back-compat removal timeline for serde aliases / store shims / <code>missions/</code> dir?</h4>
+    </div>
+    <p class="rpt-q"><strong>Question.</strong> Is there a target release after which the 5 <code>missionId</code> serde aliases / store read shims / <code>join("missions")</code> dir can be removed, or are these permanent?</p>
+    <div class="rpt-answer">
+      <p><span class="rpt-badge rpt-high">Recommendation</span> <strong>No timeline exists today; removal is gated on a code action, not a date.</strong> Split into two tracks.</p>
+      <table class="rpt-table">
+        <thead>
+          <tr><th>Class</th><th>Items</th><th>Behavior</th><th>Removal criteria</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="rpt-pill rpt-env">Class A</span></td>
+            <td>5 serde aliases (<code>api/mod.rs:232</code>, <code>flight_planner.rs:311 &amp; :337</code>, <code>flight.rs:480</code>, <code>flight_journal.rs:51</code>) + 2 store read shims (<code>goalStore.ts:15-20</code>, <code>issueStore.ts:167-171</code>)</td>
+            <td>Lazy read-only fallbacks; only rewrite to disk when a record is next saved. No eager migration exists &mdash; never-touched records keep legacy keys indefinitely.</td>
+            <td>Remove only after a one-shot eager migration ships that rewrites all persisted records with canonical keys, <em>plus</em> one release cycle. Earliest realistic target: the 1.0.0 cut.</td>
+          </tr>
+          <tr>
+            <td><span class="rpt-pill rpt-blocker">Class B</span></td>
+            <td><code>join("missions")</code> dir literal (<code>flight_journal.rs:82</code>)</td>
+            <td>NOT a shim &mdash; it is the live, canonical journal path read AND written today. No parallel <code>flights/</code> dir, no migration logic.</td>
+            <td>Effectively permanent. Changeable only via a deliberate <code>missions/&rarr;flights/</code> migration (copy + legacy-read fallback, mirroring <code>storage.rs</code> <code>data_dir()</code>), keeping the fallback one extra major version.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="rpt-callout rpt-callout-warn"><strong>Do NOT</strong> phrase removal as "after release X data is assumed migrated" &mdash; that is false here because the shims are lazy read-fallbacks with no eager pass. <strong>Backlog action:</strong> "Build eager mission&rarr;flight on-disk migration pass; gate removal of the 7 Class-A shims on it shipping + one release."</div>
+      <p class="rpt-sources"><strong>Sources:</strong> <code>Cargo.toml</code> &middot; <code>goalStore.ts</code> &middot; <code>issueStore.ts</code> &middot; <code>flight_journal.rs</code> &middot; <code>flight.rs</code> &middot; <code>api/mod.rs</code> &middot; <code>flight_planner.rs</code> &middot; <code>storage.rs</code> &middot; <code>CHANGELOG.md</code> &middot; <code>backlog.md</code> &middot; doc.rust-lang.org cargo SemVer &middot; github.com/semver/semver#508 &middot; Vector DEPRECATION.md &middot; Google Ad Manager API versioning</p>
+    </div>
+  </article>
+
+  <!-- Q6 -->
+  <article class="rpt-qa">
+    <div class="rpt-qa-head">
+      <span class="rpt-pill rpt-high">Q6</span>
+      <h4 class="rpt-h4">N5 cost-alerts: distinct notification surface, or is the shipped UI already "the alert"?</h4>
+    </div>
+    <p class="rpt-q"><strong>Question.</strong> Is the remaining N5 work a distinct user-facing notification surface (toast/push), or is the shipped guardrail warning-threshold UI already the alert?</p>
+    <div class="rpt-answer">
+      <p><span class="rpt-badge rpt-high">Recommendation</span> <strong>Distinct surface &mdash; keep N5 Partial.</strong> The shipped guardrail UI is a passive toolbar chip plus a hard launch gate, not an alert. The proactive cost notification does not exist; <code>notifications.ts</code> has no cost notify and no cost UI calls <code>notify</code>/<code>toast</code>.</p>
+      <p><strong>Action.</strong> Add <code>notifyCostThreshold</code> reusing the notify pattern and <code>evaluationMessage</code>, fired from the 30s guardrail eval on <em>ok&rarr;warning</em> and <em>warning&rarr;limit</em> transitions, plus a <code>NotificationSettingsCard</code> toggle.</p>
+      <p class="rpt-sources"><strong>Sources:</strong> <code>src/lib/costGuardrails.ts</code> &middot; <code>src/lib/notifications.ts</code> &middot; <code>src/stores/costGuardrailStore.ts</code> &middot; <code>src/components/layout/LiveSpendChip.tsx</code> &middot; <code>ROADMAP.md</code> &middot; <code>dev/moat/cost-dashboard-plan.md</code></p>
+    </div>
+  </article>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">2. Owner-gated questions (no investigation &mdash; decision required)</h3>
+  <p class="rpt-note">These remain open for the roadmap/product owner. They were surfaced by the audit but do not have a researched answer; defaults are noted where the debate established one.</p>
+
+  <table class="rpt-table">
+    <thead>
+      <tr><th>#</th><th>Question</th><th>Status / default</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="rpt-pill rpt-env">G1</span></td>
+        <td>Archive-edit policy &mdash; ~20 <code>dev/archive/*</code> files were MODIFIED by the rename pass, but the rule is do-NOT-edit-archive. Intentional, or revert?</td>
+        <td><span class="rpt-badge rpt-pass">Resolved in debate</span> Pure-EOL churn; <strong>revert</strong> via <code>git checkout -- dev/archive/</code>. (21 files restored in apply phase.)</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-pill rpt-env">G2</span></td>
+        <td>CHANGELOG EOL churn &mdash; the working-tree diff is line-ending normalization. Intended repo-wide normalization, or accidental churn?</td>
+        <td><span class="rpt-badge rpt-pass">Resolved in debate</span> Flip was LF&rarr;CRLF (not CRLF&rarr;LF) and masked 8 real content lines. <strong>Normalize back to LF.</strong></td>
+      </tr>
+      <tr>
+        <td><span class="rpt-pill rpt-env">G3</span></td>
+        <td>Code-review-*.md indexing &mdash; enumerate dated audit files in <code>dev/README.md</code> or keep them intentionally unindexed?</td>
+        <td><span class="rpt-badge rpt-env">Owner call</span> Default: add a one-line note that dated reviews are intentionally unindexed point-in-time artifacts.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-pill rpt-env">G4</span></td>
+        <td><code>BACKLOG.md</code> vs <code>backlog.md</code> &mdash; genuine two-file situation, or one file surfaced twice by the case-insensitive WSL/Windows mount?</td>
+        <td><span class="rpt-badge rpt-env">Owner call</span> Needs a case-sensitive checkout to settle rename-vs-link-normalization. Deferred to backlog.</td>
+      </tr>
+      <tr>
+        <td><span class="rpt-pill rpt-env">G5</span></td>
+        <td>Remote Agents priority &mdash; still the flagship next-after-Flight-Planner initiative, or has priority shifted?</td>
+        <td><span class="rpt-badge rpt-env">Owner call</span> Roadmap-owner confirmation needed before Sprint-0 scaffolding investment. The 09-open-decisions Decision Log scaffold can be added regardless.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">3. Appendix &mdash; raw notable code findings</h3>
+  <p class="rpt-note">Consolidated from 10 code auditors + 1 test report. The rename is verified clean; the only non-clean code findings follow verbatim. Severities use the auditors' own labels.</p>
+
+  <div class="rpt-meta-row">
+    <span class="rpt-badge rpt-pass">rust-core-types: clean</span>
+    <span class="rpt-badge rpt-high">rust-flight-planner: minor</span>
+    <span class="rpt-badge rpt-pass">rust-planner-support: clean</span>
+    <span class="rpt-badge rpt-high">rust-ipc: minor</span>
+  </div>
+
+  <!-- A.1 -->
+  <article class="rpt-finding">
+    <div class="rpt-finding-head">
+      <span class="rpt-badge rpt-blocker">Must-fix (medium)</span>
+      <h4 class="rpt-h4">README still lists the renamed file <code>MissionsView</code> in the <code>views/</code> directory tree</h4>
+    </div>
+    <p><strong>Location:</strong> <code>/mnt/d/projects/PacketADE/README.md:314</code> (also <code>:20</code>, <code>:106</code>)</p>
+    <p><code>README.md:314</code> reads: <code>views/ # First-class application views (MissionsView, WorkspaceView, AgentsView, ...)</code>. <code>MissionsView.tsx</code> was renamed to <code>FlightsView.tsx</code> in this changeset (confirmed: <code>src/components/views/FlightsView.tsx</code> exists, no <code>MissionsView</code> anywhere in <code>src/</code>). This is the one finding that materially undercuts a stated deliverable: the brief asserts README was "fully refreshed/verified against code," yet this is a now-incorrect path in public docs. Trivial fix. Verified via Read. Two related lowercase "mission control" leftovers at lines 20 and 106 (line 106 sits directly under the renamed "Flight Control" header at line 104) are best fixed in the same one-line-each pass &mdash; confirmed present and inconsistent with the new "Flight Control" terminology.</p>
+    <p class="rpt-status"><span class="rpt-badge rpt-pass">Applied</span> Three one-line edits made to README.md in the apply phase.</p>
+  </article>
+
+  <!-- A.2 -->
+  <article class="rpt-finding">
+    <div class="rpt-finding-head">
+      <span class="rpt-badge rpt-high">Nit (rust-flight-planner)</span>
+      <h4 class="rpt-h4">Three journal-tail constants still named <code>*_MISSION_JOURNAL_TAIL_BYTES</code> after the rename</h4>
+    </div>
+    <p><strong>Location:</strong> <code>src-tauri/src/commands/flight_planner.rs:2628-2630</code> (used <code>2643-2646</code>)</p>
+    <p>The constants <code>DEFAULT_MISSION_JOURNAL_TAIL_BYTES</code>, <code>MAX_MISSION_JOURNAL_TAIL_BYTES</code>, and <code>MIN_MISSION_JOURNAL_TAIL_BYTES</code> were not renamed to <code>*_FLIGHT_JOURNAL_TAIL_BYTES</code>, even though the surrounding command <code>get_flight_journal_tail</code> and its helper <code>core::flight_journal::*</code> were renamed. These are file-private, not serialized, not part of any IPC/schema, and their single use site is internal &mdash; zero correctness or back-compat impact. Distinct from the deliberately-preserved on-disk <code>missions/</code> journal directory literal (these are byte-size limits, not the path).</p>
+    <p><strong>Fix:</strong> Rename to <code>DEFAULT/MAX/MIN_FLIGHT_JOURNAL_TAIL_BYTES</code> for naming consistency. Purely cosmetic; no behavioral change.</p>
+    <div class="rpt-callout rpt-callout-info"><strong>Dedupe note:</strong> reported by 4 auditors as the same single item (rust-flight-planner nit, rust-ipc nit, leakage-sweep nit, plus referenced elsewhere) &mdash; collapsed to ONE nice-to-have. NOT part of the intentional back-compat set.</div>
+    <p class="rpt-status"><span class="rpt-badge rpt-env">Deferred to backlog</span></p>
+  </article>
+
+  <!-- A.3 -->
+  <article class="rpt-finding">
+    <div class="rpt-finding-head">
+      <span class="rpt-badge rpt-high">Nice-to-have (comment-only)</span>
+      <h4 class="rpt-h4"><code>JournalTab.tsx:31</code> doc comment over-renamed the on-disk journal path</h4>
+    </div>
+    <p>The comment was over-renamed to <code>~/.packetade/flights/F-&lt;shortId&gt;_&lt;flight_id&gt;.md</code> but the real on-disk dir is the deliberately-retained <code>~/.packetade/missions/</code> (<code>flight_journal.rs:82</code> joins <code>"missions"</code>; <code>flight_journal.rs:2</code> header still correctly says <code>missions/</code>). The filename token order was also wrong (code emits <code>F-&lt;tail&gt;_&lt;flight_id&gt;.md</code>). Comment-only; would mislead a dev locating journal files.</p>
+    <p class="rpt-status"><span class="rpt-badge rpt-pass">Applied</span> Corrected to <code>~/.packetade/missions/F-&lt;tail&gt;_&lt;flight_id&gt;.md</code>.</p>
+  </article>
+
+  <!-- A.4 -->
+  <article class="rpt-finding">
+    <div class="rpt-finding-head">
+      <span class="rpt-badge rpt-high">Nice-to-have (comment-only)</span>
+      <h4 class="rpt-h4">Sidecar smoke test references nonexistent <code>dev/mission-planner-spike-retro.md</code></h4>
+    </div>
+    <p><code>agent-sidecar/test/anthropic-multi-turn-smoke.mjs</code> lines 3 and 7 still say "Mission Planner E1" and reference the now-nonexistent <code>dev/mission-planner-spike-retro.md</code> (only <code>dev/flight-planner-spike-retro.md</code> exists &mdash; confirmed via <code>ls</code>). Comment-only, no behavioral impact.</p>
+  </article>
+
+  <!-- A.5 -->
+  <article class="rpt-finding">
+    <div class="rpt-finding-head">
+      <span class="rpt-badge rpt-env">Non-defect (explicitly NOT a regression)</span>
+      <h4 class="rpt-h4"><code>docs/index.html</code> retains "Missions" marketing branding</h4>
+    </div>
+    <p>Lines ~652/685/689/750/827/1378 retain "Missions" branding. Confirmed by auditor to be pure CRLF/line-ending diff churn, untouched by this rename and outside the declared README-only doc scope &mdash; explicitly NOT a regression.</p>
+  </article>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">4. Verification ledger (independently re-checked)</h3>
+  <p class="rpt-note">Load-bearing claims re-verified by Read/grep by the moderator.</p>
+  <table class="rpt-table">
+    <thead><tr><th>Claim</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>Repo-wide scan for strong Mission names across <code>src/</code>, <code>src-tauri/src/</code>, <code>agent-sidecar/src/</code>, <code>src/generated/</code> (excluding permission/commission/submission)</td><td><span class="rpt-badge rpt-pass">ZERO hits</span> rename eradication genuinely complete</td></tr>
+      <tr><td>Exactly 5 <code>#[serde(alias="missionId")]</code> at expected files (<code>api/mod.rs:232</code>, <code>flight_planner.rs:311 &amp; :337</code>, <code>flight.rs:480</code>, <code>flight_journal.rs:51</code>)</td><td><span class="rpt-badge rpt-pass">Confirmed</span> 5 attrs across 4 files &mdash; matches documented intentional back-compat</td></tr>
+      <tr><td>On-disk journal dir literal <code>join("missions")</code> preserved at <code>flight_journal.rs:82</code></td><td><span class="rpt-badge rpt-pass">Confirmed</span> intentional, correctly preserved</td></tr>
+      <tr><td>All four cosmetic findings present at cited locations</td><td><span class="rpt-badge rpt-pass">Confirmed</span></td></tr>
+      <tr><td>False-positive guard: serde aliases, store shims (<code>goalStore.ts:18</code> / <code>issueStore.ts:170</code>), on-disk <code>missions/</code> path NOT wrongly flagged as leftover</td><td><span class="rpt-badge rpt-pass">All correctly excluded</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================= -->
+  <h3 class="rpt-h3">5. Test appendix</h3>
+  <p class="rpt-note">All runnable suites green. Vitest and live sidecar smokes are BLOCKED-ENV only (Windows-installed <code>node_modules</code> under WSL2 lack Linux-native rollup + CLI binaries) &mdash; environmental, not code defects.</p>
+  <table class="rpt-table">
+    <thead><tr><th>Suite</th><th>Status</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr><td>cargo.exe test (Rust unit + contract)</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>419 passed; 0 failed; 13 ignored. Benign ts-rs "failed to parse serde attribute" warning on the intentional <code>missionId</code> alias &mdash; not a failure.</td></tr>
+      <tr><td>flight-planner-wiring-smoke.mjs</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>13/13. Includes pinned_key_constant, factory_shape, tools_registered, envelopes, sequential_no_deadlock, protocol_version_floor (v6).</td></tr>
+      <tr><td>openai-agents-gating-smoke.mjs</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>23/23 assertions (provider gating, auto/ask_for_risky/allow_all/deny_all/planMode, allow_always non-reprompt, non-risky read/list/grep).</td></tr>
+      <tr><td>tsc --noEmit</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>Exit 0. Re-confirms FE/IPC type surface (<code>FlightApprovalRequest</code>, <code>flightId</code>, <code>FlightSpecPane</code>) compiles cleanly.</td></tr>
+      <tr><td>eslint src</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>0 errors. Single pre-existing <code>react-refresh</code> warning at <code>views/github/shared.tsx:31</code>, unrelated to the rename.</td></tr>
+      <tr><td>registry-smoke.mjs (bonus)</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>openai-agents PASS; bogus-provider correctly rejected.</td></tr>
+      <tr><td>session-ordering-smoke.mjs (bonus)</td><td><span class="rpt-badge rpt-pass">PASS</span></td><td>Pure-logic smoke.</td></tr>
+      <tr><td>Vitest (pnpm exec vitest run)</td><td><span class="rpt-badge rpt-env">BLOCKED-ENV</span></td><td>Cannot find module <code>@rollup/rollup-linux-x64-gnu</code> (MODULE_NOT_FOUND). node_modules installed on Windows lack the rollup Linux-native binary. Environmental.</td></tr>
+      <tr><td>Live sidecar smokes (mcp-inproc, echo, protocol-v6, remote-project-path)</td><td><span class="rpt-badge rpt-env">BLOCKED-ENV</span></td><td>"Native CLI binary for linux-x64 not found" (Claude Agent SDK). Sidecar cannot spawn the missing Linux-native CLI under WSL2. Environmental.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="rpt-callout rpt-callout-pass">
+    <strong>Bottom line.</strong> The rename is safe to commit. No auditor reported a correctness, IPC-contract, serialization, or build defect; zero findings at medium-or-above severity touch behavior &mdash; the lone "medium" is the README path string. The four residual items are cosmetic/doc-only. The README fix is recommended in this commit because it directly contradicts a stated deliverable; the other three can ship now or in a trivial follow-up.
+  </div>
+</section>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    Generated by a multi-agent workflow on 2026-06-15. PacketADE — Mission→Flight Rename Audit &amp; Plan.
+  </footer>
+</body>
+</html>

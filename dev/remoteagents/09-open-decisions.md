@@ -104,6 +104,36 @@ Recommendation:
 
 Decision owner: project owner after PWA beta.
 
+## Decision Log
+
+Dated record of the three Sprint-0 BLOCKING kickoff decisions. All three gate
+any Remote Agents scaffolding: no `remoteagents/` code is created until each is
+resolved. This log is independent of the Remote-Agents-priority research
+question; recording the scaffold here is harmless and does not authorize work.
+
+### 2026-06-15 — Sprint-0 kickoff decisions
+
+**(a) Auth provider build-vs-buy for v1** — Open.
+
+- See "Auth Provider" under Open Decisions for options and recommendation.
+- Resolution / date: _pending_.
+- Decision owner: Security/Auth agent.
+
+**(b) Payload-encryption launch gate** — Open.
+
+- See "Payload Encryption Timing" under Open Decisions for options and recommendation.
+- Resolution / date: _pending_.
+- Decision owner: project owner plus Security/Auth agent.
+
+**(c) Code location (in-repo `remoteagents/` vs `apps/` vs separate repo)** — Open.
+
+- See "Code Location" under Open Decisions for options and recommendation.
+- Resolution / date: _pending_.
+- Decision owner: implementation lead.
+
+Note: all three above are BLOCKING — each must be resolved before any
+scaffolding begins.
+
 ## Deferred Decisions
 
 - team/org access model

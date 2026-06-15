@@ -14,7 +14,7 @@ The user should not have to think about relay sockets, Durable Objects, provider
 
 - Solo builder away from desk who wants to approve tools, send follow-up prompts, and see when work finishes.
 - Power user with multiple desktops/workspaces who wants all configured PacketADE providers and models available from mobile.
-- Future team lead who wants remote Missions monitoring and approval, but team/org controls are not in MVP.
+- Future team lead who wants remote Flights monitoring and approval, but team/org controls are not in MVP.
 
 ## MVP Feature Set
 
@@ -87,7 +87,7 @@ The user should not have to think about relay sockets, Durable Objects, provider
 
 - Native iOS app via TestFlight.
 - Mobile diff review with per-hunk accept/reject.
-- Mission/issue creation and monitoring.
+- Flight/issue creation and monitoring.
 - Voice dictation from phone.
 - File mention picker.
 - Cost/time budget alerts.

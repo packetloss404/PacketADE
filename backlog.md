@@ -7,12 +7,69 @@ it from here.
 Priority: **P1** = real bug or major user-facing gap · **P2** = correctness/UX
 · **P3** = cleanup.
 
+## Mission → Flight rename (2026-06-15 audit)
+
+The repo-wide *Mission* → *Flight* rename is **verified complete and clean**
+(uncommitted working tree as of 2026-06-15): "Mission Planner" → "Flight
+Planner", `MissionsView` → `FlightsView`, "Mission Control" → "Flight Control",
+data-model `mission_id`/`missionId` → `flight_id`/`flightId`, type
+`MissionApprovalRequest` → `FlightApprovalRequest`, `components/missions/*`
+merged into `components/flights/` (`MissionSpecPane` → `FlightSpecPane`), MCP
+tool `complete_mission` → `complete_flight`, and the file moves
+`core/mission_journal.rs` → `flight_journal.rs`, `lib/missionReview.ts` →
+`flightReview.ts`, sidecar `mission-planner-server.ts` →
+`flight-planner-server.ts`, and `commands/mission_planner*.rs` →
+`flight_planner*.rs` (+ `flight_planner_tools/`). Spot-confirmed on disk:
+`resolve_flight_approval` (`flight_planner.rs:2433`), `get_flight_approvals`
+(`lib.rs:412`), `complete_flight` `summary: String`, `components/flights/`,
+`flight_journal.rs`. Gates: `cargo check` = 0, `tsc --noEmit` = 0, sidecar
+`tsc` build = 0, schema regen identical, eslint 0 errors,
+flight-planner-wiring-smoke 13/13. The rename closed **no** open work items —
+renames are cosmetic to outstanding tasks — and the flight-planner entries
+below are already re-pointed to the new file names/paths. Remaining one-offs
+from this rename:
+
+- **P2 — Run the full test gate on the Windows host.** This WSL2 environment
+  cannot run Vitest (rollup native binary absent) or the live sidecar smokes
+  (Claude Agent SDK / `codex` Linux CLIs absent) — `node_modules` were
+  installed on Windows, so Linux-native binaries are missing. This is
+  environmental, not a code defect. Re-run `pnpm lint`, `pnpm build`, the full
+  Vitest suite, and the live sidecar smokes on the Windows host before
+  committing the rename.
+- **P3 — Commit the rename.** The Mission → Flight rename lives only in the
+  uncommitted working tree; land it once the Windows gate above passes.
+- **P3 — Optional serde-alias back-compat test.** Add a focused test that
+  round-trips a persisted struct serialized with the legacy `missionId` key
+  and asserts it deserializes via `#[serde(alias = "missionId")]` into
+  `flight_id`, so a future cleanup can't silently drop the alias. The 7
+  retained read-side surfaces and their removal criteria are documented under
+  **Intentional Mission→Flight back-compat surfaces** in the Flight Planner
+  section below.
+- **P3 — `backlog.md` filename-casing standardization.** All 42 in-repo
+  references and both physical files (`./backlog.md`,
+  `./dev/archive/backlog.md`) already use lowercase `backlog.md`; there is no
+  `BACKLOG.md` anywhere today. Add a CI/link guard (or contributor note) that
+  rejects an uppercase `BACKLOG.md`, so a case-insensitive filesystem
+  (Windows / default macOS) can't reintroduce a variant that breaks links under
+  case-sensitive CI. Preventive — nothing is broken now.
+
 ## Remote Agents (current flagship)
 
 Canonical plan: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md).
 This is the next major product bet: PWA first, Packet account sign-in, Packet
 Cloud relay, desktop-owned providers/secrets/tools, and no generic remote Tauri
 bridge.
+
+**Sequencing vs Flight Planner.** Remote Agents (ROADMAP R0, P0) is the headline
+direction, but it sequences *after* the in-flight Flight Planner v1 hardening
+settles — the planner emits the same `api-agent:*` event contract that Remote
+Agents will relay, so a churning planner surface is a moving target for the
+relay protocol. Land the P3 Flight Planner correctness items below (cold-start
+approval hydration, rate-limit re-fire, status-event emission gaps, journal
+incremental-fetch) and pass the Windows test gate before committing the relay
+to a frozen remote command envelope. The Flight Planner v1.1 deferrals can run
+in parallel; the relay's "stream `api-agent:*` / respond to prompts / cancel"
+envelope should treat the planner event shape as a stable input.
 
 - **P1 — Packet Cloud relay MVP.** Implement the Worker/Durable Object relay,
   desktop connector, host/session routing, reconnect semantics, and relay
@@ -162,15 +219,15 @@ Deferred items called out in `dev/multi-platform-build.md` and
   Not supported by the current setup — use native runners. Track as a
   "won't-fix until release matrix demands it" item.
 
-## Mission Planner v1.1 (deferred from `dev/mission-planner-plan.md`)
+## Flight Planner v1.1 (deferred from `dev/flight-planner-plan.md`)
 
 - **P2 — Helper planner escalation.** Primary planner can call
   `spawn_helper_planner(scope, reason)` to delegate heavy decomposition
-  to a one-shot Opus 4.7 session. Cap: 1 successful spawn per mission;
+  to a one-shot Opus 4.7 session. Cap: 1 successful spawn per flight;
   failed-to-start doesn't count. Helper output ingested back into the
   primary's next turn as `<helper_output>…</helper_output>`. Stub in v1
   returns `"deferred to v1.1"`; full implementation belongs to v1.1
-  alongside any "scope too big" missions that surface the need.
+  alongside any "scope too big" flights that surface the need.
 - **P3 — Back-port milestone-gating + file-collision detection to the
   async-attempts path.** v1 routes planner-emitted tasks through
   `asyncFlightStore.launchAsync` (worktrees + `claude-oauth` API-agent
@@ -190,11 +247,11 @@ Deferred items called out in `dev/multi-platform-build.md` and
   percentage-of-quota readout. Revisit if/when Anthropic exposes an
   endpoint.
 - **P3 — Crash-resilient planner sessions.** v1 planner sessions are
-  ephemeral; on app restart, `active` missions flip to `paused` and
+  ephemeral; on app restart, `active` flights flip to `paused` and
   require a user click to resume. Persist `lastResumeToken` and
   rehydrate on cold start.
 - **P3 — Rollback optimistic transcript on `injectTurn` failure.**
-  `missionPlannerStore.injectTurn` optimistically appends a user
+  `flightPlannerStore.injectTurn` optimistically appends a user
   transcript entry before the backend call. If the invoke errors, the
   phantom message stays on screen. Add a rollback on rejection.
 - **P3 — Replace `try_sidecar_session_for` async lock.** Currently
@@ -211,10 +268,16 @@ Deferred items called out in `dev/multi-platform-build.md` and
   `source="user"` which doesn't wrap), but harden when the path
   exists.
 - **P3 — `now_millis()` duplicated across 6 tool files.** Hoist to a shared
-  helper in `commands::mission_planner_tools::mod.rs` or reuse the one in
-  `mission_planner.rs`.
+  helper in `commands::flight_planner_tools::mod.rs` or reuse the one in
+  `flight_planner.rs`.
+- **P3 (deferred nit) — Rename leftover `*_MISSION_JOURNAL_TAIL_BYTES`
+  constants.** `DEFAULT`/`MAX`/`MIN_MISSION_JOURNAL_TAIL_BYTES`
+  (`flight_planner.rs:2628-2646`) → `*_FLIGHT_JOURNAL_TAIL_BYTES`. Cosmetic
+  only: these are file-private constants, never serialized or referenced
+  across the wire, so the stale "MISSION" token has no behavioral or
+  compat impact. Safe to fold into any future touch of that file.
 - **P3 — `PersistedStateDto → core::PersistedState` round-trip drops
-  `mission_approvals`.** Fine today (settings-only path), but a debug_assert
+  `flight_approvals`.** Fine today (settings-only path), but a debug_assert
   or stronger guard would prevent future silent loss if a different code
   path uses the round-trip.
 - **P3 — Milestone DTO bump.** E2-MILE stashes the tool's `goal` field in
@@ -229,25 +292,33 @@ Deferred items called out in `dev/multi-platform-build.md` and
 - **P3 — `update_task` re-queue doesn't re-launch attempt.** A planner that
   flips a task back to Queued has no way to actually re-run it. Either
   reject the Queued transition or wire it to spawn a new attempt.
-- **P3 — `complete_mission` schema strictness mismatch.** Sidecar zod
-  requires `summary.min(1)`; Rust accepts empty via `#[serde(default)]`.
-  Tighten Rust or relax zod.
-- **E3 prereq — `get_mission_approvals(missionId)` Tauri command for
-  cold-start hydration.** Frontend store populates `pendingApprovals` only
-  via event listeners installed at startPlanner. If a mission has pending
-  approvals before the listener attaches (paused mission resume, page
-  reload), they're invisible. E3 must add this command before mounting
-  MissionSpecPane.
+- **P3 — `complete_flight` schema strictness mismatch.** Sidecar zod
+  requires `summary.min(1)` (`agent-sidecar/src/mcp/flight-planner-server.ts:142`),
+  while Rust accepts an empty string — `CompleteFlightArgs.summary` carries
+  `#[serde(default)]` (`flight_planner_tools/complete_flight.rs:34-35`), so a
+  missing/empty summary deserializes to `""`. Product call: tighten Rust to
+  reject empty (and over-2000) at the trust boundary, matching zod — Rust is
+  the real boundary and should revalidate — OR relax zod. The empty-summary
+  test (`complete_flight.rs:193-197`) currently asserts the permissive behavior
+  and would flip if Rust hardens.
+- **P3 — Verify cold-start approval hydration uses `get_flight_approvals`.**
+  The `get_flight_approvals(flightId)` command now ships
+  (`flight_planner.rs:2564`, registered at `lib.rs:412`, bound at
+  `tauri.ts:2834`), so the original E3 prereq ("add this command before
+  mounting `FlightSpecPane`") is closed. Residual check: confirm the frontend
+  actually calls it on `FlightSpecPane` mount / paused-flight resume / page
+  reload so approvals raised before the event listener attaches are visible.
+  If the call site exists, close this; if not, wire the cold-start fetch.
 - **P3 — `read_conversation_tail` whole-file load.** Currently
-  `core::mission_planner_prompts::read_conversation_tail` reads the entire
+  `core::flight_planner_prompts::read_conversation_tail` reads the entire
   conversation file into memory before slicing the last N lines. For
   long-running sessions accumulating megabytes of JSONL chunks this is
   wasteful. Stream-and-tail via `Seek::seek` from end + back-scan for
   newlines would be safer.
 - **P3 — Planner `replanCount` data source mismatch.**
-  `core::mission_planner_prompts::render_task_failed` displays "Replan
+  `core::flight_planner_prompts::render_task_failed` displays "Replan
   budget: X/3 used" by reading `replanCount` off the Task DTO. The
-  authoritative counter lives in `MissionPlannerSession.replans_per_task`
+  authoritative counter lives in `FlightPlannerSession.replans_per_task`
   on the registry, NOT on the DTO. E5 must either mirror the count onto
   the Task DTO before firing the TaskFailed wake, or change the renderer
   to take the count as an explicit argument from `build_wake_payload`.
@@ -255,7 +326,7 @@ Deferred items called out in `dev/multi-platform-build.md` and
 - **P3 — Tighten `session_id` path-escape guard.** Today's regex allows
   Windows drive-relative paths like `C:foo`. Tighten to UUID-only:
   `session_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')`.
-- **P3 — Focus textarea on starter-prompt click.** `MissionSpecPane`
+- **P3 — Focus textarea on starter-prompt click.** `FlightSpecPane`
   pills populate the input but don't focus the textarea. One-line fix.
 - **P3 — Tighten async-approval prompt-content test.** The current test
   accepts "continue" as a "don't-block" token; "continue" appears often
@@ -270,7 +341,7 @@ Deferred items called out in `dev/multi-platform-build.md` and
   When a `rate_limited` event arrives mid-wake, the wake content is
   dropped on the floor and the auto-resume timer only flips status to
   Idle. The planner sits Idle until another orchestration event fires.
-  For "rate-limited mid-decomposition" the mission stays half-planned.
+  For "rate-limited mid-decomposition" the flight stays half-planned.
   Re-emit the most recent dropped wake on resume.
 - **P3 — 529 Overloaded not detected as rate-limit.**
   `isLikelyRateLimitError` matches 429 / `rate_limit_error` / name=
@@ -278,9 +349,9 @@ Deferred items called out in `dev/multi-platform-build.md` and
   generic error — planner sees error + no QuotaPaused. Worth handling
   in v1.1; acceptable v1.
 - **P3 — `on_planner_done` + `on_rate_limited` auto-resume don't emit
-  `mission-planner:status-changed` events.** E6 Fix 3 added
-  `set_status_and_emit` helper but only opted-in `pause_mission_planner`,
-  `resume_mission_planner`, and `inject_planner_turn`. The Awake→Idle
+  `flight-planner:status-changed` events.** E6 Fix 3 added
+  `set_status_and_emit` helper but only opted-in `pause_flight_planner`,
+  `resume_flight_planner`, and `inject_planner_turn`. The Awake→Idle
   transition (watchdog) and Idle-after-quota-resume mutate
   `session.status` directly inside the sessions mutex without firing
   the Tauri event, so the frontend `runtime.status` lags those flips
@@ -294,15 +365,15 @@ Deferred items called out in `dev/multi-platform-build.md` and
 - **P3 — Journal entry incremental fetch.** Today every `journal-appended`
   event causes `JournalTab` to refetch the whole file. On a chatty planner
   turn (~5-20 events), that's 5-20 full reads. Add a `read_journal_after(
-  mission_id, last_entry_id) -> Vec<JournalEntry>` Tauri command that
+  flight_id, last_entry_id) -> Vec<JournalEntry>` Tauri command that
   parses the HTML-comment headers to find the cut point. Use it in
   JournalTab to append-only the new content.
 - **P3 — Journal file size cap.** `read_journal` loads the whole file
   into memory each fetch. Pair with the incremental-fetch follow-up to
-  add a max-bytes safeguard or pagination so very long missions don't
+  add a max-bytes safeguard or pagination so very long flights don't
   pin megabytes in RAM.
-- **P3 — Journal path-convention drift.** `mission_journal::journal_path`
-  produces `F-<shortId>_<mission_id>.md`; locked spec says `<shortId>.md`.
+- **P3 — Journal path-convention drift.** `flight_journal::journal_path`
+  produces `F-<shortId>_<flight_id>.md`; locked spec says `<shortId>.md`.
   The drift was for collision-resistance (4-char shortId has 65k slots).
   Confirm with owner whether to trim to spec or amend the spec doc.
 - **P3 — `format_timestamp` could format in Rust.** Today journal headers
@@ -317,8 +388,8 @@ Deferred items called out in `dev/multi-platform-build.md` and
   could be confused. `MarkdownRenderer` doesn't enable raw HTML so the
   UI is safe, but the on-disk parser invariant is fragile. Escape
   HTML-comment-looking content inside body strings.
-- **P3 — Approval-resolution journal entry.** `resolve_mission_approval`
-  currently emits a `SystemNote`. Could be `ApprovalRequest` updated
+- **P3 — Approval-resolution journal entry.** `resolve_flight_approval`
+  (`flight_planner.rs:2433`) currently emits a `SystemNote`. Could be `ApprovalRequest` updated
   in-place, or a dedicated `ApprovalResolution` kind. For v1 the
   SystemNote is fine; for v1.1 consider promoting.
 - **P3 — Cost-split implicit invariant (`totalCost ≥ plannerCost`).**
@@ -329,12 +400,12 @@ Deferred items called out in `dev/multi-platform-build.md` and
   isn't load-bearing, or (b) add a debug-assert / log when the
   invariant breaks. Today neither side enforces it.
 - **P3 — Cost dashboard planner/executor split.** The `CostDashboardView`
-  aggregates cost across missions but does not distinguish planner spend
+  aggregates cost across flights but does not distinguish planner spend
   vs executor spend. Post-E8 the data is present on every Flight
   (`plannerCost` + derived `executorCost`); surface the split in the
   dashboard so a user can see how much of the bill is the planner.
-- **P3 — Export `StatGrid` from `MissionsView` for direct unit tests.**
-  E8-TESTS currently mounts `MissionsView` end-to-end (mocking six
+- **P3 — Export `StatGrid` from `FlightsView` for direct unit tests.**
+  E8-TESTS currently mounts `FlightsView` end-to-end (mocking six
   stores and five child components) to assert the cost-split cells.
   Exporting `StatGrid` would let those tests drop most of the mock
   surface and render the helper directly. Same applies to
@@ -342,28 +413,28 @@ Deferred items called out in `dev/multi-platform-build.md` and
 - **P3 — Executor cost accumulator error-spam.** E8 fix #1 lands an
   executor turn_summary hook that calls `accumulate_executor_cost`.
   Like the planner accumulator, it errors on missing flight, and the
-  caller downgrades to warn-log. After a mission delete while
+  caller downgrades to warn-log. After a flight delete while
   executor sessions are still running, every turn produces a warn —
   potentially many per minute. Either silently no-op like
-  `persist_planner_state_on_flight` does, OR ensure mission-delete
+  `persist_planner_state_on_flight` does, OR ensure flight-delete
   reliably kills associated sessions first.
 - **P3 — Cost-update event verbosity.** Both planner and executor
-  `turn_summary` events trigger `mission-planner:cost-updated:<id>`,
+  `turn_summary` events trigger `flight-planner:cost-updated:<id>`,
   which fires `flightStore.hydrateFromBackend()` in the frontend.
   During decomposition with 10-20 turns/min, that's 10-20 full
   hydrations/min. Patch just the affected flight (read its persisted
   state, replace the entry in the in-memory store) instead of full
   re-read.
 - **P3 — Token-vs-cost drift on planner-session race.** If
-  `stop_mission_planner` removes the registry entry between
-  `mission_id_for_sidecar_session` (step 2) and `get_by_mission`
+  `stop_flight_planner` removes the registry entry between
+  `flight_id_for_sidecar_session` (step 2) and `get_by_flight`
   (step 3) in the sidecar `turn_summary` async-spawn, `model` falls
   back to `""` and `calculate_cost` returns 0. The handler still
   bumps `planner_tokens` but not `planner_cost`. Mild drift; bounded
   by how often a planner is mid-turn at stop time.
 - **P3 — Compaction summarization burns OAuth quota.** Each compaction
   fires a one-shot Sonnet call (~80K input chars truncated, ~2K output)
-  against the user's Claude subscription. On long-running missions this
+  against the user's Claude subscription. On long-running flights this
   could happen multiple times per day. Consider caching previous
   summaries and only re-summarizing the delta since the last
   compaction. Also consider exposing a user-configurable threshold
@@ -390,7 +461,7 @@ Deferred items called out in `dev/multi-platform-build.md` and
   between `swap_sidecar_session_after_compaction` (registry swap)
   and `persist_planner_state_on_flight` (DTO write), the registry
   has the new id but the DTO has the old. Cold-start enforce flips
-  active missions to Paused on reboot, so the user resumes manually
+  active flights to Paused on reboot, so the user resumes manually
   — but they'll see "Paused" instead of the live planner state.
   Acceptable v1; consider write-DTO-first in v1.1.
 - **P3 — `OneshotWaiter` GC for hung sessions.** If a sidecar session
@@ -406,9 +477,56 @@ Deferred items called out in `dev/multi-platform-build.md` and
 - **P3 — Move src/agents/* cleanup out of E10 commit.** The
   pre-existing modifications to `src/agents/claude-code.ts` and
   `src/agents/index.ts` (removing `createClaudeCodeAdapter`) are
-  unrelated to mission planner work and have been excluded from
-  every mission-planner commit. Land them in their own
+  unrelated to flight planner work and have been excluded from
+  every flight-planner commit. Land them in their own
   chore/cleanup commit when convenient.
+
+### Intentional Mission→Flight back-compat surfaces (do NOT flag as leftover)
+
+The Mission→Flight rename (v0.9.5) deliberately keeps four read-side
+compatibility surfaces so persisted user data written under the old
+`missionId` / `missions` names still loads. These are intentional, not
+stale-symbol misses — leave them in place until the removal criteria below
+are met. They fall into two removal classes.
+
+**Class A — lazy read-side fallbacks (7 items).** All are deserialize-/read-time
+only: they re-emit the canonical `flightId` key the *next* time that record is
+persisted. There is no eager one-shot migration pass, so a record that is loaded
+but never re-saved keeps its legacy key on disk indefinitely.
+
+- **5 Rust `#[serde(alias = "missionId")]`** on persisted structs:
+  `api/mod.rs:232`, `commands/flight_planner.rs:311` and `:337`,
+  `core/flight.rs:480`, `core/flight_journal.rs:51`.
+- **2 frontend store read shims:** `issueStore.ts:170` (`flightId` falls back to
+  legacy `missionId`) and `goalStore.ts:18` (`migrateGoal` copies legacy
+  `missionId` → `flightId` on read).
+
+*Removal criteria (Class A):* no removal timeline exists today and none is
+implied by the code. Do NOT phrase removal as "after release X all data is
+migrated" — that is false here because these are lazy fallbacks with no eager
+pass, so never-touched records keep legacy keys forever. Removable only after
+(a) a one-shot eager migration ships that walks all persisted
+goals/issues/flights/journal records and rewrites them with canonical `flightId`
+keys, AND (b) at least one release cycle passes for that migration to run on
+users' machines. Earliest realistic target is the 1.0.0 cut (per SemVer, removals
+belong at a major bump; pre-1.0 the 0.x→0.(x+1)/1.0 cut is the legitimate window).
+Without the eager pass, removal silently drops the flight binding on any record
+not re-saved since the rename. **Action item:** build the eager mission→flight
+on-disk migration pass and gate Class-A removal on it shipping + one release.
+
+**Class B — the on-disk journal directory literal (1 item).**
+
+- **`data_dir().join("missions")`** at `core/flight_journal.rs:82` (documented at
+  `:2`). This is NOT an expirable shim — it is the live, canonical path the code
+  reads *and* writes right now. There is no parallel `~/.packetade/flights/`
+  directory and no journal-dir migration logic.
+
+*Removal criteria (Class B):* treat as a live path, not a back-compat shim, and do
+not put it on the Class-A track. It can change only as part of a deliberate
+`missions/` → `flights/` directory migration (copy + legacy-read fallback,
+mirroring the existing `storage.rs` `data_dir()` legacy-fallback precedent), and
+even then keep the legacy-read fallback one extra major version. On-disk format
+compatibility outlives API/config deprecation.
 
 ## GitHub pane v0.9+ (from v0.8 deferrals)
 
@@ -422,8 +540,8 @@ Deferred items called out in `dev/multi-platform-build.md` and
   dedicated tab listing unread items, with mark-as-read and link-back to the
   source issue / PR. Significant work — own state, polling cadence, and
   badge wiring across the app.
-- **P3 — Issue → Mission auto-mirroring (bidirectional).** v0.8 has one-way
-  Plane / Mission spec handoff. A "mirror this mission to GitHub issues"
+- **P3 — Issue → Flight auto-mirroring (bidirectional).** v0.8 has one-way
+  Plane / Flight spec handoff. A "mirror this flight to GitHub issues"
   toggle would create + update issues automatically. Two-way sync is risky
   (collision, conflict resolution); requires a dedicated design pass.
 - **P3 — Releases / gists / Actions runs view.** Out of scope for v0.8;
@@ -442,7 +560,7 @@ Deferred items called out in `dev/multi-platform-build.md` and
 
 - **P2 — Embedding / RAG over memory.** Today's pattern retrieval is
   keyword/recency-based. An embedding layer (sqlite-vss or LanceDB)
-  would enable semantic context injection for the Mission Planner
+  would enable semantic context injection for the Flight Planner
   decomposition phase and the executor brief.
 - **P2 — Pre-execution memory brief for executor sessions.** When an
   attempt launches, compose a short "what we know about this codebase"
@@ -459,7 +577,7 @@ Deferred items called out in `dev/multi-platform-build.md` and
   the pattern's confidence score.
 - **P3 — Manual capture "+ Add to memory" button** in more surfaces
   beyond the GitHub investigation. Anywhere the user encounters
-  insight (mission journal, agent transcript, code review thread)
+  insight (flight journal, agent transcript, code review thread)
   should have a single-click capture affordance.
 - **P3 — Project-scoped filter chips in TimelineTab.**
 - **P3 — Provenance linking on event cards** (clickable
@@ -594,7 +712,7 @@ hardening passes worth doing when context allows.
 - **P3 — `core/orchestrator.rs:415` `unwrap()` after `is_none()` guard
   in the `tick()` hot loop.** Idiomatic `if let Some(agent) = ... {}
   else { continue; }` reads cleaner and removes the hazard signal.
-- **P3 — `core/mission_planner_prompts.rs` LoC bloat (1,656).**
+- **P3 — `core/flight_planner_prompts.rs` LoC bloat (1,656).**
   Mostly long `r#"..."#` system-prompt strings, which is the right
   place for them, but the file deserves extraction into per-section
   sub-modules (decomposition prompt, reactive replan prompt,
@@ -633,10 +751,10 @@ malformed JSON instead of clobbering it, preserve existing server fields, and fo
 non-stdio server shapes to sidecar sessions; key/Gemini/SSH migrations keep legacy data until the
 replacement save succeeds; legacy localStorage prefix migration snapshots keys before mutation; SSH
 target migration merges both legacy namespaces; FlightDetail unlink updates both issue and flight
-stores; backend `PersistedState.issues` now hydrates `issueStore` before Mission reconciliation;
+stores; backend `PersistedState.issues` now hydrates `issueStore` before Flight reconciliation;
 empty assistant text-only turns are skipped while tool-use turns remain valid. F52's remaining caveat:
 `flight.issueIds` is still treated as a derived frontend cache, so a durable Rust-side independent
-Mission issue-link model remains future work. F19's remaining caveat: atomic MCP file writes are still
+Flight issue-link model remains future work. F19's remaining caveat: atomic MCP file writes are still
 tracked separately as F21/P3. Keep these items in the review ledger until the Batch A branch is
 validated and moved to `CHANGELOG.md`.
 
@@ -670,12 +788,12 @@ validated and moved to `CHANGELOG.md`.
 - **F28 — `send`/`retry` overwrite the in-process cancel sender, cancelling a running turn** — `api_agent.rs:701-724,1015-1037`.
 - **F32 — failed API `sendMessage` leaves the bubble spinning forever** — `agentTaskStore.ts:1072-1098`.
 - **F33 — orchestration scheduler silently swallows backend tick failures** — `orchestrationSchedulerStore.ts:47`.
-- **F34 — `update_task` `target_spec` reported landed but silently dropped** — `mission_planner_tools/update_task.rs:135-144`. _(see existing P3 entry)_
+- **F34 — `update_task` `target_spec` reported landed but silently dropped** — `flight_planner_tools/update_task.rs:135-144`. _(see existing P3 entry)_
 - **F38 — `useVoiceInput` never stops recognition/native recording on unmount** — `hooks/useVoiceInput.ts:63-153`.
 - **F44 — `migrateLegacyStorage` mutates localStorage while iterating by index → loses keys** — `lib/storage-migration.ts:19-31`.
 - **F46 — streamed UTF-8 multibyte corrupted when split across chunks (both streamers)** — `llm_anthropic.rs:213`, `llm_openai_compat.rs:234`.
 - **F48 — FlightDetail unlink clears `issue.flightId` but not `flight.issueIds`** — `flights/FlightDetail.tsx:173`.
-- **F49 — flight status never recomputes when an issue changes** — `FlightList.tsx`, `MissionsView.tsx`.
+- **F49 — flight status never recomputes when an issue changes** — `FlightList.tsx`, `FlightsView.tsx`.
 - **F51 — `flightStore.hydrateFromBackend()` clobbers in-flight optimistic mutations** — `flightStore.ts:688-698`.
 - **F52 — `issueStore` localStorage-authoritative, never hydrated, lossy backend mirror** — `issueStore.ts:203-237`. Minimal fix: reconcile `flightStore.issueIds` on hydrate.
 - **F55 — `FlightStatus` contract test asserts a hand-kept length, missing `spec`** — `__tests__/contract.test.ts:167-180`.
@@ -714,7 +832,7 @@ validated and moved to `CHANGELOG.md`.
 - **F47** final SSE line without trailing newline dropped — `llm_anthropic.rs:215`, `llm_openai_compat.rs:237`.
 - **F54** `release-gate.mjs` hardcodes the Windows Node triple — `scripts/release-gate.mjs:105-109`.
 - **F57** SSH pinning branch in `baseSshArgs` untested — `lib/ssh.ts:19-63`.
-- **F58** Mission Planner rate-limit backoff clamp untested — `mission_planner.rs:910-912`.
+- **F58** Flight Planner rate-limit backoff clamp untested — `flight_planner.rs:910-912`.
 - **G05** sessions forgotten on transient writer-closed error during restart — `agent_sidecar/protocol.rs:181-186,281-286`. _(panel: med→low)_
 - **G06** cancelled sidecar sessions leak ownership + remote ssh procs — `agent_sidecar/protocol.rs:361-370`.
 - **G07** unbounded writer channel + stdout line buffer (no backpressure/cap) — `supervisor.rs:598,679,779-808`.

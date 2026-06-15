@@ -1,16 +1,16 @@
 # Swarm Orchestration Plan
 
-Last updated: 2026-04-28
+Last updated: 2026-06-15
 
-## Implementation Status — 2026-04-15
+## Implementation Status — 2026-06-15
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Phase 1: TaskRole type | ✅ Done | coordinator/builder/reviewer/scout with badges |
+| Phase 1: TaskRole type | ✅ Done | coordinator/builder/reviewer/scout with badges; role-badge styling lives in `src/lib/flight-colors.ts` (`TASK_ROLE_CONFIG`) |
 | Phase 1: Role badges in UI | ✅ Done | In MilestonesPanel |
-| Phase 2: ownedPaths on tasks | ✅ Done | On Task interface |
-| Phase 2: File collision detection | ✅ Done | Pre-launch check in orchestrator |
-| Phase 3: Coordination feed | ✅ Done | CoordinationFeed component in FlightDetail |
+| Phase 2: ownedPaths on tasks | ✅ Done | On Task interface; also wired in core Rust (`core/flight.rs` `owned_paths`, `create_task.rs`) |
+| Phase 2: File collision detection | ✅ Done | Pre-launch check in orchestrator; collision detection also in core Rust (`create_task.rs`) |
+| Phase 3: Coordination feed | ✅ Done | Handoff-log UI in `src/components/flights/MilestonesPanel.tsx` (rendered in FlightDetail); no standalone CoordinationFeed component exists |
 | Phase 3: Task handoff log | ✅ Done | handoffLog[] with UI |
 | Phase 4: Escalation | ⚠️ Partial | blockedReason exists, no auto-reassignment |
 
@@ -36,7 +36,7 @@ PacketADE already has the key primitives:
 Relevant code today:
 
 - `src/types/flight.ts`
-- `src/stores/orchestrationStore.ts`
+- `src/stores/orchestrationSchedulerStore.ts` and `src/stores/orchestrationStateStore.ts`
 - `src-tauri/src/commands/orchestration.rs`
 
 The missing piece is not orchestration from scratch. The missing piece is a stronger product model on top of the existing orchestration core.
@@ -77,7 +77,7 @@ Make the swarm legible.
 ## Product behavior
 
 - tasks are created with a visible role
-- mission and workspace UI show role badges next to running work
+- flight and workspace UI show role badges next to running work
 - review queue can group by role
 - role-aware prompts can be injected at launch time
 
@@ -96,7 +96,7 @@ Prevent multi-agent merge collisions by design.
 - add `ownedPaths: string[]` to tasks
 - optionally add `blockedPaths: string[]` or `reservedPaths: string[]`
 - add a pre-launch conflict check in the scheduler
-- add conflict warnings in the mission/workspace UI before task execution
+- add conflict warnings in the flight/workspace UI before task execution
 
 ## Product behavior
 
@@ -131,7 +131,7 @@ Make swarm behavior understandable without digging through individual sessions.
 
 ## Product behavior
 
-- mission view shows a coordination feed
+- flight view shows a coordination feed
 - workspace view can expose a compact live swarm strip
 - review queue links back to the coordination timeline
 
@@ -175,7 +175,7 @@ These should be added incrementally. The smallest useful change is `role` plus `
 
 Natural integration points:
 
-- `MissionsView.tsx`
+- `FlightsView.tsx`
 - `FlightDetail.tsx`
 - `MilestonesPanel.tsx`
 - `ReviewQueueView.tsx`

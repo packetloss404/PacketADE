@@ -1,20 +1,28 @@
 # PacketADE MCP Server Plan
 
-Last updated: 2026-04-28
+Last updated: 2026-06-15
 
 Status: **strategy/reference**. The implementation owner for deferred transport
 work is [`../mcp-provider-transport.md`](../mcp-provider-transport.md); keep
 this file for product context and BridgeMind positioning.
 
-## Implementation Status — 2026-04-15
+## Implementation Status — 2026-06-15
+
+The Phase-1 **frontend store is live**: tool/resource definitions ship today in
+[`src/stores/mcpProviderStore.ts`](../../src/stores/mcpProviderStore.ts)
+(`PROVIDER_TOOLS`), which is the canonical source of truth for the exposed tool
+names below. Only the **backend transport is deferred** — see
+[`../mcp-provider-transport.md`](../mcp-provider-transport.md). The "Frontend
+only" / "Frontend definitions done" rows therefore mean *implemented but not yet
+wired to a server*, not unstarted.
 
 | Item | Status | Notes |
 |------|--------|-------|
 | MCP config management | ✅ Done | mcp.rs reads/writes/deletes server configs |
-| PacketADE as MCP provider | ⚠️ Phase 1 done | Frontend types/store/settings UI |
-| MCP resources (flights, tasks, memory) | ⚠️ Frontend definitions done | No transport yet (deferred to mcp-provider-transport.md) |
-| MCP tools (get_active_flight, etc.) | ⚠️ Frontend definitions done | No transport yet |
-| Phase 1: Local read-only server | ⚠️ Frontend only | Transport deferred |
+| PacketADE as MCP provider | ⚠️ Phase 1 done | Frontend types/store/settings UI (`mcpProviderStore.ts`) |
+| MCP resources (flights, tasks, memory) | ⚠️ Frontend definitions done | Defined in `PROVIDER_TOOLS` store; transport deferred to mcp-provider-transport.md |
+| MCP tools (`get_active_flight`, etc.) | ⚠️ Frontend definitions done | Live names in `mcpProviderStore.ts`; transport deferred |
+| Phase 1: Local read-only server | ⚠️ Frontend live, transport deferred | Store shipped; server transport in mcp-provider-transport.md |
 | Phase 2: Workflow tools | ❌ Deferred | — |
 | Phase 3: Ownership-aware tools | ❌ Deferred | — |
 
@@ -148,15 +156,18 @@ Likely implementation shape:
 
 ## Good First Slice
 
-The smallest useful first release is:
+The smallest useful first release maps to the read-oriented tools already
+defined in `PROVIDER_TOOLS` (`src/stores/mcpProviderStore.ts`):
 
-1. `packetade.get_active_project`
-2. `packetade.list_flights`
-3. `packetade.get_flight`
-4. `packetade.list_tasks`
-5. `packetade.get_memory_context`
+1. `get_active_flight` (renamed from the earlier `get_active_mission`)
+2. `list_runnable_tasks`
+3. `read_task_details`
+4. `read_memory_context`
+5. `list_workspaces`
 
-That already makes PacketADE materially useful as an MCP provider.
+These names are exact as shipped in the live frontend store. That already makes
+PacketADE materially useful as an MCP provider once the transport
+([`../mcp-provider-transport.md`](../mcp-provider-transport.md)) lands.
 
 ## Open Questions
 

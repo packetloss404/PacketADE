@@ -1,10 +1,10 @@
-# Mission Planner — Spike Retrospective
+# Flight Planner — Spike Retrospective
 
 Date: 2026-05-14
 Status: **GO** for E1–E8 + E10 implementation. No architecture changes
 required. One pre-existing bug surfaced that ships as part of E1.
 
-Companion to [`mission-planner-plan.md`](./mission-planner-plan.md).
+Companion to [`flight-planner-plan.md`](./flight-planner-plan.md).
 
 ## What we spiked
 
@@ -85,7 +85,7 @@ locked plan's 2-3s wake-consumer debounce is the right mitigation.
 
 ## Decision
 
-**Proceed with E1–E8 + E10 as planned in [`mission-planner-plan.md`](./mission-planner-plan.md).**
+**Proceed with E1–E8 + E10 as planned in [`flight-planner-plan.md`](./flight-planner-plan.md).**
 
 The two updates below land in the spec doc alongside this retro. No
 deeper revisions needed.
