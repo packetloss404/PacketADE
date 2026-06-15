@@ -9,7 +9,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use tracing::{info, warn};
 
 use super::agent_config::AgentConfig;
-use super::flight::{Flight, Issue, MissionApprovalRequest};
+use super::flight::{Flight, Issue, FlightApprovalRequest};
 use super::orchestrator::OrchestratorSettings;
 use super::shared::home_dir;
 use super::workspace::Workspace;
@@ -116,11 +116,11 @@ pub struct PersistedState {
     pub memory_patterns: Vec<serde_json::Value>,
     #[serde(default)]
     pub servers: Vec<ServerConfig>,
-    /// Mission Planner: pending / resolved `request_user_approval`
+    /// Flight Planner: pending / resolved `request_user_approval`
     /// records. Filed async-style by the planner via the MCP tool
-    /// surface (E2) and drained by `resolve_mission_approval`.
+    /// surface (E2) and drained by `resolve_flight_approval`.
     #[serde(default)]
-    pub mission_approvals: Vec<MissionApprovalRequest>,
+    pub flight_approvals: Vec<FlightApprovalRequest>,
 }
 
 impl Default for PersistedState {
@@ -137,7 +137,7 @@ impl Default for PersistedState {
             memory_events: Vec::new(),
             memory_patterns: Vec::new(),
             servers: Vec::new(),
-            mission_approvals: Vec::new(),
+            flight_approvals: Vec::new(),
         }
     }
 }
@@ -346,7 +346,7 @@ where
 /// Run an async closure with an exclusive load → mutate → save critical
 /// section over `PersistedState`. Solves the lost-update race that
 /// `load_state(); mutate; save_state()` exposes when called from
-/// concurrent async contexts (e.g. multiple Mission Planner MCP tool
+/// concurrent async contexts (e.g. multiple Flight Planner MCP tool
 /// handlers firing in parallel within a single planner turn).
 ///
 /// Contract:

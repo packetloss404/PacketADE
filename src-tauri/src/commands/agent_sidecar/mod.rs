@@ -45,18 +45,18 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "openai
 /// v4 (F8): added `cancel_pending_tools` request — drains parked
 /// permission/edit prompts as denied without killing the session.
 ///
-/// v5 (Mission Planner E1): added `inject_user_turn` request (typed
+/// v5 (Flight Planner E1): added `inject_user_turn` request (typed
 /// wake-trigger injection — distinct from `send_message` so the planner
 /// system prompt can reliably tell wake-triggered re-entry apart from a
 /// real user message), plus an optional `mcpKind` field on
 /// `start_session` so the sidecar can construct in-process MCP servers
-/// (e.g. the Mission Planner tool surface) locally without those live
+/// (e.g. the Flight Planner tool surface) locally without those live
 /// JS instances having to cross the wire.
 ///
-/// v6 (Mission Planner E6 — rate-limit handler): added the `rate_limited`
+/// v6 (Flight Planner E6 — rate-limit handler): added the `rate_limited`
 /// event. The Anthropic provider catches `RateLimitError` (HTTP 429) and
 /// emits it alongside the regular `error` emit; this supervisor routes it
-/// into [`crate::commands::mission_planner::MissionPlannerRegistry::on_rate_limited`]
+/// into [`crate::commands::flight_planner::FlightPlannerRegistry::on_rate_limited`]
 /// which flips the owning planner's status to `QuotaPaused` and arms an
 /// auto-resume timer.
 pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 6;

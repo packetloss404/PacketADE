@@ -561,7 +561,7 @@ pub async fn launch_flight_async(
         validate_target_claims_against_active_attempts(&targets)?;
     }
 
-    // v0.8: capture the mission title so the worktree's auto-trailer
+    // v0.8: capture the flight title so the worktree's auto-trailer
     // hook can substitute `{flightTitle}` into the rendered trailer.
     // Read once up front rather than per-attempt so we don't pay the
     // disk hit N times. Missing flight → empty title (the auto-trailer
@@ -587,7 +587,7 @@ pub async fn launch_flight_async(
         let session_id = attempt_id.clone();
         let branch = worktree::branch_name(&attempt_id);
 
-        let mission = worktree::WorktreeMission {
+        let flight = worktree::WorktreeFlight {
             flight_id: Some(flight_id.clone()),
             flight_title: Some(flight_title.clone()),
         };
@@ -601,11 +601,11 @@ pub async fn launch_flight_async(
                     provider,
                     model,
                 } => {
-                    let path = worktree::create_local_worktree_with_mission(
+                    let path = worktree::create_local_worktree_with_flight(
                         base_path,
                         &attempt_id,
                         base_branch,
-                        mission.clone(),
+                        flight.clone(),
                     )
                     .await
                     .map_err(|e| format!("Local worktree provision failed: {}", e))?;
@@ -1052,7 +1052,7 @@ mod tests {
     fn flight_with_attempt(attempt: Attempt) -> Flight {
         Flight {
             id: "flight-1".to_string(),
-            title: "Mission".to_string(),
+            title: "Flight".to_string(),
             objective: "Do work".to_string(),
             status: FlightStatus::Active,
             priority: FlightPriority::Medium,

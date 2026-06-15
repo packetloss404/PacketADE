@@ -39,7 +39,7 @@ export function MemoryInjectionCard({
           <span className="text-[10px] text-text-muted">compact · per-conv toggle</span>
         </div>
         <div className="text-[11px] leading-relaxed text-text-secondary">
-          A bounded brief of learned patterns, mission lessons, and recent summaries was prepended
+          A bounded brief of learned patterns, flight lessons, and recent summaries was prepended
           to the system prompt for this conversation.
         </div>
       </div>

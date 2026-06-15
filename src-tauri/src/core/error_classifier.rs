@@ -189,10 +189,10 @@ fn rand_fraction(attempt: u32) -> f64 {
     mixed.fract().abs()
 }
 
-// === Mission Planner E5: replan-cap exemption helpers ===
+// === Flight Planner E5: replan-cap exemption helpers ===
 //
 // These helpers gate the per-task replan cap exemption documented in
-// `dev/mission-planner-plan.md`:
+// `dev/flight-planner-plan.md`:
 //
 // > "Replans per task: 3 — RateLimit / Network errors do NOT count
 // >  (use `core/error_classifier.rs::AiErrorCategory`)"
@@ -201,7 +201,7 @@ fn rand_fraction(attempt: u32) -> f64 {
 // decide whether a failed task's replan should be charged against the cap.
 
 /// Returns `true` when `category` is exempt from the per-task replan cap
-/// per the locked Mission Planner design ("RateLimit / Network errors do
+/// per the locked Flight Planner design ("RateLimit / Network errors do
 /// NOT count"). The `Timeout` variant of `AiErrorCategory` covers the
 /// classifier's network-failure signals (`timed out`, `deadline exceeded`,
 /// `econnreset`, `socket hang up`), which is the "Network" bucket the

@@ -5,7 +5,7 @@ export type CostGuardrailScope =
   | "monthly"
   | "session"
   | `provider:${string}`
-  | `mission:${string}`;
+  | `flight:${string}`;
 export type CostGuardrailSnapshotState = "disabled" | "safe" | "warning" | "over";
 export type CostGuardrailEvaluationStatus = "off" | "ok" | "warning" | "blocked";
 
@@ -14,7 +14,7 @@ export interface CostGuardrailSettings {
   monthlyLimitUsd: number | null;
   sessionLimitUsd: number | null;
   providerLimitsUsd: Record<string, number>;
-  missionLimitsUsd: Record<string, number>;
+  flightLimitsUsd: Record<string, number>;
   warningThresholdPercent: number;
   hardStopThresholdPercent: number;
   requireApprovalAtLimit: boolean;
@@ -86,7 +86,7 @@ export const DEFAULT_COST_GUARDRAIL_SETTINGS: CostGuardrailSettings = {
   monthlyLimitUsd: null,
   sessionLimitUsd: null,
   providerLimitsUsd: {},
-  missionLimitsUsd: {},
+  flightLimitsUsd: {},
   warningThresholdPercent: 80,
   hardStopThresholdPercent: 100,
   requireApprovalAtLimit: true,
@@ -99,7 +99,7 @@ export const costGuardrailKey = {
   global: "monthly",
   session: "session",
   provider: (source: string) => `provider:${source}`,
-  mission: (missionId: string) => `mission:${missionId}`,
+  flight: (flightId: string) => `flight:${flightId}`,
 };
 
 export function normalizeCostGuardrailSettings(raw: unknown): CostGuardrailSettings {
@@ -129,7 +129,7 @@ export function normalizeCostGuardrailSettings(raw: unknown): CostGuardrailSetti
     monthlyLimitUsd: finitePositiveOrNull(candidate.monthlyLimitUsd),
     sessionLimitUsd: finitePositiveOrNull(candidate.sessionLimitUsd),
     providerLimitsUsd: finitePositiveRecord(candidate.providerLimitsUsd),
-    missionLimitsUsd: finitePositiveRecord(candidate.missionLimitsUsd),
+    flightLimitsUsd: finitePositiveRecord(candidate.flightLimitsUsd),
     warningThresholdPercent,
     hardStopThresholdPercent,
     requireApprovalAtLimit:
@@ -167,7 +167,7 @@ export function computeCostGuardrailStatus(
   options: {
     now?: Date;
     currentSessionCostUsd?: number | null;
-    missionCostsById?: Record<string, number> | undefined;
+    flightCostsById?: Record<string, number> | undefined;
     providerCostsBySource?: Record<string, number> | undefined;
   } = {},
 ): CostGuardrailStatus {
@@ -202,11 +202,11 @@ export function computeCostGuardrailStatus(
       scopeStatus(`provider:${source}`, providerCosts[source] ?? 0, limit, normalized),
     )
     .filter((scope): scope is CostGuardrailScopeStatus => Boolean(scope));
-  const missionScopes = Object.entries(normalized.missionLimitsUsd)
-    .map(([missionId, limit]) =>
+  const flightScopes = Object.entries(normalized.flightLimitsUsd)
+    .map(([flightId, limit]) =>
       scopeStatus(
-        `mission:${missionId}`,
-        options.missionCostsById?.[missionId] ?? 0,
+        `flight:${flightId}`,
+        options.flightCostsById?.[flightId] ?? 0,
         limit,
         normalized,
       ),
@@ -223,7 +223,7 @@ export function computeCostGuardrailStatus(
       normalized,
     ),
     ...providerScopes,
-    ...missionScopes,
+    ...flightScopes,
   ].filter((scope): scope is CostGuardrailScopeStatus => Boolean(scope));
 
   const activeScope = strongestScope(scopes);

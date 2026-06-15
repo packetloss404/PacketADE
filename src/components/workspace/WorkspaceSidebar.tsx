@@ -140,7 +140,7 @@ export function WorkspaceSidebar() {
       case "task_completed":
         return e.payload.summary?.trim() || e.payload.taskTitle || "Task done";
       case "flight_completed":
-        return e.payload.summary?.trim() || e.payload.flightTitle || "Mission complete";
+        return e.payload.summary?.trim() || e.payload.flightTitle || "Flight complete";
       case "manual_note":
         return e.payload.summary?.trim() || e.payload.body.slice(0, 80);
     }

@@ -27,7 +27,7 @@ import {
  *    `PRActionBar` (merge / close / convert-to-draft).
  *  - Default "Open as draft" check in `PRModal`.
  *  - Default "Publish attempts as draft PRs" check in
- *    `LaunchAsyncFlightModal` (async Mission launcher).
+ *    `LaunchAsyncFlightModal` (async Flight launcher).
  */
 export function GitHubSettingsCard() {
   const isConnected = useGitHubStore((s) => s.isConnected);
@@ -261,16 +261,16 @@ export function GitHubSettingsCard() {
           </p>
         </div>
 
-        {/* Async mission publish default */}
+        {/* Async flight publish default */}
         <div className="space-y-1.5">
           <Toggle
             icon={Github}
-            label="Publish Mission attempts as draft PRs by default"
+            label="Publish Flight attempts as draft PRs by default"
             checked={defaultPublishAttemptsAsPrs}
             onChange={setDefaultPublishAttemptsAsPrs}
           />
           <p className="text-[10px] text-text-muted leading-snug">
-            When launching a new async Mission, pre-check the &quot;Publish
+            When launching a new async Flight, pre-check the &quot;Publish
             attempts as draft PRs&quot; option.
           </p>
         </div>

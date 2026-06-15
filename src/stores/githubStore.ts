@@ -45,7 +45,7 @@ export interface GitHubSettings {
   requireMergeConfirmation: boolean;
   /** Pre-check the "Open as draft" box in the New PR modal. */
   defaultDraftPrs: boolean;
-  /** Pre-check "Publish attempts as draft PRs" in the async Mission launcher. */
+  /** Pre-check "Publish attempts as draft PRs" in the async Flight launcher. */
   defaultPublishAttemptsAsPrs: boolean;
 }
 

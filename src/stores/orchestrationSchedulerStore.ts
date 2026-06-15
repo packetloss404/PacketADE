@@ -64,7 +64,7 @@ function notifySchedulerStalled(failures: number): void {
     if (!prefs.enabled || !prefs.onSessionError) return;
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     new Notification("Orchestration paused", {
-      body: `The mission scheduler backend failed ${failures} times in a row — the dispatch loop was paused. Resume a mission to retry.`,
+      body: `The flight scheduler backend failed ${failures} times in a row — the dispatch loop was paused. Resume a flight to retry.`,
       tag: "orchestration-scheduler-stalled",
     });
   } catch (err) {
@@ -97,7 +97,7 @@ export const useOrchestrationSchedulerStore = create<SchedulerState>((set, get) 
       logSwallowed(`orchestration.tick (consecutive failure #${consecutiveTickFailures})`)(err);
       if (consecutiveTickFailures >= MAX_CONSECUTIVE_TICK_FAILURES) {
         set({
-          lastError: `Mission scheduler backend failed ${consecutiveTickFailures} times in a row; dispatch loop paused.`,
+          lastError: `Flight scheduler backend failed ${consecutiveTickFailures} times in a row; dispatch loop paused.`,
         });
         notifySchedulerStalled(consecutiveTickFailures);
         get().stopLoop();

@@ -30,7 +30,7 @@
     "sidecar:remote-project-smoke": "node agent-sidecar/test/remote-project-path-smoke.mjs",
     "sidecar:registry-smoke": "node agent-sidecar/test/registry-smoke.mjs",
     "sidecar:protocol-smoke": "node agent-sidecar/test/protocol-v6-smoke.mjs",
-    "sidecar:integration-smoke": "node agent-sidecar/test/mission-planner-wiring-smoke.mjs",
+    "sidecar:integration-smoke": "node agent-sidecar/test/flight-planner-wiring-smoke.mjs",
     "sidecar:session-ordering-smoke": "node agent-sidecar/test/session-ordering-smoke.mjs",
     "sidecar:gating-smoke": "node agent-sidecar/test/openai-agents-gating-smoke.mjs",
     "sidecar:anthropic-multi-turn-smoke": "node agent-sidecar/test/anthropic-multi-turn-smoke.mjs",

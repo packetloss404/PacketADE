@@ -12,7 +12,7 @@ type RailItem = {
 const ITEMS: RailItem[] = [
   { id: "agents", icon: Sparkles, label: "Agents" },
   { id: "workspace", icon: Terminal, label: "Workspace" },
-  { id: "missions", icon: Plane, label: "Flight Deck" },
+  { id: "flights", icon: Plane, label: "Flight Deck" },
   { id: "issues", icon: KanbanSquare, label: "Issues" },
   { id: "memory", icon: Brain, label: "Memory" },
   { id: "github", icon: Github, label: "GitHub" },

@@ -31,10 +31,10 @@ import { useServerStore } from "@/stores/serverStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
 import {
-  matchGitFilesToMissionTasks,
-  missionReviewKey,
-  type MissionReviewTaskRef,
-} from "@/lib/missionReview";
+  matchGitFilesToFlightTasks,
+  flightReviewKey,
+  type FlightReviewTaskRef,
+} from "@/lib/flightReview";
 
 interface ChangedFile {
   status: string;
@@ -131,16 +131,16 @@ function classifyError(err: unknown): LoadError {
   return { kind: "other", msg: raw };
 }
 
-function shortMissionId(id: string): string {
+function shortFlightId(id: string): string {
   return `F-${id
     .replace(/^[a-z]+-/i, "")
     .slice(-4)
     .toUpperCase()}`;
 }
 
-function reviewTitle(refs: MissionReviewTaskRef[]): string {
+function reviewTitle(refs: FlightReviewTaskRef[]): string {
   return refs
-    .map((ref) => `${shortMissionId(ref.flightId)} / ${ref.taskTitle} (${ref.relation})`)
+    .map((ref) => `${shortFlightId(ref.flightId)} / ${ref.taskTitle} (${ref.relation})`)
     .join("\n");
 }
 
@@ -166,7 +166,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
 
   const reviewContext = useMemo(
     () =>
-      matchGitFilesToMissionTasks(
+      matchGitFilesToFlightTasks(
         files.map((file) => file.path),
         flights,
         { projectPath, workspaceId: workspaceId ?? null },
@@ -180,7 +180,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
   );
 
   const commitContext = useMemo(() => {
-    const candidatePaths = new Set(commitCandidateFiles.map((file) => missionReviewKey(file.path)));
+    const candidatePaths = new Set(commitCandidateFiles.map((file) => flightReviewKey(file.path)));
     const refs = [...reviewContext.matchesByPath.entries()]
       .filter(([path]) => candidatePaths.has(path))
       .flatMap(([, match]) => match.refs);
@@ -197,10 +197,10 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
     };
   }, [commitCandidateFiles, reviewContext.matchesByPath]);
 
-  const openReviewMission = useCallback(() => {
+  const openReviewFlight = useCallback(() => {
     const [flightId] = reviewContext.flightIds;
     if (flightId) setActiveFlight(flightId);
-    setActiveView("missions");
+    setActiveView("flights");
   }, [reviewContext.flightIds, setActiveFlight, setActiveView]);
 
   const refresh = useCallback(async () => {
@@ -427,20 +427,20 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
             <span className="flex-1" />
             <button
               type="button"
-              onClick={openReviewMission}
+              onClick={openReviewFlight}
               className="hover:text-accent-amber/80 text-[10px] text-accent-amber transition-colors"
             >
-              Open mission
+              Open flight
             </button>
           </div>
           <div className="mt-0.5 text-[10px] leading-relaxed text-text-muted">
             {reviewContext.linkedFileCount} of {files.length} changed file
             {reviewContext.linkedFileCount === 1 ? "" : "s"} map to {reviewContext.taskCount}{" "}
-            mission task
+            flight task
             {reviewContext.taskCount === 1 ? "" : "s"}.
             {reviewContext.pendingApprovalCount > 0
               ? ` ${reviewContext.pendingApprovalCount} approval${reviewContext.pendingApprovalCount === 1 ? "" : "s"} still pending.`
-              : " Resolve mission review, then land the commit."}
+              : " Resolve flight review, then land the commit."}
           </div>
         </div>
       )}
@@ -502,7 +502,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
         )}
         {!loadError &&
           files.map((f, i) => {
-            const match = reviewContext.matchesByPath.get(missionReviewKey(f.path));
+            const match = reviewContext.matchesByPath.get(flightReviewKey(f.path));
             const primaryRef = match?.refs[0];
             return (
               <div
@@ -519,13 +519,13 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
                 {primaryRef && (
                   <button
                     type="button"
-                    onClick={openReviewMission}
+                    onClick={openReviewFlight}
                     title={reviewTitle(match.refs)}
                     className="border-accent-amber/25 bg-accent-amber/10 hover:bg-accent-amber/15 ml-auto inline-flex min-w-0 max-w-[112px] shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] text-accent-amber transition-colors"
                   >
                     <FileCheck2 size={9} className="shrink-0" />
                     <span className="truncate">
-                      {shortMissionId(primaryRef.flightId)} · {primaryRef.taskTitle}
+                      {shortFlightId(primaryRef.flightId)} · {primaryRef.taskTitle}
                     </span>
                   </button>
                 )}
@@ -557,13 +557,13 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
             <div className="flex items-center gap-1.5 text-[10px] text-accent-amber">
               <FileCheck2 size={10} />
               <span className="truncate">
-                Review {reviewContext.linkedFileCount} mission-linked file
+                Review {reviewContext.linkedFileCount} flight-linked file
                 {reviewContext.linkedFileCount === 1 ? "" : "s"} before committing.
               </span>
             </div>
           ) : (
             <div className="text-[10px] text-text-muted">
-              Mission-linked commits receive PacketADE trailers when a task match is found.
+              Flight-linked commits receive PacketADE trailers when a task match is found.
             </div>
           )}
           <textarea

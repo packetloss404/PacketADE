@@ -23,7 +23,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::commands::mission_planner::MissionPlannerRegistry;
+use crate::commands::flight_planner::FlightPlannerRegistry;
 use crate::core::flight::TaskStatus;
 use crate::core::storage;
 
@@ -37,12 +37,12 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
     let parsed: Args = serde_json::from_value(args)
         .map_err(|e| format!("mark_task_blocked: invalid args: {}", e))?;
 
-    // Resolve the owning mission via the registry.
+    // Resolve the owning flight via the registry.
     let registry = app
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
-    let mission_id = registry
-        .mission_id_for_sidecar_session(session_id)
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
+    let flight_id = registry
+        .flight_id_for_sidecar_session(session_id)
         .await
         .ok_or_else(|| {
             format!(
@@ -57,17 +57,17 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
     // future doesn't capture a `&mut state` borrow (the helper's
     // signature can't express that with HRTBs today). Event emit
     // happens OUTSIDE the lock.
-    let mission_id_for_closure = mission_id.clone();
+    let flight_id_for_closure = flight_id.clone();
     let task_id_for_closure = parsed.task_id.clone();
     storage::with_state_lock(move |state| {
-        let mission_id = mission_id_for_closure;
+        let flight_id = flight_id_for_closure;
         let task_id = task_id_for_closure;
         let result: Result<(), String> = (|| {
             let flight = state
                 .flights
                 .iter_mut()
-                .find(|f| f.id == mission_id)
-                .ok_or_else(|| format!("mark_task_blocked: mission '{}' not found", mission_id))?;
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("mark_task_blocked: flight '{}' not found", flight_id))?;
 
             let task = flight
                 .milestones
@@ -85,12 +85,12 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
     .map_err(|e| format!("mark_task_blocked: {}", e))?;
 
     // Emit a Tauri event carrying the reason. The frontend's planner
-    // listener fans this into the per-mission coordination log so the
+    // listener fans this into the per-flight coordination log so the
     // Journal/Timeline tabs see the block.
     let _ = app.emit(
-        &format!("mission-planner:task-blocked:{}", mission_id),
+        &format!("flight-planner:task-blocked:{}", flight_id),
         serde_json::json!({
-            "missionId": mission_id,
+            "flightId": flight_id,
             "taskId": parsed.task_id,
             "reason": parsed.reason,
         }),

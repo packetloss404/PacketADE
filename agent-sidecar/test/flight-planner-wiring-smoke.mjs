@@ -1,4 +1,4 @@
-// Mission Planner wiring smoke test (Task #15 — automated wire-check).
+// Flight Planner wiring smoke test (Task #15 — automated wire-check).
 //
 // Goal
 // ----
@@ -9,14 +9,14 @@
 //
 // What this DOES verify (and why)
 // -------------------------------
-// 1. The `createMissionPlannerMcpServer` factory builds without throwing and
+// 1. The `createFlightPlannerMcpServer` factory builds without throwing and
 //    returns an `McpSdkServerConfigWithInstance` with `type === "sdk"` and a
 //    live `instance`. (Regression: E1 — mcpKind="planner" path won't merge
 //    into the SDK's `mcpServers` map if the factory returns the wrong shape.)
 //
 // 2. All 8 expected planner tools register with the SDK-wrapped McpServer:
 //    create_milestone, create_task, update_task, mark_task_blocked,
-//    replan_after_failure, request_user_approval, complete_mission, plus the
+//    replan_after_failure, request_user_approval, complete_flight, plus the
 //    back-compat `noop`. (Regression: E2-DISP — silent tool-list drift would
 //    let a renamed/removed tool ship undetected; the Rust dispatcher's tool
 //    name match would then fail at runtime.)
@@ -56,13 +56,13 @@
 //
 // What this does NOT cover (deliberately, see report)
 // ---------------------------------------------------
-// - Tauri AppHandle / `MissionPlannerRegistry` state mutation. That needs a
+// - Tauri AppHandle / `FlightPlannerRegistry` state mutation. That needs a
 //   Rust integration test (Option B), which the task brief explicitly allows
 //   us to drop into Option A when the Tauri test mocks aren't usable.
 // - The wake-trigger inject path through the Anthropic provider's
 //   PushableAsyncIterable. The provider-level test against a real Anthropic
 //   session is the existing `mcp-inproc-smoke.mjs` (live-OAuth-gated).
-// - The Tauri event emission for `mission-planner:milestone-created:<id>`.
+// - The Tauri event emission for `flight-planner:milestone-created:<id>`.
 //   Same reason as above — needs a live AppHandle.
 //
 // We get a CI-runnable, offline, deterministic regression check on the layer
@@ -84,7 +84,7 @@ const distFactory = resolve(
   "..",
   "dist",
   "mcp",
-  "mission-planner-server.js",
+  "flight-planner-server.js",
 );
 
 if (!existsSync(distFactory)) {
@@ -97,7 +97,7 @@ if (!existsSync(distFactory)) {
   process.exit(1);
 }
 
-const { createMissionPlannerMcpServer, PLANNER_MCP_KEY } = await import(
+const { createFlightPlannerMcpServer, PLANNER_MCP_KEY } = await import(
   // file:// URL prevents Windows backslash drama in the dynamic import.
   new URL(`file://${distFactory.replace(/\\/g, "/")}`).href
 );
@@ -168,9 +168,9 @@ const emit = async (event) => {
 
 let plannerServer;
 try {
-  plannerServer = createMissionPlannerMcpServer(SESSION_ID, emit);
+  plannerServer = createFlightPlannerMcpServer(SESSION_ID, emit);
 } catch (err) {
-  fail("factory_builds", `createMissionPlannerMcpServer threw: ${err?.message ?? err}`);
+  fail("factory_builds", `createFlightPlannerMcpServer threw: ${err?.message ?? err}`);
 }
 
 if (plannerServer) {
@@ -187,10 +187,10 @@ if (plannerServer) {
   } else {
     pass("factory_shape_instance");
   }
-  if (plannerServer.name !== "mission-planner") {
+  if (plannerServer.name !== "flight-planner") {
     fail(
       "factory_shape_name",
-      `expected name === "mission-planner", got ${JSON.stringify(plannerServer.name)}`,
+      `expected name === "flight-planner", got ${JSON.stringify(plannerServer.name)}`,
     );
   } else {
     pass("factory_shape_name");
@@ -209,7 +209,7 @@ const EXPECTED_TOOLS = [
   "mark_task_blocked",
   "replan_after_failure",
   "request_user_approval",
-  "complete_mission",
+  "complete_flight",
   "noop", // back-compat smoke fixture, intentionally kept
 ];
 
@@ -245,7 +245,7 @@ if (registered) {
 // Helper — invoke a registered tool handler directly, the same way the MCP
 // SDK does in `executeToolHandler` (mcp.js:211): `handler(args, extra)`.
 // We pass a minimal `extra` shape with a non-aborted signal so any
-// signal-listening tool body doesn't crash. The Mission Planner handlers
+// signal-listening tool body doesn't crash. The Flight Planner handlers
 // don't read `extra`, but a future change might.
 // ---------------------------------------------------------------------------
 async function invokeTool(name, args) {

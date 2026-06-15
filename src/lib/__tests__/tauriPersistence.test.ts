@@ -47,7 +47,7 @@ function makePersistedStateDto(overrides: Partial<PersistedStateDto> = {}): Pers
       milestoneGating: true,
       projectPath: "/repo",
       autoCommitTrailerEnabled: true,
-      autoCommitTrailerFormat: "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}",
+      autoCommitTrailerFormat: "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}",
     },
     ui: {},
     workspaces: [],
@@ -240,11 +240,11 @@ describe("Tauri persistence DTO mapping", () => {
   });
 
   it("omits undefined ui fields for partial ui slice saves", async () => {
-    await saveUiSlice({ selectedView: "missions", theme: "dark" });
+    await saveUiSlice({ selectedView: "flights", theme: "dark" });
 
     expect(mockInvoke).toHaveBeenCalledWith("save_ui_slice", {
       ui: {
-        selectedView: "missions",
+        selectedView: "flights",
         theme: "dark",
       },
     });
@@ -261,11 +261,11 @@ describe("Tauri persistence DTO mapping", () => {
   });
 
   it("omits null theme values because the backend theme dto is an enum", async () => {
-    await saveUiSlice({ selectedView: "missions", theme: null });
+    await saveUiSlice({ selectedView: "flights", theme: null });
 
     expect(mockInvoke).toHaveBeenCalledWith("save_ui_slice", {
       ui: {
-        selectedView: "missions",
+        selectedView: "flights",
       },
     });
   });

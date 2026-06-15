@@ -757,9 +757,9 @@ pub async fn start_api_agent_session(
                     resume_messages_json,
                     permission_mode.clone(),
                     approve_writes,
-                    // Mission Planner E1: no in-process MCP kind for the regular
+                    // Flight Planner E1: no in-process MCP kind for the regular
                     // API-agent flow. The planner registers its own session via
-                    // `commands::mission_planner::start_mission_planner` which
+                    // `commands::flight_planner::start_flight_planner` which
                     // sets this to `Some("planner")`.
                     None,
                     sidecar_command_path,
@@ -786,9 +786,9 @@ pub async fn start_api_agent_session(
                     resume_messages_json,
                     permission_mode.clone(),
                     approve_writes,
-                    // Mission Planner E1: no in-process MCP kind for the regular
+                    // Flight Planner E1: no in-process MCP kind for the regular
                     // API-agent flow. The planner registers its own session via
-                    // `commands::mission_planner::start_mission_planner` which
+                    // `commands::flight_planner::start_flight_planner` which
                     // sets this to `Some("planner")`.
                     None,
                     sidecar_command_path,
@@ -1341,7 +1341,7 @@ fn spawn_executor_cost_rollup(
     let model = model.to_string();
     tauri::async_runtime::spawn(async move {
         let state_snap = crate::core::storage::load_state();
-        let owner = match crate::commands::mission_planner::flight_for_executor_session(
+        let owner = match crate::commands::flight_planner::flight_for_executor_session(
             &state_snap,
             &session_id,
         ) {
@@ -1352,7 +1352,7 @@ fn spawn_executor_cost_rollup(
             .saturating_add(output_tokens)
             .saturating_add(cache_read)
             .saturating_add(cache_write);
-        if let Err(e) = crate::commands::mission_planner::accumulate_executor_cost(
+        if let Err(e) = crate::commands::flight_planner::accumulate_executor_cost(
             &owner.flight_id,
             total_tokens,
             cost_usd,
@@ -1360,7 +1360,7 @@ fn spawn_executor_cost_rollup(
         .await
         {
             warn!(
-                mission_id = %owner.flight_id,
+                flight_id = %owner.flight_id,
                 session_id = %session_id,
                 error = %e,
                 "E8-ACCUM: failed to accumulate in-process executor cost"
@@ -1368,9 +1368,9 @@ fn spawn_executor_cost_rollup(
             return;
         }
         let _ = app.emit(
-            &format!("mission-planner:cost-updated:{}", owner.flight_id),
+            &format!("flight-planner:cost-updated:{}", owner.flight_id),
             serde_json::json!({
-                "missionId": owner.flight_id,
+                "flightId": owner.flight_id,
                 "inputTokens": input_tokens,
                 "outputTokens": output_tokens,
                 "cacheReadInputTokens": cache_read,

@@ -368,9 +368,9 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
         </div>
       )}
       {/* B5 — goal binding row. Renders when this conversation has been
-          promoted via /goal. Pause = surface as paused in MissionsView
+          promoted via /goal. Pause = surface as paused in FlightsView
           but keep the conversation running. Complete = mark done.
-          Cancel/delete left to a separate confirm flow in MissionsView. */}
+          Cancel/delete left to a separate confirm flow in FlightsView. */}
       {boundGoal && (
         <div className="flex items-center gap-2 px-3 py-1.5 border-t border-accent-blue/30 bg-accent-blue/5">
           <Target size={11} className="text-accent-blue" />
@@ -387,7 +387,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
               type="button"
               onClick={() => pauseGoal(boundGoal.id)}
               className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-muted hover:text-accent-amber"
-              title="Mark goal paused (conversation keeps running; MissionsView shows it as paused)"
+              title="Mark goal paused (conversation keeps running; FlightsView shows it as paused)"
             >
               <Pause size={10} /> Pause
             </button>

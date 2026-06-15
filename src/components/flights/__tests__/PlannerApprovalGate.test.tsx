@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
-  getMissionApprovals: vi.fn(),
-  resolveMissionApproval: vi.fn(),
+  getFlightApprovals: vi.fn(),
+  resolveFlightApproval: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -11,18 +11,18 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("@/lib/tauri", () => ({
-  getMissionApprovals: (...args: unknown[]) => mocks.getMissionApprovals(...args),
+  getFlightApprovals: (...args: unknown[]) => mocks.getFlightApprovals(...args),
   injectPlannerTurn: vi.fn().mockResolvedValue(undefined),
-  pauseMissionPlanner: vi.fn().mockResolvedValue(undefined),
-  resolveMissionApproval: (...args: unknown[]) => mocks.resolveMissionApproval(...args),
-  resumeMissionPlanner: vi.fn().mockResolvedValue(undefined),
-  startMissionPlanner: vi.fn().mockResolvedValue("planner-session"),
-  stopMissionPlanner: vi.fn().mockResolvedValue(undefined),
+  pauseFlightPlanner: vi.fn().mockResolvedValue(undefined),
+  resolveFlightApproval: (...args: unknown[]) => mocks.resolveFlightApproval(...args),
+  resumeFlightPlanner: vi.fn().mockResolvedValue(undefined),
+  startFlightPlanner: vi.fn().mockResolvedValue("planner-session"),
+  stopFlightPlanner: vi.fn().mockResolvedValue(undefined),
   triggerPlannerDecomposition: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/notifications", () => ({
-  notifyMissionPlannerRateLimited: vi.fn().mockResolvedValue(undefined),
+  notifyFlightPlannerRateLimited: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/stores/flightStore", () => ({
@@ -39,34 +39,34 @@ vi.mock("@/components/common/MarkdownRenderer", () => ({
   MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div>,
 }));
 
-import { PlannerApprovalGate } from "@/components/missions/PlannerApprovalGate";
-import { useMissionPlannerStore } from "@/stores/missionPlannerStore";
+import { PlannerApprovalGate } from "@/components/flights/PlannerApprovalGate";
+import { useFlightPlannerStore } from "@/stores/flightPlannerStore";
 
 describe("PlannerApprovalGate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useMissionPlannerStore.setState({
+    useFlightPlannerStore.setState({
       runtimes: new Map(),
       pendingApprovals: new Map(),
     });
-    mocks.getMissionApprovals.mockResolvedValue([]);
-    mocks.resolveMissionApproval.mockResolvedValue(undefined);
+    mocks.getFlightApprovals.mockResolvedValue([]);
+    mocks.resolveFlightApproval.mockResolvedValue(undefined);
   });
 
   it("hydrates persisted approvals when the gate mounts", async () => {
-    mocks.getMissionApprovals.mockResolvedValueOnce([
+    mocks.getFlightApprovals.mockResolvedValueOnce([
       {
         id: "approval-1",
-        missionId: "mission-1",
+        flightId: "flight-1",
         question: "Approve the restart plan?",
         options: ["Approve"],
         awaitingSince: 1_000,
       },
     ]);
 
-    render(<PlannerApprovalGate missionId="mission-1" />);
+    render(<PlannerApprovalGate flightId="flight-1" />);
 
     expect(await screen.findByText("Approve the restart plan?")).toBeInTheDocument();
-    expect(mocks.getMissionApprovals).toHaveBeenCalledWith("mission-1");
+    expect(mocks.getFlightApprovals).toHaveBeenCalledWith("flight-1");
   });
 });

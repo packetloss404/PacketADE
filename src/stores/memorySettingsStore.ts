@@ -29,7 +29,7 @@ export type MemoryProjectPathMatching = "exact" | "parent" | "global";
 export interface MemorySettingsValues {
   captureSessions: boolean;
   captureTasks: boolean;
-  captureMissions: boolean;
+  captureFlights: boolean;
   summarizeSessions: boolean;
   extractPatterns: boolean;
   retentionDays: number | null;
@@ -52,7 +52,7 @@ export interface MemorySettingsValues {
 interface MemorySettingsStore extends MemorySettingsValues {
   setCaptureSessions: (enabled: boolean) => void;
   setCaptureTasks: (enabled: boolean) => void;
-  setCaptureMissions: (enabled: boolean) => void;
+  setCaptureFlights: (enabled: boolean) => void;
   setSummarizeSessions: (enabled: boolean) => void;
   setExtractPatterns: (enabled: boolean) => void;
   setRetentionDays: (days: number | null) => void;
@@ -71,7 +71,7 @@ interface MemorySettingsStore extends MemorySettingsValues {
 const DEFAULTS: MemorySettingsValues = {
   captureSessions: true,
   captureTasks: true,
-  captureMissions: true,
+  captureFlights: true,
   summarizeSessions: true,
   extractPatterns: true,
   retentionDays: null,
@@ -105,7 +105,7 @@ function normalize(raw: Partial<MemorySettingsValues> | null | undefined): Memor
   return {
     captureSessions: source.captureSessions ?? DEFAULTS.captureSessions,
     captureTasks: source.captureTasks ?? DEFAULTS.captureTasks,
-    captureMissions: source.captureMissions ?? DEFAULTS.captureMissions,
+    captureFlights: source.captureFlights ?? DEFAULTS.captureFlights,
     summarizeSessions: source.summarizeSessions ?? DEFAULTS.summarizeSessions,
     extractPatterns: source.extractPatterns ?? DEFAULTS.extractPatterns,
     retentionDays:
@@ -179,7 +179,7 @@ export const useMemorySettingsStore = create<MemorySettingsStore>((set, get) => 
     ...initial,
     setCaptureSessions: (captureSessions) => update({ captureSessions }),
     setCaptureTasks: (captureTasks) => update({ captureTasks }),
-    setCaptureMissions: (captureMissions) => update({ captureMissions }),
+    setCaptureFlights: (captureFlights) => update({ captureFlights }),
     setSummarizeSessions: (summarizeSessions) => update({ summarizeSessions }),
     setExtractPatterns: (extractPatterns) => update({ extractPatterns }),
     setRetentionDays: (retentionDays) => update({ retentionDays }),
@@ -206,7 +206,7 @@ export function getMemorySettings(): MemorySettingsValues {
   return normalize({
     captureSessions: state.captureSessions,
     captureTasks: state.captureTasks,
-    captureMissions: state.captureMissions,
+    captureFlights: state.captureFlights,
     summarizeSessions: state.summarizeSessions,
     extractPatterns: state.extractPatterns,
     retentionDays: state.retentionDays,

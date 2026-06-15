@@ -70,7 +70,7 @@ interface OrchestrationStateData {
  * the same default in the absence of backend data.
  */
 export const DEFAULT_AUTO_COMMIT_TRAILER_FORMAT =
-  "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}";
+  "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}";
 
 export interface OrchestrationStateStore extends OrchestrationStateData {
   // Flight lifecycle

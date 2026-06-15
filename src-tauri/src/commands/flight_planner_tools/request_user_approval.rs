@@ -9,19 +9,19 @@
 //!
 //! Per the locked design this tool is **async-return**: the planner
 //! must NOT block waiting for the user. The handler files a
-//! `MissionApprovalRequest` onto `PersistedState::mission_approvals`,
+//! `FlightApprovalRequest` onto `PersistedState::flight_approvals`,
 //! emits a UI event so the approval surface lights up, and returns a
 //! sentinel right away. The planner's system prompt teaches it that
 //! `pending_approval:<id>` means "filed, keep working" — the actual
 //! user response is delivered later via the
 //! `WakeTrigger::UserMessageInJournal` path triggered by
-//! `resolve_mission_approval` (see `mission_planner.rs`).
+//! `resolve_flight_approval` (see `flight_planner.rs`).
 //!
 //! Implementation note: the state mutation runs under the async
 //! `core::storage::with_state_lock` helper so concurrent planner-tool
 //! handlers (firing in parallel within a single planner turn) can't lose
-//! each other's writes. The owning mission is resolved through the
-//! `MissionPlannerRegistry` reverse-lookup keyed off the sidecar
+//! each other's writes. The owning flight is resolved through the
+//! `FlightPlannerRegistry` reverse-lookup keyed off the sidecar
 //! `session_id`.
 //!
 //! Returns:
@@ -33,10 +33,10 @@ use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::warn;
 
-use crate::commands::mission_planner::{
-    mission_id_for_persisted_planner_session, MissionPlannerRegistry,
+use crate::commands::flight_planner::{
+    flight_id_for_persisted_planner_session, FlightPlannerRegistry,
 };
-use crate::core::flight::MissionApprovalRequest;
+use crate::core::flight::FlightApprovalRequest;
 use crate::core::storage;
 
 // Matches the sidecar zod schema's caps (see `agent-sidecar/src/mcp/...`):
@@ -79,15 +79,15 @@ pub async fn handle(
         ));
     }
 
-    // 2. Resolve mission_id from session_id via the registry reverse-lookup
+    // 2. Resolve flight_id from session_id via the registry reverse-lookup
     //    (see `update_task.rs` for the reference pattern).
-    let mission_id = resolve_mission_id_for_sidecar_session(app, session_id).await?;
+    let flight_id = resolve_flight_id_for_sidecar_session(app, session_id).await?;
 
     // 3. Build the new approval request.
     let approval_id = format!("appr_{}", uuid::Uuid::new_v4());
-    let approval = MissionApprovalRequest {
+    let approval = FlightApprovalRequest {
         id: approval_id.clone(),
-        mission_id: mission_id.clone(),
+        flight_id: flight_id.clone(),
         question: question.to_string(),
         options,
         awaiting_since: now_millis(),
@@ -96,7 +96,7 @@ pub async fn handle(
         resolved_at: None,
     };
 
-    // 4. Append to PersistedState.mission_approvals under the async state
+    // 4. Append to PersistedState.flight_approvals under the async state
     //    lock. The mutation runs synchronously inside the closure body
     //    and we return an async block independent of `state`'s borrow —
     //    this sidesteps a Rust lifetime inference limitation with
@@ -108,21 +108,21 @@ pub async fn handle(
     let approval_for_closure = approval.clone();
     let emitted_approval = storage::with_state_lock(move |state| {
         let approval = approval_for_closure;
-        state.mission_approvals.push(approval.clone());
+        state.flight_approvals.push(approval.clone());
         async move { Ok::<_, String>(approval) }
     })
     .await
-    .map_err(|e| format!("failed to persist mission approval: {}", e))?;
+    .map_err(|e| format!("failed to persist flight approval: {}", e))?;
 
-    // 5. Emit the UI event the frontend's missionPlannerStore is listening
-    //    for. Event name MUST match `missionPlannerApprovalRequestEvent` in
+    // 5. Emit the UI event the frontend's flightPlannerStore is listening
+    //    for. Event name MUST match `flightPlannerApprovalRequestEvent` in
     //    `src/lib/events.ts` exactly.
-    let event_name = format!("mission-planner:approval-request:{}", mission_id);
+    let event_name = format!("flight-planner:approval-request:{}", flight_id);
     if let Err(e) = app.emit(&event_name, &emitted_approval) {
         warn!(
             error = %e,
             event = %event_name,
-            "failed to emit mission planner approval request event"
+            "failed to emit flight planner approval request event"
         );
     }
 
@@ -131,7 +131,7 @@ pub async fn handle(
     //    isn't fired here either: by D1 design, the planner stays awake on
     //    its current turn and the user resolves the approval later, which
     //    emits a `WakeTrigger::UserMessageInJournal` via
-    //    `resolve_mission_approval`.
+    //    `resolve_flight_approval`.
 
     // E7-HOOKS site 5 — also append a dedicated `ApprovalRequest` journal
     // entry so the UI can render the request interactively (the matching
@@ -152,13 +152,13 @@ pub async fn handle(
         "question": emitted_approval.question,
         "options": emitted_approval.options,
     });
-    let entry = crate::commands::mission_planner::journal_entry(
-        mission_id.clone(),
-        crate::core::mission_journal::JournalKind::ApprovalRequest,
+    let entry = crate::commands::flight_planner::journal_entry(
+        flight_id.clone(),
+        crate::core::flight_journal::JournalKind::ApprovalRequest,
         body,
         Some(metadata),
     );
-    crate::commands::mission_planner::write_journal_and_emit(app, entry).await;
+    crate::commands::flight_planner::write_journal_and_emit(app, entry).await;
 
     // 7. Return the async-return sentinel IMMEDIATELY.
     Ok(serde_json::json!({
@@ -174,18 +174,18 @@ fn now_millis() -> u64 {
         .unwrap_or_default()
 }
 
-async fn resolve_mission_id_for_sidecar_session(
+async fn resolve_flight_id_for_sidecar_session(
     app: &AppHandle,
     session_id: &str,
 ) -> Result<String, String> {
-    if let Some(registry) = app.try_state::<MissionPlannerRegistry>() {
-        if let Some(mission_id) = registry.mission_id_for_sidecar_session(session_id).await {
-            return Ok(mission_id);
+    if let Some(registry) = app.try_state::<FlightPlannerRegistry>() {
+        if let Some(flight_id) = registry.flight_id_for_sidecar_session(session_id).await {
+            return Ok(flight_id);
         }
     }
 
     let state = storage::load_state();
-    mission_id_for_persisted_planner_session(&state, session_id).ok_or_else(|| {
+    flight_id_for_persisted_planner_session(&state, session_id).ok_or_else(|| {
         format!(
             "no active or persisted planner session found for sidecar session '{}'",
             session_id

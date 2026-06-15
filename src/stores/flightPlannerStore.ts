@@ -5,24 +5,24 @@ import {
   apiAgentDoneEvent,
   apiAgentErrorEvent,
   apiAgentToolStartEvent,
-  missionPlannerApprovalRequestEvent,
-  missionPlannerApprovalResolvedEvent,
+  flightPlannerApprovalRequestEvent,
+  flightPlannerApprovalResolvedEvent,
 } from "@/lib/events";
 import {
-  getMissionApprovals as invokeGetMissionApprovals,
+  getFlightApprovals as invokeGetFlightApprovals,
   injectPlannerTurn as invokeInjectPlannerTurn,
-  pauseMissionPlanner as invokePauseMissionPlanner,
-  resolveMissionApproval as invokeResolveMissionApproval,
-  resumeMissionPlanner as invokeResumeMissionPlanner,
-  startMissionPlanner as invokeStartMissionPlanner,
-  stopMissionPlanner as invokeStopMissionPlanner,
+  pauseFlightPlanner as invokePauseFlightPlanner,
+  resolveFlightApproval as invokeResolveFlightApproval,
+  resumeFlightPlanner as invokeResumeFlightPlanner,
+  startFlightPlanner as invokeStartFlightPlanner,
+  stopFlightPlanner as invokeStopFlightPlanner,
   triggerPlannerDecomposition as invokeTriggerPlannerDecomposition,
 } from "@/lib/tauri";
-import { notifyMissionPlannerRateLimited } from "@/lib/notifications";
+import { notifyFlightPlannerRateLimited } from "@/lib/notifications";
 import { syncAsyncAttemptTerminalListeners } from "@/stores/asyncAttemptTerminalListeners";
 import { useFlightStore } from "@/stores/flightStore";
 
-// E1 — frontend runtime for Mission Planner sessions. Ephemeral by design:
+// E1 — frontend runtime for Flight Planner sessions. Ephemeral by design:
 // no localStorage persistence (cold-start spec flips active planners to
 // `paused` and requires user resume).
 
@@ -41,21 +41,21 @@ export interface PlannerToolCall {
 }
 
 export interface PlannerSessionRuntime {
-  missionId: string;
+  flightId: string;
   plannerSessionId: string;
   status: PlannerStatus;
   isStreaming: boolean;
   transcript: PlannerTranscriptEntry[];
   lastToolCall: PlannerToolCall | null;
   /**
-   * E3-LAUNCH — armed to `true` by `launchMission` (after the `spec ->
+   * E3-LAUNCH — armed to `true` by `launchFlight` (after the `spec ->
    * planning` flip, before the [LAUNCH] turn is injected) and consumed
    * by the very next `api-agent:tool-start` event, which flips the
    * flight from `planning` to `active`.
    *
    * Initialized `false` at `startPlanner` so spec-mode tool calls (e.g.
    * `request_user_approval` during pre-launch chat) don't burn the flag.
-   * The kickoff is armed only between `launchMission` and the first
+   * The kickoff is armed only between `launchFlight` and the first
    * post-launch tool-start, matching the user-facing semantics
    * "Launch -> first planner tool means we're active".
    */
@@ -64,8 +64,8 @@ export interface PlannerSessionRuntime {
    * E10 — transient flag set when the Rust planner crosses the
    * 150K-token compaction threshold and is summarizing the conversation
    * to swap in a fresh session. Flips `true` on
-   * `mission-planner:compaction-triggered:<missionId>` and `false` on
-   * `mission-planner:compaction-completed:<missionId>`. The detail pane
+   * `flight-planner:compaction-triggered:<flightId>` and `false` on
+   * `flight-planner:compaction-completed:<flightId>`. The detail pane
    * surfaces this as a small "Compacting" pill in the header so the
    * user understands why the planner may be unresponsive for a few
    * seconds. Not persisted — purely UI feedback.
@@ -74,21 +74,21 @@ export interface PlannerSessionRuntime {
 }
 
 /**
- * E2 — async approval gate. Mirrors the Rust `MissionApprovalRequestDto`
- * shape emitted on `mission-planner:approval-request:<missionId>`. The
+ * E2 — async approval gate. Mirrors the Rust `FlightApprovalRequestDto`
+ * shape emitted on `flight-planner:approval-request:<flightId>`. The
  * planner's `request_user_approval` tool files an approval and keeps
  * working; the UI surfaces it inline in the detail pane and routes the
- * user's answer back via `resolveMissionApproval`.
+ * user's answer back via `resolveFlightApproval`.
  *
  * Imported locally (rather than from `@/generated/tauri-schema`) because
  * the E2-DISP Rust slice may not have regenerated the schema yet when
  * this file compiles. Field names match the Rust serde `camelCase`
  * convention.
  */
-export interface MissionApprovalRequest {
-  /** Unique approval id — used as the argument to `resolveMissionApproval`. */
+export interface FlightApprovalRequest {
+  /** Unique approval id — used as the argument to `resolveFlightApproval`. */
   id: string;
-  missionId: string;
+  flightId: string;
   question: string;
   /** Options the planner offered. Empty array = free-text / acknowledge only. */
   options: string[];
@@ -96,38 +96,38 @@ export interface MissionApprovalRequest {
   awaitingSince: number;
 }
 
-interface MissionPlannerStore {
+interface FlightPlannerStore {
   runtimes: Map<string, PlannerSessionRuntime>;
-  /** E2 — per-mission queue of unresolved approval requests, oldest first. */
-  pendingApprovals: Map<string, MissionApprovalRequest[]>;
-  startPlanner(missionId: string, projectPath: string): Promise<string>;
-  stopPlanner(missionId: string): Promise<void>;
-  pausePlanner(missionId: string): Promise<void>;
-  resumePlanner(missionId: string): Promise<void>;
-  injectTurn(missionId: string, content: string, source: "user" | "wake_trigger"): Promise<void>;
+  /** E2 — per-flight queue of unresolved approval requests, oldest first. */
+  pendingApprovals: Map<string, FlightApprovalRequest[]>;
+  startPlanner(flightId: string, projectPath: string): Promise<string>;
+  stopPlanner(flightId: string): Promise<void>;
+  pausePlanner(flightId: string): Promise<void>;
+  resumePlanner(flightId: string): Promise<void>;
+  injectTurn(flightId: string, content: string, source: "user" | "wake_trigger"): Promise<void>;
   /**
-   * E3-LAUNCH — transition a mission from `spec` to `planning`, then poke
+   * E3-LAUNCH — transition a flight from `spec` to `planning`, then poke
    * the planner with the `[LAUNCH]` sentinel so it begins decomposition.
    * The flight auto-transitions to `active` when the first
    * `create_milestone` / `create_task` tool-start event lands.
    */
-  launchMission(missionId: string): Promise<void>;
-  getPlanner(missionId: string): PlannerSessionRuntime | undefined;
-  isPlannerRunning(missionId: string): boolean;
+  launchFlight(flightId: string): Promise<void>;
+  getPlanner(flightId: string): PlannerSessionRuntime | undefined;
+  isPlannerRunning(flightId: string): boolean;
   /**
    * E2 — resolve an approval gate. Calls the Rust binding then drops the
    * approval from local state on success. On failure the approval stays
    * pending so the user can retry; the error is rethrown.
    */
-  resolveApproval(missionId: string, approvalId: string, choice: string): Promise<void>;
+  resolveApproval(flightId: string, approvalId: string, choice: string): Promise<void>;
   /**
    * E2 continuity — hydrate unresolved approvals from persisted state without
-   * requiring a live planner runtime. Used by the Mission detail approval gate
+   * requiring a live planner runtime. Used by the Flight detail approval gate
    * after cold start / view remount.
    */
-  hydratePendingApprovals(missionId: string): Promise<void>;
-  /** Returns pending approvals for `missionId`, sorted oldest-first. */
-  getPendingApprovals(missionId: string): MissionApprovalRequest[];
+  hydratePendingApprovals(flightId: string): Promise<void>;
+  /** Returns pending approvals for `flightId`, sorted oldest-first. */
+  getPendingApprovals(flightId: string): FlightApprovalRequest[];
 }
 
 type UnlistenFn = () => void;
@@ -139,25 +139,25 @@ const listenerCleanup = new Map<string, UnlistenFn>();
 
 function patchRuntime(
   runtimes: Map<string, PlannerSessionRuntime>,
-  missionId: string,
+  flightId: string,
   patch: Partial<PlannerSessionRuntime>,
 ): Map<string, PlannerSessionRuntime> {
-  const current = runtimes.get(missionId);
+  const current = runtimes.get(flightId);
   if (!current) return runtimes;
   const next = new Map(runtimes);
-  next.set(missionId, { ...current, ...patch });
+  next.set(flightId, { ...current, ...patch });
   return next;
 }
 
 function appendTranscript(
   runtimes: Map<string, PlannerSessionRuntime>,
-  missionId: string,
+  flightId: string,
   entry: PlannerTranscriptEntry,
 ): Map<string, PlannerSessionRuntime> {
-  const current = runtimes.get(missionId);
+  const current = runtimes.get(flightId);
   if (!current) return runtimes;
   const next = new Map(runtimes);
-  next.set(missionId, {
+  next.set(flightId, {
     ...current,
     transcript: [...current.transcript, entry],
   });
@@ -165,14 +165,14 @@ function appendTranscript(
 }
 
 function mergePendingApprovals(
-  pendingApprovals: Map<string, MissionApprovalRequest[]>,
-  missionId: string,
-  approvals: MissionApprovalRequest[],
+  pendingApprovals: Map<string, FlightApprovalRequest[]>,
+  flightId: string,
+  approvals: FlightApprovalRequest[],
   preserveExistingMissing: boolean,
-): Map<string, MissionApprovalRequest[]> {
+): Map<string, FlightApprovalRequest[]> {
   const updated = new Map(pendingApprovals);
-  const current = updated.get(missionId) ?? [];
-  const byId = new Map<string, MissionApprovalRequest>();
+  const current = updated.get(flightId) ?? [];
+  const byId = new Map<string, FlightApprovalRequest>();
 
   for (const approval of approvals) {
     byId.set(approval.id, approval);
@@ -187,27 +187,27 @@ function mergePendingApprovals(
 
   const merged = [...byId.values()].sort((a, b) => a.awaitingSince - b.awaitingSince);
   if (merged.length === 0) {
-    updated.delete(missionId);
+    updated.delete(flightId);
   } else {
-    updated.set(missionId, merged);
+    updated.set(flightId, merged);
   }
   return updated;
 }
 
 async function installListeners(
-  missionId: string,
+  flightId: string,
   plannerSessionId: string,
-  set: (updater: (state: MissionPlannerStore) => Partial<MissionPlannerStore>) => void,
+  set: (updater: (state: FlightPlannerStore) => Partial<FlightPlannerStore>) => void,
 ): Promise<void> {
-  const existing = listenerCleanup.get(missionId);
+  const existing = listenerCleanup.get(flightId);
   if (existing) {
     existing();
-    listenerCleanup.delete(missionId);
+    listenerCleanup.delete(flightId);
   }
 
   const chunkUnlisten = await listen<string>(apiAgentChunkEvent(plannerSessionId), (event) => {
     set((s) => {
-      const current = s.runtimes.get(missionId);
+      const current = s.runtimes.get(flightId);
       if (!current) return {};
       const transcript = current.transcript.slice();
       const last = transcript[transcript.length - 1];
@@ -224,7 +224,7 @@ async function installListeners(
         });
       }
       const runtimes = new Map(s.runtimes);
-      runtimes.set(missionId, {
+      runtimes.set(flightId, {
         ...current,
         transcript,
         isStreaming: true,
@@ -236,7 +236,7 @@ async function installListeners(
 
   const doneUnlisten = await listen<unknown>(apiAgentDoneEvent(plannerSessionId), () => {
     set((s) => ({
-      runtimes: patchRuntime(s.runtimes, missionId, { isStreaming: false }),
+      runtimes: patchRuntime(s.runtimes, flightId, { isStreaming: false }),
     }));
   });
 
@@ -247,20 +247,20 @@ async function installListeners(
       const toolName = event.payload.name;
       const args = event.payload.input ?? null;
       // E3-LAUNCH — only consume the kickoff flag if it was armed by
-      // `launchMission`. Tool calls during spec-mode chat (e.g.
+      // `launchFlight`. Tool calls during spec-mode chat (e.g.
       // `request_user_approval`) MUST NOT burn it. Capture inside the
       // set() updater so the read+clear is atomic against any other
       // listener mutating the same runtime concurrently.
       let shouldFlipToActive = false;
       set((s) => {
-        const current = s.runtimes.get(missionId);
+        const current = s.runtimes.get(flightId);
         if (!current) return {};
         const wasAwaitingKickoff = current.awaitingLaunchKickoff;
         if (wasAwaitingKickoff) {
           shouldFlipToActive = true;
         }
         const runtimes = new Map(s.runtimes);
-        runtimes.set(missionId, {
+        runtimes.set(flightId, {
           ...current,
           lastToolCall: { tool: toolName, args, ts },
           awaitingLaunchKickoff: wasAwaitingKickoff ? false : current.awaitingLaunchKickoff,
@@ -273,9 +273,9 @@ async function installListeners(
         // if it's still in the `planning` state. Guarded on flight status
         // so we don't clobber `paused`/`failed`/etc. transitions.
         const flightStore = useFlightStore.getState();
-        const flight = flightStore.flights.find((f) => f.id === missionId);
+        const flight = flightStore.flights.find((f) => f.id === flightId);
         if (flight?.status === "planning") {
-          flightStore.updateFlight(missionId, { status: "active" });
+          flightStore.updateFlight(flightId, { status: "active" });
         }
       }
     },
@@ -286,12 +286,12 @@ async function installListeners(
     (event) => {
       const message = event.payload?.message ?? "planner error";
       set((s) => {
-        const next = patchRuntime(s.runtimes, missionId, {
+        const next = patchRuntime(s.runtimes, flightId, {
           status: "failed",
           isStreaming: false,
         });
         return {
-          runtimes: appendTranscript(next, missionId, {
+          runtimes: appendTranscript(next, flightId, {
             role: "system",
             content: `error: ${message}`,
             ts: Date.now(),
@@ -301,19 +301,19 @@ async function installListeners(
     },
   );
 
-  // E2 — async approval gate. Append to the per-mission queue so the
+  // E2 — async approval gate. Append to the per-flight queue so the
   // detail pane's PlannerApprovalGate can surface the oldest one first.
-  const approvalRequestUnlisten = await listen<MissionApprovalRequest>(
-    missionPlannerApprovalRequestEvent(missionId),
+  const approvalRequestUnlisten = await listen<FlightApprovalRequest>(
+    flightPlannerApprovalRequestEvent(flightId),
     (event) => {
       const approval = event.payload;
       if (!approval || !approval.id) return;
       set((s) => {
         const pending = new Map(s.pendingApprovals);
-        const list = pending.get(missionId) ?? [];
+        const list = pending.get(flightId) ?? [];
         // De-dupe: ignore duplicate request events for the same approval id.
         if (list.some((a) => a.id === approval.id)) return {};
-        pending.set(missionId, [...list, approval]);
+        pending.set(flightId, [...list, approval]);
         return { pendingApprovals: pending };
       });
     },
@@ -324,20 +324,20 @@ async function installListeners(
   // action itself also clears state for fast UI feedback, so this is
   // mostly belt-and-braces for cross-tab/cross-window sync.
   const approvalResolvedUnlisten = await listen<{ id?: string }>(
-    missionPlannerApprovalResolvedEvent(missionId),
+    flightPlannerApprovalResolvedEvent(flightId),
     (event) => {
       const approvalId = event.payload?.id;
       if (!approvalId) return;
       set((s) => {
-        const list = s.pendingApprovals.get(missionId);
+        const list = s.pendingApprovals.get(flightId);
         if (!list || list.length === 0) return {};
         const filtered = list.filter((a) => a.id !== approvalId);
         if (filtered.length === list.length) return {};
         const pending = new Map(s.pendingApprovals);
         if (filtered.length === 0) {
-          pending.delete(missionId);
+          pending.delete(flightId);
         } else {
-          pending.set(missionId, filtered);
+          pending.set(flightId, filtered);
         }
         return { pendingApprovals: pending };
       });
@@ -346,46 +346,46 @@ async function installListeners(
 
   // E6-CEILING-RATELIMIT — desktop notification + status flip when the
   // Anthropic provider returns a rate-limit error. The Rust supervisor's
-  // `MissionPlannerRegistry::on_rate_limited` flips the planner into
-  // `QuotaPaused` and emits this per-mission event with the effective
+  // `FlightPlannerRegistry::on_rate_limited` flips the planner into
+  // `QuotaPaused` and emits this per-flight event with the effective
   // wait-seconds; we mirror that into the runtime so the UI's PlannerStatusChip
   // surfaces the right state without waiting for a wake round-trip,
-  // and fire a desktop notification so the user knows the mission
+  // and fire a desktop notification so the user knows the flight
   // isn't frozen.
   const rateLimitedUnlisten = await listen<{
-    missionId: string;
+    flightId: string;
     retryAfterSeconds: number;
-  }>(`mission-planner:rate-limited:${missionId}`, (event) => {
+  }>(`flight-planner:rate-limited:${flightId}`, (event) => {
     const waitSeconds = event.payload?.retryAfterSeconds ?? 60;
     set((s) => ({
-      runtimes: patchRuntime(s.runtimes, missionId, {
+      runtimes: patchRuntime(s.runtimes, flightId, {
         status: "quota_paused",
         isStreaming: false,
       }),
     }));
-    const flight = useFlightStore.getState().flights.find((f) => f.id === missionId);
-    const missionTitle = flight?.title ?? "Mission";
-    void notifyMissionPlannerRateLimited(missionId, missionTitle, waitSeconds);
+    const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+    const flightTitle = flight?.title ?? "Flight";
+    void notifyFlightPlannerRateLimited(flightId, flightTitle, waitSeconds);
   });
 
   // FIX 3 — generic status-changed event emitted by
-  // `MissionPlannerRegistry::set_status_and_emit` from the Rust side
+  // `FlightPlannerRegistry::set_status_and_emit` from the Rust side
   // (manual pause / resume, kill-switch, and any future call site that
   // wants UI propagation). Pattern matches the rate-limited listener
   // above but accepts any PlannerStatus.
   //
-  // The Rust payload is `{ missionId, status }` where status serializes
+  // The Rust payload is `{ flightId, status }` where status serializes
   // via PlannerStatus's `serde(rename_all = "snake_case")` derive into
   // one of: idle / awake / paused / quota_paused / completed / failed —
   // exactly the union shape of the local `PlannerStatus` TS type.
   const statusChangedUnlisten = await listen<{
-    missionId: string;
+    flightId: string;
     status: PlannerStatus;
-  }>(`mission-planner:status-changed:${missionId}`, (event) => {
+  }>(`flight-planner:status-changed:${flightId}`, (event) => {
     const nextStatus = event.payload?.status;
     if (!nextStatus) return;
     set((s) => ({
-      runtimes: patchRuntime(s.runtimes, missionId, { status: nextStatus }),
+      runtimes: patchRuntime(s.runtimes, flightId, { status: nextStatus }),
     }));
   });
 
@@ -394,9 +394,9 @@ async function installListeners(
   // populates PersistedState on disk but `MilestonesCard` / `TimelineCard`
   // stay empty until app reload, breaking the headline acceptance test.
   //
-  // All 8 events are scoped to `missionId` and the Rust side emits them
-  // unconditionally on success (see `commands/mission_planner_tools/*.rs`,
-  // search for `format!("mission-planner:`). We call the existing
+  // All 8 events are scoped to `flightId` and the Rust side emits them
+  // unconditionally on success (see `commands/flight_planner_tools/*.rs`,
+  // search for `format!("flight-planner:`). We call the existing
   // `hydrateFromBackend` on each fire — it re-reads the whole
   // PersistedState, which is the right hammer for v1. A targeted
   // "refresh-this-flight-only" would be more efficient but isn't needed
@@ -409,8 +409,8 @@ async function installListeners(
     "task-updated",
     "task-blocked",
     "task-replan-acknowledged",
-    "mission-completed",
-    // E8-UI — sibling E8-ACCUM emits `mission-planner:cost-updated:<missionId>`
+    "flight-completed",
+    // E8-UI — sibling E8-ACCUM emits `flight-planner:cost-updated:<flightId>`
     // when the planner accumulates new tokens/cost. Same handling as the
     // other planner-side mutations: re-hydrate flightStore so StatGrid's
     // Planner / Exec cells reflect the latest numbers.
@@ -418,7 +418,7 @@ async function installListeners(
   ] as const;
   const flightEventUnlistens: UnlistenFn[] = [];
   for (const kind of flightEventKinds) {
-    const unlisten = await listen(`mission-planner:${kind}:${missionId}`, () => {
+    const unlisten = await listen(`flight-planner:${kind}:${flightId}`, () => {
       // Best-effort re-read; surface failures to the console so we can
       // diagnose schema-drift issues without crashing the planner UI.
       void useFlightStore
@@ -427,8 +427,8 @@ async function installListeners(
         .then(() => syncAsyncAttemptTerminalListeners())
         .catch((err) => {
           console.warn(
-            `Failed to hydrate flightStore after mission-planner:${kind}`,
-            missionId,
+            `Failed to hydrate flightStore after flight-planner:${kind}`,
+            flightId,
             err,
           );
         });
@@ -445,19 +445,19 @@ async function installListeners(
   // flightStore so any new journal entry / cost bump from the
   // summarization itself shows up immediately.
   const compactionTriggeredUnlisten = await listen(
-    `mission-planner:compaction-triggered:${missionId}`,
+    `flight-planner:compaction-triggered:${flightId}`,
     () => {
       set((s) => ({
-        runtimes: patchRuntime(s.runtimes, missionId, { isCompacting: true }),
+        runtimes: patchRuntime(s.runtimes, flightId, { isCompacting: true }),
       }));
     },
   );
 
   const compactionCompletedUnlisten = await listen(
-    `mission-planner:compaction-completed:${missionId}`,
+    `flight-planner:compaction-completed:${flightId}`,
     () => {
       set((s) => ({
-        runtimes: patchRuntime(s.runtimes, missionId, { isCompacting: false }),
+        runtimes: patchRuntime(s.runtimes, flightId, { isCompacting: false }),
       }));
       void useFlightStore
         .getState()
@@ -465,15 +465,15 @@ async function installListeners(
         .then(() => syncAsyncAttemptTerminalListeners())
         .catch((err) => {
           console.warn(
-            "Failed to hydrate flightStore after mission-planner:compaction-completed",
-            missionId,
+            "Failed to hydrate flightStore after flight-planner:compaction-completed",
+            flightId,
             err,
           );
         });
     },
   );
 
-  listenerCleanup.set(missionId, () => {
+  listenerCleanup.set(flightId, () => {
     chunkUnlisten();
     doneUnlisten();
     toolStartUnlisten();
@@ -490,25 +490,25 @@ async function installListeners(
   });
 }
 
-export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => ({
+export const useFlightPlannerStore = create<FlightPlannerStore>((set, get) => ({
   runtimes: new Map(),
   pendingApprovals: new Map(),
 
-  startPlanner: async (missionId, projectPath) => {
-    const existing = get().runtimes.get(missionId);
+  startPlanner: async (flightId, projectPath) => {
+    const existing = get().runtimes.get(flightId);
     if (existing) return existing.plannerSessionId;
 
     // Choose the planner session id up front so we can install
     // `api-agent:*` listeners BEFORE the backend spawns the sidecar.
-    // Otherwise any event emitted between `invokeStartMissionPlanner`
+    // Otherwise any event emitted between `invokeStartFlightPlanner`
     // returning and `installListeners` resolving — including E3's spec-
     // mode greeting `chunk` events — is silently dropped.
     const provisionalSessionId = crypto.randomUUID();
 
     set((s) => {
       const runtimes = new Map(s.runtimes);
-      runtimes.set(missionId, {
-        missionId,
+      runtimes.set(flightId, {
+        flightId,
         plannerSessionId: provisionalSessionId,
         status: "awake",
         isStreaming: false,
@@ -519,12 +519,12 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
       });
       return { runtimes };
     });
-    await installListeners(missionId, provisionalSessionId, set);
+    await installListeners(flightId, provisionalSessionId, set);
 
     let plannerSessionId: string;
     try {
-      plannerSessionId = await invokeStartMissionPlanner(
-        missionId,
+      plannerSessionId = await invokeStartFlightPlanner(
+        flightId,
         projectPath,
         provisionalSessionId,
       );
@@ -532,15 +532,15 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
       // Tear down the listeners + provisional runtime so the next call
       // can re-issue cleanly. Otherwise a failed start leaves a zombie
       // runtime keyed to a never-spawned sidecar session.
-      const cleanup = listenerCleanup.get(missionId);
+      const cleanup = listenerCleanup.get(flightId);
       if (cleanup) {
         cleanup();
-        listenerCleanup.delete(missionId);
+        listenerCleanup.delete(flightId);
       }
       set((s) => {
-        if (!s.runtimes.has(missionId)) return {};
+        if (!s.runtimes.has(flightId)) return {};
         const runtimes = new Map(s.runtimes);
-        runtimes.delete(missionId);
+        runtimes.delete(flightId);
         return { runtimes };
       });
       throw err;
@@ -551,9 +551,9 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
     // listeners against the real id so events still route correctly.
     if (plannerSessionId !== provisionalSessionId) {
       set((s) => ({
-        runtimes: patchRuntime(s.runtimes, missionId, { plannerSessionId }),
+        runtimes: patchRuntime(s.runtimes, flightId, { plannerSessionId }),
       }));
-      await installListeners(missionId, plannerSessionId, set);
+      await installListeners(flightId, plannerSessionId, set);
     }
 
     // E3-LAUNCH / E3-HYD coordination — hydrate any pending approval
@@ -561,7 +561,7 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
     // new approvals; this only matters on app restart or view re-mount
     // while a planner is mid-flight. Non-fatal on error.
     try {
-      const existing = await invokeGetMissionApprovals(missionId);
+      const existing = await invokeGetFlightApprovals(flightId);
       if (existing.length > 0) {
         // Merge by id rather than replace: a live `approval-request`
         // event may have landed in the ~1ms gap between `installListeners`
@@ -569,76 +569,76 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
         // map outright would drop those entries on the floor.
         set((s) => {
           return {
-            pendingApprovals: mergePendingApprovals(s.pendingApprovals, missionId, existing, true),
+            pendingApprovals: mergePendingApprovals(s.pendingApprovals, flightId, existing, true),
           };
         });
       }
     } catch (err) {
-      console.warn("Failed to hydrate pending approvals for mission", missionId, err);
+      console.warn("Failed to hydrate pending approvals for flight", flightId, err);
     }
 
     return plannerSessionId;
   },
 
-  stopPlanner: async (missionId) => {
-    const cleanup = listenerCleanup.get(missionId);
+  stopPlanner: async (flightId) => {
+    const cleanup = listenerCleanup.get(flightId);
     if (cleanup) {
       cleanup();
-      listenerCleanup.delete(missionId);
+      listenerCleanup.delete(flightId);
     }
     set((s) => {
       const runtimes = new Map(s.runtimes);
       const pendingApprovals = new Map(s.pendingApprovals);
-      const hadRuntime = runtimes.delete(missionId);
-      const hadApprovals = pendingApprovals.delete(missionId);
+      const hadRuntime = runtimes.delete(flightId);
+      const hadApprovals = pendingApprovals.delete(flightId);
       if (!hadRuntime && !hadApprovals) return {};
       return { runtimes, pendingApprovals };
     });
     try {
-      await invokeStopMissionPlanner(missionId);
+      await invokeStopFlightPlanner(flightId);
     } catch {
       // Best-effort: backend may already have torn the session down.
     }
   },
 
-  pausePlanner: async (missionId) => {
-    await invokePauseMissionPlanner(missionId);
+  pausePlanner: async (flightId) => {
+    await invokePauseFlightPlanner(flightId);
     set((s) => ({
-      runtimes: patchRuntime(s.runtimes, missionId, { status: "paused" }),
+      runtimes: patchRuntime(s.runtimes, flightId, { status: "paused" }),
     }));
   },
 
-  resumePlanner: async (missionId) => {
-    await invokeResumeMissionPlanner(missionId);
+  resumePlanner: async (flightId) => {
+    await invokeResumeFlightPlanner(flightId);
     set((s) => ({
-      runtimes: patchRuntime(s.runtimes, missionId, { status: "awake" }),
+      runtimes: patchRuntime(s.runtimes, flightId, { status: "awake" }),
     }));
   },
 
-  injectTurn: async (missionId, content, source) => {
+  injectTurn: async (flightId, content, source) => {
     const ts = Date.now();
     set((s) => {
-      const current = s.runtimes.get(missionId);
+      const current = s.runtimes.get(flightId);
       if (!current) return {};
       return {
-        runtimes: appendTranscript(s.runtimes, missionId, {
+        runtimes: appendTranscript(s.runtimes, flightId, {
           role: source === "user" ? "user" : "system",
           content,
           ts,
         }),
       };
     });
-    await invokeInjectPlannerTurn(missionId, content, source);
+    await invokeInjectPlannerTurn(flightId, content, source);
     set((s) => ({
-      runtimes: patchRuntime(s.runtimes, missionId, { isStreaming: true }),
+      runtimes: patchRuntime(s.runtimes, flightId, { isStreaming: true }),
     }));
   },
 
-  launchMission: async (missionId) => {
-    const runtime = get().runtimes.get(missionId);
+  launchFlight: async (flightId) => {
+    const runtime = get().runtimes.get(flightId);
     if (!runtime) {
       throw new Error(
-        `launchMission: planner not started for mission ${missionId}. ` +
+        `launchFlight: planner not started for flight ${flightId}. ` +
           "Call startPlanner first (spec-mode chat must be live).",
       );
     }
@@ -646,25 +646,25 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
     // Optimistic system line so the user has visual feedback before the
     // planner's first stream chunk arrives.
     set((s) => ({
-      runtimes: appendTranscript(s.runtimes, missionId, {
+      runtimes: appendTranscript(s.runtimes, flightId, {
         role: "system",
-        content: "Launching mission…",
+        content: "Launching flight…",
         ts: Date.now(),
       }),
     }));
 
     // Flip `spec` -> `planning`. The detail pane (E3-MOUNT) listens on the
-    // flight status to swap MissionSpecPane back to the milestones/timeline
+    // flight status to swap FlightSpecPane back to the milestones/timeline
     // view, so the user sees create_milestone / create_task calls land
     // live.
-    useFlightStore.getState().updateFlight(missionId, { status: "planning" });
+    useFlightStore.getState().updateFlight(flightId, { status: "planning" });
 
     // Arm the kickoff flag. The next `api-agent:tool-start` for this
     // planner consumes the flag and flips `planning -> active`. Done
     // AFTER the status flip and BEFORE the wake fires so a hypothetical
     // racing pre-launch tool can't accidentally trip the flip.
     set((s) => ({
-      runtimes: patchRuntime(s.runtimes, missionId, {
+      runtimes: patchRuntime(s.runtimes, flightId, {
         awaitingLaunchKickoff: true,
         // Surface as `isStreaming: true` so the chat UI shows the
         // pending indicator while the planner's first decomposition
@@ -688,16 +688,16 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
     // saw a `kind="launch"` wake and `render_decomposition`'s body
     // was unreachable from the UI.
     try {
-      await invokeTriggerPlannerDecomposition(missionId);
+      await invokeTriggerPlannerDecomposition(flightId);
     } catch (err) {
       // If the wake failed to enqueue, roll back the flight status,
       // disarm the kickoff flag, and clear the streaming indicator so
-      // the user can retry. The optimistic "Launching mission…" line
+      // the user can retry. The optimistic "Launching flight…" line
       // stays in the transcript as a breadcrumb (the error event
       // listener may also append an `error:` line).
-      useFlightStore.getState().updateFlight(missionId, { status: "spec" });
+      useFlightStore.getState().updateFlight(flightId, { status: "spec" });
       set((s) => ({
-        runtimes: patchRuntime(s.runtimes, missionId, {
+        runtimes: patchRuntime(s.runtimes, flightId, {
           awaitingLaunchKickoff: false,
           isStreaming: false,
         }),
@@ -706,20 +706,20 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
     }
   },
 
-  getPlanner: (missionId) => get().runtimes.get(missionId),
+  getPlanner: (flightId) => get().runtimes.get(flightId),
 
-  isPlannerRunning: (missionId) => {
-    const runtime = get().runtimes.get(missionId);
+  isPlannerRunning: (flightId) => {
+    const runtime = get().runtimes.get(flightId);
     if (!runtime) return false;
     return runtime.status === "awake" || runtime.status === "idle";
   },
 
-  resolveApproval: async (missionId, approvalId, choice) => {
+  resolveApproval: async (flightId, approvalId, choice) => {
     // Optimistically drop the approval from local state so the UI hides
     // immediately. If the backend call fails we restore it.
-    let snapshot: MissionApprovalRequest[] | null = null;
+    let snapshot: FlightApprovalRequest[] | null = null;
     set((s) => {
-      const list = s.pendingApprovals.get(missionId);
+      const list = s.pendingApprovals.get(flightId);
       if (!list || list.length === 0) return {};
       snapshot = list;
       const filtered = list.filter((a) => a.id !== approvalId);
@@ -729,21 +729,21 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
       }
       const pending = new Map(s.pendingApprovals);
       if (filtered.length === 0) {
-        pending.delete(missionId);
+        pending.delete(flightId);
       } else {
-        pending.set(missionId, filtered);
+        pending.set(flightId, filtered);
       }
       return { pendingApprovals: pending };
     });
 
     try {
-      await invokeResolveMissionApproval(approvalId, choice);
+      await invokeResolveFlightApproval(approvalId, choice);
     } catch (err) {
       // Restore the snapshot so the user can retry.
       if (snapshot) {
         set((s) => {
           const pending = new Map(s.pendingApprovals);
-          pending.set(missionId, snapshot as MissionApprovalRequest[]);
+          pending.set(flightId, snapshot as FlightApprovalRequest[]);
           return { pendingApprovals: pending };
         });
       }
@@ -751,15 +751,15 @@ export const useMissionPlannerStore = create<MissionPlannerStore>((set, get) => 
     }
   },
 
-  hydratePendingApprovals: async (missionId) => {
-    const existing = await invokeGetMissionApprovals(missionId);
+  hydratePendingApprovals: async (flightId) => {
+    const existing = await invokeGetFlightApprovals(flightId);
     set((s) => ({
-      pendingApprovals: mergePendingApprovals(s.pendingApprovals, missionId, existing, false),
+      pendingApprovals: mergePendingApprovals(s.pendingApprovals, flightId, existing, false),
     }));
   },
 
-  getPendingApprovals: (missionId) => {
-    const list = get().pendingApprovals.get(missionId);
+  getPendingApprovals: (flightId) => {
+    const list = get().pendingApprovals.get(flightId);
     if (!list || list.length === 0) return [];
     // Oldest-first.
     return [...list].sort((a, b) => a.awaitingSince - b.awaitingSince);

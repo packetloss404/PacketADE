@@ -29,7 +29,7 @@ interface AgentHeaderBadgesProps {
  *   Only shown for API-mode agents — PTY agents get their auth surfaced
  *   elsewhere (the legacy launch flow has its own status bar).
  * - Flight chip: when this conversation's id appears in any flight's
- *   `linkedSessionIds`, render a clickable badge that jumps to MissionsView
+ *   `linkedSessionIds`, render a clickable badge that jumps to FlightsView
  *   with the flight pre-selected.
  *
  * MCP count and a richer memory-pattern preview are intentionally deferred —
@@ -175,9 +175,9 @@ export function AgentHeaderBadges({
           type="button"
           onClick={() => {
             setActiveFlight(linkedFlight.id);
-            setActiveView("missions");
+            setActiveView("flights");
           }}
-          title={`Linked to mission "${linkedFlight.title}" — click to open`}
+          title={`Linked to flight "${linkedFlight.title}" — click to open`}
           className="flex items-center gap-1 text-[10px] text-accent-purple bg-accent-purple/10 border border-accent-purple/30 rounded px-1.5 py-0.5 hover:bg-accent-purple/20 transition-colors"
         >
           <Plane size={10} />

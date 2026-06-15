@@ -1,9 +1,9 @@
-//! Mission Planner tool handlers (E2). Each tool is implemented in
+//! Flight Planner tool handlers (E2). Each tool is implemented in
 //! its own submodule; this file routes the dispatcher to them.
 //! E2-DISP scaffolds the structure; Wave-2 tool agents fill in
 //! handler bodies.
 
-pub mod complete_mission;
+pub mod complete_flight;
 pub mod create_milestone;
 pub mod create_task;
 pub mod mark_task_blocked;
@@ -13,10 +13,10 @@ pub mod update_task;
 
 use tauri::{AppHandle, Manager};
 
-use crate::commands::mission_planner::MissionPlannerRegistry;
+use crate::commands::flight_planner::FlightPlannerRegistry;
 
 /// Dispatch a planner tool call from the sidecar (called by
-/// `MissionPlannerRegistry::handle_tool_call`). Accepts both bare tool
+/// `FlightPlannerRegistry::handle_tool_call`). Accepts both bare tool
 /// names (e.g. `create_milestone`) and the MCP-prefixed form
 /// (e.g. `mcp__planner__create_milestone`).
 ///
@@ -29,7 +29,7 @@ use crate::commands::mission_planner::MissionPlannerRegistry;
 /// fires, which resets the counter).
 ///
 /// **FIX 2 — `noop` removed from production dispatch.**
-/// `noop` is a JS-side smoke fixture in `mission-planner-server.ts` used
+/// `noop` is a JS-side smoke fixture in `flight-planner-server.ts` used
 /// by `agent-sidecar/test/mcp-inproc-smoke.mjs`, which stubs the
 /// Rust supervisor entirely in JS and never reaches this dispatcher. The
 /// previous `noop` arm + cap bypass existed only for an older,
@@ -47,22 +47,22 @@ pub async fn dispatch(
     let name = tool.strip_prefix("mcp__planner__").unwrap_or(tool);
 
     let registry = app
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
     let (mode, cap, current) = registry
         .bump_and_check_tool_call(session_id)
         .await
         .ok_or_else(|| {
             format!(
-                "no mission planner session matches sidecar session '{}'",
+                "no flight planner session matches sidecar session '{}'",
                 session_id
             )
         })?;
-    // Resolve the owning mission_id BEFORE dispatch so terminal tools
-    // (`complete_mission` removes the planner session from the registry on
-    // its success path) still have a mission_id to journal under after
+    // Resolve the owning flight_id BEFORE dispatch so terminal tools
+    // (`complete_flight` removes the planner session from the registry on
+    // its success path) still have a flight_id to journal under after
     // they return.
-    let mission_id_at_dispatch = registry.mission_id_for_sidecar_session(session_id).await;
+    let flight_id_at_dispatch = registry.flight_id_for_sidecar_session(session_id).await;
 
     if current > cap {
         let err_msg = format!(
@@ -82,9 +82,9 @@ pub async fn dispatch(
         // but we keep the skip uniform with the post-dispatch branch below
         // so `request_user_approval` only ever produces `ApprovalRequest`
         // entries, never `ToolCall`.)
-        if let Some(ref mission_id) = mission_id_at_dispatch {
+        if let Some(ref flight_id) = flight_id_at_dispatch {
             if name != "request_user_approval" {
-                journal_tool_call(app, mission_id, name, &args, None, Some(&err_msg)).await;
+                journal_tool_call(app, flight_id, name, &args, None, Some(&err_msg)).await;
             }
         }
         return Err(err_msg);
@@ -99,7 +99,7 @@ pub async fn dispatch(
         "request_user_approval" => {
             request_user_approval::handle(app, session_id, args.clone()).await
         }
-        "complete_mission" => complete_mission::handle(app, session_id, args.clone()).await,
+        "complete_flight" => complete_flight::handle(app, session_id, args.clone()).await,
         // `spawn_helper_planner` remains a v1.1 stub (see backlog); accept
         // the call but return a clear deferral message so the planner can
         // route around it.
@@ -117,8 +117,8 @@ pub async fn dispatch(
     // `spawn_helper_planner` deferral, the "unknown planner tool" arm) is
     // journaled.
     //
-    // Use the mission_id captured BEFORE dispatch so terminal tools
-    // (`complete_mission` removes the planner session as part of its
+    // Use the flight_id captured BEFORE dispatch so terminal tools
+    // (`complete_flight` removes the planner session as part of its
     // success flip) still land their journal entry.
     //
     // E7-DEDUP: `request_user_approval` already writes its own dedicated
@@ -126,17 +126,17 @@ pub async fn dispatch(
     // generic `ToolCall` entry for that one tool so the timeline doesn't
     // show the same approval twice (one as ToolCall + one as
     // ApprovalRequest). All other tools journal normally.
-    if let Some(ref mission_id) = mission_id_at_dispatch {
+    if let Some(ref flight_id) = flight_id_at_dispatch {
         if name != "request_user_approval" {
             match &outcome {
                 Ok(v) => {
-                    journal_tool_call(app, mission_id, name, &args, Some(v), None).await;
+                    journal_tool_call(app, flight_id, name, &args, Some(v), None).await;
                 }
                 Err(e) if e.starts_with("invalid args:") => {
                     // Skip — args-parse failure, not a real tool call.
                 }
                 Err(e) => {
-                    journal_tool_call(app, mission_id, name, &args, None, Some(e.as_str())).await;
+                    journal_tool_call(app, flight_id, name, &args, None, Some(e.as_str())).await;
                 }
             }
         }
@@ -153,14 +153,14 @@ pub async fn dispatch(
 /// carries the full args + full result JSON for downstream analyses.
 async fn journal_tool_call(
     app: &AppHandle,
-    mission_id: &str,
+    flight_id: &str,
     tool_name: &str,
     args: &serde_json::Value,
     result: Option<&serde_json::Value>,
     error: Option<&str>,
 ) {
-    use crate::commands::mission_planner::{journal_entry, write_journal_and_emit};
-    use crate::core::mission_journal::JournalKind;
+    use crate::commands::flight_planner::{journal_entry, write_journal_and_emit};
+    use crate::core::flight_journal::JournalKind;
 
     let args_pretty = serde_json::to_string_pretty(args).unwrap_or_else(|_| "{}".to_string());
     let args_snippet = truncate(&args_pretty, 500);
@@ -192,7 +192,7 @@ async fn journal_tool_call(
         "error": error,
     });
     let entry = journal_entry(
-        mission_id.to_string(),
+        flight_id.to_string(),
         JournalKind::ToolCall,
         body,
         Some(metadata),

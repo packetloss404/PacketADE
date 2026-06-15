@@ -29,9 +29,9 @@ import type {
 } from "../protocol.js";
 import type { ProviderHandler } from "./base.js";
 import {
-  createMissionPlannerMcpServer,
+  createFlightPlannerMcpServer,
   PLANNER_MCP_KEY,
-} from "../mcp/mission-planner-server.js";
+} from "../mcp/flight-planner-server.js";
 import {
   query,
   type CanUseTool,
@@ -439,7 +439,7 @@ export class AnthropicProvider implements ProviderHandler {
   private lastUserMessage: string | null = null;
   private approveWrites = false;
   /**
-   * Mission Planner (v5): when a planner MCP tool fires, the in-sidecar
+   * Flight Planner (v5): when a planner MCP tool fires, the in-sidecar
    * handler emits a `planner_tool` event and parks a resolver here keyed by
    * `callId`. The Rust supervisor replies with `planner_tool_result`, which
    * `resolvePlannerTool` looks up and either resolves (success) or rejects
@@ -570,14 +570,14 @@ export class AnthropicProvider implements ProviderHandler {
     };
 
     // v5: when the supervisor asks for `mcpKind: "planner"`, construct the
-    // in-sidecar Mission Planner MCP server locally and merge it under the
+    // in-sidecar Flight Planner MCP server locally and merge it under the
     // pinned `PLANNER_MCP_KEY` so the SDK exposes its tools as
     // `mcp__planner__*`. Live `McpServer` instances cannot cross the stdio
     // wire, so this is the only place planner tools come into existence.
     const wireMcp = toMcpServers(req.mcpServers ?? {});
     let mcpServers: NonNullable<Options["mcpServers"]> | undefined = wireMcp;
     if (req.mcpKind === "planner") {
-      const plannerServer = createMissionPlannerMcpServer(
+      const plannerServer = createFlightPlannerMcpServer(
         req.sessionId,
         (event) => this.dispatchPlannerTool(event, emit),
       );
@@ -611,7 +611,7 @@ export class AnthropicProvider implements ProviderHandler {
     // v3: when attachments are present, build a content array with image
     // blocks alongside the text so the model can read screenshots / images.
     //
-    // Mission-planner sessions start with no human turn (empty
+    // Flight-planner sessions start with no human turn (empty
     // `initialMessage`) — the model waits for the user's first spec-mode
     // chat message via `inject_user_turn`. Anthropic's API rejects user
     // blocks with empty content (HTTP 400), so we must NOT push an empty
@@ -664,7 +664,7 @@ export class AnthropicProvider implements ProviderHandler {
     // already emits `done` per `result` message, so we MUST NOT break out
     // here: the prompt iterable is shared across turns, and breaking on the
     // first `result` would silently kill any second-turn `sendMessage` /
-    // `injectUserTurn` (mission-planner spike retro #2). Iterate until the
+    // `injectUserTurn` (flight-planner spike retro #2). Iterate until the
     // prompt iterable closes naturally (via `close_session` calling
     // `this.prompt.end()`) or the abort controller fires.
     try {
@@ -678,7 +678,7 @@ export class AnthropicProvider implements ProviderHandler {
       const name = err instanceof Error ? err.name : "";
       // v6 (E6-CEILING-RATELIMIT): if the SDK threw `RateLimitError`
       // (HTTP 429), emit a typed `rate_limited` event so the Rust
-      // supervisor can transition the owning Mission Planner session into
+      // supervisor can transition the owning Flight Planner session into
       // `QuotaPaused` and arm the auto-resume timer. We duck-type on the
       // constructor `name` (and on a 429 `status` fallback) so we don't
       // have to import the SDK's error class — its packaging changes
@@ -914,7 +914,7 @@ export class AnthropicProvider implements ProviderHandler {
    *  - `"wake_trigger"`: wrapped in
    *    `<wake_trigger source="wake_trigger" kind="<kind>">…</wake_trigger>`
    *    so the planner system prompt can distinguish re-entry from a human
-   *    turn (mission-planner spec §Transport).
+   *    turn (flight-planner spec §Transport).
    *
    * Same underlying push as `sendMessage` — the shared `PushableAsyncIterable`
    * serializes bursty injects cleanly, and the SDK iterates the prompt
@@ -990,7 +990,7 @@ export class AnthropicProvider implements ProviderHandler {
 
   /**
    * Internal: emit a `planner_tool` envelope and park a resolver. The
-   * planner MCP server in `mission-planner-server.ts` awaits this promise
+   * planner MCP server in `flight-planner-server.ts` awaits this promise
    * inside the tool's handler, so the SDK's `tool_use → tool_result` round
    * trip stays well-formed.
    */

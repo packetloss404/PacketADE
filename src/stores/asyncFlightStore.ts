@@ -377,7 +377,7 @@ export function formatAsyncLaunchPathCollisionMessage(
     .join("\n");
   const more = collisions.length > 5 ? `\n- ${collisions.length - 5} more conflict(s)` : "";
   return [
-    "Async Mission launch blocked because active executor work already claims the same path.",
+    "Async Flight launch blocked because active executor work already claims the same path.",
     preview + more,
     "Cancel, complete, or block/serialize the conflicting work before launching.",
   ].join("\n");

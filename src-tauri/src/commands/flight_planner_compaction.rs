@@ -1,17 +1,17 @@
-//! Mission Planner E10 — context compaction.
+//! Flight Planner E10 — context compaction.
 //!
 //! When a planner session's cumulative input tokens cross the threshold
 //! (see E10-DETECT), this module:
 //!
-//!   1. **E10-SUMMARIZE** — [`summarize_mission_journal`] does a one-shot
-//!      Sonnet round-trip to compress the mission journal into a priming
+//!   1. **E10-SUMMARIZE** — [`summarize_flight_journal`] does a one-shot
+//!      Sonnet round-trip to compress the flight journal into a priming
 //!      summary.
 //!   2. **E10-SWAP** — [`perform_compaction`] orchestrates the session
 //!      restart: snapshot → summarize → close old sidecar → spawn new
 //!      sidecar → inject summary → swap registry → journal + emit
 //!      completion event. [`install_compaction_listener`] wires the
-//!      per-mission Tauri listener that routes E10-DETECT's
-//!      `mission-planner:compaction-triggered:<missionId>` event to
+//!      per-flight Tauri listener that routes E10-DETECT's
+//!      `flight-planner:compaction-triggered:<flightId>` event to
 //!      [`perform_compaction`].
 
 use std::sync::Arc;
@@ -21,18 +21,18 @@ use tauri::{AppHandle, Emitter, Listener, Manager};
 use tracing::{info, warn};
 
 use crate::commands::agent_sidecar::SidecarManager;
-use crate::commands::mission_planner::{
-    journal_entry, persist_planner_state_on_flight, write_journal_and_emit, MissionPlannerRegistry,
+use crate::commands::flight_planner::{
+    journal_entry, persist_planner_state_on_flight, write_journal_and_emit, FlightPlannerRegistry,
     PlannerStatus, COMPACTION_FAILURE_ESCALATION_COUNT, COMPACTION_THRESHOLD_TOKENS,
 };
-use crate::core::mission_journal;
-use crate::core::mission_journal::JournalKind;
-use crate::core::mission_planner_prompts::spec_mode_system_prompt;
+use crate::core::flight_journal;
+use crate::core::flight_journal::JournalKind;
+use crate::core::flight_planner_prompts::spec_mode_system_prompt;
 
 /// Cap on the journal text we feed into the summarization session.
 ///
 /// The one-shot Claude session has its own ~200K-token context, but we
-/// don't want to send the entire history of a year-old mission. At ~4
+/// don't want to send the entire history of a year-old flight. At ~4
 /// chars/token, 80K chars ≈ 20K tokens — leaves plenty of headroom for
 /// the prompt scaffolding and the summary itself.
 const SUMMARY_INPUT_BUDGET_CHARS: usize = 80_000;
@@ -59,9 +59,9 @@ const SUMMARIZER_PROVIDER: &str = "claude-oauth";
 const SUMMARIZER_SYSTEM_PROMPT: &str =
     "You are a concise summarizer. Produce ONLY the requested summary, no preamble.";
 
-/// Generate a compact summary of the mission's progress so far.
+/// Generate a compact summary of the flight's progress so far.
 ///
-/// Reads the journal markdown via [`mission_journal::read_journal`],
+/// Reads the journal markdown via [`flight_journal::read_journal`],
 /// truncates it to a safe budget, then sends it to a one-shot
 /// `claude-oauth` sidecar session with a summarization prompt and
 /// returns the assistant's response.
@@ -69,7 +69,7 @@ const SUMMARIZER_SYSTEM_PROMPT: &str =
 /// The summary is intended to be injected as priming context into a
 /// restarted planner session (E10-SWAP). Aim is 1-2 paragraphs
 /// covering:
-///   * Mission objective (1 sentence)
+///   * Flight objective (1 sentence)
 ///   * Milestones created and their status (1-2 sentences)
 ///   * Tasks completed and any notable failures (1-2 sentences)
 ///   * Current state / what's pending (1 sentence)
@@ -77,20 +77,20 @@ const SUMMARIZER_SYSTEM_PROMPT: &str =
 /// Returns:
 ///   * `Ok(summary)` — the assistant text, trimmed.
 ///   * `Ok("(no journal entries to summarize)")` — the journal is empty
-///     (mission has no recorded activity).
+///     (flight has no recorded activity).
 ///   * `Err(message)` — sidecar not managed, journal read failure,
 ///     one-shot session failed, or timed out. The caller can decide
 ///     whether to retry or skip compaction this cycle; the planner
 ///     degrades gracefully but will eventually hit the context wall.
-pub async fn summarize_mission_journal(
+pub async fn summarize_flight_journal(
     app: &AppHandle,
-    mission_id: &str,
+    flight_id: &str,
 ) -> Result<String, String> {
     // 1. Read the full journal markdown. `read_journal` returns Ok("")
-    //    for missions with no journal file yet, which we treat as a
+    //    for flights with no journal file yet, which we treat as a
     //    trivial summary (the caller can still wire the no-op string
     //    into the priming context if desired).
-    let journal = mission_journal::read_journal(mission_id)?;
+    let journal = flight_journal::read_journal(flight_id)?;
     if journal.trim().is_empty() {
         return Ok("(no journal entries to summarize)".to_string());
     }
@@ -168,7 +168,7 @@ pub async fn summarize_mission_journal(
         warn!(
             session_id = %session_id,
             error = %e,
-            "summarize_mission_journal: forward_close failed (non-fatal)"
+            "summarize_flight_journal: forward_close failed (non-fatal)"
         );
     }
 
@@ -225,9 +225,9 @@ fn truncate_journal_for_summary(journal: &str, max_chars: usize) -> String {
 /// post-processing.
 fn build_summarization_prompt(journal: &str) -> String {
     format!(
-        "Summarize the following mission journal into 1-2 paragraphs.\n\n\
+        "Summarize the following flight journal into 1-2 paragraphs.\n\n\
          The summary must cover:\n\
-         1. Mission objective (one sentence).\n\
+         1. Flight objective (one sentence).\n\
          2. Milestones created and their current status.\n\
          3. Tasks completed, failed, or in-progress (with brief outcomes).\n\
          4. Current state — what the planner should be aware of when resuming.\n\n\
@@ -243,7 +243,7 @@ fn build_summarization_prompt(journal: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Allowed tool list passed to the sidecar at planner-session start. Kept in
-/// sync with the list in `mission_planner::start_mission_planner` — these are
+/// sync with the list in `flight_planner::start_flight_planner` — these are
 /// the `mcp__planner__*` tools the E2 in-process MCP server exposes.
 fn planner_allowed_tools() -> Vec<String> {
     vec![
@@ -254,30 +254,30 @@ fn planner_allowed_tools() -> Vec<String> {
         "mcp__planner__mark_task_blocked".to_string(),
         "mcp__planner__replan_after_failure".to_string(),
         "mcp__planner__request_user_approval".to_string(),
-        "mcp__planner__complete_mission".to_string(),
+        "mcp__planner__complete_flight".to_string(),
     ]
 }
 
 /// `mcpKind` discriminator the sidecar uses to construct the in-process
-/// Mission Planner tool MCP server. Mirrors the constant used by
-/// `mission_planner::start_mission_planner`.
+/// Flight Planner tool MCP server. Mirrors the constant used by
+/// `flight_planner::start_flight_planner`.
 const PLANNER_MCP_KIND: &str = "planner";
 
 /// Provider string for the new planner session. Same value
-/// `start_mission_planner` uses; kept inline so this module doesn't
+/// `start_flight_planner` uses; kept inline so this module doesn't
 /// depend on a `pub` of the parent's private constant.
 const PLANNER_PROVIDER_DEFAULT: &str = "claude-oauth";
 
 /// Fallback model if the snapshotted session has an empty `model` field.
-/// Sonnet 4.6 is the locked v1 model per `dev/mission-planner-plan.md`
+/// Sonnet 4.6 is the locked v1 model per `dev/flight-planner-plan.md`
 /// §Models.
 const PLANNER_MODEL_DEFAULT: &str = "claude-sonnet-4-6";
 
-/// Install a Tauri listener on `mission-planner:compaction-triggered:<mission_id>`
-/// that, when fired, spawns [`perform_compaction`] for the same mission.
+/// Install a Tauri listener on `flight-planner:compaction-triggered:<flight_id>`
+/// that, when fired, spawns [`perform_compaction`] for the same flight.
 ///
 /// Returns the `EventId` so the caller can store it on the
-/// `MissionPlannerSession` and `app.unlisten(id)` when the planner is
+/// `FlightPlannerSession` and `app.unlisten(id)` when the planner is
 /// stopped (see E10 FIX P0). Without that, every start→stop cycle
 /// accumulates a fresh listener — after N cycles a single triggered event
 /// would fire N parallel `perform_compaction` tasks, burning N Sonnet
@@ -285,28 +285,28 @@ const PLANNER_MODEL_DEFAULT: &str = "claude-sonnet-4-6";
 ///
 /// Idempotency: Tauri's `listen` installs a fresh listener each call
 /// without deduping, so this MUST be called at most once per planner
-/// lifecycle. [`crate::commands::mission_planner::start_mission_planner`]
-/// short-circuits when a planner already exists for a mission, so calling
+/// lifecycle. [`crate::commands::flight_planner::start_flight_planner`]
+/// short-circuits when a planner already exists for a flight, so calling
 /// this from the post-insert path is safe.
-pub fn install_compaction_listener(app: &AppHandle, mission_id: &str) -> tauri::EventId {
-    let event_name = format!("mission-planner:compaction-triggered:{}", mission_id);
-    let mission_id_owned = mission_id.to_string();
+pub fn install_compaction_listener(app: &AppHandle, flight_id: &str) -> tauri::EventId {
+    let event_name = format!("flight-planner:compaction-triggered:{}", flight_id);
+    let flight_id_owned = flight_id.to_string();
     let app_clone = app.clone();
     let event_id = app.listen(event_name, move |_event| {
-        let mission_id_for_task = mission_id_owned.clone();
+        let flight_id_for_task = flight_id_owned.clone();
         let app_for_task = app_clone.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(e) = perform_compaction(&app_for_task, &mission_id_for_task).await {
+            if let Err(e) = perform_compaction(&app_for_task, &flight_id_for_task).await {
                 warn!(
                     error = %e,
-                    mission_id = %mission_id_for_task,
+                    flight_id = %flight_id_for_task,
                     "compaction failed",
                 );
             }
         });
     });
     info!(
-        mission_id,
+        flight_id,
         event_id, "installed compaction-trigger listener"
     );
     event_id
@@ -327,8 +327,8 @@ struct PlannerSnapshot {
 /// Flow:
 ///   1. Snapshot the existing planner's sidecar session id + model + project
 ///      path under the registry lock.
-///   2. Ask [`summarize_mission_journal`] for a Sonnet round-trip summary of
-///      the mission journal. On failure, clear the `compaction_in_progress`
+///   2. Ask [`summarize_flight_journal`] for a Sonnet round-trip summary of
+///      the flight journal. On failure, clear the `compaction_in_progress`
 ///      flag (so a future threshold cross can retry) and bail.
 ///   3. Close the old sidecar session (best-effort — the sidecar may have
 ///      already shed it).
@@ -342,22 +342,22 @@ struct PlannerSnapshot {
 ///   7. Persist the new session id (and `Idle` status) onto the Flight DTO
 ///      so cold-start hydration sees the correct id after an app restart.
 ///   8. Append a `SystemNote` journal entry recording the swap.
-///   9. Emit `mission-planner:compaction-completed:<missionId>` for the
+///   9. Emit `flight-planner:compaction-completed:<flightId>` for the
 ///      frontend toast.
-pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(), String> {
-    info!(mission_id, "starting context compaction");
+pub async fn perform_compaction(app: &AppHandle, flight_id: &str) -> Result<(), String> {
+    info!(flight_id, "starting context compaction");
 
     let registry = app
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "MissionPlannerRegistry not managed".to_string())?;
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "FlightPlannerRegistry not managed".to_string())?;
 
-    // 1. Snapshot the existing planner's state. `get_by_mission` returns a
+    // 1. Snapshot the existing planner's state. `get_by_flight` returns a
     //    clone, so we drop the registry lock immediately.
     let session = registry
-        .get_by_mission(mission_id)
+        .get_by_flight(flight_id)
         .await
-        .ok_or_else(|| format!("planner session not found for mission {}", mission_id))?;
-    let project_path = resolve_planner_project_path(mission_id).await;
+        .ok_or_else(|| format!("planner session not found for flight {}", flight_id))?;
+    let project_path = resolve_planner_project_path(flight_id).await;
     let snapshot = PlannerSnapshot {
         sidecar_session_id: session.sidecar_session_id.clone(),
         model: if session.model.is_empty() {
@@ -371,7 +371,7 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
     // 2. Call the summarizer. This is the long (10-30s) round-trip; the
     //    planner's `compaction_in_progress` flag is already set (by
     //    E10-DETECT's bump) so no concurrent compaction will fire here.
-    let summary = match summarize_mission_journal(app, mission_id).await {
+    let summary = match summarize_flight_journal(app, flight_id).await {
         Ok(s) => s,
         Err(e) => {
             // E10 FIX P1-A — record failure (sets timestamp + bumps
@@ -379,17 +379,17 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
             // consecutive failure so the user sees a journal entry telling
             // them manual intervention may be required.
             warn!(
-                mission_id,
+                flight_id,
                 error = %e,
                 "compaction summarization failed; planner will continue without compaction"
             );
-            let failure_count = registry.record_compaction_failure(mission_id).await;
-            maybe_journal_failure_escalation(app, mission_id, failure_count, "summarize", &e).await;
+            let failure_count = registry.record_compaction_failure(flight_id).await;
+            maybe_journal_failure_escalation(app, flight_id, failure_count, "summarize", &e).await;
             // UI hint — the frontend can surface an error toast.
             let _ = app.emit(
-                &format!("mission-planner:compaction-completed:{}", mission_id),
+                &format!("flight-planner:compaction-completed:{}", flight_id),
                 serde_json::json!({
-                    "missionId": mission_id,
+                    "flightId": flight_id,
                     "error": e,
                     "phase": "summarize",
                 }),
@@ -442,29 +442,29 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
         .await
     {
         // E10 FIX P1-B — `forward_start` failed AFTER we closed the old
-        // session, so the mission currently has NO active planner. We must
+        // session, so the flight currently has NO active planner. We must
         // clear `compaction_in_progress` (otherwise the UI pill spins
         // forever), record the failure for the backoff gate, and emit a
         // compaction-completed event with an error payload so the frontend
         // can show a toast. Journal the failure so the user has breadcrumb.
         let err = format!("compaction: forward_start on new session failed: {}", e);
         warn!(
-            mission_id,
+            flight_id,
             error = %err,
-            "compaction: forward_start failed; mission has no active planner session"
+            "compaction: forward_start failed; flight has no active planner session"
         );
-        let failure_count = registry.record_compaction_failure(mission_id).await;
-        maybe_journal_failure_escalation(app, mission_id, failure_count, "forward_start", &err)
+        let failure_count = registry.record_compaction_failure(flight_id).await;
+        maybe_journal_failure_escalation(app, flight_id, failure_count, "forward_start", &err)
             .await;
         // Always journal the forward_start failure (independent of the
         // escalation threshold) — the user needs to know the planner is
         // gone and they should hit Start Planner to recover.
         let recovery_entry = journal_entry(
-            mission_id.to_string(),
+            flight_id.to_string(),
             JournalKind::SystemNote,
             format!(
                 "**Compaction failed**: could not start replacement planner session: {}. \
-                 Mission has no active planner; use 'Start Planner' to recover.",
+                 Flight has no active planner; use 'Start Planner' to recover.",
                 e
             ),
             Some(serde_json::json!({
@@ -474,9 +474,9 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
         );
         write_journal_and_emit(app, recovery_entry).await;
         let _ = app.emit(
-            &format!("mission-planner:compaction-completed:{}", mission_id),
+            &format!("flight-planner:compaction-completed:{}", flight_id),
             serde_json::json!({
-                "missionId": mission_id,
+                "flightId": flight_id,
                 "error": err,
                 "phase": "forward_start",
             }),
@@ -489,7 +489,7 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
     //    teaches the model that this body is a compressed history of the
     //    prior session and the next real event will be a normal wake.
     let preamble = format!(
-        "Compaction summary of mission progress so far:\n\n{}\n\n\
+        "Compaction summary of flight progress so far:\n\n{}\n\n\
          Continue from this state. The next event in your conversation \
          will be the wake-trigger you would normally have received.",
         summary
@@ -519,7 +519,7 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
             e
         );
         warn!(
-            mission_id,
+            flight_id,
             error = %err,
             new_sidecar_session_id,
             "compaction: inject summary failed; rolling back new session"
@@ -528,19 +528,19 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
         // close above).
         if let Err(close_err) = sidecar.forward_close(new_sidecar_session_id.clone()).await {
             warn!(
-                mission_id,
+                flight_id,
                 error = %close_err,
                 "compaction: forward_close on rollback failed"
             );
         }
-        let failure_count = registry.record_compaction_failure(mission_id).await;
-        maybe_journal_failure_escalation(app, mission_id, failure_count, "inject", &err).await;
+        let failure_count = registry.record_compaction_failure(flight_id).await;
+        maybe_journal_failure_escalation(app, flight_id, failure_count, "inject", &err).await;
         let recovery_entry = journal_entry(
-            mission_id.to_string(),
+            flight_id.to_string(),
             JournalKind::SystemNote,
             format!(
                 "**Compaction failed**: replacement planner session was created but priming \
-                 context could not be injected: {}. Replacement session rolled back. Mission \
+                 context could not be injected: {}. Replacement session rolled back. Flight \
                  has no active planner; use 'Start Planner' to recover.",
                 e
             ),
@@ -551,9 +551,9 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
         );
         write_journal_and_emit(app, recovery_entry).await;
         let _ = app.emit(
-            &format!("mission-planner:compaction-completed:{}", mission_id),
+            &format!("flight-planner:compaction-completed:{}", flight_id),
             serde_json::json!({
-                "missionId": mission_id,
+                "flightId": flight_id,
                 "error": err,
                 "phase": "inject",
             }),
@@ -571,17 +571,17 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
     // sidecar session we just started is an orphan — close it and bail
     // with Ok (user intentionally stopped, not an error condition).
     let swapped = registry
-        .swap_sidecar_session_after_compaction(mission_id, &new_sidecar_session_id)
+        .swap_sidecar_session_after_compaction(flight_id, &new_sidecar_session_id)
         .await;
     if !swapped {
         info!(
-            mission_id,
+            flight_id,
             new_sidecar_session_id,
-            "compaction: mission stopped during compaction; closing new session as orphan"
+            "compaction: flight stopped during compaction; closing new session as orphan"
         );
         if let Err(e) = sidecar.forward_close(new_sidecar_session_id.clone()).await {
             warn!(
-                mission_id,
+                flight_id,
                 error = %e,
                 "compaction: forward_close on stop-during-compaction orphan failed"
             );
@@ -595,14 +595,14 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
     //    so we can't race a concurrent `accumulate_planner_cost` /
     //    cold-start enforce.
     if let Err(e) = persist_planner_state_on_flight(
-        mission_id,
+        flight_id,
         Some(&new_sidecar_session_id),
         Some(PlannerStatus::Idle),
     )
     .await
     {
         warn!(
-            mission_id,
+            flight_id,
             error = %e,
             "compaction: failed to persist new sidecar session id on Flight DTO"
         );
@@ -619,7 +619,7 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
         COMPACTION_THRESHOLD_TOKENS, summary,
     );
     let entry = journal_entry(
-        mission_id.to_string(),
+        flight_id.to_string(),
         JournalKind::SystemNote,
         body,
         Some(serde_json::json!({
@@ -630,17 +630,17 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
     );
     write_journal_and_emit(app, entry).await;
 
-    // 9. UI hint — the frontend's missionPlannerStore can listen for this
+    // 9. UI hint — the frontend's flightPlannerStore can listen for this
     //    and surface a "Context compacted" toast.
     let _ = app.emit(
-        &format!("mission-planner:compaction-completed:{}", mission_id),
+        &format!("flight-planner:compaction-completed:{}", flight_id),
         serde_json::json!({
-            "missionId": mission_id,
+            "flightId": flight_id,
             "newSidecarSessionId": new_sidecar_session_id,
         }),
     );
 
-    info!(mission_id, new_sidecar_session_id, "compaction completed");
+    info!(flight_id, new_sidecar_session_id, "compaction completed");
     Ok(())
 }
 
@@ -655,7 +655,7 @@ pub async fn perform_compaction(app: &AppHandle, mission_id: &str) -> Result<(),
 /// the caller.
 async fn maybe_journal_failure_escalation(
     app: &AppHandle,
-    mission_id: &str,
+    flight_id: &str,
     failure_count: u32,
     phase: &str,
     error: &str,
@@ -664,16 +664,16 @@ async fn maybe_journal_failure_escalation(
         return;
     }
     warn!(
-        mission_id,
+        flight_id,
         failure_count, phase, "compaction has failed repeatedly; escalating via journal"
     );
     let entry = journal_entry(
-        mission_id.to_string(),
+        flight_id.to_string(),
         JournalKind::SystemNote,
         format!(
             "**Compaction failing repeatedly** ({} consecutive failures, latest in `{}` phase). \
              Manual intervention may be required: check Claude / Sonnet quota, sidecar health, \
-             and the mission journal file. Latest error: {}",
+             and the flight journal file. Latest error: {}",
             failure_count, phase, error
         ),
         Some(serde_json::json!({
@@ -685,12 +685,12 @@ async fn maybe_journal_failure_escalation(
     write_journal_and_emit(app, entry).await;
 }
 
-/// Read the mission's project path off the Flight DTO; fall back to the
+/// Read the flight's project path off the Flight DTO; fall back to the
 /// process cwd. Used to feed `forward_start`'s `projectPath` arg on the new
 /// session — the same path the original planner was started with.
-async fn resolve_planner_project_path(mission_id: &str) -> String {
+async fn resolve_planner_project_path(flight_id: &str) -> String {
     let state = crate::core::storage::load_state();
-    if let Some(flight) = state.flights.iter().find(|f| f.id == mission_id) {
+    if let Some(flight) = state.flights.iter().find(|f| f.id == flight_id) {
         if !flight.project_path.is_empty() {
             return flight.project_path.clone();
         }
@@ -767,7 +767,7 @@ mod tests {
         let prompt = build_summarization_prompt("body");
         // The rubric is load-bearing — losing a line silently regresses
         // the summary quality. Pin every numbered item.
-        assert!(prompt.contains("1. Mission objective"));
+        assert!(prompt.contains("1. Flight objective"));
         assert!(prompt.contains("2. Milestones"));
         assert!(prompt.contains("3. Tasks"));
         assert!(prompt.contains("4. Current state"));
@@ -778,7 +778,7 @@ mod tests {
     /// Live one-shot Claude call — gated `#[ignore]` because it hits
     /// the network and depends on a running sidecar + valid Claude
     /// OAuth credentials. Run manually with
-    /// `cargo test --lib commands::mission_planner_compaction::tests::summarize_live -- --ignored`.
+    /// `cargo test --lib commands::flight_planner_compaction::tests::summarize_live -- --ignored`.
     #[tokio::test]
     #[ignore]
     async fn summarize_live() {
@@ -803,7 +803,7 @@ mod tests {
     ///
     /// What we **can** verify directly is the registry-side contract that
     /// the failure path depends on: calling
-    /// `MissionPlannerRegistry::reset_compaction_in_progress` clears the
+    /// `FlightPlannerRegistry::reset_compaction_in_progress` clears the
     /// `compaction_in_progress` flag without disturbing the cumulative
     /// token counter. The orchestrator's `Err` branch in
     /// `perform_compaction` (above) is the only caller of this method, so
@@ -814,17 +814,17 @@ mod tests {
     /// threshold, set `compaction_in_progress`, and we'd loop forever).
     #[tokio::test]
     async fn reset_compaction_in_progress_clears_flag_without_zeroing_tokens() {
-        use crate::commands::mission_planner::{MissionPlannerRegistry, MissionPlannerSession};
-        let registry = MissionPlannerRegistry::default();
+        use crate::commands::flight_planner::{FlightPlannerRegistry, FlightPlannerSession};
+        let registry = FlightPlannerRegistry::default();
 
         // Build a session manually via the public Default+insert path the
-        // registry exposes — we can't go through start_mission_planner
+        // registry exposes — we can't go through start_flight_planner
         // because that requires a real sidecar. The test_helpers module
-        // in `mission_planner.rs` doesn't exist, so we go through the
+        // in `flight_planner.rs` doesn't exist, so we go through the
         // public `Default` for the session struct and serde to fill it.
-        let mut session: MissionPlannerSession = serde_json::from_value(serde_json::json!({
+        let mut session: FlightPlannerSession = serde_json::from_value(serde_json::json!({
             "id": "p-1",
-            "missionId": "m-1",
+            "flightId": "m-1",
             "sidecarSessionId": "sid-old",
             "status": "idle",
             "model": "claude-sonnet-4-6",
@@ -850,7 +850,7 @@ mod tests {
         registry.reset_compaction_in_progress("m-1").await;
 
         let snapshot = registry
-            .get_by_mission("m-1")
+            .get_by_flight("m-1")
             .await
             .expect("session still present");
         assert!(
@@ -872,11 +872,11 @@ mod tests {
     /// branches of the compaction orchestrator.
     #[tokio::test]
     async fn swap_sidecar_session_after_compaction_resets_tokens_and_flag() {
-        use crate::commands::mission_planner::{MissionPlannerRegistry, MissionPlannerSession};
-        let registry = MissionPlannerRegistry::default();
-        let mut session: MissionPlannerSession = serde_json::from_value(serde_json::json!({
+        use crate::commands::flight_planner::{FlightPlannerRegistry, FlightPlannerSession};
+        let registry = FlightPlannerRegistry::default();
+        let mut session: FlightPlannerSession = serde_json::from_value(serde_json::json!({
             "id": "p-1",
-            "missionId": "m-1",
+            "flightId": "m-1",
             "sidecarSessionId": "sid-old",
             "status": "idle",
             "model": "claude-sonnet-4-6",
@@ -907,7 +907,7 @@ mod tests {
         );
 
         let snap = registry
-            .get_by_mission("m-1")
+            .get_by_flight("m-1")
             .await
             .expect("session still present");
         assert_eq!(snap.sidecar_session_id, "sid-new");
@@ -925,8 +925,8 @@ mod tests {
     /// guarantee.
     #[tokio::test]
     async fn swap_sidecar_session_after_compaction_returns_false_when_missing() {
-        use crate::commands::mission_planner::MissionPlannerRegistry;
-        let registry = MissionPlannerRegistry::default();
+        use crate::commands::flight_planner::FlightPlannerRegistry;
+        let registry = FlightPlannerRegistry::default();
         let swapped = registry
             .swap_sidecar_session_after_compaction("does-not-exist", "sid-new")
             .await;
@@ -943,12 +943,12 @@ mod tests {
     /// must NOT re-fire the trigger.
     #[tokio::test]
     async fn failure_backoff_suppresses_immediate_retrigger() {
-        use crate::commands::mission_planner::{
-            MissionPlannerRegistry, MissionPlannerSession, COMPACTION_THRESHOLD_TOKENS,
+        use crate::commands::flight_planner::{
+            FlightPlannerRegistry, FlightPlannerSession, COMPACTION_THRESHOLD_TOKENS,
         };
-        let registry = MissionPlannerRegistry::default();
+        let registry = FlightPlannerRegistry::default();
         let mut session =
-            MissionPlannerSession::new("p-1".to_string(), "m-1".to_string(), "sid-old".to_string());
+            FlightPlannerSession::new("p-1".to_string(), "m-1".to_string(), "sid-old".to_string());
         // Already over threshold from a prior turn that triggered the
         // (now-failed) compaction.
         session.cumulative_input_tokens = COMPACTION_THRESHOLD_TOKENS + 5_000;
@@ -970,7 +970,7 @@ mod tests {
         );
 
         let snap = registry
-            .get_by_mission("m-1")
+            .get_by_flight("m-1")
             .await
             .expect("session still present");
         assert!(
@@ -991,14 +991,14 @@ mod tests {
     /// `consecutive_compaction_failures` (release escalation counter).
     #[tokio::test]
     async fn successful_swap_clears_failure_tracking() {
-        use crate::commands::mission_planner::{MissionPlannerRegistry, MissionPlannerSession};
-        let registry = MissionPlannerRegistry::default();
+        use crate::commands::flight_planner::{FlightPlannerRegistry, FlightPlannerSession};
+        let registry = FlightPlannerRegistry::default();
         let session =
-            MissionPlannerSession::new("p-1".to_string(), "m-1".to_string(), "sid-old".to_string());
+            FlightPlannerSession::new("p-1".to_string(), "m-1".to_string(), "sid-old".to_string());
         registry.insert_for_test(session).await;
         let _ = registry.record_compaction_failure("m-1").await;
         let _ = registry.record_compaction_failure("m-1").await;
-        let snap_before = registry.get_by_mission("m-1").await.unwrap();
+        let snap_before = registry.get_by_flight("m-1").await.unwrap();
         assert_eq!(snap_before.consecutive_compaction_failures, 2);
         assert!(snap_before.last_compaction_failure_at.is_some());
 
@@ -1008,7 +1008,7 @@ mod tests {
             .await;
         assert!(swapped);
 
-        let snap_after = registry.get_by_mission("m-1").await.unwrap();
+        let snap_after = registry.get_by_flight("m-1").await.unwrap();
         assert_eq!(
             snap_after.consecutive_compaction_failures, 0,
             "successful swap must reset the failure counter"
@@ -1032,10 +1032,10 @@ mod tests {
     /// been moved out for the unlisten call).
     #[tokio::test]
     async fn compaction_listener_set_take_is_one_shot() {
-        use crate::commands::mission_planner::{MissionPlannerRegistry, MissionPlannerSession};
-        let registry = MissionPlannerRegistry::default();
+        use crate::commands::flight_planner::{FlightPlannerRegistry, FlightPlannerSession};
+        let registry = FlightPlannerRegistry::default();
         let session =
-            MissionPlannerSession::new("p-1".to_string(), "m-1".to_string(), "sid-1".to_string());
+            FlightPlannerSession::new("p-1".to_string(), "m-1".to_string(), "sid-1".to_string());
         registry.insert_for_test(session).await;
 
         // tauri::EventId is a u32 alias — any value will do for the
@@ -1068,12 +1068,12 @@ mod tests {
     async fn stop_planner_unlistens_compaction_event() {
         // Steps when implemented:
         //   1. Build a Tauri test runtime with an AppHandle.
-        //   2. Manage a MissionPlannerRegistry on the app.
-        //   3. Call start_mission_planner once; capture the EventId
-        //      stored on the session via get_by_mission.
-        //   4. Call stop_mission_planner.
+        //   2. Manage a FlightPlannerRegistry on the app.
+        //   3. Call start_flight_planner once; capture the EventId
+        //      stored on the session via get_by_flight.
+        //   4. Call stop_flight_planner.
         //   5. Verify the session is gone AND that emitting
-        //      `mission-planner:compaction-triggered:<mid>` does NOT
+        //      `flight-planner:compaction-triggered:<mid>` does NOT
         //      spawn a perform_compaction task (the listener was
         //      unlistened).
         //   6. Restart and stop a second time; assert no listener
@@ -1083,17 +1083,17 @@ mod tests {
     }
 
     /// Live end-to-end test for the orchestrator. Requires a Tauri
-    /// runtime with a managed `MissionPlannerRegistry` and
-    /// `SidecarManager`, plus a populated mission journal — `#[ignore]`d
+    /// runtime with a managed `FlightPlannerRegistry` and
+    /// `SidecarManager`, plus a populated flight journal — `#[ignore]`d
     /// for the default `cargo test` run.
     #[tokio::test]
     #[ignore = "requires live Tauri runtime + sidecar; covered by the E2E integration test once E10-UI-TESTS lands"]
     async fn perform_compaction_clears_in_progress_on_summarization_failure() {
         // Steps when implemented:
         //   1. Build an AppHandle with mock sidecar that drives
-        //      summarize_mission_journal to Err.
+        //      summarize_flight_journal to Err.
         //   2. Insert a planner session with `compaction_in_progress = true`.
-        //   3. Call `perform_compaction(app, mission_id)`.
+        //   3. Call `perform_compaction(app, flight_id)`.
         //   4. Assert the returned Result is Err.
         //   5. Assert `compaction_in_progress` is now `false` (so the
         //      next threshold cross can retry).

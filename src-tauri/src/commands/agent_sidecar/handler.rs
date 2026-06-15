@@ -1,6 +1,6 @@
 //! Inbound event dispatcher — translates a parsed sidecar event into the
 //! matching `api-agent:*` Tauri event(s) and runs any side effects
-//! (mission-planner registry updates, one-shot waiter resolution, lifetime
+//! (flight-planner registry updates, one-shot waiter resolution, lifetime
 //! bookkeeping for the `ready` handshake, etc.).
 
 use std::sync::Arc;
@@ -129,7 +129,7 @@ impl SidecarManager {
                     let app_for_async = self.app_handle.clone();
                     tauri::async_runtime::spawn(async move {
                         if let Some(registry) = app_for_async
-                            .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>()
+                            .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>()
                         {
                             registry.append_chunk(&session_for_async, &text).await;
                         }
@@ -330,7 +330,7 @@ impl SidecarManager {
                 // lifetime of the sidecar conversation. Keep ownership so the
                 // next send/cancel/model change still routes to the sidecar.
 
-                // E6-KILL-AWAKE: tell the Mission Planner registry that this
+                // E6-KILL-AWAKE: tell the Flight Planner registry that this
                 // turn finished so it can flip the owning planner's status
                 // from `Awake` back to `Idle`. The registry no-ops on
                 // non-planner sidecar sessions (lookup miss) and on every
@@ -347,30 +347,30 @@ impl SidecarManager {
                 let app_for_async = self.app_handle.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(registry) = app_for_async
-                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                        .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
                     ) {
-                        // Resolve mission_id BEFORE on_planner_done — that
+                        // Resolve flight_id BEFORE on_planner_done — that
                         // call never removes sessions (it only flips status),
                         // but resolving up front keeps the two registry
                         // operations independent and easier to reason about
                         // under contention.
-                        let mission_id_opt = registry
-                            .mission_id_for_sidecar_session(&session_for_async)
+                        let flight_id_opt = registry
+                            .flight_id_for_sidecar_session(&session_for_async)
                             .await;
                         registry.on_planner_done(&session_for_async).await;
-                        if let Some(mission_id) = mission_id_opt {
+                        if let Some(flight_id) = flight_id_opt {
                             if let Some(buffer) =
                                 registry.drain_chunk_buffer(&session_for_async).await
                             {
                                 let trimmed = buffer.trim();
                                 if !trimmed.is_empty() {
-                                    let entry = crate::commands::mission_planner::journal_entry(
-                                        mission_id,
-                                        crate::core::mission_journal::JournalKind::PlannerMessage,
+                                    let entry = crate::commands::flight_planner::journal_entry(
+                                        flight_id,
+                                        crate::core::flight_journal::JournalKind::PlannerMessage,
                                         trimmed.to_string(),
                                         None,
                                     );
-                                    crate::commands::mission_planner::write_journal_and_emit(
+                                    crate::commands::flight_planner::write_journal_and_emit(
                                         &app_for_async,
                                         entry,
                                     )
@@ -492,7 +492,7 @@ impl SidecarManager {
                 //   1. Planner sidecar session → roll up onto
                 //      `flight.planner_tokens` / `planner_cost` (the dedicated
                 //      planner chip fields). Lookup via the in-memory
-                //      `MissionPlannerRegistry`.
+                //      `FlightPlannerRegistry`.
                 //   2. Executor sidecar session linked to a flight via
                 //      `attempt.session_id` or `task.session_id` → roll up
                 //      onto `flight.total_tokens` / `total_cost`. Lookup via
@@ -509,15 +509,15 @@ impl SidecarManager {
                 let app_for_async = self.app_handle.clone();
                 tauri::async_runtime::spawn(async move {
                     let registry_opt = app_for_async
-                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                        .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
                     );
                     if let Some(registry) = registry_opt {
-                        if let Some(mission_id) = registry
-                            .mission_id_for_sidecar_session(&session_for_async)
+                        if let Some(flight_id) = registry
+                            .flight_id_for_sidecar_session(&session_for_async)
                             .await
                         {
                             let model = registry
-                                .get_by_mission(&mission_id)
+                                .get_by_flight(&flight_id)
                                 .await
                                 .map(|s| s.model)
                                 .unwrap_or_default();
@@ -572,26 +572,26 @@ impl SidecarManager {
                             // unconditionally.
                             let crossed = registry
                                 .bump_cumulative_input_and_check(
-                                    &mission_id,
+                                    &flight_id,
                                     planner_input_direction,
                                 )
                                 .await;
                             if crossed {
                                 let _ = app_for_async.emit(
                                     &format!(
-                                        "mission-planner:compaction-triggered:{}",
-                                        mission_id
+                                        "flight-planner:compaction-triggered:{}",
+                                        flight_id
                                     ),
                                     serde_json::json!({
-                                        "missionId": mission_id,
-                                        "threshold": crate::commands::mission_planner::COMPACTION_THRESHOLD_TOKENS,
+                                        "flightId": flight_id,
+                                        "threshold": crate::commands::flight_planner::COMPACTION_THRESHOLD_TOKENS,
                                     }),
                                 );
                             }
 
                             if let Err(e) =
-                                crate::commands::mission_planner::accumulate_planner_cost(
-                                    &mission_id,
+                                crate::commands::flight_planner::accumulate_planner_cost(
+                                    &flight_id,
                                     planner_input_direction,
                                     output_tokens,
                                     cost_usd,
@@ -599,15 +599,15 @@ impl SidecarManager {
                                 .await
                             {
                                 warn!(
-                                    mission_id = %mission_id,
+                                    flight_id = %flight_id,
                                     error = %e,
                                     "E8-ACCUM: failed to accumulate planner cost"
                                 );
                             } else {
                                 let _ = app_for_async.emit(
-                                    &format!("mission-planner:cost-updated:{}", mission_id),
+                                    &format!("flight-planner:cost-updated:{}", flight_id),
                                     serde_json::json!({
-                                        "missionId": mission_id,
+                                        "flightId": flight_id,
                                         "inputTokens": input_tokens,
                                         "outputTokens": output_tokens,
                                         "cacheReadInputTokens": cache_read_input_tokens,
@@ -624,7 +624,7 @@ impl SidecarManager {
                     // Not a planner session — try the executor (flight-attempt
                     // / flight-task) linkage instead.
                     let state_snap = crate::core::storage::load_state();
-                    let owner = match crate::commands::mission_planner::flight_for_executor_session(
+                    let owner = match crate::commands::flight_planner::flight_for_executor_session(
                         &state_snap,
                         &session_for_async,
                     ) {
@@ -642,7 +642,7 @@ impl SidecarManager {
                         cache_read_input_tokens,
                         cache_creation_input_tokens,
                     );
-                    if let Err(e) = crate::commands::mission_planner::accumulate_executor_cost(
+                    if let Err(e) = crate::commands::flight_planner::accumulate_executor_cost(
                         &owner.flight_id,
                         exec_total_tokens,
                         exec_cost_usd,
@@ -650,15 +650,15 @@ impl SidecarManager {
                     .await
                     {
                         warn!(
-                            mission_id = %owner.flight_id,
+                            flight_id = %owner.flight_id,
                             error = %e,
                             "E8-ACCUM: failed to accumulate executor cost"
                         );
                     } else {
                         let _ = app_for_async.emit(
-                            &format!("mission-planner:cost-updated:{}", owner.flight_id),
+                            &format!("flight-planner:cost-updated:{}", owner.flight_id),
                             serde_json::json!({
-                                "missionId": owner.flight_id,
+                                "flightId": owner.flight_id,
                                 "inputTokens": input_tokens,
                                 "outputTokens": output_tokens,
                                 "cacheReadInputTokens": cache_read_input_tokens,
@@ -724,12 +724,12 @@ impl SidecarManager {
                 let error_for_async = message.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(registry) = app_for_async
-                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                        .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
                     ) {
-                        let mission_id_opt = registry
-                            .mission_id_for_sidecar_session(&session_for_async)
+                        let flight_id_opt = registry
+                            .flight_id_for_sidecar_session(&session_for_async)
                             .await;
-                        if let Some(mission_id) = mission_id_opt {
+                        if let Some(flight_id) = flight_id_opt {
                             if let Some(buffer) =
                                 registry.drain_chunk_buffer(&session_for_async).await
                             {
@@ -739,9 +739,9 @@ impl SidecarManager {
                                         "{}\n\n*(partial — error: {})*",
                                         trimmed, error_for_async
                                     );
-                                    let entry = crate::commands::mission_planner::journal_entry(
-                                        mission_id,
-                                        crate::core::mission_journal::JournalKind::PlannerMessage,
+                                    let entry = crate::commands::flight_planner::journal_entry(
+                                        flight_id,
+                                        crate::core::flight_journal::JournalKind::PlannerMessage,
                                         body,
                                         Some(serde_json::json!({
                                             "partial": true,
@@ -749,7 +749,7 @@ impl SidecarManager {
                                             "error": error_for_async,
                                         })),
                                     );
-                                    crate::commands::mission_planner::write_journal_and_emit(
+                                    crate::commands::flight_planner::write_journal_and_emit(
                                         &app_for_async,
                                         entry,
                                     )
@@ -764,7 +764,7 @@ impl SidecarManager {
                 // v5: the sidecar's in-process planner MCP server invoked
                 // one of its `mcp__planner__*` tools. The handler is parked
                 // on a pending promise keyed by `callId`; we dispatch the
-                // tool call against the MissionPlannerRegistry and forward
+                // tool call against the FlightPlannerRegistry and forward
                 // the result back via `planner_tool_result` so the SDK's
                 // tool_use → tool_result round-trip stays well-formed.
                 //
@@ -798,7 +798,7 @@ impl SidecarManager {
                     let tool_for_reply = tool.clone();
                     tauri::async_runtime::spawn(async move {
                         let outcome = match app_handle
-                            .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                            .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
                         ) {
                             Some(registry) => {
                                 registry
@@ -810,7 +810,7 @@ impl SidecarManager {
                                     )
                                     .await
                             }
-                            None => Err("mission planner registry not managed".to_string()),
+                            None => Err("flight planner registry not managed".to_string()),
                         };
                         let (success, result, error) = match outcome {
                             Ok(v) => (true, Some(v), None),
@@ -844,15 +844,15 @@ impl SidecarManager {
                 // v6 (E6-CEILING-RATELIMIT): the Anthropic provider caught
                 // a `RateLimitError` (HTTP 429) from the SDK and surfaced
                 // it as a typed event alongside its regular `error` emit.
-                // Route it into the Mission Planner registry — the
-                // planner-bound branch flips the owning mission's status
+                // Route it into the Flight Planner registry — the
+                // planner-bound branch flips the owning flight's status
                 // to `QuotaPaused`, arms an auto-resume timer, and fires
-                // a `mission-planner:rate-limited:<missionId>` event so
+                // a `flight-planner:rate-limited:<flightId>` event so
                 // the frontend can fan out an OS-level notification.
                 //
                 // Non-planner sidecar sessions land here too (any
                 // `api-claude-oauth` session that hits 429), but the
-                // registry's `mission_id_for_sidecar_session` lookup
+                // registry's `flight_id_for_sidecar_session` lookup
                 // returns `None` for them and `on_rate_limited` no-ops.
                 // The regular `error` event has already been emitted, so
                 // those sessions still surface the failure to the user.
@@ -877,7 +877,7 @@ impl SidecarManager {
                 let app_for_async = self.app_handle.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(registry) = app_for_async
-                        .try_state::<crate::commands::mission_planner::MissionPlannerRegistry>(
+                        .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
                     ) {
                         registry
                             .on_rate_limited(
@@ -895,18 +895,18 @@ impl SidecarManager {
                         // abandoned buffer, and journal the partial so the
                         // timeline shows what the planner had said up to
                         // the throttle point.
-                        let mission_id_opt = registry
-                            .mission_id_for_sidecar_session(&session_for_async)
+                        let flight_id_opt = registry
+                            .flight_id_for_sidecar_session(&session_for_async)
                             .await;
-                        if let Some(mission_id) = mission_id_opt {
+                        if let Some(flight_id) = flight_id_opt {
                             if let Some(buffer) =
                                 registry.drain_chunk_buffer(&session_for_async).await
                             {
                                 let trimmed = buffer.trim();
                                 if !trimmed.is_empty() {
-                                    let entry = crate::commands::mission_planner::journal_entry(
-                                        mission_id,
-                                        crate::core::mission_journal::JournalKind::PlannerMessage,
+                                    let entry = crate::commands::flight_planner::journal_entry(
+                                        flight_id,
+                                        crate::core::flight_journal::JournalKind::PlannerMessage,
                                         format!(
                                             "{}\n\n*(partial — rate-limited mid-stream)*",
                                             trimmed
@@ -916,7 +916,7 @@ impl SidecarManager {
                                             "reason": "rate_limited",
                                         })),
                                     );
-                                    crate::commands::mission_planner::write_journal_and_emit(
+                                    crate::commands::flight_planner::write_journal_and_emit(
                                         &app_for_async,
                                         entry,
                                     )
@@ -926,7 +926,7 @@ impl SidecarManager {
                         }
                     } else {
                         warn!(
-                            "rate_limited event but MissionPlannerRegistry not managed; cannot pause planner"
+                            "rate_limited event but FlightPlannerRegistry not managed; cannot pause planner"
                         );
                     }
                 });

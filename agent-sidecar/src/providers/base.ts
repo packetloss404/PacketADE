@@ -36,7 +36,7 @@ export interface ProviderHandler {
     emit: Emit,
   ): Promise<void>;
   /** v5: inject a new user turn (or wrapped wake_trigger envelope) into a
-   * long-lived session without restarting the query. Powers the Mission
+   * long-lived session without restarting the query. Powers the Flight
    * Planner wake bus and the spec-mode chat path. */
   injectUserTurn?(req: InjectUserTurnRequest, emit: Emit): Promise<void>;
   /** v5: resolve an outstanding in-process planner MCP tool call. Matched

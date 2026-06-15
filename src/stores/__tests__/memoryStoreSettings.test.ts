@@ -34,8 +34,8 @@ function taskEvent(id: string, timestamp: number): MemoryEvent {
     payload: {
       taskId: id,
       taskTitle: id,
-      flightId: "mission-1",
-      flightTitle: "Mission",
+      flightId: "flight-1",
+      flightTitle: "Flight",
       milestoneId: "milestone-1",
       success: true,
       exitCode: 0,
@@ -90,8 +90,8 @@ describe("memoryStore settings integration", () => {
         {
           taskId: id,
           taskTitle: id,
-          flightId: "mission-1",
-          flightTitle: "Mission",
+          flightId: "flight-1",
+          flightTitle: "Flight",
           milestoneId: "milestone-1",
           success: true,
           exitCode: 0,

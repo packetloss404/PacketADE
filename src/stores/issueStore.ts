@@ -165,6 +165,8 @@ const generateCommentId = () => genId("ic", 6);
 function migrateIssue(issue: Issue): Issue {
   return {
     ...issue,
+    // Back-compat: pre-rename persisted issues stored the flight link under the
+    // legacy `missionId` key. Read it as a fallback so old data still migrates.
     flightId: (issue as Issue & { missionId?: string | null }).missionId ?? issue.flightId ?? null,
     acceptanceCriteria: issue.acceptanceCriteria || [],
     blockedBy: issue.blockedBy || [],

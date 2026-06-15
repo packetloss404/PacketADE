@@ -70,8 +70,8 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
     complete();
   }
 
-  function handleOpenMissions() {
-    useAppStore.getState().setActiveView("missions");
+  function handleOpenFlights() {
+    useAppStore.getState().setActiveView("flights");
     complete();
   }
 
@@ -161,7 +161,7 @@ export function OnboardingPane({ onComplete }: OnboardingPaneProps) {
               <ArrowRight size={11} className="ml-auto" />
             </button>
             <button
-              onClick={handleOpenMissions}
+              onClick={handleOpenFlights}
               className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-accent-purple bg-accent-purple/10 border border-accent-purple/30 rounded hover:bg-accent-purple/20 transition-colors"
             >
               <Target size={12} />

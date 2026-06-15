@@ -1,4 +1,4 @@
-// Mission Planner — in-process MCP server (E2).
+// Flight Planner — in-process MCP server (E2).
 //
 // Constructed inside the sidecar (live `McpServer` instances cannot cross
 // the stdio wire) and merged into the Claude Agent SDK's `mcpServers` map
@@ -7,7 +7,7 @@
 // Rust supervisor pins for planner sessions.
 //
 // E1 shipped a single stub tool (`noop`) that proved the wire round-trip.
-// E2 layers the seven real Mission Planner tools on top:
+// E2 layers the seven real Flight Planner tools on top:
 //
 //   1. create_milestone         — phase-level work bucket
 //   2. create_task              — executable unit inside a milestone
@@ -15,7 +15,7 @@
 //   4. mark_task_blocked        — soft-stop a task with a reason
 //   5. replan_after_failure     — ack a failure and request retry budget
 //   6. request_user_approval    — async question (returns pending sentinel)
-//   7. complete_mission         — final summary, stops wake-triggers
+//   7. complete_flight         — final summary, stops wake-triggers
 //
 // `noop` is kept for back-compat with the existing E1 smoke harness.
 // `spawn_helper_planner` is intentionally NOT exposed in v1 — it is
@@ -29,8 +29,8 @@
 // mutation; the sidecar does NOT interpret tool args or results.
 //
 // See:
-//   - dev/mission-planner-plan.md
-//   - dev/mission-planner-spike-retro.md
+//   - dev/flight-planner-plan.md
+//   - dev/flight-planner-spike-retro.md
 //   - agent-sidecar/test/mcp-inproc-smoke.mjs
 
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
@@ -138,7 +138,7 @@ const requestUserApprovalSchema = z.object({
   options: z.array(z.string()).max(6).optional(),
 });
 
-const completeMissionSchema = z.object({
+const completeFlightSchema = z.object({
   summary: z.string().min(1).max(2000),
 });
 
@@ -147,7 +147,7 @@ const noopSchema = z.object({
 });
 
 /**
- * Build the in-process Mission Planner MCP server. Returns a config object
+ * Build the in-process Flight Planner MCP server. Returns a config object
  * shaped for the SDK's `mcpServers` map; the caller plugs it in under
  * `PLANNER_MCP_KEY`.
  *
@@ -155,7 +155,7 @@ const noopSchema = z.object({
  * promise — the supervisor must resolve/reject via a `planner_tool_result`
  * envelope keyed by `callId` for the model's tool call to make progress.
  */
-export function createMissionPlannerMcpServer(
+export function createFlightPlannerMcpServer(
   sessionId: string,
   emit: PlannerToolEmit,
 ): McpSdkServerConfigWithInstance {
@@ -182,7 +182,7 @@ export function createMissionPlannerMcpServer(
   const createMilestone = tool(
     "create_milestone",
     [
-      "Create a new milestone on this mission. Use one milestone per coherent",
+      "Create a new milestone on this flight. Use one milestone per coherent",
       "phase of work (for example: 'Schema migration', 'Frontend rewrite',",
       "'Wire e2e tests'). `dependencies` are other milestoneIds that must",
       "complete before tasks in this milestone are eligible to run.",
@@ -262,16 +262,16 @@ export function createMissionPlannerMcpServer(
     async (args) => dispatch("request_user_approval", args),
   );
 
-  const completeMission = tool(
-    "complete_mission",
+  const completeFlight = tool(
+    "complete_flight",
     [
-      "Mark the mission complete. Use only when all milestones are done and",
+      "Mark the flight complete. Use only when all milestones are done and",
       "no further work is planned. Writes a final summary to the journal",
-      "and stops further wake-triggers for this mission. Irreversible from",
+      "and stops further wake-triggers for this flight. Irreversible from",
       "the planner side — the user can reopen via the UI if needed.",
     ].join(" "),
-    completeMissionSchema.shape,
-    async (args) => dispatch("complete_mission", args),
+    completeFlightSchema.shape,
+    async (args) => dispatch("complete_flight", args),
   );
 
   // Back-compat smoke tool. Kept so the E1 mcp-inproc-smoke.mjs harness
@@ -282,7 +282,7 @@ export function createMissionPlannerMcpServer(
     "noop",
     [
       "Internal smoke-test tool. Echoes the message argument back via the",
-      "host. You should NOT call this during normal mission work — use the",
+      "host. You should NOT call this during normal flight work — use the",
       "real planner tools (create_milestone, create_task, etc.) instead.",
     ].join(" "),
     noopSchema.shape,
@@ -290,7 +290,7 @@ export function createMissionPlannerMcpServer(
   );
 
   return createSdkMcpServer({
-    name: "mission-planner",
+    name: "flight-planner",
     version: "0.2.0",
     tools: [
       createMilestone,
@@ -299,7 +299,7 @@ export function createMissionPlannerMcpServer(
       markTaskBlocked,
       replanAfterFailure,
       requestUserApproval,
-      completeMission,
+      completeFlight,
       noop,
     ],
   });
