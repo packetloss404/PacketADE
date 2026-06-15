@@ -274,17 +274,17 @@ function GuardrailSettingsPanel({
 
 function ScopedLimitsPanel({
   sources,
-  missions,
+  flights,
   settings,
   onChange,
 }: {
   sources: string[];
-  missions: Array<{ id: string; title: string; totalCost: number; status: string }>;
+  flights: Array<{ id: string; title: string; totalCost: number; status: string }>;
   settings: CostGuardrailSettings;
   onChange: (patch: Partial<CostGuardrailSettings>) => void;
 }) {
   const visibleSources = sources.slice(0, 6);
-  const visibleMissions = missions.filter((mission) => mission.status !== "cancelled").slice(0, 6);
+  const visibleFlights = flights.filter((flight) => flight.status !== "cancelled").slice(0, 6);
 
   const setProviderLimit = (source: string, raw: string) => {
     const providerLimitsUsd = { ...settings.providerLimitsUsd };
@@ -293,14 +293,14 @@ function ScopedLimitsPanel({
     onChange({ providerLimitsUsd });
   };
 
-  const setMissionLimit = (missionId: string, raw: string) => {
-    const missionLimitsUsd = { ...settings.missionLimitsUsd };
-    if (raw === "") delete missionLimitsUsd[missionId];
-    else missionLimitsUsd[missionId] = Number(raw);
-    onChange({ missionLimitsUsd });
+  const setFlightLimit = (flightId: string, raw: string) => {
+    const flightLimitsUsd = { ...settings.flightLimitsUsd };
+    if (raw === "") delete flightLimitsUsd[flightId];
+    else flightLimitsUsd[flightId] = Number(raw);
+    onChange({ flightLimitsUsd });
   };
 
-  if (visibleSources.length === 0 && visibleMissions.length === 0) return null;
+  if (visibleSources.length === 0 && visibleFlights.length === 0) return null;
 
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -322,18 +322,18 @@ function ScopedLimitsPanel({
         </div>
       </div>
       <div className="rounded-lg border border-bg-border bg-bg-secondary p-4">
-        <h3 className="mb-2 text-xs font-semibold text-text-primary">Mission Caps</h3>
+        <h3 className="mb-2 text-xs font-semibold text-text-primary">Flight Caps</h3>
         <div className="space-y-1.5">
-          {visibleMissions.length === 0 ? (
-            <p className="text-[10px] text-text-muted">No missions to cap yet.</p>
+          {visibleFlights.length === 0 ? (
+            <p className="text-[10px] text-text-muted">No flights to cap yet.</p>
           ) : (
-            visibleMissions.map((mission) => (
+            visibleFlights.map((flight) => (
               <LimitRow
-                key={mission.id}
-                label={mission.title || mission.id}
-                sublabel={formatCost(mission.totalCost)}
-                value={settings.missionLimitsUsd[mission.id] ?? null}
-                onChange={(raw) => setMissionLimit(mission.id, raw)}
+                key={flight.id}
+                label={flight.title || flight.id}
+                sublabel={formatCost(flight.totalCost)}
+                value={settings.flightLimitsUsd[flight.id] ?? null}
+                onChange={(raw) => setFlightLimit(flight.id, raw)}
               />
             ))
           )}
@@ -557,7 +557,7 @@ export function CostDashboardView() {
         guardrailSettings,
         {
           currentSessionCostUsd: liveSummary.costUsd,
-          missionCostsById: Object.fromEntries(
+          flightCostsById: Object.fromEntries(
             flights.map((flight) => [flight.id, flight.totalCost]),
           ),
         },
@@ -658,7 +658,7 @@ export function CostDashboardView() {
 
       <ScopedLimitsPanel
         sources={uniqueSources}
-        missions={flights}
+        flights={flights}
         settings={guardrailSettings}
         onChange={updateGuardrailSettings}
       />

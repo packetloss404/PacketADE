@@ -24,15 +24,15 @@
 //! ## Concurrency model (peer-review FIX 1 / FIX 2 / FIX 3)
 //!
 //! The handler:
-//!   1. Resolves the owning mission via
-//!      [`MissionPlannerRegistry::mission_id_for_sidecar_session`] — no
+//!   1. Resolves the owning flight via
+//!      [`FlightPlannerRegistry::flight_id_for_sidecar_session`] — no
 //!      bespoke flight scan.
 //!   2. Validates `agent_id` against `state.agents` (falling back to
 //!      `claude-code` on miss; matches the orchestrationStore pattern).
 //!   3. Persists the new Task with `status=Queued` via
 //!      [`storage::with_state_lock`] so concurrent planner tool calls
 //!      can't lose updates.
-//!   4. Emits `mission-planner:task-created:<missionId>` *before*
+//!   4. Emits `flight-planner:task-created:<flightId>` *before*
 //!      spawning the launch so the UI sees the Queued task immediately.
 //!   5. Spawns `launch_flight_async` via `tauri::async_runtime::spawn`
 //!      and returns the new `taskId` immediately — the planner does not
@@ -40,16 +40,16 @@
 //!   6. The spawned background task waits for the launch result and,
 //!      under a second `with_state_lock`, flips the Task to `Running`
 //!      with its `session_id` (and on failure, to `Failed`). It then
-//!      emits either `mission-planner:task-started:<missionId>` or
-//!      `mission-planner:task-launch-failed:<missionId>`.
+//!      emits either `flight-planner:task-started:<flightId>` or
+//!      `flight-planner:task-launch-failed:<flightId>`.
 //!
 //! Three Tauri events scope this lifecycle:
-//!   * `mission-planner:task-created:<missionId>` — fired by the handler
+//!   * `flight-planner:task-created:<flightId>` — fired by the handler
 //!     before returning; UI can render the Queued tile immediately.
-//!   * `mission-planner:task-started:<missionId>` — fired by the spawned
+//!   * `flight-planner:task-started:<flightId>` — fired by the spawned
 //!     task after a successful `launch_flight_async`; carries the
 //!     attempt id + session id.
-//!   * `mission-planner:task-launch-failed:<missionId>` — fired by the
+//!   * `flight-planner:task-launch-failed:<flightId>` — fired by the
 //!     spawned task if the attempt failed to start. The Task has been
 //!     flipped to `Failed` so the next planner wake will see it.
 
@@ -62,7 +62,7 @@ use tracing::warn;
 use crate::commands::agent_sidecar::SidecarManager;
 use crate::commands::api_agent::ApiAgentState;
 use crate::commands::flight_attempts::{launch_flight_async, AttemptTargetSpec};
-use crate::commands::mission_planner::MissionPlannerRegistry;
+use crate::commands::flight_planner::FlightPlannerRegistry;
 use crate::core::flight::{Task, TaskStatus, TaskType};
 use crate::core::storage;
 
@@ -71,9 +71,9 @@ use crate::core::storage;
 /// frontend so behavior is consistent across launch surfaces.
 const FALLBACK_AGENT_ID: &str = "claude-code";
 
-/// E6-CEILING-RATELIMIT — task ceiling per mission.
+/// E6-CEILING-RATELIMIT — task ceiling per flight.
 ///
-/// Per locked-design §Caps (`dev/mission-planner-plan.md`), a single mission
+/// Per locked-design §Caps (`dev/flight-planner-plan.md`), a single flight
 /// is capped at **60 tasks** across all milestones. When the planner tries
 /// to call `create_task` for the 61st, the handler returns a structured
 /// error string that the planner's system prompt and the dispatcher teach
@@ -157,13 +157,13 @@ fn active_owned_path_collision(
 
 /// Build the canonical "task ceiling reached" error string. The exact
 /// wording is part of the planner's UX contract: the system prompt
-/// (`core::mission_planner_prompts::spec_mode_system_prompt`) teaches the
+/// (`core::flight_planner_prompts::spec_mode_system_prompt`) teaches the
 /// model that, on this error, it must call `request_user_approval` with
 /// the documented options before retrying. Keeping the construction in a
 /// single helper means the test and the runtime path can't drift.
 fn task_ceiling_error_message(total_tasks: usize) -> String {
     format!(
-        "task_ceiling_reached: mission has {} tasks (cap {}). Call \
+        "task_ceiling_reached: flight has {} tasks (cap {}). Call \
          request_user_approval to ask the user whether to continue past the \
          ceiling before creating any more tasks.",
         total_tasks, TASK_CEILING
@@ -250,8 +250,8 @@ pub async fn handle(
 ) -> Result<serde_json::Value, String> {
     // 1a. Guard against "(not set)" placeholder values leaking through the
     //     target_spec (or any other arg field). The wake-message renderer
-    //     in `core::mission_planner_prompts` falls back to that literal
-    //     when the mission snapshot has no projectPath, and a careless
+    //     in `core::flight_planner_prompts` falls back to that literal
+    //     when the flight snapshot has no projectPath, and a careless
     //     planner copy could echo it into `target_spec.basePath` — which
     //     would then silently misroute `launch_flight_async`. Reject the
     //     call so the planner has to resolve the missing field (typically
@@ -273,18 +273,18 @@ pub async fn handle(
     let parsed: CreateTaskArgs =
         serde_json::from_value(args).map_err(|e| format!("invalid args: {}", e))?;
 
-    // 2. Resolve mission id via the planner registry (peer-review FIX 1).
-    //    The registry already maps sidecar session id → mission id, so we
+    // 2. Resolve flight id via the planner registry (peer-review FIX 1).
+    //    The registry already maps sidecar session id → flight id, so we
     //    don't need to scan persisted flights here.
     let registry = app
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
-    let mission_id = registry
-        .mission_id_for_sidecar_session(session_id)
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
+    let flight_id = registry
+        .flight_id_for_sidecar_session(session_id)
         .await
         .ok_or_else(|| {
             format!(
-                "no mission found for planner session '{}'; the planner may have been stopped",
+                "no flight found for planner session '{}'; the planner may have been stopped",
                 session_id
             )
         })?;
@@ -329,11 +329,11 @@ pub async fn handle(
     // `with_state_lock` signature is `FnOnce(&mut PersistedState) -> Fut`
     // which can't express HRTBs that would let an `async move` capture
     // `&mut state` cleanly, so we use the same `std::future::ready(...)`
-    // pattern already established in `resolve_mission_approval`.
+    // pattern already established in `resolve_flight_approval`.
     let task_id_for_persist = task_id.clone();
     let title_for_persist = title.clone();
     let milestone_id_for_persist = milestone_id.clone();
-    let mission_id_for_persist = mission_id.clone();
+    let flight_id_for_persist = flight_id.clone();
     let validated_agent_id_for_persist = validated_agent_id.clone();
     let claimed_paths_for_persist = claimed_paths.clone();
     storage::with_state_lock(move |state| {
@@ -341,10 +341,10 @@ pub async fn handle(
             let flight = state
                 .flights
                 .iter_mut()
-                .find(|f| f.id == mission_id_for_persist)
-                .ok_or_else(|| format!("mission '{}' not found", mission_id_for_persist))?;
+                .find(|f| f.id == flight_id_for_persist)
+                .ok_or_else(|| format!("flight '{}' not found", flight_id_for_persist))?;
 
-            // E6-CEILING-RATELIMIT — reject if the mission already has
+            // E6-CEILING-RATELIMIT — reject if the flight already has
             // [`TASK_CEILING`] tasks across all milestones. The error
             // string is structured so the planner's system prompt and
             // dispatcher together teach the model to call
@@ -371,15 +371,15 @@ pub async fn handle(
                 .find(|m| m.id == milestone_id_for_persist)
                 .ok_or_else(|| {
                     format!(
-                        "milestone '{}' not found on mission '{}'",
-                        milestone_id_for_persist, mission_id_for_persist
+                        "milestone '{}' not found on flight '{}'",
+                        milestone_id_for_persist, flight_id_for_persist
                     )
                 })?;
             let order = milestone.tasks.len();
             let new_task = Task {
                 id: task_id_for_persist.clone(),
                 milestone_id: milestone_id_for_persist.clone(),
-                flight_id: mission_id_for_persist.clone(),
+                flight_id: flight_id_for_persist.clone(),
                 title: title_for_persist.clone(),
                 description: String::new(),
                 order,
@@ -414,9 +414,9 @@ pub async fn handle(
     // 6. Emit `task-created` BEFORE the launch spawn so the UI renders the
     //    Queued tile before any worktree provisioning latency.
     let _ = app.emit(
-        &format!("mission-planner:task-created:{}", mission_id),
+        &format!("flight-planner:task-created:{}", flight_id),
         serde_json::json!({
-            "missionId": mission_id,
+            "flightId": flight_id,
             "taskId": task_id,
             "milestoneId": milestone_id,
             "title": title,
@@ -435,7 +435,7 @@ pub async fn handle(
     //    flips the Task to Running (or Failed) under a second
     //    `with_state_lock`.
     let app_for_spawn = app.clone();
-    let mission_id_for_spawn = mission_id.clone();
+    let flight_id_for_spawn = flight_id.clone();
     let milestone_id_for_spawn = milestone_id.clone();
     let task_id_for_spawn = task_id.clone();
     let prompt_for_spawn = prompt.clone();
@@ -454,7 +454,7 @@ pub async fn handle(
                 );
                 mark_task_failed_and_emit(
                     &app_for_spawn,
-                    &mission_id_for_spawn,
+                    &flight_id_for_spawn,
                     &milestone_id_for_spawn,
                     &task_id_for_spawn,
                     "ApiAgentState not managed",
@@ -472,7 +472,7 @@ pub async fn handle(
                 );
                 mark_task_failed_and_emit(
                     &app_for_spawn,
-                    &mission_id_for_spawn,
+                    &flight_id_for_spawn,
                     &milestone_id_for_spawn,
                     &task_id_for_spawn,
                     "SidecarManager not managed",
@@ -486,7 +486,7 @@ pub async fn handle(
             app_for_spawn.clone(),
             api_state,
             sidecar_state,
-            mission_id_for_spawn.clone(),
+            flight_id_for_spawn.clone(),
             prompt_for_spawn,
             vec![attempt_spec_for_spawn],
             Some(true),
@@ -504,7 +504,7 @@ pub async fn handle(
                         );
                         mark_task_failed_and_emit(
                             &app_for_spawn,
-                            &mission_id_for_spawn,
+                            &flight_id_for_spawn,
                             &milestone_id_for_spawn,
                             &task_id_for_spawn,
                             "launch_flight_async returned no attempts",
@@ -521,13 +521,13 @@ pub async fn handle(
                 // `session_id`), so the frontend join is
                 // `attempt.session_id == task.session_id`.
                 let task_id_inner = task_id_for_spawn.clone();
-                let mission_id_inner = mission_id_for_spawn.clone();
+                let flight_id_inner = flight_id_for_spawn.clone();
                 let milestone_id_inner = milestone_id_for_spawn.clone();
                 let attempt_session_id_inner = attempt_session_id.clone();
                 let lock_result = storage::with_state_lock(move |state| {
                     if let Some(task) = find_task_mut(
                         state,
-                        &mission_id_inner,
+                        &flight_id_inner,
                         &milestone_id_inner,
                         &task_id_inner,
                     ) {
@@ -538,7 +538,7 @@ pub async fn handle(
                     // Bump flight.updated_at regardless — even if the task
                     // moved, the flight row should ping the UI.
                     if let Some(flight) =
-                        state.flights.iter_mut().find(|f| f.id == mission_id_inner)
+                        state.flights.iter_mut().find(|f| f.id == flight_id_inner)
                     {
                         flight.updated_at = now_ms();
                     }
@@ -554,9 +554,9 @@ pub async fn handle(
                 }
 
                 let _ = app_for_spawn.emit(
-                    &format!("mission-planner:task-started:{}", mission_id_for_spawn),
+                    &format!("flight-planner:task-started:{}", flight_id_for_spawn),
                     serde_json::json!({
-                        "missionId": mission_id_for_spawn,
+                        "flightId": flight_id_for_spawn,
                         "taskId": task_id_for_spawn,
                         "milestoneId": milestone_id_for_spawn,
                         "attemptId": attempt_id,
@@ -573,7 +573,7 @@ pub async fn handle(
                 );
                 mark_task_failed_and_emit(
                     &app_for_spawn,
-                    &mission_id_for_spawn,
+                    &flight_id_for_spawn,
                     &milestone_id_for_spawn,
                     &task_id_for_spawn,
                     &e,
@@ -588,17 +588,17 @@ pub async fn handle(
     Ok(serde_json::json!({ "taskId": task_id }))
 }
 
-/// Locate a Task across a mission's milestones for in-place mutation. Kept
+/// Locate a Task across a flight's milestones for in-place mutation. Kept
 /// generic over milestone id so the lookup is unambiguous even if a
 /// future model lets the same task id appear under multiple milestones
 /// (it doesn't today, but the search is O(milestones) either way).
 fn find_task_mut<'a>(
     state: &'a mut storage::PersistedState,
-    mission_id: &str,
+    flight_id: &str,
     milestone_id: &str,
     task_id: &str,
 ) -> Option<&'a mut Task> {
-    let flight = state.flights.iter_mut().find(|f| f.id == mission_id)?;
+    let flight = state.flights.iter_mut().find(|f| f.id == flight_id)?;
     let milestone = flight
         .milestones
         .iter_mut()
@@ -607,30 +607,30 @@ fn find_task_mut<'a>(
 }
 
 /// Flip a Task to `Failed` under the state lock and emit
-/// `mission-planner:task-launch-failed:<missionId>` for the UI. Best-
+/// `flight-planner:task-launch-failed:<flightId>` for the UI. Best-
 /// effort — logs (outside the lock closure) if either step fails. Kept
 /// out-of-line so both the "launch errored" and "managed-state missing"
 /// branches share the same cleanup.
 async fn mark_task_failed_and_emit(
     app: &AppHandle,
-    mission_id: &str,
+    flight_id: &str,
     milestone_id: &str,
     task_id: &str,
     error: &str,
 ) {
-    let mission_id_inner = mission_id.to_string();
+    let flight_id_inner = flight_id.to_string();
     let milestone_id_inner = milestone_id.to_string();
     let task_id_inner = task_id.to_string();
     let lock_result = storage::with_state_lock(move |state| {
         if let Some(task) = find_task_mut(
             state,
-            &mission_id_inner,
+            &flight_id_inner,
             &milestone_id_inner,
             &task_id_inner,
         ) {
             task.status = TaskStatus::Failed;
         }
-        if let Some(flight) = state.flights.iter_mut().find(|f| f.id == mission_id_inner) {
+        if let Some(flight) = state.flights.iter_mut().find(|f| f.id == flight_id_inner) {
             flight.updated_at = now_ms();
         }
         std::future::ready(Ok::<(), String>(()))
@@ -645,9 +645,9 @@ async fn mark_task_failed_and_emit(
     }
 
     let _ = app.emit(
-        &format!("mission-planner:task-launch-failed:{}", mission_id),
+        &format!("flight-planner:task-launch-failed:{}", flight_id),
         serde_json::json!({
-            "missionId": mission_id,
+            "flightId": flight_id,
             "taskId": task_id,
             "milestoneId": milestone_id,
             "error": error,
@@ -869,7 +869,7 @@ mod tests {
         }
     }
 
-    /// `TASK_CEILING` is the locked-design cap of 60 tasks per mission.
+    /// `TASK_CEILING` is the locked-design cap of 60 tasks per flight.
     /// If a future agent bumps this without coordinating, the error-string
     /// contract documented in the planner's system prompt and dispatcher
     /// guidance breaks. Guard the constant itself.
@@ -904,7 +904,7 @@ mod tests {
         assert_eq!(total_tasks_for_flight(&flight), 12);
     }
 
-    /// Ceiling rejection: a mission already at 60 tasks must trip the
+    /// Ceiling rejection: a flight already at 60 tasks must trip the
     /// guard before any new task is appended. Exercises the exact
     /// comparison the runtime closure performs (`total_tasks >= TASK_CEILING`).
     #[test]
@@ -936,7 +936,7 @@ mod tests {
     }
 
     /// Boundary check: 59 tasks must NOT trip the guard. The 60th task
-    /// (the one being added) is what brings the mission to the cap; once
+    /// (the one being added) is what brings the flight to the cap; once
     /// it lands, the 61st call hits the ceiling.
     #[test]
     fn create_task_accepts_below_task_ceiling() {

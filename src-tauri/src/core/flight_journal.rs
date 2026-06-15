@@ -1,7 +1,7 @@
-//! Mission journal — append-only markdown log at
-//! `~/.packetade/missions/<shortId>_<mission_id>.md`.
+//! Flight journal — append-only markdown log at
+//! `~/.packetade/missions/<shortId>_<flight_id>.md`.
 //!
-//! Every notable event in the lifecycle of a mission (user/planner chat
+//! Every notable event in the lifecycle of a flight (user/planner chat
 //! turns, tool calls, wake triggers, approvals, system notes) is appended
 //! here as a self-describing markdown block. The Journal tab in the UI
 //! renders this file verbatim; the structured HTML comment headers let a
@@ -42,13 +42,14 @@ pub enum JournalKind {
     SystemNote,
 }
 
-/// A single append-only entry in the mission journal.
+/// A single append-only entry in the flight journal.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JournalEntry {
     /// uuid for cross-reference (event id, tool call id, etc.).
     pub id: String,
-    pub mission_id: String,
+    #[serde(alias = "missionId")]
+    pub flight_id: String,
     /// Unix millis.
     pub timestamp: u64,
     pub kind: JournalKind,
@@ -75,42 +76,42 @@ pub struct JournalRead {
 
 // === Storage location ===
 
-/// Directory containing per-mission journal files. Created lazily on the
+/// Directory containing per-flight journal files. Created lazily on the
 /// first append (see [`append_journal`]).
 pub fn journal_dir() -> PathBuf {
     crate::core::storage::data_dir().join("missions")
 }
 
-/// Compute the file path for a mission's journal. The filename pairs the
-/// frontend-style shortId (last 4 chars of the mission id, uppercased)
-/// with the full mission id for uniqueness:
-/// `F-XXXX_<mission_id>.md` — readable in finder + unambiguous.
+/// Compute the file path for a flight's journal. The filename pairs the
+/// frontend-style shortId (last 4 chars of the flight id, uppercased)
+/// with the full flight id for uniqueness:
+/// `F-XXXX_<flight_id>.md` — readable in finder + unambiguous.
 ///
-/// Mirrors the JS derivation in `MissionsView.tsx::shortId`:
+/// Mirrors the JS derivation in `FlightsView.tsx::shortId`:
 /// ```js
 /// id.replace(/^[a-z]+-/i, "").slice(-4).toUpperCase()
 /// ```
 ///
-/// **Path-traversal guard.** Mission ids in production are UUID-ish (hex +
+/// **Path-traversal guard.** Flight ids in production are UUID-ish (hex +
 /// dashes) but this function takes `&str` and is callable from anywhere a
-/// `mission_id` flows through, including the Tauri command boundary. If the
+/// `flight_id` flows through, including the Tauri command boundary. If the
 /// input contains path-escape characters (`/`, `\`, `..`, `\0`) or is
 /// empty, we return a sentinel path inside `journal_dir()` rather than
 /// allowing the filename component to escape the directory. Mirrors the
-/// guard in `commands::mission_planner::read_conversation_tail`.
-pub fn journal_path(mission_id: &str) -> PathBuf {
-    if mission_id.is_empty()
-        || mission_id.contains('/')
-        || mission_id.contains('\\')
-        || mission_id.contains("..")
-        || mission_id.contains('\0')
+/// guard in `commands::flight_planner::read_conversation_tail`.
+pub fn journal_path(flight_id: &str) -> PathBuf {
+    if flight_id.is_empty()
+        || flight_id.contains('/')
+        || flight_id.contains('\\')
+        || flight_id.contains("..")
+        || flight_id.contains('\0')
     {
-        // Sentinel path inside `journal_dir()` — no real mission will have
+        // Sentinel path inside `journal_dir()` — no real flight will have
         // this filename, and `read_journal` returns `Ok("")` when the file
         // doesn't exist, so callers degrade gracefully.
-        return journal_dir().join("__invalid_mission_id__.md");
+        return journal_dir().join("__invalid_flight_id__.md");
     }
-    let stripped = strip_leading_kind_prefix(mission_id);
+    let stripped = strip_leading_kind_prefix(flight_id);
     let tail: String = stripped
         .chars()
         .rev()
@@ -120,11 +121,11 @@ pub fn journal_path(mission_id: &str) -> PathBuf {
         .rev()
         .collect();
     let tail = tail.to_uppercase();
-    let filename = format!("F-{}_{}.md", tail, mission_id);
+    let filename = format!("F-{}_{}.md", tail, flight_id);
     journal_dir().join(filename)
 }
 
-/// Strip a single leading `[a-z]+-` prefix (e.g. `flight-`, `mission-`)
+/// Strip a single leading `[a-z]+-` prefix (e.g. `flight-`, `flight-`)
 /// to match the frontend's `shortId` regex.
 fn strip_leading_kind_prefix(id: &str) -> &str {
     if let Some(dash) = id.find('-') {
@@ -138,7 +139,7 @@ fn strip_leading_kind_prefix(id: &str) -> &str {
 
 // === Append helper ===
 
-/// Append a journal entry to the mission's markdown file. Opens the file
+/// Append a journal entry to the flight's markdown file. Opens the file
 /// in append mode (creating it if it doesn't exist) and writes a single
 /// markdown block. Concurrent appends from multiple async tasks are safe
 /// at the OS level on Windows / macOS / Linux because each `write_all`
@@ -159,7 +160,7 @@ pub async fn append_journal(entry: &JournalEntry) -> Result<(), String> {
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("failed to create journal dir {:?}: {}", dir, e))?;
 
-    let path = journal_path(&entry.mission_id);
+    let path = journal_path(&entry.flight_id);
     let block = render_entry_md(entry);
 
     let mut file = std::fs::OpenOptions::new()
@@ -211,24 +212,24 @@ fn format_timestamp(unix_millis: u64) -> String {
 
 // === Read helper ===
 
-/// Read the journal file for a mission, returning the raw markdown text.
-/// Returns `Ok("")` if the file doesn't exist yet (mission has had no
+/// Read the journal file for a flight, returning the raw markdown text.
+/// Returns `Ok("")` if the file doesn't exist yet (flight has had no
 /// recorded activity). Callers that want structured access can parse the
 /// HTML comment headers themselves; v1 only returns the markdown source
 /// so the Journal tab can render it directly.
-pub fn read_journal(mission_id: &str) -> Result<String, String> {
-    let path = journal_path(mission_id);
+pub fn read_journal(flight_id: &str) -> Result<String, String> {
+    let path = journal_path(flight_id);
     if !path.exists() {
         return Ok(String::new());
     }
     std::fs::read_to_string(&path).map_err(|e| format!("failed to read journal {:?}: {}", path, e))
 }
 
-/// Read at most `max_bytes` from the end of a mission's journal. Large files
+/// Read at most `max_bytes` from the end of a flight's journal. Large files
 /// are snapped to the next journal-entry marker when possible so the UI does
 /// not start rendering in the middle of a markdown block.
-pub fn read_journal_tail(mission_id: &str, max_bytes: u64) -> Result<JournalRead, String> {
-    let path = journal_path(mission_id);
+pub fn read_journal_tail(flight_id: &str, max_bytes: u64) -> Result<JournalRead, String> {
+    let path = journal_path(flight_id);
     read_journal_tail_from_path(&path, max_bytes)
 }
 
@@ -307,8 +308,8 @@ mod tests {
     }
 
     #[test]
-    fn journal_path_handles_mission_prefix() {
-        let p = journal_path("mission-zzzzAB12");
+    fn journal_path_handles_flight_prefix() {
+        let p = journal_path("flight-zzzzAB12");
         let name = p.file_name().unwrap().to_string_lossy().into_owned();
         // last 4 of "zzzzAB12" -> "AB12" -> uppercased "AB12"
         assert!(
@@ -335,7 +336,7 @@ mod tests {
         let p = journal_path("../../../etc/passwd");
         let name = p.file_name().unwrap().to_string_lossy().into_owned();
         assert_eq!(
-            name, "__invalid_mission_id__.md",
+            name, "__invalid_flight_id__.md",
             "expected sentinel filename for ../../../etc/passwd, got {:?}",
             p
         );
@@ -347,7 +348,7 @@ mod tests {
     fn journal_path_rejects_backslash() {
         let p = journal_path("..\\Windows\\System32");
         let name = p.file_name().unwrap().to_string_lossy().into_owned();
-        assert_eq!(name, "__invalid_mission_id__.md");
+        assert_eq!(name, "__invalid_flight_id__.md");
     }
 
     #[test]
@@ -355,12 +356,12 @@ mod tests {
         let p1 = journal_path("");
         assert_eq!(
             p1.file_name().unwrap().to_string_lossy(),
-            "__invalid_mission_id__.md"
+            "__invalid_flight_id__.md"
         );
         let p2 = journal_path("foo\0bar");
         assert_eq!(
             p2.file_name().unwrap().to_string_lossy(),
-            "__invalid_mission_id__.md"
+            "__invalid_flight_id__.md"
         );
     }
 
@@ -396,7 +397,7 @@ mod tests {
     fn render_entry_md_includes_id_and_kind_in_comment() {
         let entry = JournalEntry {
             id: "abc".to_string(),
-            mission_id: "m1".to_string(),
+            flight_id: "m1".to_string(),
             timestamp: 1700000000000,
             kind: JournalKind::ToolCall,
             content_md: "body text".to_string(),
@@ -414,7 +415,7 @@ mod tests {
     fn render_entry_md_trims_trailing_newlines_in_body() {
         let entry = JournalEntry {
             id: "x".to_string(),
-            mission_id: "m1".to_string(),
+            flight_id: "m1".to_string(),
             timestamp: 1,
             kind: JournalKind::PlannerMessage,
             content_md: "hello\n\n\n".to_string(),
@@ -430,7 +431,7 @@ mod tests {
     fn journal_entry_roundtrips_through_serde() {
         let entry = JournalEntry {
             id: "id-1".to_string(),
-            mission_id: "flight-deadbeef".to_string(),
+            flight_id: "flight-deadbeef".to_string(),
             timestamp: 42,
             kind: JournalKind::WakeTrigger,
             content_md: "## header\n\nbody".to_string(),
@@ -438,24 +439,24 @@ mod tests {
         };
         let s = serde_json::to_string(&entry).unwrap();
         // camelCase field names on the wire
-        assert!(s.contains(r#""missionId":"flight-deadbeef""#));
+        assert!(s.contains(r#""flightId":"flight-deadbeef""#));
         assert!(s.contains(r#""kind":"wake_trigger""#));
         let back: JournalEntry = serde_json::from_str(&s).unwrap();
         assert_eq!(back.id, entry.id);
-        assert_eq!(back.mission_id, entry.mission_id);
+        assert_eq!(back.flight_id, entry.flight_id);
         assert_eq!(back.timestamp, entry.timestamp);
         assert_eq!(back.kind, entry.kind);
     }
 
     /// Async file-write test. Writes into the real `~/.packetade/missions`
-    /// dir using a uniquely-prefixed mission id so it can't collide with
+    /// dir using a uniquely-prefixed flight id so it can't collide with
     /// production data. Gated `#[ignore]` because the suite runs without
     /// a writable HOME on some CI sandboxes; run manually with
-    /// `cargo test --lib core::mission_journal::tests::append_journal_creates_file_and_appends -- --ignored`.
+    /// `cargo test --lib core::flight_journal::tests::append_journal_creates_file_and_appends -- --ignored`.
     #[tokio::test]
     #[ignore]
     async fn append_journal_creates_file_and_appends() {
-        let mission_id = format!(
+        let flight_id = format!(
             "test-journal-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -465,7 +466,7 @@ mod tests {
 
         let e1 = JournalEntry {
             id: "e1".to_string(),
-            mission_id: mission_id.clone(),
+            flight_id: flight_id.clone(),
             timestamp: 1000,
             kind: JournalKind::UserMessage,
             content_md: "first entry".to_string(),
@@ -473,7 +474,7 @@ mod tests {
         };
         let e2 = JournalEntry {
             id: "e2".to_string(),
-            mission_id: mission_id.clone(),
+            flight_id: flight_id.clone(),
             timestamp: 2000,
             kind: JournalKind::PlannerMessage,
             content_md: "second entry".to_string(),
@@ -483,27 +484,27 @@ mod tests {
         append_journal(&e1).await.expect("first append");
         append_journal(&e2).await.expect("second append");
 
-        let text = read_journal(&mission_id).expect("read journal");
+        let text = read_journal(&flight_id).expect("read journal");
         assert!(text.contains("entry id:e1"), "missing e1: {}", text);
         assert!(text.contains("entry id:e2"), "missing e2: {}", text);
         assert!(text.contains("first entry"));
         assert!(text.contains("second entry"));
 
         // Cleanup: remove the test journal file.
-        let path = journal_path(&mission_id);
+        let path = journal_path(&flight_id);
         let _ = std::fs::remove_file(&path);
     }
 
     #[test]
-    fn read_journal_returns_empty_for_missing_mission() {
-        let mission_id = format!(
-            "no-such-mission-{}",
+    fn read_journal_returns_empty_for_missing_flight() {
+        let flight_id = format!(
+            "no-such-flight-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         );
-        let text = read_journal(&mission_id).expect("read should not error on missing file");
+        let text = read_journal(&flight_id).expect("read should not error on missing file");
         assert_eq!(text, "");
     }
 

@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import { useMissionPlannerStore, type MissionApprovalRequest } from "@/stores/missionPlannerStore";
+import { useFlightPlannerStore, type FlightApprovalRequest } from "@/stores/flightPlannerStore";
 import { relativeTime } from "@/lib/time";
 
 interface PlannerApprovalGateProps {
-  missionId: string;
+  flightId: string;
 }
 
 /**
  * E2 — inline approval gate. Surfaces a single pending approval from the
- * mission planner (`request_user_approval` tool) and routes the user's
- * answer back via `resolveMissionApproval`. Renders nothing when no
- * approvals are pending for `missionId`.
+ * flight planner (`request_user_approval` tool) and routes the user's
+ * answer back via `resolveFlightApproval`. Renders nothing when no
+ * approvals are pending for `flightId`.
  *
- * UX contract (per `dev/mission-planner-plan.md` D1):
+ * UX contract (per `dev/flight-planner-plan.md` D1):
  *   - Inline banner (NOT a modal) — the planner is async and the user
  *     may want to keep reading the journal while answering.
  *   - One approval at a time; oldest first. Resolved approvals optimistically
@@ -22,18 +22,18 @@ interface PlannerApprovalGateProps {
  *   - Resolution choices: option label, free-text answer, "Acknowledge"
  *     (when no options), or "Dismiss" (`"dismissed"` sentinel).
  */
-export function PlannerApprovalGate({ missionId }: PlannerApprovalGateProps) {
-  const approvals = useMissionPlannerStore((s) => s.pendingApprovals.get(missionId));
-  const hydratePendingApprovals = useMissionPlannerStore((s) => s.hydratePendingApprovals);
-  const resolveApproval = useMissionPlannerStore((s) => s.resolveApproval);
+export function PlannerApprovalGate({ flightId }: PlannerApprovalGateProps) {
+  const approvals = useFlightPlannerStore((s) => s.pendingApprovals.get(flightId));
+  const hydratePendingApprovals = useFlightPlannerStore((s) => s.hydratePendingApprovals);
+  const resolveApproval = useFlightPlannerStore((s) => s.resolveApproval);
 
   useEffect(() => {
-    void hydratePendingApprovals(missionId).catch((err) => {
-      console.warn("Failed to hydrate mission planner approvals", missionId, err);
+    void hydratePendingApprovals(flightId).catch((err) => {
+      console.warn("Failed to hydrate flight planner approvals", flightId, err);
     });
-  }, [hydratePendingApprovals, missionId]);
+  }, [hydratePendingApprovals, flightId]);
 
-  const oldest = useMemo<MissionApprovalRequest | null>(() => {
+  const oldest = useMemo<FlightApprovalRequest | null>(() => {
     if (!approvals || approvals.length === 0) return null;
     return [...approvals].sort((a, b) => a.awaitingSince - b.awaitingSince)[0];
   }, [approvals]);
@@ -46,13 +46,13 @@ export function PlannerApprovalGate({ missionId }: PlannerApprovalGateProps) {
       key={oldest.id}
       approval={oldest}
       queued={queued}
-      onResolve={(choice) => resolveApproval(missionId, oldest.id, choice)}
+      onResolve={(choice) => resolveApproval(flightId, oldest.id, choice)}
     />
   );
 }
 
 interface ApprovalCardProps {
-  approval: MissionApprovalRequest;
+  approval: FlightApprovalRequest;
   queued: number;
   onResolve(choice: string): Promise<void>;
 }

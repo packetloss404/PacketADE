@@ -58,8 +58,8 @@ export function Toolbar() {
 
   // Count of pending approvals — mirrors ReviewQueueView's filter so the
   // badge matches what the user sees when they click through. We only count
-  // tasks (not mission-planner approvals) because those surface inline on
-  // the mission view, not in the Review Queue.
+  // tasks (not flight-planner approvals) because those surface inline on
+  // the flight view, not in the Review Queue.
   const pendingApprovalCount = useFlightStore((s) => {
     let n = 0;
     for (const flight of s.flights) {
@@ -172,7 +172,7 @@ export function Toolbar() {
                 ? "bg-bg-elevated text-text-primary"
                 : "bg-bg-secondary text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
             }`}
-            title="Create a new session, mission, or issue"
+            title="Create a new session, flight, or issue"
           >
             <Plus size={12} />
             <span>New</span>
@@ -188,7 +188,7 @@ export function Toolbar() {
               />
               <DropdownItem
                 icon={<Target size={12} className="text-accent-green" />}
-                label="New Mission"
+                label="New Flight"
                 onClick={() => { setShowNewFlight(true); setShowNewMenu(false); }}
               />
               <DropdownItem

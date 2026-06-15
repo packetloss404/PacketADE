@@ -21,9 +21,9 @@
 // v4 (F8): adds `cancel_pending_tools` request — drain parked
 // permission/edit prompts as denied without killing the agent loop.
 //
-// v5 (Mission Planner E1): adds
+// v5 (Flight Planner E1): adds
 //   - `inject_user_turn` request: typed wake-trigger/user-turn injection
-//     into a long-lived session, used by the autonomous Mission Planner
+//     into a long-lived session, used by the autonomous Flight Planner
 //     wake bus and (eventually) the spec-mode chat path.
 //   - `planner_tool` event + `planner_tool_result` request: in-process
 //     MCP tool-call envelope so planner tools dispatched inside the sidecar
@@ -32,18 +32,18 @@
 //     sidecar constructs an in-process planner MCP server locally and
 //     merges it into the SDK's `mcpServers` map under the pinned key
 //     "planner" (so tool names are `mcp__planner__*`). See
-//     `dev/mission-planner-plan.md` and `dev/mission-planner-spike-retro.md`.
+//     `dev/flight-planner-plan.md` and `dev/flight-planner-spike-retro.md`.
 //   - E1 scaffolds the planner request/event types and ships a single stub
 //     tool (`noop`); the eight real planner tools land in E2.
 //
-// v6 (Mission Planner E6 — rate-limit handler): adds the `rate_limited`
+// v6 (Flight Planner E6 — rate-limit handler): adds the `rate_limited`
 // sidecar event. The Anthropic provider catches `RateLimitError` from the
 // Claude Agent SDK's message iterator, parses the `retry-after` header
 // when present, and emits this typed event alongside its existing `error`
 // emit. The Rust supervisor routes the event into
-// `MissionPlannerRegistry::on_rate_limited`, which flips the owning
+// `FlightPlannerRegistry::on_rate_limited`, which flips the owning
 // planner's status to `QuotaPaused`, schedules an auto-resume timer
-// (clamped to 60-600s), and emits a per-mission Tauri event the frontend
+// (clamped to 60-600s), and emits a per-flight Tauri event the frontend
 // turns into an OS-level desktop notification.
 export const PROTOCOL_VERSION = 6;
 
@@ -102,7 +102,7 @@ export type StartSessionRequest = {
   approveWrites?: boolean;
   /** v5: opt-in in-process MCP server kind. Currently the only recognized
    * value is `"planner"`, which tells the Anthropic provider to construct
-   * the Mission Planner MCP server in-sidecar and merge it into the SDK's
+   * the Flight Planner MCP server in-sidecar and merge it into the SDK's
    * `mcpServers` map under the pinned key `"planner"` (tool names then
    * read as `mcp__planner__*`). Unknown values are ignored — old sidecars
    * silently skip this field. */
@@ -184,7 +184,7 @@ export type CancelPendingToolsRequest = {
 };
 
 /** v5: inject a new user turn into a long-lived session. Used by the
- * Mission Planner wake bus (`source: "wake_trigger"`) and the spec-mode
+ * Flight Planner wake bus (`source: "wake_trigger"`) and the spec-mode
  * chat path (`source: "user"`). Wake-trigger content is wrapped in
  * `<wake_trigger source="..." kind="...">...</wake_trigger>` by the
  * provider so the system prompt can distinguish re-entry from a human
@@ -198,7 +198,7 @@ export type InjectUserTurnRequest = {
    * `<wake_trigger>` envelope's `kind` attribute. Ignored when
    * `source === "user"`. */
   trigger?: { kind: string; payload?: unknown };
-  /** E6-CAPS: per-mode output `max_tokens` budget the Mission Planner wants
+  /** E6-CAPS: per-mode output `max_tokens` budget the Flight Planner wants
    * the provider to honor for this turn. The Claude Agent SDK (0.2.116) does
    * not expose a per-turn `max_tokens` setter, so the anthropic provider
    * currently logs a warning and falls back to the SDK's defaults. The
@@ -322,7 +322,7 @@ export type SidecarEvent =
       address?: string;
     }
   // v5 additions ----------------------------------------------------------
-  /** Mission Planner: an in-sidecar MCP tool was invoked by the model.
+  /** Flight Planner: an in-sidecar MCP tool was invoked by the model.
    * The Rust supervisor routes the args to its dispatcher and replies via
    * `planner_tool_result` (matched by `callId`). The sidecar awaits that
    * response before resolving the SDK tool handler. */
@@ -334,11 +334,11 @@ export type SidecarEvent =
       callId: string;
     }
   // v6 additions ----------------------------------------------------------
-  /** Mission Planner E6: the underlying provider returned a rate-limit
+  /** Flight Planner E6: the underlying provider returned a rate-limit
    * error (HTTP 429 in Anthropic's case). Emitted IN ADDITION to the
    * regular `error` event so legacy listeners still react. The Rust
    * supervisor consumes this in `agent_sidecar::handle_event` and
-   * delegates to `MissionPlannerRegistry::on_rate_limited`, which arms
+   * delegates to `FlightPlannerRegistry::on_rate_limited`, which arms
    * the QuotaPaused backoff window. `retryAfterSeconds` is parsed from
    * the SDK error's `retry-after` header when present (Anthropic returns
    * a number-of-seconds value); the field is omitted when the header is

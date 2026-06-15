@@ -1,6 +1,6 @@
 import type { Flight, Task, TaskStatus } from "@/types/flight";
 
-export interface MissionReviewTaskRef {
+export interface FlightReviewTaskRef {
   flightId: string;
   flightTitle: string;
   milestoneId: string;
@@ -15,28 +15,28 @@ export interface MissionReviewTaskRef {
   relation: "reported" | "owned";
 }
 
-export interface MissionReviewSummary {
+export interface FlightReviewSummary {
   taskCount: number;
   reportedFileCount: number;
   ownedFileCount: number;
   pendingApprovalCount: number;
-  files: MissionReviewTaskRef[];
+  files: FlightReviewTaskRef[];
 }
 
-export interface GitMissionReviewMatch {
+export interface GitFlightReviewMatch {
   path: string;
-  refs: MissionReviewTaskRef[];
+  refs: FlightReviewTaskRef[];
 }
 
-export interface GitMissionReviewContext {
+export interface GitFlightReviewContext {
   linkedFileCount: number;
   taskCount: number;
   pendingApprovalCount: number;
   flightIds: string[];
-  matchesByPath: Map<string, GitMissionReviewMatch>;
+  matchesByPath: Map<string, GitFlightReviewMatch>;
 }
 
-export interface MissionReviewSelector {
+export interface FlightReviewSelector {
   flightId?: string | null;
   taskId?: string | null;
   attemptId?: string | null;
@@ -44,8 +44,8 @@ export interface MissionReviewSelector {
   sessionId?: string | null;
 }
 
-export interface MissionReviewSelection {
-  files: MissionReviewTaskRef[];
+export interface FlightReviewSelection {
+  files: FlightReviewTaskRef[];
   flightIds: string[];
   taskIds: string[];
   attemptIds: string[];
@@ -89,8 +89,8 @@ export function collectTaskReportedFiles(task: Task): string[] {
   return [...paths];
 }
 
-export function summarizeMissionReview(flight: Flight): MissionReviewSummary {
-  const files: MissionReviewTaskRef[] = [];
+export function summarizeFlightReview(flight: Flight): FlightReviewSummary {
+  const files: FlightReviewTaskRef[] = [];
   const seenTasks = new Set<string>();
   let pendingApprovalCount = 0;
   let reportedFileCount = 0;
@@ -123,24 +123,24 @@ export function summarizeMissionReview(flight: Flight): MissionReviewSummary {
   };
 }
 
-export function matchGitFilesToMissionTasks(
+export function matchGitFilesToFlightTasks(
   changedPaths: string[],
   flights: Flight[],
   context: { projectPath?: string; workspaceId?: string | null } = {},
-): GitMissionReviewContext {
+): GitFlightReviewContext {
   const relevantFlights = flights.filter((flight) => {
     if (context.workspaceId && flight.workspaceId === context.workspaceId) return true;
     if (!context.projectPath) return false;
     return normalizeRepoPath(flight.projectPath) === normalizeRepoPath(context.projectPath);
   });
 
-  const matchesByPath = new Map<string, GitMissionReviewMatch>();
+  const matchesByPath = new Map<string, GitFlightReviewMatch>();
   const matchedTasks = new Set<string>();
   const flightIds = new Set<string>();
   let pendingApprovalCount = 0;
 
   const refs = relevantFlights.flatMap((flight) => {
-    const summary = summarizeMissionReview(flight);
+    const summary = summarizeFlightReview(flight);
     pendingApprovalCount += summary.pendingApprovalCount;
     return summary.files;
   });
@@ -176,16 +176,16 @@ export function matchGitFilesToMissionTasks(
   };
 }
 
-export function missionReviewKey(path: string): string {
+export function flightReviewKey(path: string): string {
   return normalizeRepoPath(path);
 }
 
-export function selectMissionReviewFiles(
+export function selectFlightReviewFiles(
   flights: Flight[],
-  selector: MissionReviewSelector,
-): MissionReviewSelection {
+  selector: FlightReviewSelector,
+): FlightReviewSelection {
   const wantedSessionId = selector.sessionId ?? selector.conversationId ?? null;
-  const files: MissionReviewTaskRef[] = [];
+  const files: FlightReviewTaskRef[] = [];
   const flightIds = new Set<string>();
   const taskIds = new Set<string>();
   const attemptIds = new Set<string>();
@@ -242,11 +242,11 @@ function taskRef(
   flight: Flight,
   task: Task,
   filePath: string,
-  relation: MissionReviewTaskRef["relation"],
-): MissionReviewTaskRef {
+  relation: FlightReviewTaskRef["relation"],
+): FlightReviewTaskRef {
   return {
     flightId: flight.id,
-    flightTitle: flight.title || "Untitled mission",
+    flightTitle: flight.title || "Untitled flight",
     milestoneId: task.milestoneId,
     taskId: task.id,
     taskTitle: task.title || "Untitled task",
@@ -260,7 +260,7 @@ function taskRef(
   };
 }
 
-function taskReviewRefs(flight: Flight, task: Task): MissionReviewTaskRef[] {
+function taskReviewRefs(flight: Flight, task: Task): FlightReviewTaskRef[] {
   return [
     ...collectTaskReportedFiles(task).map((filePath) =>
       taskRef(flight, task, filePath, "reported"),
@@ -275,9 +275,9 @@ function attemptForTask(flight: Flight, task: Task) {
   return flight.attempts?.find((attempt) => attempt.sessionId === sessionId);
 }
 
-function dedupeRefs(refs: MissionReviewTaskRef[]): MissionReviewTaskRef[] {
+function dedupeRefs(refs: FlightReviewTaskRef[]): FlightReviewTaskRef[] {
   const seen = new Set<string>();
-  const out: MissionReviewTaskRef[] = [];
+  const out: FlightReviewTaskRef[] = [];
   for (const ref of refs) {
     const key = `${ref.flightId}:${ref.taskId}:${ref.filePath}:${ref.relation}`;
     if (seen.has(key)) continue;

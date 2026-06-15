@@ -27,7 +27,7 @@ const FILTERS: { key: FilterType; label: string }[] = [
   { key: "all", label: "All" },
   { key: "session_completed", label: "Sessions" },
   { key: "task_completed", label: "Tasks" },
-  { key: "flight_completed", label: "Missions" },
+  { key: "flight_completed", label: "Flights" },
   { key: "manual_note", label: "Notes" },
 ];
 
@@ -86,39 +86,39 @@ export function MemoryView() {
   const getContextForSession = useMemoryStore((s) => s.getContextForSession);
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
   const captureTasks = useMemorySettingsStore((s) => s.captureTasks);
-  const captureMissions = useMemorySettingsStore((s) => s.captureMissions);
+  const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
 
-  // v0.8-H — deep-link filter (e.g. from MissionsView's "N patterns
+  // v0.8-H — deep-link filter (e.g. from FlightsView's "N patterns
   // extracted" chip). Snapshot it on mount so subsequent re-renders
   // don't re-apply, and clear from the store so a back-and-forth
   // navigation resets cleanly.
   const incomingFilter = useAppStore((s) => s.memoryViewFilter);
   const clearMemoryViewFilter = useAppStore((s) => s.clearMemoryViewFilter);
-  const [missionFilter, setMissionFilter] = useState<string | null>(null);
+  const [flightFilter, setFlightFilter] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<Tab>("patterns");
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    if (incomingFilter?.missionId) {
-      setMissionFilter(incomingFilter.missionId);
+    if (incomingFilter?.flightId) {
+      setFlightFilter(incomingFilter.flightId);
       setActiveTab("timeline");
       clearMemoryViewFilter();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incomingFilter]);
 
-  /** Predicate: does this event belong to the active mission filter? Only
+  /** Predicate: does this event belong to the active flight filter? Only
    * `flight_completed` and `task_completed` carry a `flightId` payload. */
-  const matchesMissionFilter = useMemo(() => {
-    if (!missionFilter) return null;
+  const matchesFlightFilter = useMemo(() => {
+    if (!flightFilter) return null;
     return (e: MemoryEvent): boolean => {
-      if (e.type === "flight_completed") return e.payload.flightId === missionFilter;
-      if (e.type === "task_completed") return e.payload.flightId === missionFilter;
+      if (e.type === "flight_completed") return e.payload.flightId === flightFilter;
+      if (e.type === "task_completed") return e.payload.flightId === flightFilter;
       return false;
     };
-  }, [missionFilter]);
+  }, [flightFilter]);
 
   const summarizedCount = useMemo(
     () => events.filter((e) => e.type === "session_completed" && e.payload.summary !== null).length,
@@ -139,14 +139,14 @@ export function MemoryView() {
 
   const filtered = useMemo(() => {
     let result = [...events].reverse();
-    if (matchesMissionFilter) result = result.filter(matchesMissionFilter);
+    if (matchesFlightFilter) result = result.filter(matchesFlightFilter);
     if (filter !== "all") result = result.filter((e) => e.type === filter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((e) => JSON.stringify(e.payload).toLowerCase().includes(q));
     }
     return result;
-  }, [events, filter, searchQuery, matchesMissionFilter]);
+  }, [events, filter, searchQuery, matchesFlightFilter]);
 
   const groupedPatterns = useMemo(() => {
     const groups: Partial<Record<PatternCategory, LearnedPattern[]>> = {};
@@ -168,7 +168,7 @@ export function MemoryView() {
   );
 
   const tokenEstimate = Math.round((injectedPreview.length || patterns.length * 32) / 4);
-  const captureEnabled = captureSessions || captureTasks || captureMissions;
+  const captureEnabled = captureSessions || captureTasks || captureFlights;
 
   function handleRefreshPatterns() {
     if (projectPath) void refreshPatterns(projectPath);
@@ -268,17 +268,17 @@ export function MemoryView() {
         </span>
       </div>
 
-      {missionFilter && (
+      {flightFilter && (
         <div className="flex flex-shrink-0 items-center gap-1.5 border-b border-accent-line bg-accent-soft px-3.5 py-1.5 text-[10.5px] text-accent-green">
           <Sparkles size={10} />
           <span>
-            Filtered to mission <span className="font-mono">{missionFilter.slice(-6)}</span>
+            Filtered to flight <span className="font-mono">{flightFilter.slice(-6)}</span>
           </span>
           <span className="flex-1" />
           <button
-            onClick={() => setMissionFilter(null)}
+            onClick={() => setFlightFilter(null)}
             className="hover:bg-accent-green/10 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors"
-            title="Clear mission filter"
+            title="Clear flight filter"
           >
             <X size={9} />
             Clear
@@ -704,7 +704,7 @@ function TimelineTab({
             body={
               totalEvents === 0
                 ? captureEnabled
-                  ? "Memory captures session, task, and mission completions automatically."
+                  ? "Memory captures session, task, and flight completions automatically."
                   : "Memory capture is disabled in Settings."
                 : "Try a different filter or clear your search."
             }

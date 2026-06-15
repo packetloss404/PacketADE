@@ -196,7 +196,7 @@ pub struct AgentConfigDto {
 #[serde(rename_all = "snake_case")]
 pub enum FlightStatusDto {
     Draft,
-    /// Mission Planner spec-mode conversation (planner is the chat partner).
+    /// Flight Planner spec-mode conversation (planner is the chat partner).
     Spec,
     Planning,
     Ready,
@@ -208,7 +208,7 @@ pub enum FlightStatusDto {
     Cancelled,
 }
 
-/// Mission Planner status mirror of `core_flight::PlannerStatus` for the
+/// Flight Planner status mirror of `core_flight::PlannerStatus` for the
 /// frontend wire format. See `core/flight.rs::PlannerStatus`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -221,15 +221,16 @@ pub enum PlannerStatusDto {
     Failed,
 }
 
-/// Mission Planner: persisted approval-gate record mirror of
-/// `core_flight::MissionApprovalRequest`. Filed by the planner via the
+/// Flight Planner: persisted approval-gate record mirror of
+/// `core_flight::FlightApprovalRequest`. Filed by the planner via the
 /// `request_user_approval` MCP tool (E2) and drained by the
-/// `resolve_mission_approval` Tauri command.
+/// `resolve_flight_approval` Tauri command.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-pub struct MissionApprovalRequestDto {
+pub struct FlightApprovalRequestDto {
     pub id: String,
-    pub mission_id: String,
+    #[serde(alias = "missionId")]
+    pub flight_id: String,
     pub question: String,
     #[serde(default)]
     pub options: Vec<String>,
@@ -245,11 +246,11 @@ pub struct MissionApprovalRequestDto {
     pub resolved_at: Option<u64>,
 }
 
-impl From<core_flight::MissionApprovalRequest> for MissionApprovalRequestDto {
-    fn from(value: core_flight::MissionApprovalRequest) -> Self {
+impl From<core_flight::FlightApprovalRequest> for FlightApprovalRequestDto {
+    fn from(value: core_flight::FlightApprovalRequest) -> Self {
         Self {
             id: value.id,
-            mission_id: value.mission_id,
+            flight_id: value.flight_id,
             question: value.question,
             options: value.options,
             awaiting_since: value.awaiting_since,
@@ -260,11 +261,11 @@ impl From<core_flight::MissionApprovalRequest> for MissionApprovalRequestDto {
     }
 }
 
-impl From<MissionApprovalRequestDto> for core_flight::MissionApprovalRequest {
-    fn from(value: MissionApprovalRequestDto) -> Self {
+impl From<FlightApprovalRequestDto> for core_flight::FlightApprovalRequest {
+    fn from(value: FlightApprovalRequestDto) -> Self {
         Self {
             id: value.id,
-            mission_id: value.mission_id,
+            flight_id: value.flight_id,
             question: value.question,
             options: value.options,
             awaiting_since: value.awaiting_since,
@@ -433,10 +434,10 @@ pub struct TaskDto {
     pub cost: f64,
     #[ts(type = "number")]
     pub tokens: u64,
-    /// Mission Planner: number of `replan_after_failure` calls this task
+    /// Flight Planner: number of `replan_after_failure` calls this task
     /// has triggered (excluding RateLimit/Network exemptions). Mirrored
-    /// from `MissionPlannerSession.replans_per_task` by
-    /// `MissionPlannerRegistry::bump_replan_count`. Read by
+    /// from `FlightPlannerSession.replans_per_task` by
+    /// `FlightPlannerRegistry::bump_replan_count`. Read by
     /// `render_task_failed` for the budget header (`replanCount / 3`).
     #[serde(default)]
     pub replan_count: u32,
@@ -560,29 +561,29 @@ pub struct FlightDto {
     pub prompt: Option<String>,
     #[serde(default)]
     pub attempts: Vec<AttemptDto>,
-    /// Mission Planner: long-lived `api-claude-oauth` session id that owns
-    /// this mission. Absent for missions that never used the planner.
+    /// Flight Planner: long-lived `api-claude-oauth` session id that owns
+    /// this flight. Absent for flights that never used the planner.
     #[serde(default)]
     #[ts(optional)]
     pub planner_session_id: Option<String>,
-    /// Mission Planner: last-known status of the planner agent for this
-    /// mission.
+    /// Flight Planner: last-known status of the planner agent for this
+    /// flight.
     #[serde(default)]
     #[ts(optional)]
     pub planner_status: Option<PlannerStatusDto>,
-    /// Mission Planner (E8): cumulative USD cost attributed to the planner's
+    /// Flight Planner (E8): cumulative USD cost attributed to the planner's
     /// own turns. Distinct from `total_cost` which rolls up executor task
     /// spend. Absent until the planner closes its first turn.
     #[serde(default)]
     #[ts(optional)]
     pub planner_cost: Option<f64>,
-    /// Mission Planner (E8): cumulative input+output tokens used by the
+    /// Flight Planner (E8): cumulative input+output tokens used by the
     /// planner session. Absent until the planner closes its first turn.
     #[serde(default)]
     #[ts(optional)]
     #[ts(type = "number")]
     pub planner_tokens: Option<u64>,
-    /// Mission Planner (E8): provider string the planner runs on (e.g.
+    /// Flight Planner (E8): provider string the planner runs on (e.g.
     /// `"claude-oauth"` for subscription, `"api-claude"` for API-key). The
     /// StatGrid chip renders these differently because subscription usage
     /// doesn't burn API credit.
@@ -1573,12 +1574,12 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
             memory_events: value.memory_events,
             memory_patterns: value.memory_patterns,
             servers: value.servers.into_iter().map(Into::into).collect(),
-            // Mission approvals only travel as part of the planner state
+            // Flight approvals only travel as part of the planner state
             // surface; the legacy DTO→core round-trip used by the
             // settings save path does not carry them, so we drop them
             // here. (The frontend reads approvals through a dedicated
-            // mission-planner query, not through PersistedStateDto.)
-            mission_approvals: Vec::new(),
+            // flight-planner query, not through PersistedStateDto.)
+            flight_approvals: Vec::new(),
         }
     }
 }
@@ -1673,7 +1674,7 @@ fn generated_typescript_schema() -> String {
     push_decl!(AgentConfigDto);
     push_decl!(FlightStatusDto);
     push_decl!(PlannerStatusDto);
-    push_decl!(MissionApprovalRequestDto);
+    push_decl!(FlightApprovalRequestDto);
     push_decl!(FlightPriorityDto);
     push_decl!(MilestoneStatusDto);
     push_decl!(TaskStatusDto);

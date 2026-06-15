@@ -95,7 +95,7 @@ mod tests {
             memory_events: vec![],
             memory_patterns: vec![],
             servers: vec![],
-            mission_approvals: vec![],
+            flight_approvals: vec![],
         }
     }
 

@@ -9,7 +9,7 @@ use commands::code_quality_autofix::CodeQualityAutoFixState;
 use commands::dictation::audio::create_dictation_state;
 use commands::dictation::whisper::WhisperState;
 use commands::github::create_github_auth_state;
-use commands::mission_planner::{spawn_wake_consumer, MissionPlannerRegistry};
+use commands::flight_planner::{spawn_wake_consumer, FlightPlannerRegistry};
 use commands::orchestration::create_shared_orchestrator;
 use commands::pty::create_shared_pty_manager;
 use commands::quality_runner::QualityRunnerState;
@@ -86,7 +86,7 @@ pub fn run() {
         .manage(std::sync::Arc::new(ApiAgentState::new()))
         .manage(std::sync::Arc::new(QualityRunnerState::new()))
         .manage(std::sync::Arc::new(CodeQualityAutoFixState::new()))
-        .manage(MissionPlannerRegistry::default())
+        .manage(FlightPlannerRegistry::default())
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in
             // managed state so slice C's routing layer can reach it via
@@ -96,19 +96,19 @@ pub fn run() {
             let manager = SidecarManager::new(app.handle().clone());
             app.manage(manager);
 
-            // Mission Planner (E1) wake bus: drains `PlannerWakeEvent`s
+            // Flight Planner (E1) wake bus: drains `PlannerWakeEvent`s
             // emitted by orchestration hooks, debounces a ~2s window per
-            // mission, and forwards consolidated wake turns to each
-            // mission's `api-claude-oauth` sidecar session via the new
+            // flight, and forwards consolidated wake turns to each
+            // flight's `api-claude-oauth` sidecar session via the new
             // typed `inject_user_turn` message (protocol v5). Idempotent
             // wrt repeated calls; the consumer is owned by the spawned
             // tokio task and the wake-tx is installed on the
-            // already-managed `MissionPlannerRegistry`.
+            // already-managed `FlightPlannerRegistry`.
             spawn_wake_consumer(app.handle().clone());
 
-            // Mission Planner (E6 safety rail) cold-start enforcement.
+            // Flight Planner (E6 safety rail) cold-start enforcement.
             // Planner sidecar sessions are ephemeral — they die with the
-            // host app — so on a fresh app start any mission whose planner
+            // host app — so on a fresh app start any flight whose planner
             // was Awake / Idle / QuotaPaused (or merely had a
             // `planner_session_id` pinned) is pointing at a dead session.
             // Flip those to Paused and clear the stale id so the user has
@@ -120,13 +120,13 @@ pub fn run() {
             // "Awake" badge that won't actually fire wakes (the wake
             // consumer's status check skips them).
             tauri::async_runtime::spawn(async {
-                match commands::mission_planner::enforce_cold_start_paused().await {
+                match commands::flight_planner::enforce_cold_start_paused().await {
                     Ok(n) if n > 0 => tracing::info!(
                         paused = n,
-                        "cold-start: paused {} active mission(s) awaiting user resume",
+                        "cold-start: paused {} active flight(s) awaiting user resume",
                         n
                     ),
-                    Ok(_) => tracing::debug!("cold-start: no active missions to pause"),
+                    Ok(_) => tracing::debug!("cold-start: no active flights to pause"),
                     Err(e) => tracing::warn!(
                         error = %e,
                         "cold-start: failed to enforce paused planner state",
@@ -401,19 +401,19 @@ pub fn run() {
             commands::pricing::calculate_turn_cost,
             // Sidecar lifecycle status (for the status-bar chip)
             commands::agent_sidecar::get_sidecar_status,
-            // Mission Planner (E1)
-            commands::mission_planner::start_mission_planner,
-            commands::mission_planner::stop_mission_planner,
-            commands::mission_planner::pause_mission_planner,
-            commands::mission_planner::resume_mission_planner,
-            commands::mission_planner::inject_planner_turn,
-            commands::mission_planner::trigger_planner_decomposition,
-            commands::mission_planner::resolve_mission_approval,
-            commands::mission_planner::get_mission_approvals,
-            // Mission Planner — journal read access (E7)
-            commands::mission_planner::get_mission_journal,
-            commands::mission_planner::get_mission_journal_tail,
-            commands::mission_planner::get_mission_journal_path,
+            // Flight Planner (E1)
+            commands::flight_planner::start_flight_planner,
+            commands::flight_planner::stop_flight_planner,
+            commands::flight_planner::pause_flight_planner,
+            commands::flight_planner::resume_flight_planner,
+            commands::flight_planner::inject_planner_turn,
+            commands::flight_planner::trigger_planner_decomposition,
+            commands::flight_planner::resolve_flight_approval,
+            commands::flight_planner::get_flight_approvals,
+            // Flight Planner — journal read access (E7)
+            commands::flight_planner::get_flight_journal,
+            commands::flight_planner::get_flight_journal_tail,
+            commands::flight_planner::get_flight_journal_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

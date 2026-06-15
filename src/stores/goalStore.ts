@@ -12,14 +12,21 @@ interface PersistShape {
   goals: Goal[];
 }
 
+// Back-compat: goals persisted before the mission→flight rename stored the
+// flight binding under the legacy `missionId` key. Carry it over to `flightId`.
+function migrateGoal(g: Goal): Goal {
+  const legacy = (g as Goal & { missionId?: string }).missionId;
+  return legacy && !g.flightId ? { ...g, flightId: legacy } : g;
+}
+
 function loadPersisted(): Goal[] {
   const raw = loadFromStorage<PersistShape | Goal[]>(STORAGE_KEY, {
     version: SCHEMA_VERSION,
     goals: [],
   });
-  if (Array.isArray(raw)) return raw; // legacy bare-array fallback
+  if (Array.isArray(raw)) return raw.map(migrateGoal); // legacy bare-array fallback
   if (raw && typeof raw === "object" && Array.isArray(raw.goals)) {
-    return raw.goals;
+    return raw.goals.map(migrateGoal);
   }
   return [];
 }
@@ -37,15 +44,15 @@ interface GoalStore {
   addGoal: (
     input: Pick<Goal, "title"> &
       Partial<
-        Pick<Goal, "missionId" | "conversationId" | "checklist" | "status">
+        Pick<Goal, "flightId" | "conversationId" | "checklist" | "status">
       >,
   ) => string;
   updateGoal: (id: string, updates: Partial<Goal>) => void;
   deleteGoal: (id: string) => void;
 
   bindToConversation: (goalId: string, conversationId: string) => void;
-  bindToMission: (goalId: string, missionId: string) => void;
-  unbindFromMission: (goalId: string) => void;
+  bindToFlight: (goalId: string, flightId: string) => void;
+  unbindFromFlight: (goalId: string) => void;
 
   pauseGoal: (id: string) => void;
   resumeGoal: (id: string) => void;
@@ -61,7 +68,7 @@ interface GoalStore {
     items: AgentPlanItem[],
   ) => void;
 
-  getGoalsForMission: (missionId: string) => Goal[];
+  getGoalsForFlight: (flightId: string) => Goal[];
   getGoalForConversation: (conversationId: string) => Goal | undefined;
 }
 
@@ -74,7 +81,7 @@ export const useGoalStore = create<GoalStore>((set, get) => ({
       id: generateId("goal"),
       title: input.title,
       status: input.status ?? "active",
-      missionId: input.missionId,
+      flightId: input.flightId,
       conversationId: input.conversationId,
       checklist: input.checklist,
       createdAt: now,
@@ -103,11 +110,11 @@ export const useGoalStore = create<GoalStore>((set, get) => ({
   bindToConversation: (goalId, conversationId) => {
     get().updateGoal(goalId, { conversationId });
   },
-  bindToMission: (goalId, missionId) => {
-    get().updateGoal(goalId, { missionId });
+  bindToFlight: (goalId, flightId) => {
+    get().updateGoal(goalId, { flightId });
   },
-  unbindFromMission: (goalId) => {
-    get().updateGoal(goalId, { missionId: undefined });
+  unbindFromFlight: (goalId) => {
+    get().updateGoal(goalId, { flightId: undefined });
   },
 
   pauseGoal: (id) => {
@@ -133,8 +140,8 @@ export const useGoalStore = create<GoalStore>((set, get) => ({
     get().updateGoal(goalId, { checklist: items });
   },
 
-  getGoalsForMission: (missionId) =>
-    get().goals.filter((g) => g.missionId === missionId),
+  getGoalsForFlight: (flightId) =>
+    get().goals.filter((g) => g.flightId === flightId),
 
   getGoalForConversation: (conversationId) =>
     get().goals.find((g) => g.conversationId === conversationId),

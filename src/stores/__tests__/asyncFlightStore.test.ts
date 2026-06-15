@@ -121,7 +121,7 @@ function localTarget(basePath: string, baseBranch = "main"): AttemptTargetSpec {
 function flight(overrides: Partial<Flight> = {}): Flight {
   return {
     id: "flight-1",
-    title: "Mission",
+    title: "Flight",
     objective: "Do work",
     status: "active",
     priority: "medium",
@@ -249,7 +249,7 @@ describe("asyncFlightStore collision gate", () => {
     expect(mocks.launchFlightAsync).toHaveBeenCalledOnce();
   });
 
-  it("blocks launch when active mission tasks already have overlapping owned paths", async () => {
+  it("blocks launch when active flight tasks already have overlapping owned paths", async () => {
     useFlightStore.setState({
       flights: [
         flight({
@@ -333,7 +333,7 @@ describe("asyncFlightStore collision gate", () => {
           ?.attempts?.find((a) => a.id === "att-done")?.status,
       ).toBe("reviewing");
     });
-    expect(mocks.notifyAttemptCompleted).toHaveBeenCalledWith("Mission", "local");
+    expect(mocks.notifyAttemptCompleted).toHaveBeenCalledWith("Flight", "local");
     await vi.waitFor(() => {
       expect(mocks.listeners.has(apiAgentDoneEvent("session-done"))).toBe(false);
       expect(mocks.listeners.has(apiAgentErrorEvent("session-done"))).toBe(false);

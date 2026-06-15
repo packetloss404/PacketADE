@@ -26,18 +26,18 @@ import { useFlightStore } from "@/stores/flightStore";
 import { useGoalStore } from "@/stores/goalStore";
 import { useOrchestrationSchedulerStore } from "@/stores/orchestrationSchedulerStore";
 import { useOrchestrationStateStore as useOrchestrationStore } from "@/stores/orchestrationStateStore";
-import { useMissionPlannerStore } from "@/stores/missionPlannerStore";
+import { useFlightPlannerStore } from "@/stores/flightPlannerStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useAppStore } from "@/stores/appStore";
 import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
-import { MissionSpecPane } from "@/components/missions/MissionSpecPane";
-import { JournalTab } from "@/components/missions/JournalTab";
-import { PlannerApprovalGate } from "@/components/missions/PlannerApprovalGate";
+import { FlightSpecPane } from "@/components/flights/FlightSpecPane";
+import { JournalTab } from "@/components/flights/JournalTab";
+import { PlannerApprovalGate } from "@/components/flights/PlannerApprovalGate";
 import { relativeTime } from "@/lib/time";
-import { summarizeMissionReview } from "@/lib/missionReview";
+import { summarizeFlightReview } from "@/lib/flightReview";
 import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
 import type {
   Flight,
@@ -196,7 +196,7 @@ function eventTimeShort(ts: number): string {
   return `${days}d`;
 }
 
-export function MissionsView() {
+export function FlightsView() {
   const { flights, activeFlightId, setActiveFlight, addFlight, updateFlight, computeFlightStatus } =
     useFlightStore(
       useShallow((s) => ({
@@ -212,7 +212,7 @@ export function MissionsView() {
   const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
   const schedulerLastError = useOrchestrationSchedulerStore((s) => s.lastError);
   const restartSchedulerLoop = useOrchestrationSchedulerStore((s) => s.startLoop);
-  const startPlanner = useMissionPlannerStore((s) => s.startPlanner);
+  const startPlanner = useFlightPlannerStore((s) => s.startPlanner);
   const activeWorkspace = useWorkspaceStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
   );
@@ -222,10 +222,10 @@ export function MissionsView() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
-  function handleStartMission() {
+  function handleStartFlight() {
     const resolvedPath = activeWorkspace?.projectPath || projectPath || "";
     const flight = addFlight({
-      title: "Untitled mission",
+      title: "Untitled flight",
       objective: "",
       priority: "medium",
       projectPath: resolvedPath,
@@ -233,11 +233,11 @@ export function MissionsView() {
       issueIds: [],
     });
     // `addFlight` hardcodes status: "draft"; flip it to spec mode so the
-    // detail pane mounts the MissionSpecPane and the sidebar groups this
-    // mission under "Drafting".
+    // detail pane mounts the FlightSpecPane and the sidebar groups this
+    // flight under "Drafting".
     updateFlight(flight.id, { status: "spec" });
     setActiveFlight(flight.id);
-    // Fire-and-forget — MissionSpecPane handles streaming state once mounted.
+    // Fire-and-forget — FlightSpecPane handles streaming state once mounted.
     void startPlanner(flight.id, resolvedPath);
   }
 
@@ -285,18 +285,18 @@ export function MissionsView() {
       <>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-bg-primary px-6 text-text-muted">
           <Plane size={32} />
-          <span className="text-sm font-medium text-text-primary">No missions yet</span>
+          <span className="text-sm font-medium text-text-primary">No flights yet</span>
           <span className="max-w-md text-center text-xs">
             Start a conversation with the planner. Describe what you want to build, and the planner
             will help scope it, decompose it into milestones, and run it in parallel.
           </span>
           <div className="mt-2 flex flex-col items-center gap-2">
             <button
-              onClick={handleStartMission}
+              onClick={handleStartFlight}
               className="hover:bg-accent-green/15 flex items-center gap-2 rounded border border-accent-line bg-accent-soft px-4 py-2 text-sm font-medium text-accent-green transition-colors"
             >
               <Sparkles size={14} />
-              Start a mission
+              Start a flight
             </button>
             <button
               onClick={() => setModal("async")}
@@ -342,7 +342,7 @@ export function MissionsView() {
               <button
                 onClick={restartSchedulerLoop}
                 className="border-accent-amber/30 hover:bg-accent-amber/10 inline-flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium transition-colors"
-                title="Resume mission scheduler"
+                title="Resume flight scheduler"
               >
                 <RefreshCw size={10} />
                 Retry
@@ -376,7 +376,7 @@ function EmptyDetail() {
     <div className="flex flex-1 items-center justify-center bg-bg-primary">
       <div className="flex flex-col items-center gap-2 text-text-muted">
         <Plane size={28} />
-        <span className="text-xs">No mission selected — pick one from the left</span>
+        <span className="text-xs">No flight selected — pick one from the left</span>
       </div>
     </div>
   );
@@ -516,7 +516,7 @@ function FlightRow({
     return () => window.clearTimeout(timer);
   }, [confirming]);
 
-  // Surface a warning if this mission has live work — active attempts or
+  // Surface a warning if this flight has live work — active attempts or
   // any task in a non-terminal running/queued state. We still allow the
   // delete; we just nudge the user that they're abandoning in-flight work.
   const hasActiveWork = useMemo(() => {
@@ -537,13 +537,13 @@ function FlightRow({
     }
     return false;
   }, [flight.attempts, flight.milestones]);
-  // B5 — show how many persistent goals are bound to this mission so
+  // B5 — show how many persistent goals are bound to this flight so
   // users see at a glance whether long-running work is parked here.
-  const goalCount = useGoalStore((s) => s.getGoalsForMission(flight.id).length);
+  const goalCount = useGoalStore((s) => s.getGoalsForFlight(flight.id).length);
 
-  // v0.8-H — "N patterns extracted" chip on completed missions. We
+  // v0.8-H — "N patterns extracted" chip on completed flights. We
   // count every `flight_completed` / `task_completed` event tied to
-  // this mission (by flightId) and the lessonsLearned bullets they
+  // this flight (by flightId) and the lessonsLearned bullets they
   // emitted, which are the closest analog to "patterns" in our current
   // schema.
   const memoryHits = useMemoryStore((s) => {
@@ -563,7 +563,7 @@ function FlightRow({
   const openMemoryView = useAppStore((s) => s.openMemoryView);
 
   const deleteTitle = hasActiveWork
-    ? `Delete "${flight.title || "Untitled"}"? This mission has active work. Cancel attempts first or proceed anyway.`
+    ? `Delete "${flight.title || "Untitled"}"? This flight has active work. Cancel attempts first or proceed anyway.`
     : `Delete "${flight.title || "Untitled"}"`;
 
   return (
@@ -603,7 +603,7 @@ function FlightRow({
               className="text-[10px] font-medium text-accent-red"
               title={
                 hasActiveWork
-                  ? "This mission has active work — confirm to delete anyway."
+                  ? "This flight has active work — confirm to delete anyway."
                   : undefined
               }
             >
@@ -617,7 +617,7 @@ function FlightRow({
               }}
               className="hover:bg-accent-red/15 rounded p-0.5 text-accent-red transition-colors"
               title="Confirm delete"
-              aria-label="Confirm delete mission"
+              aria-label="Confirm delete flight"
             >
               <Check size={11} />
             </button>
@@ -643,7 +643,7 @@ function FlightRow({
             }}
             className="hover:bg-accent-red/10 rounded p-0.5 text-text-muted opacity-0 transition-colors hover:text-accent-red focus:opacity-100 group-hover:opacity-100"
             title={deleteTitle}
-            aria-label="Delete mission"
+            aria-label="Delete flight"
           >
             <Trash2 size={11} />
           </button>
@@ -664,7 +664,7 @@ function FlightRow({
         {goalCount > 0 && (
           <span
             className="inline-flex items-center gap-1 text-accent-blue"
-            title={`${goalCount} persistent goal${goalCount === 1 ? "" : "s"} bound to this mission`}
+            title={`${goalCount} persistent goal${goalCount === 1 ? "" : "s"} bound to this flight`}
           >
             <Target size={9} />
             <span>{goalCount}</span>
@@ -676,17 +676,17 @@ function FlightRow({
             tabIndex={0}
             onClick={(e) => {
               e.stopPropagation();
-              openMemoryView({ missionId: flight.id });
+              openMemoryView({ flightId: flight.id });
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
                 e.stopPropagation();
-                openMemoryView({ missionId: flight.id });
+                openMemoryView({ flightId: flight.id });
               }
             }}
             className="hover:text-accent-green/80 hover:bg-accent-green/10 -mx-1 inline-flex cursor-pointer items-center gap-1 rounded px-1 text-accent-green transition-colors"
-            title={`${memoryHits} memory entr${memoryHits === 1 ? "y" : "ies"} extracted from this mission. Click to view in Memory.`}
+            title={`${memoryHits} memory entr${memoryHits === 1 ? "y" : "ies"} extracted from this flight. Click to view in Memory.`}
           >
             <Brain size={9} />
             <span>{memoryHits}</span>
@@ -714,13 +714,13 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   const sessions = flight.linkedSessionIds.length;
   const isSpec = status === "spec";
   // E7-INTEGRATE — tab strip state. "overview" renders the existing
-  // detail body (or MissionSpecPane in spec status); "journal" renders
-  // the markdown journal for this mission.
+  // detail body (or FlightSpecPane in spec status); "journal" renders
+  // the markdown journal for this flight.
   const [activeTab, setActiveTab] = useState<"overview" | "journal">("overview");
   const [unreadJournal, setUnreadJournal] = useState(false);
 
-  // Reset tab + unread dot when switching between missions so a new
-  // mission doesn't inherit stale UI state.
+  // Reset tab + unread dot when switching between flights so a new
+  // flight doesn't inherit stale UI state.
   useEffect(() => {
     setActiveTab("overview");
     setUnreadJournal(false);
@@ -731,19 +731,19 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   // `activeTab` as a dependency below tore down + re-subscribed the Tauri
   // listener on every tab flip (cheap but a real source of churn during
   // rapid Overview/Journal toggles). A ref reads the freshest value at
-  // event time and the effect only runs when the mission identity changes.
+  // event time and the effect only runs when the flight identity changes.
   const activeTabRef = useRef<"overview" | "journal">("overview");
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
 
-  // Subscribe to journal-append events for this mission. If the user is
+  // Subscribe to journal-append events for this flight. If the user is
   // already viewing the Journal tab, we don't need to flag anything; the
   // JournalTab itself will refresh. Otherwise show a small dot.
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
-    listen(`mission-planner:journal-appended:${flight.id}`, () => {
+    listen(`flight-planner:journal-appended:${flight.id}`, () => {
       if (cancelled) return;
       // Read `activeTab` off the ref so this effect doesn't need to
       // resubscribe when the tab changes.
@@ -769,11 +769,11 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
   // appears/disappears when the planner starts/stops. We watch the runtime
   // status itself (not just `isPlannerRunning(...)`) so Zustand's referential
   // selector triggers a re-render when status flips.
-  const plannerStatus = useMissionPlannerStore((s) => s.runtimes.get(flight.id)?.status);
+  const plannerStatus = useFlightPlannerStore((s) => s.runtimes.get(flight.id)?.status);
   // E10 — surface context-compaction state next to the status pill so
   // the user understands why the planner is briefly unresponsive while
   // the conversation gets summarized + the session is swapped.
-  const isCompacting = useMissionPlannerStore(
+  const isCompacting = useFlightPlannerStore(
     (s) => s.runtimes.get(flight.id)?.isCompacting === true,
   );
   // FIX 4 — include `quota_paused` so the user can manually stop a planner
@@ -819,7 +819,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
               )}
             </div>
             <h2 className="text-[18px] font-semibold leading-tight tracking-tight text-text-primary">
-              {flight.title || "Untitled mission"}
+              {flight.title || "Untitled flight"}
             </h2>
             {flight.objective && (
               <p className="max-w-[600px] text-[11.5px] leading-relaxed text-text-secondary">
@@ -842,10 +842,10 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
                 onClick={() => {
                   if (
                     window.confirm(
-                      "Stop the autonomous planner for this mission? The mission stays alive — milestones, tasks, and in-flight executor work continue. You can restart the planner manually later.",
+                      "Stop the autonomous planner for this flight? The flight stays alive — milestones, tasks, and in-flight executor work continue. You can restart the planner manually later.",
                     )
                   ) {
-                    void useMissionPlannerStore.getState().stopPlanner(flight.id);
+                    void useFlightPlannerStore.getState().stopPlanner(flight.id);
                   }
                 }}
                 className="border-accent-red/30 hover:bg-accent-red/10 inline-flex items-center gap-1 rounded border bg-bg-secondary px-2 py-1 text-[11px] text-accent-red transition-colors"
@@ -875,7 +875,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
           </div>
         </div>
 
-        <PlannerApprovalGate missionId={flight.id} />
+        <PlannerApprovalGate flightId={flight.id} />
 
         {/* E7-INTEGRATE — tab strip: Overview / Journal */}
         <div className="-mx-3.5 flex items-center gap-0 border-b border-line-soft px-3.5">
@@ -912,7 +912,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
 
         {activeTab === "overview" ? (
           isSpec ? (
-            <MissionSpecPane missionId={flight.id} />
+            <FlightSpecPane flightId={flight.id} />
           ) : (
             <>
               <StatGrid flight={flight} tasks={tasks} sessions={sessions} dot={dot} />
@@ -926,7 +926,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
             </>
           )
         ) : (
-          <JournalTab missionId={flight.id} />
+          <JournalTab flightId={flight.id} />
         )}
       </div>
     </div>
@@ -934,7 +934,7 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
 }
 
 function OutputReviewCard({ flight }: { flight: Flight }) {
-  const summary = useMemo(() => summarizeMissionReview(flight), [flight]);
+  const summary = useMemo(() => summarizeFlightReview(flight), [flight]);
   const rows = useMemo(() => {
     const seen = new Set<string>();
     const out: typeof summary.files = [];
@@ -1074,7 +1074,7 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
       value: formatCost(plannerCost),
       // On OAuth the dollar amount is best-effort, so the sub-line surfaces
       // the cumulative token count as the authoritative measure. When the
-      // counter is still 0 (e.g. immediately after `start_mission_planner`
+      // counter is still 0 (e.g. immediately after `start_flight_planner`
       // before any turn has settled) "≈0 tokens" reads weirdly, so fall
       // back to a plain provider label instead.
       sub: isOAuth

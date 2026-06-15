@@ -176,14 +176,14 @@ export const slashCommandHandlers: Record<
     useGoalStore.getState().addGoal({
       title,
       conversationId,
-      missionId: linkedFlight?.id,
+      flightId: linkedFlight?.id,
       checklist: plan ?? [],
       status: "active",
     });
     appendMessage(
       conversationId,
       sysMessage(
-        `(/goal — created persistent goal "${title}"${linkedFlight ? ` bound to mission "${linkedFlight.title}"` : ""})`,
+        `(/goal — created persistent goal "${title}"${linkedFlight ? ` bound to flight "${linkedFlight.title}"` : ""})`,
       ),
     );
   },

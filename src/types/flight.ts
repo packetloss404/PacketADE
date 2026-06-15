@@ -127,10 +127,10 @@ export interface Task {
   cost: number;
   tokens: number;
   /**
-   * Mission Planner: number of `replan_after_failure` calls this task has
+   * Flight Planner: number of `replan_after_failure` calls this task has
    * triggered (excluding RateLimit/Network exemptions). Mirrored from
-   * `MissionPlannerSession.replans_per_task` by
-   * `MissionPlannerRegistry::bump_replan_count`. Read by the planner's
+   * `FlightPlannerSession.replans_per_task` by
+   * `FlightPlannerRegistry::bump_replan_count`. Read by the planner's
    * failure-wake body renderer to surface budget headroom (`N / 3`).
    *
    * Optional on the frontend Task because legacy Task constructors and
@@ -245,7 +245,7 @@ export interface Flight {
   prompt?: string;
   /** Parallel agent attempts. Non-empty = async-mode Flight. */
   attempts?: Attempt[];
-  // Mission Planner (E1+) — autonomous planner session bound to this Flight.
+  // Flight Planner (E1+) — autonomous planner session bound to this Flight.
   plannerSessionId?: string;
   plannerStatus?: "idle" | "awake" | "paused" | "quota_paused" | "completed" | "failed";
   plannerCost?: number;

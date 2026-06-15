@@ -34,7 +34,7 @@ const MemoryView = lazy(() => import("@/components/views/MemoryView").then((m) =
 const DeployView = lazy(() => import("@/components/views/DeployView").then((m) => ({ default: m.DeployView })));
 const ReviewQueueView = lazy(() => import("@/components/views/ReviewQueueView").then((m) => ({ default: m.ReviewQueueView })));
 const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })));
-const MissionsView = lazy(() => import("@/components/views/MissionsView").then((m) => ({ default: m.MissionsView })));
+const FlightsView = lazy(() => import("@/components/views/FlightsView").then((m) => ({ default: m.FlightsView })));
 
 const AgentsView = lazy(() => import("@/components/views/AgentsView").then((m) => ({ default: m.AgentsView })));
 const CostDashboardView = lazy(() => import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })));
@@ -182,7 +182,7 @@ export default function App() {
         }
         const viewMap: Record<string, AppView> = {
           "!": "agents",    // Shift+1 — was "claude", remapped after CoreView retirement
-          "@": "missions",  // Shift+2 — was "codex"
+          "@": "flights",  // Shift+2 — was "codex"
           "#": "issues",    // Shift+3
           "$": "history",   // Shift+4
           "%": "tools",     // Shift+5
@@ -307,8 +307,8 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return null; // rendered above
     case "issues":
       return <IssueBoard />;
-    case "missions":
-      return <MissionsView />;
+    case "flights":
+      return <FlightsView />;
     case "history":
       return <HistoryView />;
     case "tools":

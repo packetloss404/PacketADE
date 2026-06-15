@@ -23,7 +23,7 @@ interface CostGuardrailStore extends CostGuardrailSettings {
   setGlobalMonthlyLimit: (limit: number | null) => void;
   setSessionLimit: (limit: number | null) => void;
   setProviderLimit: (source: string, limit: number | null) => void;
-  setMissionLimit: (missionId: string, limit: number | null) => void;
+  setFlightLimit: (flightId: string, limit: number | null) => void;
   setWarningThreshold: (percent: number) => void;
   grantOverride: (key: string, now?: number) => void;
   clearOverride: (key: string) => void;
@@ -91,12 +91,12 @@ export const useCostGuardrailStore = create<CostGuardrailStore>((set, get) => {
       else providerLimitsUsd[source] = clean;
       update({ providerLimitsUsd });
     },
-    setMissionLimit: (missionId, limit) => {
-      const missionLimitsUsd = { ...get().missionLimitsUsd };
+    setFlightLimit: (flightId, limit) => {
+      const flightLimitsUsd = { ...get().flightLimitsUsd };
       const clean = cleanLimit(limit);
-      if (clean === null) delete missionLimitsUsd[missionId];
-      else missionLimitsUsd[missionId] = clean;
-      update({ missionLimitsUsd });
+      if (clean === null) delete flightLimitsUsd[flightId];
+      else flightLimitsUsd[flightId] = clean;
+      update({ flightLimitsUsd });
     },
     setWarningThreshold: (percent) => update({ warningThresholdPercent: percent }),
     grantOverride: (key, now = Date.now()) => {
@@ -160,7 +160,7 @@ export const useCostGuardrailStore = create<CostGuardrailStore>((set, get) => {
 
 export async function assertCostGuardrailsAllowLaunch(
   provider: string,
-  missionId?: string | null,
+  flightId?: string | null,
 ): Promise<void> {
   useCostGuardrailStore.getState().hydrateFromStorage();
   const state = useCostGuardrailStore.getState();
@@ -170,7 +170,7 @@ export async function assertCostGuardrailsAllowLaunch(
     state.monthlyLimitUsd !== null ||
     state.sessionLimitUsd !== null ||
     state.providerLimitsUsd[providerSource] !== undefined ||
-    (missionId ? state.missionLimitsUsd[missionId] !== undefined : false);
+    (flightId ? state.flightLimitsUsd[flightId] !== undefined : false);
   if (!hasAnyCap) return;
 
   const data = JSON.parse(await readUsageAnalytics()) as AnalyticsData;
@@ -185,16 +185,16 @@ export async function assertCostGuardrailsAllowLaunch(
       overrideUntil: state.overrideUntilByKey[costGuardrailKey.session],
     }),
   );
-  if (missionId) {
-    const flight = useFlightStore.getState().flights.find((f) => f.id === missionId);
+  if (flightId) {
+    const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
     evaluations.push(
       evaluateCostGuardrail({
-        key: costGuardrailKey.mission(missionId),
-        label: `Mission ${flight?.title ?? missionId}`,
+        key: costGuardrailKey.flight(flightId),
+        label: `Flight ${flight?.title ?? flightId}`,
         currentUsd: flight?.totalCost ?? 0,
-        limitUsd: state.missionLimitsUsd[missionId] ?? null,
+        limitUsd: state.flightLimitsUsd[flightId] ?? null,
         warningRatio: state.warningThresholdPercent / 100,
-        overrideUntil: state.overrideUntilByKey[costGuardrailKey.mission(missionId)],
+        overrideUntil: state.overrideUntilByKey[costGuardrailKey.flight(flightId)],
       }),
     );
   }

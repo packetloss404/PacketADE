@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AgentConfigDto,
-  MissionApprovalRequestDto,
+  FlightApprovalRequestDto,
   OrchestratorSnapshotDto,
   PersistedStateDto,
   PersistedUiStateDto,
@@ -1172,7 +1172,7 @@ function fromDtoTask(
     cost: task.cost,
     tokens: task.tokens,
     ownedPaths: task.ownedPaths ?? [],
-    // Mission Planner replan counter — surfaced from the DTO so renderers
+    // Flight Planner replan counter — surfaced from the DTO so renderers
     // can show `N / 3` budget headroom in the failure-wake body.
     replanCount: task.replanCount,
   };
@@ -1218,7 +1218,7 @@ function toDtoTask(
     cost: task.cost,
     tokens: task.tokens,
     ownedPaths: task.ownedPaths ?? [],
-    // Mission Planner replan counter — mirrored from the registry on each
+    // Flight Planner replan counter — mirrored from the registry on each
     // `bump_replan_count`. Default to 0 for legacy tasks that predate E5.
     replanCount: task.replanCount ?? 0,
   };
@@ -1548,7 +1548,7 @@ function toDtoPersistedState(state: PersistedState): PersistedStateDto {
       autoCommitTrailerEnabled: state.settings.autoCommitTrailerEnabled ?? true,
       autoCommitTrailerFormat:
         state.settings.autoCommitTrailerFormat ??
-        "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}",
+        "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}",
     },
     ui: {
       selectedFlightId: toOptional(state.ui.selectedFlightId),
@@ -2765,43 +2765,43 @@ export async function getProviderLaunchStats(): Promise<ProviderLaunchStats> {
   return invoke<ProviderLaunchStats>("get_provider_launch_stats");
 }
 
-// === Mission Planner (E1) =================================================
+// === Flight Planner (E1) =================================================
 //
-// Autonomous planner sessions bound to a Mission. The planner is a long-lived
+// Autonomous planner sessions bound to a Flight. The planner is a long-lived
 // `api-claude-oauth` sidecar session — it emits the standard
 // `api-agent:*:<sessionId>` event stream, so consumers attach to those events
 // via `apiAgent*Event` helpers using the returned plannerSessionId.
 
-export async function startMissionPlanner(
-  missionId: string,
+export async function startFlightPlanner(
+  flightId: string,
   projectPath: string,
   provisionalSessionId?: string,
 ): Promise<string> {
-  return invoke<string>("start_mission_planner", {
-    missionId,
+  return invoke<string>("start_flight_planner", {
+    flightId,
     projectPath,
     provisionalSessionId,
   });
 }
 
-export async function stopMissionPlanner(missionId: string): Promise<void> {
-  return invoke("stop_mission_planner", { missionId });
+export async function stopFlightPlanner(flightId: string): Promise<void> {
+  return invoke("stop_flight_planner", { flightId });
 }
 
-export async function pauseMissionPlanner(missionId: string): Promise<void> {
-  return invoke("pause_mission_planner", { missionId });
+export async function pauseFlightPlanner(flightId: string): Promise<void> {
+  return invoke("pause_flight_planner", { flightId });
 }
 
-export async function resumeMissionPlanner(missionId: string): Promise<void> {
-  return invoke("resume_mission_planner", { missionId });
+export async function resumeFlightPlanner(flightId: string): Promise<void> {
+  return invoke("resume_flight_planner", { flightId });
 }
 
 export async function injectPlannerTurn(
-  missionId: string,
+  flightId: string,
   content: string,
   source: "user" | "wake_trigger",
 ): Promise<void> {
-  return invoke("inject_planner_turn", { missionId, content, source });
+  return invoke("inject_planner_turn", { flightId, content, source });
 }
 
 // E4-LAUNCH — fire a `WakeTrigger::Decomposition` event onto the planner's
@@ -2811,60 +2811,60 @@ export async function injectPlannerTurn(
 // kind the planner's system prompt is trained to recognize as the kickoff
 // trigger. Replaces the prior `injectPlannerTurn(..., "wake_trigger")` path
 // which mis-tagged the kind as `"user_message_in_journal"`.
-export async function triggerPlannerDecomposition(missionId: string): Promise<void> {
-  return invoke("trigger_planner_decomposition", { missionId });
+export async function triggerPlannerDecomposition(flightId: string): Promise<void> {
+  return invoke("trigger_planner_decomposition", { flightId });
 }
 
 // E2 — async-return approval gate. The planner's `request_user_approval`
 // tool files an approval and keeps working; the frontend surfaces it via the
-// `mission-planner:approval-request:<missionId>` event and resolves it back
+// `flight-planner:approval-request:<flightId>` event and resolves it back
 // to the planner with this binding. `choice` is one of the option labels the
 // planner offered, the user's free-text answer, `"acknowledged"`, or
 // `"dismissed"`.
-export async function resolveMissionApproval(approvalId: string, choice: string): Promise<void> {
-  return invoke("resolve_mission_approval", { approvalId, choice });
+export async function resolveFlightApproval(approvalId: string, choice: string): Promise<void> {
+  return invoke("resolve_flight_approval", { approvalId, choice });
 }
 
-// Cold-start hydration for `missionPlannerStore.pendingApprovals`. Event
+// Cold-start hydration for `flightPlannerStore.pendingApprovals`. Event
 // listeners installed in `startPlanner` only see approvals filed AFTER they
 // attach; this binding backfills any unresolved approvals already on disk
-// (paused mission resume, page reload, cold app start). Returns only
+// (paused flight resume, page reload, cold app start). Returns only
 // unresolved entries — resolved approvals are historical.
-export async function getMissionApprovals(missionId: string): Promise<MissionApprovalRequestDto[]> {
-  return invoke<MissionApprovalRequestDto[]>("get_mission_approvals", { missionId });
+export async function getFlightApprovals(flightId: string): Promise<FlightApprovalRequestDto[]> {
+  return invoke<FlightApprovalRequestDto[]>("get_flight_approvals", { flightId });
 }
 
-export interface MissionJournalRead {
+export interface FlightJournalRead {
   markdown: string;
   totalBytes: number;
   returnedBytes: number;
   truncated: boolean;
 }
 
-// E7 — mission journal read access. `getMissionJournal` returns the raw
-// markdown source for compatibility with older consumers. `getMissionJournalTail`
+// E7 — flight journal read access. `getFlightJournal` returns the raw
+// markdown source for compatibility with older consumers. `getFlightJournalTail`
 // is the JournalTab path: it returns a bounded latest slice plus byte metadata
-// so append events do not reload/render unbounded full files. `getMissionJournalPath`
+// so append events do not reload/render unbounded full files. `getFlightJournalPath`
 // returns the absolute path of the journal file on disk — used by the
 // JournalTab's Export button so the user can locate the file in any
 // markdown viewer.
 //
-// The JournalTab re-fetches on `mission-planner:journal-appended:<missionId>`
+// The JournalTab re-fetches on `flight-planner:journal-appended:<flightId>`
 // events from the E7-HOOKS slice; this binding doesn't subscribe — the
 // component owns its own listener.
-export async function getMissionJournal(missionId: string): Promise<string> {
-  return invoke<string>("get_mission_journal", { missionId });
+export async function getFlightJournal(flightId: string): Promise<string> {
+  return invoke<string>("get_flight_journal", { flightId });
 }
 
-export async function getMissionJournalTail(
-  missionId: string,
+export async function getFlightJournalTail(
+  flightId: string,
   maxBytes?: number,
-): Promise<MissionJournalRead> {
-  return invoke<MissionJournalRead>("get_mission_journal_tail", { missionId, maxBytes });
+): Promise<FlightJournalRead> {
+  return invoke<FlightJournalRead>("get_flight_journal_tail", { flightId, maxBytes });
 }
 
-export async function getMissionJournalPath(missionId: string): Promise<string> {
-  return invoke<string>("get_mission_journal_path", { missionId });
+export async function getFlightJournalPath(flightId: string): Promise<string> {
+  return invoke<string>("get_flight_journal_path", { flightId });
 }
 
 // === v0.8.8 quality ai =====================================================

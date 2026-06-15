@@ -43,7 +43,7 @@ pub(super) struct RemoteSidecarSession {
 
 /// Per-session waiter state for [`SidecarManager::wait_for_oneshot`].
 ///
-/// Mission Planner E10-SUMMARIZE uses this to await a single-turn sidecar
+/// Flight Planner E10-SUMMARIZE uses this to await a single-turn sidecar
 /// session's completion from Rust code. The waiter accumulates `chunk` text
 /// into `buffer` and gets resolved on the first terminal event (`done` →
 /// `Ok(buffer)` / `error` → `Err(message)`).
@@ -156,7 +156,7 @@ impl SidecarManager {
     /// concatenated assistant text on `done`, or `Err(message)` on `error`.
     ///
     /// Intended for sessions whose entire conversation is a single
-    /// request/response round-trip (e.g. mission-journal summarization).
+    /// request/response round-trip (e.g. flight-journal summarization).
     /// The caller is responsible for:
     ///   * Calling this **before** `forward_start` so the waiter is in
     ///     place before any chunks arrive (the registration is cheap and

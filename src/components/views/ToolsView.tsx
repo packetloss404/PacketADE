@@ -89,7 +89,7 @@ type SettingsSection =
   | "providers"
   | "routing"
   | "memory"
-  | "missions"
+  | "flights"
   | "github"
   | "issues"
   | "servers"
@@ -106,7 +106,7 @@ const SECTIONS: { key: SettingsSection; label: string; icon: typeof Wrench }[] =
   { key: "providers", label: "AI Providers", icon: Key },
   { key: "routing", label: "AI Routing", icon: Route },
   { key: "memory", label: "Memory", icon: Brain },
-  { key: "missions", label: "Missions", icon: GitBranch },
+  { key: "flights", label: "Flights", icon: GitBranch },
   { key: "github", label: "GitHub", icon: Github },
   { key: "issues", label: "Issues", icon: Ticket },
   { key: "servers", label: "Servers", icon: Server },
@@ -215,7 +215,7 @@ export function ToolsView() {
           </div>
         )}
 
-        {activeSection === "missions" && (
+        {activeSection === "flights" && (
           <div className="max-w-2xl">
             <OrchestrationSettingsCard />
           </div>

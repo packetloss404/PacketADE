@@ -265,7 +265,7 @@ describe("flightStore", () => {
     expect(status).toBe("draft");
   });
 
-  it("reconciles mission issueIds from issue flight assignments", () => {
+  it("reconciles flight issueIds from issue flight assignments", () => {
     const flight = useFlightStore.getState().addFlight({
       title: "Linked Flight",
       objective: "Link test",

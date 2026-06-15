@@ -296,7 +296,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   },
 
   captureFlightCompleted: (payload, projectPath) => {
-    if (!getMemorySettings().captureMissions) return;
+    if (!getMemorySettings().captureFlights) return;
     const event = createEvent("flight_completed", projectPath, payload);
     const events = capEvents([...get().events, event]);
     set({ events });
@@ -537,7 +537,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
 
     const lessonItems = items.filter((i) => i.kind === "lesson");
     if (lessonItems.length > 0) {
-      lines.push("## Lessons from Previous Missions");
+      lines.push("## Lessons from Previous Flights");
       for (const it of lessonItems) lines.push(`- ${it.title}`);
       lines.push("");
     }
@@ -646,7 +646,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
           kind: "lesson",
           title: l,
           timestamp: e.timestamp,
-          reason: "Lesson from mission retrospective (last 7 days)",
+          reason: "Lesson from flight retrospective (last 7 days)",
         });
         pushed += 1;
       }
@@ -707,7 +707,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
 
     const groups: Array<[ContextItemKind, string]> = [
       ["pattern", "Learned patterns"],
-      ["lesson", "Mission lessons"],
+      ["lesson", "Flight lessons"],
       ["session", "Recent session context"],
     ];
 

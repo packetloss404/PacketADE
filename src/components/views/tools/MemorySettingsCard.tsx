@@ -26,7 +26,7 @@ export function MemorySettingsCard() {
 
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
   const captureTasks = useMemorySettingsStore((s) => s.captureTasks);
-  const captureMissions = useMemorySettingsStore((s) => s.captureMissions);
+  const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
   const summarizeSessions = useMemorySettingsStore((s) => s.summarizeSessions);
   const extractPatterns = useMemorySettingsStore((s) => s.extractPatterns);
   const retentionDays = useMemorySettingsStore((s) => s.retentionDays);
@@ -41,7 +41,7 @@ export function MemorySettingsCard() {
 
   const setCaptureSessions = useMemorySettingsStore((s) => s.setCaptureSessions);
   const setCaptureTasks = useMemorySettingsStore((s) => s.setCaptureTasks);
-  const setCaptureMissions = useMemorySettingsStore((s) => s.setCaptureMissions);
+  const setCaptureFlights = useMemorySettingsStore((s) => s.setCaptureFlights);
   const setSummarizeSessions = useMemorySettingsStore((s) => s.setSummarizeSessions);
   const setExtractPatterns = useMemorySettingsStore((s) => s.setExtractPatterns);
   const setRetentionDays = useMemorySettingsStore((s) => s.setRetentionDays);
@@ -97,15 +97,15 @@ export function MemorySettingsCard() {
           />
           <Toggle
             icon={ListChecks}
-            label="Capture mission tasks"
+            label="Capture flight tasks"
             checked={captureTasks}
             onChange={setCaptureTasks}
           />
           <Toggle
             icon={GitBranch}
-            label="Capture completed missions"
-            checked={captureMissions}
-            onChange={setCaptureMissions}
+            label="Capture completed flights"
+            checked={captureFlights}
+            onChange={setCaptureFlights}
           />
         </Section>
 
@@ -185,7 +185,7 @@ export function MemorySettingsCard() {
             onChange={setContextMaxSessions}
           />
           <NumberRow
-            label="Mission lessons"
+            label="Flight lessons"
             value={contextMaxLessons}
             min={0}
             max={50}

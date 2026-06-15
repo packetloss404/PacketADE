@@ -12,12 +12,12 @@ impl SidecarManager {
     ///
     /// `mcp_kind` (v5) is an optional discriminator that tells the sidecar to
     /// construct an additional in-process MCP server locally before opening
-    /// the SDK `query()`. The Mission Planner uses `Some("planner")` to ask
+    /// the SDK `query()`. The Flight Planner uses `Some("planner")` to ask
     /// the sidecar to register the planner tool surface
     /// (`mcp__planner__create_milestone`, etc.). Live `McpServer` instances
     /// cannot cross the stdio boundary, so this discriminator is the wire
     /// hand-off; the actual tool definitions live in
-    /// `agent-sidecar/src/mcp/mission-planner-server.ts`. `None` for
+    /// `agent-sidecar/src/mcp/flight-planner-server.ts`. `None` for
     /// non-planner sessions, which keeps the existing `api-claude-oauth`
     /// chat path untouched.
     #[allow(clippy::too_many_arguments)]
@@ -206,7 +206,7 @@ impl SidecarManager {
     /// turns; required (effectively) for `source == "wake_trigger"`.
     ///
     /// E6-CAPS: `max_output_tokens` is the per-mode output budget the
-    /// Mission Planner wants the sidecar to honor for this turn. Threaded
+    /// Flight Planner wants the sidecar to honor for this turn. Threaded
     /// onto the wire as `maxOutputTokens` (camelCase to match the rest of
     /// the protocol). NOTE: the Claude Agent SDK (0.2.116) does not expose
     /// a per-turn `max_tokens` setter — the sidecar's anthropic provider
@@ -239,7 +239,7 @@ impl SidecarManager {
     /// event when the model invokes a `mcp__planner__*` tool, and parks the
     /// SDK handler on a pending promise keyed by `call_id`. This method
     /// resolves that promise from the Rust side after
-    /// [`MissionPlannerRegistry::handle_tool_call`] has produced a result.
+    /// [`FlightPlannerRegistry::handle_tool_call`] has produced a result.
     ///
     /// `success: true` + `result` resolves the SDK handler with `result`;
     /// `success: false` + `error` rejects it with that message string. The

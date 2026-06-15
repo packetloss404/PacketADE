@@ -5,8 +5,8 @@
  * scoped Tauri events when a planner session crosses the 150K-token
  * compaction threshold:
  *
- *   mission-planner:compaction-triggered:<missionId>
- *   mission-planner:compaction-completed:<missionId>
+ *   flight-planner:compaction-triggered:<flightId>
+ *   flight-planner:compaction-completed:<flightId>
  *
  * The store flips a transient `runtime.isCompacting` flag so the detail
  * pane can surface a "Compacting" pill, and on completion re-hydrates
@@ -23,26 +23,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const listenMock = vi.fn();
 const hydrateFromBackendMock = vi.fn().mockResolvedValue(undefined);
 const updateFlightMock = vi.fn();
-const startMissionPlannerMock = vi.fn();
-const getMissionApprovalsMock = vi.fn().mockResolvedValue([]);
+const startFlightPlannerMock = vi.fn();
+const getFlightApprovalsMock = vi.fn().mockResolvedValue([]);
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (...args: unknown[]) => listenMock(...args),
 }));
 
 vi.mock("@/lib/tauri", () => ({
-  startMissionPlanner: (...args: unknown[]) => startMissionPlannerMock(...args),
-  stopMissionPlanner: vi.fn().mockResolvedValue(undefined),
-  pauseMissionPlanner: vi.fn().mockResolvedValue(undefined),
-  resumeMissionPlanner: vi.fn().mockResolvedValue(undefined),
+  startFlightPlanner: (...args: unknown[]) => startFlightPlannerMock(...args),
+  stopFlightPlanner: vi.fn().mockResolvedValue(undefined),
+  pauseFlightPlanner: vi.fn().mockResolvedValue(undefined),
+  resumeFlightPlanner: vi.fn().mockResolvedValue(undefined),
   injectPlannerTurn: vi.fn().mockResolvedValue(undefined),
   triggerPlannerDecomposition: vi.fn().mockResolvedValue(undefined),
-  resolveMissionApproval: vi.fn().mockResolvedValue(undefined),
-  getMissionApprovals: (...args: unknown[]) => getMissionApprovalsMock(...args),
+  resolveFlightApproval: vi.fn().mockResolvedValue(undefined),
+  getFlightApprovals: (...args: unknown[]) => getFlightApprovalsMock(...args),
 }));
 
 vi.mock("@/lib/notifications", () => ({
-  notifyMissionPlannerRateLimited: vi.fn().mockResolvedValue(undefined),
+  notifyFlightPlannerRateLimited: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/stores/flightStore", () => ({
@@ -55,11 +55,11 @@ vi.mock("@/stores/flightStore", () => ({
   },
 }));
 
-import { useMissionPlannerStore } from "@/stores/missionPlannerStore";
-import { notifyMissionPlannerRateLimited } from "@/lib/notifications";
+import { useFlightPlannerStore } from "@/stores/flightPlannerStore";
+import { notifyFlightPlannerRateLimited } from "@/lib/notifications";
 
 type EventCallback = (event: { payload: unknown }) => void;
-const mockedNotifyMissionPlannerRateLimited = vi.mocked(notifyMissionPlannerRateLimited);
+const mockedNotifyFlightPlannerRateLimited = vi.mocked(notifyFlightPlannerRateLimited);
 
 function setupListenCapture(): Map<string, EventCallback> {
   const handlers = new Map<string, EventCallback>();
@@ -72,61 +72,61 @@ function setupListenCapture(): Map<string, EventCallback> {
   return handlers;
 }
 
-describe("missionPlannerStore compaction listeners", () => {
+describe("flightPlannerStore compaction listeners", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useMissionPlannerStore.setState({
+    useFlightPlannerStore.setState({
       runtimes: new Map(),
       pendingApprovals: new Map(),
     });
-    getMissionApprovalsMock.mockResolvedValue([]);
-    // Default: every `startMissionPlanner` invocation returns the
+    getFlightApprovalsMock.mockResolvedValue([]);
+    // Default: every `startFlightPlanner` invocation returns the
     // provisional session id the store sent us, so the store does NOT
     // re-install listeners.
-    startMissionPlannerMock.mockImplementation(
-      async (_missionId: string, _projectPath: string, provisionalSessionId: string) =>
+    startFlightPlannerMock.mockImplementation(
+      async (_flightId: string, _projectPath: string, provisionalSessionId: string) =>
         provisionalSessionId,
     );
   });
 
   it("sets isCompacting=true on compaction-triggered event", async () => {
     const handlers = setupListenCapture();
-    await useMissionPlannerStore.getState().startPlanner("mission-1", "/tmp/project");
+    await useFlightPlannerStore.getState().startPlanner("flight-1", "/tmp/project");
 
-    const triggeredHandler = handlers.get("mission-planner:compaction-triggered:mission-1");
+    const triggeredHandler = handlers.get("flight-planner:compaction-triggered:flight-1");
     expect(triggeredHandler).toBeDefined();
 
     triggeredHandler!({ payload: undefined });
 
-    const runtime = useMissionPlannerStore.getState().runtimes.get("mission-1");
+    const runtime = useFlightPlannerStore.getState().runtimes.get("flight-1");
     expect(runtime?.isCompacting).toBe(true);
   });
 
   it("sets isCompacting=false and re-hydrates flightStore on compaction-completed", async () => {
     const handlers = setupListenCapture();
-    await useMissionPlannerStore.getState().startPlanner("mission-2", "/tmp/project");
+    await useFlightPlannerStore.getState().startPlanner("flight-2", "/tmp/project");
 
     // Pre-flip the runtime to `isCompacting: true` so we can observe
     // the listener clearing it — the trigger handler does this in
     // practice, but we don't want to make the second test depend on
     // the first one's wiring.
-    useMissionPlannerStore.setState((s) => {
+    useFlightPlannerStore.setState((s) => {
       const runtimes = new Map(s.runtimes);
-      const current = runtimes.get("mission-2");
+      const current = runtimes.get("flight-2");
       if (current) {
-        runtimes.set("mission-2", { ...current, isCompacting: true });
+        runtimes.set("flight-2", { ...current, isCompacting: true });
       }
       return { runtimes };
     });
 
     hydrateFromBackendMock.mockClear();
 
-    const completedHandler = handlers.get("mission-planner:compaction-completed:mission-2");
+    const completedHandler = handlers.get("flight-planner:compaction-completed:flight-2");
     expect(completedHandler).toBeDefined();
 
     completedHandler!({ payload: undefined });
 
-    const runtime = useMissionPlannerStore.getState().runtimes.get("mission-2");
+    const runtime = useFlightPlannerStore.getState().runtimes.get("flight-2");
     expect(runtime?.isCompacting).toBe(false);
     // Wait a microtask so the void-promise hydrate call has a chance
     // to register on the mock.
@@ -136,81 +136,81 @@ describe("missionPlannerStore compaction listeners", () => {
 
   it("initializes new planner runtimes with isCompacting=false", async () => {
     setupListenCapture();
-    await useMissionPlannerStore.getState().startPlanner("mission-3", "/tmp/project");
+    await useFlightPlannerStore.getState().startPlanner("flight-3", "/tmp/project");
 
-    const runtime = useMissionPlannerStore.getState().runtimes.get("mission-3");
+    const runtime = useFlightPlannerStore.getState().runtimes.get("flight-3");
     expect(runtime?.isCompacting).toBe(false);
   });
 
   it("hydrates pending approvals without dropping live approval events", async () => {
     const handlers = setupListenCapture();
-    const missionId = "mission-approval";
+    const flightId = "flight-approval";
     const persistedApproval = {
       id: "persisted-approval",
-      missionId,
+      flightId,
       question: "Persisted approval?",
       options: ["Proceed"],
       awaitingSince: 1_000,
     };
     const liveApproval = {
       id: "live-approval",
-      missionId,
+      flightId,
       question: "Live approval?",
       options: ["Proceed"],
       awaitingSince: 2_000,
     };
 
-    getMissionApprovalsMock.mockImplementation(async () => {
-      const handler = handlers.get("mission-planner:approval-request:mission-approval");
+    getFlightApprovalsMock.mockImplementation(async () => {
+      const handler = handlers.get("flight-planner:approval-request:flight-approval");
       expect(handler).toBeDefined();
       handler!({ payload: liveApproval });
       handler!({ payload: liveApproval });
       return [persistedApproval];
     });
 
-    await useMissionPlannerStore.getState().startPlanner(missionId, "/tmp/project");
+    await useFlightPlannerStore.getState().startPlanner(flightId, "/tmp/project");
 
     expect(
-      useMissionPlannerStore
+      useFlightPlannerStore
         .getState()
-        .getPendingApprovals(missionId)
+        .getPendingApprovals(flightId)
         .map((approval) => approval.id),
     ).toEqual(["persisted-approval", "live-approval"]);
   });
 
   it("hydrates persisted approvals without starting a planner runtime", async () => {
-    const missionId = "mission-cold-start-approval";
-    getMissionApprovalsMock.mockResolvedValueOnce([
+    const flightId = "flight-cold-start-approval";
+    getFlightApprovalsMock.mockResolvedValueOnce([
       {
         id: "persisted-cold-start",
-        missionId,
-        question: "Resume this mission?",
+        flightId,
+        question: "Resume this flight?",
         options: ["Resume", "Cancel"],
         awaitingSince: 1_000,
       },
     ]);
 
-    await useMissionPlannerStore.getState().hydratePendingApprovals(missionId);
+    await useFlightPlannerStore.getState().hydratePendingApprovals(flightId);
 
-    expect(startMissionPlannerMock).not.toHaveBeenCalled();
+    expect(startFlightPlannerMock).not.toHaveBeenCalled();
     expect(
-      useMissionPlannerStore
+      useFlightPlannerStore
         .getState()
-        .getPendingApprovals(missionId)
+        .getPendingApprovals(flightId)
         .map((approval) => approval.id),
     ).toEqual(["persisted-cold-start"]);
   });
 
   it("clears stale local approvals during cold-start hydration", async () => {
-    const missionId = "mission-stale-approval";
-    useMissionPlannerStore.setState({
+    const flightId = "flight-stale-approval";
+    useFlightPlannerStore.setState({
       pendingApprovals: new Map([
         [
-          missionId,
+          flightId,
           [
             {
               id: "already-resolved",
-              missionId,
+              flightId,
               question: "Old question?",
               options: ["OK"],
               awaitingSince: 1_000,
@@ -219,29 +219,29 @@ describe("missionPlannerStore compaction listeners", () => {
         ],
       ]),
     });
-    getMissionApprovalsMock.mockResolvedValueOnce([]);
+    getFlightApprovalsMock.mockResolvedValueOnce([]);
 
-    await useMissionPlannerStore.getState().hydratePendingApprovals(missionId);
+    await useFlightPlannerStore.getState().hydratePendingApprovals(flightId);
 
-    expect(useMissionPlannerStore.getState().getPendingApprovals(missionId)).toEqual([]);
+    expect(useFlightPlannerStore.getState().getPendingApprovals(flightId)).toEqual([]);
   });
 
   it("mirrors rate-limit events into quota_paused runtime status", async () => {
     const handlers = setupListenCapture();
-    const missionId = "mission-rate-limit";
+    const flightId = "flight-rate-limit";
 
-    await useMissionPlannerStore.getState().startPlanner(missionId, "/tmp/project");
+    await useFlightPlannerStore.getState().startPlanner(flightId, "/tmp/project");
 
-    const rateLimitedHandler = handlers.get("mission-planner:rate-limited:mission-rate-limit");
+    const rateLimitedHandler = handlers.get("flight-planner:rate-limited:flight-rate-limit");
     expect(rateLimitedHandler).toBeDefined();
 
     rateLimitedHandler!({
-      payload: { missionId, retryAfterSeconds: 75 },
+      payload: { flightId, retryAfterSeconds: 75 },
     });
 
-    const runtime = useMissionPlannerStore.getState().runtimes.get(missionId);
+    const runtime = useFlightPlannerStore.getState().runtimes.get(flightId);
     expect(runtime?.status).toBe("quota_paused");
     expect(runtime?.isStreaming).toBe(false);
-    expect(mockedNotifyMissionPlannerRateLimited).toHaveBeenCalledWith(missionId, "Mission", 75);
+    expect(mockedNotifyFlightPlannerRateLimited).toHaveBeenCalledWith(flightId, "Flight", 75);
   });
 });

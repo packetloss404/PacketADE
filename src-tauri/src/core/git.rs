@@ -182,7 +182,7 @@ fn clean_trailer_value(value: &str) -> Option<String> {
 pub fn append_packetade_context_trailers(message: &str, context: &GitCommitContext) -> String {
     let mut trailers: Vec<String> = Vec::new();
     if let Some(value) = context.flight_id.as_deref().and_then(clean_trailer_value) {
-        trailers.push(format!("PacketADE-Mission: {}", value));
+        trailers.push(format!("PacketADE-Flight: {}", value));
     }
     if let Some(value) = context.task_id.as_deref().and_then(clean_trailer_value) {
         trailers.push(format!("PacketADE-Task: {}", value));
@@ -477,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn append_packetade_context_trailers_adds_mission_task_metadata() {
+    fn append_packetade_context_trailers_adds_flight_task_metadata() {
         let msg = append_packetade_context_trailers(
             "feat: land work",
             &GitCommitContext {
@@ -486,7 +486,7 @@ mod tests {
                 ..GitCommitContext::default()
             },
         );
-        assert!(msg.contains("PacketADE-Mission: flight-123"));
+        assert!(msg.contains("PacketADE-Flight: flight-123"));
         assert!(msg.contains("PacketADE-Task: task-456"));
         assert!(msg.starts_with("feat: land work\n\n"));
     }

@@ -1,4 +1,4 @@
-// Living smoke test for the in-process MCP transport that the Mission
+// Living smoke test for the in-process MCP transport that the Flight
 // Planner depends on (was the original spike — promoted 2026-05-14 per
 // E1, extended in E2). Registers in-process MCP servers into a live
 // `@anthropic-ai/claude-agent-sdk` `query()` and confirms the model can
@@ -24,7 +24,7 @@
 //   5. The query stream terminates with a `result` message
 //
 // Pass criteria (Phase 2 — E2 planner surface):
-//   6. The real `createMissionPlannerMcpServer` factory builds without
+//   6. The real `createFlightPlannerMcpServer` factory builds without
 //      throwing, exposing 8 tools (7 real + `noop`).
 //   7. The model invokes `mcp__planner__create_milestone` exactly once.
 //   8. The handler runs, surfacing the call up through the `emit` callback
@@ -35,7 +35,7 @@
 
 import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import { createMissionPlannerMcpServer, PLANNER_MCP_KEY } from "../dist/mcp/mission-planner-server.js";
+import { createFlightPlannerMcpServer, PLANNER_MCP_KEY } from "../dist/mcp/flight-planner-server.js";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -256,8 +256,8 @@ console.log("");
 console.log("[spike] phase 1 OK — in-process MCP transport works against SDK 0.2.116");
 
 // ---------------------------------------------------------------------------
-// Phase 2 (E2): exercise the real Mission Planner MCP server. The factory
-// in `src/mcp/mission-planner-server.ts` registers 8 tools (7 real + the
+// Phase 2 (E2): exercise the real Flight Planner MCP server. The factory
+// in `src/mcp/flight-planner-server.ts` registers 8 tools (7 real + the
 // E1 `noop`). We drive a second `query()` and nudge the model to call
 // `create_milestone` exactly once, then verify the in-process round-trip
 // landed.
@@ -265,10 +265,10 @@ console.log("[spike] phase 1 OK — in-process MCP transport works against SDK 0
 // DUAL-MODE expectation re: the simulated supervisor reply:
 //
 //   In production the Rust dispatcher in
-//   `src-tauri/src/commands/mission_planner.rs` owns this. Until Wave 2
+//   `src-tauri/src/commands/flight_planner.rs` owns this. Until Wave 2
 //   (E2-MILE) lands, the dispatcher returns
 //   `Err("E2-MILE: not yet implemented")` for `create_milestone` — see
-//   the dispatcher TODO/stub list in dev/mission-planner-plan.md.
+//   the dispatcher TODO/stub list in dev/flight-planner-plan.md.
 //
 //   This JS smoke does NOT call the Rust supervisor; it stubs the `emit`
 //   callback locally. To stay faithful to the contract, the stub here
@@ -286,7 +286,7 @@ console.log("[spike] phase 1 OK — in-process MCP transport works against SDK 0
 let plannerEmitCalled = false;
 let plannerEmitEvent = null;
 
-const plannerServer = createMissionPlannerMcpServer("smoke-session", async (event) => {
+const plannerServer = createFlightPlannerMcpServer("smoke-session", async (event) => {
   plannerEmitCalled = true;
   plannerEmitEvent = event;
   // Simulated dispatcher reply. See dual-mode comment above.
@@ -297,7 +297,7 @@ const plannerServer = createMissionPlannerMcpServer("smoke-session", async (even
   };
 });
 
-console.log("[planner] createMissionPlannerMcpServer returned:", {
+console.log("[planner] createFlightPlannerMcpServer returned:", {
   type: plannerServer.type,
   name: plannerServer.name,
   hasInstance: !!plannerServer.instance,
@@ -310,7 +310,7 @@ if (plannerServer.type !== "sdk" || !plannerServer.instance) {
 const PLANNER_CREATE_MILESTONE = `mcp__${PLANNER_MCP_KEY}__create_milestone`;
 
 const plannerPrompt = [
-  "You are a test harness for the PacketADE Mission Planner.",
+  "You are a test harness for the PacketADE Flight Planner.",
   `Call the tool \`${PLANNER_CREATE_MILESTONE}\` exactly once with arguments`,
   `{"title": "Smoke milestone", "goal": "Verify the in-process planner MCP round-trip works end-to-end."}`,
   "then report the result you received in plain text. Do not call any other",
@@ -462,5 +462,5 @@ if (!looksLikeSuccess && !looksLikeE2MileNotImpl) {
 }
 
 console.log("");
-console.log("[planner] phase 2 OK — Mission Planner MCP server round-trip verified");
+console.log("[planner] phase 2 OK — Flight Planner MCP server round-trip verified");
 process.exit(0);

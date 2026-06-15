@@ -44,7 +44,7 @@ export function OrchestrationSettingsCard() {
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
       <h3 className="text-xs font-semibold text-text-primary mb-3 flex items-center gap-2">
         <GitBranch size={12} className="text-accent-blue" />
-        Missions
+        Flights
       </h3>
 
       <div className="space-y-3">
@@ -52,7 +52,7 @@ export function OrchestrationSettingsCard() {
           <div className="min-w-0">
             <div className="text-[11px] text-text-secondary">Max parallel sessions</div>
             <div className="text-[10px] text-text-muted">
-              Active mission tasks allowed to launch at once.
+              Active flight tasks allowed to launch at once.
             </div>
           </div>
           <input
@@ -106,7 +106,7 @@ export function OrchestrationSettingsCard() {
                 Append a trailer to every agent commit
               </div>
               <div className="text-[10px] text-text-muted leading-snug">
-                Installs a `prepare-commit-msg` hook inside each mission worktree so
+                Installs a `prepare-commit-msg` hook inside each flight worktree so
                 commits identify the originating flight and attempt.
               </div>
             </div>

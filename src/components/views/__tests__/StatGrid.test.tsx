@@ -1,25 +1,25 @@
 /**
  * E8-TESTS — StatGrid cost-split coverage.
  *
- * Sibling E8-UI splits the single "Cost" cell on the mission detail pane
- * into "Planner" + "Exec" cells in `MissionsView.tsx`. Sibling E8-ACCUM
+ * Sibling E8-UI splits the single "Cost" cell on the flight detail pane
+ * into "Planner" + "Exec" cells in `FlightsView.tsx`. Sibling E8-ACCUM
  * accumulates `flight.plannerCost` / `flight.plannerTokens` /
  * `flight.plannerProvider` on the Rust side and rolls them onto the Flight
  * DTO. This slice owns the FE regression tests for the new cells.
  *
- * Important: `StatGrid` is an internal helper inside `MissionsView.tsx` —
+ * Important: `StatGrid` is an internal helper inside `FlightsView.tsx` —
  * it is NOT exported. We considered three options:
  *
  *   1. Ask E8-UI to export it.
  *      Rejected: cross-slice coupling, and the helper is genuinely
- *      private to MissionsView. Exporting it just for tests is the
+ *      private to FlightsView. Exporting it just for tests is the
  *      tail wagging the dog.
  *
  *   2. Skip the tests with a comment.
  *      Rejected: the cost-split is the headline E8 user-visible change.
  *      We need coverage.
  *
- *   3. Mount `MissionsView` end-to-end with mocked stores and assert
+ *   3. Mount `FlightsView` end-to-end with mocked stores and assert
  *      the StatGrid output through the rendered DOM.
  *      Chosen. This is the same approach `WorkspaceLaunchQuality.test.tsx`
  *      uses for the WorkspaceCreationModal helper, and it has the
@@ -27,7 +27,7 @@
  *      passes Flight props down to StatGrid.
  *
  * The trade-off: each test mounts the full FlightDetailPane subtree.
- * Several heavy children (PlannerApprovalGate, MissionSpecPane,
+ * Several heavy children (PlannerApprovalGate, FlightSpecPane,
  * JournalTab, NewFlightModal, LaunchAsyncFlightModal) are mocked to no-op
  * stubs to keep the mount lightweight and the test free of unrelated
  * Tauri/listener wiring.
@@ -75,7 +75,7 @@ const mocks = vi.hoisted(() => {
       projectPath: "/test/path",
     },
     goalState: {
-      getGoalsForMission: vi.fn(() => []),
+      getGoalsForFlight: vi.fn(() => []),
     },
   };
 });
@@ -109,8 +109,8 @@ vi.mock("@/stores/orchestrationSchedulerStore", () => ({
   ),
 }));
 
-vi.mock("@/stores/missionPlannerStore", () => ({
-  useMissionPlannerStore: Object.assign(
+vi.mock("@/stores/flightPlannerStore", () => ({
+  useFlightPlannerStore: Object.assign(
     vi.fn((selector?: (s: typeof mocks.plannerState) => unknown) =>
       selector ? selector(mocks.plannerState) : mocks.plannerState,
     ),
@@ -157,15 +157,15 @@ vi.mock("@tauri-apps/api/event", () => ({
 // modal portals — none of which affect the StatGrid contract. Replace
 // with empty divs so the test mounts cleanly.
 
-vi.mock("@/components/missions/MissionSpecPane", () => ({
-  MissionSpecPane: () => <div data-testid="mock-spec-pane" />,
+vi.mock("@/components/flights/FlightSpecPane", () => ({
+  FlightSpecPane: () => <div data-testid="mock-spec-pane" />,
 }));
 
-vi.mock("@/components/missions/JournalTab", () => ({
+vi.mock("@/components/flights/JournalTab", () => ({
   JournalTab: () => <div data-testid="mock-journal" />,
 }));
 
-vi.mock("@/components/missions/PlannerApprovalGate", () => ({
+vi.mock("@/components/flights/PlannerApprovalGate", () => ({
   PlannerApprovalGate: () => null,
 }));
 
@@ -177,7 +177,7 @@ vi.mock("@/components/flights/LaunchAsyncFlightModal", () => ({
   LaunchAsyncFlightModal: () => null,
 }));
 
-import { MissionsView } from "@/components/views/MissionsView";
+import { FlightsView } from "@/components/views/FlightsView";
 
 // === Test helpers ===
 
@@ -234,7 +234,7 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.computeFlightStatus = vi.fn(() => "active" as const);
     mocks.schedulerState.lastError = null;
     mocks.schedulerState.startLoop = vi.fn();
-    mocks.goalState.getGoalsForMission = vi.fn(() => []);
+    mocks.goalState.getGoalsForFlight = vi.fn(() => []);
   });
 
   it("renders separate Planner and Exec cells", () => {
@@ -247,7 +247,7 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
     expect(screen.getByText("Planner")).toBeInTheDocument();
     expect(screen.getByText("Exec")).toBeInTheDocument();
@@ -263,7 +263,7 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
     expect(valueInCell(statCell("Planner"))).toBe("$0.30");
   });
@@ -278,7 +278,7 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
     // 1.50 - 0.30 = 1.20
     expect(valueInCell(statCell("Exec"))).toBe("$1.20");
@@ -293,7 +293,7 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
     expect(valueInCell(statCell("Planner"))).toBe("$0.00");
     expect(valueInCell(statCell("Exec"))).toBe("$1.50");
@@ -313,7 +313,7 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
     expect(valueInCell(statCell("Planner"))).toBe("$0.50");
     expect(valueInCell(statCell("Exec"))).toBe("$0.00");
@@ -333,7 +333,7 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
     const sub = subInCell(statCell("Planner"));
     expect(sub).not.toBeNull();
@@ -355,7 +355,7 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
     const sub = subInCell(statCell("Planner"));
     expect(sub).toBe("(API)");
@@ -374,14 +374,14 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
     const sub = subInCell(statCell("Planner"));
     expect(sub).toBe("(API)");
   });
 
-  it("keeps the Tokens cell as the cumulative mission total (not planner-only)", () => {
-    // `Tokens` is the existing total-mission token cell. The cost split
+  it("keeps the Tokens cell as the cumulative flight total (not planner-only)", () => {
+    // `Tokens` is the existing total-flight token cell. The cost split
     // adds Planner/Exec but must NOT change Tokens — that one rolls up
     // planner + executor. This protects against accidental swap.
     const flight = makeFlight({
@@ -393,22 +393,22 @@ describe("StatGrid cost cells (E8 cost split)", () => {
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
     // formatTokens(50_000) -> "50.0k"
     expect(valueInCell(statCell("Tokens"))).toBe("50.0k");
   });
 
-  it("surfaces scheduler stalls in the mission pane and lets the user retry", () => {
+  it("surfaces scheduler stalls in the flight pane and lets the user retry", () => {
     const flight = makeFlight();
     mocks.flightState.flights = [flight];
     mocks.flightState.activeFlightId = flight.id;
     mocks.schedulerState.lastError =
-      "Mission scheduler backend failed 3 times in a row; dispatch loop paused.";
+      "Flight scheduler backend failed 3 times in a row; dispatch loop paused.";
 
-    render(<MissionsView />);
+    render(<FlightsView />);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Mission scheduler backend failed");
+    expect(screen.getByRole("alert")).toHaveTextContent("Flight scheduler backend failed");
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(mocks.schedulerState.startLoop).toHaveBeenCalledOnce();
   });

@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Download, FileText } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
-import { getMissionJournalPath, getMissionJournalTail, type MissionJournalRead } from "@/lib/tauri";
+import { getFlightJournalPath, getFlightJournalTail, type FlightJournalRead } from "@/lib/tauri";
 
 const JOURNAL_TAIL_BYTES = 128 * 1024;
 
@@ -28,13 +28,13 @@ function prettifyTimestamps(markdown: string): string {
 }
 
 // E7-UI — Journal tab body. The journal itself is an append-only markdown
-// file on disk (`~/.packetade/missions/F-<shortId>_<mission_id>.md`,
-// owned by `core::mission_journal`). This component:
+// file on disk (`~/.packetade/missions/F-<tail>_<flight_id>.md`,
+// owned by `core::flight_journal`). This component:
 //
-//   1. Loads the latest raw markdown slice via `get_mission_journal_tail` on mount.
-//   2. Subscribes to `mission-planner:journal-appended:<missionId>`
+//   1. Loads the latest raw markdown slice via `get_flight_journal_tail` on mount.
+//   2. Subscribes to `flight-planner:journal-appended:<flightId>`
 //      (fired by the E7-HOOKS slice when new entries land) and re-fetches
-//      a bounded latest tail. This keeps long-running missions responsive:
+//      a bounded latest tail. This keeps long-running flights responsive:
 //      the full append-only archive remains on disk and the UI says when
 //      it is showing a tail view.
 //   3. Exposes an Export button that surfaces the on-disk path so the
@@ -42,15 +42,15 @@ function prettifyTimestamps(markdown: string): string {
 //      "Reveal in OS Finder" command can replace the alert here.
 //
 // The component owns its own listener lifecycle so the
-// `missionPlannerStore.installListeners` plumbing doesn't need to know
+// `flightPlannerStore.installListeners` plumbing doesn't need to know
 // about journal events — keeps the journal feature self-contained.
 
 interface JournalTabProps {
-  missionId: string;
+  flightId: string;
 }
 
-export function JournalTab({ missionId }: JournalTabProps): JSX.Element {
-  const [journal, setJournal] = useState<MissionJournalRead>({
+export function JournalTab({ flightId }: JournalTabProps): JSX.Element {
+  const [journal, setJournal] = useState<FlightJournalRead>({
     markdown: "",
     totalBytes: 0,
     returnedBytes: 0,
@@ -71,7 +71,7 @@ export function JournalTab({ missionId }: JournalTabProps): JSX.Element {
 
     async function load() {
       try {
-        const nextJournal = await getMissionJournalTail(missionId, JOURNAL_TAIL_BYTES);
+        const nextJournal = await getFlightJournalTail(flightId, JOURNAL_TAIL_BYTES);
         if (!cancelled) {
           setJournal(nextJournal);
           setError(null);
@@ -90,7 +90,7 @@ export function JournalTab({ missionId }: JournalTabProps): JSX.Element {
     // Subscribe to journal-appended events — re-fetch the whole journal
     // when new entries land. The handler races against the unmount path,
     // so it always guards on `cancelled` before mutating state.
-    listen(`mission-planner:journal-appended:${missionId}`, () => {
+    listen(`flight-planner:journal-appended:${flightId}`, () => {
       if (!cancelled) {
         void load();
       }
@@ -111,7 +111,7 @@ export function JournalTab({ missionId }: JournalTabProps): JSX.Element {
         unlisten = null;
       }
     };
-  }, [missionId]);
+  }, [flightId]);
 
   if (loading) {
     return (
@@ -135,7 +135,7 @@ export function JournalTab({ missionId }: JournalTabProps): JSX.Element {
         <FileText size={24} />
         <span className="text-xs">No journal entries yet</span>
         <span className="max-w-md text-center text-[10px]">
-          Once the planner starts working on this mission, every tool call, wake trigger, user
+          Once the planner starts working on this flight, every tool call, wake trigger, user
           message, and system note will appear here in chronological order.
         </span>
       </div>
@@ -147,7 +147,7 @@ export function JournalTab({ missionId }: JournalTabProps): JSX.Element {
       <div className="flex items-center justify-between gap-3 border-b border-line-soft px-3 py-2">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-[11px] text-text-muted">
-            Mission journal — append-only record of every planner action.
+            Flight journal — append-only record of every planner action.
           </span>
           <span
             className={
@@ -160,7 +160,7 @@ export function JournalTab({ missionId }: JournalTabProps): JSX.Element {
           </span>
         </div>
         <button
-          onClick={() => void handleExport(missionId)}
+          onClick={() => void handleExport(flightId)}
           className="inline-flex items-center gap-1 rounded border border-bg-border px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
           title="Reveal journal file path"
         >
@@ -199,9 +199,9 @@ function formatBytes(bytes: number): string {
 // straight into a terminal / Finder / Explorer address bar. The inner
 // try/catch swallows clipboard-permission failures (some webview contexts
 // reject `writeText` silently) and falls back to the path-only alert.
-async function handleExport(missionId: string): Promise<void> {
+async function handleExport(flightId: string): Promise<void> {
   try {
-    const path = await getMissionJournalPath(missionId);
+    const path = await getFlightJournalPath(flightId);
     try {
       await navigator.clipboard.writeText(path);
       alert(`Journal saved to:\n\n${path}\n\n(Path copied to clipboard.)`);

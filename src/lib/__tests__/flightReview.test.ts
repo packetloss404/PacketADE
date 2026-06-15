@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   collectTaskReportedFiles,
-  matchGitFilesToMissionTasks,
-  selectMissionReviewFiles,
-  summarizeMissionReview,
-} from "@/lib/missionReview";
+  matchGitFilesToFlightTasks,
+  selectFlightReviewFiles,
+  summarizeFlightReview,
+} from "@/lib/flightReview";
 import type { Flight, Task } from "@/types/flight";
 
 function task(overrides: Partial<Task>): Task {
@@ -30,7 +30,7 @@ function task(overrides: Partial<Task>): Task {
 function flight(tasks: Task[]): Flight {
   return {
     id: "flight-1",
-    title: "Mission",
+    title: "Flight",
     objective: "",
     status: "review",
     priority: "medium",
@@ -58,7 +58,7 @@ function flight(tasks: Task[]): Flight {
   };
 }
 
-describe("missionReview", () => {
+describe("flightReview", () => {
   it("deduplicates files reported through result, handoff, and review packets", () => {
     const files = collectTaskReportedFiles(
       task({
@@ -104,7 +104,7 @@ describe("missionReview", () => {
       }),
     ]);
 
-    const match = matchGitFilesToMissionTasks(
+    const match = matchGitFilesToFlightTasks(
       ["src/exact.ts", "src/features/review/panel.tsx", "src/unrelated.ts"],
       [f],
       { projectPath: "D:\\projects\\example" },
@@ -112,8 +112,8 @@ describe("missionReview", () => {
 
     expect(match.linkedFileCount).toBe(2);
     expect(match.taskCount).toBe(1);
-    expect(summarizeMissionReview(f).reportedFileCount).toBe(1);
-    expect(summarizeMissionReview(f).ownedFileCount).toBe(1);
+    expect(summarizeFlightReview(f).reportedFileCount).toBe(1);
+    expect(summarizeFlightReview(f).ownedFileCount).toBe(1);
   });
 
   it("selects review files by task, conversation session, and attempt session", () => {
@@ -162,11 +162,11 @@ describe("missionReview", () => {
       },
     ];
 
-    const byConversation = selectMissionReviewFiles([f], {
+    const byConversation = selectFlightReviewFiles([f], {
       conversationId: "session-1",
     });
-    const byAttempt = selectMissionReviewFiles([f], { attemptId: "att-1" });
-    const byTask = selectMissionReviewFiles([f], { taskId: "task-1" });
+    const byAttempt = selectFlightReviewFiles([f], { attemptId: "att-1" });
+    const byTask = selectFlightReviewFiles([f], { taskId: "task-1" });
 
     expect(byConversation.files.map((ref) => ref.filePath)).toEqual([
       "src/session.ts",
@@ -201,7 +201,7 @@ describe("missionReview", () => {
       },
     ];
 
-    const selected = selectMissionReviewFiles([f], { attemptId: "att-empty" });
+    const selected = selectFlightReviewFiles([f], { attemptId: "att-empty" });
 
     expect(selected.files).toEqual([]);
     expect(selected.flightIds).toEqual(["flight-1"]);

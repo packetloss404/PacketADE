@@ -1,6 +1,6 @@
 //! `replan_after_failure` tool handler.
 //!
-//! Owned by **E2-REPL-COMP** (paired with `complete_mission`). The E5-REPLAN
+//! Owned by **E2-REPL-COMP** (paired with `complete_flight`). The E5-REPLAN
 //! slice layered the error-category exemption on top: RateLimit / Network
 //! failures (per [`AiErrorCategory`]) do **not** count against the per-task
 //! replan cap (`MAX_REPLANS_PER_TASK = 3`).
@@ -41,7 +41,7 @@ use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::{info, warn};
 
-use crate::commands::mission_planner::MissionPlannerRegistry;
+use crate::commands::flight_planner::FlightPlannerRegistry;
 use crate::core::error_classifier::{self, AiErrorCategory};
 use crate::core::flight::TaskStatus;
 use crate::core::storage;
@@ -84,12 +84,12 @@ pub async fn handle(
         return Err("invalid args: task_id must be non-empty".to_string());
     }
 
-    // 2. Resolve mission_id from sidecar session_id via the registry.
+    // 2. Resolve flight_id from sidecar session_id via the registry.
     let registry = app
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
-    let mission_id = registry
-        .mission_id_for_sidecar_session(session_id)
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
+    let flight_id = registry
+        .flight_id_for_sidecar_session(session_id)
         .await
         .ok_or_else(|| {
             format!(
@@ -110,19 +110,19 @@ pub async fn handle(
         let flight = state
             .flights
             .iter()
-            .find(|f| f.id == mission_id)
-            .ok_or_else(|| format!("flight not found for mission '{}'", mission_id))?;
+            .find(|f| f.id == flight_id)
+            .ok_or_else(|| format!("flight not found for flight '{}'", flight_id))?;
         let task = flight
             .milestones
             .iter()
             .flat_map(|m| m.tasks.iter())
             .find(|t| t.id == task_id)
-            .ok_or_else(|| format!("task '{}' not found in mission '{}'", task_id, mission_id))?;
+            .ok_or_else(|| format!("task '{}' not found in flight '{}'", task_id, flight_id))?;
         error_classifier::classify_task_last_error(task)
     };
 
     // 4. Decide exempt vs. counted. Per the locked spec
-    //    (`dev/mission-planner-plan.md`):
+    //    (`dev/flight-planner-plan.md`):
     //      "Replans per task: 3 — RateLimit / Network errors do NOT count"
     let was_exempt = error_category
         .map(|c| error_classifier::is_replan_exempt(&c))
@@ -133,22 +133,22 @@ pub async fn handle(
     //    Counted path: bump and enforce the flat cap.
     let replan_count = if was_exempt {
         registry
-            .read_replan_count(&mission_id, task_id)
+            .read_replan_count(&flight_id, task_id)
             .await
             .ok_or_else(|| {
                 format!(
-                    "planner session for mission '{}' disappeared between resolve and replan",
-                    mission_id
+                    "planner session for flight '{}' disappeared between resolve and replan",
+                    flight_id
                 )
             })?
     } else {
         let new_count = registry
-            .bump_replan_count(&mission_id, task_id)
+            .bump_replan_count(&flight_id, task_id)
             .await
             .ok_or_else(|| {
                 format!(
-                    "planner session for mission '{}' disappeared between resolve and replan",
-                    mission_id
+                    "planner session for flight '{}' disappeared between resolve and replan",
+                    flight_id
                 )
             })?;
         if new_count > MAX_REPLANS_PER_TASK {
@@ -167,17 +167,17 @@ pub async fn handle(
     //    lifetime issue the helper's signature can't express. Event emit
     //    happens OUTSIDE the lock.
     let now = now_millis();
-    let mission_id_for_closure = mission_id.clone();
+    let flight_id_for_closure = flight_id.clone();
     let task_id_for_closure = task_id.to_string();
     let parent_milestone_id = storage::with_state_lock(move |state| {
-        let mission_id = mission_id_for_closure;
+        let flight_id = flight_id_for_closure;
         let task_id = task_id_for_closure;
         let result: Result<String, String> = (|| {
             let flight = state
                 .flights
                 .iter_mut()
-                .find(|f| f.id == mission_id)
-                .ok_or_else(|| format!("flight not found for mission '{}'", mission_id))?;
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("flight not found for flight '{}'", flight_id))?;
 
             let mut found: Option<String> = None;
             for milestone in flight.milestones.iter_mut() {
@@ -189,7 +189,7 @@ pub async fn handle(
                 }
             }
             flight.updated_at = now;
-            found.ok_or_else(|| format!("task '{}' not found in mission '{}'", task_id, mission_id))
+            found.ok_or_else(|| format!("task '{}' not found in flight '{}'", task_id, flight_id))
         })();
         std::future::ready(result)
     })
@@ -197,25 +197,25 @@ pub async fn handle(
     .map_err(|e| format!("failed to persist task cancellation: {}", e))?;
 
     // 7. Coordination event so the UI can light up "planner is replanning"
-    //    state. Mirrors the `mission-planner:*:<missionId>` convention used
+    //    state. Mirrors the `flight-planner:*:<flightId>` convention used
     //    by the milestone/approval paths. Includes the exempt flag + the
     //    classified error category so the UI can label exempt replans
     //    distinctly ("retried after rate limit") from cap-eating ones.
     let error_category_str: Option<String> = error_category.map(category_to_string);
     info!(
-        mission_id = %mission_id,
+        flight_id = %flight_id,
         task_id = %task_id,
         replan_count = replan_count,
         exempt = was_exempt,
         error_category = ?error_category_str,
         parent_milestone_id = %parent_milestone_id,
-        "mission planner acknowledged task replan"
+        "flight planner acknowledged task replan"
     );
-    let event_name = format!("mission-planner:task-replan-acknowledged:{}", mission_id);
+    let event_name = format!("flight-planner:task-replan-acknowledged:{}", flight_id);
     if let Err(e) = app.emit(
         &event_name,
         serde_json::json!({
-            "missionId": mission_id,
+            "flightId": flight_id,
             "taskId": task_id,
             "parentMilestoneId": parent_milestone_id,
             "replanCount": replan_count,

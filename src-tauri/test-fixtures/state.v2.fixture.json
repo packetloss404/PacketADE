@@ -97,7 +97,7 @@
     "milestone_gating": true,
     "project_path": "D:\\projects\\PacketADE\\src-tauri",
     "auto_commit_trailer_enabled": true,
-    "auto_commit_trailer_format": "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}"
+    "auto_commit_trailer_format": "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}"
   },
   "ui": {
     "selected_flight_id": null,
@@ -110,5 +110,5 @@
   "memory_events": [],
   "memory_patterns": [],
   "servers": [],
-  "mission_approvals": []
+  "flight_approvals": []
 }

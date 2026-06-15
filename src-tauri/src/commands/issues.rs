@@ -9,7 +9,7 @@
 //! (Anthropic API key route), this command intentionally routes through the
 //! `claude-oauth` sidecar so it draws from the user's Claude Pro / Max
 //! subscription rather than a metered API key. That matches the pattern in
-//! [`crate::commands::mission_planner_compaction::summarize_mission_journal`]:
+//! [`crate::commands::flight_planner_compaction::summarize_flight_journal`]:
 //! register a one-shot waiter, fire `forward_start`, wait for `done`, close
 //! the session.
 //!
@@ -71,7 +71,7 @@ const SPEC_IMPORT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Model used for spec extraction. Sonnet 4.6 is the same model the rest of
 /// the OAuth-routed AI features use (`github_ai_pr_description`,
-/// `github_ai_pr_review`, mission-planner summarization) — consistent
+/// `github_ai_pr_review`, flight-planner summarization) — consistent
 /// behavior + one model to babysit across releases.
 const SPEC_IMPORT_MODEL: &str = "claude-sonnet-4-6";
 
@@ -208,7 +208,7 @@ pub async fn issues_extract_from_spec(
 
     // Always best-effort close the session so the supervisor's owned-set
     // doesn't leak a stale id. Mirrors the pattern in
-    // `mission_planner_compaction::summarize_mission_journal`.
+    // `flight_planner_compaction::summarize_flight_journal`.
     if let Err(e) = manager.forward_close(session_id.clone()).await {
         warn!(
             session_id = %session_id,

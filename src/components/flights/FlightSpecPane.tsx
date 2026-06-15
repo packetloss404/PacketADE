@@ -8,14 +8,14 @@ import {
 } from "react";
 import { ArrowUp, Loader2, Rocket, Sparkles } from "lucide-react";
 import {
-  useMissionPlannerStore,
+  useFlightPlannerStore,
   type PlannerSessionRuntime,
   type PlannerTranscriptEntry,
-} from "@/stores/missionPlannerStore";
+} from "@/stores/flightPlannerStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 
-interface MissionSpecPaneProps {
-  missionId: string;
+interface FlightSpecPaneProps {
+  flightId: string;
 }
 
 const EMPTY_BLURB =
@@ -41,16 +41,16 @@ const STARTER_PROMPTS = [
 ];
 
 /**
- * Full-pane spec-mode chat for a Mission. Renders when the parent
+ * Full-pane spec-mode chat for a Flight. Renders when the parent
  * (FlightDetailPane) detects `flight.status === "spec"`. Binds to
- * `missionPlannerStore` runtime keyed by `missionId`; the planner session
+ * `flightPlannerStore` runtime keyed by `flightId`; the planner session
  * itself is started by the mounting component (E3-MOUNT) before this pane
  * appears.
  */
-export function MissionSpecPane({ missionId }: MissionSpecPaneProps) {
-  const runtime = useMissionPlannerStore((s) => s.runtimes.get(missionId));
-  const injectTurn = useMissionPlannerStore((s) => s.injectTurn);
-  const launchMission = useMissionPlannerStore((s) => s.launchMission);
+export function FlightSpecPane({ flightId }: FlightSpecPaneProps) {
+  const runtime = useFlightPlannerStore((s) => s.runtimes.get(flightId));
+  const injectTurn = useFlightPlannerStore((s) => s.injectTurn);
+  const launchFlight = useFlightPlannerStore((s) => s.launchFlight);
 
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
@@ -111,10 +111,10 @@ export function MissionSpecPane({ missionId }: MissionSpecPaneProps) {
     if (!trimmed) return;
     setInput("");
     // injectTurn appends the user message to the transcript optimistically.
-    void injectTurn(missionId, trimmed, "user");
+    void injectTurn(flightId, trimmed, "user");
     // Keep the textarea focused so users can keep typing.
     queueMicrotask(() => textareaRef.current?.focus());
-  }, [input, injectTurn, missionId, runtime]);
+  }, [input, injectTurn, flightId, runtime]);
 
   const handleLaunch = useCallback(async () => {
     if (!canLaunch || isLaunching) return;
@@ -124,14 +124,14 @@ export function MissionSpecPane({ missionId }: MissionSpecPaneProps) {
       // Parent (FlightDetailPane) unmounts this pane once the flight
       // status flips from `spec` → `planning`, so we don't need to clear
       // `isLaunching` on the happy path. Only reset on failure.
-      await launchMission(missionId);
+      await launchFlight(flightId);
     } catch (err) {
       setLaunchError(
-        err instanceof Error ? err.message : "Failed to launch mission",
+        err instanceof Error ? err.message : "Failed to launch flight",
       );
       setIsLaunching(false);
     }
-  }, [canLaunch, isLaunching, launchMission, missionId]);
+  }, [canLaunch, isLaunching, launchFlight, flightId]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -420,7 +420,7 @@ function LaunchFooter({
           ) : (
             <Rocket size={12} />
           )}
-          {isLaunching ? "Launching…" : "Launch mission ↗"}
+          {isLaunching ? "Launching…" : "Launch flight ↗"}
         </button>
         {error && (
           <span className="text-[10px] text-accent-red">{error}</span>

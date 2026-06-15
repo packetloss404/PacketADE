@@ -1,30 +1,30 @@
-//! Mission Planner — registry, wake bus, and Tauri commands. (Epic E1.)
+//! Flight Planner — registry, wake bus, and Tauri commands. (Epic E1.)
 //!
-//! The Mission Planner is one long-lived `api-claude-oauth` session per
-//! Mission (`core::flight::Flight`) that owns the mission's planning loop
+//! The Flight Planner is one long-lived `api-claude-oauth` session per
+//! Flight (`core::flight::Flight`) that owns the flight's planning loop
 //! end-to-end: spec-mode chat → initial decomposition → reactive replan on
 //! task complete/fail / approval gate / collision / quota.
 //!
 //! This module is the **Rust-side coordination layer**:
-//!   * [`MissionPlannerRegistry`] — Tauri-managed state keyed by mission id.
-//!     Holds one [`MissionPlannerSession`] per active planner.
-//!   * Five Tauri commands ([`start_mission_planner`] / `stop` / `pause` /
+//!   * [`FlightPlannerRegistry`] — Tauri-managed state keyed by flight id.
+//!     Holds one [`FlightPlannerSession`] per active planner.
+//!   * Five Tauri commands ([`start_flight_planner`] / `stop` / `pause` /
 //!     `resume` / [`inject_planner_turn`]) that the frontend
-//!     `missionPlannerStore` drives.
+//!     `flightPlannerStore` drives.
 //!   * A wake-consumer task spawned at startup
 //!     ([`spawn_wake_consumer`]) that receives [`PlannerWakeEvent`]s from
 //!     orchestration hook sites, debounces a 2-3s window, formats the wake
-//!     message via `core::mission_planner_prompts`, and forwards it to the
+//!     message via `core::flight_planner_prompts`, and forwards it to the
 //!     sidecar over the new typed `inject_user_turn` message (protocol v5).
 //!
 //! What this module does **not** own (deliberately, by epic split):
 //!   * The planner's MCP tool surface (`create_milestone`, `create_task`,
-//!     ...) — that's E2 (`mcp/mission-planner-server.ts` on the sidecar
+//!     ...) — that's E2 (`mcp/flight-planner-server.ts` on the sidecar
 //!     side; tool dispatch handlers slot into this file in E2).
 //!   * The actual system prompt content / per-trigger guidance — E4/E5
-//!     (stubbed in `core/mission_planner_prompts.rs`).
+//!     (stubbed in `core/flight_planner_prompts.rs`).
 //!   * Caps / replan limits / kill-switch / quota-pause backoff — E6.
-//!   * The mission journal storage — E7.
+//!   * The flight journal storage — E7.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -36,21 +36,21 @@ use tracing::{info, warn};
 
 use crate::commands::agent_sidecar::SidecarManager;
 use crate::core::flight::{FlightStatus, PlannerStatus as FlightPlannerStatus};
-use crate::core::mission_journal::{append_journal, JournalEntry, JournalKind, JournalRead};
-use crate::core::mission_planner_prompts::{spec_mode_system_prompt, wake_user_message};
+use crate::core::flight_journal::{append_journal, JournalEntry, JournalKind, JournalRead};
+use crate::core::flight_planner_prompts::{spec_mode_system_prompt, wake_user_message};
 use crate::core::storage::{self, PersistedState};
 
 // Re-export the E8 cost / token accumulation helpers extracted into
-// `mission_planner_costs` so the existing
-// `crate::commands::mission_planner::accumulate_*` /
-// `crate::commands::mission_planner::flight_for_executor_session` call sites
+// `flight_planner_costs` so the existing
+// `crate::commands::flight_planner::accumulate_*` /
+// `crate::commands::flight_planner::flight_for_executor_session` call sites
 // (api_agent.rs, agent_sidecar::handler.rs) keep compiling unchanged.
 // `ExecutorSessionOwner` is intentionally NOT re-exported here — no
 // out-of-module caller references it by name today; callers consume it via
 // the `flight_for_executor_session` return type and reach in for
 // `.flight_id` / `.model` directly. If a future caller needs the type, add
-// it to this re-export or import it from `mission_planner_costs` directly.
-pub use crate::commands::mission_planner_costs::{
+// it to this re-export or import it from `flight_planner_costs` directly.
+pub use crate::commands::flight_planner_costs::{
     accumulate_executor_cost, accumulate_planner_cost, flight_for_executor_session,
 };
 
@@ -78,15 +78,15 @@ const PLANNER_MODEL: &str = "claude-sonnet-4-6";
 const PLANNER_PROVIDER: &str = "claude-oauth";
 
 /// The `mcpKind` discriminator the sidecar uses to construct the in-process
-/// Mission Planner tool MCP server. Mirrors the sidecar TS constant in
-/// `agent-sidecar/src/mcp/mission-planner-server.ts`.
+/// Flight Planner tool MCP server. Mirrors the sidecar TS constant in
+/// `agent-sidecar/src/mcp/flight-planner-server.ts`.
 const PLANNER_MCP_KIND: &str = "planner";
 
 // ---------------------------------------------------------------------------
 // E6-CEILING-RATELIMIT — quota-pause backoff window
 // ---------------------------------------------------------------------------
 
-/// Minimum auto-resume wait for [`MissionPlannerRegistry::on_rate_limited`].
+/// Minimum auto-resume wait for [`FlightPlannerRegistry::on_rate_limited`].
 /// Per locked-design §Safety rails: never resume in under 60s, even if the
 /// provider hinted a shorter `retry-after` (don't slam back at the API).
 const QUOTA_MIN_WAIT_SECS: f64 = 60.0;
@@ -111,7 +111,7 @@ const QUOTA_DEFAULT_WAIT_SECS: f64 = 60.0;
 pub const COMPACTION_THRESHOLD_TOKENS: u64 = 150_000;
 
 /// **E10 FIX P1-A** — backoff window (seconds) after a compaction
-/// failure before [`MissionPlannerRegistry::bump_cumulative_input_and_check`]
+/// failure before [`FlightPlannerRegistry::bump_cumulative_input_and_check`]
 /// will allow another threshold-trigger to fire. 5 minutes is short
 /// enough that the user doesn't notice in the common transient-rate-limit
 /// case, but long enough that a hard failure (quota exhausted, sidecar
@@ -127,7 +127,7 @@ pub const COMPACTION_FAILURE_ESCALATION_COUNT: u32 = 3;
 // Runtime types
 // ---------------------------------------------------------------------------
 
-/// Runtime status of a planner agent for a single mission. The persisted
+/// Runtime status of a planner agent for a single flight. The persisted
 /// mirror on the Flight DTO is [`crate::core::flight::PlannerStatus`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -137,14 +137,14 @@ pub enum PlannerStatus {
     /// Planner is actively processing a turn (wake-triggered or user-sent).
     Awake,
     /// User-initiated pause via the kill-switch / pause button. Resumes
-    /// cleanly via [`resume_mission_planner`]. Wake events received while
+    /// cleanly via [`resume_flight_planner`]. Wake events received while
     /// paused are dropped on the floor (intentional — see [`spawn_wake_consumer`]).
     Paused,
     /// Hit Anthropic rate-limit on a turn; the supervisor's backoff timer
     /// will retry. Distinct from [`PlannerStatus::Paused`] so the UI can
     /// surface the right reason. (E6 wires the actual backoff.)
     QuotaPaused,
-    /// Planner called `complete_mission`. The session is closed.
+    /// Planner called `complete_flight`. The session is closed.
     Completed,
     /// Planner failed in a way that we couldn't auto-recover from (kill
     /// switch, exhausted retries, etc.).
@@ -170,17 +170,17 @@ impl PlannerStatus {
 /// Wake-trigger discriminant — the reason the planner is being re-entered.
 ///
 /// Variant data is the minimum we need to format a useful wake message in
-/// [`core::mission_planner_prompts::wake_user_message`]. Anything heavier
-/// (full mission snapshot, journal tail) is gathered by the consumer at
+/// [`core::flight_planner_prompts::wake_user_message`]. Anything heavier
+/// (full flight snapshot, journal tail) is gathered by the consumer at
 /// wake time, not stuffed into the variant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WakeTrigger {
     /// First wake after Launch — planner runs initial decomposition.
     Decomposition,
-    /// A task in this mission completed (success).
+    /// A task in this flight completed (success).
     TaskCompleted(String),
-    /// A task in this mission completed (failure).
+    /// A task in this flight completed (failure).
     TaskFailed(String),
     /// A task hit an approval gate (`request_user_approval` or async-attempt
     /// approval-needed transition).
@@ -197,7 +197,7 @@ pub enum WakeTrigger {
 
 /// Per-mode budgets the planner runs under. Set on the session at the moment
 /// the wake fires (see [`dispatch_wake`]) and read by the dispatcher
-/// (`commands::mission_planner_tools::dispatch`) to enforce per-tick tool-call
+/// (`commands::flight_planner_tools::dispatch`) to enforce per-tick tool-call
 /// caps, and by the wake injector to thread the right `max_output_tokens` into
 /// the sidecar's `inject_user_turn` request.
 ///
@@ -209,7 +209,7 @@ pub enum WakeTrigger {
 #[serde(rename_all = "snake_case")]
 pub enum PlannerMode {
     /// Pre-launch chat — the planner is conversing with the user about the
-    /// mission spec, occasional approval/info tools only.
+    /// flight spec, occasional approval/info tools only.
     Spec,
     /// Launch wake fired; the planner is producing the initial milestone /
     /// task plan via the `mcp__planner__*` tool surface.
@@ -242,7 +242,7 @@ impl PlannerMode {
 
     /// Maximum number of in-process MCP tool calls the planner is allowed to
     /// make in a single tick (one wake turn). Locked-design values per
-    /// `dev/mission-planner-plan.md` §Caps.
+    /// `dev/flight-planner-plan.md` §Caps.
     pub fn tool_call_cap(&self) -> u32 {
         match self {
             // Spec mode is mostly chat with occasional approval/info tool
@@ -257,7 +257,7 @@ impl PlannerMode {
     }
 
     /// Output `max_tokens` budget to pass to the Anthropic SDK for this
-    /// mode's turn. Locked-design values per `dev/mission-planner-plan.md`
+    /// mode's turn. Locked-design values per `dev/flight-planner-plan.md`
     /// §Budgets. NOTE: The Claude Agent SDK (0.2.116) does not expose a
     /// per-turn `max_tokens` setter; the sidecar treats this as a best-effort
     /// log + no-op for per-turn injection. See `injectUserTurn` in
@@ -279,7 +279,7 @@ impl WakeTrigger {
     /// Stable snake_case string for the `<wake_trigger kind="…">` attribute.
     ///
     /// These exact strings are taught to the planner via the system prompt
-    /// (`core::mission_planner_prompts`), so each variant maps to the
+    /// (`core::flight_planner_prompts`), so each variant maps to the
     /// model-facing kind verbatim. Note in particular that `Decomposition`
     /// — the kickoff trigger fired when the user clicks Launch — maps to
     /// `"launch"` rather than `"decomposition"`: the planner system prompt
@@ -308,13 +308,14 @@ impl WakeTrigger {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlannerWakeEvent {
-    pub mission_id: String,
+    #[serde(alias = "missionId")]
+    pub flight_id: String,
     pub trigger: WakeTrigger,
     #[serde(default)]
     pub payload: serde_json::Value,
 }
 
-/// Runtime record of a planner agent attached to a mission.
+/// Runtime record of a planner agent attached to a flight.
 ///
 /// Field set is the locked-design v1 surface. Most counters are written by
 /// later epics:
@@ -327,13 +328,14 @@ pub struct PlannerWakeEvent {
 ///     has somewhere to land.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MissionPlannerSession {
+pub struct FlightPlannerSession {
     /// Stable id we hand back to the frontend. Distinct from
     /// `sidecar_session_id` so we can re-open a sidecar session after a
     /// crash without changing the user-visible planner identity. For now
     /// they're set in lockstep.
     pub id: String,
-    pub mission_id: String,
+    #[serde(alias = "missionId")]
+    pub flight_id: String,
     /// The `api-agent:*` event id the sidecar streams under.
     pub sidecar_session_id: String,
     pub status: PlannerStatus,
@@ -364,7 +366,7 @@ pub struct MissionPlannerSession {
     pub current_mode: PlannerMode,
     /// FIX P1-C: monotonically-increasing generation counter, bumped on
     /// every transition into `QuotaPaused` via
-    /// [`MissionPlannerRegistry::on_rate_limited`]. The auto-resume timer
+    /// [`FlightPlannerRegistry::on_rate_limited`]. The auto-resume timer
     /// captures the lease value at the moment it was spawned and only
     /// clears the QuotaPaused state if that captured value is still
     /// current. This stops a stale timer from a previous 429 from
@@ -376,7 +378,7 @@ pub struct MissionPlannerSession {
     /// Cumulative input tokens billed against the planner's 200K Sonnet
     /// 4.6 context window. Includes cache reads. When this crosses
     /// [`COMPACTION_THRESHOLD_TOKENS`] the registry emits a
-    /// `mission-planner:compaction-triggered:<missionId>` event for the
+    /// `flight-planner:compaction-triggered:<flightId>` event for the
     /// compaction orchestrator (E10-SWAP) to handle the session restart.
     #[serde(default)]
     pub cumulative_input_tokens: u64,
@@ -387,8 +389,8 @@ pub struct MissionPlannerSession {
     pub compaction_in_progress: bool,
 
     /// E10 FIX P0 — Tauri listener registration for the
-    /// `mission-planner:compaction-triggered:<mission_id>` event. Stored on
-    /// the session so `stop_mission_planner` / `complete_mission` can
+    /// `flight-planner:compaction-triggered:<flight_id>` event. Stored on
+    /// the session so `stop_flight_planner` / `complete_flight` can
     /// `app.unlisten(id)` before tearing the session down. Without this,
     /// every start→stop cycle accumulates a fresh listener — after N
     /// cycles a single triggered event spawns N parallel
@@ -398,8 +400,8 @@ pub struct MissionPlannerSession {
     /// `tauri::EventId` is a `u32` and is NOT serializable here; we
     /// deliberately skip it on (de)serialize so cold-start hydration
     /// starts with `None` (the listener will be re-installed by
-    /// `start_mission_planner` after hydration). The field is `Option` so
-    /// a session built via `MissionPlannerSession::new` (which has no
+    /// `start_flight_planner` after hydration). The field is `Option` so
+    /// a session built via `FlightPlannerSession::new` (which has no
     /// listener yet) can be inserted into the registry, and the caller
     /// fills the slot in once `app.listen(...)` returns.
     #[serde(skip)]
@@ -432,12 +434,12 @@ fn default_planner_mode() -> PlannerMode {
     PlannerMode::Spec
 }
 
-impl MissionPlannerSession {
-    pub(crate) fn new(id: String, mission_id: String, sidecar_session_id: String) -> Self {
+impl FlightPlannerSession {
+    pub(crate) fn new(id: String, flight_id: String, sidecar_session_id: String) -> Self {
         let now = now_millis();
         Self {
             id,
-            mission_id,
+            flight_id,
             sidecar_session_id,
             status: PlannerStatus::Idle,
             model: PLANNER_MODEL.to_string(),
@@ -464,22 +466,22 @@ impl MissionPlannerSession {
 // Registry — Tauri-managed shared state
 // ---------------------------------------------------------------------------
 
-/// Tauri-managed state holding live planner sessions keyed by mission id,
+/// Tauri-managed state holding live planner sessions keyed by flight id,
 /// plus the wake-bus sender that orchestration hooks fan events into.
 ///
 /// Wrapped in `Arc<Mutex<…>>` for the registry table itself; the sender is
 /// `Clone` and `Send` so call sites just clone-and-send without locking.
 #[derive(Default)]
-pub struct MissionPlannerRegistry {
-    sessions: Mutex<HashMap<String, MissionPlannerSession>>,
+pub struct FlightPlannerRegistry {
+    sessions: Mutex<HashMap<String, FlightPlannerSession>>,
     wake_tx: Mutex<Option<mpsc::UnboundedSender<PlannerWakeEvent>>>,
     /// Continuity buffer for wake events that arrive while the target
     /// planner is temporarily unavailable (for example quota-paused, not
     /// yet re-started after cold-start recovery, or before the wake
     /// consumer has installed its sender).
     ///
-    /// Coalesced by mission id to match the live debounce behavior: the
-    /// newest wake wins, because dispatch builds a fresh mission snapshot
+    /// Coalesced by flight id to match the live debounce behavior: the
+    /// newest wake wins, because dispatch builds a fresh flight snapshot
     /// at replay time.
     pending_wakes: Mutex<HashMap<String, PlannerWakeEvent>>,
     /// E7-HOOKS: per-sidecar-session chunk buffer used to aggregate the
@@ -494,7 +496,7 @@ pub struct MissionPlannerRegistry {
     session_chunks: Mutex<HashMap<String, String>>,
 }
 
-impl MissionPlannerRegistry {
+impl FlightPlannerRegistry {
     /// Install the wake-bus sender. Called once at app startup from
     /// [`spawn_wake_consumer`].
     pub async fn install_wake_sender(&self, tx: mpsc::UnboundedSender<PlannerWakeEvent>) {
@@ -509,7 +511,7 @@ impl MissionPlannerRegistry {
         };
         for event in replay {
             if let Err(e) = tx.send(event.clone()) {
-                warn!(error = %e, "mission planner wake channel send failed during install replay");
+                warn!(error = %e, "flight planner wake channel send failed during install replay");
                 self.queue_wake_for_replay(event).await;
             }
         }
@@ -526,7 +528,7 @@ impl MissionPlannerRegistry {
         match tx {
             Some(tx) => {
                 if let Err(e) = tx.send(event.clone()) {
-                    warn!(error = %e, "mission planner wake channel send failed");
+                    warn!(error = %e, "flight planner wake channel send failed");
                     self.queue_wake_for_replay(event).await;
                 }
             }
@@ -539,20 +541,20 @@ impl MissionPlannerRegistry {
         }
     }
 
-    /// Store a wake for later replay. The latest wake for a mission wins,
+    /// Store a wake for later replay. The latest wake for a flight wins,
     /// mirroring the live wake consumer's coalescing behavior.
     pub async fn queue_wake_for_replay(&self, event: PlannerWakeEvent) {
         let mut pending = self.pending_wakes.lock().await;
-        pending.insert(event.mission_id.clone(), event);
+        pending.insert(event.flight_id.clone(), event);
     }
 
-    /// Drain and enqueue a pending wake for a mission. Returns `true` when
+    /// Drain and enqueue a pending wake for a flight. Returns `true` when
     /// a wake was found and queued onto the live bus (or re-buffered because
     /// the bus is not yet ready).
-    pub async fn replay_pending_wake(&self, mission_id: &str) -> bool {
+    pub async fn replay_pending_wake(&self, flight_id: &str) -> bool {
         let event = {
             let mut pending = self.pending_wakes.lock().await;
-            pending.remove(mission_id)
+            pending.remove(flight_id)
         };
         let Some(event) = event else {
             return false;
@@ -561,23 +563,23 @@ impl MissionPlannerRegistry {
         true
     }
 
-    /// Look up a session by mission id and return a clone.
-    pub async fn get_by_mission(&self, mission_id: &str) -> Option<MissionPlannerSession> {
+    /// Look up a session by flight id and return a clone.
+    pub async fn get_by_flight(&self, flight_id: &str) -> Option<FlightPlannerSession> {
         let guard = self.sessions.lock().await;
-        guard.get(mission_id).cloned()
+        guard.get(flight_id).cloned()
     }
 
-    /// Reverse-lookup the owning mission id for a given sidecar session id.
+    /// Reverse-lookup the owning flight id for a given sidecar session id.
     /// Used by the E2 in-process MCP tool handlers, which receive the
     /// sidecar session id as their `session_id` argument (because that's
     /// what the sidecar tags `planner_tool` envelopes with) and need to
-    /// resolve which mission's state to mutate.
-    pub async fn mission_id_for_sidecar_session(&self, sidecar_session_id: &str) -> Option<String> {
+    /// resolve which flight's state to mutate.
+    pub async fn flight_id_for_sidecar_session(&self, sidecar_session_id: &str) -> Option<String> {
         let guard = self.sessions.lock().await;
         guard
             .values()
             .find(|s| s.sidecar_session_id == sidecar_session_id)
-            .map(|s| s.mission_id.clone())
+            .map(|s| s.flight_id.clone())
     }
 
     /// E7-HOOKS — Option A planner-message aggregation.
@@ -618,22 +620,22 @@ impl MissionPlannerRegistry {
         chunks.remove(sidecar_session_id)
     }
 
-    /// Look up the sidecar session id for a mission, if any. Synchronous-
+    /// Look up the sidecar session id for a flight, if any. Synchronous-
     /// looking helper for orchestration hook sites that just need to know
-    /// "is there an active planner for this mission?". Used by future
+    /// "is there an active planner for this flight?". Used by future
     /// epics (E2 tool dispatch, E5 reactive replan) — kept here so the
     /// signature is locked alongside the rest of the registry surface.
     #[allow(dead_code)]
-    pub fn try_sidecar_session_for(&self, mission_id: &str) -> Option<String> {
+    pub fn try_sidecar_session_for(&self, flight_id: &str) -> Option<String> {
         self.sessions
             .try_lock()
             .ok()
-            .and_then(|g| g.get(mission_id).map(|s| s.sidecar_session_id.clone()))
+            .and_then(|g| g.get(flight_id).map(|s| s.sidecar_session_id.clone()))
     }
 
     /// Increment the per-task replan counter on the planner session and
     /// return the **new** count. Returns `None` if no planner is registered
-    /// for the mission (caller should treat that as an error).
+    /// for the flight (caller should treat that as an error).
     ///
     /// After bumping the in-memory counter, this also mirrors the new
     /// count onto the Task DTO at `PersistedState.flights[..].milestones[..]
@@ -649,13 +651,13 @@ impl MissionPlannerRegistry {
     /// error-category exemption logic so RateLimit / Network failures
     /// don't increment the counter — that path uses [`read_replan_count`]
     /// instead.
-    pub async fn bump_replan_count(&self, mission_id: &str, task_id: &str) -> Option<u32> {
+    pub async fn bump_replan_count(&self, flight_id: &str, task_id: &str) -> Option<u32> {
         // Phase 1: bump the in-memory counter and capture the new value.
         // Scoped so the sessions mutex is released BEFORE we acquire the
         // PersistedState lock — never hold two locks at once.
         let new_count = {
             let mut guard = self.sessions.lock().await;
-            let session = guard.get_mut(mission_id)?;
+            let session = guard.get_mut(flight_id)?;
             let entry = session
                 .replans_per_task
                 .entry(task_id.to_string())
@@ -668,17 +670,17 @@ impl MissionPlannerRegistry {
         // in-memory counter remains authoritative for cap enforcement; the
         // DTO mirror exists so wake-body renderers can read the value from
         // the Flight snapshot without touching the registry.
-        let mission_id_owned = mission_id.to_string();
+        let flight_id_owned = flight_id.to_string();
         let task_id_owned = task_id.to_string();
         let mirror_result = storage::with_state_lock(move |state| {
-            let mission_id = mission_id_owned.clone();
+            let flight_id = flight_id_owned.clone();
             let task_id = task_id_owned.clone();
             let result: Result<(), String> = (|| {
                 let flight = state
                     .flights
                     .iter_mut()
-                    .find(|f| f.id == mission_id)
-                    .ok_or_else(|| format!("mission '{}' not found", mission_id))?;
+                    .find(|f| f.id == flight_id)
+                    .ok_or_else(|| format!("flight '{}' not found", flight_id))?;
                 for milestone in flight.milestones.iter_mut() {
                     if let Some(task) = milestone.tasks.iter_mut().find(|t| t.id == task_id) {
                         task.replan_count = new_count;
@@ -686,8 +688,8 @@ impl MissionPlannerRegistry {
                     }
                 }
                 Err(format!(
-                    "task '{}' not found in mission '{}'",
-                    task_id, mission_id
+                    "task '{}' not found in flight '{}'",
+                    task_id, flight_id
                 ))
             })();
             std::future::ready(result)
@@ -695,7 +697,7 @@ impl MissionPlannerRegistry {
         .await;
         if let Err(e) = mirror_result {
             warn!(
-                mission_id = %mission_id,
+                flight_id = %flight_id,
                 task_id = %task_id,
                 error = %e,
                 "bump_replan_count: failed to mirror replan_count onto Task DTO; in-memory counter remains authoritative",
@@ -706,20 +708,20 @@ impl MissionPlannerRegistry {
     }
 
     /// Read the per-task replan counter **without** mutating it. Returns
-    /// `Some(0)` for a known mission with no recorded replans for the task,
-    /// and `None` only when no planner session exists for the mission.
+    /// `Some(0)` for a known flight with no recorded replans for the task,
+    /// and `None` only when no planner session exists for the flight.
     ///
     /// E5-REPLAN uses this on the exempt path (RateLimit / Network failures)
     /// to surface the unchanged count back to the planner without bumping.
-    pub async fn read_replan_count(&self, mission_id: &str, task_id: &str) -> Option<u32> {
+    pub async fn read_replan_count(&self, flight_id: &str, task_id: &str) -> Option<u32> {
         let guard = self.sessions.lock().await;
-        let session = guard.get(mission_id)?;
+        let session = guard.get(flight_id)?;
         Some(session.replans_per_task.get(task_id).copied().unwrap_or(0))
     }
 
     /// Remove a planner session from the registry. Public sibling of the
     /// internal [`Self::remove`] used by terminal-state tool handlers
-    /// (e.g. `complete_mission`) that need to take the session out of
+    /// (e.g. `complete_flight`) that need to take the session out of
     /// the wake-dispatch path before closing its sidecar.
     ///
     /// **E7-PARTIAL-DRAIN**: also drains the per-sidecar-session chunk
@@ -732,9 +734,9 @@ impl MissionPlannerRegistry {
     /// is always cleared either way).
     pub async fn remove_session(
         &self,
-        mission_id: &str,
+        flight_id: &str,
         app: Option<&AppHandle>,
-    ) -> Option<MissionPlannerSession> {
+    ) -> Option<FlightPlannerSession> {
         // Resolve the sidecar session id BEFORE removal so we can drain
         // the matching chunk buffer. We deliberately don't hold the
         // sessions lock across the buffer drain — `drain_chunk_buffer`
@@ -742,7 +744,7 @@ impl MissionPlannerRegistry {
         let sidecar_sid_opt = {
             let sessions = self.sessions.lock().await;
             sessions
-                .get(mission_id)
+                .get(flight_id)
                 .map(|s| s.sidecar_session_id.clone())
         };
         if let Some(sid) = sidecar_sid_opt {
@@ -750,14 +752,14 @@ impl MissionPlannerRegistry {
                 let trimmed = partial.trim();
                 if !trimmed.is_empty() {
                     tracing::info!(
-                        mission_id,
+                        flight_id,
                         partial_len = partial.len(),
                         "draining partial chunk buffer on planner session removal"
                     );
                     if let Some(app) = app {
                         let body = format!("{}\n\n*(partial — session closed)*", trimmed);
                         let entry = journal_entry(
-                            mission_id.to_string(),
+                            flight_id.to_string(),
                             JournalKind::PlannerMessage,
                             body,
                             Some(
@@ -769,13 +771,13 @@ impl MissionPlannerRegistry {
                 }
             }
         }
-        self.remove(mission_id).await
+        self.remove(flight_id).await
     }
 
     /// E6-KILL-AWAKE — Awake-stickiness watchdog.
     ///
     /// Called from `agent_sidecar::handle_event` when the sidecar emits a
-    /// `done` event for a planner session. Flips the owning mission's
+    /// `done` event for a planner session. Flips the owning flight's
     /// planner status from [`PlannerStatus::Awake`] back to
     /// [`PlannerStatus::Idle`] so the UI doesn't surface "Awake"
     /// indefinitely after a wake's turn completes.
@@ -787,7 +789,7 @@ impl MissionPlannerRegistry {
     /// clobber that state back to Idle, because that would re-enable wake
     /// dispatch and defeat the pause.
     ///
-    /// Also no-ops on `Idle` (already there, nothing to do) and on missions
+    /// Also no-ops on `Idle` (already there, nothing to do) and on flights
     /// with no registered planner (lookup miss is harmless — the `done`
     /// event was for a non-planner sidecar session, e.g. a regular
     /// `api-claude-oauth` chat).
@@ -795,7 +797,7 @@ impl MissionPlannerRegistry {
         // FIX P1-A: hold the sessions lock across the read+modify+write so
         // a concurrent `dispatch_wake` flipping the status to `Awake` for a
         // new turn can't be clobbered back to `Idle` here. Previously this
-        // function did `get_by_mission` (lock+release) and `set_status`
+        // function did `get_by_flight` (lock+release) and `set_status`
         // (lock+release) as two separate critical sections — if `dispatch_
         // wake` slipped in between, its `Awake` write was silently undone.
         //
@@ -805,17 +807,17 @@ impl MissionPlannerRegistry {
         // inlining it here under the lock is safe and we don't double-lock.
         let resolved = {
             let mut sessions = self.sessions.lock().await;
-            // Reverse-lookup inline (don't call mission_id_for_sidecar_session
+            // Reverse-lookup inline (don't call flight_id_for_sidecar_session
             // — that would try to take the lock again).
-            let mission_id_opt = sessions
+            let flight_id_opt = sessions
                 .iter()
                 .find(|(_, s)| s.sidecar_session_id == sidecar_session_id)
                 .map(|(m, _)| m.clone());
-            let mission_id = match mission_id_opt {
+            let flight_id = match flight_id_opt {
                 Some(m) => m,
                 None => return,
             };
-            let Some(session) = sessions.get_mut(&mission_id) else {
+            let Some(session) = sessions.get_mut(&flight_id) else {
                 return;
             };
             if !matches!(session.status, PlannerStatus::Awake) {
@@ -827,25 +829,25 @@ impl MissionPlannerRegistry {
             session.status = PlannerStatus::Idle;
             session.last_tick_at = now_millis();
             let sidecar_id = session.sidecar_session_id.clone();
-            Some((mission_id, sidecar_id))
+            Some((flight_id, sidecar_id))
         };
 
-        if let Some((mission_id, sidecar_id)) = resolved {
+        if let Some((flight_id, sidecar_id)) = resolved {
             if let Err(e) = persist_planner_state_on_flight(
-                &mission_id,
+                &flight_id,
                 Some(&sidecar_id),
                 Some(PlannerStatus::Idle),
             )
             .await
             {
                 warn!(
-                    mission_id = %mission_id,
+                    flight_id = %flight_id,
                     error = %e,
                     "on_planner_done: failed to persist Idle on Flight DTO"
                 );
             }
             info!(
-                mission_id = %mission_id,
+                flight_id = %flight_id,
                 "planner wake turn completed; status: Awake -> Idle"
             );
         }
@@ -859,7 +861,7 @@ impl MissionPlannerRegistry {
     /// `RateLimitError` (HTTP 429) mid-stream.
     ///
     /// The supervisor:
-    ///   1. Resolves the owning mission from the sidecar session id. If
+    ///   1. Resolves the owning flight from the sidecar session id. If
     ///      the session isn't a planner (e.g. a regular `claude-oauth`
     ///      chat that also hit 429), this is a no-op — the regular
     ///      `error` event already surfaced the failure to that session.
@@ -873,29 +875,29 @@ impl MissionPlannerRegistry {
     ///          off the SDK error's `retry-after` header), we use that
     ///          as the base.
     ///        * Otherwise, default to 60s.
-    ///      Per the locked-design caps (`dev/mission-planner-plan.md`
+    ///      Per the locked-design caps (`dev/flight-planner-plan.md`
     ///      §Safety rails), the minimum is 60s (don't slam back at the
     ///      API on a too-short hint) and the maximum is 600s / 10min
     ///      (don't leave the user staring at a frozen planner forever).
     ///   4. Spawns an async timer; when it elapses, if and only if the
     ///      planner is *still* `QuotaPaused` (the user may have called
-    ///      [`pause_mission_planner`] / [`stop_mission_planner`] in the
+    ///      [`pause_flight_planner`] / [`stop_flight_planner`] in the
     ///      meantime), flips back to [`PlannerStatus::Idle`]. The next
     ///      wake event will then dispatch normally.
-    ///   5. Emits `mission-planner:rate-limited:<missionId>` carrying the
+    ///   5. Emits `flight-planner:rate-limited:<flightId>` carrying the
     ///      effective wait-seconds so the frontend can turn it into an
-    ///      OS-level notification ("Mission paused — resuming in ~Xs").
+    ///      OS-level notification ("Flight paused — resuming in ~Xs").
     pub async fn on_rate_limited(
         &self,
         sidecar_session_id: &str,
         retry_after_seconds: Option<f64>,
         app: &tauri::AppHandle,
     ) {
-        // 1. Find the owning mission. Non-planner sessions land here too
+        // 1. Find the owning flight. Non-planner sessions land here too
         //    and return None — that's fine, the regular `error` event has
         //    already been emitted on this session.
-        let mission_id = match self
-            .mission_id_for_sidecar_session(sidecar_session_id)
+        let flight_id = match self
+            .flight_id_for_sidecar_session(sidecar_session_id)
             .await
         {
             Some(m) => m,
@@ -920,9 +922,9 @@ impl MissionPlannerRegistry {
         //    and the older timer's captured lease is now stale.
         let (lease, sidecar_session_id) = {
             let mut sessions = self.sessions.lock().await;
-            let Some(session) = sessions.get_mut(&mission_id) else {
-                // The mission's planner session was removed between the
-                // reverse-lookup and now (e.g. stop_mission_planner racing
+            let Some(session) = sessions.get_mut(&flight_id) else {
+                // The flight's planner session was removed between the
+                // reverse-lookup and now (e.g. stop_flight_planner racing
                 // us). Nothing to do.
                 return;
             };
@@ -932,34 +934,34 @@ impl MissionPlannerRegistry {
             (session.quota_lease, session.sidecar_session_id.clone())
         };
         if let Err(e) = persist_planner_state_on_flight(
-            &mission_id,
+            &flight_id,
             Some(&sidecar_session_id),
             Some(PlannerStatus::QuotaPaused),
         )
         .await
         {
             warn!(
-                mission_id = %mission_id,
+                flight_id = %flight_id,
                 error = %e,
                 "on_rate_limited: failed to persist QuotaPaused on Flight DTO"
             );
         }
         info!(
-            mission_id = %mission_id,
+            flight_id = %flight_id,
             wait_seconds = wait_secs,
             retry_after_seconds = ?retry_after_seconds,
             quota_lease = lease,
-            "mission planner hit Anthropic rate limit; status: -> QuotaPaused"
+            "flight planner hit Anthropic rate limit; status: -> QuotaPaused"
         );
 
-        // 4. Emit the per-mission Tauri event so the frontend can fire
-        //    an OS notification ("Mission paused — resuming in ~Xs").
+        // 4. Emit the per-flight Tauri event so the frontend can fire
+        //    an OS notification ("Flight paused — resuming in ~Xs").
         //    We emit BEFORE the spawn so the UI updates regardless of
         //    timer scheduling.
         let _ = app.emit(
-            &format!("mission-planner:rate-limited:{}", mission_id),
+            &format!("flight-planner:rate-limited:{}", flight_id),
             serde_json::json!({
-                "missionId": mission_id,
+                "flightId": flight_id,
                 "retryAfterSeconds": wait_secs,
             }),
         );
@@ -976,11 +978,11 @@ impl MissionPlannerRegistry {
         //    THIS (older) timer must back off and leave the new pause
         //    alone.
         let app_clone = app.clone();
-        let mission_clone = mission_id.clone();
+        let flight_clone = flight_id.clone();
         let captured_lease = lease;
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs_f64(wait_secs)).await;
-            let registry = match app_clone.try_state::<MissionPlannerRegistry>() {
+            let registry = match app_clone.try_state::<FlightPlannerRegistry>() {
                 Some(r) => r,
                 None => return,
             };
@@ -989,7 +991,7 @@ impl MissionPlannerRegistry {
             // comparison + status flip share a single critical section.
             let resolved = {
                 let mut sessions = registry.sessions.lock().await;
-                let Some(session) = sessions.get_mut(&mission_clone) else {
+                let Some(session) = sessions.get_mut(&flight_clone) else {
                     return;
                 };
                 if !matches!(session.status, PlannerStatus::QuotaPaused) {
@@ -1003,7 +1005,7 @@ impl MissionPlannerRegistry {
                     // armed QuotaPaused alone — its own timer will clear
                     // it (or another sibling 429 will bump again).
                     info!(
-                        mission_id = %mission_clone,
+                        flight_id = %flight_clone,
                         captured_lease,
                         current_lease = session.quota_lease,
                         "quota auto-resume timer fired but lease is stale; deferring to newer timer",
@@ -1016,26 +1018,26 @@ impl MissionPlannerRegistry {
             };
             if let Some(sidecar_id) = resolved {
                 if let Err(e) = persist_planner_state_on_flight(
-                    &mission_clone,
+                    &flight_clone,
                     Some(&sidecar_id),
                     Some(PlannerStatus::Idle),
                 )
                 .await
                 {
                     warn!(
-                        mission_id = %mission_clone,
+                        flight_id = %flight_clone,
                         error = %e,
                         "quota auto-resume: failed to persist Idle on Flight DTO"
                     );
                 }
                 info!(
-                    mission_id = %mission_clone,
+                    flight_id = %flight_clone,
                     "resuming planner after quota window: status QuotaPaused -> Idle"
                 );
-                if !registry.replay_pending_wake(&mission_clone).await {
+                if !registry.replay_pending_wake(&flight_clone).await {
                     registry
                         .send_wake(PlannerWakeEvent {
-                            mission_id: mission_clone.clone(),
+                            flight_id: flight_clone.clone(),
                             trigger: WakeTrigger::QuotaExhausted,
                             payload: serde_json::json!({
                                 "retryAfterSeconds": wait_secs,
@@ -1048,76 +1050,76 @@ impl MissionPlannerRegistry {
         });
     }
 
-    /// Set or replace the planner session for a mission. Returns the
+    /// Set or replace the planner session for a flight. Returns the
     /// previous session, if any (so caller can decide whether to close it).
-    async fn insert(&self, session: MissionPlannerSession) -> Option<MissionPlannerSession> {
+    async fn insert(&self, session: FlightPlannerSession) -> Option<FlightPlannerSession> {
         let mut guard = self.sessions.lock().await;
-        guard.insert(session.mission_id.clone(), session)
+        guard.insert(session.flight_id.clone(), session)
     }
 
     /// E10 FIX P0 — store the Tauri `EventId` returned from
     /// `install_compaction_listener` on the session record so a later
-    /// `stop_mission_planner` / `complete_mission` can call
+    /// `stop_flight_planner` / `complete_flight` can call
     /// `app.unlisten(id)` and prevent listener accumulation across start /
     /// stop cycles.
     ///
-    /// Best-effort: if the mission has no session in the registry (e.g. it
+    /// Best-effort: if the flight has no session in the registry (e.g. it
     /// was just removed by a concurrent stop), this is a silent no-op —
     /// the caller will not be able to unlisten via this registry, but the
     /// listener-leak window in that race is a single stop cycle's worth.
-    pub async fn set_compaction_listener(&self, mission_id: &str, event_id: tauri::EventId) {
+    pub async fn set_compaction_listener(&self, flight_id: &str, event_id: tauri::EventId) {
         let mut guard = self.sessions.lock().await;
-        if let Some(session) = guard.get_mut(mission_id) {
+        if let Some(session) = guard.get_mut(flight_id) {
             session.compaction_listener = Some(event_id);
         }
     }
 
     /// E10 FIX P0 — read and clear the stored compaction listener
-    /// `EventId` for a mission. Used by the terminal paths
-    /// (`stop_mission_planner`, `complete_mission`'s `remove_session`)
+    /// `EventId` for a flight. Used by the terminal paths
+    /// (`stop_flight_planner`, `complete_flight`'s `remove_session`)
     /// just before tearing the session down so the caller can call
     /// `app.unlisten(id)`.
     ///
-    /// Returns `None` when the mission has no planner session OR when no
+    /// Returns `None` when the flight has no planner session OR when no
     /// listener was ever installed (cold-start before re-install, etc.).
-    pub async fn take_compaction_listener(&self, mission_id: &str) -> Option<tauri::EventId> {
+    pub async fn take_compaction_listener(&self, flight_id: &str) -> Option<tauri::EventId> {
         let mut guard = self.sessions.lock().await;
-        guard.get_mut(mission_id)?.compaction_listener.take()
+        guard.get_mut(flight_id)?.compaction_listener.take()
     }
 
     /// Test-only mirror of [`Self::insert`] that's visible to sibling
     /// modules' `#[cfg(test)]` blocks (specifically
-    /// `mission_planner_compaction::tests`). Production callers must go
-    /// through `start_mission_planner` so the sidecar / journal /
+    /// `flight_planner_compaction::tests`). Production callers must go
+    /// through `start_flight_planner` so the sidecar / journal /
     /// persistence side-effects are correctly applied — direct insertion
     /// bypasses all of that and is only safe in unit tests that build
     /// fixture sessions by hand.
     #[cfg(test)]
-    pub async fn insert_for_test(&self, session: MissionPlannerSession) {
+    pub async fn insert_for_test(&self, session: FlightPlannerSession) {
         let mut guard = self.sessions.lock().await;
-        guard.insert(session.mission_id.clone(), session);
+        guard.insert(session.flight_id.clone(), session);
     }
 
-    /// Drop a session by mission id.
-    async fn remove(&self, mission_id: &str) -> Option<MissionPlannerSession> {
+    /// Drop a session by flight id.
+    async fn remove(&self, flight_id: &str) -> Option<FlightPlannerSession> {
         let mut guard = self.sessions.lock().await;
-        guard.remove(mission_id)
+        guard.remove(flight_id)
     }
 
     /// Mutate a session's status (and `last_tick_at`) in place. No-op if
-    /// the mission has no session.
-    async fn set_status(&self, mission_id: &str, status: PlannerStatus) {
+    /// the flight has no session.
+    async fn set_status(&self, flight_id: &str, status: PlannerStatus) {
         let mut guard = self.sessions.lock().await;
-        if let Some(s) = guard.get_mut(mission_id) {
+        if let Some(s) = guard.get_mut(flight_id) {
             s.status = status;
             s.last_tick_at = now_millis();
         }
     }
 
-    /// **FIX 3** — set status AND emit `mission-planner:status-changed:<missionId>`
-    /// so the frontend `missionPlannerStore` can reactively patch the per-runtime
+    /// **FIX 3** — set status AND emit `flight-planner:status-changed:<flightId>`
+    /// so the frontend `flightPlannerStore` can reactively patch the per-runtime
     /// `status` field without waiting for a backend round-trip via
-    /// `get_mission_status` polling.
+    /// `get_flight_status` polling.
     ///
     /// Layered on top of [`Self::set_status`] (mutates in-memory) plus a single
     /// `app.emit(...)` call. Errors from `emit` are deliberately swallowed —
@@ -1129,34 +1131,34 @@ impl MissionPlannerRegistry {
     /// resume, kill-switch). Internal call sites that are followed by a wake
     /// trigger or persisted state flip can keep using the plain [`Self::set_status`].
     ///
-    /// Payload shape: `{ "missionId": <id>, "status": <snake_case status> }`.
+    /// Payload shape: `{ "flightId": <id>, "status": <snake_case status> }`.
     /// `PlannerStatus`'s `serde(rename_all = "snake_case")` derive produces
     /// `idle` / `awake` / `paused` / `quota_paused` / `completed` / `failed`,
-    /// matching the frontend `PlannerStatus` union in `missionPlannerStore.ts`.
+    /// matching the frontend `PlannerStatus` union in `flightPlannerStore.ts`.
     pub async fn set_status_and_emit(
         &self,
-        mission_id: &str,
+        flight_id: &str,
         status: PlannerStatus,
         app: &AppHandle,
     ) {
-        self.set_status(mission_id, status).await;
+        self.set_status(flight_id, status).await;
         let _ = app.emit(
-            &format!("mission-planner:status-changed:{}", mission_id),
+            &format!("flight-planner:status-changed:{}", flight_id),
             serde_json::json!({
-                "missionId": mission_id,
+                "flightId": flight_id,
                 "status": status,
             }),
         );
     }
 
     /// E6-CAPS: set `current_mode` and reset `tool_calls_this_tick` to 0 for
-    /// the planner attached to `mission_id`. Called by [`dispatch_wake`] at
+    /// the planner attached to `flight_id`. Called by [`dispatch_wake`] at
     /// the start of every wake turn so the dispatcher's cap check operates
-    /// against the right mode + a fresh counter. No-op if the mission has no
-    /// session (a wake racing a stop_mission_planner would land here).
-    pub async fn set_mode_and_reset_tick(&self, mission_id: &str, mode: PlannerMode) {
+    /// against the right mode + a fresh counter. No-op if the flight has no
+    /// session (a wake racing a stop_flight_planner would land here).
+    pub async fn set_mode_and_reset_tick(&self, flight_id: &str, mode: PlannerMode) {
         let mut sessions = self.sessions.lock().await;
-        if let Some(s) = sessions.get_mut(mission_id) {
+        if let Some(s) = sessions.get_mut(flight_id) {
             s.current_mode = mode;
             s.tool_calls_this_tick = 0;
         }
@@ -1165,7 +1167,7 @@ impl MissionPlannerRegistry {
     /// E6-CAPS: atomically read the planner's current mode and bump the
     /// per-tick tool-call counter, returning `(mode, cap, new_count)`.
     ///
-    /// The dispatcher in `commands::mission_planner_tools::mod::dispatch`
+    /// The dispatcher in `commands::flight_planner_tools::mod::dispatch`
     /// calls this BEFORE routing to the per-tool handler so that bumping +
     /// rejecting-over-cap is atomic against concurrent tool calls from the
     /// same session. If the new count is over the mode's cap, the caller
@@ -1180,11 +1182,11 @@ impl MissionPlannerRegistry {
         sidecar_session_id: &str,
     ) -> Option<(PlannerMode, u32, u32)> {
         let mut sessions = self.sessions.lock().await;
-        let mission_id = sessions
+        let flight_id = sessions
             .iter()
             .find(|(_, s)| s.sidecar_session_id == sidecar_session_id)
             .map(|(m, _)| m.clone())?;
-        let session = sessions.get_mut(&mission_id)?;
+        let session = sessions.get_mut(&flight_id)?;
         let mode = session.current_mode;
         let cap = mode.tool_call_cap();
         session.tool_calls_this_tick = session.tool_calls_this_tick.saturating_add(1);
@@ -1195,7 +1197,7 @@ impl MissionPlannerRegistry {
     /// If this crosses [`COMPACTION_THRESHOLD_TOKENS`] **and**
     /// `compaction_in_progress` is currently false, atomically flip
     /// `compaction_in_progress` to true and return `true` (caller should
-    /// emit the `mission-planner:compaction-triggered:<missionId>`
+    /// emit the `flight-planner:compaction-triggered:<flightId>`
     /// event). Otherwise return `false`.
     ///
     /// The atomic flip ensures only ONE event fires per threshold
@@ -1213,14 +1215,14 @@ impl MissionPlannerRegistry {
     /// very next `turn_summary` immediately re-fires the trigger, retries
     /// summarization, fails again, and the loop hammers Sonnet quota.
     ///
-    /// No-op (returns false) if no planner session matches `mission_id`.
+    /// No-op (returns false) if no planner session matches `flight_id`.
     pub async fn bump_cumulative_input_and_check(
         &self,
-        mission_id: &str,
+        flight_id: &str,
         input_tokens: u64,
     ) -> bool {
         let mut sessions = self.sessions.lock().await;
-        let Some(session) = sessions.get_mut(mission_id) else {
+        let Some(session) = sessions.get_mut(flight_id) else {
             return false;
         };
         session.cumulative_input_tokens =
@@ -1245,18 +1247,18 @@ impl MissionPlannerRegistry {
 
     /// E10-DETECT — read the cumulative-input-token counter for a
     /// planner session. Returns `None` if no planner is registered for
-    /// `mission_id`. Used by UI / telemetry surfaces that want to show
+    /// `flight_id`. Used by UI / telemetry surfaces that want to show
     /// "X / 150K tokens to compaction" without bumping the counter.
     #[allow(dead_code)]
-    pub async fn read_cumulative_input(&self, mission_id: &str) -> Option<u64> {
+    pub async fn read_cumulative_input(&self, flight_id: &str) -> Option<u64> {
         let sessions = self.sessions.lock().await;
-        sessions.get(mission_id).map(|s| s.cumulative_input_tokens)
+        sessions.get(flight_id).map(|s| s.cumulative_input_tokens)
     }
 
     /// E10-SWAP — clear the `compaction_in_progress` flag without touching
     /// the cumulative-token counter.
     ///
-    /// Used by [`crate::commands::mission_planner_compaction::perform_compaction`]
+    /// Used by [`crate::commands::flight_planner_compaction::perform_compaction`]
     /// on the summarization-failure path: we want a *future* threshold cross
     /// to re-arm the trigger (so a transient summarizer error doesn't
     /// permanently disable compaction), but we don't want to zero the token
@@ -1264,7 +1266,7 @@ impl MissionPlannerRegistry {
     /// the planner cross the threshold a second time before the underlying
     /// context has actually been compacted.
     ///
-    /// No-op (returns silently) if no planner is registered for `mission_id`.
+    /// No-op (returns silently) if no planner is registered for `flight_id`.
     ///
     /// E10 FIX P1-A — superseded by `record_compaction_failure` in
     /// `perform_compaction`'s failure paths (which also sets the
@@ -1273,9 +1275,9 @@ impl MissionPlannerRegistry {
     /// failure path that genuinely wants to clear the flag without
     /// arming the backoff (e.g. a benign cancellation).
     #[allow(dead_code)]
-    pub async fn reset_compaction_in_progress(&self, mission_id: &str) {
+    pub async fn reset_compaction_in_progress(&self, flight_id: &str) {
         let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get_mut(mission_id) {
+        if let Some(session) = sessions.get_mut(flight_id) {
             session.compaction_in_progress = false;
         }
     }
@@ -1287,11 +1289,11 @@ impl MissionPlannerRegistry {
     /// escalate (write a `SystemNote` journal entry) at the
     /// [`COMPACTION_FAILURE_ESCALATION_COUNT`] threshold.
     ///
-    /// Returns `0` if no planner is registered for `mission_id` (treat as
+    /// Returns `0` if no planner is registered for `flight_id` (treat as
     /// no-op — no escalation needed).
-    pub async fn record_compaction_failure(&self, mission_id: &str) -> u32 {
+    pub async fn record_compaction_failure(&self, flight_id: &str) -> u32 {
         let mut sessions = self.sessions.lock().await;
-        let Some(session) = sessions.get_mut(mission_id) else {
+        let Some(session) = sessions.get_mut(flight_id) else {
             return 0;
         };
         session.compaction_in_progress = false;
@@ -1322,11 +1324,11 @@ impl MissionPlannerRegistry {
     /// a long summarizer round-trip.
     pub async fn swap_sidecar_session_after_compaction(
         &self,
-        mission_id: &str,
+        flight_id: &str,
         new_sidecar_session_id: &str,
     ) -> bool {
         let mut sessions = self.sessions.lock().await;
-        let Some(session) = sessions.get_mut(mission_id) else {
+        let Some(session) = sessions.get_mut(flight_id) else {
             return false;
         };
         session.sidecar_session_id = new_sidecar_session_id.to_string();
@@ -1344,11 +1346,11 @@ impl MissionPlannerRegistry {
     /// resolves the parked SDK tool handler in the sidecar.
     ///
     /// E2: delegates to per-tool handlers under
-    /// `commands::mission_planner_tools`. Caps + the task-ceiling
+    /// `commands::flight_planner_tools`. Caps + the task-ceiling
     /// approval gate come in E6 (they wrap this call, not replace it).
     ///
-    /// `session_id` is the sidecar session id (NOT the planner / mission
-    /// id) — handlers use it to find the owning mission via the registry.
+    /// `session_id` is the sidecar session id (NOT the planner / flight
+    /// id) — handlers use it to find the owning flight via the registry.
     /// `app` is the Tauri handle so handlers can `storage::load_state` /
     /// `save_state` and emit Tauri events for the UI.
     pub async fn handle_tool_call(
@@ -1358,7 +1360,7 @@ impl MissionPlannerRegistry {
         tool: &str,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        crate::commands::mission_planner_tools::dispatch(app, session_id, tool, args).await
+        crate::commands::flight_planner_tools::dispatch(app, session_id, tool, args).await
     }
 }
 
@@ -1371,32 +1373,32 @@ impl MissionPlannerRegistry {
 /// can surface "your planner sessions were interrupted" via the existing
 /// recovery path.
 ///
-/// Tolerant of a missing flight (e.g. mission was deleted between start and
+/// Tolerant of a missing flight (e.g. flight was deleted between start and
 /// status update) — silently no-ops by returning `Ok(())`.
 ///
 /// FIX P1-B: serialized through `storage::with_state_lock` so concurrent
 /// callers (e.g. `on_planner_done`, `on_rate_limited`, the wake-bus
-/// dispatcher, `complete_mission`, the start/stop/pause/resume commands)
+/// dispatcher, `complete_flight`, the start/stop/pause/resume commands)
 /// can't race a naked `load_state` + `save_state` pair and lose each
 /// other's updates. The previous implementation did `load_state` + mutate
 /// + `save_state` without a lock; under contention, the later writer
 /// would clobber the earlier one.
 pub(crate) async fn persist_planner_state_on_flight(
-    mission_id: &str,
+    flight_id: &str,
     session_id: Option<&str>,
     status: Option<PlannerStatus>,
 ) -> Result<(), String> {
-    let mission_id_owned = mission_id.to_string();
+    let flight_id_owned = flight_id.to_string();
     let session_id_owned = session_id.map(|s| s.to_string());
     let result = storage::with_state_lock(move |state| {
-        let mission_id = mission_id_owned.clone();
+        let flight_id = flight_id_owned.clone();
         let session_id_arg = session_id_owned.clone();
         let status_arg = status;
         let inner: Result<(), String> = (|| {
-            // Missing flight is tolerated (mission may have been deleted
+            // Missing flight is tolerated (flight may have been deleted
             // between the registry update and this call) — return Ok with
             // no mutation so `with_state_lock` skips the save path.
-            let Some(flight) = state.flights.iter_mut().find(|f| f.id == mission_id) else {
+            let Some(flight) = state.flights.iter_mut().find(|f| f.id == flight_id) else {
                 return Ok(());
             };
             // Only mark changes when the field actually moves, matching the
@@ -1414,7 +1416,7 @@ pub(crate) async fn persist_planner_state_on_flight(
     })
     .await;
     if let Err(ref e) = result {
-        warn!(error = %e, mission_id, "failed to persist planner state on flight");
+        warn!(error = %e, flight_id, "failed to persist planner state on flight");
     }
     result
 }
@@ -1422,7 +1424,7 @@ pub(crate) async fn persist_planner_state_on_flight(
 /// Persist the planner provider string on the Flight DTO so the StatGrid chip
 /// can render OAuth-subscription vs API-key spend differently.
 ///
-/// Called once at `start_mission_planner` time (post-`forward_start`,
+/// Called once at `start_flight_planner` time (post-`forward_start`,
 /// post-registry-insert) with the provider arg the sidecar was dispatched
 /// against — currently always [`PLANNER_PROVIDER`] (`"claude-oauth"`) but
 /// passed by argument so this helper stays correct when E6 / E9 broaden the
@@ -1433,16 +1435,16 @@ pub(crate) async fn persist_planner_state_on_flight(
 /// registry-insert and disk-flush; we only want to record provenance when
 /// there's somewhere on disk to put it.
 pub(crate) async fn persist_planner_provider_on_flight(
-    mission_id: &str,
+    flight_id: &str,
     provider: &str,
 ) -> Result<(), String> {
-    let mission_id_owned = mission_id.to_string();
+    let flight_id_owned = flight_id.to_string();
     let provider_owned = provider.to_string();
     let result = storage::with_state_lock(move |state| {
-        let mission_id = mission_id_owned.clone();
+        let flight_id = flight_id_owned.clone();
         let provider = provider_owned.clone();
         let inner: Result<(), String> = (|| {
-            let Some(flight) = state.flights.iter_mut().find(|f| f.id == mission_id) else {
+            let Some(flight) = state.flights.iter_mut().find(|f| f.id == flight_id) else {
                 return Ok(());
             };
             if flight.planner_provider.as_deref() != Some(provider.as_str()) {
@@ -1455,7 +1457,7 @@ pub(crate) async fn persist_planner_provider_on_flight(
     })
     .await;
     if let Err(ref e) = result {
-        warn!(error = %e, mission_id, "failed to persist planner provider on flight");
+        warn!(error = %e, flight_id, "failed to persist planner provider on flight");
     }
     result
 }
@@ -1466,7 +1468,7 @@ pub(crate) async fn persist_planner_provider_on_flight(
 //
 // `accumulate_planner_cost`, `accumulate_executor_cost`, `ExecutorSessionOwner`,
 // and `flight_for_executor_session` were moved into
-// `commands::mission_planner_costs` as the first-cut sub-module split. They
+// `commands::flight_planner_costs` as the first-cut sub-module split. They
 // remain reachable via the parent module path through the re-export at the
 // top of this file so existing call sites (api_agent.rs,
 // agent_sidecar::handler.rs) keep compiling unchanged.
@@ -1476,9 +1478,9 @@ pub(crate) async fn persist_planner_provider_on_flight(
 // ---------------------------------------------------------------------------
 
 /// Pure, I/O-free core of [`enforce_cold_start_paused`]. Walks `state.flights`
-/// and flips any mission that *was* running a planner at last shutdown back to
+/// and flips any flight that *was* running a planner at last shutdown back to
 /// `PlannerStatus::Paused`, clearing the stale `planner_session_id` (the
-/// sidecar that owned it died with the app). Returns the count of missions
+/// sidecar that owned it died with the app). Returns the count of flights
 /// modified — telemetry-only; persistence is the caller's job.
 ///
 /// Eligibility: `status` is NOT terminal (i.e. not
@@ -1492,12 +1494,12 @@ pub(crate) async fn persist_planner_provider_on_flight(
 /// re-pause it. `Completed` / `Failed` are terminal — also sticky.)
 ///
 /// **Scope correction (E6 FIX 1)**: the predicate now matches any
-/// non-terminal mission, not just `Active`. A planner pinned to a
+/// non-terminal flight, not just `Active`. A planner pinned to a
 /// `Planning` / `Review` / `Spec` / `Paused` flight at last shutdown
 /// still owns a dead sidecar session id post-restart — its metadata
 /// must be reset just like the `Active` case. Terminal states
 /// (`Done` / `Failed` / `Cancelled`) are skipped because touching a
-/// terminal mission's planner state would be both wrong and surprising.
+/// terminal flight's planner state would be both wrong and surprising.
 pub fn compute_cold_start_paused(state: &mut PersistedState) -> usize {
     let mut count: usize = 0;
     for flight in state.flights.iter_mut() {
@@ -1528,7 +1530,7 @@ pub fn compute_cold_start_paused(state: &mut PersistedState) -> usize {
 }
 
 /// Boot-time safety rail. Planner sidecar sessions are ephemeral — they die
-/// with the host app — so on a fresh app start any mission whose planner was
+/// with the host app — so on a fresh app start any flight whose planner was
 /// `Awake` / `Idle` / `QuotaPaused` (or merely had a `planner_session_id`
 /// pinned) is now pointing at a dead session. We flip those to
 /// [`FlightPlannerStatus::Paused`] and clear the stale session id, forcing
@@ -1541,7 +1543,7 @@ pub fn compute_cold_start_paused(state: &mut PersistedState) -> usize {
 /// race the boot path (e.g. a planner tool firing from a stale sidecar
 /// before this runs — unlikely, but the lock costs us nothing).
 ///
-/// Returns the number of missions paused for telemetry.
+/// Returns the number of flights paused for telemetry.
 pub async fn enforce_cold_start_paused() -> Result<usize, String> {
     storage::with_state_lock(|state| {
         let count = compute_cold_start_paused(state);
@@ -1557,8 +1559,8 @@ pub async fn enforce_cold_start_paused() -> Result<usize, String> {
 /// Spawn the wake-consumer task. Call once at app startup, after the
 /// `SidecarManager` is in Tauri-managed state. Wires the registry's
 /// `wake_tx` and drives a `select!` loop that pulls events off the
-/// channel, debounces a [`WAKE_DEBOUNCE_MS`] window per mission, and then
-/// dispatches one consolidated `inject_user_turn` per mission via the
+/// channel, debounces a [`WAKE_DEBOUNCE_MS`] window per flight, and then
+/// dispatches one consolidated `inject_user_turn` per flight via the
 /// sidecar.
 pub fn spawn_wake_consumer(app_handle: AppHandle) {
     let (tx, mut rx) = mpsc::unbounded_channel::<PlannerWakeEvent>();
@@ -1566,23 +1568,23 @@ pub fn spawn_wake_consumer(app_handle: AppHandle) {
     // Install the sender so orchestration hooks can fan events in.
     let app_for_install = app_handle.clone();
     tauri::async_runtime::spawn(async move {
-        if let Some(registry) = app_for_install.try_state::<MissionPlannerRegistry>() {
+        if let Some(registry) = app_for_install.try_state::<FlightPlannerRegistry>() {
             registry.install_wake_sender(tx).await;
         } else {
-            warn!("MissionPlannerRegistry not managed before wake consumer spawn");
+            warn!("FlightPlannerRegistry not managed before wake consumer spawn");
         }
     });
 
     // The actual consumer loop.
     tauri::async_runtime::spawn(async move {
-        // Pending wakes keyed by mission id. We replace-on-write so the
-        // newest trigger for a given mission wins inside the debounce
+        // Pending wakes keyed by flight id. We replace-on-write so the
+        // newest trigger for a given flight wins inside the debounce
         // window (per locked design: bursts coalesce, not stack).
         //
         // The locked design's reactive intent is that the planner reacts
-        // to the latest state of the mission, not to N redundant copies
+        // to the latest state of the flight, not to N redundant copies
         // of "task completed" — picking the freshest event is fine because
-        // the wake-message builder reads a fresh mission snapshot at
+        // the wake-message builder reads a fresh flight snapshot at
         // dispatch time anyway.
         let mut pending: HashMap<String, PlannerWakeEvent> = HashMap::new();
         let debounce = std::time::Duration::from_millis(WAKE_DEBOUNCE_MS);
@@ -1594,15 +1596,15 @@ pub fn spawn_wake_consumer(app_handle: AppHandle) {
             let first = match rx.recv().await {
                 Some(ev) => ev,
                 None => {
-                    info!("mission planner wake channel closed; consumer exiting");
+                    info!("flight planner wake channel closed; consumer exiting");
                     return;
                 }
             };
-            pending.insert(first.mission_id.clone(), first);
+            pending.insert(first.flight_id.clone(), first);
 
             // Drain anything else already queued without blocking.
             while let Ok(ev) = rx.try_recv() {
-                pending.insert(ev.mission_id.clone(), ev);
+                pending.insert(ev.flight_id.clone(), ev);
             }
 
             // Debounce window — collect anything that arrives within
@@ -1614,18 +1616,18 @@ pub fn spawn_wake_consumer(app_handle: AppHandle) {
             loop {
                 match tokio::time::timeout(debounce, rx.recv()).await {
                     Ok(Some(ev)) => {
-                        pending.insert(ev.mission_id.clone(), ev);
+                        pending.insert(ev.flight_id.clone(), ev);
                     }
                     Ok(None) => {
-                        info!("mission planner wake channel closed mid-debounce");
+                        info!("flight planner wake channel closed mid-debounce");
                         return;
                     }
                     Err(_elapsed) => break, // debounce elapsed; dispatch
                 }
             }
 
-            // Dispatch one consolidated wake per mission.
-            for (_mission, event) in pending.drain() {
+            // Dispatch one consolidated wake per flight.
+            for (_flight, event) in pending.drain() {
                 dispatch_wake(&app_handle, event).await;
             }
         }
@@ -1634,13 +1636,13 @@ pub fn spawn_wake_consumer(app_handle: AppHandle) {
 
 /// Format and forward a single consolidated wake event to the sidecar.
 async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
-    let registry = match app_handle.try_state::<MissionPlannerRegistry>() {
+    let registry = match app_handle.try_state::<FlightPlannerRegistry>() {
         Some(r) => r,
         None => return,
     };
 
     // Skip dispatch if the planner is paused/quota-paused/completed/failed.
-    let session = match registry.get_by_mission(&event.mission_id).await {
+    let session = match registry.get_by_flight(&event.flight_id).await {
         Some(s) => s,
         None => {
             registry.queue_wake_for_replay(event).await;
@@ -1667,15 +1669,15 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         }
     };
 
-    // Gather a mission snapshot for the wake-message builder. We pull a
+    // Gather a flight snapshot for the wake-message builder. We pull a
     // read-only view of the Flight DTO via `storage::load_state` (no lock —
     // we're not mutating). E7 will replace `journal_tail` with the proper
     // journal feed; for now we surface the failed-task conversation tail on
     // `TaskFailed` so the planner has concrete evidence to react to.
-    let (mission_snapshot, journal_tail) =
-        build_wake_payload(&event.mission_id, &event.trigger, &event.payload);
+    let (flight_snapshot, journal_tail) =
+        build_wake_payload(&event.flight_id, &event.trigger, &event.payload);
 
-    let content = wake_user_message(&event.trigger, &journal_tail, &mission_snapshot);
+    let content = wake_user_message(&event.trigger, &journal_tail, &flight_snapshot);
     let trigger_kind = event.trigger.kind_str();
 
     // E6-CAPS: set per-wake mode + reset the per-tick tool-call counter
@@ -1685,7 +1687,7 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
     // ultimately fails — the counter reset is idempotent.
     let mode = PlannerMode::from_trigger(&event.trigger);
     registry
-        .set_mode_and_reset_tick(&event.mission_id, mode)
+        .set_mode_and_reset_tick(&event.flight_id, mode)
         .await;
     let max_output_tokens = mode.max_output_tokens();
 
@@ -1711,7 +1713,7 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         .await
     {
         warn!(
-            mission_id = %event.mission_id,
+            flight_id = %event.flight_id,
             error = %e,
             "failed to inject wake turn into planner sidecar"
         );
@@ -1736,7 +1738,7 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
         "mode": format!("{:?}", mode),
     });
     let entry = journal_entry(
-        event.mission_id.clone(),
+        event.flight_id.clone(),
         JournalKind::WakeTrigger,
         body,
         Some(metadata),
@@ -1745,23 +1747,23 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
 
     // Flip to Awake while the planner is processing this wake's turn. The
     // status flips back to Idle when the sidecar emits `done` for this
-    // session — wired in E6-KILL-AWAKE via `MissionPlannerRegistry::
+    // session — wired in E6-KILL-AWAKE via `FlightPlannerRegistry::
     // on_planner_done`, which is invoked from `agent_sidecar::handle_event`'s
     // `"done"` arm. The on_planner_done guard preserves Paused /
     // QuotaPaused / terminal states, so a pause that races with a `done`
     // event doesn't get clobbered.
     registry
-        .set_status(&event.mission_id, PlannerStatus::Awake)
+        .set_status(&event.flight_id, PlannerStatus::Awake)
         .await;
     if let Err(e) = persist_planner_state_on_flight(
-        &event.mission_id,
+        &event.flight_id,
         Some(&session.sidecar_session_id),
         Some(PlannerStatus::Awake),
     )
     .await
     {
         warn!(
-            mission_id = %event.mission_id,
+            flight_id = %event.flight_id,
             error = %e,
             "dispatch_wake: failed to persist Awake on Flight DTO"
         );
@@ -1769,16 +1771,16 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
 }
 
 // ---------------------------------------------------------------------------
-// Wake payload enrichment — mission snapshot + journal tail
+// Wake payload enrichment — flight snapshot + journal tail
 // ---------------------------------------------------------------------------
 
-/// Build the `(mission_snapshot, journal_tail)` pair fed into
+/// Build the `(flight_snapshot, journal_tail)` pair fed into
 /// [`wake_user_message`] for a wake event.
 ///
-/// `mission_snapshot` is a structured JSON view of the current Flight DTO:
+/// `flight_snapshot` is a structured JSON view of the current Flight DTO:
 /// title, objective, project path, workspace id, milestone/task counters,
 /// and the count of tasks currently `Queued` or `Running`. The planner uses
-/// this to ground its reasoning in the current state of the mission rather
+/// this to ground its reasoning in the current state of the flight rather
 /// than relying on chat history alone.
 ///
 /// `journal_tail` is best-effort recent context. E7 will replace this with
@@ -1792,12 +1794,12 @@ async fn dispatch_wake(app_handle: &AppHandle, event: PlannerWakeEvent) {
 /// Read-only: uses `storage::load_state` (no lock) and a plain file read.
 /// Safe to call from inside the wake consumer without holding any mutex.
 fn build_wake_payload(
-    mission_id: &str,
+    flight_id: &str,
     trigger: &WakeTrigger,
     trigger_payload: &serde_json::Value,
 ) -> (serde_json::Value, String) {
     let state = storage::load_state();
-    let flight = state.flights.iter().find(|f| f.id == mission_id);
+    let flight = state.flights.iter().find(|f| f.id == flight_id);
 
     let mut snapshot = match flight {
         Some(flight) => {
@@ -1815,7 +1817,7 @@ fn build_wake_payload(
                 })
                 .count();
             serde_json::json!({
-                "missionId": mission_id,
+                "flightId": flight_id,
                 "title": flight.title,
                 "objective": flight.objective,
                 "projectPath": flight.project_path,
@@ -1828,7 +1830,7 @@ fn build_wake_payload(
             })
         }
         None => serde_json::json!({
-            "missionId": mission_id,
+            "flightId": flight_id,
             "triggerPayload": trigger_payload,
         }),
     };
@@ -1951,7 +1953,7 @@ fn read_conversation_tail(session_id: &str, max_lines: usize) -> String {
 // Tauri commands
 // ---------------------------------------------------------------------------
 
-/// Start the planner agent for `mission_id` rooted at `project_path`.
+/// Start the planner agent for `flight_id` rooted at `project_path`.
 ///
 /// Returns the *planner session id* (which is currently the same as the
 /// sidecar session id, but the frontend should treat it as opaque so we
@@ -1959,9 +1961,9 @@ fn read_conversation_tail(session_id: &str, max_lines: usize) -> String {
 /// re-established on crash).
 ///
 /// Idempotent for `Idle` / `Awake` / `QuotaPaused` / `Paused` planners:
-/// re-calling for an already-running mission returns the existing id
+/// re-calling for an already-running flight returns the existing id
 /// without spawning a second session (`Paused` callers are nudged toward
-/// `resume_mission_planner` via a log hint). Terminal states (`Completed`
+/// `resume_flight_planner` via a log hint). Terminal states (`Completed`
 /// / `Failed`) return an error so the caller can choose to remove the
 /// stale session and start a fresh one.
 ///
@@ -1969,35 +1971,35 @@ fn read_conversation_tail(session_id: &str, max_lines: usize) -> String {
 /// can install `api-agent:*` listeners BEFORE the sidecar is spawned and
 /// any events fire. When `None`, the backend generates a UUID.
 #[tauri::command]
-pub async fn start_mission_planner(
+pub async fn start_flight_planner(
     app_handle: AppHandle,
-    mission_id: String,
+    flight_id: String,
     project_path: String,
     provisional_session_id: Option<String>,
 ) -> Result<String, String> {
     let registry = app_handle
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
 
-    if let Some(existing) = registry.get_by_mission(&mission_id).await {
+    if let Some(existing) = registry.get_by_flight(&flight_id).await {
         match existing.status {
             PlannerStatus::Completed | PlannerStatus::Failed => {
                 return Err(
-                    "mission planner session has terminated; remove the existing session and start a new one".to_string(),
+                    "flight planner session has terminated; remove the existing session and start a new one".to_string(),
                 );
             }
             PlannerStatus::Paused => {
                 info!(
-                    mission_id = %mission_id,
-                    "start_mission_planner called for a paused planner; returning existing id (call resume_mission_planner to dispatch wakes again)"
+                    flight_id = %flight_id,
+                    "start_flight_planner called for a paused planner; returning existing id (call resume_flight_planner to dispatch wakes again)"
                 );
                 return Ok(existing.id);
             }
             PlannerStatus::Idle | PlannerStatus::Awake => {
-                if registry.replay_pending_wake(&mission_id).await {
+                if registry.replay_pending_wake(&flight_id).await {
                     info!(
-                        mission_id = %mission_id,
-                        "replayed pending mission planner wake for existing session"
+                        flight_id = %flight_id,
+                        "replayed pending flight planner wake for existing session"
                     );
                 }
                 return Ok(existing.id);
@@ -2036,7 +2038,7 @@ pub async fn start_mission_planner(
                 "mcp__planner__mark_task_blocked".to_string(),
                 "mcp__planner__replan_after_failure".to_string(),
                 "mcp__planner__request_user_approval".to_string(),
-                "mcp__planner__complete_mission".to_string(),
+                "mcp__planner__complete_flight".to_string(),
             ],
             // mcpServers: null. The sidecar's `mcpKind: "planner"` flag
             // tells it to construct the planner tool surface locally; the
@@ -2065,16 +2067,16 @@ pub async fn start_mission_planner(
         .map_err(|e| format!("start planner sidecar session: {}", e))?;
 
     let session =
-        MissionPlannerSession::new(session_id.clone(), mission_id.clone(), sidecar_session_id);
+        FlightPlannerSession::new(session_id.clone(), flight_id.clone(), sidecar_session_id);
     registry.insert(session).await;
     if let Err(e) =
-        persist_planner_state_on_flight(&mission_id, Some(&session_id), Some(PlannerStatus::Idle))
+        persist_planner_state_on_flight(&flight_id, Some(&session_id), Some(PlannerStatus::Idle))
             .await
     {
         warn!(
-            mission_id = %mission_id,
+            flight_id = %flight_id,
             error = %e,
-            "start_mission_planner: failed to persist Idle on Flight DTO"
+            "start_flight_planner: failed to persist Idle on Flight DTO"
         );
     }
     // E8 — record the planner provider so the StatGrid chip can render
@@ -2083,61 +2085,61 @@ pub async fn start_mission_planner(
     // the chip won't know how to render until a successful subsequent
     // turn's `turn_summary` updates the flight (cost accumulation also
     // bumps `updated_at`, but doesn't touch `planner_provider`).
-    if let Err(e) = persist_planner_provider_on_flight(&mission_id, PLANNER_PROVIDER).await {
+    if let Err(e) = persist_planner_provider_on_flight(&flight_id, PLANNER_PROVIDER).await {
         warn!(
-            mission_id = %mission_id,
+            flight_id = %flight_id,
             error = %e,
-            "start_mission_planner: failed to persist planner provider on Flight DTO"
+            "start_flight_planner: failed to persist planner provider on Flight DTO"
         );
     }
 
-    // E10-SWAP — install the per-mission compaction-trigger listener. When
+    // E10-SWAP — install the per-flight compaction-trigger listener. When
     // E10-DETECT's `bump_cumulative_input_and_check` crosses the threshold
-    // and emits `mission-planner:compaction-triggered:<missionId>`, the
+    // and emits `flight-planner:compaction-triggered:<flightId>`, the
     // listener routes the event into `perform_compaction`, which restarts
     // the planner session with a summarized priming context.
     //
     // E10 FIX P0 — capture the returned `EventId` and store it on the
-    // session record so `stop_mission_planner` / `complete_mission` can
+    // session record so `stop_flight_planner` / `complete_flight` can
     // `app.unlisten` before the session is removed. Without this,
     // start→stop cycles accumulate listeners and one event fires N tasks.
     //
     // Installed exactly once per planner lifecycle — the early-return
-    // branches above (existing planner for the same mission) skip this so
-    // we don't double-register a listener for the same mission id.
-    let event_id = crate::commands::mission_planner_compaction::install_compaction_listener(
+    // branches above (existing planner for the same flight) skip this so
+    // we don't double-register a listener for the same flight id.
+    let event_id = crate::commands::flight_planner_compaction::install_compaction_listener(
         &app_handle,
-        &mission_id,
+        &flight_id,
     );
     registry
-        .set_compaction_listener(&mission_id, event_id)
+        .set_compaction_listener(&flight_id, event_id)
         .await;
 
-    if registry.replay_pending_wake(&mission_id).await {
+    if registry.replay_pending_wake(&flight_id).await {
         info!(
-            mission_id = %mission_id,
-            "replayed pending mission planner wake after start"
+            flight_id = %flight_id,
+            "replayed pending flight planner wake after start"
         );
     }
 
-    info!(mission_id = %mission_id, planner_session = %session_id, "started mission planner");
+    info!(flight_id = %flight_id, planner_session = %session_id, "started flight planner");
     Ok(session_id)
 }
 
-/// Stop the planner agent for `mission_id`. Closes the underlying sidecar
+/// Stop the planner agent for `flight_id`. Closes the underlying sidecar
 /// session and clears the persisted planner state on the Flight.
 #[tauri::command]
-pub async fn stop_mission_planner(app_handle: AppHandle, mission_id: String) -> Result<(), String> {
+pub async fn stop_flight_planner(app_handle: AppHandle, flight_id: String) -> Result<(), String> {
     let registry = app_handle
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
 
     // Peek the sidecar session id without removing from the registry yet.
     // Per peer-review FIX 3: shutdown order must be close-sidecar FIRST,
     // then registry-remove. If we removed first and `forward_close`
     // failed (broken pipe, dead sidecar), the sidecar-side conversation
     // would be orphaned with no way for the registry to reach it again.
-    let sidecar_session_id = match registry.get_by_mission(&mission_id).await {
+    let sidecar_session_id = match registry.get_by_flight(&flight_id).await {
         Some(s) => s.sidecar_session_id,
         None => return Ok(()), // nothing to stop is success
     };
@@ -2145,21 +2147,21 @@ pub async fn stop_mission_planner(app_handle: AppHandle, mission_id: String) -> 
     // Close the sidecar session FIRST (best-effort — log on failure).
     if let Some(sidecar) = app_handle.try_state::<Arc<SidecarManager>>() {
         if let Err(e) = sidecar.forward_close(sidecar_session_id.clone()).await {
-            warn!(error = %e, "stop_mission_planner: forward_close failed");
+            warn!(error = %e, "stop_flight_planner: forward_close failed");
         }
     }
 
     // E10 FIX P0 — unlisten the compaction-trigger event handler BEFORE
     // removing the session from the registry. The EventId was captured in
-    // `start_mission_planner` and stored on the session; without
+    // `start_flight_planner` and stored on the session; without
     // unlistening here, every start→stop cycle leaks a listener.
-    if let Some(event_id) = registry.take_compaction_listener(&mission_id).await {
+    if let Some(event_id) = registry.take_compaction_listener(&flight_id).await {
         use tauri::Listener as _;
         app_handle.unlisten(event_id);
         tracing::debug!(
-            mission_id = %mission_id,
+            flight_id = %flight_id,
             event_id,
-            "stop_mission_planner: unlistened compaction-trigger"
+            "stop_flight_planner: unlistened compaction-trigger"
         );
     }
 
@@ -2170,93 +2172,93 @@ pub async fn stop_mission_planner(app_handle: AppHandle, mission_id: String) -> 
     // flight when the user pressed Stop are drained and journaled as a
     // partial `PlannerMessage` rather than silently dropped.
     registry
-        .remove_session(&mission_id, Some(&app_handle))
+        .remove_session(&flight_id, Some(&app_handle))
         .await;
 
-    if let Err(e) = persist_planner_state_on_flight(&mission_id, None, None).await {
+    if let Err(e) = persist_planner_state_on_flight(&flight_id, None, None).await {
         warn!(
-            mission_id = %mission_id,
+            flight_id = %flight_id,
             error = %e,
-            "stop_mission_planner: failed to clear planner state on Flight DTO"
+            "stop_flight_planner: failed to clear planner state on Flight DTO"
         );
     }
-    info!(mission_id = %mission_id, "stopped mission planner");
+    info!(flight_id = %flight_id, "stopped flight planner");
     Ok(())
 }
 
 /// Mark the planner as Paused so the wake consumer drops further events
-/// on the floor until [`resume_mission_planner`] flips it back.
+/// on the floor until [`resume_flight_planner`] flips it back.
 ///
 /// Does NOT cancel an in-flight turn — that's the kill-switch (E6) which
 /// will call `forward_cancel` separately.
 #[tauri::command]
-pub async fn pause_mission_planner(
+pub async fn pause_flight_planner(
     app_handle: AppHandle,
-    mission_id: String,
+    flight_id: String,
 ) -> Result<(), String> {
     let registry = app_handle
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
-    if registry.get_by_mission(&mission_id).await.is_none() {
-        return Err(format!("no planner running for mission '{}'", mission_id));
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
+    if registry.get_by_flight(&flight_id).await.is_none() {
+        return Err(format!("no planner running for flight '{}'", flight_id));
     }
     // FIX 3 — use the emit-aware helper so the frontend's
-    // `mission-planner:status-changed:<missionId>` listener flips
+    // `flight-planner:status-changed:<flightId>` listener flips
     // `runtime.status` to `paused` without a polling round-trip.
     registry
-        .set_status_and_emit(&mission_id, PlannerStatus::Paused, &app_handle)
+        .set_status_and_emit(&flight_id, PlannerStatus::Paused, &app_handle)
         .await;
     if let Err(e) =
-        persist_planner_state_on_flight(&mission_id, None, Some(PlannerStatus::Paused)).await
+        persist_planner_state_on_flight(&flight_id, None, Some(PlannerStatus::Paused)).await
     {
         warn!(
-            mission_id = %mission_id,
+            flight_id = %flight_id,
             error = %e,
-            "pause_mission_planner: failed to persist Paused on Flight DTO"
+            "pause_flight_planner: failed to persist Paused on Flight DTO"
         );
     }
-    info!(mission_id = %mission_id, "paused mission planner");
+    info!(flight_id = %flight_id, "paused flight planner");
     Ok(())
 }
 
-/// Inverse of [`pause_mission_planner`]. Flips status back to Idle so the
+/// Inverse of [`pause_flight_planner`]. Flips status back to Idle so the
 /// next wake event dispatches.
 #[tauri::command]
-pub async fn resume_mission_planner(
+pub async fn resume_flight_planner(
     app_handle: AppHandle,
-    mission_id: String,
+    flight_id: String,
 ) -> Result<(), String> {
     let registry = app_handle
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
     let session = registry
-        .get_by_mission(&mission_id)
+        .get_by_flight(&flight_id)
         .await
-        .ok_or_else(|| format!("no planner running for mission '{}'", mission_id))?;
+        .ok_or_else(|| format!("no planner running for flight '{}'", flight_id))?;
     // FIX 3 — emit-aware so the frontend store flips to Idle reactively.
     registry
-        .set_status_and_emit(&mission_id, PlannerStatus::Idle, &app_handle)
+        .set_status_and_emit(&flight_id, PlannerStatus::Idle, &app_handle)
         .await;
     if let Err(e) = persist_planner_state_on_flight(
-        &mission_id,
+        &flight_id,
         Some(&session.sidecar_session_id),
         Some(PlannerStatus::Idle),
     )
     .await
     {
         warn!(
-            mission_id = %mission_id,
+            flight_id = %flight_id,
             error = %e,
-            "resume_mission_planner: failed to persist Idle on Flight DTO"
+            "resume_flight_planner: failed to persist Idle on Flight DTO"
         );
     }
-    if registry.replay_pending_wake(&mission_id).await {
+    if registry.replay_pending_wake(&flight_id).await {
         info!(
-            mission_id = %mission_id,
-            "replayed pending mission planner wake after resume"
+            flight_id = %flight_id,
+            "replayed pending flight planner wake after resume"
         );
     }
-    info!(mission_id = %mission_id, "resumed mission planner");
+    info!(flight_id = %flight_id, "resumed flight planner");
     Ok(())
 }
 
@@ -2271,7 +2273,7 @@ pub async fn resume_mission_planner(
 #[tauri::command]
 pub async fn inject_planner_turn(
     app_handle: AppHandle,
-    mission_id: String,
+    flight_id: String,
     content: String,
     source: String,
 ) -> Result<(), String> {
@@ -2283,12 +2285,12 @@ pub async fn inject_planner_turn(
     }
 
     let registry = app_handle
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
     let session = registry
-        .get_by_mission(&mission_id)
+        .get_by_flight(&flight_id)
         .await
-        .ok_or_else(|| format!("no planner running for mission '{}'", mission_id))?;
+        .ok_or_else(|| format!("no planner running for flight '{}'", flight_id))?;
 
     let sidecar = app_handle
         .try_state::<Arc<SidecarManager>>()
@@ -2332,7 +2334,7 @@ pub async fn inject_planner_turn(
     // dispatcher), so we skip them here to avoid double-recording.
     if source == "user" {
         let entry = journal_entry(
-            mission_id.clone(),
+            flight_id.clone(),
             JournalKind::UserMessage,
             content.clone(),
             Some(serde_json::json!({ "source": "user" })),
@@ -2343,17 +2345,17 @@ pub async fn inject_planner_turn(
     // FIX 3 — emit-aware so the frontend store reflects the Awake
     // turn-in-flight without polling.
     registry
-        .set_status_and_emit(&mission_id, PlannerStatus::Awake, &app_handle)
+        .set_status_and_emit(&flight_id, PlannerStatus::Awake, &app_handle)
         .await;
     if let Err(e) = persist_planner_state_on_flight(
-        &mission_id,
+        &flight_id,
         Some(&session.sidecar_session_id),
         Some(PlannerStatus::Awake),
     )
     .await
     {
         warn!(
-            mission_id = %mission_id,
+            flight_id = %flight_id,
             error = %e,
             "inject_planner_turn: failed to persist Awake on Flight DTO"
         );
@@ -2361,7 +2363,7 @@ pub async fn inject_planner_turn(
     Ok(())
 }
 
-/// Fire a `WakeTrigger::Decomposition` event for `mission_id` onto the
+/// Fire a `WakeTrigger::Decomposition` event for `flight_id` onto the
 /// wake bus.
 ///
 /// This is the architecturally-clean path for the user-clicks-Launch
@@ -2370,29 +2372,29 @@ pub async fn inject_planner_turn(
 /// tag the wake as `kind="user_message_in_journal"` — wrong), Launch
 /// fires the real `Decomposition` wake. The existing wake consumer
 /// ([`spawn_wake_consumer`] / [`dispatch_wake`]) then:
-///   * pulls a fresh mission snapshot via [`build_wake_payload`],
+///   * pulls a fresh flight snapshot via [`build_wake_payload`],
 ///   * formats the body via [`wake_user_message`]
 ///     (→ `render_decomposition`), and
 ///   * injects with `kind_str() = "launch"` (see
 ///     [`WakeTrigger::kind_str`]), which is the kind the planner's
 ///     system prompt is trained to recognize as the kickoff trigger.
 ///
-/// Errors if no planner is registered for the mission — the frontend's
-/// `launchMission` always calls `startPlanner` first, so a missing
+/// Errors if no planner is registered for the flight — the frontend's
+/// `launchFlight` always calls `startPlanner` first, so a missing
 /// planner here is a bug worth surfacing.
 #[tauri::command]
 pub async fn trigger_planner_decomposition(
     app_handle: AppHandle,
-    mission_id: String,
+    flight_id: String,
 ) -> Result<(), String> {
     let registry = app_handle
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
 
-    if registry.get_by_mission(&mission_id).await.is_none() {
+    if registry.get_by_flight(&flight_id).await.is_none() {
         return Err(format!(
-            "no active planner for mission '{}'; call start_mission_planner first",
-            mission_id
+            "no active planner for flight '{}'; call start_flight_planner first",
+            flight_id
         ));
     }
 
@@ -2403,22 +2405,22 @@ pub async fn trigger_planner_decomposition(
     // Decomposition variant.
     registry
         .send_wake(PlannerWakeEvent {
-            mission_id: mission_id.clone(),
+            flight_id: flight_id.clone(),
             trigger: WakeTrigger::Decomposition,
             payload: serde_json::json!({}),
         })
         .await;
 
     info!(
-        mission_id = %mission_id,
-        "queued decomposition wake for mission planner"
+        flight_id = %flight_id,
+        "queued decomposition wake for flight planner"
     );
     Ok(())
 }
 
-/// Resolve a pending Mission Planner approval gate (E2).
+/// Resolve a pending Flight Planner approval gate (E2).
 ///
-/// Flips the matching `MissionApprovalRequest` on `PersistedState` to
+/// Flips the matching `FlightApprovalRequest` on `PersistedState` to
 /// `resolved=true`, records the chosen option + timestamp, persists, and
 /// fans a `WakeTrigger::UserMessageInJournal` event onto the wake bus so
 /// the planner sees the user's answer on its next turn (the wake consumer
@@ -2428,7 +2430,7 @@ pub async fn trigger_planner_decomposition(
 /// Idempotent for already-resolved approvals: returns Ok without emitting
 /// a second wake. Returns an error if no approval matches the id.
 #[tauri::command]
-pub async fn resolve_mission_approval(
+pub async fn resolve_flight_approval(
     app_handle: AppHandle,
     approval_id: String,
     choice: String,
@@ -2444,28 +2446,28 @@ pub async fn resolve_mission_approval(
     // this block so we don't hold the mutex across IO.
     let approval_id_for_closure = approval_id.clone();
     let choice_for_closure = choice.clone();
-    let (mission_id, was_already_resolved) = storage::with_state_lock(move |state| {
+    let (flight_id, was_already_resolved) = storage::with_state_lock(move |state| {
         let approval_id = approval_id_for_closure;
         let choice = choice_for_closure;
         let result: Result<(String, bool), String> = (|| {
             let approval = state
-                .mission_approvals
+                .flight_approvals
                 .iter_mut()
                 .find(|a| a.id == approval_id)
-                .ok_or_else(|| format!("no mission approval found for id '{}'", approval_id))?;
-            let mission_id = approval.mission_id.clone();
+                .ok_or_else(|| format!("no flight approval found for id '{}'", approval_id))?;
+            let flight_id = approval.flight_id.clone();
             // Idempotency: if the approval was already resolved, short-
             // circuit so the caller can still emit a "we already handled
             // this" downstream event (or just no-op). We do NOT mutate
-            // state in this branch — return the existing mission_id so
+            // state in this branch — return the existing flight_id so
             // the outer code can decide.
             if approval.resolved {
-                return Ok((mission_id, true));
+                return Ok((flight_id, true));
             }
             approval.resolved = true;
             approval.resolution = Some(choice);
             approval.resolved_at = Some(now_millis());
-            Ok((mission_id, false))
+            Ok((flight_id, false))
         })();
         std::future::ready(result)
     })
@@ -2474,21 +2476,21 @@ pub async fn resolve_mission_approval(
     if was_already_resolved {
         info!(
             approval_id = %approval_id,
-            "resolve_mission_approval called on already-resolved approval; no-op"
+            "resolve_flight_approval called on already-resolved approval; no-op"
         );
         return Ok(());
     }
 
-    // FIX 2: emit `mission-planner:approval-resolved:<missionId>` so the
-    // frontend `missionPlannerStore` can clear its pending-approval state
+    // FIX 2: emit `flight-planner:approval-resolved:<flightId>` so the
+    // frontend `flightPlannerStore` can clear its pending-approval state
     // without waiting for a wake round-trip. camelCase field names match
-    // the frontend `MissionApprovalRequest` interface. Emits happen
+    // the frontend `FlightApprovalRequest` interface. Emits happen
     // outside the state lock to avoid holding the mutex across IO.
     let _ = app_handle.emit(
-        &format!("mission-planner:approval-resolved:{}", mission_id),
+        &format!("flight-planner:approval-resolved:{}", flight_id),
         serde_json::json!({
             "id": approval_id,
-            "missionId": mission_id,
+            "flightId": flight_id,
             "choice": choice,
         }),
     );
@@ -2502,23 +2504,23 @@ pub async fn resolve_mission_approval(
         "choice": choice,
     });
     let entry = journal_entry(
-        mission_id.clone(),
+        flight_id.clone(),
         JournalKind::SystemNote,
         body,
         Some(metadata),
     );
     write_journal_and_emit(&app_handle, entry).await;
 
-    // Look up the planner for the owning mission and emit a wake.
-    // The wake consumer (spawn_wake_consumer) reads `mission_approvals`
+    // Look up the planner for the owning flight and emit a wake.
+    // The wake consumer (spawn_wake_consumer) reads `flight_approvals`
     // at dispatch time when formatting the user-message turn — we just
     // need to nudge the consumer with the right trigger discriminant
     // and a payload carrying the approval id + choice so the prompt
     // builder doesn't have to re-scan state.
-    if let Some(registry) = app_handle.try_state::<MissionPlannerRegistry>() {
+    if let Some(registry) = app_handle.try_state::<FlightPlannerRegistry>() {
         registry
             .send_wake(PlannerWakeEvent {
-                mission_id: mission_id.clone(),
+                flight_id: flight_id.clone(),
                 trigger: WakeTrigger::UserMessageInJournal(format!(
                     "Approval {} resolved: {}",
                     approval_id, choice
@@ -2531,26 +2533,26 @@ pub async fn resolve_mission_approval(
             .await;
     } else {
         warn!(
-            mission_id = %mission_id,
+            flight_id = %flight_id,
             approval_id = %approval_id,
-            "mission planner registry not managed; approval resolution persisted without wake"
+            "flight planner registry not managed; approval resolution persisted without wake"
         );
     }
 
     info!(
-        mission_id = %mission_id,
+        flight_id = %flight_id,
         approval_id = %approval_id,
-        "resolved mission approval"
+        "resolved flight approval"
     );
     Ok(())
 }
 
 /// Cold-start hydration query for the frontend's pending-approval state.
 ///
-/// `missionPlannerStore` populates its `pendingApprovals` map exclusively via
-/// `mission-planner:approval-request:<missionId>` event listeners that are
-/// installed in `startPlanner`. If a mission already has pending approvals on
-/// disk before those listeners attach — e.g. resuming a paused mission, a
+/// `flightPlannerStore` populates its `pendingApprovals` map exclusively via
+/// `flight-planner:approval-request:<flightId>` event listeners that are
+/// installed in `startPlanner`. If a flight already has pending approvals on
+/// disk before those listeners attach — e.g. resuming a paused flight, a
 /// page reload, or a cold app start — the events have already fired and the
 /// store starts empty. The frontend calls this command after installing
 /// listeners (but before mounting the spec pane) to backfill any unresolved
@@ -2559,31 +2561,31 @@ pub async fn resolve_mission_approval(
 /// Returns only **unresolved** approvals — resolved entries are historical
 /// and don't need to surface. Read-only; no state lock required.
 #[tauri::command]
-pub async fn get_mission_approvals(
-    mission_id: String,
-) -> Result<Vec<crate::api::MissionApprovalRequestDto>, String> {
+pub async fn get_flight_approvals(
+    flight_id: String,
+) -> Result<Vec<crate::api::FlightApprovalRequestDto>, String> {
     let state = storage::load_state();
-    let approvals: Vec<crate::api::MissionApprovalRequestDto> =
-        unresolved_approvals_for_mission(&state, &mission_id)
+    let approvals: Vec<crate::api::FlightApprovalRequestDto> =
+        unresolved_approvals_for_flight(&state, &flight_id)
             .into_iter()
             .map(Into::into)
             .collect();
     Ok(approvals)
 }
 
-pub(crate) fn unresolved_approvals_for_mission(
+pub(crate) fn unresolved_approvals_for_flight(
     state: &PersistedState,
-    mission_id: &str,
-) -> Vec<crate::core::flight::MissionApprovalRequest> {
+    flight_id: &str,
+) -> Vec<crate::core::flight::FlightApprovalRequest> {
     state
-        .mission_approvals
+        .flight_approvals
         .iter()
-        .filter(|a| a.mission_id == mission_id && !a.resolved)
+        .filter(|a| a.flight_id == flight_id && !a.resolved)
         .cloned()
         .collect()
 }
 
-pub(crate) fn mission_id_for_persisted_planner_session(
+pub(crate) fn flight_id_for_persisted_planner_session(
     state: &PersistedState,
     sidecar_session_id: &str,
 ) -> Option<String> {
@@ -2595,31 +2597,31 @@ pub(crate) fn mission_id_for_persisted_planner_session(
 }
 
 #[cfg(test)]
-pub(crate) fn unresolved_approval_count_by_mission(
+pub(crate) fn unresolved_approval_count_by_flight(
     state: &PersistedState,
 ) -> HashMap<String, usize> {
     let mut counts = HashMap::new();
-    for approval in state.mission_approvals.iter().filter(|a| !a.resolved) {
-        *counts.entry(approval.mission_id.clone()).or_insert(0) += 1;
+    for approval in state.flight_approvals.iter().filter(|a| !a.resolved) {
+        *counts.entry(approval.flight_id.clone()).or_insert(0) += 1;
     }
     counts
 }
 
 // ---------------------------------------------------------------------------
-// E7 — mission journal read access
+// E7 — flight journal read access
 // ---------------------------------------------------------------------------
 //
-// `get_mission_journal` returns the raw markdown text of a mission's
+// `get_flight_journal` returns the raw markdown text of a flight's
 // append-only journal. It is kept for compatibility with older consumers;
-// the JournalTab uses `get_mission_journal_tail` so large append-only files
+// the JournalTab uses `get_flight_journal_tail` so large append-only files
 // do not get reloaded in full after every append event.
 //
-// `get_mission_journal_tail` returns a bounded tail slice plus byte metadata.
-// On a mission with no recorded activity the file doesn't exist yet —
+// `get_flight_journal_tail` returns a bounded tail slice plus byte metadata.
+// On a flight with no recorded activity the file doesn't exist yet —
 // `read_journal_tail` returns an empty payload in that case so the UI can
 // render its own empty state.
 //
-// `get_mission_journal_path` resolves the on-disk path so the Export
+// `get_flight_journal_path` resolves the on-disk path so the Export
 // button can show the user where the file lives (and a future
 // "Reveal in Finder" command can call straight into the OS shell).
 
@@ -2628,13 +2630,13 @@ const MAX_MISSION_JOURNAL_TAIL_BYTES: u64 = 512 * 1024;
 const MIN_MISSION_JOURNAL_TAIL_BYTES: u64 = 4 * 1024;
 
 #[tauri::command]
-pub async fn get_mission_journal(mission_id: String) -> Result<String, String> {
-    crate::core::mission_journal::read_journal(&mission_id)
+pub async fn get_flight_journal(flight_id: String) -> Result<String, String> {
+    crate::core::flight_journal::read_journal(&flight_id)
 }
 
 #[tauri::command]
-pub async fn get_mission_journal_tail(
-    mission_id: String,
+pub async fn get_flight_journal_tail(
+    flight_id: String,
     max_bytes: Option<u64>,
 ) -> Result<JournalRead, String> {
     let max_bytes = max_bytes
@@ -2643,24 +2645,24 @@ pub async fn get_mission_journal_tail(
             MIN_MISSION_JOURNAL_TAIL_BYTES,
             MAX_MISSION_JOURNAL_TAIL_BYTES,
         );
-    crate::core::mission_journal::read_journal_tail(&mission_id, max_bytes)
+    crate::core::flight_journal::read_journal_tail(&flight_id, max_bytes)
 }
 
 #[tauri::command]
-pub async fn get_mission_journal_path(mission_id: String) -> Result<String, String> {
+pub async fn get_flight_journal_path(flight_id: String) -> Result<String, String> {
     // Defensive path-traversal guard at the Tauri command boundary (the
     // explicit "untrusted input" point). `journal_path` itself also rejects
     // these, but returning an error here gives the frontend a clean failure
     // instead of a bogus sentinel path.
-    if mission_id.is_empty()
-        || mission_id.contains('/')
-        || mission_id.contains('\\')
-        || mission_id.contains("..")
-        || mission_id.contains('\0')
+    if flight_id.is_empty()
+        || flight_id.contains('/')
+        || flight_id.contains('\\')
+        || flight_id.contains("..")
+        || flight_id.contains('\0')
     {
-        return Err("invalid mission_id".to_string());
+        return Err("invalid flight_id".to_string());
     }
-    let path = crate::core::mission_journal::journal_path(&mission_id);
+    let path = crate::core::flight_journal::journal_path(&flight_id);
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -2683,14 +2685,14 @@ pub(crate) fn now_millis() -> u64 {
 /// constructor used by every E7 hook site so they don't all hand-roll uuid
 /// generation and field plumbing.
 pub(crate) fn journal_entry(
-    mission_id: impl Into<String>,
+    flight_id: impl Into<String>,
     kind: JournalKind,
     content_md: impl Into<String>,
     metadata: Option<serde_json::Value>,
 ) -> JournalEntry {
     JournalEntry {
         id: uuid::Uuid::new_v4().to_string(),
-        mission_id: mission_id.into(),
+        flight_id: flight_id.into(),
         timestamp: now_millis(),
         kind,
         content_md: content_md.into(),
@@ -2698,28 +2700,28 @@ pub(crate) fn journal_entry(
     }
 }
 
-/// Append `entry` to the mission journal and (on success) emit
-/// `mission-planner:journal-appended:<missionId>` so the frontend can pick
+/// Append `entry` to the flight journal and (on success) emit
+/// `flight-planner:journal-appended:<flightId>` so the frontend can pick
 /// up the new entry without polling.
 ///
 /// Append failures are non-fatal — the journal is auxiliary. A warning is
 /// logged and the function returns silently so callers don't have to thread
 /// `Result`s through their hot paths.
 pub(crate) async fn write_journal_and_emit(app: &AppHandle, entry: JournalEntry) {
-    let mission_id = entry.mission_id.clone();
+    let flight_id = entry.flight_id.clone();
     let entry_id = entry.id.clone();
     if let Err(e) = append_journal(&entry).await {
         warn!(
             error = %e,
-            mission_id = %mission_id,
-            "failed to append to mission journal"
+            flight_id = %flight_id,
+            "failed to append to flight journal"
         );
         return;
     }
     let _ = app.emit(
-        &format!("mission-planner:journal-appended:{}", mission_id),
+        &format!("flight-planner:journal-appended:{}", flight_id),
         serde_json::json!({
-            "missionId": mission_id,
+            "flightId": flight_id,
             "entryId": entry_id,
         }),
     );
@@ -2777,11 +2779,11 @@ mod tests {
         // to render. Journal tail must be empty in this case (no flight =
         // no task = no session id to look up).
         let (snapshot, tail) = build_wake_payload(
-            "mission-that-does-not-exist",
+            "flight-that-does-not-exist",
             &WakeTrigger::TaskCompleted("t-1".into()),
             &serde_json::json!({"taskId": "t-1"}),
         );
-        assert_eq!(snapshot["missionId"], "mission-that-does-not-exist");
+        assert_eq!(snapshot["flightId"], "flight-that-does-not-exist");
         assert!(snapshot.get("triggerPayload").is_some());
         // Title et al. should be absent when the flight isn't found.
         assert!(snapshot.get("title").is_none());
@@ -2813,7 +2815,7 @@ mod tests {
         if std::fs::create_dir_all(&dir).is_err() {
             return;
         }
-        let id = format!("test-mission-planner-{}", uuid::Uuid::new_v4());
+        let id = format!("test-flight-planner-{}", uuid::Uuid::new_v4());
         let path = dir.join(format!("{}.json", id));
         let body: String = (0..50)
             .map(|i| format!("line-{}", i))
@@ -2856,13 +2858,13 @@ mod tests {
     /// E6-CEILING-RATELIMIT — `PlannerStatus::QuotaPaused` must serialize
     /// to the locked snake_case wire form `"quota_paused"` and round-trip
     /// cleanly through serde, both as a bare enum and as the
-    /// `MissionPlannerSession.status` field. The frontend
-    /// `missionPlannerStore.PlannerStatus` union pins this exact string
+    /// `FlightPlannerSession.status` field. The frontend
+    /// `flightPlannerStore.PlannerStatus` union pins this exact string
     /// (`"quota_paused"`), and the rate-limit notification listener
     /// matches on it — drift here would silently break the auto-resume
     /// flow.
     #[test]
-    fn mission_planner_session_has_quota_paused_status() {
+    fn flight_planner_session_has_quota_paused_status() {
         // Bare enum round-trip — locked to snake_case via the
         // `#[serde(rename_all = "snake_case")]` derive on `PlannerStatus`.
         let json = serde_json::to_value(PlannerStatus::QuotaPaused)
@@ -2876,27 +2878,27 @@ mod tests {
             serde_json::from_value(json).expect("PlannerStatus must deserialize cleanly");
         assert_eq!(back, PlannerStatus::QuotaPaused);
 
-        // Full MissionPlannerSession round-trip — guards against the
+        // Full FlightPlannerSession round-trip — guards against the
         // (camelCase) field serialization breaking when QuotaPaused is the
         // session's status. This is the shape the auth-watcher / cold-start
         // recovery code path actually reads.
-        let mut session = MissionPlannerSession::new(
+        let mut session = FlightPlannerSession::new(
             "planner-1".to_string(),
-            "mission-1".to_string(),
+            "flight-1".to_string(),
             "sidecar-1".to_string(),
         );
         session.status = PlannerStatus::QuotaPaused;
         let payload = serde_json::to_string(&session)
-            .expect("MissionPlannerSession with QuotaPaused must serialize");
+            .expect("FlightPlannerSession with QuotaPaused must serialize");
         assert!(
             payload.contains("\"status\":\"quota_paused\""),
             "session JSON must surface QuotaPaused as snake_case: {}",
             payload
         );
-        let back: MissionPlannerSession = serde_json::from_str(&payload)
-            .expect("MissionPlannerSession with QuotaPaused must deserialize");
+        let back: FlightPlannerSession = serde_json::from_str(&payload)
+            .expect("FlightPlannerSession with QuotaPaused must deserialize");
         assert_eq!(back.status, PlannerStatus::QuotaPaused);
-        assert_eq!(back.mission_id, "mission-1");
+        assert_eq!(back.flight_id, "flight-1");
         // QuotaPaused must also map onto the persisted FlightPlannerStatus
         // mirror — the storage layer trusts this conversion.
         assert_eq!(
@@ -2914,47 +2916,47 @@ mod tests {
     #[tokio::test]
     async fn on_rate_limited_flips_to_quota_paused() {
         // Real Tauri AppHandle requires a test harness we don't have here.
-        // The supervisor branches on `mission_id_for_sidecar_session` first
+        // The supervisor branches on `flight_id_for_sidecar_session` first
         // and only touches the AppHandle for the `app.emit` + spawn calls,
         // both of which are best-effort. We therefore exercise the
         // status-flip path indirectly: build a registry, seed a session,
-        // and call `set_status` + `get_by_mission` mirroring what
+        // and call `set_status` + `get_by_flight` mirroring what
         // `on_rate_limited`'s synchronous half does, then assert the
         // QuotaPaused round-trip.
         //
         // (A full integration test of the spawn + emit + sleep path lives
         // in the build/run flow; this unit slice guards the wire shape and
         // the registry mutation that the supervisor relies on.)
-        let registry = MissionPlannerRegistry::default();
-        let mission_id = "mission-rate-limit";
+        let registry = FlightPlannerRegistry::default();
+        let flight_id = "flight-rate-limit";
         let sidecar_session_id = "sidecar-rate-limit";
         seed_planner_session(
             &registry,
-            mission_id,
+            flight_id,
             sidecar_session_id,
             PlannerStatus::Awake,
         )
         .await;
 
         // Resolution path: the supervisor's first action is to look up the
-        // owning mission. Confirm that works.
+        // owning flight. Confirm that works.
         let resolved = registry
-            .mission_id_for_sidecar_session(sidecar_session_id)
+            .flight_id_for_sidecar_session(sidecar_session_id)
             .await;
-        assert_eq!(resolved.as_deref(), Some(mission_id));
+        assert_eq!(resolved.as_deref(), Some(flight_id));
 
         // Flip the status as `on_rate_limited` does.
         registry
-            .set_status(mission_id, PlannerStatus::QuotaPaused)
+            .set_status(flight_id, PlannerStatus::QuotaPaused)
             .await;
-        let after = registry.get_by_mission(mission_id).await.unwrap();
+        let after = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(after.status, PlannerStatus::QuotaPaused);
 
         // Unknown sidecar session id must resolve to None — the supervisor
         // no-ops on that branch so non-planner sessions don't accidentally
         // trip the QuotaPaused state.
         let unknown = registry
-            .mission_id_for_sidecar_session("sidecar-that-does-not-exist")
+            .flight_id_for_sidecar_session("sidecar-that-does-not-exist")
             .await;
         assert!(unknown.is_none());
     }
@@ -2969,13 +2971,13 @@ mod tests {
     /// wire shape is right.
     #[tokio::test]
     async fn registry_wake_bus_carries_decomposition_event_with_launch_kind() {
-        let registry = MissionPlannerRegistry::default();
+        let registry = FlightPlannerRegistry::default();
         let (tx, mut rx) = mpsc::unbounded_channel::<PlannerWakeEvent>();
         registry.install_wake_sender(tx).await;
 
         registry
             .send_wake(PlannerWakeEvent {
-                mission_id: "mission-test-decomp".to_string(),
+                flight_id: "flight-test-decomp".to_string(),
                 trigger: WakeTrigger::Decomposition,
                 payload: serde_json::json!({}),
             })
@@ -2985,7 +2987,7 @@ mod tests {
             .recv()
             .await
             .expect("decomposition wake should be delivered");
-        assert_eq!(received.mission_id, "mission-test-decomp");
+        assert_eq!(received.flight_id, "flight-test-decomp");
         assert!(matches!(received.trigger, WakeTrigger::Decomposition));
         // The kind the wake consumer will pass through to
         // `forward_inject_user_turn` — this is the load-bearing assertion
@@ -2995,17 +2997,17 @@ mod tests {
 
     #[tokio::test]
     async fn continuity_send_wake_buffers_until_sender_is_installed() {
-        let registry = MissionPlannerRegistry::default();
+        let registry = FlightPlannerRegistry::default();
         registry
             .send_wake(PlannerWakeEvent {
-                mission_id: "mission-buffered".to_string(),
+                flight_id: "flight-buffered".to_string(),
                 trigger: WakeTrigger::TaskCompleted("task-old".to_string()),
                 payload: serde_json::json!({ "generation": 1 }),
             })
             .await;
         registry
             .send_wake(PlannerWakeEvent {
-                mission_id: "mission-buffered".to_string(),
+                flight_id: "flight-buffered".to_string(),
                 trigger: WakeTrigger::TaskFailed("task-new".to_string()),
                 payload: serde_json::json!({ "generation": 2 }),
             })
@@ -3016,7 +3018,7 @@ mod tests {
             assert_eq!(
                 pending.len(),
                 1,
-                "pending wake buffer should coalesce by mission id"
+                "pending wake buffer should coalesce by flight id"
             );
         }
 
@@ -3027,39 +3029,39 @@ mod tests {
             .recv()
             .await
             .expect("installing sender should replay buffered wake");
-        assert_eq!(received.mission_id, "mission-buffered");
+        assert_eq!(received.flight_id, "flight-buffered");
         assert!(matches!(received.trigger, WakeTrigger::TaskFailed(_)));
         assert_eq!(received.payload["generation"], 2);
     }
 
     #[tokio::test]
     async fn continuity_replay_pending_wake_drains_to_wake_bus_once() {
-        let registry = MissionPlannerRegistry::default();
+        let registry = FlightPlannerRegistry::default();
         let (tx, mut rx) = mpsc::unbounded_channel::<PlannerWakeEvent>();
         registry.install_wake_sender(tx).await;
         registry
             .queue_wake_for_replay(PlannerWakeEvent {
-                mission_id: "mission-replay".to_string(),
+                flight_id: "flight-replay".to_string(),
                 trigger: WakeTrigger::ApprovalGateReached("task-approval".to_string()),
                 payload: serde_json::json!({ "taskId": "task-approval" }),
             })
             .await;
 
         assert!(
-            registry.replay_pending_wake("mission-replay").await,
+            registry.replay_pending_wake("flight-replay").await,
             "first replay should find a buffered wake"
         );
         let received = rx
             .recv()
             .await
             .expect("replayed wake should be delivered to wake bus");
-        assert_eq!(received.mission_id, "mission-replay");
+        assert_eq!(received.flight_id, "flight-replay");
         assert!(matches!(
             received.trigger,
             WakeTrigger::ApprovalGateReached(_)
         ));
         assert!(
-            !registry.replay_pending_wake("mission-replay").await,
+            !registry.replay_pending_wake("flight-replay").await,
             "second replay should be a no-op after draining"
         );
     }
@@ -3123,11 +3125,11 @@ mod tests {
     /// returns the right `(mode, cap, count)` triple.
     #[tokio::test]
     async fn bump_and_check_tool_call_increments_and_reports_cap() {
-        let registry = MissionPlannerRegistry::default();
+        let registry = FlightPlannerRegistry::default();
         let sidecar_session_id = "sidecar-caps-test";
-        let mut session = MissionPlannerSession::new(
+        let mut session = FlightPlannerSession::new(
             sidecar_session_id.to_string(),
-            "mission-caps-test".to_string(),
+            "flight-caps-test".to_string(),
             sidecar_session_id.to_string(),
         );
         session.current_mode = PlannerMode::Decomposition;
@@ -3151,7 +3153,7 @@ mod tests {
 
         // set_mode_and_reset_tick resets the counter and flips the mode.
         registry
-            .set_mode_and_reset_tick("mission-caps-test", PlannerMode::Reactive)
+            .set_mode_and_reset_tick("flight-caps-test", PlannerMode::Reactive)
             .await;
         let (mode3, cap3, count3) = registry
             .bump_and_check_tool_call(sidecar_session_id)
@@ -3167,7 +3169,7 @@ mod tests {
     /// the call through.
     #[tokio::test]
     async fn bump_and_check_tool_call_returns_none_for_unknown_session() {
-        let registry = MissionPlannerRegistry::default();
+        let registry = FlightPlannerRegistry::default();
         let result = registry
             .bump_and_check_tool_call("nonexistent-sidecar-session")
             .await;
@@ -3184,23 +3186,23 @@ mod tests {
     /// `cumulative_input_tokens` must reflect the bumped total.
     #[tokio::test]
     async fn bump_cumulative_input_fires_trigger_on_threshold() {
-        let registry = MissionPlannerRegistry::default();
-        let mission_id = "mission-compact-fires";
+        let registry = FlightPlannerRegistry::default();
+        let flight_id = "flight-compact-fires";
         let sidecar_session_id = "sidecar-compact-fires";
 
         // Seed a session sitting JUST below the threshold so the next
         // bump crosses it. Use 1_000 as the bump delta so the test is
         // robust to the exact threshold value.
-        let mut session = MissionPlannerSession::new(
+        let mut session = FlightPlannerSession::new(
             sidecar_session_id.to_string(),
-            mission_id.to_string(),
+            flight_id.to_string(),
             sidecar_session_id.to_string(),
         );
         session.cumulative_input_tokens = COMPACTION_THRESHOLD_TOKENS - 1_000;
         registry.insert(session).await;
 
         let crossed = registry
-            .bump_cumulative_input_and_check(mission_id, 1_500)
+            .bump_cumulative_input_and_check(flight_id, 1_500)
             .await;
         assert!(
             crossed,
@@ -3208,7 +3210,7 @@ mod tests {
         );
 
         let after = registry
-            .get_by_mission(mission_id)
+            .get_by_flight(flight_id)
             .await
             .expect("session still registered");
         assert_eq!(
@@ -3228,13 +3230,13 @@ mod tests {
     /// — E10-SWAP resets it on completion.
     #[tokio::test]
     async fn bump_cumulative_input_no_double_fire_during_compaction() {
-        let registry = MissionPlannerRegistry::default();
-        let mission_id = "mission-compact-nodupe";
+        let registry = FlightPlannerRegistry::default();
+        let flight_id = "flight-compact-nodupe";
         let sidecar_session_id = "sidecar-compact-nodupe";
 
-        let mut session = MissionPlannerSession::new(
+        let mut session = FlightPlannerSession::new(
             sidecar_session_id.to_string(),
-            mission_id.to_string(),
+            flight_id.to_string(),
             sidecar_session_id.to_string(),
         );
         session.cumulative_input_tokens = COMPACTION_THRESHOLD_TOKENS - 100;
@@ -3242,14 +3244,14 @@ mod tests {
 
         // First crossing — fires.
         let first = registry
-            .bump_cumulative_input_and_check(mission_id, 500)
+            .bump_cumulative_input_and_check(flight_id, 500)
             .await;
         assert!(first, "first threshold crossing must fire");
 
         // Second bump (still above threshold; compaction is now in
         // flight) — must NOT fire again.
         let second = registry
-            .bump_cumulative_input_and_check(mission_id, 5_000)
+            .bump_cumulative_input_and_check(flight_id, 5_000)
             .await;
         assert!(
             !second,
@@ -3258,7 +3260,7 @@ mod tests {
 
         // Counter still accumulates so telemetry stays accurate.
         let after = registry
-            .get_by_mission(mission_id)
+            .get_by_flight(flight_id)
             .await
             .expect("session still registered");
         assert_eq!(
@@ -3272,20 +3274,20 @@ mod tests {
         );
     }
 
-    /// Test helper: insert a planner session for a mission with a given
-    /// status and sidecar session id. Bypasses the public `start_mission_
+    /// Test helper: insert a planner session for a flight with a given
+    /// status and sidecar session id. Bypasses the public `start_flight_
     /// planner` Tauri command (which requires a real `AppHandle` and
     /// `SidecarManager`) so we can exercise the in-process Awake/Idle
     /// transitions in isolation.
     async fn seed_planner_session(
-        registry: &MissionPlannerRegistry,
-        mission_id: &str,
+        registry: &FlightPlannerRegistry,
+        flight_id: &str,
         sidecar_session_id: &str,
         status: PlannerStatus,
     ) {
-        let mut session = MissionPlannerSession::new(
+        let mut session = FlightPlannerSession::new(
             sidecar_session_id.to_string(),
-            mission_id.to_string(),
+            flight_id.to_string(),
             sidecar_session_id.to_string(),
         );
         session.status = status;
@@ -3294,15 +3296,15 @@ mod tests {
 
     /// E6-KILL-AWAKE — happy path. When the sidecar emits a `done` event
     /// for a planner session that's currently `Awake`, the watchdog flips
-    /// the mission's planner status back to `Idle`.
+    /// the flight's planner status back to `Idle`.
     #[tokio::test]
     async fn on_planner_done_flips_awake_to_idle() {
-        let registry = MissionPlannerRegistry::default();
-        let mission_id = "mission-awake-test";
+        let registry = FlightPlannerRegistry::default();
+        let flight_id = "flight-awake-test";
         let sidecar_session_id = "sidecar-awake-test";
         seed_planner_session(
             &registry,
-            mission_id,
+            flight_id,
             sidecar_session_id,
             PlannerStatus::Awake,
         )
@@ -3311,7 +3313,7 @@ mod tests {
         registry.on_planner_done(sidecar_session_id).await;
 
         let after = registry
-            .get_by_mission(mission_id)
+            .get_by_flight(flight_id)
             .await
             .expect("session should still be registered after on_planner_done");
         assert_eq!(
@@ -3329,20 +3331,20 @@ mod tests {
     /// flipping back to Idle.
     #[tokio::test]
     async fn on_planner_done_preserves_paused() {
-        let registry = MissionPlannerRegistry::default();
-        let mission_id = "mission-paused-test";
+        let registry = FlightPlannerRegistry::default();
+        let flight_id = "flight-paused-test";
         let sidecar_session_id = "sidecar-paused-test";
 
         // Paused is the headline case from the task brief.
         seed_planner_session(
             &registry,
-            mission_id,
+            flight_id,
             sidecar_session_id,
             PlannerStatus::Paused,
         )
         .await;
         registry.on_planner_done(sidecar_session_id).await;
-        let after = registry.get_by_mission(mission_id).await.unwrap();
+        let after = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(
             after.status,
             PlannerStatus::Paused,
@@ -3352,24 +3354,24 @@ mod tests {
         // QuotaPaused (E6 sibling slice owns the rate-limit handler that
         // installs this state; the guard must respect it equally).
         registry
-            .set_status(mission_id, PlannerStatus::QuotaPaused)
+            .set_status(flight_id, PlannerStatus::QuotaPaused)
             .await;
         registry.on_planner_done(sidecar_session_id).await;
-        let after = registry.get_by_mission(mission_id).await.unwrap();
+        let after = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(after.status, PlannerStatus::QuotaPaused);
 
         // Completed and Failed are terminal; reviving them to Idle would
         // be even worse than reviving a pause.
         registry
-            .set_status(mission_id, PlannerStatus::Completed)
+            .set_status(flight_id, PlannerStatus::Completed)
             .await;
         registry.on_planner_done(sidecar_session_id).await;
-        let after = registry.get_by_mission(mission_id).await.unwrap();
+        let after = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(after.status, PlannerStatus::Completed);
 
-        registry.set_status(mission_id, PlannerStatus::Failed).await;
+        registry.set_status(flight_id, PlannerStatus::Failed).await;
         registry.on_planner_done(sidecar_session_id).await;
-        let after = registry.get_by_mission(mission_id).await.unwrap();
+        let after = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(after.status, PlannerStatus::Failed);
     }
 
@@ -3380,11 +3382,11 @@ mod tests {
     /// session type at the call site.
     #[tokio::test]
     async fn on_planner_done_ignores_unknown_session() {
-        let registry = MissionPlannerRegistry::default();
+        let registry = FlightPlannerRegistry::default();
         // Seed an unrelated planner so the registry isn't empty.
         seed_planner_session(
             &registry,
-            "mission-other",
+            "flight-other",
             "sidecar-other",
             PlannerStatus::Awake,
         )
@@ -3396,7 +3398,7 @@ mod tests {
 
         // The unrelated Awake session must NOT flip — its session id
         // didn't match.
-        let other = registry.get_by_mission("mission-other").await.unwrap();
+        let other = registry.get_by_flight("flight-other").await.unwrap();
         assert_eq!(other.status, PlannerStatus::Awake);
     }
 
@@ -3417,29 +3419,29 @@ mod tests {
     /// (the function now holds the lock across the read + mutate).
     #[tokio::test]
     async fn on_planner_done_atomic_read_modify_write() {
-        let registry = MissionPlannerRegistry::default();
-        let mission_id = "mission-atomic-rmw";
+        let registry = FlightPlannerRegistry::default();
+        let flight_id = "flight-atomic-rmw";
         let sidecar_session_id = "sidecar-atomic-rmw";
 
         // Seed Awake, flip done, expect Idle.
         seed_planner_session(
             &registry,
-            mission_id,
+            flight_id,
             sidecar_session_id,
             PlannerStatus::Awake,
         )
         .await;
         registry.on_planner_done(sidecar_session_id).await;
-        let after = registry.get_by_mission(mission_id).await.unwrap();
+        let after = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(after.status, PlannerStatus::Idle);
 
         // Cycle a second time — Awake -> on_planner_done -> Idle. Pre-fix
         // this went through two separate critical sections; post-fix it's
         // one. Behavior under no contention is identical, which is all we
         // can probe in a unit test.
-        registry.set_status(mission_id, PlannerStatus::Awake).await;
+        registry.set_status(flight_id, PlannerStatus::Awake).await;
         registry.on_planner_done(sidecar_session_id).await;
-        let after = registry.get_by_mission(mission_id).await.unwrap();
+        let after = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(after.status, PlannerStatus::Idle);
     }
 
@@ -3451,11 +3453,11 @@ mod tests {
     /// This test type-checks the new signature.
     #[tokio::test]
     async fn persist_planner_state_on_flight_uses_state_lock() {
-        // Missing-on-disk mission is tolerated (silent no-op). The point
+        // Missing-on-disk flight is tolerated (silent no-op). The point
         // is that this call compiles only with the new async + Result
         // signature.
         let result: Result<(), String> =
-            super::persist_planner_state_on_flight("mission-does-not-exist-on-disk", None, None)
+            super::persist_planner_state_on_flight("flight-does-not-exist-on-disk", None, None)
                 .await;
         // Either Ok or Err is acceptable — save_state may legitimately
         // fail in some test environments (no HOME, read-only fs). The
@@ -3481,14 +3483,14 @@ mod tests {
     /// (expect: state cleared to Idle).
     #[tokio::test]
     async fn quota_lease_prevents_stale_timer_clobber() {
-        let registry = MissionPlannerRegistry::default();
-        let mission_id = "mission-quota-lease";
+        let registry = FlightPlannerRegistry::default();
+        let flight_id = "flight-quota-lease";
         let sidecar_session_id = "sidecar-quota-lease";
 
         // Seed QuotaPaused with lease=1 (post-first-rate-limit state).
-        let mut session = MissionPlannerSession::new(
+        let mut session = FlightPlannerSession::new(
             sidecar_session_id.to_string(),
-            mission_id.to_string(),
+            flight_id.to_string(),
             sidecar_session_id.to_string(),
         );
         session.status = PlannerStatus::QuotaPaused;
@@ -3500,11 +3502,11 @@ mod tests {
         // A second rate-limit races in: bump lease to 2.
         {
             let mut sessions = registry.sessions.lock().await;
-            let s = sessions.get_mut(mission_id).expect("seeded");
+            let s = sessions.get_mut(flight_id).expect("seeded");
             s.quota_lease = s.quota_lease.wrapping_add(1);
             s.status = PlannerStatus::QuotaPaused;
         }
-        let mid = registry.get_by_mission(mission_id).await.unwrap();
+        let mid = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(mid.quota_lease, 2);
         assert_eq!(mid.status, PlannerStatus::QuotaPaused);
 
@@ -3512,7 +3514,7 @@ mod tests {
         // with the older captured lease.
         let stale_cleared: bool = {
             let mut sessions = registry.sessions.lock().await;
-            match sessions.get_mut(mission_id) {
+            match sessions.get_mut(flight_id) {
                 Some(session)
                     if matches!(session.status, PlannerStatus::QuotaPaused)
                         && session.quota_lease == captured_lease_older =>
@@ -3527,7 +3529,7 @@ mod tests {
             !stale_cleared,
             "stale timer with captured_lease=1 must back off when current_lease=2"
         );
-        let after = registry.get_by_mission(mission_id).await.unwrap();
+        let after = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(
             after.status,
             PlannerStatus::QuotaPaused,
@@ -3539,7 +3541,7 @@ mod tests {
         let captured_lease_current: u64 = 2;
         let current_cleared: bool = {
             let mut sessions = registry.sessions.lock().await;
-            match sessions.get_mut(mission_id) {
+            match sessions.get_mut(flight_id) {
                 Some(session)
                     if matches!(session.status, PlannerStatus::QuotaPaused)
                         && session.quota_lease == captured_lease_current =>
@@ -3554,7 +3556,7 @@ mod tests {
             current_cleared,
             "current-lease timer must clear QuotaPaused"
         );
-        let after = registry.get_by_mission(mission_id).await.unwrap();
+        let after = registry.get_by_flight(flight_id).await.unwrap();
         assert_eq!(after.status, PlannerStatus::Idle);
     }
 }
@@ -3573,7 +3575,7 @@ mod tests {
 #[cfg(test)]
 mod e6_integration {
     use super::*;
-    use crate::core::flight::{Flight, FlightPriority, MissionApprovalRequest};
+    use crate::core::flight::{Flight, FlightPriority, FlightApprovalRequest};
 
     /// Build a Flight with the minimum field set so tests can mutate just
     /// the `status` / `planner_*` fields they care about.
@@ -3585,7 +3587,7 @@ mod e6_integration {
     ) -> Flight {
         Flight {
             id: id.to_string(),
-            title: format!("Mission {}", id),
+            title: format!("Flight {}", id),
             objective: String::new(),
             status,
             priority: FlightPriority::Medium,
@@ -3616,10 +3618,10 @@ mod e6_integration {
         state
     }
 
-    fn approval(id: &str, mission_id: &str, resolved: bool) -> MissionApprovalRequest {
-        MissionApprovalRequest {
+    fn approval(id: &str, flight_id: &str, resolved: bool) -> FlightApprovalRequest {
+        FlightApprovalRequest {
             id: id.to_string(),
-            mission_id: mission_id.to_string(),
+            flight_id: flight_id.to_string(),
             question: format!("Question {}", id),
             options: vec!["yes".to_string(), "no".to_string()],
             awaiting_since: 10,
@@ -3629,7 +3631,7 @@ mod e6_integration {
         }
     }
 
-    /// An Active mission whose planner was Awake at last shutdown — the
+    /// An Active flight whose planner was Awake at last shutdown — the
     /// canonical "interrupted by app restart" case the rail is designed for.
     /// Expect: status flipped to Paused, session id cleared, count = 1.
     #[test]
@@ -3648,19 +3650,19 @@ mod e6_integration {
         assert_eq!(
             flight.planner_status,
             Some(FlightPlannerStatus::Paused),
-            "Awake planner on an Active mission must flip to Paused on cold-start"
+            "Awake planner on an Active flight must flip to Paused on cold-start"
         );
         assert!(
             flight.planner_session_id.is_none(),
             "stale sidecar session id must be cleared on cold-start"
         );
-        // Mission status itself is NOT touched — only planner_status moves.
+        // Flight status itself is NOT touched — only planner_status moves.
         assert_eq!(flight.status, FlightStatus::Active);
     }
 
     /// Terminal flights (`Done` / `Failed` / `Cancelled`) sometimes carry
     /// stale planner metadata — it must NOT be rewritten. Pausing a Done
-    /// mission's planner would be both wrong and confusing in the UI.
+    /// flight's planner would be both wrong and confusing in the UI.
     ///
     /// Post-FIX-1: only terminal statuses are exempt. `Paused` / `Draft` /
     /// `Spec` / `Planning` / `Review` / `Ready` flights with stale planner
@@ -3708,7 +3710,7 @@ mod e6_integration {
         assert_eq!(
             state.flights[1].planner_status,
             Some(FlightPlannerStatus::Awake),
-            "Failed mission's stale Awake planner state must stay untouched"
+            "Failed flight's stale Awake planner state must stay untouched"
         );
         assert_eq!(
             state.flights[2].planner_session_id.as_deref(),
@@ -3717,11 +3719,11 @@ mod e6_integration {
         assert_eq!(
             state.flights[2].planner_status,
             Some(FlightPlannerStatus::Idle),
-            "Cancelled mission's stale planner state must stay untouched"
+            "Cancelled flight's stale planner state must stay untouched"
         );
     }
 
-    /// FIX 1 — A `Planning` mission whose planner was Awake at last shutdown
+    /// FIX 1 — A `Planning` flight whose planner was Awake at last shutdown
     /// must flip to Paused. Without this the planner_status sits "Awake"
     /// post-restart pointing at a dead sidecar session, and wake events
     /// would dispatch into the void.
@@ -3737,24 +3739,24 @@ mod e6_integration {
         let n = compute_cold_start_paused(&mut state);
         assert_eq!(
             n, 1,
-            "Planning mission with Awake planner must be caught by cold-start"
+            "Planning flight with Awake planner must be caught by cold-start"
         );
 
         let flight = &state.flights[0];
         assert_eq!(
             flight.planner_status,
             Some(FlightPlannerStatus::Paused),
-            "Awake planner on a Planning mission must flip to Paused on cold-start"
+            "Awake planner on a Planning flight must flip to Paused on cold-start"
         );
         assert!(
             flight.planner_session_id.is_none(),
             "stale sidecar session id must be cleared"
         );
-        // Mission status itself is NOT touched — only planner_status moves.
+        // Flight status itself is NOT touched — only planner_status moves.
         assert_eq!(flight.status, FlightStatus::Planning);
     }
 
-    /// FIX 1 — A `Review` mission with an Idle planner has a live sidecar
+    /// FIX 1 — A `Review` flight with an Idle planner has a live sidecar
     /// session id at last shutdown; the sidecar is dead post-restart and
     /// the metadata needs resetting.
     #[test]
@@ -3776,7 +3778,7 @@ mod e6_integration {
         assert_eq!(flight.status, FlightStatus::Review);
     }
 
-    /// FIX 1 — A `Spec` mission whose `planner_session_id` is still set
+    /// FIX 1 — A `Spec` flight whose `planner_session_id` is still set
     /// at last shutdown (planner_status may be None or anything non-running)
     /// must have the stale id cleared. The session-id branch alone is
     /// sufficient to trigger the rail.
@@ -3798,13 +3800,13 @@ mod e6_integration {
         assert_eq!(flight.status, FlightStatus::Spec);
     }
 
-    /// FIX 1 — A mission-level `Paused` flight with a running planner is
+    /// FIX 1 — A flight-level `Paused` flight with a running planner is
     /// post-FIX-1 caught by the rail. (Pre-FIX-1 this was sticky; the
     /// session id pinned to it is still dead post-restart.)
     #[test]
-    fn cold_start_pauses_mission_level_paused_with_awake_planner() {
+    fn cold_start_pauses_flight_level_paused_with_awake_planner() {
         let mut state = state_with(vec![make_flight(
-            "m-paused-mission",
+            "m-paused-flight",
             FlightStatus::Paused,
             Some(FlightPlannerStatus::Awake),
             Some("sidecar-paused"),
@@ -3816,7 +3818,7 @@ mod e6_integration {
         let flight = &state.flights[0];
         assert_eq!(flight.planner_status, Some(FlightPlannerStatus::Paused));
         assert!(flight.planner_session_id.is_none());
-        // Mission-level Paused stays Paused (only planner state moved).
+        // Flight-level Paused stays Paused (only planner state moved).
         assert_eq!(flight.status, FlightStatus::Paused);
     }
 
@@ -3845,7 +3847,7 @@ mod e6_integration {
 
     /// The key invariant for resume-correctness: the old sidecar session id
     /// is meaningless after app restart (the sidecar process is dead). We
-    /// clear it so a fresh `start_mission_planner` mints a brand new id and
+    /// clear it so a fresh `start_flight_planner` mints a brand new id and
     /// the UI doesn't render a stale "session XYZ" reference.
     #[test]
     fn cold_start_clears_planner_session_id() {
@@ -3883,7 +3885,7 @@ mod e6_integration {
         );
     }
 
-    /// Multi-mission scenario — telemetry-only return value must reflect
+    /// Multi-flight scenario — telemetry-only return value must reflect
     /// the modified count (not the total flight count). QuotaPaused is
     /// included in the "was running" set because a sidecar session is
     /// still live for a quota-pause backoff; that session is gone after
@@ -3919,7 +3921,7 @@ mod e6_integration {
                 Some(FlightPlannerStatus::Paused),
                 None,
             ),
-            // Done mission — skipped.
+            // Done flight — skipped.
             make_flight(
                 "m-done",
                 FlightStatus::Done,
@@ -3959,7 +3961,7 @@ mod e6_integration {
         assert_eq!(
             state.flights[5].planner_status,
             Some(FlightPlannerStatus::Completed),
-            "Done mission's planner state untouched"
+            "Done flight's planner state untouched"
         );
     }
 
@@ -3972,23 +3974,23 @@ mod e6_integration {
             Some("sidecar-needs-approval"),
         )]);
         state
-            .mission_approvals
+            .flight_approvals
             .push(approval("appr-pending", "m-needs-approval", false));
         state
-            .mission_approvals
+            .flight_approvals
             .push(approval("appr-resolved", "m-needs-approval", true));
         state
-            .mission_approvals
+            .flight_approvals
             .push(approval("appr-other", "m-other", false));
 
         let n = compute_cold_start_paused(&mut state);
         assert_eq!(n, 1);
 
-        let approvals = unresolved_approvals_for_mission(&state, "m-needs-approval");
+        let approvals = unresolved_approvals_for_flight(&state, "m-needs-approval");
         assert_eq!(approvals.len(), 1);
         assert_eq!(approvals[0].id, "appr-pending");
 
-        let counts = unresolved_approval_count_by_mission(&state);
+        let counts = unresolved_approval_count_by_flight(&state);
         assert_eq!(counts.get("m-needs-approval"), Some(&1));
         assert_eq!(counts.get("m-other"), Some(&1));
     }
@@ -4006,14 +4008,14 @@ mod e6_integration {
         ]);
 
         assert_eq!(
-            mission_id_for_persisted_planner_session(&state, "sidecar-fallback").as_deref(),
+            flight_id_for_persisted_planner_session(&state, "sidecar-fallback").as_deref(),
             Some("m-fallback")
         );
-        assert!(mission_id_for_persisted_planner_session(&state, "missing-sidecar").is_none());
+        assert!(flight_id_for_persisted_planner_session(&state, "missing-sidecar").is_none());
     }
 
     /// Defensive: calling the helper on an empty state must be a no-op
-    /// returning zero. (Boot may run this before any missions exist.)
+    /// returning zero. (Boot may run this before any flights exist.)
     #[test]
     fn cold_start_handles_empty_state() {
         let mut state = PersistedState::default();
@@ -4041,7 +4043,7 @@ mod e6_integration {
     }
 
     /// E6-CEILING-RATELIMIT: task-ceiling approval gate at 60 tasks.
-    /// Expect a public helper that returns true once a mission's task
+    /// Expect a public helper that returns true once a flight's task
     /// count crosses the ceiling, gating further `create_task` dispatches.
     #[test]
     #[ignore = "requires E6-CEILING-RATELIMIT sibling to land the ceiling helper"]
@@ -4057,11 +4059,11 @@ mod e6_integration {
     #[ignore = "requires E6-KILL-AWAKE sibling to land the kill-switch command"]
     fn kill_switch_cancels_in_flight_turn() {
         // Pseudo:
-        // call kill_mission_planner(mission_id);
-        // assert_eq!(registry.get(mission_id).status, PlannerStatus::Failed);
+        // call kill_flight_planner(flight_id);
+        // assert_eq!(registry.get(flight_id).status, PlannerStatus::Failed);
     }
 }
 
-// (E8-ACCUM tests live in `commands::mission_planner_costs` alongside the
+// (E8-ACCUM tests live in `commands::flight_planner_costs` alongside the
 // helpers they exercise. The original `mod e8_accum` was moved as part of
 // the first-cut sub-module extraction.)

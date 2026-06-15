@@ -17,12 +17,12 @@ pub struct RunningTask {
 
 /// Default `auto_commit_trailer_format` used when the user hasn't customised
 /// one. Placeholders rendered by `core::worktree::install_prepare_commit_msg_hook`:
-///   `{flightId}`    — Mission Flight id (e.g. `F-A1B2`), or `unknown` when
+///   `{flightId}`    — Flight Flight id (e.g. `F-A1B2`), or `unknown` when
 ///                     unavailable (e.g. agents-pane conversation worktrees).
 ///   `{attemptId}`   — Attempt id (e.g. `A-X1Y2`).
-///   `{flightTitle}` — Free-form mission title; sanitised for shell context.
+///   `{flightTitle}` — Free-form flight title; sanitised for shell context.
 pub const DEFAULT_AUTO_COMMIT_TRAILER_FORMAT: &str =
-    "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}";
+    "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}";
 
 /// Settings for the orchestrator
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

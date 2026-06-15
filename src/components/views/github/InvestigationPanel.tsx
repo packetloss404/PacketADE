@@ -140,12 +140,12 @@ export function InvestigationPanel({
       };
       await launchAsync(flight.id, brief, [target]);
       setActiveFlight(flight.id);
-      setActiveView("missions");
+      setActiveView("flights");
       setFeedback({
         tone: "success",
         message: `Launched draft patch for #${issue.number}`,
         linkLabel: "Open",
-        onLinkClick: () => setActiveView("missions"),
+        onLinkClick: () => setActiveView("flights"),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

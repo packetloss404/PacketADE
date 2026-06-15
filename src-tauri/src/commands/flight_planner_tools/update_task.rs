@@ -29,7 +29,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::warn;
 
-use crate::commands::mission_planner::MissionPlannerRegistry;
+use crate::commands::flight_planner::FlightPlannerRegistry;
 use crate::core::flight::{Task, TaskStatus};
 use crate::core::storage;
 
@@ -50,13 +50,13 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
         _ => return Err("update_task: 'patch' must be a JSON object".to_string()),
     };
 
-    // Resolve the owning mission via the registry (the sidecar session
+    // Resolve the owning flight via the registry (the sidecar session
     // id is what the dispatcher hands us).
     let registry = app
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
-    let mission_id = registry
-        .mission_id_for_sidecar_session(session_id)
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
+    let flight_id = registry
+        .flight_id_for_sidecar_session(session_id)
         .await
         .ok_or_else(|| {
             format!(
@@ -74,18 +74,18 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
     // express the HRTB required for an `async move` block today). Event
     // emits MUST happen outside this block — we don't hold the mutex
     // across Tauri IO.
-    let mission_id_for_closure = mission_id.clone();
+    let flight_id_for_closure = flight_id.clone();
     let task_id_for_closure = parsed.task_id.clone();
     let (updated_fields, deferred_fields) = storage::with_state_lock(move |state| {
-        let mission_id = mission_id_for_closure;
+        let flight_id = flight_id_for_closure;
         let task_id = task_id_for_closure;
         let patch_obj = patch_obj;
         let result: Result<(Vec<String>, Vec<String>), String> = (move || {
             let flight = state
                 .flights
                 .iter_mut()
-                .find(|f| f.id == mission_id)
-                .ok_or_else(|| format!("update_task: mission '{}' not found", mission_id))?;
+                .find(|f| f.id == flight_id)
+                .ok_or_else(|| format!("update_task: flight '{}' not found", flight_id))?;
 
             // Locate the task across milestones.
             let task = flight
@@ -108,9 +108,9 @@ pub async fn handle(app: &AppHandle, session_id: &str, args: Value) -> Result<Va
     // those in TS only), so we publish a scoped event the planner
     // listener wires through on the frontend. Emit OUTSIDE the lock.
     let _ = app.emit(
-        &format!("mission-planner:task-updated:{}", mission_id),
+        &format!("flight-planner:task-updated:{}", flight_id),
         serde_json::json!({
-            "missionId": mission_id,
+            "flightId": flight_id,
             "taskId": parsed.task_id,
             "updatedFields": updated_fields.clone(),
             "deferredFields": deferred_fields.clone(),
@@ -218,7 +218,7 @@ mod tests {
         Task {
             id: "task_1".to_string(),
             milestone_id: "ms_1".to_string(),
-            flight_id: "mission_1".to_string(),
+            flight_id: "flight_1".to_string(),
             title: "Old title".to_string(),
             description: "Old prompt".to_string(),
             order: 0,

@@ -19,7 +19,7 @@ const mockSetInitialized = vi.hoisted(() => vi.fn());
 const mockSetTheme = vi.hoisted(() => vi.fn());
 const mockSetActiveView = vi.hoisted(() => vi.fn());
 const mockAppState = vi.hoisted(() => ({
-  activeView: "missions",
+  activeView: "flights",
   theme: "dark" as const,
   setInitialized: mockSetInitialized,
   setTheme: mockSetTheme,
@@ -102,7 +102,7 @@ describe("persistUiState", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockSaveUiSlice.mockClear();
-    mockAppState.activeView = "missions";
+    mockAppState.activeView = "flights";
     mockAppState.theme = "dark";
   });
 
@@ -117,7 +117,7 @@ describe("persistUiState", () => {
     await Promise.resolve();
 
     expect(mockSaveUiSlice).toHaveBeenCalledWith({
-      selectedView: "missions",
+      selectedView: "flights",
       theme: "dark",
     });
   });

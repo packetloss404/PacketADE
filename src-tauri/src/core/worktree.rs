@@ -74,13 +74,13 @@ async fn run_local_git(cwd: &str, args: &[&str]) -> Result<(String, String, i32)
     ))
 }
 
-/// v0.8: optional mission context the worktree provisioner forwards to the
+/// v0.8: optional flight context the worktree provisioner forwards to the
 /// auto-trailer hook installer. When `None`, the trailer format's
 /// `{flightId}` / `{flightTitle}` placeholders are filled with `"unknown"`
-/// and `""` respectively. Used by callers that aren't mission-tied (e.g.
+/// and `""` respectively. Used by callers that aren't flight-tied (e.g.
 /// agents-pane conversation worktrees in `commands/git.rs`).
 #[derive(Debug, Clone, Default)]
-pub struct WorktreeMission {
+pub struct WorktreeFlight {
     pub flight_id: Option<String>,
     pub flight_title: Option<String>,
 }
@@ -114,18 +114,18 @@ pub async fn create_local_worktree(
     attempt_id: &str,
     base_branch: &str,
 ) -> Result<String, String> {
-    create_local_worktree_with_mission(base, attempt_id, base_branch, WorktreeMission::default())
+    create_local_worktree_with_flight(base, attempt_id, base_branch, WorktreeFlight::default())
         .await
 }
 
-/// v0.8: like `create_local_worktree` but accepts mission metadata so the
+/// v0.8: like `create_local_worktree` but accepts flight metadata so the
 /// auto-trailer hook can substitute real values for `{flightId}` and
 /// `{flightTitle}` placeholders.
-pub async fn create_local_worktree_with_mission(
+pub async fn create_local_worktree_with_flight(
     base: &str,
     attempt_id: &str,
     base_branch: &str,
-    mission: WorktreeMission,
+    flight: WorktreeFlight,
 ) -> Result<String, String> {
     let path = worktree_path(base, attempt_id)?;
     let branch = branch_name(attempt_id);
@@ -134,7 +134,7 @@ pub async fn create_local_worktree_with_mission(
         info!(path = %path, "Worktree already exists, reusing");
         // Idempotently re-install the hook so older worktrees pick it up
         // on next launch.
-        if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id, &mission).await {
+        if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id, &flight).await {
             warn!(path = %path, error = %e, "Failed to install prepare-commit-msg hook on existing worktree (non-fatal)");
         }
         return Ok(path);
@@ -156,7 +156,7 @@ pub async fn create_local_worktree_with_mission(
 
     // v0.8-16: auto-trailer hook. Non-fatal if it fails — the worktree
     // is still usable, the commit just won't carry the trailer.
-    if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id, &mission).await {
+    if let Err(e) = install_prepare_commit_msg_hook(&path, attempt_id, &flight).await {
         warn!(path = %path, error = %e, "Failed to install prepare-commit-msg hook (non-fatal)");
     }
 
@@ -169,14 +169,14 @@ pub async fn create_local_worktree_with_mission(
 ///   `Fixes #{issue_number}`
 ///   `Run-By: PacketADE issue I-{issue_id}`
 ///
-/// Mirrors `create_local_worktree_with_mission` but uses
+/// Mirrors `create_local_worktree_with_flight` but uses
 /// `install_prepare_commit_msg_hook_for_issue` for the trailer logic.
 /// Idempotent: existing worktrees re-receive the hook install on next
 /// launch so older worktrees pick up the trailers.
 ///
 /// Trailer installation respects `OrchestratorSettings.auto_commit_trailer_enabled`
 /// — turning the toggle off skips hook installation entirely, matching
-/// the mission-bound variant's behaviour.
+/// the flight-bound variant's behaviour.
 pub async fn create_local_worktree_for_issue(
     base: &str,
     attempt_id: &str,
@@ -225,7 +225,7 @@ pub async fn create_local_worktree_for_issue(
     Ok(path)
 }
 
-/// v0.8: render the user-supplied trailer format with the live mission
+/// v0.8: render the user-supplied trailer format with the live flight
 /// values. Recognised placeholders: `{flightId}`, `{attemptId}`,
 /// `{flightTitle}`. Anything else is passed through unchanged so users
 /// can keep literal braces if they need to.
@@ -263,7 +263,7 @@ fn sanitize_trailer_value(s: &str) -> String {
 ///   pre-existing hook from earlier runs is left alone.
 /// - `auto_commit_trailer_format` → format string; placeholders
 ///   `{flightId}`, `{attemptId}`, `{flightTitle}` are substituted from
-///   the supplied `mission` context. Unspecified placeholders fall back
+///   the supplied `flight` context. Unspecified placeholders fall back
 ///   to `"unknown"` / `""`.
 ///
 /// Cross-platform notes:
@@ -280,7 +280,7 @@ fn sanitize_trailer_value(s: &str) -> String {
 async fn install_prepare_commit_msg_hook(
     worktree_path: &str,
     attempt_id: &str,
-    mission: &WorktreeMission,
+    flight: &WorktreeFlight,
 ) -> Result<(), String> {
     // v0.8: consult the persisted orchestration settings. `load_state`
     // is sync; running it on a worker thread keeps us off the tokio
@@ -326,10 +326,10 @@ async fn install_prepare_commit_msg_hook(
 
     let hook_path = hooks_dir.join("prepare-commit-msg");
 
-    // Mission metadata: prefer explicit values from the caller, fall
+    // Flight metadata: prefer explicit values from the caller, fall
     // back to the legacy worktree-grandparent-name heuristic for the
     // flight id, and finally to `"unknown"`. Title defaults to empty.
-    let flight_id = mission
+    let flight_id = flight
         .flight_id
         .as_deref()
         .map(|s| s.to_string())
@@ -342,7 +342,7 @@ async fn install_prepare_commit_msg_hook(
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "unknown".to_string())
         });
-    let flight_title = mission.flight_title.as_deref().unwrap_or("");
+    let flight_title = flight.flight_title.as_deref().unwrap_or("");
 
     let flight_id_safe = sanitize_trailer_value(&flight_id);
     let attempt_id_safe = sanitize_trailer_value(attempt_id);
@@ -1005,12 +1005,12 @@ mod tests {
     fn render_trailer_format_substitutes_known_placeholders() {
         assert_eq!(
             render_trailer_format(
-                "Run-By: PacketADE mission F-{flightId} attempt A-{attemptId}",
+                "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}",
                 "abc",
                 "att1",
                 "Title",
             ),
-            "Run-By: PacketADE mission F-abc attempt A-att1"
+            "Run-By: PacketADE flight F-abc attempt A-att1"
         );
     }
 

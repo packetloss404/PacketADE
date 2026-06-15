@@ -10,7 +10,7 @@ export type GoalStatus =
 /**
  * B5 — persistent goal envelope around a checklist that outlives any
  * single AgentConversation. Inspired by Codex CLI 0.128's persisted
- * `/goal` workflows. Goals can attach optionally to a Flight (mission)
+ * `/goal` workflows. Goals can attach optionally to a Flight (flight)
  * and to a conversation; both bindings are loose (the conversation can
  * be closed without losing the goal).
  *
@@ -22,8 +22,8 @@ export interface Goal {
   id: string;
   title: string;
   status: GoalStatus;
-  /** Optional binding to a Flight/Mission for grouping. */
-  missionId?: string;
+  /** Optional binding to a Flight/Flight for grouping. */
+  flightId?: string;
   /** Optional binding to the conversation that owns the live checklist. */
   conversationId?: string;
   createdAt: number;

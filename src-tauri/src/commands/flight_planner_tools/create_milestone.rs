@@ -12,15 +12,15 @@
 //! Implementation note: mutates flight state via the async
 //! `core::storage::with_state_lock` helper so concurrent planner-tool
 //! handlers (firing in parallel within a single planner turn) can't lose
-//! each other's writes. The owning mission is resolved through the
-//! `MissionPlannerRegistry` reverse-lookup keyed off the sidecar
+//! each other's writes. The owning flight is resolved through the
+//! `FlightPlannerRegistry` reverse-lookup keyed off the sidecar
 //! `session_id`.
 
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::info;
 
-use crate::commands::mission_planner::MissionPlannerRegistry;
+use crate::commands::flight_planner::FlightPlannerRegistry;
 use crate::core::flight::{Milestone, MilestoneStatus};
 use crate::core::storage;
 
@@ -48,18 +48,18 @@ pub async fn handle(
     let goal = parsed.goal;
     let dependencies = parsed.dependencies.unwrap_or_default();
 
-    // 2. Resolve mission_id from session_id via the registry reverse-lookup.
+    // 2. Resolve flight_id from session_id via the registry reverse-lookup.
     //    This is the canonical way to map sidecar session ids back to
-    //    missions (see `update_task.rs` for the reference pattern). A miss
+    //    flights (see `update_task.rs` for the reference pattern). A miss
     //    here means the planner has been torn down between SDK tool
     //    dispatch and now, which we surface as an error so the SDK doesn't
-    //    happily append to a mission whose planner is gone.
+    //    happily append to a flight whose planner is gone.
     let registry = app
-        .try_state::<MissionPlannerRegistry>()
-        .ok_or_else(|| "mission planner registry not managed".to_string())?;
+        .try_state::<FlightPlannerRegistry>()
+        .ok_or_else(|| "flight planner registry not managed".to_string())?;
 
-    let mission_id = registry
-        .mission_id_for_sidecar_session(session_id)
+    let flight_id = registry
+        .flight_id_for_sidecar_session(session_id)
         .await
         .ok_or_else(|| format!("planner session '{}' not found in registry", session_id))?;
 
@@ -73,12 +73,12 @@ pub async fn handle(
     //    AFTER the lock releases.
     let milestone_id = format!("ms_{}", uuid::Uuid::new_v4());
     let now = now_millis();
-    let mission_id_for_closure = mission_id.clone();
+    let flight_id_for_closure = flight_id.clone();
     let milestone_id_for_closure = milestone_id.clone();
     let title_for_closure = title.clone();
 
     storage::with_state_lock(move |state| {
-        let mission_id = mission_id_for_closure;
+        let flight_id = flight_id_for_closure;
         let milestone_id = milestone_id_for_closure;
         let title = title_for_closure;
         let goal = goal;
@@ -87,13 +87,13 @@ pub async fn handle(
             let flight = state
                 .flights
                 .iter_mut()
-                .find(|f| f.id == mission_id)
+                .find(|f| f.id == flight_id)
                 .ok_or_else(|| "flight not found".to_string())?;
 
             let order = flight.milestones.len();
             let milestone = Milestone {
                 id: milestone_id,
-                flight_id: mission_id,
+                flight_id: flight_id,
                 title,
                 description: goal,
                 order,
@@ -112,19 +112,19 @@ pub async fn handle(
 
     // 4. Journal: log line for offline traceability + a Tauri event the UI
     // can subscribe to so the Live Timeline lights up. Event name follows
-    // the existing `mission-planner:*:<missionId>` convention used by the
+    // the existing `flight-planner:*:<flightId>` convention used by the
     // approval-gate path. The payload carries enough for the UI to either
     // hydrate from persisted state or render an optimistic entry.
     info!(
-        mission_id = %mission_id,
+        flight_id = %flight_id,
         milestone_id = %milestone_id,
         title = %title,
-        "mission planner created milestone"
+        "flight planner created milestone"
     );
     let _ = app.emit(
-        &format!("mission-planner:milestone-created:{}", mission_id),
+        &format!("flight-planner:milestone-created:{}", flight_id),
         serde_json::json!({
-            "missionId": mission_id,
+            "flightId": flight_id,
             "milestoneId": milestone_id,
             "title": title,
             "createdAt": now,

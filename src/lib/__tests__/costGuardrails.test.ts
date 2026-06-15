@@ -47,7 +47,7 @@ describe("cost guardrails", () => {
       monthlyLimitUsd: null,
       sessionLimitUsd: null,
       providerLimitsUsd: {},
-      missionLimitsUsd: {},
+      flightLimitsUsd: {},
       warningThresholdPercent: 100,
       hardStopThresholdPercent: 100,
       requireApprovalAtLimit: true,

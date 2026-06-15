@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type CoreView = "welcome" | "issues" | "missions" | "history" | "tools" | "github" | "memory" | "deploy" | "review_queue" | "workspace" | "agents" | "cost_dashboard" | "dictation";
+export type CoreView = "welcome" | "issues" | "flights" | "history" | "tools" | "github" | "memory" | "deploy" | "review_queue" | "workspace" | "agents" | "cost_dashboard" | "dictation";
 export type AppView = CoreView | `mod:${string}`;
 
 export function isModuleView(view: AppView): boolean {
@@ -16,12 +16,12 @@ export function moduleViewId(id: string): AppView {
 }
 
 /** v0.8-H: deep-link filter applied to MemoryView when navigated to from
- * another surface (e.g. the MissionsView "N patterns extracted" chip).
+ * another surface (e.g. the FlightsView "N patterns extracted" chip).
  * Set via {@link AppStore.openMemoryView} and cleared either explicitly
  * (the consumer clicks Clear) or implicitly (next time it's set). */
 export interface MemoryViewFilter {
-  /** Restrict MemoryView to events/patterns tied to a specific mission. */
-  missionId?: string;
+  /** Restrict MemoryView to events/patterns tied to a specific flight. */
+  flightId?: string;
   /** Restrict MemoryView to a single project's events/patterns. */
   projectPath?: string;
 }

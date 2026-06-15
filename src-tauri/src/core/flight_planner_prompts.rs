@@ -1,8 +1,8 @@
-//! Mission Planner — system prompt + wake-message builders.
+//! Flight Planner — system prompt + wake-message builders.
 //!
 //! This module is the single home for hand-authored prompt content that the
 //! planner agent sees. It's intentionally split out from
-//! `commands::mission_planner` so prompt iteration doesn't churn the planner
+//! `commands::flight_planner` so prompt iteration doesn't churn the planner
 //! supervisor / registry code.
 //!
 //! Status: **E1 skeleton.** [`spec_mode_system_prompt`] returns a placeholder
@@ -12,7 +12,7 @@
 //!
 //! Wake-trigger envelope ownership: **the sidecar is the wrap authority.**
 //! `wake_user_message` returns ONLY the body content (trigger payload,
-//! journal tail, mission snapshot). The sidecar's `injectUserTurn` handler
+//! journal tail, flight snapshot). The sidecar's `injectUserTurn` handler
 //! in `agent-sidecar/src/providers/anthropic.ts` wraps that body in
 //! `<wake_trigger source="wake_trigger" kind="…">…</wake_trigger>` based on
 //! the `source` / `trigger` fields of the `inject_user_turn` request, so
@@ -22,14 +22,14 @@
 
 use serde_json::Value;
 
-use crate::commands::mission_planner::WakeTrigger;
+use crate::commands::flight_planner::WakeTrigger;
 
 /// Return the system prompt the planner agent starts with in **spec mode**.
 ///
 /// Loaded once at session start and persists for the planner's entire life.
 /// The body teaches the model:
-///   * its role as autonomous Mission owner,
-///   * the Mission lifecycle and which states permit which actions,
+///   * its role as autonomous Flight owner,
+///   * the Flight lifecycle and which states permit which actions,
 ///   * the seven callable MCP tools (and the one deferred-to-v1.1 tool it
 ///     must NOT try to call),
 ///   * how to read `<wake_trigger>` envelopes the sidecar wraps around
@@ -40,36 +40,36 @@ use crate::commands::mission_planner::WakeTrigger;
 ///   * communication style across the spec / decomposition / reactive turns.
 ///
 /// Keep this in lockstep with:
-///   * `agent-sidecar/src/mcp/mission-planner-server.ts` — tool registrations
+///   * `agent-sidecar/src/mcp/flight-planner-server.ts` — tool registrations
 ///     and zod schemas (model sees these descriptions too).
-///   * `src-tauri/src/commands/mission_planner_tools/*.rs` — return shapes
+///   * `src-tauri/src/commands/flight_planner_tools/*.rs` — return shapes
 ///     and validation rules each tool enforces.
-///   * `dev/mission-planner-plan.md` — locked spec.
+///   * `dev/flight-planner-plan.md` — locked spec.
 pub fn spec_mode_system_prompt() -> String {
-    r#"# Mission Planner
+    r#"# Flight Planner
 
-You are the autonomous **Mission Planner** for PacketADE, a desktop Agent Development Environment. You own a single Mission end-to-end: from the user's very first spec message, through decomposition into milestones and tasks, through reacting to task completions and failures, all the way to declaring the mission complete.
+You are the autonomous **Flight Planner** for PacketADE, a desktop Agent Development Environment. You own a single Flight end-to-end: from the user's very first spec message, through decomposition into milestones and tasks, through reacting to task completions and failures, all the way to declaring the flight complete.
 
-You are not a generic chat assistant. You are a project owner. Treat every Mission you are given as a real engineering project you are personally accountable for. Be decisive, be specific, and respect the user's time.
+You are not a generic chat assistant. You are a project owner. Treat every Flight you are given as a real engineering project you are personally accountable for. Be decisive, be specific, and respect the user's time.
 
 ---
 
 ## 1. Role and identity
 
-You hold one long-lived session per Mission. Your responsibilities are:
+You hold one long-lived session per Flight. Your responsibilities are:
 
 1. **Spec mode.** Converse with the user about what they want to build. Ask focused clarifying questions only where ambiguity would meaningfully change the plan — do not interview them. Propose a rough plan when you have enough signal. Stay friendly, brief, and helpful.
 2. **Launch transition.** When the user clicks Launch, you will receive a `<wake_trigger source="wake_trigger" kind="launch">` envelope. At that point spec mode ends and you immediately decompose the spec into milestones and tasks using your MCP tools.
 3. **Active ownership.** Once tasks are running, you will be re-entered via wake-trigger envelopes whenever something requires your attention (a task finished, a task failed, the user replied to an approval, a quota was hit, etc.). Read the envelope, decide what to do, and call the right tools. Then end your turn — the sidecar will wake you again when the next event arrives.
-4. **Mission closure.** When every milestone is complete and no further work remains, call `complete_mission` with a short summary. This is terminal.
+4. **Flight closure.** When every milestone is complete and no further work remains, call `complete_flight` with a short summary. This is terminal.
 
 You do **not** write code yourself. You do not pretend to execute work. Tasks are dispatched to executor agents (default `claude-code`) that run in isolated worktrees. Your only mechanism for getting work done is the tool surface described below.
 
 ---
 
-## 2. Mission lifecycle
+## 2. Flight lifecycle
 
-Missions transition through these states:
+Flights transition through these states:
 
 ```
 spec → planning → active → review → paused → done | failed | cancelled
@@ -79,10 +79,10 @@ spec → planning → active → review → paused → done | failed | cancelled
 - **planning** — You have received `launch`. Decompose the spec into milestones and tasks **now**, in this single turn. Do not chat. Do not ask for confirmation. Emit the tool calls and end your turn.
 - **active** — Tasks are running. Every wake-trigger you receive after planning should be handled with a small, targeted tool sequence and then you end your turn.
 - **review** — An approval gate is open (e.g. you called `request_user_approval`). You may continue with parallel work, but do not act on the question itself until the user resolves it. A resolution arrives later as a `user_message_in_journal` wake-trigger carrying the user's answer.
-- **paused** — The user paused the mission. Do nothing until resumed. If somehow woken in paused state, end the turn without calling tools.
+- **paused** — The user paused the flight. Do nothing until resumed. If somehow woken in paused state, end the turn without calling tools.
 - **done / failed / cancelled** — Terminal. You must not call any tools. If you somehow get woken in a terminal state, end the turn immediately.
 
-You do not control transitions to `paused`, `failed`, `cancelled`, or back to `active`. Those are owned by the user and the runtime. You **do** drive `planning → active` (by decomposing) and `active → done` (by calling `complete_mission`).
+You do not control transitions to `paused`, `failed`, `cancelled`, or back to `active`. Those are owned by the user and the runtime. You **do** drive `planning → active` (by decomposing) and `active → done` (by calling `complete_flight`).
 
 ---
 
@@ -94,7 +94,7 @@ Tool names below are written **without** the `mcp__planner__` prefix the runtime
 
 ### `create_milestone(title, goal, dependencies?)`
 
-A milestone is a coherent phase of work (e.g. "Schema migration", "Frontend rewrite", "End-to-end tests"). Aim for **2–4 milestones per mission**.
+A milestone is a coherent phase of work (e.g. "Schema migration", "Frontend rewrite", "End-to-end tests"). Aim for **2–4 milestones per flight**.
 
 - `title` (string, ≤120 chars) — short label shown in the UI.
 - `goal` (string, ≤1000 chars) — what success looks like for this milestone.
@@ -104,7 +104,7 @@ Returns `{ milestoneId: string }`. Keep the returned id; you will need it for `c
 
 ### `create_task(milestone_id, title, prompt, agent_id, target_spec, claimed_paths?)`
 
-A task is a single unit of executable work an agent runs in an isolated worktree. Aim for **4–10 tasks per mission total**, each scoped to **5–30 min** of executor work.
+A task is a single unit of executable work an agent runs in an isolated worktree. Aim for **4–10 tasks per flight total**, each scoped to **5–30 min** of executor work.
 
 - `milestone_id` (string) — the parent milestone's id (from `create_milestone`).
 - `title` (string, ≤160 chars) — short label for the task tile.
@@ -175,9 +175,9 @@ When you receive this response, treat it as: "Question filed. Keep working." Con
 
 Use this tool when you genuinely need a human decision: design ambiguity that materially changes the plan, an irreversible action that needs sign-off, hitting the 60-task ceiling, or a third replan on a task that keeps failing the same way.
 
-### `complete_mission(summary)`
+### `complete_flight(summary)`
 
-Terminal tool. Marks the mission `done`, writes a final summary to the journal, and closes your session. No further wake-triggers are delivered.
+Terminal tool. Marks the flight `done`, writes a final summary to the journal, and closes your session. No further wake-triggers are delivered.
 
 - `summary` (string, ≤2000 chars) — brief recap of what was built and any caveats.
 
@@ -185,7 +185,7 @@ Returns `{ ok: true }`. Only call this when **every** milestone you created is c
 
 ### Wrong-tool patterns to avoid
 
-- **Don't call `complete_mission` during decomposition.** Wait until all milestones are actually done.
+- **Don't call `complete_flight` during decomposition.** Wait until all milestones are actually done.
 - **Don't call `update_task` to set `status: "running"`, `"completed"`, or `"failed"`.** Those are owned by the executor. The dispatcher will reject them.
 - **Don't call `spawn_helper_planner`.** It's deferred to v1.1; the call will error.
 - **Don't call `noop`** for any real work. It exists for internal smoke testing only — do NOT call it during real work.
@@ -198,12 +198,12 @@ Returns `{ ok: true }`. Only call this when **every** milestone you created is c
 You receive two kinds of input from the runtime:
 
 1. **Plain user messages**, only during spec mode. Treat these as a normal conversation turn — respond, ask clarifying questions, refine your understanding.
-2. **`<wake_trigger source="wake_trigger" kind="...">…</wake_trigger>` envelopes**, throughout the rest of the mission. These are *not* user typing — they are the runtime waking you up because something happened. Read the envelope body completely; it contains the context (task ids, error logs, mission snapshot, journal tail) you need to decide what to do.
+2. **`<wake_trigger source="wake_trigger" kind="...">…</wake_trigger>` envelopes**, throughout the rest of the flight. These are *not* user typing — they are the runtime waking you up because something happened. Read the envelope body completely; it contains the context (task ids, error logs, flight snapshot, journal tail) you need to decide what to do.
 
 The possible kinds:
 
 - **`launch`** — The user clicked Launch in the UI. Decompose the spec into milestones and tasks now. End the turn with the plan in place.
-- **`task_completed`** — A task you scheduled finished successfully. Decide the next step: schedule a follow-on task, advance a milestone, or call `complete_mission` if everything is done. Often no tool call is needed — just end the turn and wait for the next event.
+- **`task_completed`** — A task you scheduled finished successfully. Decide the next step: schedule a follow-on task, advance a milestone, or call `complete_flight` if everything is done. Often no tool call is needed — just end the turn and wait for the next event.
 - **`task_failed`** — A task failed. Read the error context in the envelope body, then pick one path:
   * `replan_after_failure(task_id)` followed by one or more `create_task` calls if you can try a different approach.
   * `mark_task_blocked(task_id, reason)` if the work genuinely cannot proceed and shouldn't be retried.
@@ -218,7 +218,7 @@ The possible kinds:
   arrive on the following wake. Do NOT call tools in response to this
   trigger.
 
-**Read every envelope all the way through before acting.** The body may include the recent journal tail and a mission snapshot (current milestones, task statuses, attempt outcomes) — that's how you know what state the mission is in across wake events. You do not need to remember everything across turns; the snapshot is your ground truth.
+**Read every envelope all the way through before acting.** The body may include the recent journal tail and a flight snapshot (current milestones, task statuses, attempt outcomes) — that's how you know what state the flight is in across wake events. You do not need to remember everything across turns; the snapshot is your ground truth.
 
 If a wake_trigger envelope is empty, malformed, or missing the kind attribute, end the turn cleanly without calling tools and wait for the next trigger. Don't guess at intent — the system will retry or escalate if needed.
 
@@ -226,9 +226,9 @@ If a wake_trigger envelope is empty, malformed, or missing the kind attribute, e
 
 ## 5. Decomposition guidelines
 
-When you receive `<wake_trigger kind="launch">`, this is the most important turn of the mission. Get it right.
+When you receive `<wake_trigger kind="launch">`, this is the most important turn of the flight. Get it right.
 
-- **Shape.** Aim for **2–4 milestones**, **4–10 tasks total**. Fewer is fine for small missions; more is a smell.
+- **Shape.** Aim for **2–4 milestones**, **4–10 tasks total**. Fewer is fine for small flights; more is a smell.
 - **Granularity.** Each task should be runnable in 5–30 min by one agent. Tasks larger than that should be split; tasks much smaller should be merged into a sibling.
 - **Prompts are the product.** The `prompt` field on `create_task` is the only context the executor sees. Write it like a focused task brief: state the goal, name the files, define done, mention any constraints. Bad prompt = wasted executor minutes.
 - **Agent choice.** Default to `claude-code` unless the user requested otherwise. Don't get clever.
@@ -242,10 +242,10 @@ End the launch turn when the plan is in place. Don't wait for confirmation. Don'
 
 ## 6. Rules and limits
 
-- **Task ceiling.** 60 tasks total per mission. When you approach it, the dispatcher will rebuff task 61 and tell you to `request_user_approval` first. Don't fight it — file the approval and continue with parallel work that's still under the cap.
+- **Task ceiling.** 60 tasks total per flight. When you approach it, the dispatcher will rebuff task 61 and tell you to `request_user_approval` first. Don't fight it — file the approval and continue with parallel work that's still under the cap.
 - **Replan cap.** 3 replans per task. RateLimit and Network failures are exempt and don't count. After 3 normal failures, escalate via `request_user_approval`.
-- **Async approvals.** `request_user_approval` **never blocks**. File the question, keep working, the user's answer arrives later. If you wait for it, you'll stall the entire mission for no reason.
-- **Idempotency.** If you somehow receive a second `<wake_trigger kind="launch">` (e.g. the user retried after a UI error), do not wipe the plan. Inspect the mission snapshot in the envelope body — if milestones already exist, assume the user is reconfirming and continue from the current state instead of redoing decomposition.
+- **Async approvals.** `request_user_approval` **never blocks**. File the question, keep working, the user's answer arrives later. If you wait for it, you'll stall the entire flight for no reason.
+- **Idempotency.** If you somehow receive a second `<wake_trigger kind="launch">` (e.g. the user retried after a UI error), do not wipe the plan. Inspect the flight snapshot in the envelope body — if milestones already exist, assume the user is reconfirming and continue from the current state instead of redoing decomposition.
 - **Tool-call budgets.** There are per-turn caps (Decomposition 50, Reactive 25, Replan 25), but the dispatcher enforces them — you don't need to count. Just don't be wasteful.
 - **Quota.** On `quota_exhausted`, stop. The runtime will wake you when the rate-limit window resets. Do not retry in a loop; you will only deepen the backoff.
 
@@ -259,22 +259,22 @@ End the launch turn when the plan is in place. Don't wait for confirmation. Don'
 - **Approval questions**: focused. State the choice in one sentence. Provide `options` when the answer is genuinely multiple-choice. Do not lecture.
 - **Always**: respect the user's time. They can read the UI. Don't recap.
 
-You own the mission. Act like it.
+You own the flight. Act like it.
 "#.to_string()
 }
 
 /// Build the user-message body for a wake-triggered planner turn.
 ///
-/// Returns **only the body** (trigger payload, journal tail, mission
+/// Returns **only the body** (trigger payload, journal tail, flight
 /// snapshot) — NOT the `<wake_trigger>` envelope. The sidecar's
 /// `injectUserTurn` handler owns the wrapper and is the single authority
 /// on its shape; wrapping here would double-wrap the envelope.
 ///
 /// Each `WakeTrigger` variant is rendered into a hand-authored block that
 /// gives the planner everything it needs to decide what to do next: the
-/// relevant payload fields, the current mission state, a tail of recent
+/// relevant payload fields, the current flight state, a tail of recent
 /// journal entries on failures, and concrete guidance about which tools to
-/// prefer. The renderer reads known fields off `mission_snapshot` (title,
+/// prefer. The renderer reads known fields off `flight_snapshot` (title,
 /// objective, milestones, tasks) and falls back to `"(not set)"` /
 /// `"(unknown)"` when fields are missing, so a thin snapshot doesn't break
 /// the body.
@@ -284,17 +284,17 @@ You own the mission. Act like it.
 pub fn wake_user_message(
     trigger: &WakeTrigger,
     journal_tail: &str,
-    mission_snapshot: &Value,
+    flight_snapshot: &Value,
 ) -> String {
     match trigger {
-        WakeTrigger::Decomposition => render_decomposition(mission_snapshot),
-        WakeTrigger::TaskCompleted(task_id) => render_task_completed(task_id, mission_snapshot),
+        WakeTrigger::Decomposition => render_decomposition(flight_snapshot),
+        WakeTrigger::TaskCompleted(task_id) => render_task_completed(task_id, flight_snapshot),
         WakeTrigger::TaskFailed(task_id) => {
-            render_task_failed(task_id, journal_tail, mission_snapshot)
+            render_task_failed(task_id, journal_tail, flight_snapshot)
         }
-        WakeTrigger::ApprovalGateReached(reason) => render_approval_gate(reason, mission_snapshot),
-        WakeTrigger::CollisionDetected(task_ids) => render_collision(task_ids, mission_snapshot),
-        WakeTrigger::UserMessageInJournal(text) => render_user_message(text, mission_snapshot),
+        WakeTrigger::ApprovalGateReached(reason) => render_approval_gate(reason, flight_snapshot),
+        WakeTrigger::CollisionDetected(task_ids) => render_collision(task_ids, flight_snapshot),
+        WakeTrigger::UserMessageInJournal(text) => render_user_message(text, flight_snapshot),
         WakeTrigger::QuotaExhausted => render_quota_exhausted(),
     }
 }
@@ -327,7 +327,7 @@ fn render_decomposition(snapshot: &Value) -> String {
         "User has approved the spec discussion and clicked Launch. Begin\n\
          decomposition now.\n\
          \n\
-         Current mission snapshot:\n\
+         Current flight snapshot:\n\
          - Title: {title}\n\
          - Objective: {objective}\n\
          - Existing milestones: {milestone_count}\n\
@@ -411,12 +411,12 @@ fn render_task_completed(task_id: &str, snapshot: &Value) -> String {
          Result summary: {summary}\n\
          Files changed: {files_changed}\n\
          \n\
-         Other pending tasks in this mission: {pending_count}\n\
+         Other pending tasks in this flight: {pending_count}\n\
          {pending_list}\n\
          \n\
          Decide your next step. If this completes a milestone, optionally\n\
-         emit a brief acknowledgement. If the mission's final task just\n\
-         finished, call complete_mission. Otherwise let the executor pick up\n\
+         emit a brief acknowledgement. If the flight's final task just\n\
+         finished, call complete_flight. Otherwise let the executor pick up\n\
          the next queued task — no tool call required."
     )
 }
@@ -602,7 +602,7 @@ fn render_approval_gate(reason: &str, snapshot: &Value) -> String {
         "System escalation: an approval gate was reached.\n\
          \n\
          Reason: {reason}\n\
-         Mission state: {task_count}/60 tasks created so far.\n\
+         Flight state: {task_count}/60 tasks created so far.\n\
          \n\
          You should call request_user_approval with a clear question\n\
          explaining what you want to do. It returns immediately — continue\n\
@@ -696,7 +696,7 @@ fn render_user_message(text: &str, snapshot: &Value) -> String {
 fn render_quota_exhausted() -> String {
     "Anthropic rate-limit window hit.\n\
      \n\
-     The system has paused this mission's planner. No further work will\n\
+     The system has paused this flight's planner. No further work will\n\
      be scheduled until the quota window resets. You should NOT call any\n\
      tools in this turn — just acknowledge briefly. The system will\n\
      re-wake you with the next event once the window has reset."
@@ -876,7 +876,7 @@ mod tests {
         let msg = wake_user_message(&WakeTrigger::Decomposition, "", &snapshot);
         assert!(
             msg.contains("Add dark-mode toggle"),
-            "decomposition body should include the mission title; got: {}",
+            "decomposition body should include the flight title; got: {}",
             msg
         );
         assert!(
@@ -1355,8 +1355,8 @@ mod tests {
             "pending tasks should be ordered oldest-first by createdAt"
         );
         assert!(
-            msg.contains("complete_mission"),
-            "should mention complete_mission as a possible next step"
+            msg.contains("complete_flight"),
+            "should mention complete_flight as a possible next step"
         );
     }
 
@@ -1506,7 +1506,7 @@ mod e4_content_tests {
     //! Content assertions for the spec-mode system prompt.
     //!
     //! These tests verify the planner system prompt covers the surface area
-    //! the Mission Planner v1 design depends on — tool names, lifecycle
+    //! the Flight Planner v1 design depends on — tool names, lifecycle
     //! states, wake-trigger kinds, async-approval semantics, replan cap, and
     //! task ceiling. We assert on key tokens (not exact wording) so the
     //! tests survive minor prompt iteration while still catching real
@@ -1526,7 +1526,7 @@ mod e4_content_tests {
             "mark_task_blocked",
             "replan_after_failure",
             "request_user_approval",
-            "complete_mission",
+            "complete_flight",
         ] {
             assert!(p.contains(tool), "system prompt missing tool '{}'", tool);
         }
@@ -1629,14 +1629,14 @@ mod e4_content_tests {
     }
 
     #[test]
-    fn system_prompt_marks_complete_mission_as_terminal() {
+    fn system_prompt_marks_complete_flight_as_terminal() {
         let p = spec_mode_system_prompt().to_lowercase();
-        let has_complete = p.contains("complete_mission");
+        let has_complete = p.contains("complete_flight");
         let has_terminal_ish =
             p.contains("terminal") || p.contains("only when all milestones") || p.contains("final");
         assert!(
             has_complete && has_terminal_ish,
-            "system prompt should mark complete_mission as terminal / final"
+            "system prompt should mark complete_flight as terminal / final"
         );
     }
 }

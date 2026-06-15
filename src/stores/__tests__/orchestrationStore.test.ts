@@ -328,7 +328,7 @@ describe("orchestrationStateStore", () => {
 
       expect(useOrchestrationSchedulerStore.getState().loopRunning).toBe(false);
       expect(useOrchestrationSchedulerStore.getState().lastError).toContain(
-        "Mission scheduler backend failed",
+        "Flight scheduler backend failed",
       );
 
       vi.mocked(orchestrationTick).mockResolvedValueOnce([]);

@@ -20,7 +20,7 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useFlightStore } from "@/stores/flightStore";
-import { useMissionPlannerStore } from "@/stores/missionPlannerStore";
+import { useFlightPlannerStore } from "@/stores/flightPlannerStore";
 import { gitCreateBranch } from "@/lib/tauri";
 import { PRModal } from "@/components/views/PRModal";
 import { DiffViewer } from "@/components/views/DiffViewer";
@@ -706,8 +706,8 @@ function IssueDetail({
   const addFlight = useFlightStore((s) => s.addFlight);
   const updateFlight = useFlightStore((s) => s.updateFlight);
   const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
-  const startPlanner = useMissionPlannerStore((s) => s.startPlanner);
-  const injectTurn = useMissionPlannerStore((s) => s.injectTurn);
+  const startPlanner = useFlightPlannerStore((s) => s.startPlanner);
+  const injectTurn = useFlightPlannerStore((s) => s.injectTurn);
   const projectPathFromLayout = useLayoutStore((s) => s.projectPath);
   const activeWorkspace = useWorkspaceStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
@@ -740,8 +740,8 @@ function IssueDetail({
     setActionBusy("plan");
     setFeedback(null);
     try {
-      // Stage the mission: title from issue, spec-mode entry. Mirrors
-      // MissionsView::handleStartMission's add/update/setActive/start
+      // Stage the flight: title from issue, spec-mode entry. Mirrors
+      // FlightsView::handleStartFlight's add/update/setActive/start
       // sequence so the planner runtime is alive before the view switch.
       const flight = addFlight({
         title: issue.title,
@@ -755,7 +755,7 @@ function IssueDetail({
       setActiveFlight(flight.id);
 
       // Start the planner BEFORE switching view — otherwise the
-      // MissionSpecPane mounts before the runtime exists. `startPlanner`
+      // FlightSpecPane mounts before the runtime exists. `startPlanner`
       // installs api-agent listeners then spawns the sidecar.
       await startPlanner(flight.id, resolvedProjectPath);
 
@@ -766,12 +766,12 @@ function IssueDetail({
         (issue.body?.trim() || "(no description)");
       await injectTurn(flight.id, opener, "user");
 
-      setActiveView("missions");
+      setActiveView("flights");
       setFeedback({
         tone: "success",
-        message: `Staged mission for #${issue.number}`,
+        message: `Staged flight for #${issue.number}`,
         linkLabel: "Open",
-        onLinkClick: () => setActiveView("missions"),
+        onLinkClick: () => setActiveView("flights"),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -888,7 +888,7 @@ function IssueDetail({
           )}
           Investigate with AI
         </button>
-        {/* v0.8-D — Plan flight: stage a mission in spec mode and seed the
+        {/* v0.8-D — Plan flight: stage a flight in spec mode and seed the
             planner with the issue body. */}
         <button
           type="button"
