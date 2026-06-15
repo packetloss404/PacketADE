@@ -37,14 +37,14 @@ chat panel.
 Use **Send to Monitor** as the action label on source surfaces:
 
 - Agent conversation: `Send to Monitor`
-- Mission: `Send to Monitor`
+- Flight: `Send to Monitor`
 - Review queue: `Send to Monitor`
 - Cost dashboard: `Send to Monitor`
 
 Use **Monitor** as the detached window type:
 
 - `Agent Monitor`
-- `Mission Monitor`
+- `Flight Monitor`
 - `Approval Monitor`
 - `Cost Monitor`
 - later: `Release Monitor`, `Provider Health Monitor`, `Workspace Monitor`
@@ -71,12 +71,12 @@ V1 should prove the multi-window foundation with low-risk operational views.
   palette, workspace sidebar, or global settings surfaces.
 - Support read-only displays for:
   - agent conversation status and transcript
-  - mission detail, tasks, and journal tail
+  - flight detail, tasks, and journal tail
   - pending approvals as visibility only
   - cost dashboard / guardrail status
 - Provide a `Focus in Main Window` action from every Monitor window.
 - Handle missing or deleted entities with calm empty states.
-- Keep Monitor window close behavior separate from agent / mission / session
+- Keep Monitor window close behavior separate from agent / flight / session
   lifecycle. Closing a Monitor must not stop work.
 
 ### Out of Scope for V1
@@ -202,16 +202,16 @@ Proposed route type:
 ```ts
 type MonitorRoute =
   | { kind: "agent_conversation"; conversationId: string }
-  | { kind: "mission"; missionId: string; tab?: "overview" | "tasks" | "journal" }
-  | { kind: "approvals"; missionId?: string }
-  | { kind: "cost_dashboard"; missionId?: string };
+  | { kind: "flight"; flightId: string; tab?: "overview" | "tasks" | "journal" }
+  | { kind: "approvals"; flightId?: string }
+  | { kind: "cost_dashboard"; flightId?: string };
 ```
 
 Later route types:
 
 ```ts
 type FutureMonitorRoute =
-  | { kind: "mission_attempt"; missionId: string; attemptId: string }
+  | { kind: "flight_attempt"; flightId: string; attemptId: string }
   | { kind: "provider_health" }
   | { kind: "release_readiness" }
   | { kind: "workspace_pane"; workspaceId: string; paneId: string };
@@ -293,7 +293,7 @@ Render:
 
 - conversation title / agent / model / provider
 - status: active, idle, done, failed
-- project and mission link if available
+- project and flight link if available
 - transcript and tool cards
 - pending approval count as visibility
 - cost summary when available
@@ -312,11 +312,11 @@ Implementation note: do not mount `AgentsView` in monitor mode. It owns the
 sidebar, provider selection, and selected conversation state. Render a focused
 conversation component or extract a monitor-safe read-only variant.
 
-### Mission Monitor
+### Flight Monitor
 
 Render:
 
-- mission title / status / priority
+- flight title / status / priority
 - planner state
 - current task counts
 - running / blocked / approval-needed items
@@ -324,8 +324,8 @@ Render:
 - latest coordination log
 - `Focus in Main Window`
 
-Implementation note: do not mount `MissionsView` wholesale. Extract reusable
-mission detail panels that can receive `missionId`, `defaultTab`, and
+Implementation note: do not mount `FlightsView` wholesale. Extract reusable
+flight detail panels that can receive `flightId`, `defaultTab`, and
 `variant: "main" | "monitor"`.
 
 ### Approval Monitor
@@ -333,7 +333,7 @@ mission detail panels that can receive `missionId`, `defaultTab`, and
 Render:
 
 - pending permission/edit list
-- linked mission/task/conversation
+- linked flight/task/conversation
 - time since requested
 - suggested main-window action
 
@@ -353,7 +353,7 @@ Future behavior, if desired:
 
 Render:
 
-- current session/project/mission spend
+- current session/project/flight spend
 - provider/model usage
 - guardrail thresholds
 - warnings and blocked scopes
@@ -398,7 +398,7 @@ V1 can keep restore simple:
 
 - remember last Monitor window bounds
 - remember last route only for convenience
-- do not auto-restart agents or missions
+- do not auto-restart agents or flights
 - after restart, show stale/unavailable if the live entity no longer exists
 
 Later:
@@ -434,7 +434,7 @@ monitor-window:state-changed
 Monitor window shell:
 
 - compact title bar
-- scope chip: project / mission / agent / cost
+- scope chip: project / flight / agent / cost
 - live status indicator
 - last updated timestamp
 - follow/pause toggle for high-volume streams
@@ -444,7 +444,7 @@ Monitor window shell:
 Empty states:
 
 - `Conversation not found`
-- `Mission not found`
+- `Flight not found`
 - `This monitor is stale`
 - `Session ended`
 - `Open in main window`
@@ -452,7 +452,7 @@ Empty states:
 Menu placement:
 
 - Agent header actions menu
-- Mission header / overflow menu
+- Flight header / overflow menu
 - Review queue toolbar
 - Cost dashboard toolbar
 
@@ -495,19 +495,19 @@ Acceptance:
 - no prompt input or approval controls appear
 - `Focus in Main Window` selects the conversation in the main app
 
-### Sprint 3 - Mission Monitor
+### Sprint 3 - Flight Monitor
 
 Owner slice:
 
-- reusable mission detail components
-- `mission` route
+- reusable flight detail components
+- `flight` route
 - journal tail rendering
 - task status and planner status cards
 
 Acceptance:
 
-- mission state updates without main navigation changes
-- missing mission renders safe stale state
+- flight state updates without main navigation changes
+- missing flight renders safe stale state
 - no planner-control or destructive actions in monitor
 
 ### Sprint 4 - Approval and Cost Monitors
@@ -568,7 +568,7 @@ Frontend unit/component:
 - route parser accepts valid monitor routes and rejects malformed ones.
 - `MonitorApp` does not call primary navigation persistence.
 - Agent Monitor hides prompt input and mutation actions.
-- Mission Monitor renders missing-entity state.
+- Flight Monitor renders missing-entity state.
 - `Focus in Main Window` emits the expected main-window focus event/command.
 
 Security/regression:
@@ -587,7 +587,7 @@ Manual:
 4. Move Monitor window to another physical display.
 5. Continue work in main window and confirm Monitor updates.
 6. Close Monitor and confirm the agent continues.
-7. Send a mission to Monitor and confirm the same `monitor-main` focuses and
+7. Send a flight to Monitor and confirm the same `monitor-main` focuses and
    changes route.
 8. Delete or complete the source entity and confirm stale-state behavior.
 
@@ -598,13 +598,13 @@ Manual:
 - Should Monitor windows close automatically when main closes?
 - Should Approval Monitor ever support approving from the monitor, or always
   route back to main?
-- What is the first shipped pair: Agent + Mission, or Agent + Cost?
+- What is the first shipped pair: Agent + Flight, or Agent + Cost?
 - Should `Send to Monitor` appear in command palette?
 - Should Monitor routes be deep-linkable later through an OS protocol?
 
 ## Recommendation When Resumed
 
-Ship **Agent Monitor + Mission Monitor** first. They prove the multi-monitor
+Ship **Agent Monitor + Flight Monitor** first. They prove the multi-monitor
 identity and the Tauri multi-window foundation without touching the risky PTY
 ownership path.
 

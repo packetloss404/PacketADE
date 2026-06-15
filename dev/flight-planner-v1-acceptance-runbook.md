@@ -1,13 +1,13 @@
-# Mission Planner v1 — Live Acceptance Runbook
+# Flight Planner v1 — Live Acceptance Runbook
 
 Operator-facing manual validation. Run this before signing off on a v1
-release of the Mission Planner work-stream
-([`mission-planner-plan.md`](./mission-planner-plan.md)).
+release of the Flight Planner work-stream
+([`flight-planner-plan.md`](./flight-planner-plan.md)).
 
-Status: **active manual acceptance runbook**. Current open Mission Planner work
+Status: **active manual acceptance runbook**. Current open Flight Planner work
 belongs in [`../backlog.md`](../backlog.md); the locked design remains reference.
 For the dedicated reliability sprint, pair this manual runbook with
-[`mission-planner-reliability-continuity-pack.md`](./mission-planner-reliability-continuity-pack.md).
+[`flight-planner-reliability-continuity-pack.md`](./flight-planner-reliability-continuity-pack.md).
 
 - **Time budget**: 15–20 minutes end-to-end.
 - **Mode**: real Claude Sonnet 4.6 OAuth (`api-claude-oauth`). No mocks.
@@ -31,9 +31,9 @@ All boxes must be ticked **before** opening the app.
     If it shows `login_required`, run `claude login` in a terminal and
     wait for the badge to flip — `auth_watcher` should pick it up within
     ~2 seconds.
-- [ ] The test workspace has **zero existing missions** in the Missions
+- [ ] The test workspace has **zero existing flights** in the Flights
       view, OR you are running against a fresh workspace
-      (`%USERPROFILE%\.packetade\workspaces\<fresh-id>\`). Existing missions
+      (`%USERPROFILE%\.packetade\workspaces\<fresh-id>\`). Existing flights
       hide the empty-state CTA we need to verify.
 - [ ] The app is running, either:
   - Dev: `pnpm tauri dev` from `D:\projects\PacketADE`, **or**
@@ -52,20 +52,20 @@ All boxes must be ticked **before** opening the app.
 ## 2. Test 1 — Happy path acceptance
 
 This is the §"Acceptance — the headline test" in
-`mission-planner-plan.md`. If this one passes, the bulk of the
+`flight-planner-plan.md`. If this one passes, the bulk of the
 sign-off is done.
 
-- [ ] **2.1** Click the **Missions** icon in the left sidebar (or use the
-      view shortcut if you have one bound). The `MissionsView` mounts.
+- [ ] **2.1** Click the **Flights** icon in the left sidebar (or use the
+      view shortcut if you have one bound). The `FlightsView` mounts.
 - [ ] **2.2** Verify the empty state:
-  - A single large **Start a mission** CTA is centered in the pane.
+  - A single large **Start a flight** CTA is centered in the pane.
   - A smaller **Quick async launch** link sits below it.
-  - No mission cards are listed.
+  - No flight cards are listed.
   - _Expected: this is the new spec-mode empty state, not the legacy
     `LaunchAsyncFlightModal` button._
-- [ ] **2.3** Click **Start a mission**. Within ~1 second the
-      `FlightDetailPane` mounts and shows a `MissionSpecPane` chat surface.
-  - The mission appears in the sidebar with status pill `spec`.
+- [ ] **2.3** Click **Start a flight**. Within ~1 second the
+      `FlightDetailPane` mounts and shows a `FlightSpecPane` chat surface.
+  - The flight appears in the sidebar with status pill `spec`.
 - [ ] **2.4** Within **5 seconds**, one of:
   - A "Planner is starting…" indicator appears and then disappears, OR
   - The first assistant greeting message renders.
@@ -89,13 +89,13 @@ sign-off is done.
   ```
   Submit.
 - [ ] **2.8** The planner acknowledges the spec, usually summarising it
-      back. The **Launch mission** button in the header should now be
+      back. The **Launch flight** button in the header should now be
       enabled (per E3 — disabled until the planner has spec context).
-- [ ] **2.9** Click **Launch mission**. Start a stopwatch (or note the
+- [ ] **2.9** Click **Launch flight**. Start a stopwatch (or note the
       wall-clock time).
 - [ ] **2.10** Within **30 seconds** of clicking Launch, all of the
       following must be visible in the `FlightDetailPane`:
-  - [ ] Mission status pill transitions: `spec → planning → active`.
+  - [ ] Flight status pill transitions: `spec → planning → active`.
         (You may not catch `planning` if decomposition is fast; that's fine
         as long as you end on `active`.)
   - [ ] `MilestonesCard` shows **2–4** milestone cards with titles +
@@ -120,9 +120,9 @@ If all 6 sub-bullets of 2.10 fire within 30s, Test 1 **passes**.
 
 ## 3. Test 2 — Stop / restart hygiene
 
-Validates the kill-switch and that mission state survives a planner stop.
+Validates the kill-switch and that flight state survives a planner stop.
 
-- [ ] **3.1** With the Test 1 mission still in `active`, click **Stop
+- [ ] **3.1** With the Test 1 flight still in `active`, click **Stop
       planner** in the `FlightDetailPane` header.
 - [ ] **3.2** A `window.confirm` dialog appears. Click **OK**.
 - [ ] **3.3** Within ~2 seconds:
@@ -131,16 +131,16 @@ Validates the kill-switch and that mission state survives a planner stop.
         tail on `sidecar-*.log` should show a `close_session` event for the
         planner session id.
   - [ ] The Stop planner button disappears or transitions to
-        **Start planner** (depending on whether mission is terminal).
-- [ ] **3.4** Mission state survives:
+        **Start planner** (depending on whether flight is terminal).
+- [ ] **3.4** Flight state survives:
   - [ ] All milestones still listed.
   - [ ] All tasks still listed, with their executor sessions still
         running (their session pills don't go grey).
   - [ ] The Journal tab still shows the prior entries.
 - [ ] **3.5** _(Optional)_ Click **Start planner** (or reload the app
-      and reopen the mission). The planner re-attaches and emits a
+      and reopen the flight). The planner re-attaches and emits a
       `planner_message` acknowledging resume. Cold-start spec behaviour:
-      per the locked spec, missions in `active` on app restart flip to
+      per the locked spec, flights in `active` on app restart flip to
       `paused` and require a manual resume — that's expected.
 
 Test 2 **passes** if 3.3 and 3.4 both hold.
@@ -152,8 +152,8 @@ Test 2 **passes** if 3.3 and 3.4 both hold.
 Validates `request_user_approval` and the `<PlannerApprovalGate>`
 banner.
 
-- [ ] **4.1** Return to the Missions view. Click **Start a mission**
-      again to begin a fresh mission.
+- [ ] **4.1** Return to the Flights view. Click **Start a flight**
+      again to begin a fresh flight.
 - [ ] **4.2** Type the deliberately-oversized prompt:
   ```
   Refactor the entire codebase from React to Vue, build full e2e Playwright tests
@@ -161,7 +161,7 @@ banner.
   ```
   Submit and let the planner reply once (it will likely warn about
   scope; that's fine).
-- [ ] **4.3** Click **Launch mission**.
+- [ ] **4.3** Click **Launch flight**.
 - [ ] **4.4** Within ~60 seconds, the `<PlannerApprovalGate>` banner
       should appear, citing a reason near the 60-task ceiling — the
       planner is calling `request_user_approval` with a question like
@@ -172,7 +172,7 @@ banner.
 - [ ] **4.5** Click one of the options (recommend "Reduce scope" to keep
       the test bounded).
 - [ ] **4.6** The banner clears, and within ~10s a new
-      `planner_message` appears acknowledging the choice. Mission status
+      `planner_message` appears acknowledging the choice. Flight status
       remains `active` or transitions to `active` if it was `planning`.
 
 Test 3 **passes** if the banner renders **and** clicking an option
@@ -184,20 +184,24 @@ visibly unblocks the planner.
 
 Validates the on-disk journal artifact.
 
-- [ ] **5.1** Open the Test 1 mission. Click the **Journal** tab.
+- [ ] **5.1** Open the Test 1 flight. Click the **Journal** tab.
 - [ ] **5.2** Entries are ordered chronologically (oldest first) and
       each row shows a kind marker:
   - `user_message`, `planner_message`, `tool_call`, `tool_result`,
     `wake_trigger` should all be represented after Test 1.
 - [ ] **5.3** Click **Export**. A toast or inline notice confirms the
       path was copied to clipboard. Expected path shape:
-      `~/.packetade/missions/<shortId>_<mission_id>.md` (or
-      `%USERPROFILE%\.packetade\missions\<shortId>_<mission_id>.md` on Windows).
+      `~/.packetade/missions/F-<TAIL>_<flight_id>.md` (or
+      `%USERPROFILE%\.packetade\missions\F-<TAIL>_<flight_id>.md` on Windows),
+      where `<TAIL>` is the uppercased last-4-chars shortId derived in
+      `core/flight_journal.rs::journal_path` (mirrors `FlightsView.tsx::shortId`).
+      _Note: the `missions/` directory literal is an intentional on-disk
+      back-compat retention — the journal dir is not renamed to `flights/`._
 - [ ] **5.4** Paste the path into a terminal (or your file explorer)
       and open the file in any markdown viewer (VS Code preview, Obsidian,
       glow, etc.).
   - [ ] The file opens without parse errors.
-  - [ ] Headings render (mission title, milestones).
+  - [ ] Headings render (flight title, milestones).
   - [ ] Conversation entries are readable; tool calls render as fenced
         blocks with the tool name + args.
 
@@ -218,7 +222,7 @@ Common failure modes encountered during dogfooding.
   retry.
 - **OAuth expired.** Look for `401 Unauthorized` in the sidecar log.
   Re-run `claude login` from a terminal and wait for the auth badge to
-  flip to **ready** before re-clicking _Start a mission_.
+  flip to **ready** before re-clicking _Start a flight_.
 - **Protocol-version mismatch.** Sidecar log warns
   `protocol version mismatch: expected 6, got N` (or a later expected version
   if the protocol has advanced again). Rebuild the sidecar:
@@ -230,25 +234,25 @@ Common failure modes encountered during dogfooding.
   planner didn't receive the `[LAUNCH]` wake-trigger. Verify in the
   sidecar log that an `inject_user_turn` with `kind=launch` was emitted.
 - If `tool_call` entries exist but milestones don't render, check the
-  browser console for store-update errors in `missionPlannerStore.ts`.
+  browser console for store-update errors in `flightPlannerStore.ts`.
 - Verify the system prompt loaded all 8 wake-trigger kinds (search
-  `dev/mission-planner-plan.md` for `compaction_resume` — the prompt
+  `dev/flight-planner-plan.md` for `compaction_resume` — the prompt
   must enumerate every wake kind the wake-bus can emit).
 
 ### Stop planner button missing
 
-The button only renders for **in-flight** planners. If the mission is
+The button only renders for **in-flight** planners. If the flight is
 already terminal (`done`, `failed`, `cancelled`) the header shows a
-status-only label. Confirm the mission status pill — if it's `done`,
+status-only label. Confirm the flight status pill — if it's `done`,
 that's working as intended.
 
 ### Approval gate doesn't appear (Test 3)
 
 The planner may have decided the scope was achievable without an
 approval call. Re-prompt with more explicit scope-bloat language, e.g.
-_"Do all of the above as a single mission with no phasing and no scope
+_"Do all of the above as a single flight with no phasing and no scope
 cuts."_ If after two attempts the gate still doesn't fire, file an
-issue tagged `mission-planner/approval-gate`.
+issue tagged `flight-planner/approval-gate`.
 
 ### StatGrid Exec cell stuck at $0.00
 
@@ -262,8 +266,8 @@ sign-off until fixed.
 ### Compaction never fires
 
 E10's compaction threshold is **150K cumulative input tokens**. Short
-missions (like the dark-mode toggle) won't hit it. To exercise
-compaction, run a long mission with a verbose spec chat (5+ user
+flights (like the dark-mode toggle) won't hit it. To exercise
+compaction, run a long flight with a verbose spec chat (5+ user
 messages) and many decomposition turns. This is not blocking for v1
 sign-off unless you're explicitly verifying E10.
 
@@ -272,9 +276,9 @@ sign-off unless you're explicitly verifying E10.
 - `Failed to invoke 'forward_inject_user_turn'`: protocol-version
   drift (see "Protocol-version mismatch" above).
 - `Cannot read properties of undefined (reading 'plannerSessionId')`:
-  a mission DTO is missing the new fields — confirm
+  a flight DTO is missing the new fields — confirm
   `core/flight.rs` has `#[serde(default)]` on the new fields and that
-  any pre-existing missions migrate cleanly. Treat as blocker.
+  any pre-existing flights migrate cleanly. Treat as blocker.
 
 ### Sidecar log shows `RateLimitError`
 
@@ -291,13 +295,13 @@ Sign-off requires **all** of the following:
 
 - [ ] **Test 1** (happy path) passes within 30 seconds of clicking
       Launch, with all 6 sub-checks in §2.10 green.
-- [ ] **Test 2** (stop hygiene) leaves the mission in a recoverable
+- [ ] **Test 2** (stop hygiene) leaves the flight in a recoverable
       state — milestones and tasks survive, executor sessions keep
       running.
 - [ ] **Test 3** (approval gate) renders `<PlannerApprovalGate>` and
       clicking an option visibly resumes the planner.
 - [ ] **Test 4** (journal export) produces a readable markdown file
-      on disk at `~/.packetade/missions/<shortId>_<mission_id>.md`.
+      on disk at `~/.packetade/missions/F-<TAIL>_<flight_id>.md`.
 - [ ] **Zero red errors** in the browser devtools console across all
       four tests.
 - [ ] **Zero Rust panics** in the sidecar/Tauri stderr (`backend log`
@@ -313,7 +317,7 @@ relevant log excerpt and proceed to §8.
 If sign-off fails:
 
 1. Identify the failing epic(s) from the symptom (E1–E10 mapping is in
-   `mission-planner-plan.md` §"Epics").
+   `flight-planner-plan.md` §"Epics").
 2. `git revert <commit-sha>` for the offending epic commit(s). Prefer
    reverting whole epics over partial reverts — the epics are
    dependency-ordered.

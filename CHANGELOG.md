@@ -7,6 +7,19 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [Unreleased] - 2026-06-15
+
+### Changed — Mission → Flight rename + README refresh
+
+A staged, no-behavior-change rename completed the long-running Mission → Flight terminology unification across the frontend, Rust backend, IPC surface, and generated schema, paired with a full README pass against the code. Every stage was verified before landing.
+
+- **README refreshed/verified against code** — public overview and setup re-checked against the current source so the docs match what ships.
+- **UI / IPC / generated-schema rename** — `Mission Planner` → `Flight Planner`, `MissionsView` → `FlightsView`, `Mission Control` → `Flight Control` across the React surface, Tauri command/event names, and the generated TS schema (schema regeneration is byte-identical).
+- **Data-model identifiers** — `mission_id` → `flight_id` (Rust) and `missionId` → `flightId` (TS) on the in-memory/serialized models.
+- **Full Mission eradication** — `MissionApprovalRequest` → `FlightApprovalRequest`; `components/missions/*` merged into `components/flights/` with `MissionSpecPane` → `FlightSpecPane`; MCP tool `complete_mission` → `complete_flight`; file renames `core/mission_journal.rs` → `core/flight_journal.rs`, `lib/missionReview.ts` → `lib/flightReview.ts`, agent-sidecar `mission-planner-server.ts` → `flight-planner-server.ts`, `commands/mission_planner*.rs` → `commands/flight_planner*.rs` plus the `flight_planner_tools/` directory.
+- **Intentionally preserved back-compat** (read-time fallbacks, not stale leftovers) — 5 `#[serde(alias = "missionId")]` attributes across 4 files (`api/mod.rs`, `commands/flight_planner.rs` ×2, `core/flight.rs`, `core/flight_journal.rs`); the `issueStore.ts` and `goalStore.ts` legacy `missionId` read shims; and the on-disk `~/.packetade/missions/` journal directory literal (`join("missions")`), which is the live canonical path and is deliberately kept. These are lazy read-fallbacks with no eager migration pass; removal is gated on shipping a one-shot rewrite migration (tracked in [`backlog.md`](./backlog.md)), not a calendar date.
+- **Verification** — `cargo check` 0, `tsc --noEmit` 0, sidecar `tsc` build 0, schema regen byte-identical, `eslint` 0 errors, `flight-planner-wiring-smoke` 13/13.
+
 ## [0.9.4] - 2026-06-01
 
 ### Fixed — two-team code review remediation (8 peer-reviewed fixes)
@@ -758,7 +771,7 @@ context compaction.
   `maxOutputTokens`).
 - In-process MCP server inside the agent-sidecar exposes 7 planner
   tools to Claude (validated by spike — see
-  `dev/mission-planner-spike-retro.md`).
+  `dev/flight-planner-spike-retro.md`).
 - 9 commits, ~70 new tests (Rust unit + vitest + sidecar smokes).
 
 #### Deferred to v1.1
@@ -772,9 +785,9 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
 - Crash-resilient planner sessions across app restarts.
 
 #### Documentation
-- `dev/mission-planner-plan.md` — locked design spec.
-- `dev/mission-planner-spike-retro.md` — spike findings.
-- `dev/mission-planner-v1-acceptance-runbook.md` — manual
+- `dev/flight-planner-plan.md` — locked design spec.
+- `dev/flight-planner-spike-retro.md` — spike findings.
+- `dev/flight-planner-v1-acceptance-runbook.md` — manual
   validation procedure.
 
 ---

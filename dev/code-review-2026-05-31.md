@@ -102,8 +102,8 @@ The `brand.ts` one-file-rename guarantee is violated in ~5 sites. Individually t
 | med | `delete_api_key` leaves legacy keyring entry — keys resurrect | `commands/api_keys.rs:127` |
 | med | Codex `stream_error` dead-coded, never surfaced | `openai-codex.ts:809` |
 | med | `truncateToLimit` O(n²) byte-length recompute on large output | `openai-agents.ts:116` |
-| low | Wake into Awake planner resets per-tick cap + double-injects | `commands/mission_planner.rs:1658` |
-| low | Oneshot summarizer waiter leaked when `forward_start` fails | `commands/mission_planner_compaction.rs:149` |
+| low | Wake into Awake planner resets per-tick cap + double-injects | `commands/flight_planner.rs:1658` |
+| low | Oneshot summarizer waiter leaked when `forward_start` fails | `commands/flight_planner_compaction.rs:149` |
 | low | In-process stream task detached (not aborted) on cancel | `commands/api_agent.rs:1299-1357` |
 | low | Auth-watcher leading-edge debounce drops trailing/final state | `commands/auth_watcher.rs:201` |
 | low | bash tool kills only shell, leaks grandchildren on timeout | `openai-agents.ts:877` |

@@ -1,6 +1,6 @@
 # Dev Planning Docs
 
-Last updated: 2026-05-28
+Last updated: 2026-06-15
 
 This directory holds **active** planning docs with outstanding work items plus the engineering reference docs that used to live in `docs/`. Completed docs have been moved to `dev/archive/`.
 
@@ -30,6 +30,8 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 - `updater-setup.md` — runbook for wiring up the Tauri v2 auto-updater (currently not enabled)
 - `ssh-tech-debt.md` — redirect to `/backlog.md` (left for old links)
 
+> Dated `code-review-YYYY-MM-DD.md` files (e.g. `code-review-2026-05-31.md`, `code-review-2026-06-07.md`) are intentionally left unindexed point-in-time audit artifacts; actionable items from them land in `/backlog.md`.
+
 ## Active (Outstanding Items)
 
 ### Moat
@@ -45,10 +47,11 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 
 - `mcp-provider-transport.md` — Phases 2-3 deferred (local MCP server transport)
 
-### Mission Planner
+### Flight Planner
 
-- `mission-planner-v1-acceptance-runbook.md` — live manual sign-off for Mission Planner v1
-- `mission-planner-plan.md` and `mission-planner-spike-retro.md` — locked v1 design/reference; remaining work should be tracked in `/backlog.md`
+- `flight-planner-v1-acceptance-runbook.md` — live manual sign-off for Flight Planner v1
+- `flight-planner-reliability-continuity-pack.md` — reliability + continuity test/verification contract for Flight Planner journals
+- `flight-planner-plan.md` and `flight-planner-spike-retro.md` — locked v1 design/reference; remaining work should be tracked in `/backlog.md`
 
 ### Workspace UX
 
@@ -78,6 +81,8 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 - `archive/quadcode/` — gap analysis, terminal features, AI platform features
 - `archive/zen-workspace/` — workspace model plan, gap analysis, research, project-workspaces feature spec
 - `archive/vibetotext/` — sprint plan, features spec, README
+
+> Dated `code-review-YYYY-MM-DD.md` files (e.g. `code-review-2026-05-31.md`, `code-review-2026-06-07.md`) are intentionally unindexed: they are point-in-time audit artifacts, not active planning docs. Outstanding items they surfaced are tracked in [`/backlog.md`](../backlog.md).
 
 ## Tracks (All Implemented)
 

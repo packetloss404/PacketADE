@@ -118,12 +118,12 @@ The debate confirmed these are _not_ real bugs (or are intended/protected behavi
 | F28 | `send`/`retry` overwrite the in-process cancel sender, silently cancelling a running turn                                                        | `api_agent.rs:701-724,1015-1037`                   |
 | F32 | Failed API `sendMessage` leaves the bubble spinning forever (`isStreaming` never cleared)                                                        | `agentTaskStore.ts:1072-1098`                      |
 | F33 | Orchestration scheduler silently swallows backend tick failures                                                                                  | `orchestrationSchedulerStore.ts:47`                |
-| F34 | `update_task` `target_spec` patch reported as landed but silently dropped (false success to planner)                                             | `mission_planner_tools/update_task.rs:135-144`     |
+| F34 | `update_task` `target_spec` patch reported as landed but silently dropped (false success to planner)                                             | `flight_planner_tools/update_task.rs:135-144`     |
 | F38 | `useVoiceInput` never stops recognition/native recording on unmount (mic leak)                                                                   | `hooks/useVoiceInput.ts:63-153`                    |
 | F44 | `migrateLegacyStorage` mutates localStorage while iterating by index → can lose keys                                                             | `lib/storage-migration.ts:19-31`                   |
 | F46 | Streamed UTF-8 multibyte chars corrupted when split across network chunks (both streamers)                                                       | `llm_anthropic.rs:213`; `llm_openai_compat.rs:234` |
 | F48 | FlightDetail unlink clears `issue.flightId` but not `flight.issueIds` → status desync                                                            | `flights/FlightDetail.tsx:173`                     |
-| F49 | Flight status never recomputes when an issue changes (no `issueStore` subscription)                                                              | `FlightList.tsx`, `MissionsView.tsx`               |
+| F49 | Flight status never recomputes when an issue changes (no `issueStore` subscription)                                                              | `FlightList.tsx`, `FlightsView.tsx`               |
 | F51 | Event-driven `flightStore.hydrateFromBackend()` clobbers in-flight optimistic mutations                                                          | `flightStore.ts:688-698`                           |
 | F52 | `issueStore` is localStorage-authoritative, never hydrated, writes a lossy subset to backend                                                     | `issueStore.ts:203-237`                            |
 | F55 | `FlightStatus` contract test asserts a hand-kept length, missing `spec` variant                                                                  | `__tests__/contract.test.ts:167-180`               |
@@ -172,9 +172,9 @@ existing server fields, and forward preserved non-stdio server shapes to sidecar
 key/Gemini/SSH migrations keep legacy data until the replacement save succeeds; legacy localStorage
 prefix migration snapshots keys before mutation; SSH target migration merges both legacy namespaces;
 FlightDetail unlink updates both issue and flight stores; backend `PersistedState.issues` now
-hydrates `issueStore` before Mission reconciliation; empty assistant text-only turns are skipped
+hydrates `issueStore` before Flight reconciliation; empty assistant text-only turns are skipped
 while tool-use turns remain valid. F52 caveat: `flight.issueIds` remains a derived frontend cache,
-not an independent Rust-side Mission issue-link model. F19 caveat: atomic MCP file writes remain
+not an independent Rust-side Flight issue-link model. F19 caveat: atomic MCP file writes remain
 tracked separately as F21/P3.
 
 **Batch B — "It silently failed" (orchestration trust):**

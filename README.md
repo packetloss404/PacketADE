@@ -17,13 +17,11 @@ PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issu
 
 - Chat with eight coding-agent providers from a **single Agents pane** that normalizes Claude Code subscription, Codex subscription, OpenAI Agents SDK, four API-key providers, and local Ollama into one event contract
 - Run multiple agent sessions side-by-side in PTY-backed panes inside a **Workspace** (your terminal-CLI command center)
-- Plan and supervise larger units of work from the **Flight Deck** — a single-screen master-detail mission control
+- Plan and supervise larger units of work from the **Flight Deck** — a single-screen master-detail flight control surface
 - Track issues on a kanban board and send them directly to workspace sessions
 - Connect to remote servers via SSH and run agent sessions over the wire
 - Keep project context close with auto-learning memory, history, and GitHub integration
-- Manage MCP servers, inspect crashes, and run deploy workflows from the same UI
-
-> Looking for a terminal-native orchestration experience? See [**FlightDeck**](https://github.com/packetloss404/flightdeck) — the TUI-first sibling project, split out of this repo and evolving independently.
+- Manage MCP servers, inspect crashes, run code-quality scans, and run deploy workflows from the same UI
 
 ## Supported Agents
 
@@ -60,36 +58,40 @@ The Agents pane is the front door. One composer, two backends (in-process Rust +
 - **Live SessionHealthBar** in the chat header: model · context % gauge · cumulative tokens · session $ · git branch
 - **Drag-drop and clipboard-paste images** into the launcher (5 MB cap, removable thumbnail chips); image blocks land in the SDK content array on send
 - **Mid-turn steering**: `Tab` queues a follow-up that delivers after the current turn; `Alt+.` / `Alt+,` nudge the model toward thorough / fast within the same provider; `Shift+Tab` cycles a single mode chip (`default | plan | manual | yolo`)
-- **Slash commands**: `/plan /permissions /model /compact /review /usage /history /clear /new /help` plus saved prompt templates as native `/<slug>` commands and project skills
-- **Header context badges**: provider auth (live `provider-auth:changed`), linked Mission with click-to-jump, MCP `N/M` server toggle dropdown, memory-context tooltip previewing the actual injected patterns
+- **Slash commands**: `/plan /permissions /model /compact /review /goal /usage /history /clear /new /help` plus saved prompt templates as native `/<slug>` commands and project skills
+- **`@`-mention files and sources** in the composer via a file-mention popover, so you can pull specific files into a turn without pasting paths
+- **Header context badges**: provider auth (live `provider-auth:changed`), linked Flight with click-to-jump, and an MCP `N/M` server toggle dropdown. A separate **memory toggle** in the header actions carries a tooltip previewing the actual injected memory context
 - **Persistent Plan / Todo panel** docked above the chat scroll, parsing Anthropic SDK `TodoWrite` (structured `plan_block` events) plus the markdown `task_list` tool with a fallback parser
 - **Per-hunk diff acceptance** in `PendingEditPrompt`: pick which hunks to accept, the merged content lands via `edit_response.mergedContent` (sidecar Anthropic + every in-process provider)
 - **Batch approvals**: when 2+ writes or permissions stack up, "Apply all / Reject all / Cancel pending" rollups appear; "Cancel pending" drains parked prompts as denied without killing the agent loop
 - **Reviewer subagent**: `/review` spawns a fresh read-only conversation seeded with a unified diff of pending writes; returns 🛑 Blockers / ⚠️ Concerns / 💡 Nits with file:line citations
 - **Plan-first mode**: launching with the Plan posture seeds a Spec → Plan → Code FSM — the model proposes 3-7 success-criterion bullets and stops, the SpecPanel renders them as editable rows, "Lock & request plan" asks for a structured TodoWrite, "Approve & execute" lifts plan-mode and runs
+- **Checkpoint / rewind panel**: snapshots conversation state so you can rewind the thread to an earlier checkpoint (Claude-Code-style rewind)
+- **Side Chat overlay**: a floating ask-a-side-question panel that streams an answer without disturbing the main thread
+- **Continue-in menu**: hand a conversation off to an external editor or terminal
 - **Durable agent profiles** (Default, Scout, Reviewer built-ins, plus user-created): bundle system prompt + allowed tools + memory + permission posture; pick from the launcher dropdown or edit in `Settings → Agent Profiles`
 - **AGENTS.md / CLAUDE.md auto-injection** from project root into the system prompt at session start
-- **Auto-failover on rate-limit**: 429 / quota / overload errors trigger a same-provider fallback (Opus → Sonnet → Haiku, o3 → gpt-5 → o4-mini, MiniMax → highspeed) before surfacing the failure
+- **Auto-failover on rate-limit**: 429 / quota / overload errors trigger a same-provider fallback (Opus → Sonnet → Haiku, o3 → gpt-5.5 → o4-mini, MiniMax → highspeed) before surfacing the failure
 - **Worktree-per-conversation** (opt-in toggle, local projects): provisions `.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch so the conversation's tool calls don't touch the main checkout
 - **Backgroundable agent tray** in the toolbar showing a live count of streaming agents with click-to-jump and stop
 - **Live spend HUD chip** in the toolbar combining today's persisted total + in-memory session $ across every open API conversation; click jumps to the Cost Dashboard
 - **Hover-`+` Codex-App-style diff comments**: per-line `+` button in the diff view opens an inline composer; queued comments fold into the next user turn as a `File comments:` preamble
 - **Composer-mode segmented control** (Local / Worktree / Cloud) at "send" time picks where the conversation runs; local + worktree wired today, cloud reserved for future delegation
-- **Right-rail tabbed mode** with Plan / Diff / Inspector tabs in a single 340 px column — lighter alternative to the full mosaic split for smaller screens; persisted toggle
+- **Right-rail tabbed mode** with Inspector / Plan / Preview / Diff / Files tabs in a single 340 px column — lighter alternative to the full mosaic split for smaller screens; persisted toggle
 - **Smart-approval prefix proposals**: permission prompts compute a sensible allowlist rule (e.g. `Bash(git push:*)`) and let you accept it with one click — closes the "approval fatigue" footgun
 - **Cross-tool unified Project Rules editor** in `Settings → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save so a single rule set works for both Claude Code and Codex
-- **Persistent goals bridged to Missions** via `/goal` — promote a conversation's checklist into a goal that survives the conversation closing; Pause / Resume / Complete from the PlanPanel; goal count surfaces in MissionsView
-- **Plan-with-Claude → Execute-with-Codex** one-click handoff: PlanPanel "Hand off to Codex →" button spawns a fresh Codex conversation seeded with the distilled spec + plan; "← back to plan" link in the child's chat header
+- **Persistent goals bridged to the Flight Deck** via `/goal` — promote a conversation's checklist into a goal that survives the conversation closing; Pause / Resume / Complete from the PlanPanel; goal count surfaces in the Flight Deck
+- **Plan-with-Claude → Execute-with-Codex** one-click handoff: PlanPanel "Hand off to Codex" button spawns a fresh Codex conversation seeded with the distilled spec + plan; "← back to plan" link in the child's chat header
 - **Old-model pinning** per profile via the `pinnedModel` field — locks a known-good model so future provider auto-upgrades don't silently switch away
 - **Auto-resume across restarts**: hydrated conversations capture the provider's resume token and lazily re-establish the session on next send
-- **Onboarding overlay** on first visit explaining the four affordances; one-time, persisted in localStorage
+- **Onboarding overlay** on first visit explaining the core affordances; one-time, persisted in localStorage
 
 ### Sidecar Protocol
 
-The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **6**, with these v3+ additions:
+The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **6**:
 
-- Events: `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken`), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns)
-- Requests: `start_session` (with image attachments + resume), `send_message`, `permission_response`, `edit_response` (with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`
+- Events: `ready` (handshake), `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken`), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns), `planner_tool` (v5 Flight Planner round-trip), and `rate_limited` (v6, typed quota-pause for the Flight Planner)
+- Requests: `start_session` (with image attachments + resume), `send_message`, `permission_response`, `edit_response` (with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`, `inject_user_turn` (v5), `planner_tool_result` (v5)
 
 ### Workspaces — Terminal CLI Command Center
 
@@ -99,9 +101,9 @@ The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a No
 - Agent profile system for reusable agent configurations
 - Pane layout presets (1×1, 1×2, 2×1, 2×2, 2×3, 3×2) live in the main toolbar when a workspace is active
 
-### Flight Deck — Mission Control
+### Flight Deck — Flight Control
 
-- Single-screen master-detail layout: a status-grouped flight list on the left, the selected flight's mission control on the right
+- Single-screen master-detail layout: a status-grouped flight list on the left, the selected flight's flight control on the right
 - **Attention** group automatically surfaces paused, failed, and approval-needed flights
 - Live tiles for the selected flight: stat strip (cost, tokens, tasks, approvals, sessions, last update), milestones, live agents, approvals queue, and timeline
 - Inline edit of title and objective; status and priority dropdowns; pause/resume/cancel lifecycle controls
@@ -111,13 +113,12 @@ The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a No
 ### SSH Remote Workspaces
 
 - Add and manage remote servers with SSH agent, key, or password authentication
-- Auto-detect and install agent CLIs on remote servers (Claude Code, OpenCode)
-- Create workspaces that run agent sessions over SSH on remote machines
-- Password authentication via in-app prompt (never saved to disk)
+- Detect installed agent CLIs and create workspaces that run agent sessions over SSH on remote machines
+- Optional SSH password storage in the OS keyring (under `ssh-<server-id>`); otherwise prompted at connect time and held in memory only. Host-key pinning is enforced when a server's fingerprint is known, with a TOFU `accept-new` fallback for interactive PTY connections
 
 ### Issues — Work on This Issue
 
-- Kanban board with drag-and-drop columns (To Do, In Progress, QA, Done, Blocked, Needs Human)
+- Kanban board with drag-and-drop columns: Backlog, Up Next, To Do, In Progress, In Review, QA, Done, Blocked, Needs Human
 - Click "Work on this issue" to send the issue prompt to an existing workspace session
 - Or create a new workspace named after the project with the issue pre-loaded
 - Acceptance criteria, dependency graphs, flight assignment, labels, and priorities
@@ -133,8 +134,8 @@ The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a No
 
 - Local Whisper transcription (no audio leaves the machine); model size, audio device, and custom dictionary configurable from `Tools → Dictation`
 - OS-level global shortcuts via `tauri-plugin-global-shortcut` so the hotkeys work even when PacketADE is not the focused application:
-  - `Ctrl+Shift+V` (hold) — push-to-talk; records while held, transcribes on release
-  - `Ctrl+Shift+R` — toggle recording on/off
+  - `Ctrl+Shift+V` (hold) — push-to-talk; records while held, transcribes on release (rebindable)
+  - `Ctrl+Shift+R` — toggle recording on/off (rebindable)
   - `Ctrl+Shift+D` — open the Dictation view
   - `Escape` — cancel an active recording
 - **Focus-aware insertion**: tracks the most recently focused text input across the app and inserts the transcript at its cursor on completion — works in agent chats, flight title/objective, issue forms, prompt library, anywhere you type. Terminals are excluded.
@@ -143,9 +144,13 @@ The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a No
 
 ### Ideation Scanner
 
-- AI-powered codebase analysis that generates improvement ideas across categories (code quality, security, performance, documentation, UI/UX)
+- AI-powered codebase analysis that generates improvement ideas across categories (code quality, security, performance, documentation, UI/UX, code improvements)
 - Per-workspace scoping — each workspace gets its own scan results
 - Convert ideas directly to issues on the kanban board
+
+### Code Quality
+
+- A dedicated quality module surface for running code-quality scans alongside the Ideation Scanner and Dictation modules
 
 ### GitHub Integration
 
@@ -154,6 +159,11 @@ The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a No
 - Issue browsing with search, labels, and import-to-board
 - Pull request browsing with diff viewer
 - AI investigation of issues via Claude
+
+### Cost Dashboard & History
+
+- A first-class Cost Dashboard view aggregating today's persisted spend plus live in-memory session costs (also surfaced by the toolbar LiveSpendChip)
+- A History view for browsing prior session activity
 
 ### Project Operations
 
@@ -182,8 +192,8 @@ The Anthropic Subscription and OpenAI ChatGPT subscription providers run in a No
 
 ### Prerequisites
 
-- Node.js 18+
-- `pnpm`
+- Node.js (the bundled sidecar runtime is pinned to **24.15.0**; use a recent LTS for development)
+- `pnpm` (repo pins `pnpm@9.15.4` via `packageManager`)
 - Rust stable toolchain
 - One or more supported agent CLIs installed and available on `PATH`
 
@@ -204,10 +214,10 @@ pnpm install
 
 ### Agent Sidecar
 
-PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription) and OpenAI (ChatGPT Plus/Pro) providers.
+PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription), OpenAI (ChatGPT Plus/Pro), and OpenAI Agents SDK providers.
 
 - `pnpm install` at the repo root also installs the sidecar's dependencies automatically via a `postinstall` hook (idempotent; adds a few seconds to the first install).
-- Before using the Anthropic (Subscription) or OpenAI (ChatGPT Plus/Pro) providers for the first time, compile the sidecar once:
+- Before using a sidecar provider for the first time, compile the sidecar once:
 
   ```bash
   pnpm sidecar:build
@@ -219,13 +229,13 @@ PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription) 
   pnpm build:all
   ```
 
-- To point the app at a custom sidecar entry point (e.g. when running from a different working copy), set `PACKETADE_SIDECAR_PATH` to the absolute path of the compiled entry file before launching PacketADE.
+- To point the app at a custom sidecar entry point (e.g. when running from a different working copy), set `PACKETADE_SIDECAR_PATH` to the absolute path of the compiled entry file before launching PacketADE. `PACKETADE_NODE_PATH` similarly overrides the Node binary used to launch it.
 
 `pnpm build:all` still works for a full local build. For **production bundling**, `pnpm tauri build` now auto-runs the `prebundle` chain (`fetch-node` → `sidecar:install` → `sidecar:build` → `sidecar:prune`) via Tauri's `beforeBuildCommand`, so no manual sidecar or Node setup is needed. A pinned Node 24.15.0 runtime is fetched as a Tauri `externalBin`, and the sidecar ships with a pruned production `node_modules`. Reference sizes from a Windows build: NSIS installer ~74 MB, MSI installer ~114 MB (both are produced because `bundle.targets` is `"all"`), standalone `packetade.exe` ~30 MB. The prune step removes the sidecar's devDependencies; run `pnpm sidecar:install` afterward to restore them for further sidecar development.
 
 #### Sidecar status
 
-The sidecar work is complete across the original four v2 tiers and the v3 / v4 protocol additions that power the unified Agents pane:
+The sidecar work is complete across the original four v2 tiers and the v3–v6 protocol additions that power the unified Agents pane:
 
 - **v2 Tier 1 — Bundling:** pinned Node 24.15.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
 - **v2 Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
@@ -234,8 +244,10 @@ The sidecar work is complete across the original four v2 tiers and the v3 / v4 p
 - **Refresh-token aware expiry:** `provider_auth` now treats expired access tokens as `ready` when a refresh token is present, avoiding spurious "please log in" prompts for subscription users whose SDK / CLI would have refreshed on next use anyway.
 - **v3 — Protocol additions for the Agents pane:** typed image attachments on `start_session` / `send_message`; `mergedContent` on `edit_response` (per-hunk acceptance); `batchId`/`batchSize` on `permission_request`; `resumeToken` on `done`; new `plan_block` event mirroring `TodoWrite`; `tool_output_extended` event with Bash exit code + stdout/stderr + Write/Edit modified paths; `turn_summary` event for live mid-stream token totals.
 - **v4 — `cancel_pending_tools`:** drains parked permission/edit prompts as denied without aborting the SDK query, so the model receives synthetic "User cancelled this tool" results and the loop continues.
+- **v5 — Flight Planner round-trips:** `inject_user_turn` and the `planner_tool` / `planner_tool_result` request/event pair let the Flight Planner drive multi-step planning over the same protocol.
+- **v6 — typed `rate_limited` event:** surfaces Flight Planner quota pauses as a typed event instead of an opaque error.
 - **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so CostDashboard reports GPT-5.5 spend correctly; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
-- **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with the same OpenAI API key as `api-openai`, preserving the existing Agents pane event contract while leaving the stable Rust OpenAI API provider and Codex subscription provider untouched.
+- **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with the same OpenAI API key as `api-openai`, preserving the existing Agents pane event contract while leaving the stable Rust OpenAI API provider and Codex subscription provider untouched. The default `auto` mode requires approval before `bash` / `write_file`.
 - **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.
 - See [`agent-sidecar/README.md`](./agent-sidecar/README.md) for sidecar internals and [`dev/updater-setup.md`](./dev/updater-setup.md) for signing / release channel configuration.
 
@@ -295,18 +307,18 @@ PacketADE/
   src/
     App.tsx                    # Root app shell and view routing
     components/
-      layout/                  # Title bar, toolbar, mosaic tiling, status bar
+      layout/                  # Title bar, toolbar, mosaic tiling, status bar, left rail
       session/                 # Terminal panes, session modals, status bars, inspect UI
       issues/                  # Kanban issue board and issue detail UI
       flights/                 # Flight Deck tiles (FlightList, FlightDetail, FlightHeaderTile, etc.)
-      views/                   # First-class application views (MissionsView, WorkspaceView, AgentsView, …)
+      views/                   # First-class application views (FlightsView, WorkspaceView, AgentsView, …)
       editor/                  # Lightweight editor/diff support
       workspace/               # Workspace creation, sidebar, and pane container UI
       servers/                 # SSH server form modal
       common/                  # Shared presentation components
       ui/                      # Shared UI primitives
     stores/                    # Zustand stores for app, layout, flights, issues, workspaces, etc.
-    modules/                   # Module registration: ideation, scaffold, dictation
+    modules/                   # Module registration: quality, ideation, dictation
     lib/                       # Tauri bindings, shared utilities, model lists, event helpers
     generated/                 # Generated TypeScript types (Rust ↔ TS DTO contract)
     hooks/                     # UI and agent interaction hooks
@@ -321,7 +333,7 @@ PacketADE/
       claude/                  # Claude CLI integration helpers
       session/                 # Session DTOs and shared session helpers
 
-  agent-sidecar/               # Node sidecar for subscription providers
+  agent-sidecar/               # Node sidecar for subscription + OpenAI Agents SDK providers
   scripts/                     # Build, sidecar, schema-check, and bundling scripts
   e2e/                         # Playwright tests
   docs/                        # Documentation site assets
@@ -332,11 +344,10 @@ PacketADE/
 
 - Core views are declared in `src/stores/appStore.ts`
 - Tauri commands live in `src-tauri/src/commands/` and are bound in `src/lib/tauri.ts`
-- App modules are registered through `src/modules/registry.ts`; current modules are Ideation Scanner, Scaffold, and Dictation
+- App modules are registered through `src/modules/registry.ts`; current modules are Code Quality, Ideation Scanner, and Dictation
 - Session management is PTY-based rather than JSONL-session based
-- Backend orchestration concepts (Flights, PTY sessions, agent configs) are mirrored by FlightDeck, PacketADE's sibling TUI project in a separate repo
 - GitHub PAT is stored in the OS keyring via the `keyring` crate
-- SSH passwords are prompted at connect time and held in memory only
+- SSH passwords may be stored in the OS keyring (under `ssh-<server-id>`) or prompted at connect time and held in memory only
 
 ## License
 

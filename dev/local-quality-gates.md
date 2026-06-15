@@ -49,10 +49,10 @@ PacketADE intentionally has no GitHub CI workflows. Release confidence is built 
   - Run `pnpm sidecar:check` after changes to `agent-sidecar/`, provider routing, protocol types, or supervisor integration.
   - These scripts validate the Node sidecar protocol and basic provider registry behavior without requiring the full desktop app.
 
-- **Mission Planner reliability**
-  - Use [`mission-planner-reliability-continuity-pack.md`](./mission-planner-reliability-continuity-pack.md) for the focused continuity sprint.
-  - Run the targeted Mission Planner gates when touching planner runtime, approvals, wake replay, journal, compaction, or async launch safety:
-    - `pnpm exec vitest run src/stores/__tests__/missionPlannerStore.compaction.test.ts src/components/missions/__tests__/JournalTab.test.tsx --testTimeout=15000`
+- **Flight Planner reliability**
+  - Use [`flight-planner-reliability-continuity-pack.md`](./flight-planner-reliability-continuity-pack.md) for the focused continuity sprint.
+  - Run the targeted Flight Planner gates when touching planner runtime, approvals, wake replay, journal, compaction, or async launch safety:
+    - `pnpm exec vitest run src/stores/__tests__/flightPlannerStore.compaction.test.ts src/components/missions/__tests__/JournalTab.test.tsx --testTimeout=15000`
     - `pnpm run sidecar:integration-smoke`
     - `cargo test --manifest-path src-tauri/Cargo.toml cold_start -- --nocapture`
     - `cargo test --manifest-path src-tauri/Cargo.toml mission_journal -- --nocapture`

@@ -1,42 +1,44 @@
-# Mission Planner — Locked Design (v1)
+# Flight Planner — Locked Design (v1)
 
-Locked v1 reference for the autonomous Mission Planner work-stream. For current
+Locked v1 reference for the autonomous Flight Planner work-stream. For current
 outstanding work, use [`../backlog.md`](../backlog.md). For manual release
 sign-off, use
-[`mission-planner-v1-acceptance-runbook.md`](./mission-planner-v1-acceptance-runbook.md).
+[`flight-planner-v1-acceptance-runbook.md`](./flight-planner-v1-acceptance-runbook.md).
 For the focused reliability hardening sprint after v1 feature completion, use
-[`mission-planner-reliability-continuity-pack.md`](./mission-planner-reliability-continuity-pack.md).
-All implementation agents touching Mission Planner internals should still read
+[`flight-planner-reliability-continuity-pack.md`](./flight-planner-reliability-continuity-pack.md).
+All implementation agents touching Flight Planner internals should still read
 this top-to-bottom before changing that surface.
 
 Status: **locked 2026-05-14** after a two-agent independent-draft synthesis
 and decisions from the project owner. Updated 2026-05-27 to clarify live
-ownership only; no design semantics changed.
+ownership only; no design semantics changed. Updated 2026-06-15 to refresh
+internal file/component pointers and the `createSdkMcpServer` name to their
+post-rename (Mission → Flight) values; no design semantics changed.
 
 ## Why we're building this
 
-Today, "Missions" (internal type `Flight`) launch through a modal that
-asks for a prompt + targets. The project owner has _never seen a mission
+Today, "Flights" (internal type `Flight`) launch through a modal that
+asks for a prompt + targets. The project owner has _never seen a flight
 fully populate_ because the launch friction stops them every time. We're
 replacing that entry path with a **conversational spec mode** that an
 **autonomous planner agent** owns end-to-end.
 
 ## What it is
 
-One long-lived Claude session per Mission, running through the existing
+One long-lived Claude session per Flight, running through the existing
 sidecar via `api-claude-oauth` (uses the user's Claude subscription, not
 API credit):
 
 1. Starts as the chat partner in **spec mode** — a full-pane chat that
-   replaces the current `MissionsView` empty-state buttons.
+   replaces the current `FlightsView` empty-state buttons.
 2. On user **Launch** → decomposes the spec into milestones + tasks,
-   streams the plan into the mission detail pane.
-3. **Owns** the mission for its whole life: reacts to task completions,
+   streams the plan into the flight detail pane.
+3. **Owns** the flight for its whole life: reacts to task completions,
    replans on failures, escalates to user on gates, can spawn one
    helper-planner _(deferred to v1.1)_.
-4. Maintains a per-mission **journal** (markdown rendered in a new
+4. Maintains a per-flight **journal** (markdown rendered in a new
    Journal tab on `FlightDetailPane`, exportable to
-   `~/.packetade/missions/<shortId>_<mission_id>.md`; early drafts used
+   `~/.packetade/missions/F-<TAIL>_<flight_id>.md`; early drafts used
    `<shortId>.md`).
 
 ## Locked decisions
@@ -44,7 +46,7 @@ API credit):
 ### Models
 
 - **Primary**: `claude-sonnet-4-6`
-- **Helper** _(v1.1)_: `claude-opus-4-7`, one-shot per mission
+- **Helper** _(v1.1)_: `claude-opus-4-7`, one-shot per flight
 
 ### Lifecycle
 
@@ -65,7 +67,7 @@ API credit):
 - `replan_after_failure(task_id) → new task subtree`
 - `request_user_approval(question, options)` — **async return**
   (sentinel `pending_approval:<id>`, planner keeps working)
-- `complete_mission(summary)`
+- `complete_flight(summary)`
 
 Deferred for v1.1 and intentionally not exposed in v1:
 
@@ -91,7 +93,7 @@ Deferred for v1.1 and intentionally not exposed in v1:
 - Task ceiling before user approval gate: **60**
 - Replans per task: **3** — **RateLimit / Network errors do NOT count**
   (use `core/error_classifier.rs::AiErrorCategory`)
-- Helper-planner spawn: **1 successful spawn per mission**, failed-to-start
+- Helper-planner spawn: **1 successful spawn per flight**, failed-to-start
   doesn't count _(v1.1)_
 
 ### Safety rails
@@ -102,7 +104,7 @@ Deferred for v1.1 and intentionally not exposed in v1:
 - Kill-switch button in `FlightDetailPane` header
 - **No predictive quota awareness** — Claude Agent SDK doesn't expose
   `anthropic-ratelimit-*` response headers
-- Cold-start: planner sessions are ephemeral; on app restart, missions
+- Cold-start: planner sessions are ephemeral; on app restart, flights
   in `active` flip to `paused` and require user resume
 
 ### Executor path
@@ -125,7 +127,7 @@ but should land soon after.
   the existing sidecar's Anthropic SDK call. SDK version `0.2.116`
   supports `McpSdkServerConfigWithInstance` natively — no fallback
   needed.
-- **Tool naming**: `mcpServers["planner"] = createSdkMcpServer({ name: "mission-planner", tools: [...] })`
+- **Tool naming**: `mcpServers["planner"] = createSdkMcpServer({ name: "flight-planner", tools: [...] })`
   so tool names are `mcp__planner__create_milestone`,
   `mcp__planner__create_task`, etc. The `allowedTools` list pins these
   exact names.
@@ -133,7 +135,7 @@ but should land soon after.
   wire (live JS objects). The wire protocol carries a
   `mcpKind: "planner"` flag on `StartSessionRequest`; the sidecar
   constructs the planner MCP server locally in
-  `agent-sidecar/src/mcp/mission-planner-server.ts` and merges it into
+  `agent-sidecar/src/mcp/flight-planner-server.ts` and merges it into
   `query()`'s `mcpServers` map.
 - Wake-triggers injected via **new typed `inject_user_turn` sidecar
   message (introduced in protocol v5; live protocol is now v6)** — NOT
@@ -147,22 +149,22 @@ but should land soon after.
   `result`, which silently kills multi-turn `api-claude-oauth` chat
   (and would kill the wake-trigger pipeline). Fix: remove the `break`
   on line 555; let `for await` run until the prompt iterable closes.
-  ~6 lines. See [`mission-planner-spike-retro.md`](./mission-planner-spike-retro.md).
+  ~6 lines. See [`flight-planner-spike-retro.md`](./flight-planner-spike-retro.md).
 
 ## Architecture surface
 
 ### New files
 
-- `src-tauri/src/commands/mission_planner.rs` — registry, tool dispatch,
+- `src-tauri/src/commands/flight_planner.rs` — registry, tool dispatch,
   wake consumer, journal writer
-- `src-tauri/src/core/mission_planner_prompts.rs` — hand-authored
+- `src-tauri/src/core/flight_planner_prompts.rs` — hand-authored
   system prompts + per-wake-trigger user-message builders
-- `agent-sidecar/src/mcp/mission-planner-server.ts` — in-process MCP
+- `agent-sidecar/src/mcp/flight-planner-server.ts` — in-process MCP
   server with 7 real tool handlers (`noop` remains for E1 smoke
   back-compat; helper planner is deferred)
-- `src/stores/missionPlannerStore.ts` — frontend state + event subs
-- `src/components/missions/MissionSpecPane.tsx` — full-pane spec chat
-- `src/components/missions/JournalTab.tsx` — markdown journal render
+- `src/stores/flightPlannerStore.ts` — frontend state + event subs
+- `src/components/flights/FlightSpecPane.tsx` — full-pane spec chat
+- `src/components/flights/JournalTab.tsx` — markdown journal render
 
 ### Key edits
 
@@ -177,7 +179,7 @@ but should land soon after.
   `forward_inject_user_turn`, route `planner_tool` events to callback
 - `src-tauri/src/commands/orchestration.rs` — emit `PlannerWakeEvent`
   at existing coordination-event hook sites
-- `src/components/views/MissionsView.tsx` — replace empty state, mount
+- `src/components/views/FlightsView.tsx` — replace empty state, mount
   spec pane on `status===spec`, add Journal tab, split cost in StatGrid
 
 ## Epics
@@ -186,11 +188,11 @@ but should land soon after.
 | ------ | --------------------------------------------------------------------------------------- | --------- | ------- |
 | E1     | Planner session plumbing (struct, registry, protocol v5 wake bus; live protocol now v6) | 1         | spike   |
 | E2     | Planner MCP tool surface (server + dispatcher + 7 handlers)                             | 2         | E1      |
-| E3     | Spec mode UI (MissionSpecPane + MissionsView empty state)                               | 3         | E1      |
+| E3     | Spec mode UI (FlightSpecPane + FlightsView empty state)                                 | 3         | E1      |
 | E4     | Initial decomposition (system prompt + Launch transition)                               | 4         | E2, E3  |
 | E5     | Reactive replan on task failure                                                         | 5         | E2, E4  |
 | E6     | Safety rails (caps, ceiling, rate-limit, kill-switch)                                   | 6         | E1–E5   |
-| E7     | Mission journal (storage + Journal tab)                                                 | 7         | E1, E2  |
+| E7     | Flight journal (storage + Journal tab)                                                  | 7         | E1, E2  |
 | E8     | Cost display (planner vs executor split)                                                | 8         | E6, E7  |
 | E10    | Context compaction (long-running session safety)                                        | 9         | E1, E7  |
 | ~~E9~~ | ~~Helper planner~~ — **deferred to v1.1**                                               | —         | —       |
@@ -199,12 +201,12 @@ but should land soon after.
 
 1. ~~In-process MCP transport unverified~~ **Resolved 2026-05-14** — SDK
    `0.2.116` supports `type: "sdk"` MCP server registration with a live
-   `McpServer` instance. See `mission-planner-spike-retro.md`.
+   `McpServer` instance. See `flight-planner-spike-retro.md`.
 2. **Wake-trigger storm** — 8 parallel tasks finishing in 1s = 8
    sequential planner turns = TPM throttle. Mitigation: 2-3s debounce
    window in the wake consumer.
 3. **Context compaction is mandatory, not optional** — without E10, any
-   multi-day mission hits the 200K context wall and dies. E10 ships
+   multi-day flight hits the 200K context wall and dies. E10 ships
    in v1.
 4. **`request_user_approval` async-return needs prompt training** — the
    planner system prompt must teach the model that
@@ -225,11 +227,11 @@ but should land soon after.
 
 ## Acceptance — the headline test
 
-A user with zero existing missions clicks "Start a mission", types
+A user with zero existing flights clicks "Start a flight", types
 "build a dark-mode toggle for the app", chats briefly with the planner,
 hits Launch, and within ~30 seconds sees:
 
-- Mission status: `active`
+- Flight status: `active`
 - 2-4 milestones populated in `MilestonesCard`
 - 4-10 tasks with prompts visible in milestones
 - At least one task running an executor session

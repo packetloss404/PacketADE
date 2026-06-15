@@ -1,16 +1,16 @@
 # Cost Dashboard Plan
 
-## Implementation Status — 2026-04-15
+## Implementation Status — 2026-06-15
 
 | Item | Status | Notes |
 |------|--------|-------|
 | `read_usage_analytics` backend | ✅ Done | Returns AnalyticsData with cost, tokens, per-model |
 | CostDashboardView | ✅ Done | Standalone view + toolbar dollar sign button |
-| Cost alerts | ❌ Not started | Nice-to-have |
+| Cost alerts | ⚠️ Partial | Guardrail engine + store + UI shipped (`src/lib/costGuardrails.ts`, `costGuardrailStore`, `LiveSpendChip`); remaining gap is proactive alert/notification UX |
 | Per-flight cost rollup | ⚠️ Partial | Deploy integration tracks per-flight |
 | Cost/analytics unification | ✅ Done | analyticsStore is sole source of truth |
 
-Last updated: 2026-04-28
+Last updated: 2026-06-15
 
 ## What the Cost Dashboard Does Today
 
@@ -73,7 +73,7 @@ If multiple users share a machine, costs are not attributed to different users.
 
 ## Recommendation
 
-This doc is now a gap audit for the implemented dashboard. The most impactful next improvement would be: **add budget thresholds and visible cost alerts** using the existing backend analytics output.
+This doc is now a gap audit for the implemented dashboard. Budget thresholds are now shipped: `src/lib/costGuardrails.ts` provides per-scope (daily/monthly/session/provider/flight) limits, warning/hard-stop thresholds, snapshot/evaluation helpers, and override handling, surfaced via `costGuardrailStore` and the `LiveSpendChip` toolbar UI plus a launch gate. The most impactful next improvement would be: **proactive cost alerts/notifications** — the current threshold UI is a passive chip and a hard launch gate, so spend crossing a warning/limit boundary does not yet fire a notification. Add a `notifyCostThreshold` path reusing the existing notify pattern and `evaluationMessage`, fired from the 30s guardrail eval on `ok → warning` and `warning → limit` transitions, plus a notification-settings toggle.
 
 ## Next Step
 
