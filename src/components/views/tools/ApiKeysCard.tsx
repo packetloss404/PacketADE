@@ -13,7 +13,7 @@ interface ProviderEntry {
 const PROVIDERS: ProviderEntry[] = [
   { id: "anthropic", name: "Anthropic", description: "Claude Opus, Sonnet, Haiku", needsKey: true },
   { id: "openai", name: "OpenAI", description: "GPT-5.5, GPT-4o, o3", needsKey: true },
-  { id: "minimax", name: "MiniMax", description: "M3.0, M2.7", needsKey: true },
+  { id: "minimax", name: "MiniMax", description: "M2.5, M2.1, M2", needsKey: true },
   { id: "openrouter", name: "OpenRouter", description: "100+ models, one key", needsKey: true },
   {
     id: "gemini",
