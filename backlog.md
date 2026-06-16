@@ -817,7 +817,7 @@ validated and moved to `CHANGELOG.md`.
 - **F15** `write_with_backup` no fsync of backup/parent — `core/storage.rs:651-662`.
 - **F17** first-ever login badge miss (non-recursive $HOME watch) — `auth_watcher.rs:84-128`.
 - **F18** locked cred store reported as "missing key" — `api_keys.rs:119-123`.
-- **F21** MCP writes non-atomic — `commands/mcp.rs:167-168,195-197`. _(see existing P3 entry)_
+- ~~**F21** MCP writes non-atomic — `commands/mcp.rs:167-168,195-197`.~~ **RESOLVED 2026-06-15**: `write_pretty_json` now writes via temp file + `sync_all` + atomic rename (mirrors `core::storage::write_with_backup`).
 - **F22** DeployTerminal misses early output — `deploy.rs:288-305`.
 - **F25** deploy output array unbounded in memory — `deployStore.ts:110,179-185`.
 - **F26/G04** `owns_session()` `try_lock` misroutes follow-up messages → dropped — `supervisor.rs:131-145`. _(panel: med→low)_

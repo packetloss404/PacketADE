@@ -2,7 +2,7 @@ use serde::Serialize;
 use serde_json::Map;
 use serde_json::Value;
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
@@ -115,7 +115,30 @@ fn write_pretty_json(path: &Path, json: &Value) -> Result<(), String> {
     }
 
     let pretty = serde_json::to_string_pretty(json).map_err(|e| e.to_string())?;
-    fs::write(path, pretty).map_err(|e| e.to_string())
+
+    // F21: write atomically (temp file + fsync + atomic rename) so a crash,
+    // disk-full, or partial write can't clobber/truncate the existing MCP
+    // config. Mirrors `core::storage::write_with_backup`; `std::fs::rename`
+    // replaces an existing destination on all platforms (Windows uses
+    // MOVEFILE_REPLACE_EXISTING), so we must NOT pre-remove `path`.
+    let tmp_path = path.with_extension(format!(
+        "{}.tmp",
+        path.extension().and_then(|e| e.to_str()).unwrap_or("json")
+    ));
+    {
+        let mut file = fs::File::create(&tmp_path)
+            .map_err(|e| format!("Failed to create {:?}: {}", tmp_path, e))?;
+        file.write_all(pretty.as_bytes())
+            .map_err(|e| format!("Failed to write {:?}: {}", tmp_path, e))?;
+        file.flush()
+            .map_err(|e| format!("Failed to flush {:?}: {}", tmp_path, e))?;
+        file.sync_all()
+            .map_err(|e| format!("Failed to sync {:?}: {}", tmp_path, e))?;
+    }
+    fs::rename(&tmp_path, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp_path);
+        format!("Failed to replace {:?}: {}", path, e)
+    })
 }
 
 fn extract_servers(json: &Value, scope: &str) -> Vec<McpServerEntry> {
