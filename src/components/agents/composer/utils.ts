@@ -66,7 +66,7 @@ export const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
       "api-openai-agents",
     ],
   },
-  { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama"] },
+  { label: "Other", agents: ["api-openrouter", "api-minimax", "api-minimax-api", "api-ollama"] },
 ];
 
 /**

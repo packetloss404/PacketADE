@@ -404,7 +404,7 @@ pub async fn sign_out_provider(provider: String) -> Result<u32, String> {
 #[tauri::command]
 pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthStatus, String> {
     match provider.as_str() {
-        "anthropic" | "openai" | "openai-agents" | "minimax" | "openrouter" => {
+        "anthropic" | "openai" | "openai-agents" | "minimax" | "minimax-api" | "openrouter" => {
             let key_provider = if provider == "openai-agents" {
                 "openai".to_string()
             } else {
@@ -420,7 +420,8 @@ pub async fn get_provider_auth_status(provider: String) -> Result<ProviderAuthSt
                 let label = match provider.as_str() {
                     "anthropic" => "Anthropic",
                     "openai" | "openai-agents" => "OpenAI",
-                    "minimax" => "MiniMax",
+                    "minimax" => "MiniMax (Token Plan)",
+                    "minimax-api" => "MiniMax (API)",
                     "openrouter" => "OpenRouter",
                     _ => &provider,
                 };

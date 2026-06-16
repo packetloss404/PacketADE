@@ -502,6 +502,7 @@ fn provider_to_source(provider: &str) -> &'static str {
         "openai" | "api-openai" => "api-openai",
         "openai-agents" | "api-openai-agents" => "api-openai-agents",
         "minimax" | "api-minimax" => "api-minimax",
+        "minimax-api" | "api-minimax-api" => "api-minimax-api",
         "openrouter" | "api-openrouter" => "api-openrouter",
         "ollama" | "api-ollama" => "api-ollama",
         _ => "api-claude",

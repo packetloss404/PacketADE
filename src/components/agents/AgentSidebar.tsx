@@ -69,7 +69,8 @@ function agentColorClass(agent: string): string {
   if (agent === "gemini") return "text-accent-blue";
   if (agent === "opencode" || agent === "api-ollama") return "text-accent-purple";
   if (agent === "packetcode") return "text-accent-purple";
-  if (agent === "api-minimax" || agent === "api-openrouter") return "text-accent-blue";
+  if (agent === "api-minimax" || agent === "api-minimax-api" || agent === "api-openrouter")
+    return "text-accent-blue";
   return "text-text-secondary";
 }
 

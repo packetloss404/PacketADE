@@ -7,6 +7,7 @@ const VALID_PROVIDERS: &[&str] = &[
     "anthropic",
     "openai",
     "minimax",
+    "minimax-api",
     "openrouter",
     "ollama",
     "gemini",
