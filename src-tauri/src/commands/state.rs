@@ -22,13 +22,25 @@ pub fn load_persisted_state() -> Result<PersistedStateDto, String> {
     Ok(storage::load_state().into())
 }
 
+/// Bulk-save the persisted state.
+///
+/// **Issue-slice contract:** the `issues` and `retrospectives` fields of the
+/// incoming DTO are *intentionally ignored*. Those two slices are owned
+/// exclusively by [`save_issues_slice`] and [`save_retrospectives`]; this bulk
+/// save always keeps whatever is already on disk for them. That prevents a
+/// concurrent slice write — landing between the frontend's
+/// `load_persisted_state` and this call — from being silently clobbered by a
+/// stale bulk snapshot. Callers must persist issue / retrospective changes
+/// through those dedicated slice commands, never by stuffing them into the DTO
+/// passed here.
 #[tauri::command]
 pub fn save_persisted_state(state: PersistedStateDto) -> Result<(), String> {
-    // Merge under STATE_LOCK so a concurrent `save_issues_slice` /
-    // `save_retrospectives` (or any other slice writer) between the load
-    // and save can't be silently overwritten by the bulk save here.
     let incoming: crate::core::storage::PersistedState = state.into();
     storage::update_state(|state| {
+        // Take the on-disk issues/retrospectives aside, overwrite everything
+        // else with `incoming`, then put the slice-owned data back — so the
+        // incoming DTO's issues/retrospectives are dropped, not persisted.
+        // See the issue-slice contract on this function.
         let preserved_issues = std::mem::take(&mut state.issues);
         let preserved_retros = std::mem::take(&mut state.retrospectives);
         *state = incoming;

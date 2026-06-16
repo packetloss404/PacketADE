@@ -754,8 +754,10 @@ target migration merges both legacy namespaces; FlightDetail unlink updates both
 stores; backend `PersistedState.issues` now hydrates `issueStore` before Flight reconciliation;
 empty assistant text-only turns are skipped while tool-use turns remain valid. F52's remaining caveat:
 `flight.issueIds` is still treated as a derived frontend cache, so a durable Rust-side independent
-Flight issue-link model remains future work. F19's remaining caveat: atomic MCP file writes are still
-tracked separately as F21/P3. Keep these items in the review ledger until the Batch A branch is
+Flight issue-link model remains future work (the frontend cache is the source of truth for now; a
+backend-authoritative Flight↔issue link is a deliberate later effort). F19's remaining caveat —
+atomic MCP file writes (F21) — is now **RESOLVED (2026-06-15)**: `write_pretty_json` writes via temp
+file + `sync_all` + atomic rename. Keep the remaining items in the review ledger until the Batch A branch is
 validated and moved to `CHANGELOG.md`.
 
 ### P1 — confirmed high
