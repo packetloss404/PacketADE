@@ -44,6 +44,12 @@ export async function getCwd(): Promise<string> {
   return invoke<string>("get_cwd");
 }
 
+/** True only when `path` exists and is a directory. Used by bootstrap to
+ *  validate a persisted project path before adopting it. */
+export async function pathIsDir(path: string): Promise<boolean> {
+  return invoke<boolean>("path_is_dir", { path });
+}
+
 export async function listSubdirectories(dirPath: string): Promise<string[]> {
   return invoke<string[]>("list_subdirectories", { dirPath });
 }

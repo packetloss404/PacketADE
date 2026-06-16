@@ -36,12 +36,35 @@ const ALLOWED_COMMANDS: &[&str] = &[
     "ssh",
 ];
 
+/// Extract the program name from a command string for allowlist checks.
+/// Strips any directory components and a trailing executable extension so a
+/// manually-pinned absolute path (e.g. `D:\tools\packetcode.exe`) validates
+/// against the bare-name allowlist by its program name (`packetcode`).
+/// Lowercased for case-insensitive comparison on Windows.
+fn command_program_name(command: &str) -> String {
+    let stem = std::path::Path::new(command)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(command);
+    stem.to_ascii_lowercase()
+}
+
 /// Resolve a command name to its actual path on Windows.
 /// Uses `where` to find the binary — returns the first match.
 /// Prefers .exe over .cmd when both exist.
 #[cfg(windows)]
 fn resolve_windows_command(command: &str) -> String {
     use super::shared::hide_window;
+
+    // A manually-pinned binary arrives as an explicit path (absolute, or
+    // containing a separator). `where` doesn't resolve full paths, so use it
+    // directly when it points at a real file.
+    let as_path = std::path::Path::new(command);
+    if (as_path.is_absolute() || command.contains('\\') || command.contains('/'))
+        && as_path.is_file()
+    {
+        return command.to_string();
+    }
 
     let mut where_cmd = std::process::Command::new("where");
     where_cmd.arg(command);
@@ -257,8 +280,12 @@ pub fn create_pty_session(
     args: Option<Vec<String>>,
     env: Option<std::collections::HashMap<String, String>>,
 ) -> Result<String, String> {
-    // Validate command against allowlist
-    if !ALLOWED_COMMANDS.iter().any(|&c| c == command) {
+    // Validate command against allowlist. Match on the program name so a
+    // manually-pinned absolute path for a known agent (e.g.
+    // `D:\projects\packetcode\bin\packetcode.exe`) is accepted by its
+    // basename while still rejecting arbitrary programs.
+    let program = command_program_name(&command);
+    if !ALLOWED_COMMANDS.iter().any(|&c| c == program) {
         return Err(format!(
             "Command '{}' is not allowed. Allowed commands: {:?}",
             command, ALLOWED_COMMANDS
