@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, lazy, Suspense } from "react";
 import { FolderOpen, Wrench, ArrowDown, ArrowUp, GitCommit, Bell, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
@@ -12,12 +12,18 @@ import { getModulesSorted } from "@/modules/registry";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { NewAgentModal } from "@/components/workspace/NewAgentModal";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
 import { CommitModal } from "@/components/workspace/CommitModal";
 import { Modal } from "@/components/ui/Modal";
 import { gitPull, gitPush, getGitBranch } from "@/lib/tauri";
+
+// Lazy-loaded so the markdown vendor chunk (react-markdown +
+// react-syntax-highlighter) leaves the entry chunk; only fetched when the
+// New Flight modal opens.
+const NewFlightModal = lazy(() =>
+  import("@/components/flights/NewFlightModal").then((m) => ({ default: m.NewFlightModal }))
+);
 
 /** Last path segment, OS-agnostic. Used to seed the new workspace name. */
 function basenameOfPath(p: string): string {
@@ -343,7 +349,9 @@ export function Toolbar() {
         <NewAgentModal onClose={() => setShowNewAgent(false)} />
       )}
       {showNewFlight && (
-        <NewFlightModal onClose={() => setShowNewFlight(false)} />
+        <Suspense fallback={null}>
+          <NewFlightModal onClose={() => setShowNewFlight(false)} />
+        </Suspense>
       )}
       {showNewIssue && (
         <NewIssueForm defaultStatus="todo" onClose={() => setShowNewIssue(false)} />

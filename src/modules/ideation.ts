@@ -1,6 +1,12 @@
+import { lazy } from "react";
 import { Lightbulb } from "lucide-react";
-import { IdeationView } from "@/components/views/IdeationView";
 import type { ModuleManifest } from "@/types/modules";
+
+// Lazy-loaded so the Ideation view stays out of the entry chunk; the
+// module-view render site in App.tsx is already wrapped in Suspense.
+const IdeationView = lazy(() =>
+  import("@/components/views/IdeationView").then((m) => ({ default: m.IdeationView })),
+);
 
 export const ideationModule: ModuleManifest = {
   id: "ideation",

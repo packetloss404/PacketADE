@@ -1,6 +1,13 @@
+import { lazy } from "react";
 import { Diamond } from "lucide-react";
-import { QualityView } from "@/components/views/QualityView";
 import type { ModuleManifest } from "@/types/modules";
+
+// Lazy-loaded so QualityView's markdown stack (react-markdown +
+// react-syntax-highlighter, ~247KB vendor-markdown) stays out of the entry
+// chunk. The module-view render site in App.tsx is already wrapped in Suspense.
+const QualityView = lazy(() =>
+  import("@/components/views/QualityView").then((m) => ({ default: m.QualityView })),
+);
 
 export const qualityModule: ModuleManifest = {
   id: "quality",

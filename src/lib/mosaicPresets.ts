@@ -1,5 +1,16 @@
 import type { MosaicNode, MosaicLayoutPreset } from "@/types/mosaic";
-import { isSplitNode } from "react-mosaic-component";
+import type { MosaicSplitNode } from "react-mosaic-component";
+
+/**
+ * Local type-guard replicating react-mosaic-component's `isSplitNode` without
+ * pulling the library's runtime into the entry chunk. A split node is an object
+ * with a `direction` field; leaves are strings and tabs nodes lack `direction`.
+ */
+function isSplitNode(
+  node: MosaicNode<string> | null,
+): node is MosaicSplitNode<string> {
+  return node != null && typeof node === "object" && "direction" in node;
+}
 
 /**
  * Build a mosaic n-ary tree for a given layout preset and ordered pane IDs.
