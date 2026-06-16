@@ -64,9 +64,10 @@ export function pickFailoverModel(currentModel: string): string | null {
     return pick((model) => model.includes("o4-mini"));
   }
 
-  // MiniMax: only one tier really, fall back to highspeed if not already.
-  if (m.includes("minimax-m2.7") && !m.includes("highspeed")) {
-    return pick((model) => model.includes("minimax-m2.7-highspeed"));
+  // MiniMax: one tier per version — fall back to that version's highspeed
+  // variant if not already on it (version-agnostic so M3.0/M2.7 both work).
+  if (m.includes("minimax") && !m.includes("highspeed")) {
+    return pick((model) => model.includes(`${m}-highspeed`));
   }
 
   return null;

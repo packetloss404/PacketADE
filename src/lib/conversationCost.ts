@@ -7,6 +7,7 @@ import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
  * For accurate per-turn costs use the `calculateTurnCost` Tauri command.
  */
 const COST_PER_MTOK: Record<string, { input: number; output: number }> = {
+  "claude-opus-4-8": { input: 15, output: 75 },
   "claude-opus-4-7": { input: 15, output: 75 },
   "claude-opus-4-6": { input: 15, output: 75 },
   "claude-sonnet-4-6": { input: 3, output: 15 },
@@ -22,6 +23,8 @@ const COST_PER_MTOK: Record<string, { input: number; output: number }> = {
   "gpt-4o": { input: 2.5, output: 10 },
   o3: { input: 15, output: 60 },
   "o4-mini": { input: 1.1, output: 4.4 },
+  "MiniMax-M3.0": { input: 0.3, output: 1.2 },
+  "MiniMax-M3.0-highspeed": { input: 0.3, output: 1.2 },
   "MiniMax-M2.7": { input: 0.3, output: 1.2 },
   "MiniMax-M2.7-highspeed": { input: 0.3, output: 1.2 },
   "google/gemini-2.5-pro": { input: 1.25, output: 10 },

@@ -5,6 +5,7 @@ export interface ModelOption {
 
 // Use un-dated aliases so PacketADE always picks the latest version of each tier.
 export const CLAUDE_MODELS: ModelOption[] = [
+  { label: "Opus 4.8", value: "claude-opus-4-8" },
   { label: "Opus 4.7", value: "claude-opus-4-7" },
   { label: "Opus 4.6", value: "claude-opus-4-6" },
   { label: "Sonnet 4.6", value: "claude-sonnet-4-6" },
@@ -30,11 +31,18 @@ export const EFFORT_LEVELS: { label: string; value: EffortLevel }[] = [
   { label: "High", value: "high" },
 ];
 
-export const OPENCODE_MODELS: ModelOption[] = [];
+// OpenCode normally manages models internally; we surface MiniMax M3.0 so it
+// can be picked in a workspace. OpenCode's --model takes a `provider/model` id.
+export const OPENCODE_MODELS: ModelOption[] = [
+  { label: "MiniMax M3.0", value: "minimax/MiniMax-M3.0" },
+];
 
-// PacketCode reads its default from `~/.packetcode/config.toml`; no curated
-// list yet — the CLI accepts any provider-specific model name via --model.
-export const PACKETCODE_MODELS: ModelOption[] = [];
+// PacketCode reads its default from `~/.packetcode/config.toml` and accepts any
+// provider-specific model name via --model (bare name, e.g. "gpt-4o"). MiniMax
+// M3.0 is surfaced here so it's selectable in a workspace.
+export const PACKETCODE_MODELS: ModelOption[] = [
+  { label: "MiniMax M3.0", value: "MiniMax-M3.0" },
+];
 
 /** Return the model list appropriate for a given agent */
 export function getModelsForAgent(agentConfigId: string): ModelOption[] {

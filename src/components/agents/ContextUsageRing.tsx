@@ -9,12 +9,17 @@ import type { AgentConversation } from "@/types/agent-conversation";
  */
 const MODEL_CONTEXT_TOKENS: Record<string, number> = {
   // Anthropic (Claude 4.x)
+  "claude-opus-4-8": 1_000_000,
+  "claude-opus-4-8-1m": 1_000_000,
   "claude-opus-4-7": 1_000_000,
   "claude-opus-4-7-1m": 1_000_000,
   "claude-opus-4-6": 200_000,
   "claude-sonnet-4-6": 200_000,
   "claude-haiku-4-5": 200_000,
   "claude-haiku-4-5-20251001": 200_000,
+  // MiniMax
+  "MiniMax-M3.0": 256_000,
+  "MiniMax-M3.0-highspeed": 256_000,
   // OpenAI (GPT-5.x)
   "gpt-5.5": 400_000,
   "gpt-5.4": 400_000,

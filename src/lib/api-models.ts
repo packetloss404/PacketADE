@@ -20,6 +20,7 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     name: "Anthropic (Subscription)",
     needsKey: false,
     models: [
+      { label: "Claude Opus 4.8", value: "claude-opus-4-8" },
       { label: "Claude Opus 4.7", value: "claude-opus-4-7" },
       { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6" },
       { label: "Claude Haiku 4.5", value: "claude-haiku-4-5" },
@@ -31,6 +32,7 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     name: "Claude (API)",
     needsKey: true,
     models: [
+      { label: "Claude Opus 4.8", value: "claude-opus-4-8" },
       { label: "Claude Opus 4.7", value: "claude-opus-4-7" },
       { label: "Claude Opus 4.6", value: "claude-opus-4-6-20250415" },
       { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6-20250414" },
@@ -81,6 +83,8 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     name: "MiniMax (API)",
     needsKey: true,
     models: [
+      { label: "M3.0 (high speed)", value: "MiniMax-M3.0-highspeed" },
+      { label: "M3.0", value: "MiniMax-M3.0" },
       { label: "M2.7 (high speed)", value: "MiniMax-M2.7-highspeed" },
       { label: "M2.7", value: "MiniMax-M2.7" },
     ],
@@ -92,6 +96,7 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     needsKey: true,
     models: [
       { label: "Auto (best available)", value: "openrouter/auto" },
+      { label: "Claude Opus 4.8", value: "anthropic/claude-opus-4-8" },
       { label: "Claude Opus 4.7", value: "anthropic/claude-opus-4-7" },
       { label: "Claude Opus 4.6", value: "anthropic/claude-opus-4-6" },
       { label: "Claude Sonnet 4.6", value: "anthropic/claude-sonnet-4-6" },
