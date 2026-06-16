@@ -27,7 +27,10 @@ pub fn get_provider(name: &str) -> Result<Box<dyn LlmProvider>, String> {
     match name {
         "anthropic" => Ok(Box::new(super::llm_anthropic::AnthropicProvider)),
         "openai" => Ok(Box::new(super::llm_openai::OpenAiProvider)),
-        "minimax" => Ok(Box::new(super::llm_minimax::MiniMaxProvider)),
+        // Token Plan and pay-as-you-go API both use the same OpenAI-compatible
+        // MiniMax endpoint; they differ only by which keyring key supplies the
+        // credential (provider string -> `api-key-{provider}`).
+        "minimax" | "minimax-api" => Ok(Box::new(super::llm_minimax::MiniMaxProvider)),
         "openrouter" => Ok(Box::new(super::llm_openrouter::OpenRouterProvider)),
         "ollama" => Ok(Box::new(super::llm_ollama::OllamaProvider)),
         _ => Err(format!("Unknown provider: {}", name)),

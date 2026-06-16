@@ -340,6 +340,8 @@ export function providerSourceForAgentProvider(provider: string): string {
     "openai-agents": "openai-agents",
     "api-minimax": "api-minimax",
     minimax: "api-minimax",
+    "api-minimax-api": "api-minimax-api",
+    "minimax-api": "api-minimax-api",
     "api-openrouter": "api-openrouter",
     openrouter: "api-openrouter",
     "api-ollama": "api-ollama",

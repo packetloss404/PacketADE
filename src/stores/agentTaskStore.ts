@@ -196,6 +196,7 @@ export type ApiAgentCli =
   | "api-openai-agents"
   | "api-openai"
   | "api-minimax"
+  | "api-minimax-api"
   | "api-openrouter"
   | "api-ollama";
 
@@ -211,6 +212,7 @@ export type AgentCli =
   | "api-openai-agents"
   | "api-openai"
   | "api-minimax"
+  | "api-minimax-api"
   | "api-openrouter"
   | "api-ollama"
   | (string & {});
@@ -229,6 +231,7 @@ export function apiAgentProvider(agent: AgentCli): string {
     "api-openai-agents": "openai-agents",
     "api-openai": "openai",
     "api-minimax": "minimax",
+    "api-minimax-api": "minimax-api",
     "api-openrouter": "openrouter",
     "api-ollama": "ollama",
   };

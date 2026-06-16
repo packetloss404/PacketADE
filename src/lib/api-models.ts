@@ -80,6 +80,17 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
   {
     id: "minimax",
     agentCli: "api-minimax",
+    name: "MiniMax (Token Plan)",
+    needsKey: true,
+    models: [
+      { label: "M3", value: "MiniMax-M3" },
+      { label: "M2.5", value: "MiniMax-M2.5" },
+      { label: "M2", value: "MiniMax-M2" },
+    ],
+  },
+  {
+    id: "minimax-api",
+    agentCli: "api-minimax-api",
     name: "MiniMax (API)",
     needsKey: true,
     models: [
