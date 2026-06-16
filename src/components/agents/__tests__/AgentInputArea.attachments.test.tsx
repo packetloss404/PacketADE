@@ -118,7 +118,7 @@ function renderInput(onLaunch: (attachments: unknown[]) => boolean) {
       selectedAgent="api-minimax"
       onAgentChange={vi.fn()}
       onLaunch={onLaunch}
-      selectedModel="MiniMax-M2.7-highspeed"
+      selectedModel="MiniMax-M2.5"
       onModelChange={vi.fn()}
     />,
   );

@@ -34,7 +34,7 @@ describe("model metadata", () => {
       pickFailoverModel("gpt-5.5"),
       pickFailoverModel("gpt-5-codex"),
       pickFailoverModel("gpt-4o"),
-      pickFailoverModel("MiniMax-M2.7"),
+      pickFailoverModel("MiniMax-M2.5"),
     ];
 
     for (const fallback of fallbacks) {

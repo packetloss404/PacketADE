@@ -47,7 +47,7 @@ const AGENT_AUTO_PICK_ORDER: AgentCli[] = [
 
 /** Hardcoded fallback defaults — also used as the "no user intent" sentinel. */
 const DEFAULT_AGENT: AgentCli = "api-minimax";
-const DEFAULT_MODEL = "MiniMax-M3.0-highspeed";
+const DEFAULT_MODEL = "MiniMax-M2.5";
 
 export function AgentsView() {
   const agentInputText = useAgentTaskStore((s) => s.agentInputText);

@@ -17,9 +17,10 @@ const MODEL_CONTEXT_TOKENS: Record<string, number> = {
   "claude-sonnet-4-6": 200_000,
   "claude-haiku-4-5": 200_000,
   "claude-haiku-4-5-20251001": 200_000,
-  // MiniMax
-  "MiniMax-M3.0": 256_000,
-  "MiniMax-M3.0-highspeed": 256_000,
+  // MiniMax (M2 family — 200k context per MiniMax docs)
+  "MiniMax-M2.5": 200_000,
+  "MiniMax-M2.1": 200_000,
+  "MiniMax-M2": 200_000,
   // OpenAI (GPT-5.x)
   "gpt-5.5": 400_000,
   "gpt-5.4": 400_000,
