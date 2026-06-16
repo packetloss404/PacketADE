@@ -31,17 +31,17 @@ export const EFFORT_LEVELS: { label: string; value: EffortLevel }[] = [
   { label: "High", value: "high" },
 ];
 
-// OpenCode normally manages models internally; we surface MiniMax M2.5 so it
+// OpenCode normally manages models internally; we surface MiniMax M3 so it
 // can be picked in a workspace. OpenCode's --model takes a `provider/model` id.
 export const OPENCODE_MODELS: ModelOption[] = [
-  { label: "MiniMax M2.5", value: "minimax/MiniMax-M2.5" },
+  { label: "MiniMax M3", value: "minimax/MiniMax-M3" },
 ];
 
 // PacketCode reads its default from `~/.packetcode/config.toml` and accepts any
 // provider-specific model name via --model (bare name, e.g. "gpt-4o"). MiniMax
-// M2.5 is surfaced here so it's selectable in a workspace.
+// M3 is surfaced here so it's selectable in a workspace.
 export const PACKETCODE_MODELS: ModelOption[] = [
-  { label: "MiniMax M2.5", value: "MiniMax-M2.5" },
+  { label: "MiniMax M3", value: "MiniMax-M3" },
 ];
 
 /** Return the model list appropriate for a given agent */

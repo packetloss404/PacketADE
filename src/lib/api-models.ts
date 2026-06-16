@@ -83,8 +83,8 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     name: "MiniMax (API)",
     needsKey: true,
     models: [
+      { label: "M3", value: "MiniMax-M3" },
       { label: "M2.5", value: "MiniMax-M2.5" },
-      { label: "M2.1", value: "MiniMax-M2.1" },
       { label: "M2", value: "MiniMax-M2" },
     ],
   },
