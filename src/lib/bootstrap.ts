@@ -1,4 +1,4 @@
-import { loadPersistedState, getCwd, saveUiSlice, getAppKnownHostsPath } from "@/lib/tauri";
+import { loadPersistedState, getCwd, pathIsDir, saveUiSlice, getAppKnownHostsPath } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
@@ -10,6 +10,44 @@ import { useMemoryStore } from "@/stores/memoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useIssueStore } from "@/stores/issueStore";
 import { migrateSshTargetsToServers } from "@/lib/sshTargetMigration";
+
+const PROJECT_PATH_KEY = "packetade:project-path";
+
+/** A path inside the app's own build output is never a real project to launch
+ *  CLIs in. Adopting it as a default is what historically poisoned the
+ *  persisted project path (see `getCwd()` fallback below), so we reject it. */
+function looksLikeBuildDir(path: string): boolean {
+  const p = path.replace(/\\/g, "/").toLowerCase();
+  return p.includes("/src-tauri/target/") || p.endsWith("/src-tauri/target");
+}
+
+/**
+ * Pick the first candidate that actually exists on disk as a directory.
+ * Stale entries (e.g. a project path captured before a folder was renamed
+ * or deleted) are skipped so they can't break PTY launches. Clears the
+ * persisted `project-path` key when the value it held is no longer valid.
+ */
+async function resolveValidProjectPath(
+  candidates: Array<string | null | undefined>,
+): Promise<string | null> {
+  for (const candidate of candidates) {
+    const path = candidate?.trim();
+    if (!path || looksLikeBuildDir(path)) continue;
+    try {
+      if (await pathIsDir(path)) return path;
+    } catch {
+      // Backend probe failed — treat as unverifiable and skip.
+    }
+  }
+  // Nothing valid survived; drop a stale persisted value so it doesn't keep
+  // resurfacing and re-poisoning the global project path on every launch.
+  try {
+    localStorage.removeItem(PROJECT_PATH_KEY);
+  } catch {
+    // localStorage unavailable — fine.
+  }
+  return null;
+}
 
 /**
  * App initialization — called once on mount.
@@ -48,20 +86,20 @@ export async function initializeApp(): Promise<void> {
     }
     useAppStore.getState().setActiveView("welcome");
 
-    // Restore project path: backend settings > localStorage > CWD
+    // Restore project path: backend settings > localStorage > CWD. Each
+    // candidate is validated against the filesystem so a stale path (e.g.
+    // captured before a folder was renamed/deleted) can't break PTY launches.
     const backendPath = state.settings.projectPath;
-    const localPath = localStorage.getItem("packetade:project-path");
-    const projectPath = backendPath || localPath || null;
-
+    const localPath = localStorage.getItem(PROJECT_PATH_KEY);
+    let cwd: string | null = null;
+    try {
+      cwd = await getCwd();
+    } catch {
+      // no CWD available
+    }
+    const projectPath = await resolveValidProjectPath([backendPath, localPath, cwd]);
     if (projectPath) {
       useLayoutStore.getState().setProjectPath(projectPath);
-    } else {
-      try {
-        const cwd = await getCwd();
-        if (cwd) useLayoutStore.getState().setProjectPath(cwd);
-      } catch {
-        // no CWD available
-      }
     }
 
     // One-time cleanup of the retired agentMosaicStore localStorage key.
@@ -91,17 +129,17 @@ export async function initializeApp(): Promise<void> {
       .hydrateFromBackend(state)
       .catch(() => undefined);
   } catch {
-    // Backend unavailable — fall back to localStorage defaults.
-    const localPath = localStorage.getItem("packetade:project-path");
-    if (localPath) {
-      useLayoutStore.getState().setProjectPath(localPath);
-    } else {
-      try {
-        const cwd = await getCwd();
-        if (cwd) useLayoutStore.getState().setProjectPath(cwd);
-      } catch {
-        // no CWD available
-      }
+    // Backend unavailable — fall back to localStorage / CWD, validated.
+    const localPath = localStorage.getItem(PROJECT_PATH_KEY);
+    let cwd: string | null = null;
+    try {
+      cwd = await getCwd();
+    } catch {
+      // no CWD available
+    }
+    const projectPath = await resolveValidProjectPath([localPath, cwd]);
+    if (projectPath) {
+      useLayoutStore.getState().setProjectPath(projectPath);
     }
     useAppStore.getState().setInitialized(true);
   }

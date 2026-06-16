@@ -553,6 +553,11 @@ export function CliAgentsCard() {
       }
       // Update the local results map so the card refreshes immediately.
       setResults((prev) => ({ ...prev, [selectedEntry.id]: result }));
+      // Propagate into agentStore so the WorkspaceView "Add Agent" menu
+      // (which gates its button on `agents[].installed`) and PTY launches
+      // see this result. Without this, a green Test check never enables the
+      // Add Agent button. No-op for catalog ids without a built-in slot.
+      syncAgentFromResult(selectedEntry, result, manualPath ?? null);
       if (!result.installed) {
         return {
           ok: false,

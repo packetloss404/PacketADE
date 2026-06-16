@@ -30,6 +30,16 @@ pub async fn get_cwd() -> Result<String, String> {
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// Cheap existence/type probe for a local path. Returns `true` only when the
+/// path exists and is a directory. Used by bootstrap to reject a stale
+/// persisted project path before it poisons PTY launches.
+#[tauri::command]
+pub async fn path_is_dir(path: String) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || Path::new(&path).is_dir())
+        .await
+        .map_err(|e| format!("Task join error: {}", e))
+}
+
 #[tauri::command]
 pub async fn list_directory(dir_path: String, workspace: String) -> Result<Vec<DirEntry>, String> {
     tokio::task::spawn_blocking(move || {

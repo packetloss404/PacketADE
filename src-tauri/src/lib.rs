@@ -218,6 +218,7 @@ pub fn run() {
             commands::fs::list_directory,
             commands::fs::list_subdirectories,
             commands::fs::get_cwd,
+            commands::fs::path_is_dir,
             commands::fs::read_file_contents,
             commands::fs::write_file_contents,
             commands::fs::list_project_files,
