@@ -7,7 +7,6 @@ import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { DiffPane } from "@/components/agents/DiffPane";
 import { SideChatOverlay } from "@/components/agents/SideChatOverlay";
-import { LoginPtyModal } from "@/components/auth/LoginPtyModal";
 import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
 import { useDictationTarget } from "@/hooks/useDictationTarget";
 import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts";
@@ -39,6 +38,9 @@ const FlightsView = lazy(() => import("@/components/views/FlightsView").then((m)
 const AgentsView = lazy(() => import("@/components/views/AgentsView").then((m) => ({ default: m.AgentsView })));
 const CostDashboardView = lazy(() => import("@/components/views/CostDashboardView").then((m) => ({ default: m.CostDashboardView })));
 const DictationView = lazy(() => import("@/components/views/DictationView").then((m) => ({ default: m.DictationView })));
+
+// Lazy-loaded so vendor-xterm (@xterm/*) stays out of the entry chunk; only loads when a login PTY opens
+const LoginPtyModal = lazy(() => import("@/components/auth/LoginPtyModal").then((m) => ({ default: m.LoginPtyModal })));
 
 function ViewLoader() {
   return (
@@ -287,11 +289,13 @@ export default function App() {
         <DiffPane />
         <SideChatOverlay />
         {loginCli && (
-          <LoginPtyModal
-            cli={loginCli}
-            projectPath={loginProjectPath}
-            onClose={() => setLoginCli(null)}
-          />
+          <Suspense fallback={null}>
+            <LoginPtyModal
+              cli={loginCli}
+              projectPath={loginProjectPath}
+              onClose={() => setLoginCli(null)}
+            />
+          </Suspense>
         )}
       </div>
     </ErrorBoundary>

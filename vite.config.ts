@@ -15,6 +15,16 @@ export default defineConfig(async () => ({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Pin Vite's dynamic-import preload helper to the always-loaded
+          // vendor-react chunk. It's a virtual module (not under node_modules),
+          // so without this it falls through to default placement and rollup
+          // may park it inside a heavy lazy chunk (e.g. vendor-markdown) — the
+          // entry then statically imports that whole chunk just for the helper,
+          // dragging it onto the cold-start critical path. A dedicated
+          // dependency-free chunk avoids any cross-chunk cycle.
+          if (id.includes("vite/preload-helper")) {
+            return "vendor-helpers";
+          }
           if (!id.includes("node_modules")) {
             return undefined;
           }
