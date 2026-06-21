@@ -36,6 +36,7 @@
     "sidecar:anthropic-multi-turn-smoke": "node agent-sidecar/test/anthropic-multi-turn-smoke.mjs",
     "sidecar:mcp-inproc-smoke": "node agent-sidecar/test/mcp-inproc-smoke.mjs",
     "clean:dmg-scratch": "node scripts/clean-dmg-scratch.mjs",
+    "build:macos": "node scripts/build-macos.mjs",
     "prebundle": "pnpm run clean:dmg-scratch && pnpm run fetch-node && pnpm run sidecar:install && pnpm run sidecar:build && pnpm run sidecar:prune",
     "preflight": "pnpm run format:check && pnpm run lint:src && pnpm test && pnpm run build",
     "release:gate": "node scripts/release-gate.mjs",
