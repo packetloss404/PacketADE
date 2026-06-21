@@ -303,14 +303,32 @@ pub fn create_pty_session(
                 project_path.clone()
             })
     } else {
-        let project_dir = std::path::Path::new(&project_path);
-        if !project_dir.is_dir() {
-            return Err(format!(
-                "Project path '{}' is not a valid directory",
-                project_path
-            ));
+        let trimmed = project_path.trim();
+        // Never launch an interactive CLI at the filesystem root (or with no
+        // path at all). An agent spawned at "/" can wander the entire disk and
+        // is exactly what triggers broad macOS file-access prompts. Fall back to
+        // the user's home directory — the conventional default working dir
+        // (what Terminal.app uses) — instead of "/".
+        if trimmed.is_empty() || trimmed == "/" {
+            dirs::home_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| {
+                    warn!(
+                        requested = %project_path,
+                        "no project path and home dir unresolvable; refusing to spawn at root"
+                    );
+                    project_path.clone()
+                })
+        } else {
+            let project_dir = std::path::Path::new(trimmed);
+            if !project_dir.is_dir() {
+                return Err(format!(
+                    "Project path '{}' is not a valid directory",
+                    project_path
+                ));
+            }
+            project_path
         }
-        project_path
     };
 
     info!(command = %command, project_path = %project_path, "Creating PTY session");

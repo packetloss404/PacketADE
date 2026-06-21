@@ -35,6 +35,7 @@ pub mod flight_planner_prompts;
 pub mod orchestrator;
 pub mod pty;
 pub mod shared;
+pub mod shell_path;
 pub mod storage;
 pub mod tool_custom_agent;
 pub mod tool_github;
