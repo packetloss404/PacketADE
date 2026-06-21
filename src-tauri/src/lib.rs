@@ -67,6 +67,12 @@ fn dirs_log_dir() -> std::path::PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing();
+    // Repair PATH for GUI launches (Finder/Dock/Spotlight give us only the
+    // minimal launchd PATH). Reconstructs PATH from known install dirs + the
+    // user's shell rc files *without executing the shell*, so it never trips
+    // privacy prompts via the user's config. Must run before the sidecar, PTY,
+    // or any CLI lookup (`which claude`, `gh`, `git`, `node`, …).
+    core::shell_path::fix_path_for_gui_launch();
     // Rename ~/.packetcode → ~/.packetade once per upgrade. Must run before
     // any command that reads/writes the data dir.
     core::migration::migrate_data_dir();

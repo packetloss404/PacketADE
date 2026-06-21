@@ -40,10 +40,19 @@ pub fn find_claude_binary() -> Option<PathBuf> {
     let home = home_dir().unwrap_or_default();
 
     let candidates = vec![
+        // Windows (npm global)
         PathBuf::from(&home).join("AppData/Roaming/npm/claude.cmd"),
         PathBuf::from(&home).join("AppData/Roaming/npm/claude"),
+        // Cross-platform user installs
         PathBuf::from(&home).join(".local/bin/claude.exe"),
         PathBuf::from(&home).join(".local/bin/claude"),
+        // macOS / Linux: Homebrew + common npm-global prefixes. These are the
+        // GUI-launch blind spots that the startup PATH repair also covers, kept
+        // here as a fallback if the shell query fails.
+        PathBuf::from("/opt/homebrew/bin/claude"),
+        PathBuf::from("/usr/local/bin/claude"),
+        PathBuf::from(&home).join(".npm-global/bin/claude"),
+        PathBuf::from(&home).join(".bun/bin/claude"),
         PathBuf::from(&home).join(".nvm/versions"),
     ];
 
