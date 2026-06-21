@@ -36,21 +36,30 @@ function sh(cmd) {
   }
 }
 
-// 1. Detach any attached PacketADE scratch images. `hdiutil info` lists each
-//    attached image as a "/dev/diskN ... <image-path>" block; pair the device
-//    node with its image path and force-detach the PacketADE ones.
+// 1. Detach any attached PacketADE scratch images. `hdiutil info` groups each
+//    image into a block separated by a line of "=", with the `image-path` line
+//    appearing BEFORE the `/dev/diskN` device line(s) inside that block. So we
+//    flag a block when its image-path matches a PacketADE scratch image, then
+//    force-detach the first whole-disk device that follows in that same block.
 const info = sh("hdiutil info");
-let currentDev = null;
+let blockIsOurs = false;
 let detached = 0;
 for (const line of info.split("\n")) {
-  const devMatch = line.match(/^(\/dev\/disk\d+)/);
-  if (devMatch) currentDev = devMatch[1];
-  if (/rw\.\d+\.PacketADE/i.test(line) && currentDev) {
-    if (sh(`hdiutil detach ${currentDev} -force`)) {
-      console.log(`[clean-dmg-scratch] detached ${currentDev}`);
+  if (/^=+$/.test(line.trim())) {
+    blockIsOurs = false; // new image block
+    continue;
+  }
+  if (/image-path\s*:.*rw\.\d+\.PacketADE/i.test(line)) {
+    blockIsOurs = true;
+    continue;
+  }
+  const devMatch = line.match(/^(\/dev\/disk\d+)\b/);
+  if (devMatch && blockIsOurs) {
+    if (sh(`hdiutil detach ${devMatch[1]} -force`)) {
+      console.log(`[clean-dmg-scratch] detached ${devMatch[1]}`);
       detached++;
     }
-    currentDev = null;
+    blockIsOurs = false; // one detach per block
   }
 }
 
