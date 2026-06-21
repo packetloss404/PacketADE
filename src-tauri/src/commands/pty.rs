@@ -49,6 +49,33 @@ fn command_program_name(command: &str) -> String {
     stem.to_ascii_lowercase()
 }
 
+/// Resolve a CLI agent to an app-pinned binary, if one is configured.
+///
+/// Some agent CLIs auto-update to builds that misbehave in our PTY — e.g. claude
+/// 2.1.185 aborts on its first PTY write with
+/// `assertion failed: output.write(&bytes).is_ok()`, while 2.1.183 works. The
+/// auto-updater keeps repointing `~/.local/bin/claude` at the broken build, so
+/// relying on PATH re-breaks the app. To stay self-contained, the app pins a
+/// known-good binary by writing its absolute path to `~/.packetade/<command>-bin`.
+/// When that file exists and points at a real file, we launch it directly and
+/// also set `DISABLE_AUTOUPDATER` so it can't swap itself out mid-session.
+/// Delete the pin file to fall back to the PATH binary (e.g. once a fixed
+/// upstream version ships).
+#[cfg(not(windows))]
+fn resolve_pinned_cli_binary(command: &str) -> String {
+    if let Some(home) = dirs::home_dir() {
+        let pin = home.join(".packetade").join(format!("{command}-bin"));
+        if let Ok(contents) = std::fs::read_to_string(&pin) {
+            let path = contents.trim();
+            if !path.is_empty() && std::path::Path::new(path).exists() {
+                info!(command, pinned = path, "Using app-pinned CLI binary");
+                return path.to_string();
+            }
+        }
+    }
+    command.to_string()
+}
+
 /// Resolve a command name to its actual path on Windows.
 /// Uses `where` to find the binary — returns the first match.
 /// Prefers .exe over .cmd when both exist.
@@ -365,7 +392,7 @@ pub fn create_pty_session(
         }
     };
     #[cfg(not(windows))]
-    let mut cmd = { CommandBuilder::new(&command) };
+    let mut cmd = { CommandBuilder::new(resolve_pinned_cli_binary(&command)) };
     cmd.cwd(&project_path);
 
     // Append any extra arguments (e.g. --model)
@@ -379,6 +406,11 @@ pub fn create_pty_session(
     if command == "claude" {
         cmd.env_remove("CLAUDECODE");
         cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
+        // The app manages claude's lifecycle; an auto-update mid-session can swap
+        // in a build that's incompatible with our PTY (claude 2.1.185 panics on
+        // its first PTY write). Stop the launched binary from self-updating so a
+        // pinned-good version (see `resolve_pinned_cli_binary`) stays put.
+        cmd.env("DISABLE_AUTOUPDATER", "1");
         // Tell statusline.ps1 to suppress terminal output (PacketADE has its own native status bar).
         // PACKETCODE env var retained for backwards compatibility with any existing scripts.
         cmd.env("PACKETADE", "1");
