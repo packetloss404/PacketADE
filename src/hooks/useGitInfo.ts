@@ -9,6 +9,15 @@ export function useGitInfo() {
   const gitBranch = useAppStore((s) => s.gitBranch);
 
   useEffect(() => {
+    // No project open → `projectPath` is "" (and the backend treats that as the
+    // filesystem root). Polling git there just fails every 10s, spams the log,
+    // and runs a child process against "/" for no reason — skip it entirely.
+    const hasProject = projectPath !== "" && projectPath !== "/";
+    if (!hasProject) {
+      setGitBranch(null);
+      return;
+    }
+
     let cancelled = false;
 
     async function fetchBranch() {
