@@ -276,7 +276,8 @@ const CLI_COMMANDS: Record<BuiltinCliAgent, string> = {
  * passing one makes it print `--help` and exit. PacketCode uses `--trust`. */
 const BYPASS_FLAGS: Partial<Record<BuiltinCliAgent, string>> = {
   "claude-code": "--dangerously-skip-permissions",
-  codex: "--full-auto",
+  // codex >= 0.x dropped `--full-auto`; the full-bypass equivalent is this.
+  codex: "--dangerously-bypass-approvals-and-sandbox",
   gemini: "--yolo",
   packetcode: "--trust",
 };
