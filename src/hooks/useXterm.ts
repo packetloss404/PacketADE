@@ -69,20 +69,38 @@ export function useXterm({ containerRef, sessionIdRef, onUserInput }: UseXtermOp
 
     // Use WebGL renderer for GPU-accelerated 60fps rendering.
     // Keep a reference so we can dispose it explicitly on cleanup.
+    //
+    // IMPORTANT: attaching the WebGL addon against a hidden / 0x0 container
+    // (e.g. a pane in a non-active workspace tile, or one mounted before layout)
+    // leaves its canvas permanently blank — even once the pane is shown. Since
+    // full-TUI CLIs like OpenCode only redraw on change, nothing ever repaints
+    // it, so the pane stays blank. So: only attach WebGL once the container is
+    // actually visible, and recreate + repaint it on the hidden->visible
+    // transition (see the ResizeObserver below).
     let webglAddon: WebglAddon | null = null;
-    try {
-      webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        // GPU context was lost (e.g. too many contexts, system sleep).
-        // Dispose the addon — xterm falls back to its default canvas renderer.
-        webglAddon?.dispose();
+    const loadWebgl = () => {
+      if (webglAddon) return;
+      try {
+        const addon = new WebglAddon();
+        addon.onContextLoss(() => {
+          // GPU context was lost (e.g. too many contexts, system sleep).
+          // Dispose the addon — xterm falls back to its default canvas renderer.
+          addon.dispose();
+          if (webglAddon === addon) webglAddon = null;
+        });
+        term.loadAddon(addon);
+        webglAddon = addon;
+      } catch {
+        // WebGL not available — falls back to default canvas renderer
         webglAddon = null;
-      });
-      term.loadAddon(webglAddon);
-    } catch {
-      // WebGL not available — falls back to default canvas renderer
-      webglAddon = null;
-    }
+      }
+    };
+    const isContainerVisible = () =>
+      !!containerRef.current &&
+      containerRef.current.offsetWidth > 0 &&
+      containerRef.current.offsetHeight > 0;
+
+    if (isContainerVisible()) loadWebgl();
 
     try {
       fitAddon.fit();
@@ -104,18 +122,39 @@ export function useXterm({ containerRef, sessionIdRef, onUserInput }: UseXtermOp
       }
     });
 
+    let wasHidden = !isContainerVisible();
     const resizeObserver = new ResizeObserver((entries) => {
       // When the workspace is switched away, its container is set to display:none
       // which reports a 0x0 contentRect. Fitting to that would resize the PTY to
       // degenerate dimensions, which scrambles full-TUI CLIs like OpenCode on return.
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        if (width < 1 || height < 1) return;
+        if (width < 1 || height < 1) {
+          wasHidden = true;
+          return;
+        }
       }
       try {
         fitAddon.fit();
       } catch {
         // ignore
+      }
+      // Pane just became visible after being hidden / 0x0. A WebGL canvas that
+      // was attached while hidden comes back blank, so recreate it now that the
+      // container is laid out, then force a full repaint (OpenCode et al. won't
+      // redraw on their own). Panes that were visible at mount skip all of this.
+      if (wasHidden) {
+        wasHidden = false;
+        if (webglAddon) {
+          webglAddon.dispose();
+          webglAddon = null;
+        }
+        loadWebgl();
+        try {
+          term.refresh(0, term.rows - 1);
+        } catch {
+          // ignore
+        }
       }
     });
     resizeObserver.observe(containerRef.current);
