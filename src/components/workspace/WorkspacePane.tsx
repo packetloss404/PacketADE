@@ -43,7 +43,8 @@ const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: 
  * inside the OpenCode TUI/config instead. */
 const BYPASS_FLAGS: Record<string, string> = {
   "claude-code": "--dangerously-skip-permissions",
-  codex: "--full-auto",
+  // codex >= 0.x dropped `--full-auto`; the full-bypass equivalent is this.
+  codex: "--dangerously-bypass-approvals-and-sandbox",
   gemini: "--yolo",
 };
 
