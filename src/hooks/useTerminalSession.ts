@@ -63,6 +63,14 @@ export interface TerminalActivityInfo {
 
 let sessionCounter = 0;
 
+// Panes with an in-flight `startSession()`. StrictMode / double-mount can fire
+// two auto-starts for the same pane a few ms apart; without deduping, each spawns
+// its own PTY. That's invisible for claude/codex (multiple instances coexist) but
+// fatal for opencode, whose second instance exits 1 and leaves the pane's xterm
+// bound to a dead session — i.e. a permanently blank pane. Module-scoped so it
+// dedupes across separate hook/component instances of the same pane.
+const panesStarting = new Set<string>();
+
 export function useTerminalSession({
   paneId,
   cliCommand,
@@ -172,6 +180,15 @@ export function useTerminalSession({
     const fitAddon = fitAddonRef.current;
     if (!term || !fitAddon) return;
 
+    // Dedupe concurrent starts for the same pane (set synchronously before the
+    // first await, so a near-simultaneous duplicate start bails out here). The
+    // flag is cleared once the spawn resolves/fails, so legitimate restarts later
+    // still work.
+    if (paneId) {
+      if (panesStarting.has(paneId)) return;
+      panesStarting.add(paneId);
+    }
+
     // Kill any existing PTY session before starting a new one to prevent
     // orphans. Swallow kill errors — the PTY may already have exited; the
     // restart will succeed regardless.
@@ -227,6 +244,7 @@ export function useTerminalSession({
       );
 
       sessionIdRef.current = sessionId;
+      if (paneId) panesStarting.delete(paneId);
       setCurrentSessionId(sessionId);
       setAlive(true);
 
@@ -364,6 +382,7 @@ export function useTerminalSession({
         }
       }
     } catch (err) {
+      if (paneId) panesStarting.delete(paneId);
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
       const label = cliCommand.charAt(0).toUpperCase() + cliCommand.slice(1);
@@ -406,6 +425,8 @@ export function useTerminalSession({
         fn();
       }
       stopDurationTimer();
+      // Release the start-dedupe flag in case we unmount mid-spawn.
+      if (paneId) panesStarting.delete(paneId);
       const sid = sessionIdRef.current;
       if (sid) {
         exitRequestedRef.current = true;
