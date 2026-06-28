@@ -49,18 +49,18 @@ fn command_program_name(command: &str) -> String {
     stem.to_ascii_lowercase()
 }
 
-/// Resolve a CLI agent to an app-pinned binary, if one is configured.
+/// Resolve a CLI agent command to an absolute executable path.
 ///
-/// Some agent CLIs auto-update to builds that misbehave in our PTY — e.g. claude
-/// 2.1.185 aborts on its first PTY write with
-/// `assertion failed: output.write(&bytes).is_ok()`, while 2.1.183 works. The
-/// auto-updater keeps repointing `~/.local/bin/claude` at the broken build, so
-/// relying on PATH re-breaks the app. To stay self-contained, the app pins a
-/// known-good binary by writing its absolute path to `~/.packetade/<command>-bin`.
-/// When that file exists and points at a real file, we launch it directly and
-/// also set `DISABLE_AUTOUPDATER` so it can't swap itself out mid-session.
-/// Delete the pin file to fall back to the PATH binary (e.g. once a fixed
-/// upstream version ships).
+/// 1. An app pin (`~/.packetade/<command>-bin` containing an absolute path) wins
+///    if present — an escape hatch to force a specific binary (e.g. when a CLI
+///    release crashes in our PTY).
+/// 2. Otherwise, resolve a bare command name against PATH to an absolute path.
+///    This is important: we always spawn with the pane's cwd, and our PTY layer
+///    resolves a *relative* program against cwd FIRST — so a same-named file or
+///    directory in the cwd (e.g. a stray `~/claude` dir while cwd is the home
+///    dir) would shadow the real CLI and make `exec` fail (EACCES on a dir →
+///    "[Session ended]"). Returning an absolute path avoids that entirely.
+/// 3. If it can't be resolved, return the name unchanged and let it fail loudly.
 #[cfg(not(windows))]
 fn resolve_pinned_cli_binary(command: &str) -> String {
     if let Some(home) = dirs::home_dir() {
@@ -73,6 +73,25 @@ fn resolve_pinned_cli_binary(command: &str) -> String {
             }
         }
     }
+
+    // Already an explicit path — use as-is.
+    if command.contains('/') {
+        return command.to_string();
+    }
+
+    // Resolve the bare name against PATH to an absolute executable file.
+    if let Some(path) = std::env::var_os("PATH") {
+        use std::os::unix::fs::PermissionsExt;
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(command);
+            if let Ok(meta) = std::fs::metadata(&candidate) {
+                if meta.is_file() && meta.permissions().mode() & 0o111 != 0 {
+                    return candidate.to_string_lossy().into_owned();
+                }
+            }
+        }
+    }
+
     command.to_string()
 }
 
