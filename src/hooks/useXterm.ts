@@ -57,6 +57,17 @@ export function useXterm({ containerRef, sessionIdRef, onUserInput }: UseXtermOp
       scrollback: 10000,
     });
 
+    // xterm 6.0.0's bundled DECRQM handler (`requestMode`) throws
+    // "ReferenceError: Can't find variable: i" — a minified-build bug. That
+    // aborts the entire parse, so any output stream containing a DECRQM query
+    // (`CSI ? Pd $ p` / `CSI Pd $ p`) renders nothing. opencode/opentui sends
+    // several of these on startup, which is why its panes were blank while
+    // claude/codex (which don't query) rendered fine. Intercept DECRQM with a
+    // no-op so the broken built-in never runs. The CLI just doesn't receive a
+    // mode-support reply, which it handles gracefully.
+    term.parser.registerCsiHandler({ prefix: "?", intermediates: "$", final: "p" }, () => true);
+    term.parser.registerCsiHandler({ intermediates: "$", final: "p" }, () => true);
+
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
     const unicode11Addon = new Unicode11Addon();
