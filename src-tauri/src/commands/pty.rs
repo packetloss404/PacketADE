@@ -95,6 +95,18 @@ fn resolve_pinned_cli_binary(command: &str) -> String {
     command.to_string()
 }
 
+/// A neutral, empty working directory for panes opened without a project.
+/// Lives in the app data dir so an agent's cwd scan finds nothing sensitive
+/// (avoids macOS TCC prompts for ~/Music, ~/Pictures, … that scanning $HOME
+/// triggers). Created on demand.
+fn neutral_scratch_cwd() -> Option<String> {
+    let dir = dirs::home_dir()?
+        .join(crate::core::brand::DATA_DIR_NAME)
+        .join("scratch");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.to_string_lossy().into_owned())
+}
+
 /// Resolve a command name to its actual path on Windows.
 /// Uses `where` to find the binary — returns the first match.
 /// Prefers .exe over .cmd when both exist.
@@ -356,15 +368,19 @@ pub fn create_pty_session(
         // the user's home directory — the conventional default working dir
         // (what Terminal.app uses) — instead of "/".
         if trimmed.is_empty() || trimmed == "/" {
-            dirs::home_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| {
-                    warn!(
-                        requested = %project_path,
-                        "no project path and home dir unresolvable; refusing to spawn at root"
-                    );
-                    project_path.clone()
-                })
+            // No project selected. Do NOT fall back to "/" (whole-disk wander)
+            // OR the home directory: an agent like claude scans its cwd for
+            // context, and scanning $HOME walks into ~/Music, ~/Pictures,
+            // ~/Documents, … which triggers macOS TCC permission prompts
+            // attributed to the app. Use a dedicated empty scratch dir instead —
+            // nothing sensitive to scan, no prompts.
+            neutral_scratch_cwd().unwrap_or_else(|| {
+                warn!(
+                    requested = %project_path,
+                    "no project path and scratch dir unavailable; falling back to caller path"
+                );
+                project_path.clone()
+            })
         } else {
             let project_dir = std::path::Path::new(trimmed);
             if !project_dir.is_dir() {
