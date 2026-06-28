@@ -420,6 +420,16 @@ pub fn create_pty_session(
     // Gemini CLI env setup
     if command == "gemini" {
         cmd.env("PACKETCODE", "1");
+        // Google deprecated the gemini CLI's individual OAuth ("Code Assist for
+        // individuals"), so interactive sign-in now fails. Inject the stored
+        // Gemini API key (Tools → Gemini API Key, kept in the keychain) as
+        // GEMINI_API_KEY so the CLI authenticates via the key instead.
+        if let Ok(key) = crate::commands::api_keys::load_api_key("gemini") {
+            let key = key.trim();
+            if !key.is_empty() {
+                cmd.env("GEMINI_API_KEY", key);
+            }
+        }
     }
 
     // PTY is a real terminal — advertise a common modern terminal profile so CLIs

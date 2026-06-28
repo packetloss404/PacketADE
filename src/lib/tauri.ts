@@ -82,6 +82,16 @@ export async function writeFileContents(
 }
 
 // PTY session management
+// PTY spawns go through a serialized queue with a small gap between them.
+// Each spawn does a fork()+exec() in the backend, and macOS aborts a fork
+// child pre-exec when forks happen in a tight burst inside a heavily-threaded
+// process (Tauri's embedded WebKit spawns many threads). Restoring a workspace
+// fired ~5 spawns within ~70ms, which crashed several fork children
+// ("crashed on child side of fork pre-exec"). Spacing the forks lets background
+// thread activity settle between them so the children can exec cleanly.
+const PTY_SPAWN_GAP_MS = 150;
+let ptySpawnQueue: Promise<unknown> = Promise.resolve();
+
 export async function createPtySession(
   projectPath: string,
   cols: number,
@@ -90,14 +100,22 @@ export async function createPtySession(
   args: string[] | null,
   env?: Record<string, string> | null,
 ): Promise<string> {
-  return invoke<string>("create_pty_session", {
-    projectPath,
-    cols,
-    rows,
-    command,
-    args,
-    env: env ?? null,
-  });
+  const run = async (): Promise<string> => {
+    const id = await invoke<string>("create_pty_session", {
+      projectPath,
+      cols,
+      rows,
+      command,
+      args,
+      env: env ?? null,
+    });
+    await new Promise((resolve) => setTimeout(resolve, PTY_SPAWN_GAP_MS));
+    return id;
+  };
+  // Chain onto the queue regardless of whether the previous spawn succeeded.
+  const result = ptySpawnQueue.then(run, run) as Promise<string>;
+  ptySpawnQueue = result.catch(() => {});
+  return result;
 }
 
 export async function writePty(sessionId: string, data: string): Promise<void> {

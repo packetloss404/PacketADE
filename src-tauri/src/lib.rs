@@ -64,15 +64,67 @@ fn dirs_log_dir() -> std::path::PathBuf {
     }
 }
 
+/// PTY spawn helper. Re-invoked as
+/// `packetade __pty_spawn <cwd> <program> <args...>` by the vendored
+/// portable-pty (`UnixSlavePty::spawn_command`), with the slave pty wired to
+/// fd 0/1/2. This runs in a fresh, single-threaded process that the parent
+/// created via `posix_spawn` (fork-safe in a multi-threaded host), so it can
+/// safely become a session leader, claim the pty as its controlling terminal,
+/// chdir, and exec the real program. Never returns.
+#[cfg(unix)]
+pub fn pty_spawn_helper(args: &[std::ffi::OsString]) -> ! {
+    use std::os::unix::ffi::OsStrExt;
+
+    // args = [cwd, program, arg1, ...]
+    let cwd = args.first().cloned().unwrap_or_default();
+    let exec_argv = args.get(1..).unwrap_or(&[]);
+
+    unsafe {
+        if !cwd.is_empty() {
+            if let Ok(c) = std::ffi::CString::new(cwd.as_bytes()) {
+                libc::chdir(c.as_ptr());
+            }
+        }
+        // Become a session leader and claim the pty (fd 0) as the controlling
+        // terminal so SIGWINCH/job control work for the TUI CLIs.
+        libc::setsid();
+        libc::ioctl(0, libc::TIOCSCTTY as _, 0);
+    }
+
+    let c_args: Vec<std::ffi::CString> = exec_argv
+        .iter()
+        .filter_map(|a| std::ffi::CString::new(a.as_bytes()).ok())
+        .collect();
+    if c_args.is_empty() {
+        std::process::exit(127);
+    }
+    let mut ptrs: Vec<*const libc::c_char> = c_args.iter().map(|c| c.as_ptr()).collect();
+    ptrs.push(std::ptr::null());
+    unsafe {
+        libc::execvp(ptrs[0], ptrs.as_ptr());
+    }
+    // Only reached if exec failed.
+    std::process::exit(127);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    init_tracing();
     // Repair PATH for GUI launches (Finder/Dock/Spotlight give us only the
     // minimal launchd PATH). Reconstructs PATH from known install dirs + the
     // user's shell rc files *without executing the shell*, so it never trips
     // privacy prompts via the user's config. Must run before the sidecar, PTY,
     // or any CLI lookup (`which claude`, `gh`, `git`, `node`, …).
+    //
+    // CRITICAL: this calls `std::env::set_var`, which is only sound while the
+    // process is single-threaded. It MUST run before anything spawns a thread —
+    // notably `init_tracing()` below, which starts a background log-writer
+    // thread. Mutating `environ` once another thread exists is UB and corrupts
+    // the environment such that a later PTY `fork()`+`exec()` aborts in the
+    // child ("crashed on child side of fork pre-exec"). So this is the very
+    // first statement in `run()`.
     core::shell_path::fix_path_for_gui_launch();
+
+    init_tracing();
     // Rename ~/.packetcode → ~/.packetade once per upgrade. Must run before
     // any command that reads/writes the data dir.
     core::migration::migrate_data_dir();
