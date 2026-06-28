@@ -2,5 +2,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // PTY spawn helper mode (see `pty_spawn_helper`): when re-invoked with the
+    // `__pty_spawn` sentinel, set up the controlling tty and exec the real
+    // program instead of starting the app. Runs before any app init.
+    #[cfg(unix)]
+    {
+        let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
+        if argv.get(1).map(|a| a == "__pty_spawn").unwrap_or(false) {
+            packetade_lib::pty_spawn_helper(argv.get(2..).unwrap_or(&[]));
+        }
+    }
+
     packetade_lib::run()
 }
