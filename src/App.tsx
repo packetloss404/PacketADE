@@ -69,10 +69,22 @@ export default function App() {
   // Bootstrap: load backend state and hydrate all stores on first mount
   useEffect(() => {
     initializeApp();
-    // Request OS notification permission early so async-agent completion
-    // notifications can fire later. User-denial is the common case — swallow
-    // silently; downstream `notify()` calls degrade gracefully.
-    void requestNotificationPermission().catch(() => {});
+    // Request OS notification permission on the first user gesture. macOS
+    // WKWebView refuses `Notification.requestPermission()` calls that aren't
+    // triggered by a gesture ("can only be done from a user gesture"), so
+    // requesting at mount both fails and logs an error. User-denial is the
+    // common case — swallow silently; downstream `notify()` calls degrade.
+    const requestOnFirstGesture = () => {
+      window.removeEventListener("pointerdown", requestOnFirstGesture);
+      window.removeEventListener("keydown", requestOnFirstGesture);
+      void requestNotificationPermission().catch(() => {});
+    };
+    window.addEventListener("pointerdown", requestOnFirstGesture);
+    window.addEventListener("keydown", requestOnFirstGesture);
+    return () => {
+      window.removeEventListener("pointerdown", requestOnFirstGesture);
+      window.removeEventListener("keydown", requestOnFirstGesture);
+    };
   }, []);
 
   // Apply theme class to document
