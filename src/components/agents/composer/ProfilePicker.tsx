@@ -1,4 +1,4 @@
-import { User } from "lucide-react";
+import { User, Check } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import type { AgentProfile } from "@/types/profiles";
 
@@ -35,34 +35,43 @@ export function ProfilePicker({
         </span>
       }
     >
-      {profiles.map((p) => (
-        <DropdownItem
-          key={p.id}
-          onClick={() => {
-            onProfileChange?.(p.id);
-            setDefaultProfile(p.id);
-          }}
-        >
-          <span className="flex items-center gap-1.5">
-            <User
-              size={10}
-              className={
-                p.isBuiltin ? "text-accent-blue" : "text-accent-purple"
-              }
-            />
-            <span
-              className={
-                selectedProfileId === p.id ? "text-accent-green" : ""
-              }
-            >
-              {p.name}
+      {profiles.length === 0 ? (
+        <div className="px-3 py-1.5 text-[10px] text-text-muted">
+          No profiles
+        </div>
+      ) : (
+        profiles.map((p) => (
+          <DropdownItem
+            key={p.id}
+            onClick={() => {
+              onProfileChange?.(p.id);
+              setDefaultProfile(p.id);
+            }}
+          >
+            <span className="flex items-center gap-1.5">
+              <User
+                size={10}
+                className={
+                  p.isBuiltin ? "text-accent-blue" : "text-accent-purple"
+                }
+              />
+              <span
+                className={
+                  selectedProfileId === p.id ? "text-accent-green" : ""
+                }
+              >
+                {p.name}
+              </span>
+              <span className="text-text-muted text-[9px] ml-1 truncate max-w-[200px]">
+                {p.description}
+              </span>
+              {selectedProfileId === p.id && (
+                <Check size={12} className="text-accent-green shrink-0 ml-auto" />
+              )}
             </span>
-            <span className="text-text-muted text-[9px] ml-1 truncate max-w-[200px]">
-              {p.description}
-            </span>
-          </span>
-        </DropdownItem>
-      ))}
+          </DropdownItem>
+        ))
+      )}
     </Dropdown>
   );
 }

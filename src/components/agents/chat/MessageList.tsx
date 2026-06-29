@@ -95,7 +95,7 @@ export function MessageList({
 
       {showThinking && (
         <div className="flex items-start gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary border border-bg-border rounded-lg text-[11px] text-text-muted">
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary border border-bg-border rounded text-[11px] text-text-muted">
             <Loader2 size={10} className="animate-spin" />
             Thinking...
           </div>
@@ -145,7 +145,7 @@ function MessageBubble({
     if (isEditing) {
       return (
         <div className="flex justify-end">
-          <div className="max-w-[85%] w-full px-3 py-2 rounded-lg text-xs bg-accent-blue/10 border border-accent-blue/40 flex flex-col gap-1.5">
+          <div className="max-w-[85%] w-full px-3 py-2 rounded text-xs bg-accent-blue/10 border border-accent-blue/40 flex flex-col gap-1.5">
             <textarea
               autoFocus
               value={editingText ?? ""}
@@ -176,7 +176,7 @@ function MessageBubble({
                 <button
                   type="button"
                   onClick={onCancelEdit}
-                  className="text-[11px] px-2 py-0.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                  className="text-[11px] px-2 py-0.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
                   title="Cancel (Esc)"
                 >
                   Cancel
@@ -185,7 +185,7 @@ function MessageBubble({
                   type="button"
                   onClick={onSubmitEdit}
                   disabled={!(editingText ?? "").trim()}
-                  className="text-[11px] px-2 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Send (Ctrl+Enter)"
                 >
                   Resend
@@ -199,13 +199,13 @@ function MessageBubble({
     return (
       <div className="group flex justify-end">
         <div
-          className={`max-w-[85%] px-3 py-1.5 rounded-lg text-xs text-text-primary relative ${
+          className={`max-w-[85%] px-3 py-1.5 rounded text-xs text-text-primary relative ${
             message.queued
               ? "bg-accent-amber/10 border border-accent-amber/30"
               : "bg-accent-blue/15"
           }`}
         >
-          <div>{message.content}</div>
+          <div className="whitespace-pre-wrap break-words">{message.content}</div>
           {message.queued && (
             <span className="text-[10px] text-accent-amber ml-1">
               (queued)
@@ -215,7 +215,7 @@ function MessageBubble({
             <button
               type="button"
               onClick={onStartEdit}
-              className="absolute -left-6 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-opacity"
+              className="absolute -left-6 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-opacity transition-colors"
               title="Edit & resend — forks the conversation from this turn"
             >
               <Pencil size={11} />
@@ -255,16 +255,15 @@ function MessageBubble({
         )}
 
         {message.content && (
-          <div className="px-3 py-2 bg-bg-secondary border border-bg-border rounded-lg text-xs">
+          <div className="px-3 py-2 bg-bg-secondary border border-bg-border rounded text-xs">
             <MarkdownRenderer
               content={message.content}
               className="text-xs leading-relaxed"
             />
+            {message.isStreaming && (
+              <span className="inline-block w-1.5 h-3.5 bg-accent-green/70 rounded-sm animate-pulse ml-1 align-text-bottom" />
+            )}
           </div>
-        )}
-
-        {message.isStreaming && (
-          <span className="inline-block w-1.5 h-3.5 bg-accent-green/70 rounded-sm animate-pulse ml-1" />
         )}
 
         <div className="flex items-center gap-2">
@@ -327,7 +326,7 @@ function AssistantCostPill({
   if (inputTokens == null || outputTokens == null) return null;
   const totalTokens = inputTokens + outputTokens;
   return (
-    <div className="text-[10px] text-text-muted mt-1 font-mono">
+    <div className="text-[10px] text-text-muted font-mono">
       {totalTokens} tok
       {cost != null && ` · $${cost.toFixed(4)}`}
     </div>

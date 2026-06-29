@@ -95,21 +95,21 @@ describe("AgentInspectorPane", () => {
     expect(screen.getByText("Files changed")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /preview/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /preview/i }));
     expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
     expect(screen.queryByText("Files changed")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /diff/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /diff/i }));
     expect(screen.getByTestId("diff-pane")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
     // No SSH target on the default fixture → AgentFilePane mounts its
     // local-FS branch; the SSH "not supported" copy is asserted in a
     // dedicated test below. Confirm the diff stub unmounted.
     expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /inspector/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /inspector/i }));
     expect(screen.getByText("Files changed")).toBeInTheDocument();
   });
 
@@ -207,7 +207,7 @@ describe("AgentInspectorPane", () => {
     ];
     render(<AgentInspectorPane conversationId="conv-pty" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /diff/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /diff/i }));
 
     // EmbeddedDiffPane is NOT mounted for pty conversations.
     expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
@@ -231,7 +231,7 @@ describe("AgentInspectorPane", () => {
     ];
     render(<AgentInspectorPane conversationId="conv-ssh" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
 
     expect(
       screen.getByText(/file browsing on ssh targets is not yet supported/i),

@@ -20,7 +20,7 @@ export function PendingDiffCommentsStrip({
   const comments = conversation.pendingDiffComments ?? [];
   return (
     <div className="shrink-0 border-t border-accent-blue/30 bg-accent-blue/5 px-3 py-1.5 flex items-center gap-2 flex-wrap">
-      <span className="text-[10px] uppercase tracking-wider text-accent-blue">
+      <span className="text-[10px] uppercase tracking-wide text-accent-blue">
         {comments.length} file comment
         {comments.length === 1 ? "" : "s"} queued
       </span>
@@ -40,7 +40,7 @@ export function PendingDiffCommentsStrip({
             <button
               type="button"
               onClick={() => onRemove(dc.id)}
-              className="text-text-faint hover:text-accent-red"
+              className="text-text-faint hover:text-accent-red transition-colors"
               title="Remove this comment"
             >
               <X size={9} />
@@ -51,7 +51,7 @@ export function PendingDiffCommentsStrip({
       <button
         type="button"
         onClick={onClear}
-        className="text-[10px] text-text-muted hover:text-text-primary ml-auto"
+        className="text-[10px] text-text-muted hover:text-text-primary ml-auto transition-colors"
       >
         Clear all
       </button>

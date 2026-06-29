@@ -17,7 +17,14 @@ const EMPTY: DiffTotals = { fileCount: 0, totalAdds: 0, totalDels: 0 };
 export function useDiffTotals(
   conversation: AgentConversation | undefined,
 ): DiffTotals {
-  const messageCount = conversation?.messages.length ?? 0;
+  // Signature that grows as write_file tool calls stream in — including extra
+  // calls landing on an EXISTING assistant message, which message count alone
+  // (messages.length) would miss.
+  const toolCallSig =
+    conversation?.messages.reduce(
+      (n, m) => n + (m.toolCalls?.length ?? 0),
+      0,
+    ) ?? 0;
   const [totals, setTotals] = useState<DiffTotals>(EMPTY);
 
   useEffect(() => {
@@ -42,10 +49,10 @@ export function useDiffTotals(
     return () => {
       cancelled = true;
     };
-    // Key on identity + mode + message count: streaming tool-call arrivals
-    // bump the count, which is exactly when totals can change.
+    // Key on identity + mode + tool-call signature: streaming tool-call
+    // arrivals bump the signature, which is exactly when totals can change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation?.id, conversation?.mode, messageCount]);
+  }, [conversation?.id, conversation?.mode, toolCallSig]);
 
   return totals;
 }

@@ -95,7 +95,7 @@ export function ProviderPicker({
         return (
           <div key={group.label}>
             {gi > 0 && <div className="my-1 border-t border-bg-border" />}
-            <div className="text-[9px] uppercase tracking-wide text-text-muted px-2 py-1">
+            <div className="text-[9px] uppercase tracking-wide text-text-muted px-3 py-1">
               {group.label}
             </div>
             {rows.map(({ agent, info }) => {

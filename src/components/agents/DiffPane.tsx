@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, FileDiff } from "lucide-react";
 import { useDiffPaneStore } from "@/stores/diffPaneStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { aggregateWriteFiles } from "@/lib/diffUtils";
+import type { ConversationDiffAggregate } from "@/lib/aggregateConversationDiffs";
 import { FileListAndDiffBody } from "./diff/FileListAndDiffBody";
 
 /**
@@ -28,6 +29,22 @@ export function DiffPane() {
     [conversation],
   );
 
+  // Aggregate +adds/-dels lifted from the body so the header keeps the totals
+  // the trigger chip advertised.
+  const [aggregate, setAggregate] = useState<ConversationDiffAggregate | null>(
+    null,
+  );
+
+  // Escape closes the slide-out, matching the app's overlay convention.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, close]);
+
   if (!open) return null;
 
   return (
@@ -42,6 +59,12 @@ export function DiffPane() {
           <span className="text-xs font-medium text-text-primary">
             Changes ({fileCount} {fileCount === 1 ? "file" : "files"})
           </span>
+          {aggregate && (
+            <span className="flex items-center gap-1 text-[10px] font-mono">
+              <span className="text-accent-green">+{aggregate.totalAdds}</span>
+              <span className="text-accent-red">-{aggregate.totalDels}</span>
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -58,6 +81,7 @@ export function DiffPane() {
         conversation={conversation}
         selectedFilePath={selectedFilePath}
         onSelectFile={selectFile}
+        onAggregate={setAggregate}
         autoFormat
       />
     </div>

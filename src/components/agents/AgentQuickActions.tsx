@@ -28,11 +28,11 @@ export function AgentQuickActions({ conversationId }: AgentQuickActionsProps) {
           <button
             key={action.label}
             onClick={() => handleAction(action.prompt)}
-            className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+            className="flex items-center gap-1 rounded bg-bg-tertiary px-2 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary"
             title={action.prompt}
           >
             <Icon size={10} />
-            {action.label}
+            <span className="text-[11px]">{action.label}</span>
           </button>
         );
       })}

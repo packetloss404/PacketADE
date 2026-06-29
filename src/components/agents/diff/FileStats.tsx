@@ -15,7 +15,11 @@ export interface FileStatsProps {
  */
 export function FileStats({ stat, loading }: FileStatsProps) {
   if (loading) {
-    return <span className="text-text-muted text-[10px]">…</span>;
+    return (
+      <span className="text-text-muted text-[10px] animate-pulse motion-reduce:animate-none">
+        ···
+      </span>
+    );
   }
   if (!stat) {
     return <span className="text-text-muted text-[10px]">—</span>;

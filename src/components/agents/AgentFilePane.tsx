@@ -12,6 +12,7 @@ import {
   RotateCw,
   Server,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 import { listDirectory } from "@/lib/tauri";
 
@@ -135,6 +136,7 @@ export function AgentFilePane({
   const [error, setError] = useState<string | null>(null);
   const [truncated, setTruncated] = useState<number>(0);
   const [highlightedIdx, setHighlightedIdx] = useState(0);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -146,6 +148,7 @@ export function AgentFilePane({
   useEffect(() => {
     setCurrentPath(projectPath);
     setHighlightedIdx(0);
+    setSelectedPath(null);
   }, [conversationId, projectPath]);
 
   const loadDir = useCallback(
@@ -219,6 +222,7 @@ export function AgentFilePane({
         setCurrentPath(entry.path);
         return;
       }
+      setSelectedPath(entry.path);
       onSelectFile?.(entry.path);
       // Best-effort clipboard write — failure (e.g. no permission) is silent.
       try {
@@ -278,7 +282,7 @@ export function AgentFilePane({
   if (sshTarget) {
     return (
       <div className="flex flex-col h-full bg-bg-primary items-center justify-center px-4 text-center">
-        <Server size={20} className="text-text-muted mb-2" />
+        <Server size={20} className="text-text-muted opacity-40 mb-2" />
         <span className="text-[11px] text-text-secondary max-w-xs">
           File browsing on SSH targets is not yet supported.
         </span>
@@ -303,17 +307,18 @@ export function AgentFilePane({
           onClick={goUp}
           disabled={parentOf(currentPath) == null}
           title="Parent directory (Backspace)"
-          className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          className="p-1 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <ChevronUp size={12} />
         </button>
         <button
           type="button"
           onClick={refresh}
+          disabled={loading}
           title="Refresh"
-          className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors"
+          className="p-1 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <RotateCw size={12} className={loading ? "animate-spin" : ""} />
+          <RotateCw size={12} className={loading ? "animate-spin motion-reduce:animate-none" : ""} />
         </button>
         <div className="flex-1 min-w-0 overflow-x-auto">
           <div className="flex items-center gap-0.5 text-[11px] font-mono whitespace-nowrap">
@@ -357,8 +362,16 @@ export function AgentFilePane({
           </div>
         )}
 
+        {!error && loading && entries.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full gap-2">
+            <Loader2 size={20} className="text-text-muted opacity-40 animate-spin motion-reduce:animate-none" />
+            <span className="text-[11px] text-text-muted">Loading…</span>
+          </div>
+        )}
+
         {!error && !loading && entries.length === 0 && (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex flex-col items-center justify-center h-full gap-2">
+            <Folder size={20} className="text-text-muted opacity-40" />
             <span className="text-[11px] text-text-muted">Empty directory</span>
           </div>
         )}
@@ -368,20 +381,24 @@ export function AgentFilePane({
             {entries.map((entry, idx) => {
               const Icon = entry.is_dir ? Folder : FileText;
               const isHighlighted = idx === highlightedIdx;
+              const isSelected = !entry.is_dir && entry.path === selectedPath;
               return (
                 <button
                   key={entry.path}
                   type="button"
                   data-file-row-idx={idx}
+                  aria-current={isSelected ? "true" : undefined}
                   onClick={() => {
                     setHighlightedIdx(idx);
                     openEntry(entry);
                   }}
                   onMouseEnter={() => setHighlightedIdx(idx)}
-                  className={`w-full flex items-center gap-2 px-3 py-1 text-left text-[11px] transition-colors ${
-                    isHighlighted
-                      ? "bg-bg-hover text-text-primary"
-                      : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                  className={`w-full flex items-center gap-2 px-3 py-1 text-left text-[11px] border-l-2 transition-colors ${
+                    isSelected
+                      ? "bg-accent-purple/15 border-accent-purple text-text-primary"
+                      : isHighlighted
+                        ? "bg-bg-hover border-transparent text-text-primary"
+                        : "border-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary"
                   }`}
                   title={entry.path}
                 >

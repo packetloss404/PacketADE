@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
 interface BaseToolCardProps {
   icon: ReactNode;
@@ -25,6 +25,9 @@ interface BaseToolCardProps {
   onToggle: () => void;
   /** Override the chevron aria-labels (default: Expand / Collapse content). */
   toggleLabel?: { expanded: string; collapsed: string };
+  /** When true, paint the card with the error chrome so failed calls stand
+   * out when scanning a long transcript. */
+  isError?: boolean;
   /** Body content (rendered when canToggle && expanded). */
   children?: ReactNode;
 }
@@ -47,6 +50,7 @@ export function BaseToolCard({
   expanded,
   onToggle,
   toggleLabel,
+  isError,
   children,
 }: BaseToolCardProps) {
   const expandedLabel = toggleLabel?.expanded ?? "Collapse content";
@@ -54,31 +58,42 @@ export function BaseToolCard({
   const bodyVisible = canToggle && expanded && children !== undefined;
 
   return (
-    <div className="bg-bg-hover rounded text-[10px] text-text-muted border border-bg-border">
+    <div
+      className={`rounded text-[10px] text-text-muted border ${
+        isError
+          ? "border-accent-red/30 bg-accent-red/5"
+          : "border-bg-border bg-bg-hover"
+      }`}
+    >
       <div className="flex items-center gap-1.5 px-2 py-1">
         {canToggle ? (
           <button
             type="button"
             onClick={onToggle}
-            className="text-text-muted hover:text-text-primary transition-colors"
+            aria-expanded={expanded}
             aria-label={expanded ? expandedLabel : collapsedLabel}
+            className="flex items-center gap-1.5 flex-1 min-w-0 text-left hover:text-text-primary transition-colors"
           >
-            {expanded ? (
-              <ChevronDown size={10} />
-            ) : (
-              <ChevronRight size={10} />
-            )}
+            <ChevronRight
+              size={10}
+              className={`shrink-0 transition-transform motion-reduce:transition-none ${
+                expanded ? "rotate-90" : ""
+              }`}
+            />
+            {icon}
+            <span className="text-text-primary truncate min-w-0" title={titleAttr}>
+              {title}
+            </span>
           </button>
         ) : (
-          <span className="w-[10px]" />
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <span className="w-[10px] shrink-0" />
+            {icon}
+            <span className="text-text-primary truncate min-w-0" title={titleAttr}>
+              {title}
+            </span>
+          </div>
         )}
-        {icon}
-        <span
-          className="text-text-primary truncate flex-1 min-w-0"
-          title={titleAttr}
-        >
-          {title}
-        </span>
         {headerActions}
         {statusPill}
       </div>

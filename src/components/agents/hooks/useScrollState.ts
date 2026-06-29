@@ -43,7 +43,10 @@ export function useScrollState(
     const prev = prevMessageCountRef.current;
     prevMessageCountRef.current = count;
     if (isAtBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      // High-frequency streaming follow: use instant scroll so overlapping
+      // smooth animations don't fight each other (jank). Smooth is reserved
+      // for the explicit jumpToBottom() user action.
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
     } else if (count > prev) {
       setUnreadCount((u) => u + (count - prev));
     }

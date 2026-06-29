@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plane, Plug } from "lucide-react";
+import { Check, Plane, Plug } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import {
@@ -206,12 +206,12 @@ export function AgentHeaderBadges({
             </span>
           </button>
           {mcpMenuOpen && (
-            <div className="absolute top-full right-0 mt-1 w-72 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50">
+            <div className="absolute top-full right-0 mt-1 w-72 bg-bg-secondary border border-bg-border rounded shadow-md z-50">
               <div className="px-3 py-2 border-b border-bg-border">
-                <div className="text-[10px] uppercase tracking-wider text-text-muted">
+                <div className="text-[10px] uppercase tracking-wide text-text-faint">
                   MCP servers
                 </div>
-                <div className="text-[9.5px] text-text-faint mt-0.5">
+                <div className="text-[9px] text-text-muted mt-0.5">
                   Changes apply on next launch (sidecar can't hot-swap MCP).
                 </div>
               </div>
@@ -221,18 +221,28 @@ export function AgentHeaderBadges({
                   return (
                     <label
                       key={srv.name}
-                      className="flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-bg-hover cursor-pointer"
+                      className="flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-bg-hover cursor-pointer transition-colors"
                     >
                       <input
                         type="checkbox"
                         checked={on}
                         onChange={() => toggleServer(srv.name)}
+                        className="sr-only"
                       />
+                      <span
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
+                          on
+                            ? "bg-accent-green/20 border-accent-green/40 text-accent-green"
+                            : "bg-bg-tertiary border-bg-border text-transparent"
+                        }`}
+                      >
+                        <Check size={10} />
+                      </span>
                       <span className="flex flex-col flex-1 min-w-0">
                         <span className="text-text-primary truncate">
                           {srv.name}
                         </span>
-                        <span className="text-[9.5px] text-text-muted truncate">
+                        <span className="text-[9px] text-text-muted truncate">
                           {srv.scope} · {srv.config.command}
                         </span>
                       </span>
@@ -244,7 +254,7 @@ export function AgentHeaderBadges({
                 <button
                   type="button"
                   onClick={resetToAll}
-                  className="text-[10px] text-text-muted hover:text-text-secondary"
+                  className="text-[10px] text-text-muted hover:text-text-primary transition-colors"
                   title="Reset to default — every non-disabled server is enabled"
                 >
                   Reset to all
@@ -252,7 +262,7 @@ export function AgentHeaderBadges({
                 <button
                   type="button"
                   onClick={() => setMcpMenuOpen(false)}
-                  className="text-[10px] text-accent-green hover:underline"
+                  className="text-[10px] rounded px-2 py-0.5 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
                 >
                   Done
                 </button>

@@ -1,4 +1,4 @@
-import { Brain } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 interface MemoryInjectionCardProps {
   patterns?: number;
@@ -25,11 +25,11 @@ export function MemoryInjectionCard({
   if (approxTokens != null) stats.push(`~${approxTokens} tok`);
 
   return (
-    <div className="flex items-start gap-2 rounded-md border border-dashed border-accent-line bg-accent-soft px-2.5 py-2 text-[11px] text-text-secondary">
-      <Brain size={12} className="mt-0.5 shrink-0 text-accent-green" />
+    <div className="flex items-start gap-2 rounded border border-dashed border-accent-line bg-accent-soft px-2 py-2 text-[11px] text-text-secondary">
+      <Sparkles size={12} className="mt-0.5 shrink-0 text-accent-green" />
       <div className="min-w-0 flex-1">
         <div className="mb-0.5 flex items-center gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-accent-green">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-green">
             Memory brief injected
           </span>
           {stats.length > 0 && (
