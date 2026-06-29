@@ -145,7 +145,7 @@ export function AgentPreviewPane({
       {!embedded && (
         <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <BookOpen size={13} className="text-text-secondary shrink-0" />
+            <BookOpen size={14} className="text-text-secondary shrink-0" />
             <span className="text-xs font-medium text-text-primary truncate">
               {activeTab === "markdown"
                 ? fileLabel(markdownPath)
@@ -166,7 +166,11 @@ export function AgentPreviewPane({
         </div>
       )}
 
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-bg-border bg-bg-primary shrink-0">
+      <div
+        role="tablist"
+        aria-label="Preview views"
+        className="flex items-center gap-1 px-2 py-1.5 border-b border-bg-border bg-bg-primary shrink-0"
+      >
         {(Object.keys(TAB_META) as PreviewPaneTab[]).map((tab) => {
           const meta = TAB_META[tab];
           const Icon = meta.icon;
@@ -176,10 +180,12 @@ export function AgentPreviewPane({
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
+              role="tab"
+              aria-selected={active}
               className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-colors ${
                 active
-                  ? "bg-bg-hover text-text-primary"
-                  : "text-text-muted hover:text-text-secondary hover:bg-bg-hover/60"
+                  ? "bg-accent-green/20 text-accent-green"
+                  : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
               }`}
             >
               <Icon size={12} />
@@ -201,7 +207,7 @@ export function AgentPreviewPane({
             value={browserDraft}
             onChange={(event) => setBrowserDraft(event.target.value)}
             placeholder="https://example.com"
-            className="flex-1 min-w-0 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+            className="flex-1 min-w-0 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
           />
           <button
             type="submit"
@@ -230,7 +236,7 @@ export function AgentPreviewPane({
             {!markdownPath && (
               <div className="h-full flex items-center justify-center text-center">
                 <div className="max-w-xs">
-                  <BookOpen size={20} className="text-text-muted mx-auto mb-2" />
+                  <BookOpen size={20} className="text-text-muted opacity-40 mx-auto mb-2" />
                   <p className="text-[11px] text-text-secondary">
                     Open a Markdown file from the file pane or click a .md path in chat.
                   </p>
@@ -268,7 +274,7 @@ export function AgentPreviewPane({
             ) : (
               <div className="h-full flex items-center justify-center text-center">
                 <div className="max-w-xs">
-                  <ClipboardList size={20} className="text-text-muted mx-auto mb-2" />
+                  <ClipboardList size={20} className="text-text-muted opacity-40 mx-auto mb-2" />
                   <p className="text-[11px] text-text-secondary">
                     Plan-mode responses will appear here for review.
                   </p>
@@ -286,12 +292,12 @@ export function AgentPreviewPane({
                 src={activeBrowserUrl}
                 title="Preview browser"
                 className="w-full h-full bg-bg-primary"
-                sandbox="allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+                sandbox="allow-forms allow-modals allow-popups allow-scripts"
               />
             ) : (
               <div className="h-full flex items-center justify-center text-center px-6">
                 <div className="max-w-xs">
-                  <Globe2 size={20} className="text-text-muted mx-auto mb-2" />
+                  <Globe2 size={20} className="text-text-muted opacity-40 mx-auto mb-2" />
                   <p className="text-[11px] text-text-secondary">
                     Enter a URL above to browse inside the preview pane.
                   </p>

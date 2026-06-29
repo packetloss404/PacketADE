@@ -1,4 +1,5 @@
 import {
+  Brain,
   Compass,
   Download,
   FileCheck2,
@@ -115,12 +116,14 @@ export function HeaderActions({
                 })()
               : "Memory context OFF — click to include learned patterns in system prompt"
           }
-          className={`border rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+          aria-pressed={!!conversation.memoryContextEnabled}
+          className={`inline-flex items-center gap-1 border rounded px-1.5 py-0.5 text-[10px] transition-colors ${
             conversation.memoryContextEnabled
               ? "bg-accent-blue/15 border-accent-blue/40 text-accent-blue"
-              : "bg-bg-secondary border-bg-border text-text-muted hover:text-text-secondary"
+              : "border-bg-border text-text-muted hover:text-text-primary"
           }`}
         >
+          <Brain size={11} />
           Memory
         </button>
       )}
@@ -170,9 +173,10 @@ export function HeaderActions({
                 ? "Plan mode ON — writes/bash disabled"
                 : "Plan mode OFF — all tools enabled"
             }
+            aria-pressed={!!conversation.planMode}
             className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
               conversation.planMode
-                ? "border-accent-amber/40 text-accent-amber bg-accent-amber/10"
+                ? "border-accent-amber/40 text-accent-amber bg-accent-amber/15"
                 : "border-bg-border text-text-muted hover:text-text-primary"
             }`}
           >
@@ -211,9 +215,10 @@ export function HeaderActions({
                 ? "Approve writes ON — confirm each write_file"
                 : "Approve writes OFF"
             }
+            aria-pressed={!!conversation.approveWrites}
             className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
               conversation.approveWrites
-                ? "border-accent-amber/40 text-accent-amber bg-accent-amber/10"
+                ? "border-accent-amber/40 text-accent-amber bg-accent-amber/15"
                 : "border-bg-border text-text-muted hover:text-text-primary"
             }`}
           >
@@ -249,6 +254,7 @@ export function HeaderActions({
       <button
         type="button"
         onClick={togglePreview}
+        aria-pressed={previewOpen}
         className={`p-0.5 rounded transition-colors ${
           previewOpen
             ? "text-accent-blue bg-accent-blue/10"
@@ -264,9 +270,10 @@ export function HeaderActions({
 
       <button
         onClick={() => setShowRewind((v) => !v)}
+        aria-pressed={showRewind}
         className={`p-0.5 rounded transition-colors ${
           showRewind
-            ? "text-accent-blue"
+            ? "text-accent-blue bg-accent-blue/10"
             : "text-text-muted hover:text-text-primary"
         }`}
         title="Rewind / checkpoints"
@@ -277,7 +284,8 @@ export function HeaderActions({
       <button
         onClick={onClose}
         className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors"
-        title="Close pane"
+        title="Back to list"
+        aria-label="Back to list"
       >
         <X size={12} />
       </button>

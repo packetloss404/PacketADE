@@ -83,6 +83,9 @@ export function AgentInputArea({
   const { staged, addFiles, removeStaged, clear: clearStaged } =
     useAttachmentStaging();
   const [dragActive, setDragActive] = useState(false);
+  // Enter/leave depth counter so the drag border doesn't flicker off when the
+  // pointer crosses into nested children (textarea, staged chips, popovers).
+  const dragDepthRef = useRef(0);
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -107,6 +110,7 @@ export function AgentInputArea({
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
+      dragDepthRef.current = 0;
       setDragActive(false);
       const files = Array.from(e.dataTransfer?.files ?? []);
       if (files.length > 0) void addFiles(files);
@@ -114,14 +118,22 @@ export function AgentInputArea({
     [addFiles],
   );
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    // Functional setter — keeps `dragActive` out of deps so we don't
-    // oscillate state / re-bind the listener every frame during a drag.
-    setDragActive((cur) => (cur ? cur : true));
+    dragDepthRef.current += 1;
+    setDragActive(true);
   }, []);
 
-  const handleDragLeave = useCallback(() => setDragActive(false), []);
+  // dragover must preventDefault for the drop to fire, but doesn't touch the
+  // depth counter — enter/leave own the active state.
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragActive(false);
+  }, []);
 
   // Single-flight guard: onLaunch returns synchronously while async work
   // (worktree provisioning, conversation creation) is still in flight, so
@@ -399,12 +411,13 @@ export function AgentInputArea({
         )}
 
         <div
-          className={`relative border rounded-lg bg-bg-primary transition-colors ${
+          className={`relative border rounded bg-bg-primary transition-colors ${
             dragActive
               ? "border-accent-green ring-2 ring-accent-green/30"
-              : "border-bg-border"
+              : "border-bg-border focus-within:border-accent-green/50"
           }`}
           onDrop={handleDrop}
+          onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
         >
@@ -470,7 +483,7 @@ export function AgentInputArea({
                 slash.close();
               }, 120);
             }}
-            placeholder="What would you like to work on?  (drag-drop or paste images)"
+            placeholder="What would you like to work on?"
             rows={4}
             className="w-full bg-transparent px-4 py-3 text-xs text-text-primary placeholder:text-text-muted focus:outline-none resize-none"
           />

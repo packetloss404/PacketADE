@@ -125,7 +125,7 @@ export function useReviewedDiffs(
 
   // Local tick so this hook re-renders whenever the shared map changes
   // (e.g., another component on the same screen calls `markReviewed`).
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     const fn = () => setTick((n) => n + 1);
     subscribers.add(fn);
@@ -143,7 +143,10 @@ export function useReviewedDiffs(
     if (!conversationId) return new Set();
     const ids = getMap()[conversationId] ?? [];
     return new Set(ids);
-  }, [conversationId]);
+    // `tick` bumps whenever any hook instance marks a tool call reviewed; it
+    // must stay in the deps so the memo re-reads getMap() and the badge syncs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: `tick` is a re-run trigger, not read in the body.
+  }, [conversationId, tick]);
 
   const unreviewedCount = useMemo(() => {
     if (writeCalls.length === 0) return 0;

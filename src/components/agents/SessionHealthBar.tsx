@@ -5,28 +5,11 @@ import {
   formatCostPill,
 } from "@/lib/conversationCost";
 import { getGitBranch } from "@/lib/tauri";
-import type { AgentConversation } from "@/types/agent-conversation";
-
-/**
- * Heuristic context-window size by model id. Anthropic and most modern
- * frontier models default to 200k. We don't try to enumerate every model —
- * unknowns fall through to 200k so the gauge still renders something
- * directional. Replace with an authoritative provider-side capability map
- * when the protocol surfaces one.
- */
-function contextWindowFor(model: string | undefined | null): number {
-  if (!model) return 200_000;
-  const id = model.toLowerCase();
-  if (id.includes("haiku") || id.includes("4o-mini") || id.includes("4-mini"))
-    return 200_000;
-  if (id.includes("opus") || id.includes("sonnet") || id.includes("claude"))
-    return 200_000;
-  if (id.includes("gpt-5") || id.includes("o3") || id.includes("o4"))
-    return 400_000;
-  if (id.includes("gpt-4o")) return 128_000;
-  if (id.includes("minimax")) return 256_000;
-  return 200_000;
-}
+import { computeContextOccupancy } from "@/lib/modelContext";
+import type {
+  AgentConversation,
+  AgentMessage,
+} from "@/types/agent-conversation";
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -83,20 +66,36 @@ export function SessionHealthBar({ conversation }: SessionHealthBarProps) {
     [conversation],
   );
 
-  // Approximate context usage as cumulative input tokens / model context
-  // window. This is a worst-case proxy — real usage is closer to the last
-  // turn's input — but it tracks "you are getting deep into the budget,
-  // think about /compact" trends which is what the gauge is for.
-  const cumulativeInput = useMemo(() => {
-    let n = 0;
-    for (const m of conversation.messages ?? []) {
-      if (m.inputTokens) n += m.inputTokens;
+  // Context usage = the LATEST assistant turn's resident window
+  // (input + cache read + cache write), not a cross-turn sum. Each turn
+  // re-sends the whole window, so summing multi-counts the same context
+  // and pins the gauge to 100%. The shared lib is the single source of
+  // truth for both the window size and the occupancy math.
+  const occupancy = useMemo(() => {
+    const messages = conversation.messages ?? [];
+    let latest: AgentMessage | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (
+        m.role === "assistant" &&
+        ((m.inputTokens ?? 0) > 0 ||
+          (m.cacheReadTokens ?? 0) > 0 ||
+          (m.cacheWriteTokens ?? 0) > 0)
+      ) {
+        latest = m;
+        break;
+      }
     }
-    return n;
-  }, [conversation]);
+    return computeContextOccupancy({
+      inputTokens: latest?.inputTokens,
+      cacheReadTokens: latest?.cacheReadTokens,
+      cacheWriteTokens: latest?.cacheWriteTokens,
+      model: conversation.model,
+    });
+  }, [conversation.messages, conversation.model]);
 
-  const ctxWindow = contextWindowFor(conversation.model);
-  const ctxPct = Math.min(100, Math.round((cumulativeInput / ctxWindow) * 100));
+  const ctxWindow = occupancy.totalTokens;
+  const ctxPct = Math.round(occupancy.fraction * 100);
   const ctxColor =
     ctxPct >= 85
       ? "text-accent-red"
@@ -124,7 +123,7 @@ export function SessionHealthBar({ conversation }: SessionHealthBarProps) {
 
       <span
         className={`flex items-center gap-1 shrink-0 ${ctxColor}`}
-        title={`Cumulative input: ~${fmtTokens(cumulativeInput)} of ~${fmtTokens(ctxWindow)} model window`}
+        title={`Context: ~${fmtTokens(occupancy.usedTokens)} of ~${fmtTokens(ctxWindow)} model window (latest turn)`}
       >
         <Gauge size={10} />
         <span>{ctxPct}% ctx</span>

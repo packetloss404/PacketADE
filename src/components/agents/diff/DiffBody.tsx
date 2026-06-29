@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { writeFileContents } from "@/lib/tauri";
 import { HunkSelectableDiff } from "@/components/agents/HunkSelectableDiff";
 import { autoFormatFile } from "@/lib/autoFormat";
@@ -46,7 +46,8 @@ export function DiffBody({ projectPath, entry, autoFormat }: DiffBodyProps) {
 
   if (disk.kind === "loading") {
     return (
-      <div className="px-3 py-4 text-[11px] text-text-secondary italic">
+      <div className="px-3 py-4 flex items-center gap-1.5 text-[11px] text-text-secondary">
+        <Loader2 size={12} className="animate-spin text-text-muted" />
         Loading file from disk…
       </div>
     );

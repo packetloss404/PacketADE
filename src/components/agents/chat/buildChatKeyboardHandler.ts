@@ -81,22 +81,35 @@ export function buildChatKeyboardHandler(deps: ChatKeyboardDeps) {
         return;
       }
       // FileMentionPopover fetches results async, so delegate accept to a
-      // mousedown dispatch on the highlighted DOM row.
+      // mousedown dispatch on the highlighted DOM row. Always swallow Enter/Tab
+      // while the popover is open so a half-typed `@query` is never sent because
+      // results haven't loaded yet.
       if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
         const el = document.querySelector<HTMLDivElement>(
           '[data-agent-pane-mention-popover] [role="option"][aria-selected="true"]',
         );
         if (el) {
-          e.preventDefault();
           el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-          return;
         }
+        return;
       }
       if (e.key === "ArrowDown") {
         e.preventDefault();
+        // Clamp to the rendered row count (file results are async/DOM-driven)
+        // so the highlight can't run past the last item and lose its selection.
+        const count = document.querySelectorAll(
+          '[data-agent-pane-mention-popover] [role="option"]',
+        ).length;
         setMentionState((ms) =>
           ms.kind === "file"
-            ? { ...ms, highlightedIndex: ms.highlightedIndex + 1 }
+            ? {
+                ...ms,
+                highlightedIndex:
+                  count > 0
+                    ? Math.min(count - 1, ms.highlightedIndex + 1)
+                    : ms.highlightedIndex,
+              }
             : ms,
         );
         return;
@@ -149,6 +162,9 @@ export function buildChatKeyboardHandler(deps: ChatKeyboardDeps) {
         return;
       }
       if (e.key === "Enter" || e.key === "Tab") {
+        // Always swallow Enter/Tab while the slash popover is open so an
+        // unmatched `/xyz` is never sent as a literal message.
+        e.preventDefault();
         const q = mentionState.query.toLowerCase();
         const builtins = BUILTIN_SLASH_NAMES.filter((c) => c.startsWith(q));
         const customMatches = allCustomSlashCommands.filter((c) =>
@@ -164,10 +180,9 @@ export function buildChatKeyboardHandler(deps: ChatKeyboardDeps) {
         ];
         const picked = all[mentionState.highlightedIndex] ?? all[0];
         if (picked) {
-          e.preventDefault();
           runSlashCommand(picked);
-          return;
         }
+        return;
       }
     }
 
@@ -222,9 +237,11 @@ export function buildChatKeyboardHandler(deps: ChatKeyboardDeps) {
       return;
     }
 
-    if (e.altKey && (e.key === "." || e.key === ",")) {
+    // Key off physical codes, not e.key: on macOS WKWebView Option+. / Option+,
+    // emit the composed glyphs "≥" / "≤", so matching e.key never fires.
+    if (e.altKey && (e.code === "Period" || e.code === "Comma")) {
       e.preventDefault();
-      nudgeReasoning(e.key === "." ? "up" : "down");
+      nudgeReasoning(e.code === "Period" ? "up" : "down");
       return;
     }
 

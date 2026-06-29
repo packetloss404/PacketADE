@@ -15,6 +15,8 @@ import { AgentInputArea } from "@/components/agents/AgentInputArea";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
 import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { X } from "lucide-react";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
 import {
   getProviderAuthStatus,
@@ -57,7 +59,6 @@ export function AgentsView() {
   const selectedConversationId = useAgentTaskStore((s) => s.selectedConversationId);
   const selectConversation = useAgentTaskStore((s) => s.selectConversation);
   const createApiConversation = useAgentTaskStore((s) => s.createApiConversation);
-  const deleteConversation = useAgentTaskStore((s) => s.deleteConversation);
 
   const [selectedAgent, setSelectedAgent] = useState<AgentCli>(DEFAULT_AGENT);
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
@@ -66,12 +67,33 @@ export function AgentsView() {
   const getProfile = useProfileStore((s) => s.getProfile);
   const [selectedProfileId, setSelectedProfileId] =
     useState<string>(defaultProfileId);
+  const userPickedProfileRef = useRef(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const composerMode = useAgentSettingsStore(
     (s) => s.composerMode,
   ) as ComposerMode;
   const setComposerMode = useAgentSettingsStore((s) => s.setComposerMode);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const autoPickRanRef = useRef(false);
+
+  // Keep the launcher's profile in sync with the store's default until the
+  // user makes an explicit pick — defaultProfileId can hydrate after mount,
+  // so reading it once via useState would strand the launcher on a stale id.
+  useEffect(() => {
+    if (!userPickedProfileRef.current) setSelectedProfileId(defaultProfileId);
+  }, [defaultProfileId]);
+
+  // Auto-clear the inline launch error so it behaves like a transient toast.
+  useEffect(() => {
+    if (!launchError) return;
+    const t = window.setTimeout(() => setLaunchError(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [launchError]);
+
+  const handleProfileChange = useCallback((id: string) => {
+    userPickedProfileRef.current = true;
+    setSelectedProfileId(id);
+  }, []);
 
   // One-shot: on mount, if the Agents pane has no active conversation and the
   // user hasn't already manually picked a provider (state still equals the
@@ -121,7 +143,9 @@ export function AgentsView() {
 
   const handleNewAgent = useCallback(() => {
     selectConversation(null);
-    setTimeout(() => textareaRef.current?.focus(), 50);
+    // Focus after the launcher has had a frame to mount, rather than racing a
+    // hardcoded timer that can fire before the textarea exists.
+    requestAnimationFrame(() => textareaRef.current?.focus());
   }, [selectConversation]);
 
   // Ctrl+N (Cmd+N on macOS) opens a fresh agent. Suppressed when the user is
@@ -190,7 +214,7 @@ export function AgentsView() {
           ? useServerStore.getState().getServer(parsed.serverId)
           : undefined;
         if (!parsed || !server) {
-          alert(
+          setLaunchError(
             "SSH server no longer exists. Pick another from the project dropdown.",
           );
           return false;
@@ -202,7 +226,7 @@ export function AgentsView() {
             ? parsed.remotePath.trim()
             : server.remotePath?.trim()) ?? "";
         if (!remotePath) {
-          alert(
+          setLaunchError(
             "Enter a remote project path for this SSH server before launching.",
           );
           return false;
@@ -221,8 +245,10 @@ export function AgentsView() {
         };
       }
 
+      setLaunchError(null);
       void (async () => {
         let convId: string | undefined;
+        try {
         if (sshTarget && sshProjectPath) {
           // Stamp lastConnectedAt so the recents ordering reflects use.
           useServerStore.getState().updateServer(sshTarget.serverId, {
@@ -301,8 +327,15 @@ export function AgentsView() {
           plans.setSpec(convId, []);
           plans.setSpecStage(convId, "spec");
         }
+        // Clear the composer only once the launch actually succeeded, so a
+        // failed launch keeps the user's typed prompt intact for a retry.
+        setAgentInputText("");
+        } catch (e) {
+          setLaunchError(
+            e instanceof Error ? e.message : "Failed to launch agent.",
+          );
+        }
       })();
-      setAgentInputText("");
       return true;
     },
     [
@@ -311,6 +344,7 @@ export function AgentsView() {
       selectedAgent,
       selectedModel,
       setAgentInputText,
+      setLaunchError,
       createApiConversation,
       agentMode,
       selectedProfileId,
@@ -319,12 +353,12 @@ export function AgentsView() {
     ],
   );
 
-  const handleCloseConversation = useCallback(
-    (id: string) => {
-      deleteConversation(id);
-    },
-    [deleteConversation],
-  );
+  // The pane "X" is a NON-destructive close: it returns to the launcher/list
+  // and leaves the conversation in the sidebar. Permanent deletion lives
+  // behind the sidebar's explicit Delete action (gated by a confirm).
+  const handleClosePane = useCallback(() => {
+    selectConversation(null);
+  }, [selectConversation]);
 
   return (
     <div className="relative flex flex-1 overflow-hidden bg-bg-primary">
@@ -336,11 +370,15 @@ export function AgentsView() {
 
       {selectedConversationId ? (
         <>
-          <AgentChatPane
-            conversationId={selectedConversationId}
-            onClose={() => handleCloseConversation(selectedConversationId)}
-          />
-          <AgentInspectorPane conversationId={selectedConversationId} />
+          <ErrorBoundary fallbackMessage="This conversation hit an error.">
+            <AgentChatPane
+              conversationId={selectedConversationId}
+              onClose={handleClosePane}
+            />
+          </ErrorBoundary>
+          <ErrorBoundary fallbackMessage="The inspector hit an error.">
+            <AgentInspectorPane conversationId={selectedConversationId} />
+          </ErrorBoundary>
         </>
       ) : (
         <AgentInputArea
@@ -353,10 +391,23 @@ export function AgentsView() {
           agentMode={agentMode}
           onAgentModeChange={setAgentMode}
           selectedProfileId={selectedProfileId}
-          onProfileChange={setSelectedProfileId}
+          onProfileChange={handleProfileChange}
           composerMode={composerMode}
           onComposerModeChange={setComposerMode}
         />
+      )}
+
+      {launchError && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 max-w-[480px] px-3 py-2 rounded bg-accent-red/15 border border-accent-red/30 text-accent-red text-[11px] shadow-lg">
+          <span className="flex-1">{launchError}</span>
+          <button
+            onClick={() => setLaunchError(null)}
+            className="text-accent-red hover:text-text-primary transition-colors"
+            title="Dismiss"
+          >
+            <X size={12} />
+          </button>
+        </div>
       )}
 
       <AgentsOnboarding />

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, ChevronDown, Brain, Sparkles, Plane, Clock, Info } from "lucide-react";
+import { ChevronRight, Brain, Sparkles, Lightbulb, Clock, Info } from "lucide-react";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { relativeTime } from "@/lib/time";
 import type { ContextItem, ContextItemKind } from "@/stores/memoryStore";
@@ -35,7 +35,7 @@ const KIND_META: Record<
   }
 > = {
   pattern: { label: "Pattern", icon: Sparkles, color: "text-accent-amber" },
-  lesson: { label: "Lesson", icon: Plane, color: "text-accent-blue" },
+  lesson: { label: "Lesson", icon: Lightbulb, color: "text-accent-blue" },
   session: { label: "Session", icon: Clock, color: "text-accent-green" },
 };
 
@@ -68,7 +68,7 @@ export function ContextPreviewChevron({ sessionId, projectPath }: ContextPreview
   );
 
   return (
-    <div className="text-[10.5px]">
+    <div className="text-[10px]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -80,7 +80,10 @@ export function ContextPreviewChevron({ sessionId, projectPath }: ContextPreview
         }
         aria-expanded={open}
       >
-        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        <ChevronRight
+          size={11}
+          className={`transition-transform ${open ? "rotate-90" : ""}`}
+        />
         <Brain size={10} className="text-accent-green" />
         <span>
           Memory brief <span className="text-line-strong">·</span>{" "}
@@ -98,7 +101,7 @@ export function ContextPreviewChevron({ sessionId, projectPath }: ContextPreview
       {open && (
         <div className="mt-1.5 flex max-h-[180px] flex-col gap-1 overflow-y-auto rounded border border-bg-border bg-bg-secondary px-2 py-1.5">
           {count > 0 && (
-            <div className="mb-0.5 flex items-center gap-1.5 text-[9.5px] text-text-faint">
+            <div className="mb-0.5 flex items-center gap-1.5 text-[9px] text-text-muted">
               <span>{patternCount} patterns</span>
               <span className="text-line-strong">·</span>
               <span>{lessonCount} lessons</span>
@@ -107,8 +110,8 @@ export function ContextPreviewChevron({ sessionId, projectPath }: ContextPreview
             </div>
           )}
           {count === 0 ? (
-            <span className="py-1 text-[10px] text-text-faint">
-              # No memory brief sources yet. Complete a few sessions to start learning, or pin a
+            <span className="py-1 text-[10px] text-text-muted">
+              No memory brief sources yet. Complete a few sessions to start learning, or pin a
               pattern from the Memory view.
             </span>
           ) : (
@@ -116,10 +119,10 @@ export function ContextPreviewChevron({ sessionId, projectPath }: ContextPreview
               const meta = KIND_META[it.kind];
               const Icon = meta.icon;
               return (
-                <div key={it.id} className="flex items-start gap-1.5 text-[10.5px] leading-snug">
+                <div key={it.id} className="flex items-start gap-1.5 text-[10px] leading-snug">
                   <Icon size={9} className={`${meta.color} mt-0.5 flex-shrink-0`} />
                   <span className="min-w-0 flex-1 truncate text-text-secondary">{it.title}</span>
-                  <span className="flex-shrink-0 text-[9.5px] text-text-faint">
+                  <span className="flex-shrink-0 text-[9px] text-text-muted">
                     {relativeTime(it.timestamp)}
                   </span>
                   <span

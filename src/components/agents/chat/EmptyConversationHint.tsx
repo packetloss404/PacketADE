@@ -1,8 +1,11 @@
+import { MessageSquare } from "lucide-react";
+
 /** Keyboard-shortcut hint shown when the conversation has no messages yet. */
 export function EmptyConversationHint() {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3">
-      <span className="text-[11px] text-text-muted">No messages yet</span>
+      <MessageSquare size={24} className="opacity-30 text-text-muted" />
+      <span className="text-xs text-text-secondary">No messages yet</span>
       <div className="flex flex-col gap-1.5 text-[11px] text-text-secondary">
         <div className="flex items-center gap-2">
           <kbd className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[10px] font-mono">

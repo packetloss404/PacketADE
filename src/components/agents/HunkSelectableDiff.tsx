@@ -3,7 +3,7 @@ import {
   CheckSquare,
   Square,
   Save,
-  RotateCw,
+  Loader2,
   FilePlus2,
   FileDiff,
 } from "lucide-react";
@@ -133,7 +133,7 @@ export function HunkSelectableDiff({
           type="button"
           onClick={acceptAll}
           disabled={allSelected}
-          className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           title="Accept all hunks"
         >
           Accept all
@@ -142,7 +142,7 @@ export function HunkSelectableDiff({
           type="button"
           onClick={rejectAll}
           disabled={noneSelected}
-          className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           title="Reject all hunks"
         >
           Reject all
@@ -151,11 +151,11 @@ export function HunkSelectableDiff({
           type="button"
           onClick={handleApply}
           disabled={applying}
-          className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-accent-green/15 border border-accent-green/40 text-accent-green hover:bg-accent-green/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded bg-accent-green/15 border border-accent-green/30 text-accent-green hover:bg-accent-green/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           title="Apply selected hunks to file on disk"
         >
           {applying ? (
-            <RotateCw size={10} className="animate-spin" />
+            <Loader2 size={10} className="animate-spin" />
           ) : (
             <Save size={10} />
           )}
@@ -186,7 +186,10 @@ export function HunkSelectableDiff({
               <button
                 type="button"
                 onClick={() => toggleHunk(hunk.id)}
-                className="w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-bg-hover/50 transition-colors rounded-t"
+                role="checkbox"
+                aria-checked={accepted}
+                aria-label={`Hunk ${idx + 1} at line ${hunk.startLine}`}
+                className="w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-bg-hover transition-colors rounded-t"
                 title={accepted ? "Reject this hunk" : "Accept this hunk"}
               >
                 {accepted ? (
@@ -208,7 +211,7 @@ export function HunkSelectableDiff({
               </button>
 
               {/* Hunk body */}
-              <div className="border-t border-bg-border">
+              <div className="border-t border-bg-border overflow-x-auto">
                 {hunk.context.before.length > 0 && (
                   <ContextBlock lines={hunk.context.before} />
                 )}
@@ -236,7 +239,7 @@ export function HunkSelectableDiff({
 
 function ContextBlock({ lines }: { lines: string[] }) {
   return (
-    <pre className="text-[11px] font-mono whitespace-pre-wrap break-words text-text-secondary">
+    <pre className="text-[11px] font-mono whitespace-pre text-text-secondary">
       {lines.map((line, idx) => (
         <div key={idx} className="px-3">
           <span className="inline-block w-4 text-text-muted select-none"> </span>
@@ -254,18 +257,18 @@ function ChangeBlock({
   lines: string[];
   kind: "added" | "removed";
 }) {
-  const rowClass =
-    kind === "added"
-      ? "bg-accent-green/10 text-accent-green"
-      : "bg-accent-red/10 text-accent-red";
+  // Tint only the row background; keep code text at the normal foreground and
+  // color just the +/- gutter sign (standard diff reading).
+  const rowClass = kind === "added" ? "bg-accent-green/10" : "bg-accent-red/10";
   const gutter = kind === "added" ? "+" : "-";
+  const gutterClass = kind === "added" ? "text-accent-green" : "text-accent-red";
   return (
     <pre
-      className={`text-[11px] font-mono whitespace-pre-wrap break-words ${rowClass}`}
+      className={`text-[11px] font-mono whitespace-pre text-text-primary ${rowClass}`}
     >
       {lines.map((line, idx) => (
         <div key={idx} className="px-3">
-          <span className="inline-block w-4 text-text-secondary select-none">
+          <span className={`inline-block w-4 select-none ${gutterClass}`}>
             {gutter}
           </span>
           {line}

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Settings2 } from "lucide-react";
+import { ChevronRight, Settings2 } from "lucide-react";
 import { storageKey } from "@/lib/brand";
 
 const OPEN_STORAGE_KEY = storageKey("composer-advanced-open");
@@ -55,7 +55,11 @@ export function AdvancedAccordion({
   forceOpenOnFirstMount = false,
   children,
 }: AdvancedAccordionProps) {
-  const [open, setOpen] = useState<boolean>(() => loadOpen(forceOpenOnFirstMount));
+  const [open, setOpen] = useState<boolean>(
+    // Force-open wins even when a stored "0" exists, so active non-default
+    // settings are always revealed on first mount.
+    () => forceOpenOnFirstMount || loadOpen(forceOpenOnFirstMount),
+  );
 
   useEffect(() => {
     persistOpen(open);
@@ -66,8 +70,6 @@ export function AdvancedAccordion({
     .map((s) => truncate(s.label as string, s.maxChars));
   const hasActive = activeBits.length > 0;
 
-  const Chevron = open ? ChevronDown : ChevronRight;
-
   return (
     <div className="flex flex-col">
       <button
@@ -77,7 +79,10 @@ export function AdvancedAccordion({
         title={open ? "Hide advanced settings" : "Show advanced settings"}
         aria-expanded={open}
       >
-        <Chevron size={10} />
+        <ChevronRight
+          size={10}
+          className={`transition-transform ${open ? "rotate-90" : ""}`}
+        />
         <Settings2 size={10} />
         <span>Advanced</span>
         {!open && hasActive && (

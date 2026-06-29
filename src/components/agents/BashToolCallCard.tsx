@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, RotateCw, Terminal } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
@@ -42,6 +42,12 @@ export function BashToolCallCard({
 
   const [expanded, setExpanded] = useState(verbosity === "verbose");
   const [copied, setCopied] = useState(false);
+
+  // Keep expand state in sync when the per-conversation verbosity control
+  // changes after the card has mounted.
+  useEffect(() => {
+    setExpanded(verbosity === "verbose");
+  }, [verbosity]);
 
   const body = toolCall.fullContent ?? toolCall.summary ?? "";
   const hasBody = body.trim().length > 0;
@@ -87,7 +93,7 @@ export function BashToolCallCard({
       <button
         type="button"
         onClick={handleCopy}
-        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border/50"
+        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
         title={copied ? "Copied!" : "Copy command"}
         aria-label="Copy command"
       >
@@ -100,9 +106,9 @@ export function BashToolCallCard({
       <button
         type="button"
         onClick={handleRerun}
-        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border/50"
-        title="Re-run command"
-        aria-label="Re-run command"
+        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
+        title="Ask agent to re-run this command"
+        aria-label="Ask agent to re-run this command"
       >
         <RotateCw size={11} />
       </button>
@@ -111,7 +117,7 @@ export function BashToolCallCard({
 
   const subHeader =
     verbosity === "verbose" && cwd ? (
-      <div className="px-2 pb-1 font-mono text-[10px] text-text-muted/80 truncate">
+      <div className="px-2 pb-1 font-mono text-[10px] text-text-faint truncate">
         cwd: {cwd}
       </div>
     ) : undefined;
@@ -133,6 +139,7 @@ export function BashToolCallCard({
         expanded: "Collapse output",
         collapsed: "Expand output",
       }}
+      isError={toolCall.status === "error"}
     >
       <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
         {body}

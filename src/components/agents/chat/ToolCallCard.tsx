@@ -1,12 +1,7 @@
-import { useState } from "react";
-import {
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  XCircle,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { ToolDiffView } from "../ToolDiffView";
+import { StatusPill } from "../tool-cards/StatusPill";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface WriteFileInput {
@@ -54,41 +49,42 @@ export function ToolCallCard({
 }) {
   const [expanded, setExpanded] = useState(verbosity === "verbose");
 
+  // Keep expand state in sync when the per-conversation verbosity control
+  // changes after the card has mounted.
+  useEffect(() => {
+    setExpanded(verbosity === "verbose");
+  }, [verbosity]);
+
   const writeFileInput =
     toolCall.name === "write_file" ? parseWriteFileInput(toolCall) : null;
 
-  const statusIcon =
+  const statusPill =
     toolCall.status === "running" ? (
-      <Loader2 size={10} className="animate-spin" />
-    ) : toolCall.status === "error" ? (
-      <XCircle size={10} className="text-accent-red" />
+      <StatusPill status="running" />
     ) : (
-      <CheckCircle size={10} className="text-accent-green" />
+      <StatusPill status={toolCall.status} variant="label" />
     );
 
-  const dotClass =
-    toolCall.status === "running"
-      ? "bg-accent-amber animate-pulse"
-      : toolCall.status === "error"
-        ? "bg-accent-red"
-        : "bg-accent-green";
+  const isError = toolCall.status === "error";
 
   if (writeFileInput) {
     return (
-      <div className="border border-bg-border rounded-md overflow-hidden bg-bg-secondary">
-        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-bg-tertiary border-b border-line-soft">
-          {statusIcon}
-          <span className="text-[12px] font-medium text-text-primary">Edit</span>
+      <div
+        className={`border rounded overflow-hidden ${
+          isError
+            ? "border-accent-red/30 bg-accent-red/5"
+            : "border-bg-border bg-bg-secondary"
+        }`}
+      >
+        <div className="flex items-center gap-2 px-2 py-1 bg-bg-tertiary border-b border-line-soft">
+          <span className="text-xs font-medium text-text-primary">Edit</span>
           {toolCall.file && (
-            <span className="font-mono text-[10.5px] text-text-secondary truncate">
+            <span className="font-mono text-[10px] text-text-secondary truncate">
               {toolCall.file}
             </span>
           )}
           <span className="flex-1" />
-          <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
-          <span className="text-[10.5px] capitalize text-text-secondary">
-            {toolCall.status}
-          </span>
+          {statusPill}
         </div>
         <ToolDiffView
           projectPath={projectPath}
@@ -108,39 +104,44 @@ export function ToolCallCard({
     summary.length > 160;
 
   return (
-    <div className="border border-bg-border rounded-md overflow-hidden bg-bg-secondary">
+    <div
+      className={`border rounded overflow-hidden ${
+        isError
+          ? "border-accent-red/30 bg-accent-red/5"
+          : "border-bg-border bg-bg-secondary"
+      }`}
+    >
       <button
         type="button"
         onClick={() => hasMore && setExpanded((v) => !v)}
-        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left bg-bg-tertiary ${
+        aria-expanded={hasMore ? expanded : undefined}
+        className={`w-full flex items-center gap-2 px-2 py-1 text-left bg-bg-tertiary ${
           hasMore ? "hover:bg-bg-elevated cursor-pointer" : "cursor-default"
         } ${expanded && hasMore ? "border-b border-line-soft" : ""} transition-colors`}
       >
-        {statusIcon}
-        <span className="text-[12px] font-medium text-text-primary">
+        <span className="text-xs font-medium text-text-primary">
           {toolCall.name}
         </span>
         {toolCall.file && (
-          <span className="font-mono text-[10.5px] text-text-secondary truncate">
+          <span className="font-mono text-[10px] text-text-secondary truncate">
             {toolCall.file}
           </span>
         )}
         {!expanded && summaryPreview && verbosity !== "summary" && (
-          <span className="ml-1 truncate text-text-muted text-[10.5px] flex-1 min-w-0">
+          <span className="ml-1 truncate text-text-muted text-[10px] flex-1 min-w-0">
             {summaryPreview.replace(/\n/g, " ↵ ")}
           </span>
         )}
         <span className="flex-1" />
-        <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
-        <span className="text-[10.5px] capitalize text-text-secondary">
-          {toolCall.status}
-        </span>
-        {hasMore &&
-          (expanded ? (
-            <ChevronDown size={10} className="text-text-muted" />
-          ) : (
-            <ChevronRight size={10} className="text-text-muted" />
-          ))}
+        {statusPill}
+        {hasMore && (
+          <ChevronRight
+            size={10}
+            className={`text-text-muted shrink-0 transition-transform motion-reduce:transition-none ${
+              expanded ? "rotate-90" : ""
+            }`}
+          />
+        )}
       </button>
       {expanded && hasMore && (
         <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary p-2 max-h-96 overflow-y-auto text-text-primary">

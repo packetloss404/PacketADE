@@ -54,7 +54,7 @@ export function PendingApprovalsRollup({
           <button
             type="button"
             onClick={onCancelAllPending}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover"
+            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover transition-colors"
             title="Drain all parked prompts as denied — agent loop continues, model sees synthetic 'user cancelled' results"
           >
             <Ban size={11} /> Cancel pending
@@ -70,7 +70,7 @@ export function PendingApprovalsRollup({
           <button
             type="button"
             onClick={onApplyAllEdits}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
+            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
             title="Apply every staged write_file in one go"
           >
             <Check size={11} /> Apply all
@@ -78,7 +78,7 @@ export function PendingApprovalsRollup({
           <button
             type="button"
             onClick={onRejectAllEdits}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-red/40 text-accent-red hover:bg-accent-red/10"
+            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
             title="Reject every staged write_file"
           >
             <X size={11} /> Reject all
@@ -86,7 +86,7 @@ export function PendingApprovalsRollup({
           <button
             type="button"
             onClick={onCancelAllPending}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-bg-border text-text-muted hover:bg-bg-hover"
+            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-bg-border text-text-muted hover:bg-bg-hover transition-colors"
             title="Cancel all parked prompts — agent loop continues"
           >
             <Ban size={11} />
@@ -102,7 +102,7 @@ export function PendingApprovalsRollup({
           <button
             type="button"
             onClick={onAllowAllPermissions}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
+            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
             title="Allow every pending tool call once"
           >
             <Check size={11} /> Allow all
@@ -110,7 +110,7 @@ export function PendingApprovalsRollup({
           <button
             type="button"
             onClick={onDenyAllPermissions}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-red/40 text-accent-red hover:bg-accent-red/10"
+            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
             title="Deny every pending tool call"
           >
             <X size={11} /> Deny all

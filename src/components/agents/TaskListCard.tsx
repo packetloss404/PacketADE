@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
   CheckSquare,
-  ChevronDown,
   ChevronRight,
   Loader2,
   Square,
@@ -119,10 +118,16 @@ export function TaskListCard({ toolCall, verbosity = "normal" }: TaskListCardPro
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-1.5 px-2 py-1 text-left hover:bg-bg-border/50 transition-colors rounded-t"
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-1.5 px-2 py-1 text-left hover:bg-bg-elevated transition-colors rounded-t"
       >
-        {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-        <CheckSquare size={11} className="text-accent-green" />
+        <ChevronRight
+          size={12}
+          className={`shrink-0 transition-transform motion-reduce:transition-none ${
+            expanded ? "rotate-90" : ""
+          }`}
+        />
+        <CheckSquare size={12} className="text-accent-green" />
         <span className="text-[10px] font-mono text-text-secondary">tasks</span>
         <span className="text-[10px] text-text-muted">
           {counts.completed}/{counts.total} done

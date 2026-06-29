@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { GitBranch, Server, FolderOpen, ArrowDownToLine } from "lucide-react";
+import {
+  GitBranch,
+  Server,
+  FolderOpen,
+  ArrowDownToLine,
+  Loader2,
+} from "lucide-react";
 import { gitSafetyCheck, type GitSafetyReport } from "@/lib/tauri";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import type { AgentConversation } from "@/types/agent-conversation";
@@ -87,12 +93,12 @@ export function AgentStatusBar({ conversation }: AgentStatusBarProps) {
             </span>
             {!report.isClean && (
               <span
-                className="text-accent-amber"
+                className="inline-flex items-center"
                 title={`${report.uncommittedCount} uncommitted change${
                   report.uncommittedCount === 1 ? "" : "s"
                 }`}
               >
-                ●
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-amber" />
               </span>
             )}
             {report.behindUpstream > 0 && (
@@ -108,14 +114,14 @@ export function AgentStatusBar({ conversation }: AgentStatusBarProps) {
         )}
 
         {!isSsh && !loading && report && !report.isGitRepo && (
-          <span className="flex items-center gap-1 text-text-muted/70">
+          <span className="flex items-center gap-1 text-text-faint">
             <FolderOpen size={10} />
             not a git repo
           </span>
         )}
 
         {!isSsh && loading && !report && (
-          <span className="text-text-muted/60 italic">...</span>
+          <Loader2 size={10} className="animate-spin text-text-faint" />
         )}
       </div>
     </div>

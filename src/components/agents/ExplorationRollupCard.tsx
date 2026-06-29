@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Compass } from "lucide-react";
+import { ChevronRight, Compass } from "lucide-react";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface ExplorationRollupCardProps {
@@ -55,11 +55,14 @@ export function ExplorationRollupCard({ toolCalls }: ExplorationRollupCardProps)
       if (tc.status === "running") continue;
       const args = parseInput(tc.input);
       if (READ_TOOLS.has(tc.name)) {
-        fileReads.push({ id: tc.id, path: pickPath(args) || tc.file || "" });
+        const path = pickPath(args) || tc.file || "";
+        if (path) fileReads.push({ id: tc.id, path });
       } else if (SEARCH_TOOLS.has(tc.name)) {
-        searches.push({ id: tc.id, query: pickQuery(args) });
+        const query = pickQuery(args);
+        if (query) searches.push({ id: tc.id, query });
       } else if (LIST_TOOLS.has(tc.name)) {
-        listings.push({ id: tc.id, path: pickPath(args) });
+        const path = pickPath(args);
+        if (path) listings.push({ id: tc.id, path });
       }
     }
     return { fileReads, searches, listings };
@@ -87,25 +90,27 @@ export function ExplorationRollupCard({ toolCalls }: ExplorationRollupCardProps)
   const summary = `Explored ${summaryParts.join(", ")}`;
 
   return (
-    <div className="bg-bg-hover/60 rounded text-[10px] text-text-muted border border-bg-border/50">
+    <div className="bg-bg-hover rounded text-[10px] text-text-muted border border-bg-border">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-bg-tertiary transition-colors text-left"
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-bg-elevated transition-colors text-left"
       >
-        {expanded ? (
-          <ChevronDown size={10} className="shrink-0" />
-        ) : (
-          <ChevronRight size={10} className="shrink-0" />
-        )}
-        <Compass size={11} className="text-text-muted shrink-0" />
+        <ChevronRight
+          size={12}
+          className={`shrink-0 transition-transform motion-reduce:transition-none ${
+            expanded ? "rotate-90" : ""
+          }`}
+        />
+        <Compass size={12} className="text-text-muted shrink-0" />
         <span className="text-[11px] text-text-secondary truncate flex-1">{summary}</span>
       </button>
       {expanded && (
-        <div className="px-2 pb-1.5 border-t border-bg-border/40 flex flex-col gap-0.5">
+        <div className="px-2 pb-1.5 border-t border-bg-border flex flex-col gap-0.5 max-h-64 overflow-y-auto">
           {stats.fileReads.length > 0 && (
             <div className="pt-1">
-              <div className="text-[9px] uppercase tracking-wide text-text-muted/70 mb-0.5">
+              <div className="text-[9px] uppercase tracking-wide text-text-faint mb-0.5">
                 Read
               </div>
               {stats.fileReads.map((r) => (
@@ -114,14 +119,14 @@ export function ExplorationRollupCard({ toolCalls }: ExplorationRollupCardProps)
                   className="font-mono text-[10px] text-text-secondary truncate"
                   title={r.path}
                 >
-                  {r.path || "(unknown path)"}
+                  {r.path}
                 </div>
               ))}
             </div>
           )}
           {stats.searches.length > 0 && (
             <div className="pt-1">
-              <div className="text-[9px] uppercase tracking-wide text-text-muted/70 mb-0.5">
+              <div className="text-[9px] uppercase tracking-wide text-text-faint mb-0.5">
                 Searched
               </div>
               {stats.searches.map((s) => (
@@ -130,14 +135,14 @@ export function ExplorationRollupCard({ toolCalls }: ExplorationRollupCardProps)
                   className="font-mono text-[10px] text-text-secondary truncate"
                   title={s.query}
                 >
-                  {s.query || "(empty query)"}
+                  {s.query}
                 </div>
               ))}
             </div>
           )}
           {stats.listings.length > 0 && (
             <div className="pt-1">
-              <div className="text-[9px] uppercase tracking-wide text-text-muted/70 mb-0.5">
+              <div className="text-[9px] uppercase tracking-wide text-text-faint mb-0.5">
                 Listed
               </div>
               {stats.listings.map((l) => (
@@ -146,7 +151,7 @@ export function ExplorationRollupCard({ toolCalls }: ExplorationRollupCardProps)
                   className="font-mono text-[10px] text-text-secondary truncate"
                   title={l.path}
                 >
-                  {l.path || "(unknown path)"}
+                  {l.path}
                 </div>
               ))}
             </div>

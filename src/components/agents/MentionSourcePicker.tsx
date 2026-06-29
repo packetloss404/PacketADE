@@ -73,6 +73,8 @@ export function MentionSourcePicker({
             highlightedIndex={highlightedIndex}
             onSelect={(path) => onSelect(formatMentionInsert("files", path))}
             onItemsChange={onItemsChange}
+            floating={false}
+            className="rounded-t-none"
           />
         )}
         {source === "folders" && (
@@ -136,7 +138,7 @@ function FolderPopover({
           { projectPath, filter: query, limit: 50 },
         );
         if (cancelled) return;
-        const folderPaths = filterFolders(results ?? []);
+        const folderPaths = filterFolders(results ?? [], query);
         const mapped: InputPopoverItem[] = folderPaths.map((path) => ({
           key: path,
           label: path,
@@ -163,10 +165,12 @@ function FolderPopover({
   return (
     <InputPopover
       visible
-      items={loading ? [] : items}
+      items={items}
+      loading={loading}
       highlightedIndex={highlightedIndex}
       onSelect={(item) => onSelect(item.key)}
-      emptyLabel={loading ? "Searching..." : "No folders found"}
+      emptyLabel="No folders found"
+      floating={false}
       className="rounded-t-none"
     />
   );
@@ -174,14 +178,39 @@ function FolderPopover({
 
 /**
  * Filter a mixed list of `ProjectEntry` or string paths down to folder-only
- * entries. Falls back to "ends with /" when the backend returns plain strings
- * without an `is_dir` flag.
+ * entries. When the backend returns rich entries we use `is_dir`; when it
+ * returns the current flat string list we derive folders client-side from the
+ * unique directory prefixes of the file paths (so the Folders tab isn't empty).
  */
-function filterFolders(entries: ProjectEntry[] | string[]): string[] {
+function filterFolders(
+  entries: ProjectEntry[] | string[],
+  query: string,
+): string[] {
   if (entries.length === 0) return [];
   const first = entries[0];
   if (typeof first === "string") {
-    return (entries as string[]).filter((p) => p.endsWith("/"));
+    const strs = entries as string[];
+    // Honor explicit trailing-slash dirs if the backend ever sends them.
+    const explicit = strs.filter((p) => p.endsWith("/"));
+    if (explicit.length > 0) return explicit;
+    // Otherwise derive every ancestor directory prefix from the file paths.
+    const dirs = new Set<string>();
+    for (const p of strs) {
+      const norm = p.replace(/\\/g, "/");
+      const lastSlash = norm.lastIndexOf("/");
+      if (lastSlash <= 0) continue;
+      const parts = norm.slice(0, lastSlash).split("/");
+      let acc = "";
+      for (const part of parts) {
+        if (!part) continue;
+        acc = acc ? `${acc}/${part}` : part;
+        dirs.add(`${acc}/`);
+      }
+    }
+    const q = query.toLowerCase();
+    return Array.from(dirs)
+      .filter((d) => d.toLowerCase().includes(q))
+      .sort();
   }
   return (entries as ProjectEntry[])
     .filter((e) => e.is_dir === true)
@@ -214,8 +243,8 @@ function WebInputPopover({ onSubmit }: WebInputPopoverProps) {
     <div
       className={[
         "min-w-[260px] max-w-[420px]",
-        "bg-bg-secondary border border-bg-border rounded rounded-tl-none",
-        "shadow-lg p-2 flex items-center gap-2",
+        "bg-bg-secondary border border-bg-border rounded rounded-t-none",
+        "shadow-xl p-2 flex items-center gap-2",
       ].join(" ")}
     >
       <Globe size={12} className="text-text-secondary flex-shrink-0" />
@@ -236,8 +265,8 @@ function WebInputPopover({ onSubmit }: WebInputPopoverProps) {
         placeholder="https://..."
         className={[
           "flex-1 min-w-0 bg-bg-primary border border-bg-border rounded",
-          "px-1.5 py-0.5 text-xs text-text-primary",
-          "focus:outline-none focus:border-accent-green",
+          "px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted",
+          "focus:outline-none focus:border-accent-green/50",
         ].join(" ")}
       />
     </div>
@@ -314,8 +343,8 @@ function GitBranchPopover({
       <div
         className={[
           "min-w-[260px] max-w-[420px]",
-          "bg-bg-secondary border border-bg-border border-b-0 rounded-t rounded-tl-none",
-          "shadow-lg p-2 flex items-center gap-2",
+          "bg-bg-secondary border border-bg-border border-b-0 rounded-none",
+          "shadow-xl p-2 flex items-center gap-2",
         ].join(" ")}
       >
         <GitBranch size={12} className="text-text-secondary flex-shrink-0" />
@@ -336,8 +365,8 @@ function GitBranchPopover({
           placeholder={currentBranch ?? "branch name"}
           className={[
             "flex-1 min-w-0 bg-bg-primary border border-bg-border rounded",
-            "px-1.5 py-0.5 text-xs text-text-primary",
-            "focus:outline-none focus:border-accent-green",
+            "px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted",
+            "focus:outline-none focus:border-accent-green/50",
           ].join(" ")}
         />
       </div>
@@ -347,6 +376,7 @@ function GitBranchPopover({
         highlightedIndex={highlightedIndex}
         onSelect={(item) => onSelect(item.key)}
         emptyLabel="Type a branch name and press Enter"
+        floating={false}
         className="rounded-t-none"
       />
     </div>

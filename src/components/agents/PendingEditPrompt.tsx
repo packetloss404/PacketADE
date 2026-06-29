@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as Diff from "diff";
 import {
-  ChevronDown,
   ChevronRight,
   FileEdit,
   Check,
@@ -171,12 +170,12 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
     () => (hunkPickerOpen ? changeHunks.map((h) => h.id).join(",") : ""),
     [hunkPickerOpen, changeHunks],
   );
-  useMemo(() => {
+  useEffect(() => {
     if (hunkPickerOpen) {
       setSelected(new Set(changeHunks.map((h) => h.id)));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hunkPickerKey]);
+  }, [hunkPickerOpen, hunkPickerKey]);
 
   const toggleHunk = (id: number) => {
     setSelected((prev) => {
@@ -205,11 +204,10 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-bg-tertiary transition-colors text-left"
       >
-        {expanded ? (
-          <ChevronDown size={12} className="text-text-secondary shrink-0" />
-        ) : (
-          <ChevronRight size={12} className="text-text-secondary shrink-0" />
-        )}
+        <ChevronRight
+          size={12}
+          className={`text-text-secondary shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+        />
         <FileEdit size={12} className="text-accent-amber shrink-0" />
         <span className="text-[11px] font-mono text-text-primary truncate flex-1" title={item.path}>
           {fileName}
@@ -296,7 +294,7 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
             <button
               type="button"
               onClick={applyMerged}
-              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
+              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
               title="Write file with only the selected hunks"
             >
               <Check size={12} /> Apply selected ({selected.size})
@@ -304,7 +302,7 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
             <button
               type="button"
               onClick={() => setHunkPickerOpen(false)}
-              className="text-[11px] px-2 py-1 rounded border border-bg-border text-text-secondary hover:bg-bg-hover"
+              className="text-[11px] px-2 py-1 rounded border border-bg-border text-text-secondary hover:bg-bg-hover transition-colors"
             >
               Cancel
             </button>
@@ -314,11 +312,11 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
             <button
               type="button"
               onClick={() => onApply(item.id)}
-              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
+              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
             >
               <Check size={12} /> Apply
               {showKeyboardHints && (
-                <kbd className="ml-1 text-[9.5px] font-mono text-accent-green/80 border border-accent-green/40 rounded px-1 leading-none py-0.5">
+                <kbd className="ml-1 text-[10px] font-mono text-accent-green/80 border border-accent-green/40 rounded px-1 leading-none py-0.5">
                   Y
                 </kbd>
               )}
@@ -327,7 +325,7 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
               <button
                 type="button"
                 onClick={() => setHunkPickerOpen(true)}
-                className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10"
+                className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors"
                 title="Pick which hunks to apply (sidecar Anthropic only)"
               >
                 <ListChecks size={12} /> Pick hunks
@@ -336,11 +334,11 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
             <button
               type="button"
               onClick={() => onReject(item.id)}
-              className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-red/40 text-accent-red hover:bg-accent-red/10"
+              className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
             >
               <X size={12} /> Reject
               {showKeyboardHints && (
-                <kbd className="ml-1 text-[9.5px] font-mono text-accent-red/80 border border-accent-red/40 rounded px-1 leading-none py-0.5">
+                <kbd className="ml-1 text-[10px] font-mono text-accent-red/80 border border-accent-red/40 rounded px-1 leading-none py-0.5">
                   N
                 </kbd>
               )}

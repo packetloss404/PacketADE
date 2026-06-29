@@ -77,7 +77,7 @@ export function ModelSelector({
     >
       {isOllama ? (
         <>
-          <div className="flex items-center justify-between px-2 py-1 text-[9px] uppercase tracking-wide text-text-muted">
+          <div className="flex items-center justify-between px-3 py-1 text-[9px] uppercase tracking-wide text-text-muted">
             <span>Installed models</span>
             <button
               type="button"
@@ -85,27 +85,23 @@ export function ModelSelector({
                 e.stopPropagation();
                 refreshOllamaModels();
               }}
-              className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-text-secondary transition-colors"
+              className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
               title="Refresh installed Ollama models"
             >
               <RefreshCw size={10} />
             </button>
           </div>
           {ollamaModels === "loading" ? (
-            <DropdownItem onClick={() => {}}>
-              <span className="flex items-center gap-1.5 text-text-muted opacity-60">
-                <Loader2 size={10} className="animate-spin" />
-                Loading models…
-              </span>
-            </DropdownItem>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-text-muted">
+              <Loader2 size={10} className="animate-spin" />
+              Loading models…
+            </div>
           ) : !Array.isArray(ollamaModels) ? (
             <>
-              <DropdownItem onClick={() => {}}>
-                <span className="flex items-center gap-1.5 text-accent-red opacity-80">
-                  <AlertCircle size={10} />
-                  {ollamaModels.error}
-                </span>
-              </DropdownItem>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 text-accent-red">
+                <AlertCircle size={10} />
+                {ollamaModels.error}
+              </div>
               <DropdownItem onClick={() => refreshOllamaModels()}>
                 <span className="flex items-center gap-1.5 text-text-secondary">
                   <RefreshCw size={10} />
@@ -114,15 +110,13 @@ export function ModelSelector({
               </DropdownItem>
             </>
           ) : ollamaModels.length === 0 ? (
-            <DropdownItem onClick={() => {}}>
-              <span className="text-text-muted opacity-70 text-[10px]">
-                No models installed. Run{" "}
-                <code className="text-text-secondary">
-                  ollama pull &lt;model&gt;
-                </code>{" "}
-                in a terminal.
-              </span>
-            </DropdownItem>
+            <div className="px-3 py-1.5 text-text-muted text-[10px]">
+              No models installed. Run{" "}
+              <code className="text-text-secondary">
+                ollama pull &lt;model&gt;
+              </code>{" "}
+              in a terminal.
+            </div>
           ) : (
             ollamaModels.map((m) => (
               <DropdownItem

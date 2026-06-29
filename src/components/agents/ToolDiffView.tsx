@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import * as Diff from "diff";
-import { Plus, Check, X } from "lucide-react";
+import { Plus, Check, X, Loader2 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFileDisk, type DiskState } from "@/components/agents/hooks/useFileDisk";
 
@@ -118,7 +118,8 @@ export function ToolDiffView({
 
   if (state.kind === "loading") {
     return (
-      <div className="text-[11px] text-text-secondary italic px-2 py-1">
+      <div className="flex items-center gap-1.5 text-[11px] text-text-secondary px-2 py-1">
+        <Loader2 size={12} className="animate-spin text-text-muted" />
         Loading diff...
       </div>
     );
@@ -135,7 +136,7 @@ export function ToolDiffView({
             New file
           </span>
         </div>
-        <pre className="text-[11px] font-mono whitespace-pre-wrap break-words px-2 py-1 bg-bg-primary text-text-primary overflow-x-auto">
+        <pre className="text-[11px] font-mono whitespace-pre-wrap break-words px-2 py-1 bg-accent-green/5 text-text-primary border-l-2 border-accent-green overflow-x-auto">
           {newContent}
         </pre>
       </div>
@@ -218,12 +219,20 @@ function DiffRowView({
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState("");
 
+  // Tint only the row background by add/remove; keep the code text at the
+  // normal foreground and color just the marker glyph (standard diff reading).
   const rowClass =
     row.marker === "+"
-      ? "bg-accent-green/10 text-accent-green"
+      ? "bg-accent-green/10"
       : row.marker === "-"
-        ? "bg-accent-red/10 text-accent-red"
-        : "text-text-primary";
+        ? "bg-accent-red/10"
+        : "";
+  const markerClass =
+    row.marker === "+"
+      ? "text-accent-green"
+      : row.marker === "-"
+        ? "text-accent-red"
+        : "text-text-faint";
   const hasComment = !!queued?.some(
     (c) => c.path === filePath && c.line === row.line && c.side === row.side,
   );
@@ -248,9 +257,9 @@ function DiffRowView({
   return (
     <>
       <div
-        className={`group relative flex items-start whitespace-pre-wrap break-words ${rowClass}`}
+        className={`group relative flex items-start whitespace-pre-wrap break-words text-text-primary ${rowClass}`}
       >
-        <span className="inline-block w-4 text-text-secondary select-none px-2">
+        <span className={`inline-block w-5 text-center select-none ${markerClass}`}>
           {row.marker}
         </span>
         <span className="flex-1 pr-12">{row.text}</span>
@@ -260,8 +269,8 @@ function DiffRowView({
             onClick={() => setComposerOpen(true)}
             className={`absolute right-1 top-0 flex items-center justify-center w-5 h-5 rounded text-[10px] transition-opacity ${
               hasComment
-                ? "opacity-100 bg-accent-blue text-white"
-                : "opacity-0 group-hover:opacity-100 bg-bg-secondary border border-bg-border text-text-muted hover:text-accent-blue hover:border-accent-blue/40"
+                ? "opacity-100 bg-accent-blue/20 text-accent-blue"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 bg-bg-secondary border border-bg-border text-text-muted hover:text-accent-blue hover:border-accent-blue/40"
             }`}
             title={
               hasComment

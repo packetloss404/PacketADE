@@ -29,7 +29,7 @@ export function ActionButtons({
           className={`p-1.5 rounded-full transition-colors ${
             isListening
               ? "bg-accent-green/20 text-accent-green animate-pulse"
-              : "text-text-muted hover:text-text-secondary"
+              : "text-text-muted hover:text-text-primary"
           }`}
           title={isListening ? "Stop listening" : "Voice input"}
         >
@@ -46,11 +46,7 @@ export function ActionButtons({
         }}
         disabled={!launchReady}
         title={launchTitle}
-        className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
-          launchReady
-            ? "bg-accent-green/20 text-accent-green hover:bg-accent-green/30"
-            : "bg-bg-hover text-text-muted cursor-not-allowed"
-        }`}
+        className="flex items-center gap-1 px-3 py-1.5 rounded text-[11px] font-medium transition-colors bg-accent-green/20 text-accent-green hover:bg-accent-green/30 disabled:opacity-40 disabled:cursor-not-allowed"
       >
         <Send size={10} />
         {launchLabel}

@@ -17,14 +17,17 @@ export function ServerSelectorPopover() {
     <Dropdown
       trigger={
         <span className="flex items-center gap-1.5">
-          <Server size={11} />
+          <Server
+            size={11}
+            className={selectedServer ? "text-accent-green" : "text-text-muted"}
+          />
           {label}
         </span>
       }
     >
       {servers.length === 0 ? (
         <DropdownItem onClick={() => setActiveView("tools")}>
-          <span className="text-text-muted">Configure Servers...</span>
+          <span className="text-text-muted">Configure Servers…</span>
         </DropdownItem>
       ) : (
         <>
@@ -39,7 +42,8 @@ export function ServerSelectorPopover() {
                 {server.id === selectedServerId && <Check size={10} className="text-accent-green" />}
                 <span>{server.name}</span>
                 <span className="text-text-muted ml-auto text-[10px]">
-                  {server.host}:{server.port}
+                  {server.host}
+                  {server.port !== 22 ? `:${server.port}` : ""}
                 </span>
               </span>
             </DropdownItem>
