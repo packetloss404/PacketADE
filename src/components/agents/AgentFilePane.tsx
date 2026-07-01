@@ -12,9 +12,11 @@ import {
   RotateCw,
   Server,
   AlertCircle,
-  Loader2,
 } from "lucide-react";
 import { listDirectory } from "@/lib/tauri";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { Spinner } from "@/components/ui/Spinner";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 /**
  * Read-only file tree pane for the agent inspector.
@@ -281,14 +283,13 @@ export function AgentFilePane({
   // after all hooks so render order stays stable across SSH/local switches.
   if (sshTarget) {
     return (
-      <div className="flex flex-col h-full bg-bg-primary items-center justify-center px-4 text-center">
-        <Server size={20} className="text-text-muted opacity-40 mb-2" />
-        <span className="text-[11px] text-text-secondary max-w-xs">
-          File browsing on SSH targets is not yet supported.
-        </span>
-        <span className="text-[10px] text-text-muted mt-1 max-w-xs">
-          Open the worktree on your local machine to browse it.
-        </span>
+      <div className="flex flex-col h-full bg-bg-primary">
+        <EmptyState
+          className="h-full"
+          icon={<Server size={24} />}
+          title="File browsing on SSH targets is not yet supported."
+          description="Open the worktree on your local machine to browse it."
+        />
       </div>
     );
   }
@@ -302,24 +303,26 @@ export function AgentFilePane({
     >
       {/* Header: breadcrumb + actions */}
       <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
-        <button
-          type="button"
-          onClick={goUp}
-          disabled={parentOf(currentPath) == null}
-          title="Parent directory (Backspace)"
-          className="p-1 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <ChevronUp size={12} />
-        </button>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={loading}
-          title="Refresh"
-          className="p-1 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <RotateCw size={12} className={loading ? "animate-spin motion-reduce:animate-none" : ""} />
-        </button>
+        <Tooltip content="Parent directory (Backspace)">
+          <button
+            type="button"
+            onClick={goUp}
+            disabled={parentOf(currentPath) == null}
+            className="p-1 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronUp size={12} />
+          </button>
+        </Tooltip>
+        <Tooltip content="Refresh">
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="p-1 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RotateCw size={12} className={loading ? "animate-spin motion-reduce:animate-none" : ""} />
+          </button>
+        </Tooltip>
         <div className="flex-1 min-w-0 overflow-x-auto">
           <div className="flex items-center gap-0.5 text-[11px] font-mono whitespace-nowrap">
             {segments.map((seg, i) => {
@@ -364,16 +367,13 @@ export function AgentFilePane({
 
         {!error && loading && entries.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-2">
-            <Loader2 size={20} className="text-text-muted opacity-40 animate-spin motion-reduce:animate-none" />
+            <Spinner size={20} className="text-text-muted opacity-40" />
             <span className="text-[11px] text-text-muted">Loading…</span>
           </div>
         )}
 
         {!error && !loading && entries.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full gap-2">
-            <Folder size={20} className="text-text-muted opacity-40" />
-            <span className="text-[11px] text-text-muted">Empty directory</span>
-          </div>
+          <EmptyState className="h-full" icon={<Folder size={24} />} title="Empty directory" />
         )}
 
         {!error && entries.length > 0 && (

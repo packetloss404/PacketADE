@@ -5,7 +5,6 @@ import {
   ClipboardList,
   ExternalLink,
   Globe2,
-  Loader2,
   PanelRightClose,
   RefreshCw,
 } from "lucide-react";
@@ -15,6 +14,9 @@ import {
   usePreviewPaneStore,
   type PreviewPaneTab,
 } from "@/stores/previewPaneStore";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { Spinner } from "@/components/ui/Spinner";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 interface AgentPreviewPaneProps {
   projectPath: string;
@@ -154,15 +156,16 @@ export function AgentPreviewPane({
                   : "Browser"}
             </span>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-            title="Collapse preview"
-            aria-label="Collapse preview"
-          >
-            <PanelRightClose size={14} />
-          </button>
+          <Tooltip content="Collapse preview">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+              aria-label="Collapse preview"
+            >
+              <PanelRightClose size={14} />
+            </button>
+          </Tooltip>
         </div>
       )}
 
@@ -209,23 +212,25 @@ export function AgentPreviewPane({
             placeholder="https://example.com"
             className="flex-1 min-w-0 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
           />
-          <button
-            type="submit"
-            className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
-            title="Load"
-          >
-            <RefreshCw size={12} />
-          </button>
-          {activeBrowserUrl && (
-            <a
-              href={activeBrowserUrl}
-              target="_blank"
-              rel="noreferrer"
+          <Tooltip content="Load">
+            <button
+              type="submit"
               className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
-              title="Open externally"
             >
-              <ExternalLink size={12} />
-            </a>
+              <RefreshCw size={12} />
+            </button>
+          </Tooltip>
+          {activeBrowserUrl && (
+            <Tooltip content="Open externally">
+              <a
+                href={activeBrowserUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+              >
+                <ExternalLink size={12} />
+              </a>
+            </Tooltip>
           )}
         </form>
       )}
@@ -234,18 +239,15 @@ export function AgentPreviewPane({
         {activeTab === "markdown" && (
           <div className="h-full overflow-y-auto px-5 py-4">
             {!markdownPath && (
-              <div className="h-full flex items-center justify-center text-center">
-                <div className="max-w-xs">
-                  <BookOpen size={20} className="text-text-muted opacity-40 mx-auto mb-2" />
-                  <p className="text-[11px] text-text-secondary">
-                    Open a Markdown file from the file pane or click a .md path in chat.
-                  </p>
-                </div>
-              </div>
+              <EmptyState
+                className="h-full"
+                icon={<BookOpen size={24} />}
+                title="Open a Markdown file from the file pane or click a .md path in chat."
+              />
             )}
             {markdownLoading && (
               <div className="flex items-center gap-2 text-[11px] text-text-muted">
-                <Loader2 size={12} className="animate-spin" />
+                <Spinner size={12} />
                 Loading markdown…
               </div>
             )}
@@ -272,14 +274,11 @@ export function AgentPreviewPane({
                 className="text-sm leading-relaxed"
               />
             ) : (
-              <div className="h-full flex items-center justify-center text-center">
-                <div className="max-w-xs">
-                  <ClipboardList size={20} className="text-text-muted opacity-40 mx-auto mb-2" />
-                  <p className="text-[11px] text-text-secondary">
-                    Plan-mode responses will appear here for review.
-                  </p>
-                </div>
-              </div>
+              <EmptyState
+                className="h-full"
+                icon={<ClipboardList size={24} />}
+                title="Plan-mode responses will appear here for review."
+              />
             )}
           </div>
         )}
@@ -295,14 +294,11 @@ export function AgentPreviewPane({
                 sandbox="allow-forms allow-modals allow-popups allow-scripts"
               />
             ) : (
-              <div className="h-full flex items-center justify-center text-center px-6">
-                <div className="max-w-xs">
-                  <Globe2 size={20} className="text-text-muted opacity-40 mx-auto mb-2" />
-                  <p className="text-[11px] text-text-secondary">
-                    Enter a URL above to browse inside the preview pane.
-                  </p>
-                </div>
-              </div>
+              <EmptyState
+                className="h-full"
+                icon={<Globe2 size={24} />}
+                title="Enter a URL above to browse inside the preview pane."
+              />
             )}
           </div>
         )}

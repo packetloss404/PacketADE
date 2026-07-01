@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ListChecks, Plus, Check, X, Trash2 } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 
@@ -108,18 +109,19 @@ export function SpecPanel({ conversation }: SpecPanelProps) {
           {draft.length} criteria
         </span>
         <div className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              commitToStore(draft);
-              approveSpec(conversation.id);
-            }}
-            disabled={!canApprove}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Lock the spec and ask the agent for a structured Plan"
-          >
-            <Check size={11} /> Lock & request plan
-          </button>
+          <Tooltip content="Lock the spec and ask the agent for a structured Plan">
+            <button
+              type="button"
+              onClick={() => {
+                commitToStore(draft);
+                approveSpec(conversation.id);
+              }}
+              disabled={!canApprove}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Check size={11} /> Lock & request plan
+            </button>
+          </Tooltip>
         </div>
       </div>
       <ul className="px-3 pb-2 pt-0 space-y-1">
@@ -136,15 +138,16 @@ export function SpecPanel({ conversation }: SpecPanelProps) {
               aria-label={`Success criterion ${i + 1}`}
               className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-0.5 text-[11px] text-text-primary focus:outline-none focus:border-accent-green/50"
             />
-            <button
-              type="button"
-              onClick={() => removeAt(item.id)}
-              className="p-0.5 text-text-faint hover:text-accent-red transition-colors"
-              title="Remove criterion"
-              aria-label={`Remove criterion ${i + 1}`}
-            >
-              <Trash2 size={11} />
-            </button>
+            <Tooltip content="Remove criterion">
+              <button
+                type="button"
+                onClick={() => removeAt(item.id)}
+                className="p-0.5 text-text-faint hover:text-accent-red transition-colors"
+                aria-label={`Remove criterion ${i + 1}`}
+              >
+                <Trash2 size={11} />
+              </button>
+            </Tooltip>
           </li>
         ))}
         <li className="flex items-center gap-2">
@@ -169,15 +172,16 @@ export function SpecPanel({ conversation }: SpecPanelProps) {
             className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-0.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
           />
           {newBullet.trim() && (
-            <button
-              type="button"
-              onClick={addBullet}
-              className="p-0.5 text-accent-green hover:bg-accent-green/10 rounded transition-colors"
-              title="Add criterion"
-              aria-label="Add criterion"
-            >
-              <Check size={11} />
-            </button>
+            <Tooltip content="Add criterion">
+              <button
+                type="button"
+                onClick={addBullet}
+                className="p-0.5 text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+                aria-label="Add criterion"
+              >
+                <Check size={11} />
+              </button>
+            </Tooltip>
           )}
         </li>
         {draft.length === 0 && (

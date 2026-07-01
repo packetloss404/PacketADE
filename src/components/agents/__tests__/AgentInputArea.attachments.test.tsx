@@ -176,7 +176,7 @@ describe("AgentInputArea image attachments", () => {
     const { unmount } = renderInput(onLaunch);
 
     await stageImage("remove-me.png");
-    fireEvent.click(screen.getByTitle("Remove"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(screen.queryByText("remove-me.png")).not.toBeInTheDocument());
     expect(mocks.revokeObjectURL).toHaveBeenCalledWith("blob:preview-1");
 

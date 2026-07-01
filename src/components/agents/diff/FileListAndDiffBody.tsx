@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { FileDiff } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import {
   aggregateConversationDiffs,
   type ConversationDiffAggregate,
@@ -142,10 +144,8 @@ export function FileListAndDiffBody({
 
   if (entries.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center px-6">
-        <p className="text-[11px] text-text-muted text-center">
-          {emptyMessage}
-        </p>
+      <div className="flex-1 flex items-center justify-center">
+        <EmptyState icon={<FileDiff size={24} />} title={emptyMessage} />
       </div>
     );
   }

@@ -8,6 +8,8 @@ import {
   ListChecks,
 } from "lucide-react";
 import { ToolDiffView } from "./ToolDiffView";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { Badge } from "@/components/ui/Badge";
 import type { PendingEdit } from "@/types/agent-conversation";
 
 interface PendingEditPromptProps {
@@ -197,7 +199,7 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
   const canPickHunks = item.before !== undefined && changeHunks.length >= 2;
 
   return (
-    <div className="bg-bg-secondary border border-accent-amber/40 rounded overflow-hidden">
+    <div className="bg-bg-secondary border border-accent-amber/40 rounded overflow-hidden animate-[welcomeFadeIn_150ms_ease-out] motion-reduce:animate-none">
       {/* Compact header — Cursor-style one-liner with file + +/- counts */}
       <button
         type="button"
@@ -214,11 +216,7 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
         </span>
         {hasCounts && (
           <span className="flex items-center gap-1.5 shrink-0">
-            {isNew && (
-              <span className="text-[9px] px-1 py-px bg-accent-green/15 text-accent-green rounded">
-                NEW
-              </span>
-            )}
+            {isNew && <Badge tone="green">NEW</Badge>}
             <span className="text-[11px] font-mono text-accent-green">+{added}</span>
             <span className="text-[11px] font-mono text-accent-red">-{removed}</span>
           </span>
@@ -291,14 +289,15 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
       <div className="flex flex-wrap gap-1.5 px-2 py-1.5 border-t border-bg-border bg-bg-primary">
         {hunkPickerOpen ? (
           <>
-            <button
-              type="button"
-              onClick={applyMerged}
-              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
-              title="Write file with only the selected hunks"
-            >
-              <Check size={12} /> Apply selected ({selected.size})
-            </button>
+            <Tooltip content="Write file with only the selected hunks">
+              <button
+                type="button"
+                onClick={applyMerged}
+                className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
+              >
+                <Check size={12} /> Apply selected ({selected.size})
+              </button>
+            </Tooltip>
             <button
               type="button"
               onClick={() => setHunkPickerOpen(false)}
@@ -322,14 +321,15 @@ export function PendingEditPrompt({ item, projectPath, onApply, onReject, conver
               )}
             </button>
             {canPickHunks && (
-              <button
-                type="button"
-                onClick={() => setHunkPickerOpen(true)}
-                className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors"
-                title="Pick which hunks to apply (sidecar Anthropic only)"
-              >
-                <ListChecks size={12} /> Pick hunks
-              </button>
+              <Tooltip content="Pick which hunks to apply (sidecar Anthropic only)">
+                <button
+                  type="button"
+                  onClick={() => setHunkPickerOpen(true)}
+                  className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors"
+                >
+                  <ListChecks size={12} /> Pick hunks
+                </button>
+              </Tooltip>
             )}
             <button
               type="button"

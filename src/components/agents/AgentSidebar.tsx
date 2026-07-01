@@ -4,7 +4,6 @@ import {
   Trash2,
   FolderOpen,
   Server,
-  Loader2,
   Circle,
   CheckCircle2,
   XCircle,
@@ -22,6 +21,12 @@ import type { AgentConversation } from "@/types/agent-conversation";
 import { Modal } from "@/components/ui/Modal";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { aggregateConversationCost, formatCostPill } from "@/lib/conversationCost";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { Spinner } from "@/components/ui/Spinner";
+import { Badge } from "@/components/ui/Badge";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Popover } from "@/components/ui/Popover";
+import { getAgentColor, getStatusColor } from "@/lib/agentColors";
 
 type StatusFilter = "all" | "active" | "done" | "archived";
 type GroupBy = "project" | "status" | "env";
@@ -51,28 +56,14 @@ function envGroupKey(conv: AgentConversation): "Local" | "SSH" | "Worktree" {
 function statusIcon(status: AgentConversation["status"]) {
   switch (status) {
     case "active":
-      return <Loader2 size={10} className="text-accent-green animate-spin shrink-0" />;
+      return <Spinner size={10} className={`${getStatusColor("active")} shrink-0`} />;
     case "idle":
-      return <Circle size={10} className="text-accent-green fill-accent-green shrink-0" />;
+      return <Circle size={10} className={`${getStatusColor("idle")} fill-accent-green shrink-0`} />;
     case "done":
-      return <CheckCircle2 size={10} className="text-text-muted shrink-0" />;
+      return <CheckCircle2 size={10} className={`${getStatusColor("done")} shrink-0`} />;
     case "failed":
-      return <XCircle size={10} className="text-accent-red shrink-0" />;
+      return <XCircle size={10} className={`${getStatusColor("failed")} shrink-0`} />;
   }
-}
-
-/** Color-coded agent name per the design (Claude=green, Codex=amber, etc.) */
-function agentColorClass(agent: string): string {
-  if (agent === "claude-code" || agent.startsWith("api-claude"))
-    return "text-accent-green";
-  if (agent === "codex" || agent.startsWith("api-openai"))
-    return "text-accent-amber";
-  if (agent === "gemini") return "text-accent-blue";
-  if (agent === "opencode" || agent === "api-ollama") return "text-accent-purple";
-  if (agent === "packetcode") return "text-accent-purple";
-  if (agent === "api-minimax" || agent === "api-minimax-api" || agent === "api-openrouter")
-    return "text-accent-blue";
-  return "text-text-secondary";
 }
 
 /** Compact model label — drops the date / build suffix when present. */
@@ -96,22 +87,16 @@ function isWorktreePath(path: string): boolean {
 function envBadge(conv: AgentConversation) {
   if (isWorktreePath(conv.projectPath)) {
     return (
-      <span
-        className="text-[9px] px-1.5 py-0.5 bg-accent-amber/10 text-accent-amber rounded font-medium"
-        title="Worktree (Flight Deck attempt)"
-      >
-        WT
-      </span>
+      <Tooltip content="Worktree (Flight Deck attempt)">
+        <Badge tone="amber">WT</Badge>
+      </Tooltip>
     );
   }
   if (conv.sshTarget) {
     return (
-      <span
-        className="text-[9px] px-1.5 py-0.5 bg-accent-purple/10 text-accent-purple rounded font-medium"
-        title={`SSH: ${conv.sshTarget.user}@${conv.sshTarget.host}`}
-      >
-        SSH
-      </span>
+      <Tooltip content={`SSH: ${conv.sshTarget.user}@${conv.sshTarget.host}`}>
+        <Badge tone="purple">SSH</Badge>
+      </Tooltip>
     );
   }
   return null;
@@ -177,6 +162,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const groupBtnRef = useRef<HTMLButtonElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
 
   const trimmedQuery = searchQuery.trim();
@@ -331,33 +317,35 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       <div className="px-3 py-2 flex items-center gap-1.5 border-b border-line-soft">
         <span className="text-[11px] font-semibold text-text-primary">Sessions</span>
         {conversations.length > 0 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-elevated text-text-muted">
+          <Badge>
             {isSearching
               ? searchStats.count
               : filter === "archived"
                 ? counts.archived
                 : counts.all}
-          </span>
+          </Badge>
         )}
         <span className="flex-1" />
-        <button
-          onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-          className={`p-1 rounded transition-colors ${
-            searchOpen
-              ? "text-accent-green bg-accent-green/10"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-          title="Search conversations (/)"
-        >
-          <Search size={11} />
-        </button>
-        <button
-          onClick={onNewAgent}
-          title="New session (Ctrl+N)"
-          className="p-1 rounded text-text-muted hover:text-accent-green hover:bg-bg-hover transition-colors"
-        >
-          <Plus size={11} />
-        </button>
+        <Tooltip content="Search conversations (/)">
+          <button
+            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+            className={`p-1 rounded transition-colors ${
+              searchOpen
+                ? "text-accent-green bg-accent-green/10"
+                : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
+            }`}
+          >
+            <Search size={11} />
+          </button>
+        </Tooltip>
+        <Tooltip content="New session (Ctrl+N)">
+          <button
+            onClick={onNewAgent}
+            className="p-1 rounded text-text-muted hover:text-accent-green hover:bg-bg-hover transition-colors"
+          >
+            <Plus size={11} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Status filter (hidden when search is open) */}
@@ -427,42 +415,48 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       {/* Group-by dropdown */}
       {conversations.length > 0 && (
         <div className="relative px-3 pb-1.5">
-          <button
-            onClick={() => !isSearching && setGroupMenuOpen((v) => !v)}
-            onBlur={() => setTimeout(() => setGroupMenuOpen(false), 120)}
-            disabled={isSearching}
-            className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-              isSearching
-                ? "text-text-faint cursor-not-allowed"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
-            title={isSearching ? "Grouping disabled while searching" : "Group conversations by"}
+          <Tooltip content={isSearching ? "Grouping disabled while searching" : "Group conversations by"}>
+            <button
+              ref={groupBtnRef}
+              onClick={() => !isSearching && setGroupMenuOpen((v) => !v)}
+              disabled={isSearching}
+              className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+                isSearching
+                  ? "text-text-faint cursor-not-allowed"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              <Layers size={10} />
+              <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
+              <ChevronDown size={11} className="opacity-70" />
+            </button>
+          </Tooltip>
+          <Popover
+            open={groupMenuOpen}
+            onClose={() => setGroupMenuOpen(false)}
+            anchorRef={groupBtnRef}
+            placement="bottom-start"
+            role="menu"
+            className="py-0.5 min-w-[120px]"
           >
-            <Layers size={10} />
-            <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
-            <ChevronDown size={11} className="opacity-70" />
-          </button>
-          {groupMenuOpen && (
-            <div className="absolute z-10 left-3 top-full mt-0.5 bg-bg-primary border border-bg-border rounded shadow-lg py-0.5 min-w-[120px]">
-              {(["project", "status", "env"] as GroupBy[]).map((g) => (
-                <button
-                  key={g}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setGroupBy(g);
-                    setGroupMenuOpen(false);
-                  }}
-                  className={`flex items-center w-full px-2 py-1 text-[10px] text-left transition-colors ${
-                    groupBy === g
-                      ? "text-accent-green bg-accent-green/10"
-                      : "text-text-secondary hover:bg-bg-hover"
-                  }`}
-                >
-                  {GROUP_BY_LABELS[g]}
-                </button>
-              ))}
-            </div>
-          )}
+            {(["project", "status", "env"] as GroupBy[]).map((g) => (
+              <button
+                key={g}
+                role="menuitem"
+                onClick={() => {
+                  setGroupBy(g);
+                  setGroupMenuOpen(false);
+                }}
+                className={`flex items-center w-full px-2 py-1 text-[10px] text-left transition-colors ${
+                  groupBy === g
+                    ? "text-accent-green bg-accent-green/10"
+                    : "text-text-secondary hover:bg-bg-hover"
+                }`}
+              >
+                {GROUP_BY_LABELS[g]}
+              </button>
+            ))}
+          </Popover>
         </div>
       )}
 
@@ -470,33 +464,39 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       <div className="flex-1 overflow-y-auto px-1">
         {!hasConversations ? (
           isSearching ? (
-            <div className="flex flex-col items-center justify-center py-16 text-text-muted text-center px-4">
-              <Search size={24} className="mb-2 opacity-30" />
-              <p className="text-xs text-text-secondary">No matches for “{trimmedQuery}”</p>
-              <button
-                onClick={closeSearch}
-                className="text-[10px] mt-1 text-text-muted hover:text-text-secondary transition-colors"
-              >
-                Clear search
-              </button>
-            </div>
+            <EmptyState
+              className="py-16"
+              icon={<Search size={24} />}
+              title={`No matches for “${trimmedQuery}”`}
+              action={
+                <button
+                  onClick={closeSearch}
+                  className="text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+                >
+                  Clear search
+                </button>
+              }
+            />
           ) : !hasAnyConversations ? (
-            <div className="flex flex-col items-center justify-center py-16 text-text-muted">
-              <Zap size={24} className="mb-2 opacity-30" />
-              <p className="text-xs text-text-secondary">No agents yet</p>
-              <p className="text-[10px] mt-1 text-text-muted">Start one with New Agent</p>
-            </div>
+            <EmptyState
+              className="py-16"
+              icon={<Zap size={24} />}
+              title="No agents yet"
+              description="Start one with New Agent"
+            />
           ) : filter === "archived" ? (
-            <div className="flex flex-col items-center justify-center py-16 text-text-muted">
-              <Archive size={24} className="mb-2 opacity-30" />
-              <p className="text-xs text-text-secondary">No archived sessions</p>
-            </div>
+            <EmptyState
+              className="py-16"
+              icon={<Archive size={24} />}
+              title="No archived sessions"
+            />
           ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-text-muted">
-              <Zap size={24} className="mb-2 opacity-30" />
-              <p className="text-xs text-text-secondary">No matching sessions</p>
-              <p className="text-[10px] mt-1 text-text-muted">Try a different filter</p>
-            </div>
+            <EmptyState
+              className="py-16"
+              icon={<Zap size={24} />}
+              title="No matching sessions"
+              description="Try a different filter"
+            />
           )
         ) : (
           Array.from(convsGrouped.entries()).map(([key, convs]) => {
@@ -622,7 +622,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                       <div className="flex items-center gap-1.5">
                         <span>{statusIcon(conv.status)}</span>
                         <span
-                          className={`text-[11px] font-semibold ${agentColorClass(conv.agent)}`}
+                          className={`text-[11px] font-semibold ${getAgentColor(conv.agent).text}`}
                         >
                           {agentLabel(conv.agent)}
                         </span>
@@ -660,12 +660,11 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                         </span>
                         <span className="flex-1" />
                         {costLabel && (
-                          <span
-                            className="font-mono"
-                            title={`${totalTokens.toLocaleString()} tokens`}
-                          >
-                            {costLabel}
-                          </span>
+                          <Tooltip content={`${totalTokens.toLocaleString()} tokens`}>
+                            <span className="font-mono">
+                              {costLabel}
+                            </span>
+                          </Tooltip>
                         )}
                       </div>
                     </button>

@@ -4,12 +4,14 @@ import {
   RotateCcw,
   GitBranch,
   Save,
-  Loader2,
   AlertTriangle,
   History,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { Modal } from "@/components/ui/Modal";
+import { Spinner } from "@/components/ui/Spinner";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { relativeTime } from "@/lib/time";
 import type { AgentMessage } from "@/types/agent-conversation";
 
@@ -181,13 +183,14 @@ export function CheckpointPanel({
           Rewind
         </span>
         <div className="flex-1" />
-        <button
-          onClick={onClose}
-          className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors"
-          title="Close"
-        >
-          <X size={12} />
-        </button>
+        <Tooltip content="Close">
+          <button
+            onClick={onClose}
+            className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors"
+          >
+            <X size={12} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Save current state */}
@@ -199,7 +202,7 @@ export function CheckpointPanel({
           title="Snapshot current conversation state"
         >
           {savingNow ? (
-            <Loader2 size={11} className="animate-spin" />
+            <Spinner size={11} />
           ) : (
             <Save size={11} />
           )}
@@ -236,18 +239,17 @@ export function CheckpointPanel({
       <div className="flex-1 overflow-y-auto">
         {loading && checkpoints.length === 0 && (
           <div className="flex items-center justify-center h-24 text-[11px] text-text-muted gap-1.5">
-            <Loader2 size={11} className="animate-spin" />
+            <Spinner size={11} />
             Loading checkpoints...
           </div>
         )}
 
         {!loading && checkpoints.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-32 px-4 gap-2 text-text-muted">
-            <History size={20} className="text-text-faint" />
-            <span className="text-[11px] text-center">
-              No checkpoints yet — click 'Save current state' to snapshot.
-            </span>
-          </div>
+          <EmptyState
+            icon={<History size={20} />}
+            title="No checkpoints yet"
+            description="Click 'Save current state' to snapshot."
+          />
         )}
 
         <ul className="divide-y divide-bg-border">
@@ -267,38 +269,42 @@ export function CheckpointPanel({
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmRestore(cp)}
-                    disabled={anyBusy}
-                    title="Restore only the conversation messages from this checkpoint (replaces current messages)"
-                    className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-accent-red border border-accent-red/30 hover:bg-accent-red/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {convBusy ? (
-                      <Loader2 size={10} className="animate-spin" />
-                    ) : (
-                      <RotateCcw size={10} />
-                    )}
-                    Restore conversation
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleFork(cp)}
-                    disabled={anyBusy || !canFork}
-                    title={
+                  <Tooltip content="Restore only the conversation messages from this checkpoint (replaces current messages)">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmRestore(cp)}
+                      disabled={anyBusy}
+                      className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-accent-red border border-accent-red/30 hover:bg-accent-red/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {convBusy ? (
+                        <Spinner size={10} />
+                      ) : (
+                        <RotateCcw size={10} />
+                      )}
+                      Restore conversation
+                    </button>
+                  </Tooltip>
+                  <Tooltip
+                    content={
                       canFork
                         ? "Create a new conversation seeded from this checkpoint"
                         : "Fork is only available on API conversations with a model."
                     }
-                    className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-accent-amber border border-accent-amber/30 hover:bg-accent-amber/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {forkBusy ? (
-                      <Loader2 size={10} className="animate-spin" />
-                    ) : (
-                      <GitBranch size={10} />
-                    )}
-                    Fork from here
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleFork(cp)}
+                      disabled={anyBusy || !canFork}
+                      className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-accent-amber border border-accent-amber/30 hover:bg-accent-amber/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {forkBusy ? (
+                        <Spinner size={10} />
+                      ) : (
+                        <GitBranch size={10} />
+                      )}
+                      Fork from here
+                    </button>
+                  </Tooltip>
                 </div>
               </li>
             );

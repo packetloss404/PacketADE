@@ -1,4 +1,5 @@
 import { Check, X, FileEdit, ShieldAlert, Ban } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
 import type {
   PendingEdit,
   PendingPermission,
@@ -51,14 +52,15 @@ export function PendingApprovalsRollup({
           <span className="text-[11px] text-text-secondary flex-1">
             {totalPending} pending tools waiting on you
           </span>
-          <button
-            type="button"
-            onClick={onCancelAllPending}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover transition-colors"
-            title="Drain all parked prompts as denied — agent loop continues, model sees synthetic 'user cancelled' results"
-          >
-            <Ban size={11} /> Cancel pending
-          </button>
+          <Tooltip content="Drain all parked prompts as denied — agent loop continues, model sees synthetic 'user cancelled' results">
+            <button
+              type="button"
+              onClick={onCancelAllPending}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover transition-colors"
+            >
+              <Ban size={11} /> Cancel pending
+            </button>
+          </Tooltip>
         </div>
       )}
       {showEditsRollup && (
@@ -67,30 +69,33 @@ export function PendingApprovalsRollup({
           <span className="text-[11px] text-text-secondary flex-1">
             {pendingEdits.length} pending file edits
           </span>
-          <button
-            type="button"
-            onClick={onApplyAllEdits}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
-            title="Apply every staged write_file in one go"
-          >
-            <Check size={11} /> Apply all
-          </button>
-          <button
-            type="button"
-            onClick={onRejectAllEdits}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
-            title="Reject every staged write_file"
-          >
-            <X size={11} /> Reject all
-          </button>
-          <button
-            type="button"
-            onClick={onCancelAllPending}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-bg-border text-text-muted hover:bg-bg-hover transition-colors"
-            title="Cancel all parked prompts — agent loop continues"
-          >
-            <Ban size={11} />
-          </button>
+          <Tooltip content="Apply every staged write_file in one go">
+            <button
+              type="button"
+              onClick={onApplyAllEdits}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
+            >
+              <Check size={11} /> Apply all
+            </button>
+          </Tooltip>
+          <Tooltip content="Reject every staged write_file">
+            <button
+              type="button"
+              onClick={onRejectAllEdits}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
+            >
+              <X size={11} /> Reject all
+            </button>
+          </Tooltip>
+          <Tooltip content="Cancel all parked prompts — agent loop continues">
+            <button
+              type="button"
+              onClick={onCancelAllPending}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-bg-border text-text-muted hover:bg-bg-hover transition-colors"
+            >
+              <Ban size={11} />
+            </button>
+          </Tooltip>
         </div>
       )}
       {showPermsRollup && (
@@ -99,22 +104,24 @@ export function PendingApprovalsRollup({
           <span className="text-[11px] text-text-secondary flex-1">
             {pendingPermissions.length} pending tool permissions
           </span>
-          <button
-            type="button"
-            onClick={onAllowAllPermissions}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
-            title="Allow every pending tool call once"
-          >
-            <Check size={11} /> Allow all
-          </button>
-          <button
-            type="button"
-            onClick={onDenyAllPermissions}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
-            title="Deny every pending tool call"
-          >
-            <X size={11} /> Deny all
-          </button>
+          <Tooltip content="Allow every pending tool call once">
+            <button
+              type="button"
+              onClick={onAllowAllPermissions}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
+            >
+              <Check size={11} /> Allow all
+            </button>
+          </Tooltip>
+          <Tooltip content="Deny every pending tool call">
+            <button
+              type="button"
+              onClick={onDenyAllPermissions}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
+            >
+              <X size={11} /> Deny all
+            </button>
+          </Tooltip>
         </div>
       )}
     </div>

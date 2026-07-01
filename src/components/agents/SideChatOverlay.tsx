@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, Loader2, MessageSquarePlus, MessageSquareShare, Send, X } from "lucide-react";
+import { Check, Copy, MessageSquarePlus, MessageSquareShare, Send, X } from "lucide-react";
 import { useSideChatStore } from "@/stores/sideChatStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { Spinner } from "@/components/ui/Spinner";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 /**
  * Floating bottom-right side chat panel. Visually distinct from the main
@@ -91,7 +93,7 @@ export function SideChatOverlay() {
 
   return (
     <div
-      className="fixed bottom-[34px] right-4 w-[320px] h-[400px] bg-bg-secondary border border-accent-purple/30 rounded shadow-2xl flex flex-col z-50 text-[11px] origin-bottom-right animate-[welcomeFadeIn_150ms_ease-out] motion-reduce:animate-none"
+      className="fixed bottom-[34px] right-4 w-[320px] h-[400px] bg-bg-secondary border border-accent-purple/30 rounded shadow-2xl flex flex-col z-50 text-[11px] origin-bottom-right animate-[popoverIn_150ms_ease-out] motion-reduce:animate-none"
       role="dialog"
       aria-label="Side chat"
     >
@@ -123,7 +125,7 @@ export function SideChatOverlay() {
         )}
         {isStreaming && answer.length === 0 && (
           <div className="flex items-center gap-1.5 text-text-muted">
-            <Loader2 size={12} className="animate-spin text-accent-purple" />
+            <Spinner size={12} className="text-accent-purple" />
             Thinking…
           </div>
         )}
@@ -140,25 +142,27 @@ export function SideChatOverlay() {
         )}
         {canPromote && (
           <div className="mt-2 pt-2 border-t border-bg-border flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleInsertIntoChat}
-              disabled={!hasConversation}
-              title={hasConversation ? "Insert this Q+A as context into the active main thread" : "Open a conversation in the Agents tab first"}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-purple/15 text-accent-purple hover:bg-accent-purple/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <MessageSquareShare size={12} />
-              <span>Insert into chat</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleCopyAnswer}
-              title="Copy answer to clipboard"
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-bg-primary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
-            >
-              {copied ? <Check size={12} className="text-accent-green" /> : <Copy size={12} />}
-              <span>{copied ? "Copied" : "Copy answer"}</span>
-            </button>
+            <Tooltip content={hasConversation ? "Insert this Q+A as context into the active main thread" : "Open a conversation in the Agents tab first"}>
+              <button
+                type="button"
+                onClick={handleInsertIntoChat}
+                disabled={!hasConversation}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-purple/15 text-accent-purple hover:bg-accent-purple/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <MessageSquareShare size={12} />
+                <span>Insert into chat</span>
+              </button>
+            </Tooltip>
+            <Tooltip content="Copy answer to clipboard">
+              <button
+                type="button"
+                onClick={handleCopyAnswer}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-bg-primary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+              >
+                {copied ? <Check size={12} className="text-accent-green" /> : <Copy size={12} />}
+                <span>{copied ? "Copied" : "Copy answer"}</span>
+              </button>
+            </Tooltip>
           </div>
         )}
       </div>

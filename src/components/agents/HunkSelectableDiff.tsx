@@ -3,11 +3,11 @@ import {
   CheckSquare,
   Square,
   Save,
-  Loader2,
   FilePlus2,
   FileDiff,
 } from "lucide-react";
 import { applyAcceptedHunks, parseHunks, type Hunk } from "@/lib/hunkDiff";
+import { Spinner } from "@/components/ui/Spinner";
 
 interface HunkSelectableDiffProps {
   originalContent: string | null;
@@ -155,7 +155,7 @@ export function HunkSelectableDiff({
           title="Apply selected hunks to file on disk"
         >
           {applying ? (
-            <Loader2 size={10} className="animate-spin" />
+            <Spinner size={10} />
           ) : (
             <Save size={10} />
           )}

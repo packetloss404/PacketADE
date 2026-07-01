@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import * as Diff from "diff";
-import { Plus, Check, X, Loader2 } from "lucide-react";
+import { Plus, Check, X } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFileDisk, type DiskState } from "@/components/agents/hooks/useFileDisk";
+import { Spinner } from "@/components/ui/Spinner";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 interface ToolDiffViewProps {
   projectPath: string;
@@ -119,7 +121,7 @@ export function ToolDiffView({
   if (state.kind === "loading") {
     return (
       <div className="flex items-center gap-1.5 text-[11px] text-text-secondary px-2 py-1">
-        <Loader2 size={12} className="animate-spin text-text-muted" />
+        <Spinner size={12} className="text-text-muted" />
         Loading diff...
       </div>
     );
@@ -306,26 +308,28 @@ function DiffRowView({
             placeholder="Add a comment (Enter to queue, Esc to cancel)"
             className="flex-1 bg-bg-primary border border-bg-border rounded px-1.5 py-0.5 text-[11px] text-text-primary focus:outline-none focus:border-accent-blue/60"
           />
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!draft.trim()}
-            className="p-0.5 text-accent-green hover:bg-accent-green/10 rounded disabled:opacity-40"
-            title="Queue comment"
-          >
-            <Check size={11} />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setDraft("");
-              setComposerOpen(false);
-            }}
-            className="p-0.5 text-text-faint hover:text-text-primary rounded"
-            title="Cancel"
-          >
-            <X size={11} />
-          </button>
+          <Tooltip content="Queue comment">
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!draft.trim()}
+              className="p-0.5 text-accent-green hover:bg-accent-green/10 rounded disabled:opacity-40"
+            >
+              <Check size={11} />
+            </button>
+          </Tooltip>
+          <Tooltip content="Cancel">
+            <button
+              type="button"
+              onClick={() => {
+                setDraft("");
+                setComposerOpen(false);
+              }}
+              className="p-0.5 text-text-faint hover:text-text-primary rounded"
+            >
+              <X size={11} />
+            </button>
+          </Tooltip>
         </div>
       )}
     </>

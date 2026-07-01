@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CheckSquare,
   ChevronDown,
-  Loader2,
   Pause,
   Play,
   Send,
@@ -10,6 +9,8 @@ import {
   Target,
   X,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/Spinner";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useGoalStore } from "@/stores/goalStore";
@@ -142,7 +143,7 @@ function StatusIcon({ status }: { status: PlanItemStatus }) {
     return <CheckSquare size={11} className="text-accent-green shrink-0" />;
   if (status === "in_progress")
     return (
-      <Loader2 size={11} className="text-accent-blue shrink-0 animate-spin" />
+      <Spinner size={11} className="text-accent-blue shrink-0" />
     );
   return <Square size={11} className="text-text-muted shrink-0" />;
 }
@@ -348,19 +349,22 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
             Plan is a proposal — approve to lift plan-mode and execute.
           </span>
           {handoffEligible && (
-            <button
-              type="button"
-              onClick={() => void handleHandoff()}
-              disabled={!codexReady || handingOff}
-              title={
+            <Tooltip
+              content={
                 !codexReady
                   ? "Codex login required (run `codex login` or sign in via the provider dropdown)"
                   : "Hand the approved plan off to a fresh Codex conversation for execution"
               }
-              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to Codex"}
-            </button>
+              <button
+                type="button"
+                onClick={() => void handleHandoff()}
+                disabled={!codexReady || handingOff}
+                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to Codex"}
+              </button>
+            </Tooltip>
           )}
           <button
             type="button"
@@ -387,14 +391,15 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
             <span className="font-mono">{boundGoal.status}</span>
           </span>
           {boundGoal.status === "active" && (
-            <button
-              type="button"
-              onClick={() => pauseGoal(boundGoal.id)}
-              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-muted hover:text-accent-amber transition-colors"
-              title="Mark goal paused (conversation keeps running; FlightsView shows it as paused)"
-            >
-              <Pause size={10} /> Pause
-            </button>
+            <Tooltip content="Mark goal paused (conversation keeps running; FlightsView shows it as paused)">
+              <button
+                type="button"
+                onClick={() => pauseGoal(boundGoal.id)}
+                className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-muted hover:text-accent-amber transition-colors"
+              >
+                <Pause size={10} /> Pause
+              </button>
+            </Tooltip>
           )}
           {boundGoal.status === "paused" && (
             <button
