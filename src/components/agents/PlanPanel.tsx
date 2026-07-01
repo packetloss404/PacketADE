@@ -265,21 +265,21 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
         (p) => p.agentCli === "api-openai-codex",
       );
       const codexModel = codexProvider?.models[0]?.value ?? "gpt-5.5";
-      const newId = await createApiConversation(
-        "api-openai-codex",
-        conversation.projectPath,
-        codexModel,
-        prompt,
-        "You are executing an approved plan from a planning agent. " +
+      const newId = await createApiConversation({
+        agent: "api-openai-codex",
+        projectPath: conversation.projectPath,
+        model: codexModel,
+        initialMessage: prompt,
+        systemPromptOverride:
+          "You are executing an approved plan from a planning agent. " +
           "Follow the plan step by step; do not re-plan unless blocked.",
-        false, // thinkingEnabled
-        false, // planMode (executing, not planning)
-        null, // sshTarget
-        undefined,
-        false,
-        null, // allowedTools — full toolset
-        false, // memoryContextEnabled
-      );
+        thinkingEnabled: false,
+        planMode: false, // executing, not planning
+        sshTarget: null,
+        skipBackendStart: false,
+        allowedTools: null, // full toolset
+        memoryContextEnabled: false,
+      });
       setParentConversation(newId, conversation.id);
       selectConversation(newId);
     } catch (e) {

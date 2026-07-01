@@ -8,6 +8,12 @@ import {
 } from "lucide-react";
 import { applyAcceptedHunks, parseHunks, type Hunk } from "@/lib/hunkDiff";
 import { Spinner } from "@/components/ui/Spinner";
+import {
+  buildHunkRows,
+  DiffRowView,
+  languageForPath,
+  MAX_HIGHLIGHT_ROWS,
+} from "@/components/agents/diff/DiffRows";
 
 interface HunkSelectableDiffProps {
   originalContent: string | null;
@@ -57,6 +63,25 @@ export function HunkSelectableDiff({
     setAcceptedIds(new Set(hunks.map((h) => h.id)));
     setError(null);
   }, [hunks]);
+
+  const language = useMemo(() => languageForPath(filePath), [filePath]);
+
+  // Pre-compute per-hunk interleaved rows plus the cumulative NEW-file line
+  // offset so each hunk's new-line gutter stays consistent with the whole
+  // file even though hunks render in isolation.
+  const hunkRows = useMemo(() => {
+    let delta = 0;
+    let totalRows = 0;
+    const perHunk = hunks.map((hunk) => {
+      const rows = buildHunkRows(hunk, delta);
+      delta += hunk.newLines.length - hunk.originalLines.length;
+      totalRows += rows.length;
+      return rows;
+    });
+    // Disable per-line highlighting on very large diffs to stay responsive.
+    const rowLanguage = totalRows > MAX_HIGHLIGHT_ROWS ? undefined : language;
+    return { perHunk, rowLanguage };
+  }, [hunks, language]);
 
   const totalHunks = hunks.length;
   const selectedCount = acceptedIds.size;
@@ -173,6 +198,7 @@ export function HunkSelectableDiff({
       <div className="flex flex-col gap-2 p-2">
         {hunks.map((hunk, idx) => {
           const accepted = acceptedIds.has(hunk.id);
+          const rows = hunkRows.perHunk[idx];
           return (
             <div
               key={hunk.id}
@@ -210,70 +236,20 @@ export function HunkSelectableDiff({
                 </span>
               </button>
 
-              {/* Hunk body */}
+              {/* Hunk body — shared interleaved diff rows with line gutters */}
               <div className="border-t border-bg-border overflow-x-auto">
-                {hunk.context.before.length > 0 && (
-                  <ContextBlock lines={hunk.context.before} />
-                )}
-                {hunk.originalLines.length > 0 && (
-                  <ChangeBlock lines={hunk.originalLines} kind="removed" />
-                )}
-                {hunk.newLines.length > 0 && (
-                  <ChangeBlock lines={hunk.newLines} kind="added" />
-                )}
-                {hunk.context.after.length > 0 && (
-                  <ContextBlock lines={hunk.context.after} />
-                )}
+                {rows.map((row) => (
+                  <DiffRowView
+                    key={row.key}
+                    row={row}
+                    language={hunkRows.rowLanguage}
+                  />
+                ))}
               </div>
             </div>
           );
         })}
       </div>
     </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/*                              Sub-components                                */
-/* -------------------------------------------------------------------------- */
-
-function ContextBlock({ lines }: { lines: string[] }) {
-  return (
-    <pre className="text-[11px] font-mono whitespace-pre text-text-secondary">
-      {lines.map((line, idx) => (
-        <div key={idx} className="px-3">
-          <span className="inline-block w-4 text-text-muted select-none"> </span>
-          {line}
-        </div>
-      ))}
-    </pre>
-  );
-}
-
-function ChangeBlock({
-  lines,
-  kind,
-}: {
-  lines: string[];
-  kind: "added" | "removed";
-}) {
-  // Tint only the row background; keep code text at the normal foreground and
-  // color just the +/- gutter sign (standard diff reading).
-  const rowClass = kind === "added" ? "bg-accent-green/10" : "bg-accent-red/10";
-  const gutter = kind === "added" ? "+" : "-";
-  const gutterClass = kind === "added" ? "text-accent-green" : "text-accent-red";
-  return (
-    <pre
-      className={`text-[11px] font-mono whitespace-pre text-text-primary ${rowClass}`}
-    >
-      {lines.map((line, idx) => (
-        <div key={idx} className="px-3">
-          <span className={`inline-block w-4 select-none ${gutterClass}`}>
-            {gutter}
-          </span>
-          {line}
-        </div>
-      ))}
-    </pre>
   );
 }
