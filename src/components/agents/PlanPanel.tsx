@@ -264,7 +264,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
       const codexProvider = API_PROVIDERS.find(
         (p) => p.agentCli === "api-openai-codex",
       );
-      const codexModel = codexProvider?.models[0]?.value ?? "gpt-5-codex";
+      const codexModel = codexProvider?.models[0]?.value ?? "gpt-5.5";
       const newId = await createApiConversation(
         "api-openai-codex",
         conversation.projectPath,

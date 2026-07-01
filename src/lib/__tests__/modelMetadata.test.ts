@@ -32,7 +32,6 @@ describe("model metadata", () => {
       pickFailoverModel("claude-opus-4-6-20250415"),
       pickFailoverModel("anthropic/claude-opus-4-7"),
       pickFailoverModel("gpt-5.5"),
-      pickFailoverModel("gpt-5-codex"),
       pickFailoverModel("gpt-4o"),
       pickFailoverModel("MiniMax-M2.5"),
     ];
