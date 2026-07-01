@@ -1,4 +1,5 @@
 import { Bot, Compass, Hand, Zap } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { deriveMode, nextMode } from "./agentModeChipUtils";
 
@@ -75,14 +76,23 @@ export function AgentModeChip({ conversation, onCycle }: AgentModeChipProps) {
   const nextMeta = MODE_META[next];
 
   return (
-    <button
-      type="button"
-      onClick={onCycle}
-      title={`${meta.label}: ${meta.description}\nShift+Tab → ${nextMeta.label}`}
-      className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${meta.color} ${meta.border} hover:brightness-110`}
+    <Tooltip
+      content={
+        <span>
+          {meta.label}: {meta.description}
+          <br />
+          Shift+Tab → {nextMeta.label}
+        </span>
+      }
     >
-      <Icon size={11} />
-      {meta.label}
-    </button>
+      <button
+        type="button"
+        onClick={onCycle}
+        className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors motion-reduce:transition-none ${meta.color} ${meta.border} hover:brightness-110`}
+      >
+        <Icon size={11} />
+        {meta.label}
+      </button>
+    </Tooltip>
   );
 }

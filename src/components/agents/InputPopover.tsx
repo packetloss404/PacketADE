@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Loader2 } from "lucide-react";
+import { Spinner } from "@/components/ui/Spinner";
 
 export interface InputPopoverItem {
   key: string;
@@ -62,7 +62,7 @@ export function InputPopover({
     <div ref={containerRef} className={classes} role="listbox">
       {loading ? (
         <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-text-muted">
-          <Loader2 size={12} className="animate-spin" />
+          <Spinner size={12} />
           Searching…
         </div>
       ) : items.length === 0 ? (
@@ -74,7 +74,7 @@ export function InputPopover({
           const isHighlighted = idx === hi;
           const rowClasses = [
             "flex items-center gap-2 px-2 py-1.5 cursor-pointer text-xs",
-            "transition-colors hover:bg-bg-hover",
+            "transition-colors motion-reduce:transition-none hover:bg-bg-hover",
             isHighlighted ? "bg-bg-hover" : "",
           ]
             .filter(Boolean)

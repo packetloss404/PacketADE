@@ -7,10 +7,10 @@ import {
   FileMinus2,
   FilePlus2,
   Folder,
-  Loader2,
 } from "lucide-react";
 import { useDiffPaneStore } from "../../stores/diffPaneStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import { Spinner } from "@/components/ui/Spinner";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface MultiFileEditCardProps {
@@ -237,9 +237,10 @@ export function MultiFileEditCard({
                       {entry.path}
                     </span>
                     {entry.loading ? (
-                      <Loader2
+                      <Spinner
                         size={11}
-                        className="animate-spin text-text-muted shrink-0 motion-reduce:animate-none"
+                        className="text-text-muted shrink-0"
+                        label="Loading diff"
                       />
                     ) : (
                       <span className="flex items-center gap-1.5 shrink-0">

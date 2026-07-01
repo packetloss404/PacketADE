@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { AgentModeChip } from "../AgentModeChip";
 import { ContextUsageRing } from "../ContextUsageRing";
 import { ContinueInMenu } from "../ContinueInMenu";
@@ -67,25 +68,26 @@ export function HeaderActions({
   return (
     <div className="flex items-center gap-1 shrink-0">
       {conversation.mode === "api" && (
-        <select
-          value={conversation.transcriptVerbosity ?? "normal"}
-          onChange={(e) => {
-            const next = e.target.value as "summary" | "normal" | "verbose";
-            useAgentTaskStore.setState((s) => ({
-              conversations: s.conversations.map((c) =>
-                c.id === conversationId
-                  ? { ...c, transcriptVerbosity: next, updatedAt: Date.now() }
-                  : c,
-              ),
-            }));
-          }}
-          title="Transcript density: Summary collapses tool calls and hides thinking; Verbose shows raw inputs."
-          className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
-        >
-          <option value="summary">Summary</option>
-          <option value="normal">Normal</option>
-          <option value="verbose">Verbose</option>
-        </select>
+        <Tooltip content="Transcript density: Summary collapses tool calls and hides thinking; Verbose shows raw inputs.">
+          <select
+            value={conversation.transcriptVerbosity ?? "normal"}
+            onChange={(e) => {
+              const next = e.target.value as "summary" | "normal" | "verbose";
+              useAgentTaskStore.setState((s) => ({
+                conversations: s.conversations.map((c) =>
+                  c.id === conversationId
+                    ? { ...c, transcriptVerbosity: next, updatedAt: Date.now() }
+                    : c,
+                ),
+              }));
+            }}
+            className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
+          >
+            <option value="summary">Summary</option>
+            <option value="normal">Normal</option>
+            <option value="verbose">Verbose</option>
+          </select>
+        </Tooltip>
       )}
 
       {conversation.mode === "api" && (
@@ -165,66 +167,73 @@ export function HeaderActions({
       {conversation.mode === "api" && (
         <div className="flex items-center gap-1.5">
           <AgentModeChip conversation={conversation} onCycle={onCycleMode} />
-          <button
-            type="button"
-            onClick={() => void setPlanMode(conversationId, !conversation.planMode)}
-            title={
+          <Tooltip
+            content={
               conversation.planMode
                 ? "Plan mode ON — writes/bash disabled"
                 : "Plan mode OFF — all tools enabled"
             }
-            aria-pressed={!!conversation.planMode}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
-              conversation.planMode
-                ? "border-accent-amber/40 text-accent-amber bg-accent-amber/15"
-                : "border-bg-border text-text-muted hover:text-text-primary"
-            }`}
           >
-            <Compass size={11} />
-            Plan
-          </button>
-          <div data-agent-pane-permissions-dropdown={conversationId}>
-            <select
-              value={conversation.permissionMode ?? "auto"}
-              onChange={(e) =>
-                void setPermissionMode(
-                  conversationId,
-                  e.target.value as
-                    | "auto"
-                    | "ask_for_risky"
-                    | "allow_all"
-                    | "deny_all",
-                )
-              }
-              title="Permission mode for risky tools"
-              className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
+            <button
+              type="button"
+              onClick={() => void setPlanMode(conversationId, !conversation.planMode)}
+              aria-pressed={!!conversation.planMode}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
+                conversation.planMode
+                  ? "border-accent-amber/40 text-accent-amber bg-accent-amber/15"
+                  : "border-bg-border text-text-muted hover:text-text-primary"
+              }`}
             >
-              <option value="auto">Auto</option>
-              <option value="ask_for_risky">Ask risky</option>
-              <option value="allow_all">Allow all</option>
-              <option value="deny_all">Deny risky</option>
-            </select>
+              <Compass size={11} />
+              Plan
+            </button>
+          </Tooltip>
+          <div data-agent-pane-permissions-dropdown={conversationId}>
+            <Tooltip content="Permission mode for risky tools">
+              <select
+                value={conversation.permissionMode ?? "auto"}
+                onChange={(e) =>
+                  void setPermissionMode(
+                    conversationId,
+                    e.target.value as
+                      | "auto"
+                      | "ask_for_risky"
+                      | "allow_all"
+                      | "deny_all",
+                  )
+                }
+                className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
+              >
+                <option value="auto">Auto</option>
+                <option value="ask_for_risky">Ask risky</option>
+                <option value="allow_all">Allow all</option>
+                <option value="deny_all">Deny risky</option>
+              </select>
+            </Tooltip>
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              void setApproveWrites(conversationId, !conversation.approveWrites)
-            }
-            title={
+          <Tooltip
+            content={
               conversation.approveWrites
                 ? "Approve writes ON — confirm each write_file"
                 : "Approve writes OFF"
             }
-            aria-pressed={!!conversation.approveWrites}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
-              conversation.approveWrites
-                ? "border-accent-amber/40 text-accent-amber bg-accent-amber/15"
-                : "border-bg-border text-text-muted hover:text-text-primary"
-            }`}
           >
-            <FileCheck2 size={11} />
-            Approve
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                void setApproveWrites(conversationId, !conversation.approveWrites)
+              }
+              aria-pressed={!!conversation.approveWrites}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
+                conversation.approveWrites
+                  ? "border-accent-amber/40 text-accent-amber bg-accent-amber/15"
+                  : "border-bg-border text-text-muted hover:text-text-primary"
+              }`}
+            >
+              <FileCheck2 size={11} />
+              Approve
+            </button>
+          </Tooltip>
           <Dropdown
             align="right"
             trigger={
@@ -251,44 +260,47 @@ export function HeaderActions({
         />
       )}
 
-      <button
-        type="button"
-        onClick={togglePreview}
-        aria-pressed={previewOpen}
-        className={`p-0.5 rounded transition-colors ${
-          previewOpen
-            ? "text-accent-blue bg-accent-blue/10"
-            : "text-text-muted hover:text-text-primary"
-        }`}
-        title={previewOpen ? "Collapse preview pane" : "Open preview pane"}
-        aria-label={previewOpen ? "Collapse preview pane" : "Open preview pane"}
-      >
-        <PanelRightOpen size={12} />
-      </button>
+      <Tooltip content={previewOpen ? "Collapse preview pane" : "Open preview pane"}>
+        <button
+          type="button"
+          onClick={togglePreview}
+          aria-pressed={previewOpen}
+          className={`p-0.5 rounded transition-colors ${
+            previewOpen
+              ? "text-accent-blue bg-accent-blue/10"
+              : "text-text-muted hover:text-text-primary"
+          }`}
+          aria-label={previewOpen ? "Collapse preview pane" : "Open preview pane"}
+        >
+          <PanelRightOpen size={12} />
+        </button>
+      </Tooltip>
 
       <ContinueInMenu conversation={conversation} />
 
-      <button
-        onClick={() => setShowRewind((v) => !v)}
-        aria-pressed={showRewind}
-        className={`p-0.5 rounded transition-colors ${
-          showRewind
-            ? "text-accent-blue bg-accent-blue/10"
-            : "text-text-muted hover:text-text-primary"
-        }`}
-        title="Rewind / checkpoints"
-      >
-        <RotateCcw size={12} />
-      </button>
+      <Tooltip content="Rewind / checkpoints">
+        <button
+          onClick={() => setShowRewind((v) => !v)}
+          aria-pressed={showRewind}
+          className={`p-0.5 rounded transition-colors ${
+            showRewind
+              ? "text-accent-blue bg-accent-blue/10"
+              : "text-text-muted hover:text-text-primary"
+          }`}
+        >
+          <RotateCcw size={12} />
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={onClose}
-        className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors"
-        title="Back to list"
-        aria-label="Back to list"
-      >
-        <X size={12} />
-      </button>
+      <Tooltip content="Back to list">
+        <button
+          onClick={onClose}
+          className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors"
+          aria-label="Back to list"
+        >
+          <X size={12} />
+        </button>
+      </Tooltip>
     </div>
   );
 }

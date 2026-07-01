@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { ShieldAlert, Check, X, Sparkles, AlertTriangle, ChevronRight } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { Badge } from "@/components/ui/Badge";
 import {
   derivePatternHint,
   parseBashCommand,
@@ -66,7 +68,7 @@ export function PermissionPrompt({
 
   return (
     <div
-      className={`bg-bg-secondary border rounded p-3 flex flex-col gap-2 ${
+      className={`bg-bg-secondary border rounded p-3 flex flex-col gap-2 animate-[welcomeFadeIn_150ms_ease-out] motion-reduce:animate-none ${
         destructive ? "border-accent-red/40" : "border-accent-amber/40"
       }`}
     >
@@ -86,9 +88,9 @@ export function PermissionPrompt({
           ?
         </span>
         {destructive && (
-          <span className="ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded bg-accent-red/20 text-accent-red">
+          <Badge tone="red" className="ml-auto">
             Destructive
-          </span>
+          </Badge>
         )}
       </div>
       {bashCommand !== null ? (
@@ -135,15 +137,16 @@ export function PermissionPrompt({
             </kbd>
           )}
         </button>
-        <button
-          type="button"
-          onClick={() => onAllowAlways(item.id)}
-          title="Always allow this tool for the rest of the session (no rule saved)"
-          className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
-        >
-          <Check size={12} /> Always allow
-          <span className="text-[10px] text-text-muted">(session)</span>
-        </button>
+        <Tooltip content="Always allow this tool for the rest of the session (no rule saved)">
+          <button
+            type="button"
+            onClick={() => onAllowAlways(item.id)}
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
+          >
+            <Check size={12} /> Always allow
+            <span className="text-[10px] text-text-muted">(session)</span>
+          </button>
+        </Tooltip>
         <button
           type="button"
           onClick={() => onDeny(item.id)}

@@ -119,7 +119,7 @@ export function PlanModeApprovalMenu({
   };
 
   return (
-    <div className="bg-bg-secondary border border-accent-green/40 rounded p-3 flex flex-col gap-2">
+    <div className="bg-bg-secondary border border-accent-green/40 rounded p-3 flex flex-col gap-2 animate-[welcomeFadeIn_150ms_ease-out] motion-reduce:animate-none">
       <div className="flex items-center gap-2">
         <Check size={14} className="text-accent-green shrink-0" />
         <span className="text-xs text-text-primary">

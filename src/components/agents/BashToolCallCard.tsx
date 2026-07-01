@@ -3,6 +3,7 @@ import { CheckCircle2, Copy, RotateCw, Terminal } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { BaseToolCard } from "./tool-cards/BaseToolCard";
 import { StatusPill } from "./tool-cards/StatusPill";
 
@@ -90,28 +91,30 @@ export function BashToolCallCard({
 
   const headerActions = (
     <>
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
-        title={copied ? "Copied!" : "Copy command"}
-        aria-label="Copy command"
-      >
-        {copied ? (
-          <CheckCircle2 size={11} className="text-accent-green" />
-        ) : (
-          <Copy size={11} />
-        )}
-      </button>
-      <button
-        type="button"
-        onClick={handleRerun}
-        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
-        title="Ask agent to re-run this command"
-        aria-label="Ask agent to re-run this command"
-      >
-        <RotateCw size={11} />
-      </button>
+      <Tooltip content={copied ? "Copied!" : "Copy command"}>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
+          aria-label="Copy command"
+        >
+          {copied ? (
+            <CheckCircle2 size={11} className="text-accent-green" />
+          ) : (
+            <Copy size={11} />
+          )}
+        </button>
+      </Tooltip>
+      <Tooltip content="Ask agent to re-run this command">
+        <button
+          type="button"
+          onClick={handleRerun}
+          className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
+          aria-label="Ask agent to re-run this command"
+        >
+          <RotateCw size={11} />
+        </button>
+      </Tooltip>
     </>
   );
 

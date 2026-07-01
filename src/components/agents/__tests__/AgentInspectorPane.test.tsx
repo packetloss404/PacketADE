@@ -120,7 +120,9 @@ describe("AgentInspectorPane", () => {
     // style; the "Collapse pane" chevron is the right-aligned action.
     expect(container.querySelector("aside")).not.toBeNull();
     expect(screen.getByTitle("Collapse pane")).toBeInTheDocument();
-    expect(screen.queryByTitle("Show right pane")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show right pane" }),
+    ).not.toBeInTheDocument();
     // Inspector content (only rendered when the pane is expanded AND the
     // inspector tab is active) is visible.
     expect(screen.getByText("Files changed")).toBeInTheDocument();
@@ -131,16 +133,16 @@ describe("AgentInspectorPane", () => {
     // the chevron flips to "Show right pane"; inspector content is no
     // longer rendered because the body div is gone.
     expect(container.querySelector("aside")).toBeNull();
-    expect(screen.getByTitle("Show right pane")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show right pane" })).toBeInTheDocument();
     expect(screen.queryByTitle("Collapse pane")).not.toBeInTheDocument();
     expect(screen.queryByText("Files changed")).not.toBeInTheDocument();
-    // Icon-strip buttons (identified by title attribute) are present.
-    expect(screen.getByTitle("Inspector")).toBeInTheDocument();
-    expect(screen.getByTitle("Preview")).toBeInTheDocument();
-    expect(screen.getByTitle("Diff")).toBeInTheDocument();
-    expect(screen.getByTitle("Files")).toBeInTheDocument();
+    // Icon-strip buttons (identified by their accessible tab names) are present.
+    expect(screen.getByRole("tab", { name: "Inspector" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Preview" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Diff" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Files" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTitle("Show right pane"));
+    fireEvent.click(screen.getByRole("button", { name: "Show right pane" }));
     expect(container.querySelector("aside")).not.toBeNull();
     expect(screen.getByTitle("Collapse pane")).toBeInTheDocument();
   });
@@ -189,7 +191,7 @@ describe("AgentInspectorPane", () => {
     // Start collapsed on Inspector to prove BOTH effects (tab switch +
     // expand) fire from a single store flip.
     fireEvent.click(screen.getByTitle("Collapse pane"));
-    expect(screen.getByTitle("Show right pane")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show right pane" })).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
     act(() => {

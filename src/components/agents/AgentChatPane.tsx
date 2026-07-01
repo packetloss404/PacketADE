@@ -7,7 +7,6 @@ import { BUILTIN_SLASH_NAMES, TEMPLATE_SOURCE_TAG } from "./slashCommandConstant
 import type { SlashCommandDef } from "@/lib/tauri";
 import { MemoryInjectionCard } from "./MemoryInjectionCard";
 import { CheckpointPanel } from "./CheckpointPanel";
-import { AgentStatusBar } from "./AgentStatusBar";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
 import { SessionHealthBar } from "./SessionHealthBar";
 import { PlanPanel } from "./PlanPanel";
@@ -40,6 +39,8 @@ import { useProjectSlashCommands } from "./hooks/useProjectSlashCommands";
 import { useDiffTotals } from "./hooks/useDiffTotals";
 import { buildChatKeyboardHandler, type MentionState } from "./chat/buildChatKeyboardHandler";
 import { slashCommandHandlers } from "./chat/slashCommandHandlers";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { getAgentColor } from "@/lib/agentColors";
 
 const AGENT_LABELS: Record<string, string> = {
   "claude-code": "Claude Code",
@@ -47,14 +48,6 @@ const AGENT_LABELS: Record<string, string> = {
   gemini: "Gemini",
   opencode: "OpenCode",
   packetcode: "PacketCode",
-};
-
-const AGENT_DOT_COLORS: Record<string, string> = {
-  "claude-code": "bg-accent-amber",
-  codex: "bg-accent-blue",
-  gemini: "bg-accent-purple",
-  opencode: "bg-accent-green",
-  packetcode: "bg-accent-purple",
 };
 
 const STATUS_DISPLAY: Record<string, { label: string; className: string }> = {
@@ -77,15 +70,16 @@ function BackToParentLink({ parentId }: { parentId: string }) {
   const selectConversation = useAgentTaskStore((s) => s.selectConversation);
   if (!parent) return null;
   return (
-    <button
-      type="button"
-      onClick={() => selectConversation(parentId)}
-      title={`Spawned via "Hand off to Codex" from "${parent.title}"`}
-      className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-muted transition-colors hover:text-accent-blue"
-    >
-      <ArrowLeft size={11} />
-      back to plan
-    </button>
+    <Tooltip content={`Spawned via "Hand off to Codex" from "${parent.title}"`}>
+      <button
+        type="button"
+        onClick={() => selectConversation(parentId)}
+        className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-muted transition-colors hover:text-accent-blue"
+      >
+        <ArrowLeft size={11} />
+        back to plan
+      </button>
+    </Tooltip>
   );
 }
 
@@ -288,10 +282,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   const status = STATUS_DISPLAY[conversation.status] ?? STATUS_DISPLAY.idle;
   const agentLabel = AGENT_LABELS[conversation.agent] ?? conversation.agent;
-  const dotColor = AGENT_DOT_COLORS[conversation.agent] ?? "bg-text-muted";
-  const folderName =
-    conversation.projectPath.replace(/\\/g, "/").split("/").filter(Boolean).pop() ??
-    conversation.projectPath;
+  const agentColor = getAgentColor(conversation.agent);
 
   // isActive = actively streaming / waiting for the agent ("running" in the UI sense).
   const isActive = conversation.status === "active";
@@ -473,20 +464,10 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   /* ----------------- render ----------------- */
 
-  // "N turns · M tool calls · P pending approvals".
+  // Session counts surfaced in the consolidated status bar below the header.
   const turnCount = messages.filter((m) => m.role === "user").length;
   const toolCallCount = messages.reduce((sum, m) => sum + (m.toolCalls?.length ?? 0), 0);
   const pendingApprovalCount = pendingEdits.length + pendingPermissions.length;
-  const statusLineParts: string[] = [];
-  if (turnCount > 0) statusLineParts.push(`${turnCount} turn${turnCount === 1 ? "" : "s"}`);
-  if (toolCallCount > 0)
-    statusLineParts.push(`${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`);
-  if (pendingApprovalCount > 0)
-    statusLineParts.push(
-      `${pendingApprovalCount} pending approval${pendingApprovalCount === 1 ? "" : "s"}`,
-    );
-
-  const userMsgCount = turnCount;
   const assistantMsgCount = messages.filter((m) => m.role === "assistant").length;
 
   // Politely announced to screen readers: status transitions + the latest
@@ -501,41 +482,36 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   const chatContent = (
     <div className="flex h-full flex-col">
-      {/* Header bar — sparkle avatar + title + status line. Standardized to
-          px-3 py-2 / border-bg-border per the visual-drift audit. */}
-      <div className="flex shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3 py-2">
+      {/* Header bar — sparkle avatar + title + agent/status chips. Single row
+          snapped to the shared h-[33px] baseline; session counts + git/model
+          moved into the consolidated SessionHealthBar below. */}
+      <div className="flex h-[33px] shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3">
         <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border border-accent-line bg-accent-soft">
           <Sparkles size={13} className="text-accent-green" />
         </div>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-semibold text-text-primary">
-              {conversation.title || agentLabel}
-            </span>
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor} ${isActive ? "animate-pulse" : ""}`}
-            />
-            <span className={`text-[10px] font-medium ${status.className}`}>{status.label}</span>
-            {conversation.sshTarget && (
-              <span
-                className="flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent-green"
-                title={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
-              >
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="truncate text-sm font-semibold text-text-primary">
+            {conversation.title || agentLabel}
+          </span>
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${agentColor.text} bg-current ${isActive ? "animate-pulse motion-reduce:animate-none" : ""}`}
+          />
+          <span className={`text-[10px] font-medium ${status.className}`}>{status.label}</span>
+          {conversation.sshTarget && (
+            <Tooltip
+              content={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
+              side="bottom"
+            >
+              <span className="flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent-green">
                 <Server size={10} />
                 {conversation.sshTarget.host}
               </span>
-            )}
-            <AgentHeaderBadges conversationId={conversationId} agent={conversation.agent} />
-            {conversation.parentConversationId && (
-              <BackToParentLink parentId={conversation.parentConversationId} />
-            )}
-          </div>
-          <span
-            className="truncate text-[10px] text-text-secondary"
-            title={`${userMsgCount} sent, ${assistantMsgCount} received`}
-          >
-            {statusLineParts.length > 0 ? statusLineParts.join(" · ") : `${folderName} · ready`}
-          </span>
+            </Tooltip>
+          )}
+          <AgentHeaderBadges conversationId={conversationId} agent={conversation.agent} />
+          {conversation.parentConversationId && (
+            <BackToParentLink parentId={conversation.parentConversationId} />
+          )}
         </div>
 
         <HeaderActions
@@ -560,7 +536,15 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         {status.label}. {lastAssistantText}
       </div>
 
-      <SessionHealthBar conversation={conversation} />
+      <SessionHealthBar
+        conversation={conversation}
+        counts={{
+          turns: turnCount,
+          toolCalls: toolCallCount,
+          pending: pendingApprovalCount,
+          received: assistantMsgCount,
+        }}
+      />
 
       {/* F10: Spec → Plan → Code FSM. SpecPanel renders only during specStage="spec". */}
       <SpecPanel conversation={conversation} />
@@ -598,15 +582,16 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             <div ref={messagesEndRef} />
           </div>
           {!isAtBottom && (
-            <button
-              type="button"
-              onClick={jumpToBottom}
-              className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-bg-border bg-bg-primary px-3 py-1 text-xs text-text-secondary shadow-md transition-colors hover:border-accent-green/60 hover:text-text-primary"
-              title="Jump to latest"
-            >
-              <ArrowDown size={12} />
-              <span>{unreadCount > 0 ? `${unreadCount} new` : "Latest"}</span>
-            </button>
+            <Tooltip content="Jump to latest">
+              <button
+                type="button"
+                onClick={jumpToBottom}
+                className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-bg-border bg-bg-primary px-3 py-1 text-xs text-text-secondary shadow-md transition-colors hover:border-accent-green/60 hover:text-text-primary"
+              >
+                <ArrowDown size={12} />
+                <span>{unreadCount > 0 ? `${unreadCount} new` : "Latest"}</span>
+              </button>
+            </Tooltip>
           )}
         </div>
       </ClickablePathsRoot>
@@ -621,8 +606,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         cancelPendingTools={approvalActions.cancelPendingTools}
         appendAllowedToolPattern={actions.appendAllowedToolPattern}
       />
-
-      <AgentStatusBar conversation={conversation} />
 
       {(conversation.pendingDiffComments?.length ?? 0) > 0 && (
         <PendingDiffCommentsStrip
@@ -656,14 +639,15 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             >
               restore
             </button>
-            <button
-              type="button"
-              onClick={() => setStashedDraft(null)}
-              className="ml-1 text-text-muted hover:text-text-primary"
-              title="Discard stash"
-            >
-              <X size={11} />
-            </button>
+            <Tooltip content="Discard stash">
+              <button
+                type="button"
+                onClick={() => setStashedDraft(null)}
+                className="ml-1 text-text-muted hover:text-text-primary"
+              >
+                <X size={11} />
+              </button>
+            </Tooltip>
           </div>
         )}
         <div className="absolute bottom-full left-3 right-3" data-agent-pane-mention-popover>
@@ -699,18 +683,19 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           />
 
           {voice.isSupported && (
-            <button
-              type="button"
-              onClick={voice.isListening ? voice.stopListening : voice.startListening}
-              className={`shrink-0 rounded p-1 transition-colors ${
-                voice.isListening
-                  ? "bg-accent-green/20 animate-pulse text-accent-green"
-                  : "text-text-muted hover:bg-bg-hover hover:text-text-primary"
-              }`}
-              title={voice.isListening ? "Stop recording" : "Voice input"}
-            >
-              <Mic size={12} />
-            </button>
+            <Tooltip content={voice.isListening ? "Stop recording" : "Voice input"}>
+              <button
+                type="button"
+                onClick={voice.isListening ? voice.stopListening : voice.startListening}
+                className={`shrink-0 rounded p-1 transition-colors ${
+                  voice.isListening
+                    ? "bg-accent-green/20 animate-pulse motion-reduce:animate-none text-accent-green"
+                    : "text-text-muted hover:bg-bg-hover hover:text-text-primary"
+                }`}
+              >
+                <Mic size={12} />
+              </button>
+            </Tooltip>
           )}
 
           <CancelPendingButton
@@ -719,24 +704,26 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           />
 
           {isActive ? (
-            <button
-              type="button"
-              onClick={handleStop}
-              className="shrink-0 rounded bg-accent-red/15 p-1.5 text-accent-red transition-colors hover:bg-accent-red/25"
-              title="Stop turn"
-            >
-              <Square size={12} />
-            </button>
+            <Tooltip content="Stop turn">
+              <button
+                type="button"
+                onClick={handleStop}
+                className="shrink-0 rounded bg-accent-red/15 p-1.5 text-accent-red transition-colors hover:bg-accent-red/25"
+              >
+                <Square size={12} />
+              </button>
+            </Tooltip>
           ) : (
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={!input.trim()}
-              className="shrink-0 rounded bg-accent-green/20 p-1.5 text-accent-green transition-colors hover:bg-accent-green/30 disabled:cursor-not-allowed disabled:opacity-30"
-              title="Send (Enter)"
-            >
-              <Send size={12} />
-            </button>
+            <Tooltip content="Send (Enter)">
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!input.trim()}
+                className="shrink-0 rounded bg-accent-green/20 p-1.5 text-accent-green transition-colors hover:bg-accent-green/30 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <Send size={12} />
+              </button>
+            </Tooltip>
           )}
         </div>
       </div>

@@ -8,7 +8,6 @@ import {
   Check,
   FileDiff,
   FolderTree,
-  Loader2,
   AlertCircle,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
@@ -26,6 +25,10 @@ import { PlanPanel } from "./PlanPanel";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { useReviewedDiffs } from "./hooks/useReviewedDiffs";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { Spinner } from "@/components/ui/Spinner";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { getAgentColor } from "@/lib/agentColors";
 
 interface AgentInspectorPaneProps {
   conversationId: string;
@@ -138,42 +141,48 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
   if (!open) {
     return (
       <div className="w-[30px] shrink-0 bg-bg-secondary border-l border-bg-border flex flex-col items-center py-2 gap-1">
-        <button
-          onClick={() => setOpen(true)}
-          title="Show right pane"
-          className="w-6 h-6 grid place-items-center text-text-muted hover:text-text-primary rounded transition-colors"
-        >
-          <ChevronRight size={12} className="rotate-180" />
-        </button>
+        <Tooltip content="Show right pane" side="left">
+          <button
+            aria-label="Show right pane"
+            onClick={() => setOpen(true)}
+            className="w-6 h-6 grid place-items-center text-text-muted hover:text-text-primary rounded transition-colors"
+          >
+            <ChevronRight size={12} className="rotate-180" />
+          </button>
+        </Tooltip>
         <div className="w-px h-2 bg-line-soft" />
         <div role="tablist" aria-label="Inspector views" className="contents">
         {TAB_DEFS.map((t) => {
           const Icon = t.icon;
           const showBadge = t.id === "diff" && unreviewedCount > 0;
           return (
-            <button
+            <Tooltip
               key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              aria-label={t.label}
-              onClick={() => {
-                setTab(t.id);
-                setOpen(true);
-              }}
-              title={
+              side="left"
+              content={
                 showBadge
                   ? `${t.label} (${unreviewedCount} unreviewed)`
                   : t.label
               }
-              className={`relative w-6 h-6 grid place-items-center rounded transition-colors ${
-                tab === t.id
-                  ? "bg-bg-elevated text-text-primary"
-                  : "text-text-muted hover:text-text-secondary"
-              }`}
             >
-              <Icon size={12} />
-              {showBadge && <UnreviewedBadge count={unreviewedCount} compact />}
-            </button>
+              <button
+                role="tab"
+                aria-selected={tab === t.id}
+                aria-label={t.label}
+                onClick={() => {
+                  setTab(t.id);
+                  setOpen(true);
+                }}
+                className={`relative w-6 h-6 grid place-items-center rounded transition-colors ${
+                  tab === t.id
+                    ? "bg-bg-elevated text-text-primary"
+                    : "text-text-muted hover:text-text-secondary"
+                }`}
+              >
+                <Icon size={12} />
+                {showBadge && <UnreviewedBadge count={unreviewedCount} compact />}
+              </button>
+            </Tooltip>
           );
         })}
         </div>
@@ -285,10 +294,11 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
           conversation.mode === "api" ? (
             <EmbeddedDiffPane conversationId={conversationId} />
           ) : (
-            <div className="flex-1 flex items-center justify-center px-6 text-center bg-bg-primary">
-              <span className="text-[11px] text-text-muted max-w-[220px]">
-                Diffs are only tracked for API-mode conversations.
-              </span>
+            <div className="flex-1 flex items-center justify-center bg-bg-primary">
+              <EmptyState
+                icon={<FileDiff size={24} />}
+                title="Diffs are only tracked for API-mode conversations."
+              />
             </div>
           )
         )}
@@ -389,7 +399,7 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
         <div className="p-2 flex flex-col gap-1.5">
           {filesLoading ? (
             <span className="flex items-center gap-1.5 text-[10px] text-text-muted px-1 py-1">
-              <Loader2 size={10} className="animate-spin motion-reduce:animate-none" />
+              <Spinner size={10} />
               Computing edits…
             </span>
           ) : filesError ? (
@@ -456,7 +466,7 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
             k="Agent"
             v={
               <span>
-                <span className="text-accent-green font-medium">
+                <span className={`${getAgentColor(conversation?.agent ?? "").text} font-medium`}>
                   {agentDisplayName(conversation?.agent ?? "")}
                 </span>
                 <span className="text-text-muted"> · {modelLabel}</span>

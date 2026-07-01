@@ -2,12 +2,12 @@ import { useMemo, useState } from "react";
 import {
   CheckSquare,
   ChevronRight,
-  Loader2,
   Square,
   XCircle,
 } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
+import { Spinner } from "@/components/ui/Spinner";
 
 interface TaskListCardProps {
   toolCall: AgentToolCall;
@@ -56,7 +56,7 @@ function StatusIcon({ status }: { status: ParsedStatus }) {
   }
   if (status === "in_progress") {
     return (
-      <Loader2 size={11} className="text-accent-blue shrink-0 animate-spin" />
+      <Spinner size={11} className="text-accent-blue shrink-0" label="in progress" />
     );
   }
   return <Square size={11} className="text-text-muted shrink-0" />;
@@ -101,7 +101,7 @@ export function TaskListCard({ toolCall, verbosity = "normal" }: TaskListCardPro
     return (
       <div className="border border-bg-border rounded text-[10px] text-text-muted bg-bg-hover px-2 py-1 flex items-center gap-1.5">
         {toolCall.status === "running" ? (
-          <Loader2 size={11} className="animate-spin" />
+          <Spinner size={11} />
         ) : (
           <Square size={11} />
         )}

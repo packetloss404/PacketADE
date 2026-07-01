@@ -8,6 +8,7 @@ import {
   Code,
 } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { Tooltip } from "@/components/ui/Tooltip";
 import type { AgentConversation } from "@/types/agent-conversation";
 import type { AgentCli } from "@/stores/agentTaskStore";
 
@@ -49,7 +50,7 @@ function MenuItem({
         // Close dropdown by simulating an outside click.
         document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       }}
-      className={`w-full text-left px-3 py-1.5 flex items-start gap-2 transition-colors ${
+      className={`w-full text-left px-3 py-1.5 flex items-start gap-2 transition-colors motion-reduce:transition-none ${
         disabled
           ? "opacity-40 cursor-not-allowed"
           : "hover:bg-bg-hover cursor-pointer"
@@ -163,13 +164,12 @@ export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
       <Dropdown
         align="right"
         trigger={
-          <span
-            className="flex items-center gap-1 text-[11px] text-text-secondary"
-            title="Continue this conversation in another surface"
-          >
-            <Send size={11} />
-            Continue in
-          </span>
+          <Tooltip content="Continue this conversation in another surface">
+            <span className="flex items-center gap-1 text-[11px] text-text-secondary">
+              <Send size={11} />
+              Continue in
+            </span>
+          </Tooltip>
         }
       >
         <div className="min-w-[240px] py-0.5">

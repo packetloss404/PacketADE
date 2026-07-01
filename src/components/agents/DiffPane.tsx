@@ -5,6 +5,7 @@ import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { aggregateWriteFiles } from "@/lib/diffUtils";
 import type { ConversationDiffAggregate } from "@/lib/aggregateConversationDiffs";
 import { FileListAndDiffBody } from "./diff/FileListAndDiffBody";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 /**
  * Right-side slide-out diff pane. Thin wrapper around `FileListAndDiffBody`
@@ -66,15 +67,16 @@ export function DiffPane() {
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={close}
-          className="p-1 rounded hover:bg-bg-hover text-text-secondary hover:text-text-primary transition-colors"
-          aria-label="Close diff pane"
-          title="Close"
-        >
-          <X size={14} />
-        </button>
+        <Tooltip content="Close">
+          <button
+            type="button"
+            onClick={close}
+            className="p-1 rounded hover:bg-bg-hover text-text-secondary hover:text-text-primary transition-colors"
+            aria-label="Close diff pane"
+          >
+            <X size={14} />
+          </button>
+        </Tooltip>
       </div>
 
       <FileListAndDiffBody

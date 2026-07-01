@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { X } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
@@ -449,22 +450,29 @@ export function AgentInputArea({
                 <div
                   key={s.id}
                   className="flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded border border-bg-border bg-bg-secondary text-[10px] text-text-secondary"
-                  title={`${s.name} · ${(s.sizeBytes / 1024).toFixed(1)} KB`}
                 >
-                  <img
-                    src={s.previewUrl}
-                    alt=""
-                    className="w-5 h-5 rounded object-cover"
-                  />
-                  <span className="truncate max-w-[140px]">{s.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeStaged(s.id)}
-                    className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-accent-red"
-                    title="Remove"
+                  <Tooltip
+                    content={`${s.name} · ${(s.sizeBytes / 1024).toFixed(1)} KB`}
                   >
-                    <X size={9} />
-                  </button>
+                    <span className="flex items-center gap-1.5">
+                      <img
+                        src={s.previewUrl}
+                        alt=""
+                        className="w-5 h-5 rounded object-cover"
+                      />
+                      <span className="truncate max-w-[140px]">{s.name}</span>
+                    </span>
+                  </Tooltip>
+                  <Tooltip content="Remove">
+                    <button
+                      type="button"
+                      aria-label="Remove"
+                      onClick={() => removeStaged(s.id)}
+                      className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-accent-red"
+                    >
+                      <X size={9} />
+                    </button>
+                  </Tooltip>
                 </div>
               ))}
             </div>
