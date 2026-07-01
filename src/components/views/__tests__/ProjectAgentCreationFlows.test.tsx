@@ -164,10 +164,10 @@ describe("project-based agent creation flows", () => {
     await waitFor(() =>
       expect(mocks.agentTaskState.createApiConversation).toHaveBeenCalledTimes(1),
     );
-    const args = mocks.agentTaskState.createApiConversation.mock.calls[0];
-    expect(args[0]).toBe("api-claude");
-    expect(args[1]).toBe(mocks.activeWorkspace.projectPath);
-    expect(args).not.toContain(mocks.activeWorkspace.id);
+    const [options] = mocks.agentTaskState.createApiConversation.mock.calls[0];
+    expect(options.agent).toBe("api-claude");
+    expect(options.projectPath).toBe(mocks.activeWorkspace.projectPath);
+    expect(Object.values(options)).not.toContain(mocks.activeWorkspace.id);
     expect(mocks.agentTaskState.selectConversation).toHaveBeenCalledWith("conversation-1");
     expect(mocks.appState.setActiveView).toHaveBeenCalledWith("agents");
   });
@@ -181,11 +181,11 @@ describe("project-based agent creation flows", () => {
     await waitFor(() =>
       expect(mocks.agentTaskState.createApiConversation).toHaveBeenCalledTimes(1),
     );
-    const args = mocks.agentTaskState.createApiConversation.mock.calls[0];
-    expect(args[0]).toBe("api-claude");
-    expect(args[1]).toBe(mocks.activeWorkspace.projectPath);
-    expect(args).not.toContain(mocks.activeWorkspace.id);
-    expect(args[3]).toContain("Suggestion: Extract the shared parsing logic.");
+    const [options] = mocks.agentTaskState.createApiConversation.mock.calls[0];
+    expect(options.agent).toBe("api-claude");
+    expect(options.projectPath).toBe(mocks.activeWorkspace.projectPath);
+    expect(Object.values(options)).not.toContain(mocks.activeWorkspace.id);
+    expect(options.initialMessage).toContain("Suggestion: Extract the shared parsing logic.");
     expect(mocks.agentTaskState.selectConversation).toHaveBeenCalledWith("conversation-1");
     expect(mocks.appState.setActiveView).toHaveBeenCalledWith("agents");
   });

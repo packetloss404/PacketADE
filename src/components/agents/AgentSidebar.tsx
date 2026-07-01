@@ -15,8 +15,15 @@ import {
   Search,
   X,
   Plus,
+  Pin,
+  Tag,
+  ArrowUpDown,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import {
+  useAgentSidebarPrefsStore,
+  type SidebarSortMode,
+} from "@/stores/agentSidebarPrefsStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { Modal } from "@/components/ui/Modal";
 import { API_PROVIDERS } from "@/lib/api-models";
@@ -26,6 +33,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Popover } from "@/components/ui/Popover";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { getAgentColor, getStatusColor } from "@/lib/agentColors";
 
 type StatusFilter = "all" | "active" | "done" | "archived";
@@ -36,6 +44,18 @@ const GROUP_BY_LABELS: Record<GroupBy, string> = {
   status: "Status",
   env: "Environment",
 };
+
+const SORT_MODE_LABELS: Record<SidebarSortMode, string> = {
+  recent: "Recent",
+  created: "Created",
+  alpha: "A–Z",
+};
+
+const SORT_OPTIONS: { value: SidebarSortMode; label: string }[] = [
+  { value: "recent", label: "Recent" },
+  { value: "created", label: "Created" },
+  { value: "alpha", label: "A–Z" },
+];
 
 const STATUS_GROUP_LABELS: Record<AgentConversation["status"], string> = {
   active: "Active",
@@ -78,6 +98,29 @@ function shortModel(model: string | undefined): string {
 /** Aggregate "turn" count = number of user messages in the conversation. */
 function turnCount(conv: AgentConversation): number {
   return conv.messages.filter((m) => m.role === "user").length;
+}
+
+/**
+ * Order a list of conversations: pinned rows always float to the top, then
+ * the active sort mode is applied. Returns a new array (does not mutate).
+ */
+function sortConversations(
+  list: AgentConversation[],
+  sortMode: SidebarSortMode,
+  prefs: Record<string, { pinned?: boolean }>,
+): AgentConversation[] {
+  return [...list].sort((a, b) => {
+    const pa = prefs[a.id]?.pinned ? 1 : 0;
+    const pb = prefs[b.id]?.pinned ? 1 : 0;
+    if (pa !== pb) return pb - pa;
+    if (sortMode === "alpha") {
+      const cmp = (a.title || "").trim().toLowerCase().localeCompare((b.title || "").trim().toLowerCase());
+      if (cmp !== 0) return cmp;
+      return b.updatedAt - a.updatedAt;
+    }
+    if (sortMode === "created") return b.createdAt - a.createdAt;
+    return b.updatedAt - a.updatedAt;
+  });
 }
 
 function isWorktreePath(path: string): boolean {
@@ -146,6 +189,14 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const projectLabels = useAgentTaskStore((s) => s.projectLabels);
   const setProjectLabel = useAgentTaskStore((s) => s.setProjectLabel);
 
+  // Per-conversation pin/tags + global sort (separate persisted store).
+  const prefs = useAgentSidebarPrefsStore((s) => s.prefs);
+  const sortMode = useAgentSidebarPrefsStore((s) => s.sortMode);
+  const setSortMode = useAgentSidebarPrefsStore((s) => s.setSortMode);
+  const togglePinned = useAgentSidebarPrefsStore((s) => s.togglePinned);
+  const addTag = useAgentSidebarPrefsStore((s) => s.addTag);
+  const removeTag = useAgentSidebarPrefsStore((s) => s.removeTag);
+
   /** State for inline-renaming a project group header (groupBy=project only). */
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -159,11 +210,22 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const [pendingDelete, setPendingDelete] = useState<AgentConversation | null>(null);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const groupBtnRef = useRef<HTMLButtonElement | null>(null);
+  const sortBtnRef = useRef<HTMLButtonElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
+
+  // Inline "add tag" input — tracks which conversation row is being tagged.
+  const [taggingId, setTaggingId] = useState<string | null>(null);
+  const [tagValue, setTagValue] = useState("");
+  const tagInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (taggingId !== null) tagInputRef.current?.focus();
+  }, [taggingId]);
 
   const trimmedQuery = searchQuery.trim();
   const isSearching = trimmedQuery.length > 0;
@@ -233,7 +295,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
 
   const convsGrouped = useMemo(() => {
     if (isSearching) {
-      const sorted = [...filtered].sort((a, b) => b.updatedAt - a.updatedAt);
+      const sorted = sortConversations(filtered, sortMode, prefs);
       const map = new Map<string, AgentConversation[]>();
       if (sorted.length > 0) map.set("__search__", sorted);
       return map;
@@ -253,8 +315,8 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(conv);
     }
-    for (const [, list] of map) {
-      list.sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const [key, list] of map) {
+      map.set(key, sortConversations(list, sortMode, prefs));
     }
     if (groupBy === "status") {
       const ordered = new Map<string, AgentConversation[]>();
@@ -271,7 +333,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       return ordered;
     }
     return map;
-  }, [filtered, groupBy, isSearching]);
+  }, [filtered, groupBy, isSearching, sortMode, prefs]);
 
   // Search-result aggregate counts
   const searchStats = useMemo(() => {
@@ -412,51 +474,85 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
         </div>
       )}
 
-      {/* Group-by dropdown */}
+      {/* Group-by + sort dropdowns */}
       {conversations.length > 0 && (
-        <div className="relative px-3 pb-1.5">
-          <Tooltip content={isSearching ? "Grouping disabled while searching" : "Group conversations by"}>
-            <button
-              ref={groupBtnRef}
-              onClick={() => !isSearching && setGroupMenuOpen((v) => !v)}
-              disabled={isSearching}
-              className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-                isSearching
-                  ? "text-text-faint cursor-not-allowed"
-                  : "text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              <Layers size={10} />
-              <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
-              <ChevronDown size={11} className="opacity-70" />
-            </button>
-          </Tooltip>
-          <Popover
-            open={groupMenuOpen}
-            onClose={() => setGroupMenuOpen(false)}
-            anchorRef={groupBtnRef}
-            placement="bottom-start"
-            role="menu"
-            className="py-0.5 min-w-[120px]"
-          >
-            {(["project", "status", "env"] as GroupBy[]).map((g) => (
+        <div className="px-3 pb-1.5 flex items-center justify-between gap-1">
+          <div className="relative">
+            <Tooltip content={isSearching ? "Grouping disabled while searching" : "Group conversations by"}>
               <button
-                key={g}
-                role="menuitem"
-                onClick={() => {
-                  setGroupBy(g);
-                  setGroupMenuOpen(false);
-                }}
-                className={`flex items-center w-full px-2 py-1 text-[10px] text-left transition-colors ${
-                  groupBy === g
-                    ? "text-accent-green bg-accent-green/10"
-                    : "text-text-secondary hover:bg-bg-hover"
+                ref={groupBtnRef}
+                onClick={() => !isSearching && setGroupMenuOpen((v) => !v)}
+                disabled={isSearching}
+                className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+                  isSearching
+                    ? "text-text-faint cursor-not-allowed"
+                    : "text-text-muted hover:text-text-secondary"
                 }`}
               >
-                {GROUP_BY_LABELS[g]}
+                <Layers size={10} />
+                <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
+                <ChevronDown size={11} className="opacity-70" />
               </button>
-            ))}
-          </Popover>
+            </Tooltip>
+            <Popover
+              open={groupMenuOpen}
+              onClose={() => setGroupMenuOpen(false)}
+              anchorRef={groupBtnRef}
+              placement="bottom-start"
+              role="menu"
+              className="py-0.5 min-w-[120px]"
+            >
+              {(["project", "status", "env"] as GroupBy[]).map((g) => (
+                <button
+                  key={g}
+                  role="menuitem"
+                  onClick={() => {
+                    setGroupBy(g);
+                    setGroupMenuOpen(false);
+                  }}
+                  className={`flex items-center w-full px-2 py-1 text-[10px] text-left transition-colors ${
+                    groupBy === g
+                      ? "text-accent-green bg-accent-green/10"
+                      : "text-text-secondary hover:bg-bg-hover"
+                  }`}
+                >
+                  {GROUP_BY_LABELS[g]}
+                </button>
+              ))}
+            </Popover>
+          </div>
+          <div className="relative">
+            <Tooltip content="Sort conversations by">
+              <button
+                ref={sortBtnRef}
+                onClick={() => setSortMenuOpen((v) => !v)}
+                className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors text-text-muted hover:text-text-secondary"
+              >
+                <ArrowUpDown size={10} />
+                <span>{SORT_MODE_LABELS[sortMode]}</span>
+                <ChevronDown size={11} className="opacity-70" />
+              </button>
+            </Tooltip>
+            <Popover
+              open={sortMenuOpen}
+              onClose={() => setSortMenuOpen(false)}
+              anchorRef={sortBtnRef}
+              placement="bottom-end"
+              role="menu"
+              className="p-1"
+            >
+              <SegmentedControl
+                options={SORT_OPTIONS}
+                value={sortMode}
+                onChange={(v) => {
+                  setSortMode(v);
+                  setSortMenuOpen(false);
+                }}
+                size="xs"
+                aria-label="Sort conversations by"
+              />
+            </Popover>
+          </div>
         </div>
       )}
 
@@ -602,6 +698,9 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                 const turns = turnCount(conv);
                 const branchLabel = conv.sshTarget?.name ?? "";
                 const titleText = conv.title || "(untitled)";
+                const isPinned = !!prefs[conv.id]?.pinned;
+                const tags = prefs[conv.id]?.tags ?? [];
+                const isTagging = taggingId === conv.id;
 
                 return (
                   <div
@@ -620,6 +719,9 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                       }`}
                     >
                       <div className="flex items-center gap-1.5">
+                        {isPinned && (
+                          <Pin size={9} className="text-accent-amber fill-accent-amber shrink-0" />
+                        )}
                         <span>{statusIcon(conv.status)}</span>
                         <span
                           className={`text-[11px] font-semibold ${getAgentColor(conv.agent).text}`}
@@ -686,6 +788,75 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                     >
                       <Trash2 size={10} />
                     </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePinned(conv.id);
+                      }}
+                      className={`absolute right-11 top-1.5 p-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity ${
+                        isPinned ? "text-accent-amber" : "text-text-muted hover:text-accent-amber"
+                      }`}
+                      title={isPinned ? "Unpin" : "Pin to top"}
+                    >
+                      <Pin size={10} className={isPinned ? "fill-accent-amber" : ""} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTaggingId((id) => (id === conv.id ? null : conv.id));
+                        setTagValue("");
+                      }}
+                      className="absolute right-16 top-1.5 p-0.5 text-text-muted hover:text-accent-blue opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
+                      title="Add tag"
+                    >
+                      <Tag size={10} />
+                    </button>
+                    {(tags.length > 0 || isTagging) && (
+                      <div className="flex flex-wrap items-center gap-1 px-3 pb-2 -mt-0.5">
+                        {tags.map((t) => (
+                          <Badge key={t} tone="blue" className="gap-0.5 pr-0.5">
+                            <span className="truncate max-w-[80px]">{t}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeTag(conv.id, t);
+                              }}
+                              className="p-px text-accent-blue/70 hover:text-accent-red rounded"
+                              title={`Remove tag “${t}”`}
+                            >
+                              <X size={8} />
+                            </button>
+                          </Badge>
+                        ))}
+                        {isTagging && (
+                          <input
+                            ref={tagInputRef}
+                            value={tagValue}
+                            onChange={(e) => setTagValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                const v = tagValue.trim();
+                                if (v) {
+                                  addTag(conv.id, v);
+                                  setTagValue("");
+                                }
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                setTaggingId(null);
+                                setTagValue("");
+                              }
+                            }}
+                            onBlur={() => {
+                              setTaggingId(null);
+                              setTagValue("");
+                            }}
+                            placeholder="tag…"
+                            className="w-[70px] px-1 py-px text-[9px] bg-bg-primary border border-accent-blue/40 rounded text-text-primary placeholder:text-text-muted focus:outline-none"
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}

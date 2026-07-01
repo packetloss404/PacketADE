@@ -130,20 +130,17 @@ export function CheckpointPanel({
     setError(null);
     try {
       const store = useAgentTaskStore.getState();
-      const newId = await store.createApiConversation(
-        conversation.agent,
-        conversation.projectPath,
-        conversation.model,
-        "",
-        conversation.systemPromptOverride ?? null,
-        undefined,
-        undefined,
-        null,
-        undefined,
-        false,
-        conversation.allowedTools ?? null,
-        conversation.memoryContextEnabled ?? false,
-      );
+      const newId = await store.createApiConversation({
+        agent: conversation.agent,
+        projectPath: conversation.projectPath,
+        model: conversation.model,
+        initialMessage: "",
+        systemPromptOverride: conversation.systemPromptOverride ?? null,
+        sshTarget: null,
+        skipBackendStart: false,
+        allowedTools: conversation.allowedTools ?? null,
+        memoryContextEnabled: conversation.memoryContextEnabled ?? false,
+      });
       // Seed the new conversation with the checkpoint's messages.
       useAgentTaskStore.setState((s) => ({
         conversations: s.conversations.map((c) =>

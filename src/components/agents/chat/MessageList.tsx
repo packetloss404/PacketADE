@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Pencil, RotateCw } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { Spinner } from "@/components/ui/Spinner";
@@ -15,6 +15,17 @@ import type {
   AgentMessage,
 } from "@/types/agent-conversation";
 
+// Virtualization tuning. The last N rows always mount immediately so the
+// bottom of the transcript (streaming message, quick actions, diff viewer)
+// renders instantly and the "stick to bottom" scroll lands on real content.
+// Everything above is lazily mounted as it approaches the viewport.
+const TAIL_FORCE_MOUNT = 10;
+// Reserved height for a not-yet-mounted row. Keeps the scroll container
+// overflowing (so off-screen rows stay off-screen) and gives the scrollbar a
+// sensible size before real heights are known. Browser scroll anchoring
+// smooths the reflow as rows mount.
+const PLACEHOLDER_MIN_HEIGHT = 72;
+
 interface MessageListProps {
   conversation: AgentConversation;
   conversationId: string;
@@ -26,6 +37,9 @@ interface MessageListProps {
   onCancelEdit: () => void;
   onRetryLastTurn: () => void;
   isActive: boolean;
+  // Scroll container that owns the message viewport (from AgentChatPane).
+  // Used as the IntersectionObserver root for lazy row mounting.
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
 }
 
 export function MessageList({
@@ -39,6 +53,7 @@ export function MessageList({
   onCancelEdit,
   onRetryLastTurn,
   isActive,
+  scrollContainerRef,
 }: MessageListProps) {
   const messages = conversation.messages;
   const lastMessage = messages[messages.length - 1];
@@ -52,41 +67,90 @@ export function MessageList({
     (!lastMessage || lastMessage.role === "user") &&
     messages.length > 0;
 
+  // Shared IntersectionObserver for lazy row mounting. One observer per list
+  // instance watches every placeholder row; when a row nears the viewport it
+  // mounts once and is unobserved (mount-once, never unmount — preserves per
+  // card local state like expanded tool output and streaming auto-scroll).
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const visibilityCallbacks = useRef(new Map<Element, () => void>());
+  const register = useCallback(
+    (el: Element, onVisible: () => void) => {
+      if (typeof IntersectionObserver === "undefined") {
+        onVisible();
+        return () => {};
+      }
+      if (!observerRef.current) {
+        observerRef.current = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              const cb = visibilityCallbacks.current.get(entry.target);
+              if (cb) {
+                visibilityCallbacks.current.delete(entry.target);
+                observerRef.current?.unobserve(entry.target);
+                cb();
+              }
+            }
+          },
+          { root: scrollContainerRef?.current ?? null, rootMargin: "600px 0px" },
+        );
+      }
+      visibilityCallbacks.current.set(el, onVisible);
+      observerRef.current.observe(el);
+      return () => {
+        visibilityCallbacks.current.delete(el);
+        observerRef.current?.unobserve(el);
+      };
+    },
+    [scrollContainerRef],
+  );
+  useEffect(
+    () => () => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      visibilityCallbacks.current.clear();
+    },
+    [],
+  );
+
+  const tailStart = Math.max(0, messages.length - TAIL_FORCE_MOUNT);
+
   return (
     <>
-      {messages.map((msg) => (
-        <div
-          key={msg.id}
-          className="animate-[welcomeFadeIn_200ms_ease-out] motion-reduce:animate-none"
-        >
-          <MessageBubble
-            message={msg}
-            conversation={conversation}
-            isLastAssistant={msg.id === lastAssistantMessage?.id}
-            onRetry={
-              msg.id === lastAssistantMessage?.id && !msg.isStreaming
-                ? onRetryLastTurn
-                : undefined
-            }
-            isEditing={editingMessageId === msg.id}
-            editingText={editingText}
-            onStartEdit={
-              msg.role === "user"
-                ? () => onStartEdit(msg.id, msg.content)
-                : undefined
-            }
-            onChangeEdit={onChangeEdit}
-            onSubmitEdit={() => onSubmitEdit(msg.id)}
-            onCancelEdit={onCancelEdit}
-          />
-          {showQuickActions && msg.id === lastAssistantMessage?.id && (
-            <AgentQuickActions
-              conversationId={conversationId}
+      {messages.map((msg, index) => {
+        const isLastAssistant = msg.id === lastAssistantMessage?.id;
+        // Always mount the tail window + the last assistant message so the
+        // streaming card, quick actions and diff viewer never get windowed out.
+        const forceMount = index >= tailStart || isLastAssistant;
+        return (
+          <LazyMessageRow key={msg.id} forceMount={forceMount} register={register}>
+            <MessageBubble
               message={msg}
+              conversation={conversation}
+              isLastAssistant={isLastAssistant}
+              onRetry={
+                isLastAssistant && !msg.isStreaming ? onRetryLastTurn : undefined
+              }
+              isEditing={editingMessageId === msg.id}
+              editingText={editingText}
+              onStartEdit={
+                msg.role === "user"
+                  ? () => onStartEdit(msg.id, msg.content)
+                  : undefined
+              }
+              onChangeEdit={onChangeEdit}
+              onSubmitEdit={() => onSubmitEdit(msg.id)}
+              onCancelEdit={onCancelEdit}
             />
-          )}
-        </div>
-      ))}
+            {showQuickActions && isLastAssistant && (
+              <AgentQuickActions
+                conversationId={conversationId}
+                message={msg}
+              />
+            )}
+          </LazyMessageRow>
+        );
+      })}
 
       {conversation.planMode &&
         lastMessage?.role === "assistant" &&
@@ -107,6 +171,43 @@ export function MessageList({
         </div>
       )}
     </>
+  );
+}
+
+// Lazily mounts a single message row. Force-mounted rows (tail window / last
+// assistant) render immediately; the rest render a fixed-height placeholder
+// until they scroll near the viewport, then mount once and stay mounted so no
+// card loses local state and scroll position never jumps from an unmount.
+function LazyMessageRow({
+  forceMount,
+  register,
+  children,
+}: {
+  forceMount: boolean;
+  register: (el: Element, onVisible: () => void) => () => void;
+  children: ReactNode;
+}) {
+  const [mounted, setMounted] = useState(forceMount);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (forceMount) {
+      setMounted(true);
+      return;
+    }
+    const el = rowRef.current;
+    if (!el) return;
+    return register(el, () => setMounted(true));
+  }, [forceMount, register]);
+
+  return (
+    <div
+      ref={rowRef}
+      className="animate-[welcomeFadeIn_200ms_ease-out] motion-reduce:animate-none"
+      style={mounted ? undefined : { minHeight: PLACEHOLDER_MIN_HEIGHT }}
+    >
+      {mounted ? children : null}
+    </div>
   );
 }
 

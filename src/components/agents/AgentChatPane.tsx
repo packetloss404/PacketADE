@@ -179,7 +179,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { messagesContainerRef, messagesEndRef, isAtBottom, unreadCount, jumpToBottom } =
+  const { messagesContainerRef, messagesContentRef, messagesEndRef, isAtBottom, unreadCount, jumpToBottom } =
     useScrollState(conversationId, conversation?.messages);
 
   const appendToInput = useCallback((chunk: string) => {
@@ -555,31 +555,37 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         onOpenMarkdown={handleOpenMarkdown}
       >
         <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={messagesContainerRef} className="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
-            {conversation.mode === "api" && conversation.memoryContextEnabled && (
-              <MemoryInjectionCard {...memoryBriefStats} />
-            )}
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-3">
+            {/* Inner content wrapper carries the row spacing and is measured by
+                the ResizeObserver in useScrollState so "stick to bottom" stays
+                pinned as virtualized rows lazily mount and grow. */}
+            <div ref={messagesContentRef} className="space-y-2.5">
+              {conversation.mode === "api" && conversation.memoryContextEnabled && (
+                <MemoryInjectionCard {...memoryBriefStats} />
+              )}
 
-            {messages.length === 0 && <EmptyConversationHint />}
+              {messages.length === 0 && <EmptyConversationHint />}
 
-            <MessageList
-              conversation={conversation}
-              conversationId={conversationId}
-              editingMessageId={editState.id}
-              editingText={editState.text}
-              onStartEdit={(id, content) => setEditState({ id, text: content })}
-              onChangeEdit={(text) => setEditState((s) => ({ ...s, text }))}
-              onSubmitEdit={(msgId) => {
-                const text = editState.text;
-                setEditState({ id: null, text: "" });
-                void actions.forkAndResend(conversationId, msgId, text);
-              }}
-              onCancelEdit={() => setEditState({ id: null, text: "" })}
-              onRetryLastTurn={() => void actions.retryLastTurn(conversationId)}
-              isActive={isActive}
-            />
+              <MessageList
+                conversation={conversation}
+                conversationId={conversationId}
+                editingMessageId={editState.id}
+                editingText={editState.text}
+                onStartEdit={(id, content) => setEditState({ id, text: content })}
+                onChangeEdit={(text) => setEditState((s) => ({ ...s, text }))}
+                onSubmitEdit={(msgId) => {
+                  const text = editState.text;
+                  setEditState({ id: null, text: "" });
+                  void actions.forkAndResend(conversationId, msgId, text);
+                }}
+                onCancelEdit={() => setEditState({ id: null, text: "" })}
+                onRetryLastTurn={() => void actions.retryLastTurn(conversationId)}
+                isActive={isActive}
+                scrollContainerRef={messagesContainerRef}
+              />
 
-            <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} />
+            </div>
           </div>
           {!isAtBottom && (
             <Tooltip content="Jump to latest">
