@@ -22,8 +22,11 @@ use tauri::Emitter;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::{info, warn};
 
-/// Maximum number of tool-use loop iterations to prevent runaway agents.
-const MAX_TOOL_ITERATIONS: usize = 25;
+/// Maximum number of tool-use loop iterations per turn. Set high so a real
+/// task runs to completion in one turn (like Cursor / Claude Code) instead of
+/// hitting the cap mid-task and forcing the user to hit "Continue". Still
+/// bounded to backstop a genuinely runaway agent.
+const MAX_TOOL_ITERATIONS: usize = 150;
 
 /// Permission modes for risky tool calls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

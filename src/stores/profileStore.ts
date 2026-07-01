@@ -6,6 +6,7 @@ import {
   SCOUT_ALLOWED_TOOLS,
   SCOUT_MEMORY_CONTEXT_DEFAULT,
 } from "@/lib/scout-config";
+import { DEFAULT_AGENT_HARNESS } from "@/lib/agent-harness";
 import type { AgentProfile } from "@/types/profiles";
 
 const STORAGE_KEY = storageKey("agent-profiles");
@@ -23,8 +24,9 @@ const BUILTINS: AgentProfile[] = [
   {
     id: "builtin-default",
     name: "Default",
-    description: "Full toolset, no system-prompt override. Standard agent.",
-    systemPrompt: "",
+    description:
+      "Full toolset with the autonomous agent harness — plans, uses tools, and drives the task to completion.",
+    systemPrompt: DEFAULT_AGENT_HARNESS,
     allowedTools: null,
     memoryContextEnabled: false,
     permissionMode: "auto",
