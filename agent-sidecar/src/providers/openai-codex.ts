@@ -97,12 +97,21 @@ interface CodexSandboxFlags {
  *                           those SDK modes don't prompt the user)
  *   - default / <unset>   → `--sandbox workspace-write -a on-request`
  */
+// NOTE: `codex exec` runs non-interactively — we deliver the prompt as a
+// positional arg and CLOSE stdin (otherwise codex 0.135+ blocks reading stdin).
+// That means Codex's `-a on-request` interactive approval flow can't work here
+// (there's no open channel to write the approval response back), and would
+// leave the turn stalled waiting for input. So we never use `-a on-request`;
+// the sandbox mode is the safety boundary instead (read-only can't write/exec;
+// workspace-write is confined to the project dir). Per-command approval prompts
+// aren't supported for Codex in this surface.
 function modeToCodexFlags(mode: string | null | undefined): CodexSandboxFlags {
   switch (mode) {
     case "plan":
       return {
-        args: ["--sandbox", "read-only", "-a", "on-request"],
-        hasApprovals: true,
+        // Plan/investigate only — read-only, no writes or command execution.
+        args: ["--sandbox", "read-only", "-a", "never"],
+        hasApprovals: false,
       };
     case "bypassPermissions":
     case "allow_all":
@@ -127,9 +136,11 @@ function modeToCodexFlags(mode: string | null | undefined): CodexSandboxFlags {
     case null:
     case undefined:
     default:
+      // Confined to the project dir via the sandbox; no interactive approval
+      // (unsupported for exec — see note above), so `-a never` to avoid a stall.
       return {
-        args: ["--sandbox", "workspace-write", "-a", "on-request"],
-        hasApprovals: true,
+        args: ["--sandbox", "workspace-write", "-a", "never"],
+        hasApprovals: false,
       };
   }
 }
