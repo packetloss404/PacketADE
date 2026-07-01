@@ -130,6 +130,11 @@ pub fn run() {
     core::migration::migrate_data_dir();
     commands::crashes::install_panic_hook();
 
+    // Reap PTY-agent children stranded by a previous run's abnormal exit
+    // (SIGKILL / crash / force-quit) before we spawn anything new. Runs after
+    // migrate_data_dir so the registry resolves to the current data dir.
+    core::pty::reap_orphaned_pty_children();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
