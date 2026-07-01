@@ -193,6 +193,11 @@ impl PtyManager {
         })?;
 
         let pid = child.process_id();
+        // Record the pid so a crash/force-quit that can't run cleanup gets swept
+        // on the next launch (see `reap_orphaned_pty_children`).
+        if let Some(pid) = pid {
+            record_spawned_pid(pid, &command);
+        }
         let killer = child.clone_killer();
 
         let writer = pair
@@ -347,6 +352,14 @@ impl PtyManager {
     }
 
     /// Kill a PTY session.
+    ///
+    /// Reaps the entire process GROUP, not just the direct child. The PTY spawn
+    /// helper `setsid`s each child into its own session/group, so the child pid
+    /// is the group leader and `kill(-pid, …)` signals every descendant it
+    /// spawned. Without the group kill, workers a CLI agent forks (e.g. an
+    /// `opencode`/`codex` agent's sub-processes, or a wrapped shell's child)
+    /// survive pane close, reparent to launchd, and spin at 100% CPU forever —
+    /// which is exactly how a machine ends up with a pile of orphaned agents.
     pub fn kill(&mut self, session_id: &str) -> Result<(), String> {
         if let Some(session) = self.sessions.get_mut(session_id) {
             info!(session_id = %session_id, "Killing PTY session");
@@ -354,6 +367,36 @@ impl PtyManager {
                 .kill_flag
                 .store(true, std::sync::atomic::Ordering::Relaxed);
             session.info.alive = false;
+
+            #[cfg(unix)]
+            {
+                // Collect the groups to reap: the setsid leader's group (child
+                // pid == pgid) plus the terminal's current foreground group, in
+                // case job control moved the running command into a distinct one.
+                let mut groups: Vec<libc::pid_t> = Vec::new();
+                if let Some(pid) = session.info.pid {
+                    groups.push(pid as libc::pid_t);
+                }
+                if let Some(fg) = session.master.process_group_leader() {
+                    if !groups.contains(&fg) {
+                        groups.push(fg);
+                    }
+                }
+                for gid in groups {
+                    // Guard against 0/1 (would broadcast to our own group / init).
+                    if gid > 1 {
+                        // SIGTERM the group for a chance to unwind, then SIGKILL
+                        // to guarantee the reap. Negative pid = whole group.
+                        unsafe {
+                            libc::kill(-gid, libc::SIGTERM);
+                            libc::kill(-gid, libc::SIGKILL);
+                        }
+                    }
+                }
+            }
+
+            // Still kill the direct child via portable-pty (handles non-unix and
+            // is a harmless no-op if the group kill already reaped it).
             if let Err(e) = session.killer.kill() {
                 warn!(session_id = %session_id, error = %e, "Failed to kill PTY child");
             }
@@ -474,6 +517,90 @@ fn transcript_path(session_id: &str) -> Option<PathBuf> {
 fn transcript_truncated_marker_path(session_id: &str) -> Option<PathBuf> {
     transcript_path(session_id).map(|path| path.with_extension("log.truncated"))
 }
+
+/// Registry of PIDs for PTY children spawned this run. One line per child:
+/// `<pid>\t<command-basename>`. Consumed by `reap_orphaned_pty_children` on the
+/// NEXT launch to kill any child that survived an abnormal exit (SIGKILL /
+/// crash / force-quit) — those reparent to launchd and otherwise spin at 100%
+/// CPU forever. Clean pane-close already reaps via `kill()`'s group signal; this
+/// is the safety net for exits that can't run cleanup.
+fn pty_pids_registry_path() -> PathBuf {
+    storage::data_dir().join("pty-active-pids")
+}
+
+/// Append a freshly-spawned PTY child pid + its command basename to the registry.
+fn record_spawned_pid(pid: u32, command: &str) {
+    let basename = std::path::Path::new(command)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(command);
+    let path = pty_pids_registry_path();
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{}\t{}", pid, basename);
+    }
+}
+
+/// Startup sweep: reap any PTY children recorded by a previous run that are
+/// still alive. Before signalling, verify the pid's current command basename
+/// still matches what we recorded — so a recycled pid (now some unrelated
+/// process) is never killed. Signals the whole process GROUP (`kill(-pid)`),
+/// since each PTY child is a `setsid` session leader. Truncates the registry
+/// afterward; sessions spawned this run re-append as they start.
+#[cfg(unix)]
+pub fn reap_orphaned_pty_children() {
+    let path = pty_pids_registry_path();
+    let contents = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let mut reaped = 0usize;
+    for line in contents.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let pid: i32 = match parts.next().and_then(|p| p.trim().parse().ok()) {
+            Some(p) if p > 1 => p,
+            _ => continue,
+        };
+        let recorded = parts.next().unwrap_or("").trim();
+        if recorded.is_empty() {
+            continue;
+        }
+        // Verify pid is alive AND still running the recorded command basename.
+        let matches = std::process::Command::new("ps")
+            .args(["-o", "comm=", "-p", &pid.to_string()])
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| {
+                let name = String::from_utf8_lossy(&out.stdout);
+                let name = name.trim();
+                let base = std::path::Path::new(name)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(name);
+                base == recorded
+            })
+            .unwrap_or(false);
+        if matches {
+            // SIGTERM the group for a chance to unwind, then SIGKILL to guarantee.
+            unsafe {
+                libc::kill(-pid, libc::SIGTERM);
+                libc::kill(-pid, libc::SIGKILL);
+            }
+            reaped += 1;
+        }
+    }
+    if reaped > 0 {
+        warn!(
+            count = reaped,
+            "Reaped orphaned PTY children left by a previous run"
+        );
+    }
+    // Clear the registry regardless — dead/mismatched entries are done with.
+    let _ = fs::write(&path, "");
+}
+
+#[cfg(not(unix))]
+pub fn reap_orphaned_pty_children() {}
 
 fn mark_transcript_truncated(session_id: &str) {
     if let Some(path) = transcript_truncated_marker_path(session_id) {
