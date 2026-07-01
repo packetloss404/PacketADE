@@ -45,8 +45,10 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     name: "OpenAI (ChatGPT Plus/Pro)",
     needsKey: false,
     models: [
-      { label: "GPT-5.5 (default)", value: "gpt-5.5" },
-      { label: "GPT-5 Codex", value: "gpt-5-codex" },
+      // gpt-5-codex is the agentic-tuned model — it runs the full task
+      // autonomously per turn (far fewer "Continue" stops) so it leads.
+      { label: "GPT-5 Codex (default)", value: "gpt-5-codex" },
+      { label: "GPT-5.5", value: "gpt-5.5" },
       { label: "GPT-5", value: "gpt-5" },
       { label: "o4-mini", value: "o4-mini" },
     ],
