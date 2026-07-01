@@ -8,6 +8,24 @@ import {
 } from "@/lib/api-models";
 import type { OllamaModelsState } from "../hooks/useOllamaModels";
 
+/** Compact context-window label, e.g. 200_000 -> "200K ctx", 1_000_000 -> "1M ctx". */
+function formatContextWindow(tokens: number | undefined): string | null {
+  if (!tokens || tokens <= 0) return null;
+  if (tokens >= 1_000_000) {
+    const m = tokens / 1_000_000;
+    return `${Number.isInteger(m) ? m : m.toFixed(1)}M ctx`;
+  }
+  return `${Math.round(tokens / 1000)}K ctx`;
+}
+
+/** Compact per-1M-token price label, e.g. { input: 3, output: 15 } -> "$3/$15". */
+function formatPricing(
+  pricing: { input: number; output: number } | undefined,
+): string | null {
+  if (!pricing) return null;
+  return `$${pricing.input}/$${pricing.output}`;
+}
+
 interface ModelSelectorProps {
   selectedAgent: AgentCli;
   selectedModel: string;
@@ -136,14 +154,26 @@ export function ModelSelector({
           )}
         </>
       ) : (
-        provider.models.map((m) => (
-          <DropdownItem
-            key={m.value}
-            onClick={() => onModelChange(m.value)}
-          >
-            {m.label}
-          </DropdownItem>
-        ))
+        provider.models.map((m) => {
+          const ctx = formatContextWindow(m.contextWindow);
+          const price = formatPricing(m.pricing);
+          return (
+            <DropdownItem
+              key={m.value}
+              onClick={() => onModelChange(m.value)}
+            >
+              <span className="flex items-center justify-between gap-3 w-full">
+                <span className="truncate">{m.label}</span>
+                {(ctx || price) && (
+                  <span className="flex items-center gap-2 shrink-0 text-text-muted text-[10px] tabular-nums">
+                    {ctx && <span>{ctx}</span>}
+                    {price && <span>{price}</span>}
+                  </span>
+                )}
+              </span>
+            </DropdownItem>
+          );
+        })
       )}
     </Dropdown>
   );

@@ -11,8 +11,6 @@ import {
   sendApiAgentMessage,
   cancelApiAgentSession,
   closeApiAgentSession,
-  saveConversation,
-  loadConversations,
   deleteConversationFile,
   changeAgentModel,
   setPlanMode as tauriSetPlanMode,
@@ -60,7 +58,6 @@ import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import { useMemoryStore } from "@/stores/memoryStore";
-import { getAgentAutoArchiveIdleMs } from "@/stores/agentSettingsStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
@@ -77,48 +74,18 @@ import type {
   PermissionMode,
 } from "@/types/agent-conversation";
 import { installApiAgentListeners } from "@/stores/apiAgentListeners";
+import {
+  scheduleSave,
+  requestConversationSave,
+  cancelPendingSave,
+  hydrateConversations,
+} from "@/stores/agentConversationPersistence";
 
-/** Build a serializable snapshot of a conversation for `saveConversation`.
- * Pulls plan/spec state out of `agentPlanStore` so the persisted record
- * keeps its on-disk shape even though those fields no longer live on the
- * in-memory conversation object. Ephemeral substores (approval,
- * streaming) are intentionally omitted — they reset on hydration. */
-function snapshotForPersist(conv: AgentConversation): AgentConversation {
-  const plans = useAgentPlanStore.getState();
-  return {
-    ...conv,
-    spec: plans.getSpec(conv.id),
-    specStage: plans.getSpecStage(conv.id),
-    plan: plans.getPlan(conv.id),
-    planApproved: plans.getPlanApproved(conv.id) || undefined,
-  };
-}
-
-/** Debounced save: per-conversation timers so rapid streaming events coalesce. */
-const SAVE_DEBOUNCE_MS = 500;
-const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-function scheduleSave(conv: AgentConversation): void {
-  if (conv.mode !== "api") return; // only persist API conversations
-  const existing = saveTimers.get(conv.id);
-  if (existing) clearTimeout(existing);
-  const handle = setTimeout(() => {
-    saveTimers.delete(conv.id);
-    saveConversation(conv.id, JSON.stringify(snapshotForPersist(conv))).catch((e) => {
-      console.warn("Failed to save conversation:", conv.id, e);
-    });
-  }, SAVE_DEBOUNCE_MS);
-  saveTimers.set(conv.id, handle);
-}
-
-/** Request a save for a conversation by id. Plan-store mutations call
- * this so plan/spec edits debounce-persist through the same path as
- * conversation mutations, without plan-store needing to import the full
- * agentTaskStore module at load time. */
-export function requestConversationSave(conversationId: string): void {
-  const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === conversationId);
-  if (conv) scheduleSave(conv);
-}
+// `requestConversationSave` was historically defined here; re-export it so
+// external importers (apiAgentListeners, agentPlanStore, slashCommandHandlers,
+// …) keep importing it from `@/stores/agentTaskStore` unchanged after the
+// persistence helpers moved to their sibling module.
+export { requestConversationSave };
 
 /** Centralized turn-failure unwind. Marks the conversation `failed`, and —
  * when a streaming placeholder id is given — flips that message's
@@ -456,6 +423,46 @@ export function buildConversationResumeMessages(messages: AgentMessage[]): Resum
   return kept;
 }
 
+/** Named-field options for `createApiConversation`. Replaces the former
+ * ~18-positional-arg signature, which was a latent-bug magnet: callers passed
+ * unreadable positional sequences and inserting one arg silently shifted every
+ * caller. Only `agent`/`projectPath`/`model`/`initialMessage` are required; the
+ * rest preserve their previous per-arg defaults when omitted. */
+export interface CreateApiConversationOptions {
+  agent: AgentCli;
+  projectPath: string;
+  model: string;
+  initialMessage: string;
+  systemPromptOverride?: string | null;
+  thinkingEnabled?: boolean;
+  planMode?: boolean;
+  sshTarget?: AgentSshConfigInput | null;
+  /** When set, use this id instead of generating a new one. Used by Flight
+   * Deck attempts so the conversation id matches the backend session id. */
+  explicitId?: string;
+  /** When true, skip the start_api_agent_session backend call (the caller
+   * has already started it). Used by Flight Deck attempts. */
+  skipBackendStart?: boolean;
+  /** Restrict the agent to this tool subset (e.g. Scout profile uses
+   * read_file/list_directory/grep/web_fetch). Undefined = all tools. */
+  allowedTools?: string[] | null;
+  /** Inject the memory layer's project context into the system prompt.
+   * Default false to preserve existing behavior. */
+  memoryContextEnabled?: boolean;
+  /** Image attachments inlined with the initial user message. Currently only
+   * applied to the in-process LlmProvider path; sidecar Anthropic + Codex
+   * ignore them until the protocol bump that wires them through. */
+  attachments?: ImageAttachment[] | null;
+  /** F9: per-conversation MCP server filter passed to the sidecar at
+   * session start. null = all enabled servers. */
+  enabledMcpServerIds?: string[] | null;
+  /** Initial permission posture for the backend session. Must be supplied
+   * before startApiAgentSession so the first turn doesn't race with a
+   * post-create permission update. */
+  permissionMode?: PermissionMode;
+  approveWrites?: boolean;
+}
+
 interface AgentTaskStore {
   // --- Existing task state (used by Flight orchestration and legacy task launches) ---
   tasks: AgentTask[];
@@ -488,40 +495,7 @@ interface AgentTaskStore {
 
   // --- Conversation actions ---
   createConversation: (agent: AgentCli, projectPath: string) => Promise<string>;
-  createApiConversation: (
-    agent: AgentCli,
-    projectPath: string,
-    model: string,
-    initialMessage: string,
-    systemPromptOverride?: string | null,
-    thinkingEnabled?: boolean,
-    planMode?: boolean,
-    sshTarget?: AgentSshConfigInput | null,
-    /** When set, use this id instead of generating a new one. Used by Flight
-     * Deck attempts so the conversation id matches the backend session id. */
-    explicitId?: string,
-    /** When true, skip the start_api_agent_session backend call (the caller
-     * has already started it). Used by Flight Deck attempts. */
-    skipBackendStart?: boolean,
-    /** Restrict the agent to this tool subset (e.g. Scout profile uses
-     * read_file/list_directory/grep/web_fetch). Undefined = all tools. */
-    allowedTools?: string[] | null,
-    /** Inject the memory layer's project context into the system prompt.
-     * Default false to preserve existing behavior. */
-    memoryContextEnabled?: boolean,
-    /** Image attachments inlined with the initial user message. Currently only
-     * applied to the in-process LlmProvider path; sidecar Anthropic + Codex
-     * ignore them until the protocol bump that wires them through. */
-    attachments?: ImageAttachment[] | null,
-    /** F9: per-conversation MCP server filter passed to the sidecar at
-     * session start. null = all enabled servers. */
-    enabledMcpServerIds?: string[] | null,
-    /** Initial permission posture for the backend session. Must be supplied
-     * before startApiAgentSession so the first turn doesn't race with a
-     * post-create permission update. */
-    permissionMode?: PermissionMode,
-    approveWrites?: boolean,
-  ) => Promise<string>;
+  createApiConversation: (options: CreateApiConversationOptions) => Promise<string>;
   sendMessage: (
     conversationId: string,
     content: string,
@@ -817,7 +791,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     return id;
   },
 
-  createApiConversation: async (
+  createApiConversation: async ({
     agent,
     projectPath,
     model,
@@ -834,7 +808,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     enabledMcpServerIds,
     permissionMode,
     approveWrites,
-  ) => {
+  }) => {
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
     const isRemoteConversation = Boolean(sshTarget);
@@ -1203,11 +1177,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       );
     }
     // Cancel any pending debounced save
-    const timer = saveTimers.get(id);
-    if (timer) {
-      clearTimeout(timer);
-      saveTimers.delete(id);
-    }
+    cancelPendingSave(id);
     // Drop the per-conversation auto-failover guard so the module-scope Set
     // doesn't accumulate a stale entry (and can't mis-fire if the id is reused).
     failoverGuard.delete(id);
@@ -1792,65 +1762,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   },
 }));
 
-/** One-time pass over hydrated conversations: any conversation with
- * status === "done" that has been idle longer than the Agents settings
- * threshold and isn't already archived gets auto-archived. Mutates `conv` in
- * place and returns whether it changed (so callers can re-persist). */
-function maybeAutoArchive(conv: AgentConversation): boolean {
-  if (conv.archived) return false;
-  if (conv.status !== "done") return false;
-  const autoArchiveIdleMs = getAgentAutoArchiveIdleMs();
-  if (autoArchiveIdleMs === null) return false;
-  if (conv.updatedAt >= Date.now() - autoArchiveIdleMs) return false;
-  conv.archived = true;
-  return true;
-}
-
-// Hydrate persisted API conversations on module load.
-// Reset runtime-only fields so we don't resume mid-stream after a cold start.
-loadConversations()
-  .then((rawList) => {
-    const parsed: AgentConversation[] = [];
-    for (const raw of rawList) {
-      try {
-        const conv = JSON.parse(raw) as AgentConversation;
-        if (conv.mode !== "api") continue; // PTY sessions died with the app
-        // Auto-archive long-idle done conversations BEFORE we coerce status to
-        // "idle" below. Persist the change so the archive flag survives the
-        // next cold start.
-        if (maybeAutoArchive(conv)) {
-          saveConversation(conv.id, JSON.stringify(conv)).catch((e) => {
-            console.warn("Failed to persist auto-archive:", conv.id, e);
-          });
-        }
-        conv.status = "idle";
-        conv.messages = (conv.messages ?? []).map((m) => ({ ...m, isStreaming: false }));
-        conv.queuedMessages = [];
-        // Push persisted plan/spec state into the plan substore — it is the
-        // runtime source of truth. The conversation's own copies are kept
-        // for back-compat with code that hasn't migrated yet but the live
-        // UI reads from the store.
-        useAgentPlanStore.getState().hydrateConversation(conv.id, {
-          spec: conv.spec,
-          specStage: conv.specStage,
-          plan: conv.plan,
-          planApproved: conv.planApproved,
-        });
-        // Drop ephemeral fields so the in-memory record matches the new
-        // substore-driven shape. These were already cleared pre-split.
-        delete conv.pendingPermissions;
-        delete conv.pendingEdits;
-        delete conv.thinkingStream;
-        delete conv.subAgentTokens;
-        parsed.push(conv);
-      } catch (e) {
-        console.warn("Skipping malformed conversation:", e);
-      }
-    }
-    if (parsed.length > 0) {
-      useAgentTaskStore.setState((state) => ({
-        conversations: [...parsed, ...state.conversations],
-      }));
-    }
-  })
-  .catch((e) => console.warn("Failed to hydrate conversations:", e));
+// Hydrate persisted API conversations on module load. The pass itself lives in
+// `agentConversationPersistence` alongside the save helpers; invoked here so the
+// load-time trigger still runs after the store is created.
+hydrateConversations();

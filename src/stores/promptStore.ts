@@ -88,20 +88,19 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
       selected?.mode === "api" && API_PROVIDERS.some((p) => p.agentCli === selected.agent)
         ? selected.agent
         : "api-claude";
-    const id = await useAgentTaskStore.getState().createApiConversation(
+    const id = await useAgentTaskStore.getState().createApiConversation({
       agent,
       projectPath,
-      getDefaultModel(agent),
-      template.content,
-      SCOUT_SYSTEM_PROMPT,
-      false,
-      false,
-      null,
-      undefined,
-      false,
-      SCOUT_ALLOWED_TOOLS,
-      SCOUT_MEMORY_CONTEXT_DEFAULT,
-    );
+      model: getDefaultModel(agent),
+      initialMessage: template.content,
+      systemPromptOverride: SCOUT_SYSTEM_PROMPT,
+      thinkingEnabled: false,
+      planMode: false,
+      sshTarget: null,
+      skipBackendStart: false,
+      allowedTools: SCOUT_ALLOWED_TOOLS,
+      memoryContextEnabled: SCOUT_MEMORY_CONTEXT_DEFAULT,
+    });
     useAgentTaskStore.getState().selectConversation(id);
     useAppStore.getState().setActiveView("agents");
   },

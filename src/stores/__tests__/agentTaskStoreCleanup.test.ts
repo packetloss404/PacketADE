@@ -102,12 +102,12 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation(
-        "api-openai",
-        "D:/projects/example",
-        "gpt-4o",
-        "kickoff",
-      );
+      .createApiConversation({
+        agent: "api-openai",
+        projectPath: "D:/projects/example",
+        model: "gpt-4o",
+        initialMessage: "kickoff",
+      });
 
     expect(useAgentTaskStore.getState().conversations.find((c) => c.id === id)).toBeDefined();
 
@@ -122,7 +122,7 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
 
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+      .createApiConversation({ agent: "api-openai", projectPath: "D:/projects/example", model: "gpt-4o", initialMessage: "kickoff" });
 
     useAgentApprovalStore.getState().addPendingPermission(id, {
       id: "perm-1",
@@ -149,7 +149,7 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
 
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+      .createApiConversation({ agent: "api-openai", projectPath: "D:/projects/example", model: "gpt-4o", initialMessage: "kickoff" });
 
     useAgentPlanStore.getState().setSpec(id, ["criterion"]);
     useAgentPlanStore.getState().setSpecStage(id, "plan");
@@ -173,7 +173,7 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
 
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+      .createApiConversation({ agent: "api-openai", projectPath: "D:/projects/example", model: "gpt-4o", initialMessage: "kickoff" });
 
     useAgentStreamingStore.getState().appendThinking(id, "thinking...");
     useAgentStreamingStore.getState().setSubAgentBucket(id, "/root/agent_a", {
@@ -195,7 +195,7 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+      .createApiConversation({ agent: "api-openai", projectPath: "D:/projects/example", model: "gpt-4o", initialMessage: "kickoff" });
 
     // createApiConversation leaves status = "active" until first event arrives.
     expect(useAgentTaskStore.getState().conversations.find((c) => c.id === id)?.status).toBe(
@@ -213,7 +213,7 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+      .createApiConversation({ agent: "api-openai", projectPath: "D:/projects/example", model: "gpt-4o", initialMessage: "kickoff" });
 
     // createApiConversation auto-selects the newly created conversation.
     expect(useAgentTaskStore.getState().selectedConversationId).toBe(id);
@@ -240,7 +240,7 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
 
       const id = await useAgentTaskStore
         .getState()
-        .createApiConversation("api-openai", "D:/projects/example", "gpt-4o", "kickoff");
+        .createApiConversation({ agent: "api-openai", projectPath: "D:/projects/example", model: "gpt-4o", initialMessage: "kickoff" });
 
       // Simulate the drain timer that api-agent:done would schedule:
       // setTimeout(() => getState().sendMessage(id, queued), 0).
