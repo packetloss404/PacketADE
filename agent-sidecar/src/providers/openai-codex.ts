@@ -332,6 +332,15 @@ export class OpenAICodexProvider implements ProviderHandler {
    * no turn has been sent yet — retry() errors in that case.
    */
   private lastUserMessage: string | null = null;
+  /**
+   * Codex CLI 0.135+ emits an "item"-based JSONL schema (`item.started` /
+   * `item.completed` carrying `{ item: { type, text, ... } }`) instead of the
+   * flat `agent_message` / `agent_message_delta` events of 0.121. An
+   * `agent_message` (or `reasoning`) item may arrive as a completed block OR as
+   * incremental `item.updated`s; track how many chars we've already emitted per
+   * item id so we forward only the newly-added suffix and never double-print.
+   */
+  private itemTextEmitted = new Map<string, number>();
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.sessionId = req.sessionId;
@@ -442,6 +451,9 @@ export class OpenAICodexProvider implements ProviderHandler {
 
     this.child = child;
     this.doneEmitted = false;
+    // Each `codex exec` restarts item ids at item_0, so clear the per-item
+    // emitted-length tracker or turn 2's item_0 would be seen as "already sent".
+    this.itemTextEmitted.clear();
 
     child.on("error", (err) => {
       logStderr(`child process error: ${err.message}`);
@@ -509,6 +521,22 @@ export class OpenAICodexProvider implements ProviderHandler {
       if (line.length === 0) return;
       process.stderr.write(`[codex:stderr] ${line}\n`);
     });
+
+    // CRITICAL (codex-cli 0.135+): `codex exec` treats an open, piped stdin as
+    // "additional input" and BLOCKS reading it to EOF ("Reading additional
+    // input from stdin...") before running the turn — so a spawn that never
+    // closes stdin hangs forever and emits nothing. We deliver the prompt as a
+    // positional arg, so close stdin now to let the turn proceed. A side effect
+    // is that stdin-based approval responses (respondPermission) can't be
+    // written; non-interactive exec relies on the sandbox/approval *flags*
+    // (`--dangerously-bypass-approvals-and-sandbox` / `-a never`) instead.
+    try {
+      child.stdin.end();
+    } catch (err) {
+      logStderr(
+        `failed to close codex stdin: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**
@@ -532,12 +560,172 @@ export class OpenAICodexProvider implements ProviderHandler {
     const typeStr = pickString(payload, "type") ?? pickString(envelope, "type") ?? "";
 
     // Capture Codex session-id as soon as it shows up so we can resume later.
+    // 0.135+ reports it as `thread_id` on the `thread.started` event; older
+    // builds used `session_id` / `session.id`.
     const maybeSession =
-      pickString(envelope, "session_id", "sessionId") ??
-      pickString(payload, "session_id", "sessionId") ??
+      pickString(envelope, "thread_id", "session_id", "sessionId") ??
+      pickString(payload, "thread_id", "session_id", "sessionId") ??
       (pickNested(payload, ["session", "id"]) as string | undefined);
     if (typeof maybeSession === "string" && maybeSession.length > 0) {
       this.codexSessionId = maybeSession;
+    }
+
+    // ─── Codex CLI 0.135+ "item"-based schema ────────────────────────────
+    // thread.started (session id captured above) and turn.started are
+    // informational; turn.completed carries the final token usage; content
+    // arrives as item.started/updated/completed envelopes dispatched on
+    // item.type. This block is matched first; the flat handlers below remain
+    // as a fallback for the 0.121 schema.
+    if (typeStr === "thread.started" || typeStr === "turn.started") {
+      logStderr(`codex lifecycle event: ${typeStr}`);
+      return;
+    }
+    if (typeStr === "turn.completed") {
+      const usage = (payload.usage as Record<string, unknown> | undefined) ?? {};
+      const input = (usage.input_tokens as number | undefined) ?? this.lastInputTokens;
+      const output = (usage.output_tokens as number | undefined) ?? this.lastOutputTokens;
+      const reasoning = (usage.reasoning_output_tokens as number | undefined) ?? 0;
+      const cachedInput = (usage.cached_input_tokens as number | undefined) ?? 0;
+      const bucket = this.tokensByAddress.get("") ?? {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cachedInput: 0,
+      };
+      bucket.input = typeof input === "number" ? input : bucket.input;
+      bucket.output = typeof output === "number" ? output : bucket.output;
+      bucket.reasoning = typeof reasoning === "number" ? reasoning : bucket.reasoning;
+      bucket.cachedInput = typeof cachedInput === "number" ? cachedInput : bucket.cachedInput;
+      this.tokensByAddress.set("", bucket);
+      this.lastInputTokens = bucket.input;
+      this.lastOutputTokens = bucket.output;
+      emit({
+        type: "turn_summary",
+        sessionId,
+        inputTokens: bucket.input,
+        outputTokens: bucket.output,
+        cacheReadInputTokens: bucket.cachedInput,
+        reasoningTokens: bucket.reasoning,
+      });
+      // `done` is emitted by the child 'exit' handler — `codex exec` is
+      // one-shot and exits right after turn.completed, carrying these totals.
+      return;
+    }
+    if (typeStr === "turn.failed" || typeStr === "thread.error") {
+      const errObj = payload.error ?? payload;
+      const message =
+        pickString(errObj, "message", "error", "reason") ?? stringifyUnknown(errObj);
+      if (!this.doneEmitted) {
+        this.doneEmitted = true;
+        emit({ type: "error", sessionId, message: `codex error: ${message}` });
+      }
+      return;
+    }
+    if (
+      typeStr === "item.started" ||
+      typeStr === "item.updated" ||
+      typeStr === "item.completed"
+    ) {
+      const item = (payload.item ?? envelope.item) as Record<string, unknown> | undefined;
+      if (!item || typeof item !== "object") return;
+      const itemType = pickString(item, "type") ?? "";
+      const itemId = pickString(item, "id") ?? randomUUID();
+
+      // Assistant text — forward only the newly-added suffix so a streamed
+      // item.updated sequence plus the final item.completed can't double-print.
+      if (itemType === "agent_message" || itemType === "assistant_message") {
+        const full =
+          pickString(item, "text", "message", "content") ??
+          extractTextBlock(item.content) ??
+          "";
+        const already = this.itemTextEmitted.get(itemId) ?? 0;
+        if (full.length > already) {
+          emit({ type: "chunk", sessionId, text: full.slice(already) });
+          this.itemTextEmitted.set(itemId, full.length);
+        }
+        return;
+      }
+
+      // Reasoning / chain-of-thought — same suffix-forwarding as text.
+      if (itemType === "reasoning" || itemType === "agent_reasoning") {
+        const full =
+          pickString(item, "text", "content") ?? extractTextBlock(item.content) ?? "";
+        const already = this.itemTextEmitted.get(itemId) ?? 0;
+        if (full.length > already) {
+          emit({ type: "thinking", sessionId, text: full.slice(already) });
+          this.itemTextEmitted.set(itemId, full.length);
+        }
+        if (typeStr === "item.completed") emit({ type: "thinking_stop", sessionId });
+        return;
+      }
+
+      // Shell / command / tool execution — started → tool_start, completed → result.
+      if (
+        itemType === "command_execution" ||
+        itemType === "local_shell_call" ||
+        itemType === "mcp_tool_call" ||
+        itemType === "tool_call"
+      ) {
+        const name = pickString(item, "command", "name", "tool") ?? "shell";
+        if (typeStr === "item.started") {
+          emit({ type: "tool_start", sessionId, toolUseId: itemId, name, input: item });
+        } else if (typeStr === "item.completed") {
+          const output =
+            pickString(item, "aggregated_output", "output", "stdout", "result") ??
+            stringifyUnknown(item.result ?? item.content ?? "");
+          const exitCode =
+            typeof item.exit_code === "number" ? (item.exit_code as number) : undefined;
+          const isError =
+            Boolean(item.is_error) ||
+            (typeof exitCode === "number" && exitCode !== 0) ||
+            pickString(item, "status") === "failed";
+          emit({ type: "tool_result", sessionId, toolUseId: itemId, output, isError });
+        }
+        return;
+      }
+
+      // File change / patch — surface for visibility as a tool call.
+      if (itemType === "file_change" || itemType === "patch" || itemType === "apply_patch") {
+        if (typeStr === "item.completed") {
+          emit({
+            type: "tool_result",
+            sessionId,
+            toolUseId: itemId,
+            output: stringifyUnknown(item),
+            isError: pickString(item, "status") === "failed",
+          });
+        } else {
+          emit({ type: "tool_start", sessionId, toolUseId: itemId, name: "apply_patch", input: item });
+        }
+        return;
+      }
+
+      // Todo list — reuse the plan_block channel so PlanPanel renders it.
+      if (itemType === "todo_list") {
+        const rawItems = item.items;
+        if (Array.isArray(rawItems)) {
+          const items = rawItems
+            .filter((r): r is Record<string, unknown> => r != null && typeof r === "object")
+            .map((r) => {
+              const text = pickString(r, "text", "title", "content") ?? "";
+              const completed = Boolean(r.completed ?? r.done ?? r.status === "completed");
+              return {
+                content: text,
+                status: (completed
+                  ? "completed"
+                  : pickString(r, "status") === "in_progress"
+                    ? "in_progress"
+                    : "pending") as "completed" | "in_progress" | "pending",
+              };
+            })
+            .filter((p) => p.content.length > 0);
+          if (items.length > 0) emit({ type: "plan_block", sessionId, items });
+        }
+        return;
+      }
+
+      logStderr(`unhandled codex item.type: ${itemType} (${typeStr})`);
+      return;
     }
 
     // Agent text: a few observed/likely type names. Match broadly.
@@ -744,40 +932,6 @@ export class OpenAICodexProvider implements ProviderHandler {
         reasoningTokens: bucket.reasoning,
         address: address.length > 0 ? address : undefined,
       });
-      return;
-    }
-
-    // A1 — Codex `todo_list` item: the structural twin of Anthropic's
-    // TodoWrite. Reuse the existing `plan_block` event so PlanPanel works
-    // for Codex without any frontend change. Item shape:
-    //   { type: "item.started" | "item.updated" | "item.completed",
-    //     item: { type: "todo_list", items: [{ text, completed }] } }
-    if (typeStr === "item.started" || typeStr === "item.updated" || typeStr === "item.completed") {
-      const item = (payload.item ?? envelope.item) as Record<string, unknown> | undefined;
-      if (item && pickString(item, "type") === "todo_list") {
-        const rawItems = item.items;
-        if (Array.isArray(rawItems)) {
-          const items = rawItems
-            .filter((r): r is Record<string, unknown> => r != null && typeof r === "object")
-            .map((r) => {
-              const text = pickString(r, "text", "title", "content") ?? "";
-              const completed = Boolean(r.completed ?? r.done ?? r.status === "completed");
-              return {
-                content: text,
-                status: (completed
-                  ? "completed"
-                  : pickString(r, "status") === "in_progress"
-                    ? "in_progress"
-                    : "pending") as "completed" | "in_progress" | "pending",
-              };
-            })
-            .filter((p) => p.content.length > 0);
-          if (items.length > 0) {
-            emit({ type: "plan_block", sessionId, items });
-          }
-        }
-      }
-      // todo_list aside, item.* events are otherwise noise — fall through.
       return;
     }
 
