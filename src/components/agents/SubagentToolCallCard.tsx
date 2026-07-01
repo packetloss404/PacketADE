@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Bot } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
@@ -34,7 +34,7 @@ function truncate(text: string, max: number): string {
   return `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
-export function SubagentToolCallCard({
+function SubagentToolCallCardImpl({
   toolCall,
   conversationId: _conversationId,
   verbosity = "normal",
@@ -115,3 +115,7 @@ export function SubagentToolCallCard({
     </BaseToolCard>
   );
 }
+
+// Memoized so a streaming turn's frequent store updates only re-render
+// the card whose toolCall reference actually changed, not all 40+ at once.
+export const SubagentToolCallCard = memo(SubagentToolCallCardImpl);

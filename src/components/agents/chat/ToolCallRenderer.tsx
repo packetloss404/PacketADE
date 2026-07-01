@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { BashToolCallCard } from "../BashToolCallCard";
 import { MultiFileEditCard } from "../MultiFileEditCard";
 import { SubagentToolCallCard } from "../SubagentToolCallCard";
@@ -30,7 +31,10 @@ interface ToolCallRendererProps {
   verbosity: TranscriptVerbosity;
 }
 
-export function ToolCallRenderer({
+// Memoized: a streaming turn fires many store updates per second; skipping this
+// whole subtree when the toolCalls array reference is unchanged (e.g. a text-only
+// chunk arrived) avoids re-rendering 40+ tool cards on every token.
+export const ToolCallRenderer = memo(function ToolCallRenderer({
   toolCalls,
   isStreaming,
   conversationId,
@@ -102,4 +106,4 @@ export function ToolCallRenderer({
       })}
     </div>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   CheckSquare,
   ChevronRight,
@@ -68,7 +68,7 @@ function rowClassName(status: ParsedStatus): string {
   return "text-text-muted";
 }
 
-export function TaskListCard({ toolCall, verbosity = "normal" }: TaskListCardProps) {
+function TaskListCardImpl({ toolCall, verbosity = "normal" }: TaskListCardProps) {
   const [expanded, setExpanded] = useState(verbosity !== "summary");
 
   const content = toolCall.fullContent ?? toolCall.summary ?? "";
@@ -150,3 +150,7 @@ export function TaskListCard({ toolCall, verbosity = "normal" }: TaskListCardPro
     </div>
   );
 }
+
+// Memoized so a streaming turn's frequent store updates only re-render
+// the card whose toolCall reference actually changed, not all 40+ at once.
+export const TaskListCard = memo(TaskListCardImpl);

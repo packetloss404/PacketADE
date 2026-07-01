@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { ToolDiffView } from "../ToolDiffView";
 import { StatusPill } from "../tool-cards/StatusPill";
@@ -38,7 +38,7 @@ function parseWriteFileInput(tc: AgentToolCall): WriteFileInput | null {
   return null;
 }
 
-export function ToolCallCard({
+function ToolCallCardImpl({
   toolCall,
   projectPath,
   verbosity = "normal",
@@ -156,3 +156,7 @@ export function ToolCallCard({
     </div>
   );
 }
+
+// Memoized so a streaming turn's frequent store updates only re-render
+// the card whose toolCall reference actually changed, not all 40+ at once.
+export const ToolCallCard = memo(ToolCallCardImpl);
