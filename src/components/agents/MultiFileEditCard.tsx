@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as Diff from "diff";
 import {
@@ -98,7 +98,7 @@ function KindIcon({ kind }: { kind: FileKind }) {
   return <FileEdit size={12} className="text-text-secondary shrink-0" />;
 }
 
-export function MultiFileEditCard({
+function MultiFileEditCardImpl({
   toolCalls,
   conversationId,
   projectPath,
@@ -272,3 +272,7 @@ export function MultiFileEditCard({
     </div>
   );
 }
+
+// Memoized so a streaming turn's frequent store updates only re-render
+// the card whose toolCall reference actually changed, not all 40+ at once.
+export const MultiFileEditCard = memo(MultiFileEditCardImpl);

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 
@@ -38,7 +39,7 @@ interface BaseToolCardProps {
  * the expandable body, and an optional footer. Wrappers own the expanded
  * state plus their content + verbosity-specific logic.
  */
-export function BaseToolCard({
+function BaseToolCardImpl({
   icon,
   title,
   titleAttr,
@@ -103,3 +104,7 @@ export function BaseToolCard({
     </div>
   );
 }
+
+// Memoized so a streaming turn's frequent store updates only re-render
+// the card whose toolCall reference actually changed, not all 40+ at once.
+export const BaseToolCard = memo(BaseToolCardImpl);

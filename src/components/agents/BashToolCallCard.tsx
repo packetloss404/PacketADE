@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, RotateCw, Terminal } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
@@ -31,7 +31,7 @@ function parseBashInput(raw: string | undefined): BashInput {
   }
 }
 
-export function BashToolCallCard({
+function BashToolCallCardImpl({
   toolCall,
   conversationId,
   verbosity = "normal",
@@ -150,3 +150,7 @@ export function BashToolCallCard({
     </BaseToolCard>
   );
 }
+
+// Memoized so a streaming turn's frequent store updates only re-render
+// the card whose toolCall reference actually changed, not all 40+ at once.
+export const BashToolCallCard = memo(BashToolCallCardImpl);

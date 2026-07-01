@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { ChevronRight, Compass } from "lucide-react";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
@@ -44,7 +44,7 @@ function pickQuery(args: Record<string, unknown>): string {
   return "";
 }
 
-export function ExplorationRollupCard({ toolCalls }: ExplorationRollupCardProps) {
+function ExplorationRollupCardImpl({ toolCalls }: ExplorationRollupCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const stats = useMemo<ExplorationStats>(() => {
@@ -161,3 +161,7 @@ export function ExplorationRollupCard({ toolCalls }: ExplorationRollupCardProps)
     </div>
   );
 }
+
+// Memoized so a streaming turn's frequent store updates only re-render
+// the card whose toolCall reference actually changed, not all 40+ at once.
+export const ExplorationRollupCard = memo(ExplorationRollupCardImpl);
