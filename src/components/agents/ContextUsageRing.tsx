@@ -1,47 +1,9 @@
 import { useMemo, useState, useRef, useEffect } from "react";
-import type { AgentConversation } from "@/types/agent-conversation";
-
-/**
- * Best-effort context-window size in tokens, keyed on model id. Numbers
- * mirror the public 2026 spec sheets. When we can't recognize a model id
- * we fall back to 200_000 — the median of the field — so the ring still
- * means something visually rather than collapsing to "N tokens" only.
- */
-const MODEL_CONTEXT_TOKENS: Record<string, number> = {
-  // Anthropic (Claude 4.x)
-  "claude-opus-4-8": 1_000_000,
-  "claude-opus-4-8-1m": 1_000_000,
-  "claude-opus-4-7": 1_000_000,
-  "claude-opus-4-7-1m": 1_000_000,
-  "claude-opus-4-6": 200_000,
-  "claude-sonnet-4-6": 200_000,
-  "claude-haiku-4-5": 200_000,
-  "claude-haiku-4-5-20251001": 200_000,
-  // MiniMax — M3 supports up to 1M context; M2 family is 200k (per MiniMax docs)
-  "MiniMax-M3": 1_000_000,
-  "MiniMax-M2.5": 200_000,
-  "MiniMax-M2": 200_000,
-  // OpenAI (GPT-5.x)
-  "gpt-5.5": 400_000,
-  "gpt-5.4": 400_000,
-  "gpt-5.3-codex": 400_000,
-  // Google
-  "gemini-3.1-pro": 2_000_000,
-  "gemini-3-flash": 1_000_000,
-};
-
-const DEFAULT_CONTEXT_TOKENS = 200_000;
-
-function resolveContextLimit(modelId: string | undefined): number {
-  if (!modelId) return DEFAULT_CONTEXT_TOKENS;
-  // Exact match first; otherwise startsWith for dated variants like
-  // "claude-sonnet-4-6-20250414".
-  if (MODEL_CONTEXT_TOKENS[modelId]) return MODEL_CONTEXT_TOKENS[modelId];
-  for (const [prefix, limit] of Object.entries(MODEL_CONTEXT_TOKENS)) {
-    if (modelId.startsWith(prefix)) return limit;
-  }
-  return DEFAULT_CONTEXT_TOKENS;
-}
+import { computeContextOccupancy } from "@/lib/modelContext";
+import type {
+  AgentConversation,
+  AgentMessage,
+} from "@/types/agent-conversation";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -54,12 +16,14 @@ interface ContextUsageRingProps {
 }
 
 /**
- * Cursor-style context-usage indicator. Sums tokens across all completed
- * assistant turns in the conversation and renders a 14px SVG ring next to
- * the model picker. Hover surfaces a breakdown by token kind (input /
- * output / cache read / cache write / reasoning) — we don't have
- * per-source attribution from providers yet so this is the best we can
- * do without lying.
+ * Cursor-style context-usage indicator. Reads the LATEST completed
+ * assistant turn's token usage and renders a 14px SVG ring next to the
+ * model picker. Hover/focus surfaces a breakdown by token kind (input /
+ * output / cache read / cache write / reasoning) for that turn.
+ *
+ * Occupancy is the resident window of the latest turn (input + cache),
+ * NOT a cross-turn sum — each turn re-sends the whole window, so summing
+ * would multi-count the same context and pin the ring to 100%.
  *
  * Suppressed until at least one assistant turn has completed so we don't
  * paint an empty ring on fresh conversations.
@@ -78,45 +42,61 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
     }
   }, []);
 
-  const breakdown = useMemo(() => {
-    let input = 0;
-    let output = 0;
-    let cacheRead = 0;
-    let cacheWrite = 0;
-    let reasoning = 0;
-    for (const m of conversation.messages) {
+  const { breakdown, inContext, limit, ratio } = useMemo(() => {
+    // Find the most recent assistant turn that reported usage. Its token
+    // counts ARE the current context occupancy.
+    let latest: AgentMessage | undefined;
+    for (let i = conversation.messages.length - 1; i >= 0; i--) {
+      const m = conversation.messages[i];
       if (m.role !== "assistant") continue;
-      input += m.inputTokens ?? 0;
-      output += m.outputTokens ?? 0;
-      cacheRead += m.cacheReadTokens ?? 0;
-      cacheWrite += m.cacheWriteTokens ?? 0;
-      reasoning += m.reasoningTokens ?? 0;
+      if (
+        (m.inputTokens ?? 0) > 0 ||
+        (m.outputTokens ?? 0) > 0 ||
+        (m.cacheReadTokens ?? 0) > 0 ||
+        (m.cacheWriteTokens ?? 0) > 0
+      ) {
+        latest = m;
+        break;
+      }
     }
-    // Context-window utilization is dominated by INPUT tokens — output
-    // doesn't sit in context for the next turn, and the API charges them
-    // separately. Cache reads ARE input that survived into the window,
-    // already counted on the input side by every provider we care about,
-    // so don't double-count.
-    const inContext = input;
-    return { input, output, cacheRead, cacheWrite, reasoning, inContext };
-  }, [conversation.messages]);
-
-  const limit = resolveContextLimit(conversation.model);
-  const ratio = Math.min(1, breakdown.inContext / limit);
+    const breakdown = {
+      input: latest?.inputTokens ?? 0,
+      output: latest?.outputTokens ?? 0,
+      cacheRead: latest?.cacheReadTokens ?? 0,
+      cacheWrite: latest?.cacheWriteTokens ?? 0,
+      reasoning: latest?.reasoningTokens ?? 0,
+    };
+    // inContext = input + cache (cache read/write sit in the resident
+    // window; Anthropic reports them separately from input_tokens). Output
+    // and reasoning are billed separately and don't occupy the window.
+    const occ = computeContextOccupancy({
+      inputTokens: breakdown.input,
+      cacheReadTokens: breakdown.cacheRead,
+      cacheWriteTokens: breakdown.cacheWrite,
+      model: conversation.model,
+    });
+    return {
+      breakdown,
+      inContext: occ.usedTokens,
+      limit: occ.totalTokens,
+      ratio: occ.fraction,
+    };
+  }, [conversation.messages, conversation.model]);
 
   // No completed turns yet → nothing useful to display.
-  if (breakdown.input === 0 && breakdown.output === 0) return null;
+  if (inContext === 0 && breakdown.output === 0) return null;
 
   const pct = Math.round(ratio * 100);
   // Stroke color follows budget pressure — green safe, amber warning,
   // red eviction zone. The thresholds match what Cursor surfaces in
-  // their compose ring.
-  const stroke =
+  // their compose ring. Driven by Tailwind stroke-* token utilities so it
+  // tracks the theme instead of hardcoded hex fallbacks.
+  const strokeClass =
     ratio >= 0.9
-      ? "var(--color-accent-red, #c97070)"
+      ? "stroke-accent-red"
       : ratio >= 0.7
-        ? "var(--color-accent-amber, #d4b25c)"
-        : "var(--color-accent-green, #6fb89a)";
+        ? "stroke-accent-amber"
+        : "stroke-accent-green";
 
   const size = 14;
   const r = 5;
@@ -126,7 +106,10 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
   return (
     <div
       ref={wrapRef}
-      className="relative inline-flex items-center gap-1 text-[10px] text-text-muted font-mono cursor-default"
+      tabIndex={0}
+      role="img"
+      aria-label={`Context usage ${pct} percent, ${formatTokens(inContext)} of ${formatTokens(limit)}`}
+      className="relative inline-flex items-center gap-1 text-[10px] text-text-muted font-mono cursor-default rounded outline-none focus-visible:ring-1 focus-visible:ring-accent-line"
       onMouseEnter={() => {
         if (hoverTimerRef.current !== null) {
           window.clearTimeout(hoverTimerRef.current);
@@ -137,14 +120,26 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
       onMouseLeave={() => {
         hoverTimerRef.current = window.setTimeout(() => setHover(false), 120);
       }}
-      title={`Context: ${formatTokens(breakdown.inContext)} / ${formatTokens(limit)} (${pct}%)`}
+      onFocus={() => {
+        if (hoverTimerRef.current !== null) {
+          window.clearTimeout(hoverTimerRef.current);
+          hoverTimerRef.current = null;
+        }
+        setHover(true);
+      }}
+      onBlur={() => setHover(false)}
     >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        aria-hidden="true"
+      >
         <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
-          stroke="var(--color-bg-border, #2a2a2a)"
+          className="stroke-bg-border"
           strokeWidth={2}
           fill="none"
         />
@@ -152,11 +147,11 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
           cx={size / 2}
           cy={size / 2}
           r={r}
-          stroke={stroke}
+          className={`${strokeClass} transition-[stroke-dasharray] motion-reduce:transition-none`}
           strokeWidth={2}
           fill="none"
           strokeDasharray={`${dash} ${c - dash}`}
-          strokeDashoffset={c / 4}
+          strokeDashoffset={0}
           strokeLinecap="round"
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
@@ -169,7 +164,7 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
           role="tooltip"
         >
           <div className="text-text-primary font-medium mb-1">
-            {formatTokens(breakdown.inContext)} / {formatTokens(limit)}
+            {formatTokens(inContext)} / {formatTokens(limit)}
             <span className="ml-1 text-text-muted">({pct}%)</span>
           </div>
           <div className="flex justify-between">
@@ -181,7 +176,7 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
             <span className="font-mono">{formatTokens(breakdown.output)}</span>
           </div>
           {breakdown.cacheRead > 0 && (
-            <div className="flex justify-between text-accent-green/80">
+            <div className="flex justify-between text-accent-green">
               <span>Cache read</span>
               <span className="font-mono">
                 {formatTokens(breakdown.cacheRead)}
@@ -205,8 +200,8 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
             </div>
           )}
           <div className="border-t border-bg-border mt-1 pt-1 text-[9px] text-text-muted leading-snug">
-            Context = input that survives into the next turn. Output, cache,
-            and reasoning are billed separately and don't sit in the window.
+            Context = input + cache resent on the latest turn. Output and
+            reasoning are billed separately and don't sit in the window.
           </div>
         </div>
       )}

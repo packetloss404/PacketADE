@@ -1,14 +1,13 @@
 import { useMemo, useState } from "react";
 import {
   CheckSquare,
-  ChevronDown,
   ChevronRight,
-  Loader2,
   Square,
   XCircle,
 } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
+import { Spinner } from "@/components/ui/Spinner";
 
 interface TaskListCardProps {
   toolCall: AgentToolCall;
@@ -57,7 +56,7 @@ function StatusIcon({ status }: { status: ParsedStatus }) {
   }
   if (status === "in_progress") {
     return (
-      <Loader2 size={11} className="text-accent-blue shrink-0 animate-spin" />
+      <Spinner size={11} className="text-accent-blue shrink-0" label="in progress" />
     );
   }
   return <Square size={11} className="text-text-muted shrink-0" />;
@@ -102,7 +101,7 @@ export function TaskListCard({ toolCall, verbosity = "normal" }: TaskListCardPro
     return (
       <div className="border border-bg-border rounded text-[10px] text-text-muted bg-bg-hover px-2 py-1 flex items-center gap-1.5">
         {toolCall.status === "running" ? (
-          <Loader2 size={11} className="animate-spin" />
+          <Spinner size={11} />
         ) : (
           <Square size={11} />
         )}
@@ -119,10 +118,16 @@ export function TaskListCard({ toolCall, verbosity = "normal" }: TaskListCardPro
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-1.5 px-2 py-1 text-left hover:bg-bg-border/50 transition-colors rounded-t"
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-1.5 px-2 py-1 text-left hover:bg-bg-elevated transition-colors rounded-t"
       >
-        {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-        <CheckSquare size={11} className="text-accent-green" />
+        <ChevronRight
+          size={12}
+          className={`shrink-0 transition-transform motion-reduce:transition-none ${
+            expanded ? "rotate-90" : ""
+          }`}
+        />
+        <CheckSquare size={12} className="text-accent-green" />
         <span className="text-[10px] font-mono text-text-secondary">tasks</span>
         <span className="text-[10px] text-text-muted">
           {counts.completed}/{counts.total} done

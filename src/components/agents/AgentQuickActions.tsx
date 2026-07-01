@@ -1,4 +1,5 @@
 import { MessageSquare, Undo2, ArrowRight } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import type { AgentMessage } from "@/types/agent-conversation";
 
@@ -25,15 +26,15 @@ export function AgentQuickActions({ conversationId }: AgentQuickActionsProps) {
       {QUICK_ACTIONS.map((action) => {
         const Icon = action.icon;
         return (
-          <button
-            key={action.label}
-            onClick={() => handleAction(action.prompt)}
-            className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
-            title={action.prompt}
-          >
-            <Icon size={10} />
-            {action.label}
-          </button>
+          <Tooltip key={action.label} content={action.prompt}>
+            <button
+              onClick={() => handleAction(action.prompt)}
+              className="flex items-center gap-1 rounded bg-bg-tertiary px-2 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary"
+            >
+              <Icon size={10} />
+              <span className="text-[11px]">{action.label}</span>
+            </button>
+          </Tooltip>
         );
       })}
     </div>

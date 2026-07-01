@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, RotateCw, Terminal } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { BaseToolCard } from "./tool-cards/BaseToolCard";
 import { StatusPill } from "./tool-cards/StatusPill";
 
@@ -42,6 +43,12 @@ export function BashToolCallCard({
 
   const [expanded, setExpanded] = useState(verbosity === "verbose");
   const [copied, setCopied] = useState(false);
+
+  // Keep expand state in sync when the per-conversation verbosity control
+  // changes after the card has mounted.
+  useEffect(() => {
+    setExpanded(verbosity === "verbose");
+  }, [verbosity]);
 
   const body = toolCall.fullContent ?? toolCall.summary ?? "";
   const hasBody = body.trim().length > 0;
@@ -84,34 +91,36 @@ export function BashToolCallCard({
 
   const headerActions = (
     <>
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border/50"
-        title={copied ? "Copied!" : "Copy command"}
-        aria-label="Copy command"
-      >
-        {copied ? (
-          <CheckCircle2 size={11} className="text-accent-green" />
-        ) : (
-          <Copy size={11} />
-        )}
-      </button>
-      <button
-        type="button"
-        onClick={handleRerun}
-        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border/50"
-        title="Re-run command"
-        aria-label="Re-run command"
-      >
-        <RotateCw size={11} />
-      </button>
+      <Tooltip content={copied ? "Copied!" : "Copy command"}>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
+          aria-label="Copy command"
+        >
+          {copied ? (
+            <CheckCircle2 size={11} className="text-accent-green" />
+          ) : (
+            <Copy size={11} />
+          )}
+        </button>
+      </Tooltip>
+      <Tooltip content="Ask agent to re-run this command">
+        <button
+          type="button"
+          onClick={handleRerun}
+          className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
+          aria-label="Ask agent to re-run this command"
+        >
+          <RotateCw size={11} />
+        </button>
+      </Tooltip>
     </>
   );
 
   const subHeader =
     verbosity === "verbose" && cwd ? (
-      <div className="px-2 pb-1 font-mono text-[10px] text-text-muted/80 truncate">
+      <div className="px-2 pb-1 font-mono text-[10px] text-text-faint truncate">
         cwd: {cwd}
       </div>
     ) : undefined;
@@ -133,6 +142,7 @@ export function BashToolCallCard({
         expanded: "Collapse output",
         collapsed: "Expand output",
       }}
+      isError={toolCall.status === "error"}
     >
       <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
         {body}

@@ -145,6 +145,11 @@ export const useAgentPlanStore = create<AgentPlanState>((set, get) => ({
       next.set(conversationId, items);
       return { plan: next };
     });
+    // Persist like every sibling mutator — snapshotForPersist reads the plan
+    // back out of this store, so any caller must trigger a save.
+    void importTaskStore().then(({ requestConversationSave }) =>
+      requestConversationSave(conversationId),
+    );
   },
 
   approvePlan: (conversationId) => {
@@ -156,14 +161,15 @@ export const useAgentPlanStore = create<AgentPlanState>((set, get) => ({
       nextStage.set(conversationId, "code");
       return { planApproved: nextApproved, specStage: nextStage };
     });
-    void importTaskStore().then(({ requestConversationSave, useAgentTaskStore }) => {
+    void importTaskStore().then(async ({ requestConversationSave, useAgentTaskStore }) => {
       requestConversationSave(conversationId);
       const store = useAgentTaskStore.getState();
       const conv = store.conversations.find((c) => c.id === conversationId);
       // Lift plan mode if it was on (the launcher's Plan mode set it on
-      // start) and tell the model to execute.
+      // start) BEFORE dispatching the execute turn, otherwise the execute
+      // message can reach the backend while plan mode is still active.
       if (conv?.planMode) {
-        void store.setPlanMode(conversationId, false);
+        await store.setPlanMode(conversationId, false);
       }
       store.sendMessage(
         conversationId,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Check } from "lucide-react";
+import { Bot, Check, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAgentStore } from "@/stores/agentStore";
@@ -13,6 +13,8 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [agent, setAgent] = useState<AgentCli>("claude-code");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const agents = useAgentStore((s) => s.agents);
   const launchTask = useAgentTaskStore((s) => s.launchTask);
@@ -30,10 +32,18 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
   }, [agent, agentOptions]);
 
   async function handleLaunch() {
-    if (!description.trim() || !selectedAgent?.installed) return;
+    if (busy || !description.trim() || !selectedAgent?.installed) return;
+    setBusy(true);
+    setError(null);
     const taskTitle = title.trim() || description.trim().slice(0, 60);
-    await launchTask(taskTitle, description.trim(), agent, projectPath);
-    onClose();
+    try {
+      await launchTask(taskTitle, description.trim(), agent, projectPath);
+      onClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || "Failed to launch agent.");
+      setBusy(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -45,7 +55,8 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
 
   return (
     <Modal
-      onClose={onClose}
+      onClose={busy ? () => {} : onClose}
+      closeDisabled={busy}
       title="New Agent Task"
       icon={<Bot size={14} className="text-accent-green" />}
       width="w-[480px]"
@@ -53,16 +64,18 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+            disabled={busy}
+            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40"
           >
             Cancel
           </button>
           <button
             onClick={() => void handleLaunch()}
-            disabled={!description.trim() || !selectedAgent?.installed}
-            className="px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
+            disabled={busy || !description.trim() || !selectedAgent?.installed}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Launch Agent
+            {busy && <Loader2 size={11} className="animate-spin" />}
+            {busy ? "Launching…" : "Launch Agent"}
           </button>
         </div>
       }
@@ -70,7 +83,7 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
       <div className="px-5 py-4 flex flex-col gap-4" onKeyDown={handleKeyDown}>
         {/* Title (optional) */}
         <div>
-          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">
+          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wide">
             Title <span className="normal-case">(optional)</span>
           </label>
           <input
@@ -78,13 +91,14 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Short name for this task"
-            className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+            disabled={busy}
+            className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted outline-none focus:border-accent-green/50 disabled:opacity-60"
           />
         </div>
 
         {/* Agent picker */}
         <div>
-          <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">Agent</label>
+          <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wide">Agent</label>
           <div className="flex flex-wrap gap-1.5">
             {agentOptions.map((opt) => {
               const installed = !!opt.installed;
@@ -93,17 +107,17 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
                 <button
                   key={opt.id}
                   onClick={() => installed && setAgent(opt.id as AgentCli)}
-                  disabled={!installed}
+                  disabled={!installed || busy}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded border transition-colors ${
                     selected
                       ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
-                      : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary"
+                      : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-line-strong"
                   } ${!installed ? "opacity-40 cursor-not-allowed" : ""}`}
                 >
                   <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
                     selected ? "bg-accent-green border-accent-green" : "border-bg-border"
                   }`}>
-                  {selected && <Check size={8} className="text-bg-primary" />}
+                  {selected && <Check size={10} strokeWidth={3} className="text-bg-primary" />}
                   </div>
                   {opt.name}
                 </button>
@@ -114,15 +128,21 @@ export function NewAgentTaskModal({ onClose }: NewAgentTaskModalProps) {
 
         {/* Task description */}
         <div>
-          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Task Description</label>
+          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wide">Task Description</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={6}
             placeholder="Describe what the agent should do..."
-            className="w-full bg-bg-primary border border-bg-border rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green resize-none"
+            disabled={busy}
+            className="w-full bg-bg-primary border border-bg-border rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted outline-none focus:border-accent-green/50 resize-none disabled:opacity-60"
             autoFocus
           />
+          {error && (
+            <p className="text-[11px] text-accent-red whitespace-pre-wrap break-words mt-1">
+              {error}
+            </p>
+          )}
           <p className="text-[10px] text-text-muted mt-1">
             The agent will run autonomously with full edit access. Ctrl+Enter to launch.
           </p>

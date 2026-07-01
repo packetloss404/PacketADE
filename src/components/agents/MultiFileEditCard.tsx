@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as Diff from "diff";
 import {
-  ChevronDown,
   ChevronRight,
   FileEdit,
   FileMinus2,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react";
 import { useDiffPaneStore } from "../../stores/diffPaneStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import { Spinner } from "@/components/ui/Spinner";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface MultiFileEditCardProps {
@@ -39,6 +39,29 @@ function extractWriteFileInput(
   const content = typeof input.content === "string" ? input.content : "";
   if (!path) return null;
   return { path, content };
+}
+
+/**
+ * Build one seed entry per unique file path. If the agent writes the same
+ * file twice in a turn (e.g. scaffold then patch), the last write wins so we
+ * render one row per file (no duplicate React keys) and count files, not
+ * writes.
+ */
+function buildSeeds(toolCalls: AgentToolCall[]): FileEntry[] {
+  const byPath = new Map<string, FileEntry>();
+  for (const call of toolCalls) {
+    const parsed = extractWriteFileInput(call);
+    if (!parsed) continue;
+    byPath.set(parsed.path, {
+      path: parsed.path,
+      newContent: parsed.content,
+      kind: "modified",
+      added: 0,
+      removed: 0,
+      loading: true,
+    });
+  }
+  return [...byPath.values()];
 }
 
 function countDiffLines(orig: string, next: string): {
@@ -81,38 +104,13 @@ export function MultiFileEditCard({
   projectPath,
 }: MultiFileEditCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const [entries, setEntries] = useState<FileEntry[]>(() => {
-    const seeds: FileEntry[] = [];
-    for (const call of toolCalls) {
-      const parsed = extractWriteFileInput(call);
-      if (!parsed) continue;
-      seeds.push({
-        path: parsed.path,
-        newContent: parsed.content,
-        kind: "modified",
-        added: 0,
-        removed: 0,
-        loading: true,
-      });
-    }
-    return seeds;
-  });
+  const [entries, setEntries] = useState<FileEntry[]>(() =>
+    buildSeeds(toolCalls),
+  );
 
   useEffect(() => {
     let cancelled = false;
-    const seeds: FileEntry[] = [];
-    for (const call of toolCalls) {
-      const parsed = extractWriteFileInput(call);
-      if (!parsed) continue;
-      seeds.push({
-        path: parsed.path,
-        newContent: parsed.content,
-        kind: "modified",
-        added: 0,
-        removed: 0,
-        loading: true,
-      });
-    }
+    const seeds = buildSeeds(toolCalls);
     setEntries(seeds);
 
     (async () => {
@@ -170,6 +168,9 @@ export function MultiFileEditCard({
 
   const totalCount = entries.length;
   const summaryParts: string[] = [];
+
+  if (totalCount === 0) return null;
+
   if (grouped.new.length > 0) summaryParts.push(`${grouped.new.length} new`);
   if (grouped.modified.length > 0)
     summaryParts.push(`${grouped.modified.length} modified`);
@@ -195,13 +196,15 @@ export function MultiFileEditCard({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-bg-tertiary transition-colors text-left"
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-2 px-2 py-1 hover:bg-bg-tertiary transition-colors text-left"
       >
-        {expanded ? (
-          <ChevronDown size={12} className="text-text-secondary shrink-0" />
-        ) : (
-          <ChevronRight size={12} className="text-text-secondary shrink-0" />
-        )}
+        <ChevronRight
+          size={12}
+          className={`text-text-secondary shrink-0 transition-transform motion-reduce:transition-none ${
+            expanded ? "rotate-90" : ""
+          }`}
+        />
         <Folder size={12} className="text-accent-blue shrink-0" />
         <span className="text-[11px] text-text-primary flex-1 truncate">
           Edited {totalCount} {totalCount === 1 ? "file" : "files"}
@@ -211,6 +214,7 @@ export function MultiFileEditCard({
 
       {expanded && (
         <div className="border-t border-bg-border">
+          <div className="max-h-64 overflow-y-auto">
           {KIND_ORDER.map((kind) => {
             const list = grouped[kind];
             if (list.length === 0) return null;
@@ -233,9 +237,11 @@ export function MultiFileEditCard({
                       {entry.path}
                     </span>
                     {entry.loading ? (
-                      <span className="text-[10px] text-text-secondary italic">
-                        ...
-                      </span>
+                      <Spinner
+                        size={11}
+                        className="text-text-muted shrink-0"
+                        label="Loading diff"
+                      />
                     ) : (
                       <span className="flex items-center gap-1.5 shrink-0">
                         <span className="text-[11px] font-mono text-accent-green">
@@ -251,11 +257,12 @@ export function MultiFileEditCard({
               </div>
             );
           })}
+          </div>
           <div className="px-2 py-1.5 border-t border-bg-border bg-bg-primary flex justify-end">
             <button
               type="button"
               onClick={handleOpenAll}
-              className="text-[11px] text-accent-blue hover:text-accent-green transition-colors"
+              className="text-[11px] text-text-muted hover:text-text-primary transition-colors"
             >
               Open all in diff pane
             </button>

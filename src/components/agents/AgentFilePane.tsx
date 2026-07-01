@@ -14,6 +14,9 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { listDirectory } from "@/lib/tauri";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { Spinner } from "@/components/ui/Spinner";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 /**
  * Read-only file tree pane for the agent inspector.
@@ -135,6 +138,7 @@ export function AgentFilePane({
   const [error, setError] = useState<string | null>(null);
   const [truncated, setTruncated] = useState<number>(0);
   const [highlightedIdx, setHighlightedIdx] = useState(0);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -146,6 +150,7 @@ export function AgentFilePane({
   useEffect(() => {
     setCurrentPath(projectPath);
     setHighlightedIdx(0);
+    setSelectedPath(null);
   }, [conversationId, projectPath]);
 
   const loadDir = useCallback(
@@ -219,6 +224,7 @@ export function AgentFilePane({
         setCurrentPath(entry.path);
         return;
       }
+      setSelectedPath(entry.path);
       onSelectFile?.(entry.path);
       // Best-effort clipboard write — failure (e.g. no permission) is silent.
       try {
@@ -277,14 +283,13 @@ export function AgentFilePane({
   // after all hooks so render order stays stable across SSH/local switches.
   if (sshTarget) {
     return (
-      <div className="flex flex-col h-full bg-bg-primary items-center justify-center px-4 text-center">
-        <Server size={20} className="text-text-muted mb-2" />
-        <span className="text-[11px] text-text-secondary max-w-xs">
-          File browsing on SSH targets is not yet supported.
-        </span>
-        <span className="text-[10px] text-text-muted mt-1 max-w-xs">
-          Open the worktree on your local machine to browse it.
-        </span>
+      <div className="flex flex-col h-full bg-bg-primary">
+        <EmptyState
+          className="h-full"
+          icon={<Server size={24} />}
+          title="File browsing on SSH targets is not yet supported."
+          description="Open the worktree on your local machine to browse it."
+        />
       </div>
     );
   }
@@ -298,23 +303,26 @@ export function AgentFilePane({
     >
       {/* Header: breadcrumb + actions */}
       <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
-        <button
-          type="button"
-          onClick={goUp}
-          disabled={parentOf(currentPath) == null}
-          title="Parent directory (Backspace)"
-          className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <ChevronUp size={12} />
-        </button>
-        <button
-          type="button"
-          onClick={refresh}
-          title="Refresh"
-          className="p-0.5 text-text-muted hover:text-text-primary rounded transition-colors"
-        >
-          <RotateCw size={12} className={loading ? "animate-spin" : ""} />
-        </button>
+        <Tooltip content="Parent directory (Backspace)">
+          <button
+            type="button"
+            onClick={goUp}
+            disabled={parentOf(currentPath) == null}
+            className="p-1 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronUp size={12} />
+          </button>
+        </Tooltip>
+        <Tooltip content="Refresh">
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="p-1 text-text-muted hover:text-text-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RotateCw size={12} className={loading ? "animate-spin motion-reduce:animate-none" : ""} />
+          </button>
+        </Tooltip>
         <div className="flex-1 min-w-0 overflow-x-auto">
           <div className="flex items-center gap-0.5 text-[11px] font-mono whitespace-nowrap">
             {segments.map((seg, i) => {
@@ -357,10 +365,15 @@ export function AgentFilePane({
           </div>
         )}
 
-        {!error && !loading && entries.length === 0 && (
-          <div className="flex items-center justify-center h-full">
-            <span className="text-[11px] text-text-muted">Empty directory</span>
+        {!error && loading && entries.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full gap-2">
+            <Spinner size={20} className="text-text-muted opacity-40" />
+            <span className="text-[11px] text-text-muted">Loading…</span>
           </div>
+        )}
+
+        {!error && !loading && entries.length === 0 && (
+          <EmptyState className="h-full" icon={<Folder size={24} />} title="Empty directory" />
         )}
 
         {!error && entries.length > 0 && (
@@ -368,20 +381,24 @@ export function AgentFilePane({
             {entries.map((entry, idx) => {
               const Icon = entry.is_dir ? Folder : FileText;
               const isHighlighted = idx === highlightedIdx;
+              const isSelected = !entry.is_dir && entry.path === selectedPath;
               return (
                 <button
                   key={entry.path}
                   type="button"
                   data-file-row-idx={idx}
+                  aria-current={isSelected ? "true" : undefined}
                   onClick={() => {
                     setHighlightedIdx(idx);
                     openEntry(entry);
                   }}
                   onMouseEnter={() => setHighlightedIdx(idx)}
-                  className={`w-full flex items-center gap-2 px-3 py-1 text-left text-[11px] transition-colors ${
-                    isHighlighted
-                      ? "bg-bg-hover text-text-primary"
-                      : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                  className={`w-full flex items-center gap-2 px-3 py-1 text-left text-[11px] border-l-2 transition-colors ${
+                    isSelected
+                      ? "bg-accent-purple/15 border-accent-purple text-text-primary"
+                      : isHighlighted
+                        ? "bg-bg-hover border-transparent text-text-primary"
+                        : "border-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary"
                   }`}
                   title={entry.path}
                 >

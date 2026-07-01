@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Settings2 } from "lucide-react";
+import { ChevronRight, Settings2 } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { storageKey } from "@/lib/brand";
 
 const OPEN_STORAGE_KEY = storageKey("composer-advanced-open");
@@ -55,10 +56,27 @@ export function AdvancedAccordion({
   forceOpenOnFirstMount = false,
   children,
 }: AdvancedAccordionProps) {
-  const [open, setOpen] = useState<boolean>(() => loadOpen(forceOpenOnFirstMount));
+  const [open, setOpen] = useState<boolean>(
+    // Force-open wins even when a stored "0" exists, so active non-default
+    // settings are always revealed on first mount.
+    () => forceOpenOnFirstMount || loadOpen(forceOpenOnFirstMount),
+  );
+  // The collapse animation clips content with `overflow-hidden`, but child
+  // pickers (ProfilePicker) open absolutely-positioned dropdown menus that
+  // must escape that box. Re-allow overflow only once the expand transition
+  // has settled so those menus aren't clipped.
+  const [overflowVisible, setOverflowVisible] = useState<boolean>(
+    () => forceOpenOnFirstMount || loadOpen(forceOpenOnFirstMount),
+  );
 
   useEffect(() => {
     persistOpen(open);
+    if (!open) {
+      setOverflowVisible(false);
+      return;
+    }
+    const id = window.setTimeout(() => setOverflowVisible(true), 220);
+    return () => window.clearTimeout(id);
   }, [open]);
 
   const activeBits = summary
@@ -66,29 +84,45 @@ export function AdvancedAccordion({
     .map((s) => truncate(s.label as string, s.maxChars));
   const hasActive = activeBits.length > 0;
 
-  const Chevron = open ? ChevronDown : ChevronRight;
-
   return (
     <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors self-start"
-        title={open ? "Hide advanced settings" : "Show advanced settings"}
-        aria-expanded={open}
+      <div className="self-start">
+        <Tooltip
+          content={open ? "Hide advanced settings" : "Show advanced settings"}
+        >
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors"
+            aria-expanded={open}
+          >
+            <ChevronRight
+              size={10}
+              className={`transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+            />
+            <Settings2 size={10} />
+            <span>Advanced</span>
+            {!open && hasActive && (
+              <span className="text-text-secondary">
+                ({activeBits.join(", ")})
+              </span>
+            )}
+          </button>
+        </Tooltip>
+      </div>
+      <div
+        className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        }`}
       >
-        <Chevron size={10} />
-        <Settings2 size={10} />
-        <span>Advanced</span>
-        {!open && hasActive && (
-          <span className="text-text-secondary">
-            ({activeBits.join(", ")})
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="flex flex-wrap items-center gap-2 mt-2">{children}</div>
-      )}
+        <div
+          className={`${overflowVisible ? "overflow-visible" : "overflow-hidden"} transition-opacity duration-200 motion-reduce:transition-none ${open ? "opacity-100" : "opacity-0"}`}
+        >
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            {children}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

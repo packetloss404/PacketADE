@@ -52,14 +52,15 @@ const CHOICES: Choice[] = [
 ];
 
 const TONE_CLASSES: Record<Choice["tone"], string> = {
+  // Primary, recommended path — filled green per the action recipe.
   green:
-    "border-accent-green/40 text-accent-green hover:bg-accent-green/10",
+    "bg-accent-green/20 hover:bg-accent-green/30 border border-transparent text-accent-green font-medium transition-colors",
   blue:
-    "border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10",
+    "border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors",
   amber:
-    "border-accent-amber/40 text-accent-amber hover:bg-accent-amber/10",
+    "border border-accent-amber/40 text-accent-amber hover:bg-accent-amber/10 transition-colors",
   muted:
-    "border-bg-border text-text-secondary hover:bg-bg-secondary",
+    "border border-bg-border text-text-secondary hover:bg-bg-secondary transition-colors",
 };
 
 export function PlanModeApprovalMenu({
@@ -118,7 +119,7 @@ export function PlanModeApprovalMenu({
   };
 
   return (
-    <div className="bg-bg-secondary border border-accent-green/40 rounded p-3 flex flex-col gap-2">
+    <div className="bg-bg-secondary border border-accent-green/40 rounded p-3 flex flex-col gap-2 animate-[welcomeFadeIn_150ms_ease-out] motion-reduce:animate-none">
       <div className="flex items-center gap-2">
         <Check size={14} className="text-accent-green shrink-0" />
         <span className="text-xs text-text-primary">
@@ -126,7 +127,7 @@ export function PlanModeApprovalMenu({
         </span>
       </div>
 
-      <div className="flex gap-1.5 flex-wrap">
+      <div className="flex flex-col gap-1.5">
         {CHOICES.map((c) => {
           const Icon = c.icon;
           return (
@@ -134,29 +135,19 @@ export function PlanModeApprovalMenu({
               key={c.key}
               type="button"
               onClick={() => void handle(c.key)}
-              title={c.hint}
-              className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded border ${TONE_CLASSES[c.tone]}`}
+              className={`flex items-start gap-2 text-[11px] px-2 py-1.5 rounded text-left w-full ${TONE_CLASSES[c.tone]}`}
             >
-              <Icon size={12} />
-              {c.label}
+              <Icon size={12} className="mt-0.5 shrink-0" />
+              <span className="flex flex-col min-w-0">
+                <span>{c.label}</span>
+                <span className="text-[10px] text-text-muted leading-snug">
+                  {c.hint}
+                </span>
+              </span>
             </button>
           );
         })}
       </div>
-
-      <p className="text-[10px] text-text-muted leading-snug">
-        <span className="text-accent-green">Execute</span> auto-runs safe tools.
-        {" "}
-        <span className="text-accent-blue">Accept edits</span> applies file
-        changes without prompting but still asks before destructive shell
-        commands.
-        {" "}
-        <span className="text-accent-amber">Review each edit</span> pauses on
-        every risky tool call so you can approve or deny.
-        {" "}
-        <span className="text-text-secondary">Keep planning</span> stays in
-        plan mode and asks the agent to iterate.
-      </p>
     </div>
   );
 }

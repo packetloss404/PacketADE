@@ -1,10 +1,34 @@
 import { useEffect, useState } from "react";
 import { ListChecks, Plus, Check, X, Trash2 } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 
 interface SpecPanelProps {
   conversation: AgentConversation;
+}
+
+/** A success criterion plus a stable id for keying controlled inputs. */
+interface Criterion {
+  id: string;
+  text: string;
+}
+
+function makeId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `c-${Math.random().toString(36).slice(2)}`;
+}
+
+function toCriteria(criteria: string[]): Criterion[] {
+  return criteria.map((text) => ({ id: makeId(), text }));
+}
+
+function sameText(rows: Criterion[], criteria: string[]): boolean {
+  return (
+    rows.length === criteria.length &&
+    rows.every((r, i) => r.text === criteria[i])
+  );
 }
 
 /**
@@ -22,83 +46,108 @@ export function SpecPanel({ conversation }: SpecPanelProps) {
   const spec = useAgentPlanStore((s) => s.spec.get(conversation.id));
   const specStage = useAgentPlanStore((s) => s.specStage.get(conversation.id));
 
-  const [draft, setDraft] = useState<string[]>(spec?.criteria ?? []);
+  // Editable rows carry a stable id so controlled-input focus/edits stay put
+  // when earlier rows are removed (keying by array index reuses DOM nodes and
+  // lands edits on the wrong row).
+  const [draft, setDraft] = useState<Criterion[]>(() =>
+    toCriteria(spec?.criteria ?? []),
+  );
   const [newBullet, setNewBullet] = useState("");
 
-  // Re-seed draft whenever the stored criteria change (e.g. model-refined
-  // spec arrives via a different flow).
+  // Re-seed draft only when the stored criteria genuinely differ from what we
+  // have locally (e.g. a model-refined spec arrives via a different flow) — not
+  // after our own commits, which would clobber in-flight edits and re-render.
   useEffect(() => {
-    if (spec) setDraft(spec.criteria);
+    if (!spec) return;
+    setDraft((prev) =>
+      sameText(prev, spec.criteria) ? prev : toCriteria(spec.criteria),
+    );
   }, [spec]);
 
   if (specStage !== "spec") return null;
 
-  function commitDraft(next: string[]) {
-    setDraft(next);
-    setSpec(conversation.id, next);
+  // Persist the draft to the store. Called on structural changes (add/remove)
+  // and on blur — not on every keystroke, to avoid a store write + scheduled
+  // persistence per character.
+  function commitToStore(next: Criterion[]) {
+    setSpec(
+      conversation.id,
+      next.map((c) => c.text),
+    );
   }
 
   function addBullet() {
     const t = newBullet.trim();
     if (!t) return;
-    commitDraft([...draft, t]);
+    const next = [...draft, { id: makeId(), text: t }];
+    setDraft(next);
+    commitToStore(next);
     setNewBullet("");
   }
 
-  function updateAt(i: number, val: string) {
-    const next = draft.slice();
-    next[i] = val;
-    commitDraft(next);
+  function updateAt(id: string, val: string) {
+    setDraft((prev) => prev.map((c) => (c.id === id ? { ...c, text: val } : c)));
   }
 
-  function removeAt(i: number) {
-    commitDraft(draft.filter((_, j) => j !== i));
+  function removeAt(id: string) {
+    const next = draft.filter((c) => c.id !== id);
+    setDraft(next);
+    commitToStore(next);
   }
 
-  const canApprove = draft.length > 0 && draft.every((c) => c.trim().length > 0);
+  const canApprove =
+    draft.length > 0 && draft.every((c) => c.text.trim().length > 0);
 
   return (
     <div className="shrink-0 border-b border-bg-border bg-bg-secondary">
       <div className="flex items-center gap-2 px-3 py-2">
         <ListChecks size={11} className="text-accent-blue shrink-0" />
-        <span className="text-[10px] uppercase tracking-wider text-text-muted">
+        <span className="text-[10px] uppercase tracking-wide font-semibold text-text-secondary">
           Spec
         </span>
         <span className="text-[10px] text-text-secondary">
           {draft.length} criteria
         </span>
         <div className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => approveSpec(conversation.id)}
-            disabled={!canApprove}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 disabled:opacity-40"
-            title="Lock the spec and ask the agent for a structured Plan"
-          >
-            <Check size={11} /> Lock & request plan
-          </button>
+          <Tooltip content="Lock the spec and ask the agent for a structured Plan">
+            <button
+              type="button"
+              onClick={() => {
+                commitToStore(draft);
+                approveSpec(conversation.id);
+              }}
+              disabled={!canApprove}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Check size={11} /> Lock & request plan
+            </button>
+          </Tooltip>
         </div>
       </div>
       <ul className="px-3 pb-2 pt-0 space-y-1">
         {draft.map((item, i) => (
-          <li key={i} className="flex items-center gap-2">
+          <li key={item.id} className="flex items-center gap-2">
             <span className="text-[10px] text-text-faint w-4 tabular-nums">
               {i + 1}.
             </span>
             <input
               type="text"
-              value={item}
-              onChange={(e) => updateAt(i, e.target.value)}
-              className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-0.5 text-[11px] text-text-primary focus:outline-none focus:border-accent-blue/60"
+              value={item.text}
+              onChange={(e) => updateAt(item.id, e.target.value)}
+              onBlur={() => commitToStore(draft)}
+              aria-label={`Success criterion ${i + 1}`}
+              className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-0.5 text-[11px] text-text-primary focus:outline-none focus:border-accent-green/50"
             />
-            <button
-              type="button"
-              onClick={() => removeAt(i)}
-              className="p-0.5 text-text-faint hover:text-accent-red"
-              title="Remove criterion"
-            >
-              <Trash2 size={11} />
-            </button>
+            <Tooltip content="Remove criterion">
+              <button
+                type="button"
+                onClick={() => removeAt(item.id)}
+                className="p-0.5 text-text-faint hover:text-accent-red transition-colors"
+                aria-label={`Remove criterion ${i + 1}`}
+              >
+                <Trash2 size={11} />
+              </button>
+            </Tooltip>
           </li>
         ))}
         <li className="flex items-center gap-2">
@@ -119,17 +168,20 @@ export function SpecPanel({ conversation }: SpecPanelProps) {
               }
             }}
             placeholder="Add a success criterion (Enter to add)…"
-            className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-0.5 text-[11px] text-text-primary placeholder:text-text-faint focus:outline-none focus:border-accent-blue/60"
+            aria-label="Add a success criterion"
+            className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-0.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
           />
           {newBullet.trim() && (
-            <button
-              type="button"
-              onClick={addBullet}
-              className="p-0.5 text-accent-green hover:bg-accent-green/10 rounded"
-              title="Add criterion"
-            >
-              <Check size={11} />
-            </button>
+            <Tooltip content="Add criterion">
+              <button
+                type="button"
+                onClick={addBullet}
+                className="p-0.5 text-accent-green hover:bg-accent-green/10 rounded transition-colors"
+                aria-label="Add criterion"
+              >
+                <Check size={11} />
+              </button>
+            </Tooltip>
           )}
         </li>
         {draft.length === 0 && (

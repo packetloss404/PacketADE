@@ -44,10 +44,10 @@ export function MentionTypeBar({
         const isActive = chip.source === active;
         const chipClasses = [
           "flex items-center gap-1 px-2 py-0.5 rounded text-[11px]",
-          "transition-colors cursor-pointer select-none",
+          "transition-colors motion-reduce:transition-none cursor-pointer select-none",
           isActive
-            ? "bg-bg-hover text-accent-green"
-            : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
+            ? "bg-accent-green/20 text-accent-green"
+            : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary",
         ].join(" ");
         return (
           <button

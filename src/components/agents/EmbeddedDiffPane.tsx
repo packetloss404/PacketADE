@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { FileDiff } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { aggregateWriteFiles } from "@/lib/diffUtils";
+import type { ConversationDiffAggregate } from "@/lib/aggregateConversationDiffs";
 import { FileListAndDiffBody } from "./diff/FileListAndDiffBody";
 
 interface EmbeddedDiffPaneProps {
@@ -24,6 +25,10 @@ export function EmbeddedDiffPane({ conversationId }: EmbeddedDiffPaneProps) {
     [conversation],
   );
 
+  const [aggregate, setAggregate] = useState<ConversationDiffAggregate | null>(
+    null,
+  );
+
   return (
     <div className="h-full flex flex-col bg-bg-primary">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-bg-border bg-bg-secondary shrink-0">
@@ -31,9 +36,18 @@ export function EmbeddedDiffPane({ conversationId }: EmbeddedDiffPaneProps) {
         <span className="text-[11px] font-medium text-text-primary">
           Changes ({fileCount} {fileCount === 1 ? "file" : "files"})
         </span>
+        {aggregate && (
+          <span className="flex items-center gap-1 text-[10px] font-mono">
+            <span className="text-accent-green">+{aggregate.totalAdds}</span>
+            <span className="text-accent-red">-{aggregate.totalDels}</span>
+          </span>
+        )}
       </div>
 
-      <FileListAndDiffBody conversation={conversation} />
+      <FileListAndDiffBody
+        conversation={conversation}
+        onAggregate={setAggregate}
+      />
     </div>
   );
 }

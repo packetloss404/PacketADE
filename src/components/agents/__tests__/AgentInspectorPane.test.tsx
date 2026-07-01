@@ -95,21 +95,21 @@ describe("AgentInspectorPane", () => {
     expect(screen.getByText("Files changed")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /preview/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /preview/i }));
     expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
     expect(screen.queryByText("Files changed")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /diff/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /diff/i }));
     expect(screen.getByTestId("diff-pane")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
     // No SSH target on the default fixture → AgentFilePane mounts its
     // local-FS branch; the SSH "not supported" copy is asserted in a
     // dedicated test below. Confirm the diff stub unmounted.
     expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /inspector/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /inspector/i }));
     expect(screen.getByText("Files changed")).toBeInTheDocument();
   });
 
@@ -120,7 +120,9 @@ describe("AgentInspectorPane", () => {
     // style; the "Collapse pane" chevron is the right-aligned action.
     expect(container.querySelector("aside")).not.toBeNull();
     expect(screen.getByTitle("Collapse pane")).toBeInTheDocument();
-    expect(screen.queryByTitle("Show right pane")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show right pane" }),
+    ).not.toBeInTheDocument();
     // Inspector content (only rendered when the pane is expanded AND the
     // inspector tab is active) is visible.
     expect(screen.getByText("Files changed")).toBeInTheDocument();
@@ -131,16 +133,16 @@ describe("AgentInspectorPane", () => {
     // the chevron flips to "Show right pane"; inspector content is no
     // longer rendered because the body div is gone.
     expect(container.querySelector("aside")).toBeNull();
-    expect(screen.getByTitle("Show right pane")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show right pane" })).toBeInTheDocument();
     expect(screen.queryByTitle("Collapse pane")).not.toBeInTheDocument();
     expect(screen.queryByText("Files changed")).not.toBeInTheDocument();
-    // Icon-strip buttons (identified by title attribute) are present.
-    expect(screen.getByTitle("Inspector")).toBeInTheDocument();
-    expect(screen.getByTitle("Preview")).toBeInTheDocument();
-    expect(screen.getByTitle("Diff")).toBeInTheDocument();
-    expect(screen.getByTitle("Files")).toBeInTheDocument();
+    // Icon-strip buttons (identified by their accessible tab names) are present.
+    expect(screen.getByRole("tab", { name: "Inspector" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Preview" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Diff" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Files" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTitle("Show right pane"));
+    fireEvent.click(screen.getByRole("button", { name: "Show right pane" }));
     expect(container.querySelector("aside")).not.toBeNull();
     expect(screen.getByTitle("Collapse pane")).toBeInTheDocument();
   });
@@ -189,7 +191,7 @@ describe("AgentInspectorPane", () => {
     // Start collapsed on Inspector to prove BOTH effects (tab switch +
     // expand) fire from a single store flip.
     fireEvent.click(screen.getByTitle("Collapse pane"));
-    expect(screen.getByTitle("Show right pane")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show right pane" })).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
     act(() => {
@@ -207,7 +209,7 @@ describe("AgentInspectorPane", () => {
     ];
     render(<AgentInspectorPane conversationId="conv-pty" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /diff/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /diff/i }));
 
     // EmbeddedDiffPane is NOT mounted for pty conversations.
     expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
@@ -231,7 +233,7 @@ describe("AgentInspectorPane", () => {
     ];
     render(<AgentInspectorPane conversationId="conv-ssh" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
 
     expect(
       screen.getByText(/file browsing on ssh targets is not yet supported/i),

@@ -1,6 +1,7 @@
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
+import { Spinner } from "@/components/ui/Spinner";
 
 type StatusPillProps =
   | { status: Extract<AgentToolCall["status"], "running"> }
@@ -24,7 +25,7 @@ export function StatusPill(props: StatusPillProps) {
   if (props.status === "running") {
     return (
       <span className={`${PILL_BASE} bg-bg-primary text-text-muted`}>
-        <Loader2 size={10} className="animate-spin" />
+        <Spinner size={10} label="running" />
         running
       </span>
     );

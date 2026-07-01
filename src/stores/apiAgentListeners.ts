@@ -16,12 +16,21 @@ import {
 import { generateId } from "@/lib/storage";
 import { sendApiAgentMessage } from "@/lib/tauri";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
-import { notifyConversationDone } from "@/lib/notifications";
+import {
+  notifySessionComplete,
+  notifySessionError,
+  notifyApprovalNeeded,
+} from "@/lib/notifications";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
-import { useAgentTaskStore, requestConversationSave, failoverGuard } from "@/stores/agentTaskStore";
+import {
+  useAgentTaskStore,
+  requestConversationSave,
+  failoverGuard,
+  failTurn,
+} from "@/stores/agentTaskStore";
 import type {
   AgentConversation,
   AgentMessage,
@@ -75,16 +84,11 @@ function sendPromotedQueuedMessage(
   }));
   if (updated) requestConversationSave(conversationId);
 
-  void sendApiAgentMessage(conversationId, content, undefined).catch(() => {
-    let failed = false;
-    setState((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== conversationId) return c;
-        failed = true;
-        return { ...c, status: "failed", updatedAt: Date.now() };
-      }),
-    }));
-    if (failed) requestConversationSave(conversationId);
+  void sendApiAgentMessage(conversationId, content, undefined).catch((err) => {
+    // failTurn also clears the streaming placeholder we just inserted —
+    // previously this only flipped status to "failed", leaving the assistant
+    // bubble spinning forever.
+    failTurn(conversationId, assistantMsg.id, err);
   });
 }
 
@@ -260,8 +264,10 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       }, 0);
     }
     if (updated && getState().selectedConversationId !== id) {
-      const finishedTitle = updated.title;
-      void notifyConversationDone(finishedTitle);
+      // Route through the pref-gated helper so desktop notifications honor the
+      // user's notificationStore settings (enabled / onlyWhenUnfocused /
+      // onSessionComplete / per-session debounce) instead of bypassing them.
+      void notifySessionComplete(id, updated.title);
     }
   });
 
@@ -325,8 +331,8 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     }));
     if (updated) requestConversationSave(id);
     if (updated) {
-      const failedTitle = `Failed: ${updated.title}`;
-      void notifyConversationDone(failedTitle);
+      // Pref-gated error notification (honors onSessionError + debounce).
+      void notifySessionError(id, updated.title);
     }
   });
 
@@ -363,26 +369,28 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       // mid-flight, dropping the prompt and skipping the task wake-up is
       // the right behavior. agentApprovalStore.addPendingPermission also
       // fires the orchestrator `approval_needed` flip internally.
-      const exists = getState().conversations.some((c) => c.id === id);
-      if (!exists) return;
+      const conv = getState().conversations.find((c) => c.id === id);
+      if (!conv) return;
       useAgentApprovalStore.getState().addPendingPermission(id, event.payload);
+      // Long autonomous runs pause here for approval — ping the user (pref-gated
+      // + per-session debounced) so they know an unattended run needs them.
+      void notifyApprovalNeeded(id, conv.title);
     },
   );
 
   const pendingEditUnlisten = await listen<PendingEdit>(apiAgentPendingEditEvent(id), (event) => {
-    const exists = getState().conversations.some((c) => c.id === id);
-    if (!exists) return;
+    const conv = getState().conversations.find((c) => c.id === id);
+    if (!conv) return;
     useAgentApprovalStore.getState().addPendingEdit(id, event.payload);
+    void notifyApprovalNeeded(id, conv.title);
   });
 
   const planBlockUnlisten = await listen<{ items: AgentPlanItem[] }>(
     apiAgentPlanBlockEvent(id),
     (event) => {
+      // setPlan now requests its own conversation save (snapshotForPersist
+      // reads the plan back out of agentPlanStore), so no extra save here.
       useAgentPlanStore.getState().setPlan(id, event.payload.items);
-      // The plan reduction is part of the persisted conversation snapshot,
-      // so a save still has to schedule for that. snapshotForPersist reads
-      // the plan back out of agentPlanStore.
-      requestConversationSave(id);
     },
   );
 

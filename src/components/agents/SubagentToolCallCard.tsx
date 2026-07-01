@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bot } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
@@ -46,6 +46,12 @@ export function SubagentToolCallCard({
 
   const [expanded, setExpanded] = useState(verbosity === "verbose");
 
+  // Keep expand state in sync when the per-conversation verbosity control
+  // changes after the card has mounted.
+  useEffect(() => {
+    setExpanded(verbosity === "verbose");
+  }, [verbosity]);
+
   const body = toolCall.fullContent ?? toolCall.summary ?? "";
   const hasBody = body.trim().length > 0;
   const canToggle = verbosity !== "summary" && hasBody;
@@ -62,7 +68,7 @@ export function SubagentToolCallCard({
 
   const subHeader =
     verbosity === "verbose" && model ? (
-      <div className="px-2 pb-1 font-mono text-[10px] text-text-muted/80 truncate">
+      <div className="px-2 pb-1 font-mono text-[10px] text-text-faint truncate">
         model: {model}
       </div>
     ) : undefined;
@@ -81,8 +87,9 @@ export function SubagentToolCallCard({
         expanded: "Collapse summary",
         collapsed: "Expand summary",
       }}
+      isError={toolCall.status === "error"}
       footer={
-        <div className="px-2 pb-1 flex items-center gap-1 text-[9px] uppercase tracking-wide text-text-muted/70">
+        <div className="px-2 pb-1 flex items-center gap-1 text-[9px] uppercase tracking-wide text-text-faint">
           <Bot size={9} />
           <span>Sub-agent</span>
         </div>
@@ -94,7 +101,7 @@ export function SubagentToolCallCard({
           className="text-[11px] leading-relaxed"
         />
         {verbosity === "verbose" && toolCall.input && (
-          <pre className="mt-2 pt-2 border-t border-bg-border/50 text-[10px] font-mono whitespace-pre-wrap text-text-muted">
+          <pre className="mt-2 pt-2 border-t border-bg-border text-[10px] font-mono whitespace-pre-wrap text-text-muted">
             {(() => {
               try {
                 return JSON.stringify(JSON.parse(toolCall.input), null, 2);

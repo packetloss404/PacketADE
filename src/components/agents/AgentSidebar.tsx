@@ -4,7 +4,6 @@ import {
   Trash2,
   FolderOpen,
   Server,
-  Loader2,
   Circle,
   CheckCircle2,
   XCircle,
@@ -19,8 +18,15 @@ import {
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import type { AgentConversation } from "@/types/agent-conversation";
+import { Modal } from "@/components/ui/Modal";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { aggregateConversationCost, formatCostPill } from "@/lib/conversationCost";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { Spinner } from "@/components/ui/Spinner";
+import { Badge } from "@/components/ui/Badge";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Popover } from "@/components/ui/Popover";
+import { getAgentColor, getStatusColor } from "@/lib/agentColors";
 
 type StatusFilter = "all" | "active" | "done" | "archived";
 type GroupBy = "project" | "status" | "env";
@@ -50,28 +56,14 @@ function envGroupKey(conv: AgentConversation): "Local" | "SSH" | "Worktree" {
 function statusIcon(status: AgentConversation["status"]) {
   switch (status) {
     case "active":
-      return <Loader2 size={10} className="text-accent-green animate-spin shrink-0" />;
+      return <Spinner size={10} className={`${getStatusColor("active")} shrink-0`} />;
     case "idle":
-      return <Circle size={10} className="text-accent-green fill-accent-green shrink-0" />;
+      return <Circle size={10} className={`${getStatusColor("idle")} fill-accent-green shrink-0`} />;
     case "done":
-      return <CheckCircle2 size={10} className="text-text-muted shrink-0" />;
+      return <CheckCircle2 size={10} className={`${getStatusColor("done")} shrink-0`} />;
     case "failed":
-      return <XCircle size={10} className="text-accent-red shrink-0" />;
+      return <XCircle size={10} className={`${getStatusColor("failed")} shrink-0`} />;
   }
-}
-
-/** Color-coded agent name per the design (Claude=green, Codex=amber, etc.) */
-function agentColorClass(agent: string): string {
-  if (agent === "claude-code" || agent.startsWith("api-claude"))
-    return "text-accent-green";
-  if (agent === "codex" || agent.startsWith("api-openai"))
-    return "text-accent-amber";
-  if (agent === "gemini") return "text-accent-blue";
-  if (agent === "opencode" || agent === "api-ollama") return "text-accent-purple";
-  if (agent === "packetcode") return "text-accent-purple";
-  if (agent === "api-minimax" || agent === "api-minimax-api" || agent === "api-openrouter")
-    return "text-accent-blue";
-  return "text-text-secondary";
 }
 
 /** Compact model label — drops the date / build suffix when present. */
@@ -95,22 +87,16 @@ function isWorktreePath(path: string): boolean {
 function envBadge(conv: AgentConversation) {
   if (isWorktreePath(conv.projectPath)) {
     return (
-      <span
-        className="text-[8px] px-1 py-px bg-accent-amber/10 text-accent-amber rounded font-medium"
-        title="Worktree (Flight Deck attempt)"
-      >
-        WT
-      </span>
+      <Tooltip content="Worktree (Flight Deck attempt)">
+        <Badge tone="amber">WT</Badge>
+      </Tooltip>
     );
   }
   if (conv.sshTarget) {
     return (
-      <span
-        className="text-[8px] px-1 py-px bg-accent-purple/10 text-accent-purple rounded font-medium"
-        title={`SSH: ${conv.sshTarget.user}@${conv.sshTarget.host}`}
-      >
-        SSH
-      </span>
+      <Tooltip content={`SSH: ${conv.sshTarget.user}@${conv.sshTarget.host}`}>
+        <Badge tone="purple">SSH</Badge>
+      </Tooltip>
     );
   }
   return null;
@@ -170,11 +156,13 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   }, [renamingPath]);
 
   const [filter, setFilter] = useState<StatusFilter>("all");
+  const [pendingDelete, setPendingDelete] = useState<AgentConversation | null>(null);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const groupBtnRef = useRef<HTMLButtonElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
 
   const trimmedQuery = searchQuery.trim();
@@ -316,6 +304,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   }, [conversations]);
 
   const hasConversations = convsGrouped.size > 0;
+  const hasAnyConversations = conversations.length > 0;
 
   return (
     <div
@@ -325,32 +314,38 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       className="w-[240px] flex-shrink-0 flex flex-col bg-bg-secondary border-r border-bg-border overflow-hidden focus:outline-none"
     >
       {/* Sessions list header — matches design (label + count pill + search/plus icons) */}
-      <div className="px-2.5 py-2 flex items-center gap-1.5 border-b border-line-soft">
+      <div className="px-3 py-2 flex items-center gap-1.5 border-b border-line-soft">
         <span className="text-[11px] font-semibold text-text-primary">Sessions</span>
         {conversations.length > 0 && (
-          <span className="text-[9.5px] px-1.5 py-px rounded bg-bg-elevated text-text-muted">
-            {conversations.filter((c) => !c.archived).length}
-          </span>
+          <Badge>
+            {isSearching
+              ? searchStats.count
+              : filter === "archived"
+                ? counts.archived
+                : counts.all}
+          </Badge>
         )}
         <span className="flex-1" />
-        <button
-          onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-          className={`p-1 rounded transition-colors ${
-            searchOpen
-              ? "text-accent-green bg-accent-green/10"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-          title="Search conversations (/)"
-        >
-          <Search size={11} />
-        </button>
-        <button
-          onClick={onNewAgent}
-          title="New session (Ctrl+N)"
-          className="p-1 rounded text-text-muted hover:text-accent-green hover:bg-bg-hover transition-colors"
-        >
-          <Plus size={11} />
-        </button>
+        <Tooltip content="Search conversations (/)">
+          <button
+            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+            className={`p-1 rounded transition-colors ${
+              searchOpen
+                ? "text-accent-green bg-accent-green/10"
+                : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
+            }`}
+          >
+            <Search size={11} />
+          </button>
+        </Tooltip>
+        <Tooltip content="New session (Ctrl+N)">
+          <button
+            onClick={onNewAgent}
+            className="p-1 rounded text-text-muted hover:text-accent-green hover:bg-bg-hover transition-colors"
+          >
+            <Plus size={11} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Status filter (hidden when search is open) */}
@@ -367,8 +362,8 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                 onClick={() => setFilter(f)}
                 className={`flex-1 text-[10px] py-0.5 rounded transition-colors ${
                   isActive
-                    ? "bg-accent-green/15 text-accent-green"
-                    : "text-text-muted hover:text-text-secondary"
+                    ? "bg-accent-green/20 text-accent-green"
+                    : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
                 }`}
               >
                 {label}
@@ -420,53 +415,89 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       {/* Group-by dropdown */}
       {conversations.length > 0 && (
         <div className="relative px-3 pb-1.5">
-          <button
-            onClick={() => !isSearching && setGroupMenuOpen((v) => !v)}
-            onBlur={() => setTimeout(() => setGroupMenuOpen(false), 120)}
-            disabled={isSearching}
-            className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-              isSearching
-                ? "text-text-muted/40 cursor-not-allowed"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
-            title={isSearching ? "Grouping disabled while searching" : "Group conversations by"}
+          <Tooltip content={isSearching ? "Grouping disabled while searching" : "Group conversations by"}>
+            <button
+              ref={groupBtnRef}
+              onClick={() => !isSearching && setGroupMenuOpen((v) => !v)}
+              disabled={isSearching}
+              className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+                isSearching
+                  ? "text-text-faint cursor-not-allowed"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              <Layers size={10} />
+              <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
+              <ChevronDown size={11} className="opacity-70" />
+            </button>
+          </Tooltip>
+          <Popover
+            open={groupMenuOpen}
+            onClose={() => setGroupMenuOpen(false)}
+            anchorRef={groupBtnRef}
+            placement="bottom-start"
+            role="menu"
+            className="py-0.5 min-w-[120px]"
           >
-            <Layers size={10} />
-            <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
-            <ChevronDown size={11} className="opacity-70" />
-          </button>
-          {groupMenuOpen && (
-            <div className="absolute z-10 left-3 top-full mt-0.5 bg-bg-primary border border-bg-border rounded shadow-lg py-0.5 min-w-[120px]">
-              {(["project", "status", "env"] as GroupBy[]).map((g) => (
-                <button
-                  key={g}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setGroupBy(g);
-                    setGroupMenuOpen(false);
-                  }}
-                  className={`flex items-center w-full px-2 py-1 text-[10px] text-left transition-colors ${
-                    groupBy === g
-                      ? "text-accent-green bg-accent-green/10"
-                      : "text-text-secondary hover:bg-bg-hover"
-                  }`}
-                >
-                  {GROUP_BY_LABELS[g]}
-                </button>
-              ))}
-            </div>
-          )}
+            {(["project", "status", "env"] as GroupBy[]).map((g) => (
+              <button
+                key={g}
+                role="menuitem"
+                onClick={() => {
+                  setGroupBy(g);
+                  setGroupMenuOpen(false);
+                }}
+                className={`flex items-center w-full px-2 py-1 text-[10px] text-left transition-colors ${
+                  groupBy === g
+                    ? "text-accent-green bg-accent-green/10"
+                    : "text-text-secondary hover:bg-bg-hover"
+                }`}
+              >
+                {GROUP_BY_LABELS[g]}
+              </button>
+            ))}
+          </Popover>
         </div>
       )}
 
       {/* Conversations grouped by project / status / env */}
       <div className="flex-1 overflow-y-auto px-1">
         {!hasConversations ? (
-          <div className="flex flex-col items-center justify-center py-16 text-text-muted">
-            <Zap size={16} className="mb-2 opacity-30" />
-            <p className="text-[10px]">No agents yet</p>
-            <p className="text-[9px] mt-1 opacity-70">Start one with New Agent</p>
-          </div>
+          isSearching ? (
+            <EmptyState
+              className="py-16"
+              icon={<Search size={24} />}
+              title={`No matches for “${trimmedQuery}”`}
+              action={
+                <button
+                  onClick={closeSearch}
+                  className="text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+                >
+                  Clear search
+                </button>
+              }
+            />
+          ) : !hasAnyConversations ? (
+            <EmptyState
+              className="py-16"
+              icon={<Zap size={24} />}
+              title="No agents yet"
+              description="Start one with New Agent"
+            />
+          ) : filter === "archived" ? (
+            <EmptyState
+              className="py-16"
+              icon={<Archive size={24} />}
+              title="No archived sessions"
+            />
+          ) : (
+            <EmptyState
+              className="py-16"
+              icon={<Zap size={24} />}
+              title="No matching sessions"
+              description="Try a different filter"
+            />
+          )
         ) : (
           Array.from(convsGrouped.entries()).map(([key, convs]) => {
             const sshTarget = convs[0]?.sshTarget;
@@ -524,7 +555,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
             <div key={key}>
               {/* Group header — uppercase tracking, design-matched */}
               <div
-                className="px-2.5 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-y border-line-soft"
+                className="px-3 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-y border-line-soft"
                 title={canRename ? `${fullPathTitle} — right-click to rename` : fullPathTitle}
                 onContextMenu={(e) => {
                   if (!canRename) return;
@@ -550,14 +581,14 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                         setRenameValue("");
                       }
                     }}
-                    className="text-[9.5px] font-semibold bg-bg-primary border border-accent-green/40 rounded px-1 py-px text-text-primary uppercase tracking-wider focus:outline-none flex-1 min-w-0"
+                    className="text-[10px] font-semibold bg-bg-primary border border-accent-green/50 rounded px-1 py-px text-text-primary uppercase tracking-wide focus:outline-none flex-1 min-w-0"
                   />
                 ) : (
-                  <span className="text-[9.5px] font-semibold text-text-muted truncate uppercase tracking-wider">
+                  <span className="text-[10px] font-semibold text-text-secondary truncate uppercase tracking-wide">
                     {headerLabel}
                   </span>
                 )}
-                <span className="text-[9.5px] text-text-muted shrink-0 ml-auto">
+                <span className="text-[10px] text-text-muted shrink-0 ml-auto">
                   {convs.length}
                 </span>
               </div>
@@ -575,37 +606,39 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                 return (
                   <div
                     key={conv.id}
-                    className={`group relative border-l-2 ${
+                    className={`group relative border-l-2 transition-colors ${
                       isSelected
-                        ? "border-accent-green bg-bg-elevated"
+                        ? "border-accent-purple bg-accent-purple/15"
                         : "border-transparent"
                     } border-b border-line-soft`}
                   >
                     <button
                       onClick={() => onSelect(conv.id)}
                       title={conv.title}
-                      className="flex flex-col w-full px-2.5 py-2 text-left gap-1 hover:bg-bg-hover/50 transition-colors"
+                      className={`flex flex-col w-full px-3 py-2 text-left gap-1 transition-colors ${
+                        isSelected ? "" : "hover:bg-bg-hover"
+                      }`}
                     >
                       <div className="flex items-center gap-1.5">
                         <span>{statusIcon(conv.status)}</span>
                         <span
-                          className={`text-[11px] font-semibold ${agentColorClass(conv.agent)}`}
+                          className={`text-[11px] font-semibold ${getAgentColor(conv.agent).text}`}
                         >
                           {agentLabel(conv.agent)}
                         </span>
                         {conv.model && (
-                          <span className="font-mono text-[9.5px] text-text-muted truncate">
+                          <span className="font-mono text-[9px] text-text-muted truncate">
                             {shortModel(conv.model)}
                           </span>
                         )}
                         {envBadge(conv)}
                         <span className="flex-1" />
-                        <span className="text-[9.5px] text-text-muted shrink-0">
+                        <span className="text-[10px] text-text-muted shrink-0">
                           {formatRelativeTime(conv.updatedAt)}
                         </span>
                       </div>
                       <div
-                        className={`text-[12px] leading-tight truncate ${
+                        className={`text-xs leading-tight truncate ${
                           isSelected
                             ? "text-text-primary font-medium"
                             : "text-text-secondary"
@@ -613,7 +646,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                       >
                         {snippet ?? titleText}
                       </div>
-                      <div className="flex items-center gap-1.5 text-[9.5px] text-text-muted">
+                      <div className="flex items-center gap-1.5 text-[9px] text-text-muted">
                         <GitBranch size={9} />
                         <span
                           className="font-mono text-text-secondary truncate max-w-[90px]"
@@ -627,12 +660,11 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                         </span>
                         <span className="flex-1" />
                         {costLabel && (
-                          <span
-                            className="font-mono"
-                            title={`${totalTokens.toLocaleString()} tokens`}
-                          >
-                            {costLabel}
-                          </span>
+                          <Tooltip content={`${totalTokens.toLocaleString()} tokens`}>
+                            <span className="font-mono">
+                              {costLabel}
+                            </span>
+                          </Tooltip>
                         )}
                       </div>
                     </button>
@@ -642,14 +674,14 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                         if (conv.archived) unarchiveConversation(conv.id);
                         else archiveConversation(conv.id);
                       }}
-                      className="absolute right-6 top-1.5 p-0.5 text-text-muted hover:text-accent-green opacity-0 group-hover:opacity-100 transition-opacity rounded"
+                      className="absolute right-6 top-1.5 p-0.5 text-text-muted hover:text-accent-green opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
                       title={conv.archived ? "Unarchive" : "Archive"}
                     >
                       {conv.archived ? <ArchiveRestore size={10} /> : <Archive size={10} />}
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                      className="absolute right-1 top-1.5 p-0.5 text-text-muted hover:text-accent-red opacity-0 group-hover:opacity-100 transition-opacity rounded"
+                      onClick={(e) => { e.stopPropagation(); setPendingDelete(conv); }}
+                      className="absolute right-1 top-1.5 p-0.5 text-text-muted hover:text-accent-red opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
                       title="Delete"
                     >
                       <Trash2 size={10} />
@@ -665,6 +697,47 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
 
       {/* "New session" footer — primary CTA */}
       <SidebarFooter onNewAgent={onNewAgent} />
+
+      {pendingDelete && (
+        <Modal
+          title="Delete session?"
+          width="w-[400px]"
+          closeOnEscape
+          onClose={() => setPendingDelete(null)}
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setPendingDelete(null)}
+                className="px-3 py-1.5 rounded text-[11px] text-text-secondary hover:bg-bg-hover transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteConversation(pendingDelete.id);
+                  setPendingDelete(null);
+                }}
+                className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-red/15 text-accent-red hover:bg-accent-red/25 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          }
+        >
+          <div className="px-5 py-4">
+            <p className="text-xs text-text-secondary">
+              Permanently delete{" "}
+              <span className="text-text-primary">
+                “{pendingDelete.title || "(untitled)"}”
+              </span>
+              ? This closes the session and removes its history.
+            </p>
+            <p className="text-[10px] text-text-muted mt-2">
+              This can’t be undone.
+            </p>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

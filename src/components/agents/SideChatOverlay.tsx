@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Copy, MessageSquarePlus, MessageSquareShare, Send, X } from "lucide-react";
 import { useSideChatStore } from "@/stores/sideChatStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { Spinner } from "@/components/ui/Spinner";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 /**
  * Floating bottom-right side chat panel. Visually distinct from the main
@@ -90,7 +93,7 @@ export function SideChatOverlay() {
 
   return (
     <div
-      className="fixed bottom-4 right-4 w-[320px] h-[400px] bg-bg-secondary border border-accent-purple/30 rounded-lg shadow-2xl flex flex-col z-50 text-[11px]"
+      className="fixed bottom-[34px] right-4 w-[320px] h-[400px] bg-bg-secondary border border-accent-purple/30 rounded shadow-2xl flex flex-col z-50 text-[11px] origin-bottom-right animate-[popoverIn_150ms_ease-out] motion-reduce:animate-none"
       role="dialog"
       aria-label="Side chat"
     >
@@ -110,47 +113,56 @@ export function SideChatOverlay() {
       </div>
 
       {/* Answer area */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 text-text-secondary">
+      <div
+        className="flex-1 overflow-y-auto px-3 py-2 text-text-secondary"
+        aria-live="polite"
+        aria-busy={isStreaming}
+      >
         {!answer && !isStreaming && (
           <p className="text-text-muted italic">
             Ask a quick question about the current conversation context. Answers stay here and don't pollute the main thread.
           </p>
         )}
         {isStreaming && answer.length === 0 && (
-          <p className="text-text-muted">Thinking...</p>
+          <div className="flex items-center gap-1.5 text-text-muted">
+            <Spinner size={12} className="text-accent-purple" />
+            Thinking…
+          </div>
         )}
         {answer && (
-          <p className="whitespace-pre-wrap leading-relaxed">
-            {answer}
+          <div className="leading-relaxed">
+            <MarkdownRenderer content={answer} className="text-[11px]" />
             {isStreaming && (
               <span
                 className="inline-block w-1.5 h-3 bg-accent-purple/70 animate-pulse ml-0.5 align-baseline"
                 aria-hidden="true"
               />
             )}
-          </p>
+          </div>
         )}
         {canPromote && (
           <div className="mt-2 pt-2 border-t border-bg-border flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleInsertIntoChat}
-              disabled={!hasConversation}
-              title={hasConversation ? "Insert this Q+A as context into the active main thread" : "Open a conversation in the Agents tab first"}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-purple/15 text-accent-purple hover:bg-accent-purple/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <MessageSquareShare size={12} />
-              <span>Insert into chat</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleCopyAnswer}
-              title="Copy answer to clipboard"
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-bg-primary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
-            >
-              {copied ? <Check size={12} className="text-accent-green" /> : <Copy size={12} />}
-              <span>{copied ? "Copied" : "Copy answer"}</span>
-            </button>
+            <Tooltip content={hasConversation ? "Insert this Q+A as context into the active main thread" : "Open a conversation in the Agents tab first"}>
+              <button
+                type="button"
+                onClick={handleInsertIntoChat}
+                disabled={!hasConversation}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-purple/15 text-accent-purple hover:bg-accent-purple/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <MessageSquareShare size={12} />
+                <span>Insert into chat</span>
+              </button>
+            </Tooltip>
+            <Tooltip content="Copy answer to clipboard">
+              <button
+                type="button"
+                onClick={handleCopyAnswer}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-bg-primary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+              >
+                {copied ? <Check size={12} className="text-accent-green" /> : <Copy size={12} />}
+                <span>{copied ? "Copied" : "Copy answer"}</span>
+              </button>
+            </Tooltip>
           </div>
         )}
       </div>
@@ -164,7 +176,7 @@ export function SideChatOverlay() {
           onKeyDown={handleKeyDown}
           placeholder="Ask anything..."
           rows={2}
-          className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder-text-muted resize-none focus:outline-none focus:border-accent-purple/50"
+          className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:border-accent-purple/50"
           disabled={isStreaming}
         />
         <button
