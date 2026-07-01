@@ -1,0 +1,5 @@
+# This repo has mixed historical line endings. Preserve each file's existing
+# endings so neither git nor tooling silently flips CRLF<->LF (which produces
+# whole-file diff noise). Run a deliberate `git add --renormalize` if you ever
+# want to converge the repo to LF.
+* -text
