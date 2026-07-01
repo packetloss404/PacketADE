@@ -44,11 +44,13 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     agentCli: "api-openai-codex",
     name: "OpenAI (ChatGPT Plus/Pro)",
     needsKey: false,
+    // NOTE: gpt-5-codex is NOT available on a ChatGPT (Plus/Pro) account —
+    // Codex returns 400 "model is not supported when using Codex with a
+    // ChatGPT account". It's API-key-only, so it must not appear here. The
+    // autonomy win for this provider comes from the harness + higher iteration
+    // cap, not the model.
     models: [
-      // gpt-5-codex is the agentic-tuned model — it runs the full task
-      // autonomously per turn (far fewer "Continue" stops) so it leads.
-      { label: "GPT-5 Codex (default)", value: "gpt-5-codex" },
-      { label: "GPT-5.5", value: "gpt-5.5" },
+      { label: "GPT-5.5 (default)", value: "gpt-5.5" },
       { label: "GPT-5", value: "gpt-5" },
       { label: "o4-mini", value: "o4-mini" },
     ],
