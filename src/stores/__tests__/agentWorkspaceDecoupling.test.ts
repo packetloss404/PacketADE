@@ -129,7 +129,12 @@ describe("agent/workspace store decoupling", () => {
 
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation("api-openai", "D:/projects/example", "gpt-4.1", "Build the thing");
+      .createApiConversation({
+        agent: "api-openai",
+        projectPath: "D:/projects/example",
+        model: "gpt-4.1",
+        initialMessage: "Build the thing",
+      });
 
     const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
 
@@ -161,15 +166,14 @@ describe("agent/workspace store decoupling", () => {
 
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation(
-        "api-openai-codex",
-        "/srv/packetade",
-        "gpt-5-codex",
-        "Build remotely",
-        undefined,
-        false,
-        false,
-        {
+      .createApiConversation({
+        agent: "api-openai-codex",
+        projectPath: "/srv/packetade",
+        model: "gpt-5-codex",
+        initialMessage: "Build remotely",
+        thinkingEnabled: false,
+        planMode: false,
+        sshTarget: {
           serverId: "srv-123",
           name: "Staging",
           host: "example.com",
@@ -180,7 +184,7 @@ describe("agent/workspace store decoupling", () => {
           authMethod: "key",
           hostFingerprint: "SHA256:abc123",
         },
-      );
+      });
 
     const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
 
@@ -234,20 +238,18 @@ describe("agent/workspace store decoupling", () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation(
-        "api-openai",
-        "D:/projects/example",
-        "gpt-4.1",
-        "Build with memory",
-        "You are focused.",
-        false,
-        false,
-        null,
-        undefined,
-        false,
-        undefined,
-        true,
-      );
+      .createApiConversation({
+        agent: "api-openai",
+        projectPath: "D:/projects/example",
+        model: "gpt-4.1",
+        initialMessage: "Build with memory",
+        systemPromptOverride: "You are focused.",
+        thinkingEnabled: false,
+        planMode: false,
+        sshTarget: null,
+        skipBackendStart: false,
+        memoryContextEnabled: true,
+      });
 
     expect(composeMemoryBriefMock).toHaveBeenCalledWith({
       kind: "local",
@@ -264,15 +266,15 @@ describe("agent/workspace store decoupling", () => {
 
   it("passes SSH scope to memory briefs without local path probing", async () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
-    await useAgentTaskStore.getState().createApiConversation(
-      "api-openai-codex",
-      "/srv/app",
-      "gpt-5-codex",
-      "Build remotely with memory enabled",
-      null,
-      false,
-      false,
-      {
+    await useAgentTaskStore.getState().createApiConversation({
+      agent: "api-openai-codex",
+      projectPath: "/srv/app",
+      model: "gpt-5-codex",
+      initialMessage: "Build remotely with memory enabled",
+      systemPromptOverride: null,
+      thinkingEnabled: false,
+      planMode: false,
+      sshTarget: {
         serverId: "server-1",
         name: "Build host",
         host: "example.com",
@@ -283,11 +285,9 @@ describe("agent/workspace store decoupling", () => {
         authMethod: "key",
         hostFingerprint: "SHA256:test",
       },
-      undefined,
-      false,
-      undefined,
-      true,
-    );
+      skipBackendStart: false,
+      memoryContextEnabled: true,
+    });
 
     expect(loadAgentsMdMock).not.toHaveBeenCalled();
     expect(composeMemoryBriefMock).toHaveBeenCalledWith({
@@ -303,15 +303,15 @@ describe("agent/workspace store decoupling", () => {
 
     const id = await useAgentTaskStore
       .getState()
-      .createApiConversation(
-        "api-claude-oauth",
-        "/srv/app",
-        "claude-sonnet-4.5",
-        "Work on the remote repo",
-        null,
-        false,
-        false,
-        {
+      .createApiConversation({
+        agent: "api-claude-oauth",
+        projectPath: "/srv/app",
+        model: "claude-sonnet-4.5",
+        initialMessage: "Work on the remote repo",
+        systemPromptOverride: null,
+        thinkingEnabled: false,
+        planMode: false,
+        sshTarget: {
           serverId: "server-1",
           name: "Build host",
           host: "example.com",
@@ -322,7 +322,7 @@ describe("agent/workspace store decoupling", () => {
           authMethod: "key",
           hostFingerprint: "SHA256:test",
         },
-      );
+      });
 
     const conversation = useAgentTaskStore.getState().conversations.find((c) => c.id === id);
 
@@ -421,18 +421,17 @@ describe("agent/workspace store decoupling", () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     await useAgentTaskStore
       .getState()
-      .createApiConversation(
-        "api-openai",
-        "D:/projects/example",
-        "gpt-4o",
-        "Build the thing",
-        undefined,
-        false,
-        false,
-        null,
-        "conv-no-failover",
-        true,
-      );
+      .createApiConversation({
+        agent: "api-openai",
+        projectPath: "D:/projects/example",
+        model: "gpt-4o",
+        initialMessage: "Build the thing",
+        thinkingEnabled: false,
+        planMode: false,
+        sshTarget: null,
+        explicitId: "conv-no-failover",
+        skipBackendStart: true,
+      });
 
     listeners.get("api-agent:error:conv-no-failover")?.({
       payload: { message: "429 rate limit exceeded" },
@@ -456,18 +455,17 @@ describe("agent/workspace store decoupling", () => {
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
     await useAgentTaskStore
       .getState()
-      .createApiConversation(
-        "api-openai",
-        "D:/projects/example",
-        "gpt-4o",
-        "Build the thing",
-        undefined,
-        false,
-        false,
-        null,
-        "conv-failover",
-        true,
-      );
+      .createApiConversation({
+        agent: "api-openai",
+        projectPath: "D:/projects/example",
+        model: "gpt-4o",
+        initialMessage: "Build the thing",
+        thinkingEnabled: false,
+        planMode: false,
+        sshTarget: null,
+        explicitId: "conv-failover",
+        skipBackendStart: true,
+      });
 
     listeners.get("api-agent:error:conv-failover")?.({
       payload: { message: "429 rate limit exceeded" },

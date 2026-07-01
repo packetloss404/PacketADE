@@ -254,24 +254,21 @@ export function AgentsView() {
           useServerStore.getState().updateServer(sshTarget.serverId, {
             lastConnectedAt: Date.now(),
           });
-          convId = await createApiConversation(
-            selectedAgent,
-            sshProjectPath,
+          convId = await createApiConversation({
+            agent: selectedAgent,
+            projectPath: sshProjectPath,
             model,
             initialMessage,
-            systemPrompt,
-            undefined,
+            systemPromptOverride: systemPrompt,
             planMode,
             sshTarget,
-            undefined,
-            false,
+            skipBackendStart: false,
             allowedTools,
             memoryContextEnabled,
-            att,
-            undefined,
-            launchPermissionMode,
-            launchApproveWrites,
-          );
+            attachments: att,
+            permissionMode: launchPermissionMode,
+            approveWrites: launchApproveWrites,
+          });
         } else {
           useProjectHistoryStore.getState().recordOpen(selectedRepo);
 
@@ -301,24 +298,22 @@ export function AgentsView() {
             }
           }
 
-          convId = await createApiConversation(
-            selectedAgent,
-            effectiveProjectPath,
+          convId = await createApiConversation({
+            agent: selectedAgent,
+            projectPath: effectiveProjectPath,
             model,
             initialMessage,
-            systemPrompt,
-            undefined,
+            systemPromptOverride: systemPrompt,
             planMode,
-            null,
-            explicitConvId,
-            false,
+            sshTarget: null,
+            explicitId: explicitConvId,
+            skipBackendStart: false,
             allowedTools,
             memoryContextEnabled,
-            att,
-            undefined,
-            launchPermissionMode,
-            launchApproveWrites,
-          );
+            attachments: att,
+            permissionMode: launchPermissionMode,
+            approveWrites: launchApproveWrites,
+          });
         }
         // F10: enter the spec stage so SpecPanel renders criteria as the
         // model emits them. The model is instructed to bullet-and-stop.

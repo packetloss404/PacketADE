@@ -10,7 +10,11 @@ import {
   type AttemptTargetSpec,
 } from "@/lib/tauri";
 import { useFlightStore } from "@/stores/flightStore";
-import { useAgentTaskStore, type AgentCli } from "@/stores/agentTaskStore";
+import {
+  useAgentTaskStore,
+  type AgentCli,
+  type CreateApiConversationOptions,
+} from "@/stores/agentTaskStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useGitHubStore } from "@/stores/githubStore";
 import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
@@ -460,7 +464,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // we pass `skipBackendStart=true`.
     const createApi = useAgentTaskStore.getState().createApiConversation;
     for (const a of attempts) {
-      let sshTarget: Parameters<typeof createApi>[7] = null;
+      let sshTarget: CreateApiConversationOptions["sshTarget"] = null;
       if (a.target.kind === "ssh") {
         const server = useServerStore.getState().getServer(a.target.targetId);
         if (server) {
@@ -479,20 +483,18 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       }
       const projectPath = a.target.kind === "local" ? a.target.worktreePath : a.target.worktreePath;
       try {
-        await createApi(
-          a.agentConfigId as AgentCli,
+        await createApi({
+          agent: a.agentConfigId as AgentCli,
           projectPath,
-          a.model,
-          prompt,
-          null,
-          false,
-          false,
+          model: a.model,
+          initialMessage: prompt,
+          systemPromptOverride: null,
+          thinkingEnabled: false,
+          planMode: false,
           sshTarget,
-          a.sessionId, // explicitId — match backend session id
-          true, // skipBackendStart — backend already started
-          undefined, // allowedTools
-          undefined, // memoryContextEnabled
-        );
+          explicitId: a.sessionId, // match backend session id
+          skipBackendStart: true, // backend already started
+        });
       } catch (err) {
         console.warn("Failed to attach attempt listeners:", a.id, err);
       }

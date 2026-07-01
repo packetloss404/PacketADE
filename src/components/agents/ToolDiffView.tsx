@@ -1,10 +1,17 @@
 import { useMemo, useState } from "react";
-import * as Diff from "diff";
 import { Plus, Check, X } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFileDisk, type DiskState } from "@/components/agents/hooks/useFileDisk";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
+import {
+  buildDiffRows,
+  DiffRowView,
+  languageForPath,
+  rowAnchor,
+  MAX_HIGHLIGHT_ROWS,
+  type DiffRow,
+} from "@/components/agents/diff/DiffRows";
 
 interface ToolDiffViewProps {
   projectPath: string;
@@ -20,62 +27,6 @@ interface ToolDiffViewProps {
 }
 
 type LoadState = DiskState;
-
-/** B1: per-line diff row computed from `Diff.diffLines` parts with running
- * old/new line counters. `side` is the file the line lives in: removed
- * lines anchor to the OLD file; added + context lines anchor to the NEW
- * file. The displayed `line` is the relevant counter for that side. */
-interface DiffRow {
-  /** Stable id within this diff for React key stability. */
-  key: string;
-  marker: "+" | "-" | " ";
-  text: string;
-  side: "old" | "new";
-  line: number;
-}
-
-function buildRows(parts: Diff.Change[]): DiffRow[] {
-  const rows: DiffRow[] = [];
-  let oldLine = 1;
-  let newLine = 1;
-  let counter = 0;
-  for (const part of parts) {
-    const lines = part.value.split("\n");
-    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-    for (const line of lines) {
-      if (part.added) {
-        rows.push({
-          key: `r${counter++}`,
-          marker: "+",
-          text: line,
-          side: "new",
-          line: newLine,
-        });
-        newLine++;
-      } else if (part.removed) {
-        rows.push({
-          key: `r${counter++}`,
-          marker: "-",
-          text: line,
-          side: "old",
-          line: oldLine,
-        });
-        oldLine++;
-      } else {
-        rows.push({
-          key: `r${counter++}`,
-          marker: " ",
-          text: line,
-          side: "new",
-          line: newLine,
-        });
-        oldLine++;
-        newLine++;
-      }
-    }
-  }
-  return rows;
-}
 
 export function ToolDiffView({
   projectPath,
@@ -98,22 +49,24 @@ export function ToolDiffView({
     return diskState;
   }, [oldContent, diskState]);
 
-  const diffParts = useMemo(() => {
+  const rows = useMemo(() => {
     if (state.kind !== "existing") return null;
-    return Diff.diffLines(state.oldContent, newContent);
+    return buildDiffRows(state.oldContent, newContent);
   }, [state, newContent]);
 
-  const rows = useMemo(() => (diffParts ? buildRows(diffParts) : null), [
-    diffParts,
-  ]);
+  const language = useMemo(() => languageForPath(filePath), [filePath]);
+  // Disable per-line highlighting on very large whole-file diffs to stay
+  // responsive; the diff still renders (gutter + tint) as plain monospace.
+  const rowLanguage =
+    rows && rows.length > MAX_HIGHLIGHT_ROWS ? undefined : language;
 
   const counts = useMemo(() => {
     if (!rows) return { added: 0, removed: 0 };
     let added = 0;
     let removed = 0;
     for (const r of rows) {
-      if (r.marker === "+") added++;
-      else if (r.marker === "-") removed++;
+      if (r.kind === "add") added++;
+      else if (r.kind === "del") removed++;
     }
     return { added, removed };
   }, [rows]);
@@ -177,11 +130,12 @@ export function ToolDiffView({
           -{counts.removed}
         </span>
       </div>
-      <div className="bg-bg-primary text-[11px] font-mono">
+      <div className="bg-bg-primary overflow-x-auto">
         {rows?.map((row) => (
-          <DiffRowView
+          <CommentableRow
             key={row.key}
             row={row}
+            language={rowLanguage}
             filePath={filePath}
             conversationId={conversationId}
           />
@@ -192,51 +146,39 @@ export function ToolDiffView({
 }
 
 /**
- * One diff line with hover-`+` to attach a Codex-style comment. The `+`
- * appears on hover (group-hover); clicking opens a single-line textarea
- * inline. Enter submits, Esc cancels. Submitted comments queue on the
- * conversation and are folded into the next user turn by sendMessage.
+ * One shared diff row plus the B1 hover-`+` comment affordance. The `+`
+ * appears on hover (group-hover); clicking opens a single-line composer
+ * inline below the row. Enter submits, Esc cancels. Submitted comments queue
+ * on the conversation and are folded into the next user turn by sendMessage.
  *
- * Renders the read-only diff line when `conversationId` is omitted (e.g.
- * tests / preview surfaces that shouldn't accept comments).
+ * Renders the read-only row when `conversationId` is omitted (e.g. tests /
+ * preview surfaces that shouldn't accept comments).
  */
-function DiffRowView({
+function CommentableRow({
   row,
+  language,
   filePath,
   conversationId,
 }: {
   row: DiffRow;
+  language?: string;
   filePath: string;
   conversationId?: string;
 }) {
   const addDiffComment = useAgentTaskStore((s) => s.addDiffComment);
-  const queued = useAgentTaskStore(
-    (s) =>
-      conversationId
-        ? s.conversations.find((c) => c.id === conversationId)
-            ?.pendingDiffComments
-        : undefined,
+  const queued = useAgentTaskStore((s) =>
+    conversationId
+      ? s.conversations.find((c) => c.id === conversationId)
+          ?.pendingDiffComments
+      : undefined,
   );
 
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState("");
 
-  // Tint only the row background by add/remove; keep the code text at the
-  // normal foreground and color just the marker glyph (standard diff reading).
-  const rowClass =
-    row.marker === "+"
-      ? "bg-accent-green/10"
-      : row.marker === "-"
-        ? "bg-accent-red/10"
-        : "";
-  const markerClass =
-    row.marker === "+"
-      ? "text-accent-green"
-      : row.marker === "-"
-        ? "text-accent-red"
-        : "text-text-faint";
+  const anchor = rowAnchor(row);
   const hasComment = !!queued?.some(
-    (c) => c.path === filePath && c.line === row.line && c.side === row.side,
+    (c) => c.path === filePath && c.line === anchor.line && c.side === anchor.side,
   );
 
   function submit() {
@@ -248,8 +190,8 @@ function DiffRowView({
     }
     addDiffComment(conversationId, {
       path: filePath,
-      line: row.line,
-      side: row.side,
+      line: anchor.line,
+      side: anchor.side,
       text: t,
     });
     setDraft("");
@@ -258,36 +200,30 @@ function DiffRowView({
 
   return (
     <>
-      <div
-        className={`group relative flex items-start whitespace-pre-wrap break-words text-text-primary ${rowClass}`}
-      >
-        <span className={`inline-block w-5 text-center select-none ${markerClass}`}>
-          {row.marker}
-        </span>
-        <span className="flex-1 pr-12">{row.text}</span>
+      <DiffRowView row={row} language={language}>
         {conversationId && !composerOpen && (
           <button
             type="button"
             onClick={() => setComposerOpen(true)}
-            className={`absolute right-1 top-0 flex items-center justify-center w-5 h-5 rounded text-[10px] transition-opacity ${
+            className={`sticky right-1 ml-auto self-start flex items-center justify-center w-5 h-5 rounded text-[10px] transition-opacity ${
               hasComment
                 ? "opacity-100 bg-accent-blue/20 text-accent-blue"
                 : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 bg-bg-secondary border border-bg-border text-text-muted hover:text-accent-blue hover:border-accent-blue/40"
             }`}
             title={
               hasComment
-                ? `Comment queued on ${filePath}:${row.line}`
-                : `Comment on ${filePath}:${row.line}`
+                ? `Comment queued on ${filePath}:${anchor.line}`
+                : `Comment on ${filePath}:${anchor.line}`
             }
           >
             <Plus size={10} />
           </button>
         )}
-      </div>
+      </DiffRowView>
       {composerOpen && (
-        <div className="flex items-center gap-1 px-2 py-1 bg-bg-secondary border-y border-accent-blue/30">
+        <div className="flex items-center gap-1 min-w-full px-2 py-1 bg-bg-secondary border-y border-accent-blue/30">
           <span className="text-[10px] text-text-muted shrink-0 font-mono">
-            {filePath}:{row.line} —
+            {filePath}:{anchor.line} —
           </span>
           <input
             type="text"

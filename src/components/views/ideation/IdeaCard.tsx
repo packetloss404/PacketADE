@@ -21,20 +21,19 @@ export function IdeaCard({ idea, isSelected, onSelect }: IdeaCardProps) {
     const workspace = useWorkspaceStore.getState().getActiveWorkspace();
     if (!workspace) return;
     const agent = "api-claude";
-    const id = await useAgentTaskStore.getState().createApiConversation(
+    const id = await useAgentTaskStore.getState().createApiConversation({
       agent,
-      workspace.projectPath,
-      getDefaultModel(agent),
-      `Tell me more about this idea: ${idea.title}\n\n${idea.description}`,
-      SCOUT_SYSTEM_PROMPT,
-      false,
-      false,
-      null,
-      undefined,
-      false,
-      SCOUT_ALLOWED_TOOLS,
-      SCOUT_MEMORY_CONTEXT_DEFAULT,
-    );
+      projectPath: workspace.projectPath,
+      model: getDefaultModel(agent),
+      initialMessage: `Tell me more about this idea: ${idea.title}\n\n${idea.description}`,
+      systemPromptOverride: SCOUT_SYSTEM_PROMPT,
+      thinkingEnabled: false,
+      planMode: false,
+      sshTarget: null,
+      skipBackendStart: false,
+      allowedTools: SCOUT_ALLOWED_TOOLS,
+      memoryContextEnabled: SCOUT_MEMORY_CONTEXT_DEFAULT,
+    });
     useAgentTaskStore.getState().selectConversation(id);
     useAppStore.getState().setActiveView("agents");
   }

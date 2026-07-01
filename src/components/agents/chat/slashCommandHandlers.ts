@@ -89,24 +89,22 @@ export const slashCommandHandlers: Record<
     const model = conversation.model;
     void (async () => {
       try {
-        const newId = await createApiConversation(
-          conversation.agent,
-          conversation.projectPath,
+        const newId = await createApiConversation({
+          agent: conversation.agent,
+          projectPath: conversation.projectPath,
           model,
-          "",
-          conversation.systemPromptOverride ?? null,
-          undefined,
-          conversation.planMode ?? false,
-          null,
-          undefined,
-          false,
-          conversation.allowedTools ?? null,
-          conversation.memoryContextEnabled ?? false,
-          null,
-          conversation.enabledMcpServerIds ?? null,
-          conversation.permissionMode,
-          conversation.approveWrites,
-        );
+          initialMessage: "",
+          systemPromptOverride: conversation.systemPromptOverride ?? null,
+          planMode: conversation.planMode ?? false,
+          sshTarget: null,
+          skipBackendStart: false,
+          allowedTools: conversation.allowedTools ?? null,
+          memoryContextEnabled: conversation.memoryContextEnabled ?? false,
+          attachments: null,
+          enabledMcpServerIds: conversation.enabledMcpServerIds ?? null,
+          permissionMode: conversation.permissionMode,
+          approveWrites: conversation.approveWrites,
+        });
         selectConversation(newId);
       } catch (e) {
         console.warn("Failed to start new conversation:", e);
@@ -213,20 +211,18 @@ export const slashCommandHandlers: Record<
           );
           return;
         }
-        const newId = await createApiConversation(
-          conversation.agent,
-          conversation.projectPath,
+        const newId = await createApiConversation({
+          agent: conversation.agent,
+          projectPath: conversation.projectPath,
           model,
-          prompt,
-          reviewerProfile?.systemPrompt ?? null,
-          undefined,
-          true, // planMode — reviewer is read-only
-          null,
-          undefined,
-          false,
-          reviewerProfile?.allowedTools ?? null,
-          false,
-        );
+          initialMessage: prompt,
+          systemPromptOverride: reviewerProfile?.systemPrompt ?? null,
+          planMode: true, // reviewer is read-only
+          sshTarget: null,
+          skipBackendStart: false,
+          allowedTools: reviewerProfile?.allowedTools ?? null,
+          memoryContextEnabled: false,
+        });
         selectConversation(newId);
       } catch (e) {
         console.warn("/review failed:", e);

@@ -12,10 +12,15 @@ export function useScrollState(
   messages: AgentMessage[] | undefined,
 ) {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const messagesContentRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  // Mirror of isAtBottom readable inside the ResizeObserver callback without
+  // resubscribing it on every scroll.
+  const isAtBottomRef = useRef(true);
+  isAtBottomRef.current = isAtBottom;
 
   useEffect(() => {
     const el = messagesContainerRef.current;
@@ -28,6 +33,24 @@ export function useScrollState(
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Keep the view pinned to the bottom while the user is at the bottom even
+  // when the content height changes asynchronously (lazy-mounted rows growing
+  // from their placeholder height, images loading, markdown reflow). Without
+  // this, mounting virtualized rows just above the viewport would drift us off
+  // the bottom. Only re-pins when already at bottom, so it never fights an
+  // intentional scroll-up.
+  useEffect(() => {
+    const content = messagesContentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (isAtBottomRef.current) {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      }
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
   }, []);
 
   // Reset on conversation switch. Intentionally only depends on conversationId.
@@ -60,6 +83,7 @@ export function useScrollState(
 
   return {
     messagesContainerRef,
+    messagesContentRef,
     messagesEndRef,
     isAtBottom,
     unreadCount,

@@ -1,8 +1,11 @@
+import { useState } from "react";
 import {
   Brain,
   Compass,
+  Copy,
   Download,
   FileCheck2,
+  FileJson,
   MoreVertical,
   PanelRightOpen,
   RotateCcw,
@@ -14,6 +17,10 @@ import { AgentModeChip } from "../AgentModeChip";
 import { ContextUsageRing } from "../ContextUsageRing";
 import { ContinueInMenu } from "../ContinueInMenu";
 import { DiffPaneTrigger } from "../DiffPaneTrigger";
+import {
+  exportConversationJson,
+  copyTranscriptToClipboard,
+} from "./handleExport";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { API_PROVIDERS } from "@/lib/api-models";
@@ -64,6 +71,14 @@ export function HeaderActions({
     providerInfo?.models.find((m) => m.value === currentModelValue)?.label ??
     currentModelValue ??
     "Model";
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+  const handleCopyTranscript = async () => {
+    const ok = await copyTranscriptToClipboard(conversation);
+    setCopyState(ok ? "copied" : "failed");
+    window.setTimeout(() => setCopyState("idle"), 1800);
+  };
 
   return (
     <div className="flex items-center gap-1 shrink-0">
@@ -234,6 +249,15 @@ export function HeaderActions({
               Approve
             </button>
           </Tooltip>
+          {copyState !== "idle" && (
+            <span
+              className={`text-[10px] ${
+                copyState === "copied" ? "text-accent-green" : "text-accent-red"
+              }`}
+            >
+              {copyState === "copied" ? "Copied" : "Copy failed"}
+            </span>
+          )}
           <Dropdown
             align="right"
             trigger={
@@ -245,6 +269,16 @@ export function HeaderActions({
             <DropdownItem onClick={onExport}>
               <span className="flex items-center gap-1.5 text-[11px]">
                 <Download size={11} /> Export as Markdown
+              </span>
+            </DropdownItem>
+            <DropdownItem onClick={() => exportConversationJson(conversation)}>
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <FileJson size={11} /> Export as JSON
+              </span>
+            </DropdownItem>
+            <DropdownItem onClick={() => void handleCopyTranscript()}>
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <Copy size={11} /> Copy transcript
               </span>
             </DropdownItem>
           </Dropdown>
