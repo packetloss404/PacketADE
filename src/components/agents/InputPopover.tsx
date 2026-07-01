@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
+import { Spinner } from "@/components/ui/Spinner";
 
 export interface InputPopoverItem {
   key: string;
@@ -13,6 +14,12 @@ interface InputPopoverProps {
   highlightedIndex: number;
   onSelect: (item: InputPopoverItem) => void;
   emptyLabel?: string;
+  /** Show a centered spinner row instead of items/empty while fetching. */
+  loading?: boolean;
+  /** When true (default) the popover anchors itself above the textarea via
+   * `absolute bottom-full`. Set false when embedded inside another positioned
+   * shell (e.g. the mention type bar) so it flows in-document. */
+  floating?: boolean;
   className?: string;
 }
 
@@ -22,13 +29,29 @@ export function InputPopover({
   highlightedIndex,
   onSelect,
   emptyLabel = "No matches",
+  loading = false,
+  floating = true,
   className,
 }: InputPopoverProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Clamp so the highlight stays valid after the item list shrinks (source or
+  // query change) without waiting for the next arrow key.
+  const hi = items.length === 0 ? -1 : Math.min(highlightedIndex, items.length - 1);
+
+  // Keep the keyboard-highlighted row scrolled into view.
+  useEffect(() => {
+    const el = containerRef.current?.querySelector<HTMLElement>(
+      '[role="option"][aria-selected="true"]',
+    );
+    el?.scrollIntoView({ block: "nearest" });
+  }, [hi]);
+
   if (!visible) return null;
 
   const classes = [
-    "absolute bottom-full mb-1 left-0 z-50 min-w-[220px] max-w-[420px]",
-    "bg-bg-secondary border border-bg-border rounded shadow-lg",
+    floating ? "absolute bottom-full mb-1 left-0 z-50" : "",
+    "min-w-[220px] max-w-[420px]",
+    "bg-bg-secondary border border-bg-border rounded shadow-xl",
     "max-h-[200px] overflow-y-auto",
     className,
   ]
@@ -36,16 +59,22 @@ export function InputPopover({
     .join(" ");
 
   return (
-    <div className={classes} role="listbox">
-      {items.length === 0 ? (
+    <div ref={containerRef} className={classes} role="listbox">
+      {loading ? (
+        <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-text-muted">
+          <Spinner size={12} />
+          Searching…
+        </div>
+      ) : items.length === 0 ? (
         <div className="px-2 py-1.5 text-[11px] text-text-secondary italic">
           {emptyLabel}
         </div>
       ) : (
         items.map((item, idx) => {
-          const isHighlighted = idx === highlightedIndex;
+          const isHighlighted = idx === hi;
           const rowClasses = [
             "flex items-center gap-2 px-2 py-1.5 cursor-pointer text-xs",
+            "transition-colors motion-reduce:transition-none hover:bg-bg-hover",
             isHighlighted ? "bg-bg-hover" : "",
           ]
             .filter(Boolean)

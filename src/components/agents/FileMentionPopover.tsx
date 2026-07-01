@@ -12,6 +12,9 @@ interface FileMentionPopoverProps {
   /** Called whenever the fetched items change, so parents can drive
    *  keyboard navigation (ArrowUp/Down/Enter) synchronously. */
   onItemsChange?: (paths: string[]) => void;
+  /** Forwarded to InputPopover — set false when embedded under a type bar. */
+  floating?: boolean;
+  className?: string;
 }
 
 export function FileMentionPopover({
@@ -21,6 +24,8 @@ export function FileMentionPopover({
   highlightedIndex,
   onSelect,
   onItemsChange,
+  floating = true,
+  className,
 }: FileMentionPopoverProps) {
   const [items, setItems] = useState<InputPopoverItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -67,10 +72,13 @@ export function FileMentionPopover({
   return (
     <InputPopover
       visible={visible}
-      items={loading ? [] : items}
+      items={items}
+      loading={loading}
       highlightedIndex={highlightedIndex}
       onSelect={(item) => onSelect(item.key)}
-      emptyLabel={loading ? "Searching..." : "No files found"}
+      emptyLabel="No files found"
+      floating={floating}
+      className={className}
     />
   );
 }

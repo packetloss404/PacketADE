@@ -1,4 +1,5 @@
 import type { PerFileDiffStat } from "@/lib/aggregateConversationDiffs";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 export interface FileStatsProps {
   /** Pre-computed per-file stat from `aggregateConversationDiffs`. */
@@ -15,7 +16,11 @@ export interface FileStatsProps {
  */
 export function FileStats({ stat, loading }: FileStatsProps) {
   if (loading) {
-    return <span className="text-text-muted text-[10px]">…</span>;
+    return (
+      <span className="text-text-muted text-[10px] animate-pulse motion-reduce:animate-none">
+        ···
+      </span>
+    );
   }
   if (!stat) {
     return <span className="text-text-muted text-[10px]">—</span>;
@@ -23,12 +28,11 @@ export function FileStats({ stat, loading }: FileStatsProps) {
   return (
     <span className="flex items-center gap-1 font-mono text-[10px]">
       {stat.isNew && (
-        <span
-          className="text-accent-green border border-accent-green/30 bg-accent-green/10 px-1 rounded"
-          title="New file"
-        >
-          new
-        </span>
+        <Tooltip content="New file">
+          <span className="text-accent-green border border-accent-green/30 bg-accent-green/10 px-1 rounded">
+            new
+          </span>
+        </Tooltip>
       )}
       <span className="text-accent-green">+{stat.adds}</span>
       <span className="text-accent-red">-{stat.dels}</span>

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Plane, Plug } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { Checkbox } from "@/components/ui/Checkbox";
 import {
   apiAgentProvider,
   useAgentTaskStore,
@@ -161,36 +163,34 @@ export function AgentHeaderBadges({
   return (
     <>
       {provider && (
-        <span
-          className="flex items-center gap-1 text-[10px] bg-bg-secondary border border-bg-border rounded px-1.5 py-0.5"
-          title={authHint || `Provider: ${provider}`}
-        >
-          <AuthBadge status={authStatus} />
-          <span className="text-text-muted leading-none">{provider}</span>
-        </span>
+        <Tooltip content={authHint || `Provider: ${provider}`}>
+          <span className="flex items-center gap-1 text-[10px] bg-bg-secondary border border-bg-border rounded px-1.5 py-0.5">
+            <AuthBadge status={authStatus} />
+            <span className="text-text-muted leading-none">{provider}</span>
+          </span>
+        </Tooltip>
       )}
 
       {linkedFlight && (
-        <button
-          type="button"
-          onClick={() => {
-            setActiveFlight(linkedFlight.id);
-            setActiveView("flights");
-          }}
-          title={`Linked to flight "${linkedFlight.title}" — click to open`}
-          className="flex items-center gap-1 text-[10px] text-accent-purple bg-accent-purple/10 border border-accent-purple/30 rounded px-1.5 py-0.5 hover:bg-accent-purple/20 transition-colors"
-        >
-          <Plane size={10} />
-          <span className="truncate max-w-[120px]">{linkedFlight.title}</span>
-        </button>
+        <Tooltip content={`Linked to flight "${linkedFlight.title}" — click to open`}>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveFlight(linkedFlight.id);
+              setActiveView("flights");
+            }}
+            className="flex items-center gap-1 text-[10px] text-accent-purple bg-accent-purple/10 border border-accent-purple/30 rounded px-1.5 py-0.5 hover:bg-accent-purple/20 transition-colors"
+          >
+            <Plane size={10} />
+            <span className="truncate max-w-[120px]">{linkedFlight.title}</span>
+          </button>
+        </Tooltip>
       )}
 
       {eligibleServers.length > 0 && (
         <div className="relative" ref={mcpMenuRef}>
-          <button
-            type="button"
-            onClick={() => setMcpMenuOpen((v) => !v)}
-            title={
+          <Tooltip
+            content={
               activeCount === 0
                 ? "MCP servers — none active for this conversation. Click to choose."
                 : `MCP servers active: ${eligibleServers
@@ -198,20 +198,25 @@ export function AgentHeaderBadges({
                     .map((s) => s.name)
                     .join(", ")}`
             }
-            className="flex items-center gap-1 text-[10px] text-accent-blue bg-accent-blue/10 border border-accent-blue/30 rounded px-1.5 py-0.5 hover:bg-accent-blue/20 transition-colors"
           >
-            <Plug size={10} />
-            <span>
-              MCP {activeCount}/{eligibleServers.length}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setMcpMenuOpen((v) => !v)}
+              className="flex items-center gap-1 text-[10px] text-accent-blue bg-accent-blue/10 border border-accent-blue/30 rounded px-1.5 py-0.5 hover:bg-accent-blue/20 transition-colors"
+            >
+              <Plug size={10} />
+              <span>
+                MCP {activeCount}/{eligibleServers.length}
+              </span>
+            </button>
+          </Tooltip>
           {mcpMenuOpen && (
-            <div className="absolute top-full right-0 mt-1 w-72 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50">
+            <div className="absolute top-full right-0 mt-1 w-72 bg-bg-secondary border border-bg-border rounded shadow-md z-50">
               <div className="px-3 py-2 border-b border-bg-border">
-                <div className="text-[10px] uppercase tracking-wider text-text-muted">
+                <div className="text-[10px] uppercase tracking-wide text-text-faint">
                   MCP servers
                 </div>
-                <div className="text-[9.5px] text-text-faint mt-0.5">
+                <div className="text-[9px] text-text-muted mt-0.5">
                   Changes apply on next launch (sidecar can't hot-swap MCP).
                 </div>
               </div>
@@ -219,40 +224,39 @@ export function AgentHeaderBadges({
                 {eligibleServers.map((srv) => {
                   const on = activeNames.has(srv.name);
                   return (
-                    <label
+                    <Checkbox
                       key={srv.name}
-                      className="flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-bg-hover cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => toggleServer(srv.name)}
-                      />
-                      <span className="flex flex-col flex-1 min-w-0">
-                        <span className="text-text-primary truncate">
-                          {srv.name}
+                      checked={on}
+                      onChange={() => toggleServer(srv.name)}
+                      className="gap-2 px-3 py-1.5 text-[11px] w-full hover:bg-bg-hover transition-colors"
+                      label={
+                        <span className="flex flex-col flex-1 min-w-0">
+                          <span className="text-text-primary truncate">
+                            {srv.name}
+                          </span>
+                          <span className="text-[9px] text-text-muted truncate">
+                            {srv.scope} · {srv.config.command}
+                          </span>
                         </span>
-                        <span className="text-[9.5px] text-text-muted truncate">
-                          {srv.scope} · {srv.config.command}
-                        </span>
-                      </span>
-                    </label>
+                      }
+                    />
                   );
                 })}
               </div>
               <div className="px-3 py-1.5 border-t border-bg-border flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={resetToAll}
-                  className="text-[10px] text-text-muted hover:text-text-secondary"
-                  title="Reset to default — every non-disabled server is enabled"
-                >
-                  Reset to all
-                </button>
+                <Tooltip content="Reset to default — every non-disabled server is enabled">
+                  <button
+                    type="button"
+                    onClick={resetToAll}
+                    className="text-[10px] text-text-muted hover:text-text-primary transition-colors"
+                  >
+                    Reset to all
+                  </button>
+                </Tooltip>
                 <button
                   type="button"
                   onClick={() => setMcpMenuOpen(false)}
-                  className="text-[10px] text-accent-green hover:underline"
+                  className="text-[10px] rounded px-2 py-0.5 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
                 >
                   Done
                 </button>

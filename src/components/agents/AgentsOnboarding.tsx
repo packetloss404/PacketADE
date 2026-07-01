@@ -1,5 +1,6 @@
-import { Folder, Zap, Paperclip, Slash, X, Sparkles } from "lucide-react";
+import { Folder, Zap, Paperclip, Slash, Sparkles } from "lucide-react";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
+import { Modal } from "@/components/ui/Modal";
 
 interface OnboardingCard {
   icon: React.ComponentType<{ size?: number; className?: string }>;
@@ -48,59 +49,51 @@ export function AgentsOnboarding() {
   if (onboardingDismissed) return null;
 
   return (
-    <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/85 backdrop-blur-sm"
-      onClick={dismiss}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Agents onboarding"
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[640px] mx-6 bg-bg-secondary border border-line-soft rounded-lg shadow-2xl"
-      >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-line-soft">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-accent-soft border border-accent-line grid place-items-center">
-              <Sparkles size={14} className="text-accent-green" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[13px] font-semibold text-text-primary">
-                Welcome to Agents
-              </span>
-              <span className="text-[10px] text-text-muted">
-                A unified chat for every coding agent.
-              </span>
-            </div>
-          </div>
+    <Modal
+      title="Welcome to Agents"
+      width="w-[640px]"
+      closeOnEscape
+      onClose={dismiss}
+      icon={
+        <div className="w-7 h-7 rounded bg-accent-soft border border-accent-line grid place-items-center">
+          <Sparkles size={14} className="text-accent-green" />
+        </div>
+      }
+      footer={
+        <div className="flex items-center justify-end">
           <button
             type="button"
             onClick={dismiss}
-            className="p-1 rounded text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors"
-            title="Dismiss"
+            autoFocus
+            className="px-3 py-1.5 rounded border border-accent-green/30 text-[11px] font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 transition-colors"
           >
-            <X size={14} />
+            Got it
           </button>
         </div>
-
-        <div className="grid grid-cols-2 gap-3 p-5">
+      }
+    >
+      <div className="p-5">
+        <p className="text-[11px] text-text-muted mb-3">
+          A unified chat for every coding agent.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
           {CARDS.map((card) => {
             const Icon = card.icon;
             return (
               <div
                 key={card.title}
-                className="flex gap-2.5 p-3 rounded-md border border-bg-border bg-bg-primary"
+                className="flex gap-2.5 p-3 rounded border border-bg-border bg-bg-primary"
               >
                 <div
-                  className={`shrink-0 w-7 h-7 rounded-md grid place-items-center ${card.accent}`}
+                  className={`shrink-0 w-7 h-7 rounded grid place-items-center ${card.accent}`}
                 >
                   <Icon size={14} />
                 </div>
                 <div className="flex flex-col gap-1 min-w-0">
-                  <span className="text-[11px] font-semibold text-text-primary">
+                  <span className="text-xs font-semibold text-text-primary">
                     {card.title}
                   </span>
-                  <span className="text-[10px] leading-snug text-text-secondary">
+                  <span className="text-[11px] leading-relaxed text-text-secondary">
                     {card.body}
                   </span>
                 </div>
@@ -108,17 +101,7 @@ export function AgentsOnboarding() {
             );
           })}
         </div>
-
-        <div className="flex items-center justify-end px-5 py-3 border-t border-line-soft">
-          <button
-            type="button"
-            onClick={dismiss}
-            className="px-3 py-1.5 rounded-md text-[11px] font-medium bg-accent-green/20 text-accent-green hover:bg-accent-green/30 transition-colors"
-          >
-            Got it
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

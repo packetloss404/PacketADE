@@ -148,7 +148,12 @@ export function PendingApprovalsSection({
 
   if (collapsed) {
     return (
-      <div className="shrink-0 px-3 py-2 border-t border-bg-border bg-bg-primary">
+      <div
+        role="region"
+        aria-label="Pending approvals"
+        aria-live="polite"
+        className="shrink-0 px-3 py-2 border-t border-bg-border bg-bg-primary"
+      >
         <div className="flex items-center gap-2 rounded border border-accent-amber/40 bg-bg-secondary px-2 py-1.5">
           <button
             type="button"
@@ -174,7 +179,12 @@ export function PendingApprovalsSection({
   }
 
   return (
-    <div className="shrink-0 px-3 py-2 flex flex-col gap-2 border-t border-bg-border bg-bg-primary">
+    <div
+      role="region"
+      aria-label="Pending approvals"
+      aria-live="polite"
+      className="shrink-0 px-3 py-2 flex flex-col gap-2 border-t border-bg-border bg-bg-primary"
+    >
       {totalCount >= COLLAPSE_THRESHOLD && (
         <div className="flex items-center gap-2">
           <button

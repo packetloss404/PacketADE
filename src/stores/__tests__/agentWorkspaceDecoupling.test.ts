@@ -494,7 +494,7 @@ describe("agent/workspace store decoupling", () => {
       120,
       40,
       "C:\\tools\\codex-wrapper.cmd",
-      ["--full-auto", "--model", "gpt-5.2"],
+      ["--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-5.2"],
     );
   });
 

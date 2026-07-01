@@ -92,9 +92,9 @@ describe("Agents pane workspace decoupling", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /group:\s*project/i }));
 
-    expect(screen.getByRole("button", { name: "Project" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Status" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Environment" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Project" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Status" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Environment" })).toBeInTheDocument();
     expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
   });
 

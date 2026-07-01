@@ -40,3 +40,45 @@ export function derivePatternHint(
   if (toolName === "grep") return "Grep(*)";
   return null;
 }
+
+/**
+ * Pull the actual shell command out of a bash tool's JSON arguments so the
+ * permission prompt can surface it prominently instead of burying it inside
+ * `{ "command": "..." }`. Falls back to the raw string when not JSON.
+ */
+export function parseBashCommand(rawArgs: string): string | null {
+  try {
+    const parsed = JSON.parse(rawArgs) as { command?: string };
+    const cmd = (parsed.command ?? "").trim();
+    return cmd.length > 0 ? cmd : null;
+  } catch {
+    const cmd = rawArgs.trim();
+    return cmd.length > 0 ? cmd : null;
+  }
+}
+
+/**
+ * Heuristic: does this shell command look destructive / irreversible? Used to
+ * escalate the permission prompt from amber (caution) to red (danger) so a
+ * `rm -rf` never looks the same as a `ls`. Intentionally conservative — false
+ * positives just add a warning, they never block.
+ */
+const DESTRUCTIVE_PATTERNS: RegExp[] = [
+  /\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\b/i, // rm -rf / -fr
+  /\bgit\s+push\b.*--force\b/i,
+  /\bgit\s+push\b.*\s-f\b/i,
+  /\bgit\s+reset\s+--hard\b/i,
+  /\bgit\s+clean\s+-[a-z]*f/i,
+  /\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(sh|bash|zsh)\b/i, // curl ... | sh
+  /\bchmod\s+(-R\s+)?0?777\b/i,
+  /\bmkfs\b/i,
+  /\b(drop\s+(database|table)|truncate\s+table)\b/i,
+  /\bdd\s+if=/i,
+  /:\s*\(\s*\)\s*\{.*\};\s*:/, // fork bomb
+  />\s*\/dev\/sd[a-z]/i,
+  /\bsudo\s+rm\b/i,
+];
+
+export function isDestructiveBash(cmd: string): boolean {
+  return DESTRUCTIVE_PATTERNS.some((re) => re.test(cmd));
+}

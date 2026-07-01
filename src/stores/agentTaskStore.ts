@@ -120,6 +120,43 @@ export function requestConversationSave(conversationId: string): void {
   if (conv) scheduleSave(conv);
 }
 
+/** Centralized turn-failure unwind. Marks the conversation `failed`, and —
+ * when a streaming placeholder id is given — flips that message's
+ * `isStreaming` off and appends the error text so the assistant bubble can't
+ * spin forever. Shared by createApiConversation / retryLastTurn /
+ * resumeApiConversation catches and the promoted-queued send failure path,
+ * which previously hand-rolled this (and sometimes forgot to clear the
+ * placeholder, leaving a stuck spinner). */
+export function failTurn(
+  conversationId: string,
+  streamingMessageId: string | null,
+  error: unknown,
+): void {
+  let failed: AgentConversation | undefined;
+  useAgentTaskStore.setState((s) => ({
+    conversations: s.conversations.map((c) => {
+      if (c.id !== conversationId) return c;
+      const messages =
+        streamingMessageId !== null
+          ? c.messages.map((m) =>
+              m.id === streamingMessageId
+                ? { ...m, isStreaming: false, content: m.content + `\n\nError: ${error}` }
+                : m,
+            )
+          : c.messages;
+      const next: AgentConversation = {
+        ...c,
+        messages,
+        status: "failed",
+        updatedAt: Date.now(),
+      };
+      failed = next;
+      return next;
+    }),
+  }));
+  if (failed) scheduleSave(failed);
+}
+
 function nonOverlappingSuffix(base: string, tail: string): string {
   if (!base || !tail) return tail;
   const max = Math.min(base.length, tail.length);
@@ -235,7 +272,18 @@ export function apiAgentProvider(agent: AgentCli): string {
     "api-openrouter": "openrouter",
     "api-ollama": "ollama",
   };
-  return map[agent] ?? "anthropic";
+  const provider = map[agent];
+  if (!provider) {
+    // A missing entry means a new ApiAgentCli was added without updating this
+    // map, or a malformed/legacy `api-*` agent was hydrated from disk. Silently
+    // defaulting to Anthropic mis-bills against the wrong credentials, so log
+    // it so the misconfiguration is diagnosable.
+    logSwallowed("agentTaskStore.apiAgentProvider")(
+      new Error(`Unknown API agent provider for "${agent}" — defaulting to anthropic`),
+    );
+    return "anthropic";
+  }
+  return provider;
 }
 
 function apiAgentCommandPath(agent: AgentCli): string | null {
@@ -957,28 +1005,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     } catch (e) {
       // `startApiAgentSession` rejected before any `api-agent:*` event could
       // fire, so the streaming placeholder would otherwise spin forever.
-      // Mirror the `api-agent:error` listener: fail the conversation, clear
-      // streaming on the specific placeholder, and surface the error text.
+      // failTurn fails the conversation and clears the specific placeholder.
       logSwallowed("agentTaskStore.createApiConversation")(e);
-      let failed: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const next: AgentConversation = {
-            ...c,
-            status: "failed" as const,
-            updatedAt: Date.now(),
-            messages: c.messages.map((m) =>
-              m.id === assistantMsgId
-                ? { ...m, isStreaming: false, content: m.content + `\n\nError: ${e}` }
-                : m,
-            ),
-          };
-          failed = next;
-          return next;
-        }),
-      }));
-      if (failed) scheduleSave(failed);
+      failTurn(id, assistantMsgId, e);
     }
 
     return id;
@@ -1179,6 +1208,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       clearTimeout(timer);
       saveTimers.delete(id);
     }
+    // Drop the per-conversation auto-failover guard so the module-scope Set
+    // doesn't accumulate a stale entry (and can't mis-fire if the id is reused).
+    failoverGuard.delete(id);
     set((s) => ({
       conversations: s.conversations.filter((c) => c.id !== id),
       selectedConversationId: s.selectedConversationId === id ? null : s.selectedConversationId,
@@ -1493,14 +1525,21 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
         const msgs = c.messages.slice();
-        // Find last assistant index (from end) and truncate.
+        // Find last assistant index (from end) and truncate — but preserve any
+        // trailing system messages (e.g. the auto-failover notice the error
+        // listener appends after the failed assistant). `msgs.length = i` would
+        // otherwise drop them along with the assistant.
+        const trailingSystem: AgentMessage[] = [];
         for (let i = msgs.length - 1; i >= 0; i--) {
           if (msgs[i].role === "assistant") {
             msgs.length = i;
             break;
           }
+          if (msgs[i].role === "system") trailingSystem.unshift(msgs[i]);
         }
-        // Append a fresh streaming assistant shell.
+        // Re-append the preserved system notice(s) so the user still sees the
+        // failover happened, then a fresh streaming assistant shell.
+        for (const sys of trailingSystem) msgs.push(sys);
         msgs.push({
           id: retryMsgId,
           role: "assistant",
@@ -1526,29 +1565,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     } catch (e) {
       // The backend rejected the retry start (rate limit, session gone,
       // sidecar down) — so no `api-agent:done`/`error` event will ever
-      // arrive to clear the streaming shell we just pushed. Mirror the
-      // `api-agent:error` listener: fail the conversation, clear streaming
-      // on the specific shell, and surface the error in its content.
-      let failed: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const messages = c.messages.map((m) =>
-            m.id === retryMsgId
-              ? { ...m, isStreaming: false, content: m.content + `\n\nError: ${e}` }
-              : m,
-          );
-          const next: AgentConversation = {
-            ...c,
-            messages,
-            status: "failed" as const,
-            updatedAt: Date.now(),
-          };
-          failed = next;
-          return next;
-        }),
-      }));
-      if (failed) scheduleSave(failed);
+      // arrive to clear the streaming shell we just pushed. failTurn fails
+      // the conversation and clears that specific shell.
+      failTurn(id, retryMsgId, e);
       return;
     }
     if (updated) scheduleSave(updated);
@@ -1766,11 +1785,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       );
     } catch (e) {
       console.warn("resumeApiConversation failed:", e);
-      set((s) => ({
-        conversations: s.conversations.map((c) =>
-          c.id === conversationId ? { ...c, status: "failed", updatedAt: Date.now() } : c,
-        ),
-      }));
+      // Clear the streaming placeholder we appended above — no `api-agent:*`
+      // event will arrive, so without this the assistant bubble spins forever.
+      failTurn(conversationId, assistantMsgId, e);
     }
   },
 }));

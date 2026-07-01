@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CheckSquare,
   ChevronDown,
-  ChevronUp,
-  Loader2,
   Pause,
   Play,
   Send,
@@ -11,6 +9,8 @@ import {
   Target,
   X,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/Spinner";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useGoalStore } from "@/stores/goalStore";
@@ -143,7 +143,7 @@ function StatusIcon({ status }: { status: PlanItemStatus }) {
     return <CheckSquare size={11} className="text-accent-green shrink-0" />;
   if (status === "in_progress")
     return (
-      <Loader2 size={11} className="text-accent-blue shrink-0 animate-spin" />
+      <Spinner size={11} className="text-accent-blue shrink-0" />
     );
   return <Square size={11} className="text-text-muted shrink-0" />;
 }
@@ -307,11 +307,11 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover/40 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover transition-colors"
         title="Toggle plan visibility"
       >
         <CheckSquare size={11} className="text-accent-green shrink-0" />
-        <span className="text-[10px] uppercase tracking-wider text-text-muted">
+        <span className="text-[10px] uppercase tracking-wide font-semibold text-text-secondary">
           {awaitingPlanApproval ? "Plan (proposed)" : "Plan"}
         </span>
         <span className="text-[10px] text-text-secondary">
@@ -320,7 +320,10 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
           {pending > 0 ? ` · ${pending} pending` : ""}
         </span>
         <span className="ml-auto text-text-muted">
-          {collapsed ? <ChevronDown size={11} /> : <ChevronUp size={11} />}
+          <ChevronDown
+            size={11}
+            className={`transition-transform ${collapsed ? "" : "rotate-180"}`}
+          />
         </span>
       </button>
       {!collapsed && (
@@ -333,7 +336,9 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
               }`}
             >
               <StatusIcon status={t.status} />
-              <span className="truncate">{t.title}</span>
+              <span className="truncate" title={t.title}>
+                {t.title}
+              </span>
             </li>
           ))}
         </ul>
@@ -344,24 +349,27 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
             Plan is a proposal — approve to lift plan-mode and execute.
           </span>
           {handoffEligible && (
-            <button
-              type="button"
-              onClick={() => void handleHandoff()}
-              disabled={!codexReady || handingOff}
-              title={
+            <Tooltip
+              content={
                 !codexReady
                   ? "Codex login required (run `codex login` or sign in via the provider dropdown)"
                   : "Hand the approved plan off to a fresh Codex conversation for execution"
               }
-              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 disabled:opacity-40"
             >
-              <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to Codex"}
-            </button>
+              <button
+                type="button"
+                onClick={() => void handleHandoff()}
+                disabled={!codexReady || handingOff}
+                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to Codex"}
+              </button>
+            </Tooltip>
           )}
           <button
             type="button"
             onClick={() => approvePlan(conversation.id)}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
+            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
           >
             <Play size={11} /> Approve & execute
           </button>
@@ -383,20 +391,21 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
             <span className="font-mono">{boundGoal.status}</span>
           </span>
           {boundGoal.status === "active" && (
-            <button
-              type="button"
-              onClick={() => pauseGoal(boundGoal.id)}
-              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-muted hover:text-accent-amber"
-              title="Mark goal paused (conversation keeps running; FlightsView shows it as paused)"
-            >
-              <Pause size={10} /> Pause
-            </button>
+            <Tooltip content="Mark goal paused (conversation keeps running; FlightsView shows it as paused)">
+              <button
+                type="button"
+                onClick={() => pauseGoal(boundGoal.id)}
+                className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-muted hover:text-accent-amber transition-colors"
+              >
+                <Pause size={10} /> Pause
+              </button>
+            </Tooltip>
           )}
           {boundGoal.status === "paused" && (
             <button
               type="button"
               onClick={() => resumeGoal(boundGoal.id)}
-              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
             >
               <Play size={10} /> Resume
             </button>
@@ -406,7 +415,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
             <button
               type="button"
               onClick={() => completeGoal(boundGoal.id)}
-              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10"
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
             >
               <X size={10} /> Complete
             </button>

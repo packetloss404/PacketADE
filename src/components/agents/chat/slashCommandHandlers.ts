@@ -21,7 +21,7 @@ const HELP_CHEATSHEET =
   "- Shift+Tab — cycle mode (default → plan → manual → yolo)\n" +
   "- Alt+. / Alt+, — nudge model toward thorough / fast\n" +
   "- @ — mention a file\n" +
-  "- / — run a slash command (try /usage, /history, /template)\n" +
+  "- / — run a slash command (try /usage, /history, /review)\n" +
   "- Stop button — cancels mid-stream";
 
 export interface SlashCommandContext {
@@ -96,12 +96,16 @@ export const slashCommandHandlers: Record<
           "",
           conversation.systemPromptOverride ?? null,
           undefined,
-          undefined,
+          conversation.planMode ?? false,
           null,
           undefined,
           false,
           conversation.allowedTools ?? null,
           conversation.memoryContextEnabled ?? false,
+          null,
+          conversation.enabledMcpServerIds ?? null,
+          conversation.permissionMode,
+          conversation.approveWrites,
         );
         selectConversation(newId);
       } catch (e) {

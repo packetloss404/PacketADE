@@ -1,4 +1,5 @@
 import { Folder, GitBranch, Cloud } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
 import type { ComposerMode } from "./utils";
 
 interface ComposerModePickerProps {
@@ -38,30 +39,30 @@ export function ComposerModePicker({ value, onChange }: ComposerModePickerProps)
   ];
 
   return (
-    <div className="inline-flex flex-col" title="Where this conversation runs">
+    <div className="inline-flex flex-col">
       <div className="inline-flex rounded border border-bg-border overflow-hidden">
         {opts.map((opt) => {
           const Icon = opt.icon;
           const isActive = value === opt.mode;
           const isDisabled = opt.disabled;
           return (
-            <button
-              key={opt.mode}
-              type="button"
-              disabled={isDisabled}
-              onClick={() => !isDisabled && onChange?.(opt.mode)}
-              title={opt.title}
-              className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] transition-colors ${
-                isDisabled
-                  ? "text-text-faint opacity-50 cursor-not-allowed"
-                  : isActive
-                    ? "bg-accent-purple/10 text-accent-purple"
-                    : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
-              }`}
-            >
-              <Icon size={10} />
-              {opt.label}
-            </button>
+            <Tooltip key={opt.mode} content={opt.title}>
+              <button
+                type="button"
+                disabled={isDisabled}
+                onClick={() => !isDisabled && onChange?.(opt.mode)}
+                className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] transition-colors motion-reduce:transition-none ${
+                  isDisabled
+                    ? "text-text-faint opacity-50 cursor-not-allowed"
+                    : isActive
+                      ? "bg-accent-purple/10 text-accent-purple"
+                      : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
+                }`}
+              >
+                <Icon size={10} />
+                {opt.label}
+              </button>
+            </Tooltip>
           );
         })}
       </div>

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { FileDiff } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import {
   aggregateConversationDiffs,
   type ConversationDiffAggregate,
@@ -27,6 +29,12 @@ export interface FileListAndDiffBodyProps {
    * tool calls yet.
    */
   emptyMessage?: string;
+  /**
+   * Reports the full per-conversation diff aggregate (file count + total
+   * +adds/-dels) whenever it resolves, so the host pane header can surface
+   * the totals. Fires with `null` while there is nothing to aggregate.
+   */
+  onAggregate?: (aggregate: ConversationDiffAggregate | null) => void;
 }
 
 /**
@@ -43,6 +51,7 @@ export function FileListAndDiffBody({
   onSelectFile,
   autoFormat = false,
   emptyMessage = "No file edits in this conversation yet.",
+  onAggregate,
 }: FileListAndDiffBodyProps) {
   const writeFiles = useMemo(
     () => aggregateWriteFiles(conversation),
@@ -64,10 +73,13 @@ export function FileListAndDiffBody({
   // Mark the file's underlying `write_file` tool calls as reviewed when
   // the user selects it from the list — feeds the Diff-tab badge counter.
   const { markReviewed } = useReviewedDiffs(conversation?.id);
-  const selectFile = (path: string) => {
+  // `markAsReviewed` defaults true for user-driven selection; the auto-select
+  // effect passes false so merely opening the tab doesn't mark the first file
+  // reviewed (which would inflate the reviewed count behind the user's back).
+  const selectFile = (path: string, markAsReviewed = true) => {
     if (onSelectFile) onSelectFile(path);
     if (!isControlled) setInternalSelected(path);
-    markReviewed(path);
+    if (markAsReviewed) markReviewed(path);
   };
 
   // Cache the full diff aggregate (per-file +/- counts). Recomputes whenever
@@ -81,6 +93,7 @@ export function FileListAndDiffBody({
   useEffect(() => {
     if (!conversation) {
       setAggregate(null);
+      onAggregate?.(null);
       return;
     }
     let cancelled = false;
@@ -88,9 +101,15 @@ export function FileListAndDiffBody({
     (async () => {
       try {
         const result = await aggregateConversationDiffs(conversation);
-        if (!cancelled) setAggregate(result);
+        if (!cancelled) {
+          setAggregate(result);
+          onAggregate?.(result);
+        }
       } catch {
-        if (!cancelled) setAggregate(null);
+        if (!cancelled) {
+          setAggregate(null);
+          onAggregate?.(null);
+        }
       } finally {
         if (!cancelled) setAggregateLoading(false);
       }
@@ -116,7 +135,7 @@ export function FileListAndDiffBody({
   useEffect(() => {
     if (entries.length === 0) return;
     if (!selectedPath || !writeFiles.has(selectedPath)) {
-      selectFile(entries[0].path);
+      selectFile(entries[0].path, false);
     }
     // selectFile is closure-stable enough for this purpose; including it
     // would loop because `internalSelected` setter re-creates the closure.
@@ -125,10 +144,8 @@ export function FileListAndDiffBody({
 
   if (entries.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center px-6">
-        <p className="text-[11px] text-text-muted text-center">
-          {emptyMessage}
-        </p>
+      <div className="flex-1 flex items-center justify-center">
+        <EmptyState icon={<FileDiff size={24} />} title={emptyMessage} />
       </div>
     );
   }
@@ -154,8 +171,8 @@ export function FileListAndDiffBody({
                   onClick={() => selectFile(entry.path)}
                   className={`w-full text-left px-2 py-1.5 flex flex-col gap-0.5 transition-colors ${
                     isActive
-                      ? "bg-bg-hover border-l-2 border-accent-green"
-                      : "hover:bg-bg-hover/60 border-l-2 border-transparent"
+                      ? "bg-accent-purple/15 border-l-2 border-accent-purple"
+                      : "hover:bg-bg-hover border-l-2 border-transparent"
                   }`}
                   title={entry.path}
                 >

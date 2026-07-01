@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { apiAgentProvider } from "@/stores/agentTaskStore";
 import type { AgentCli } from "@/stores/agentTaskStore";
@@ -26,7 +26,14 @@ export function useProviderAuthStatus(): UseProviderAuthStatusResult {
     [],
   );
 
+  // Per-invocation epoch so overlapping refreshes (e.g. a manual refresh racing
+  // a `provider-auth:changed`-triggered one) can't resolve out of order — an
+  // older per-agent response must not overwrite a newer one. Bumped again on
+  // unmount so late resolutions become no-ops.
+  const refreshEpochRef = useRef(0);
+
   const refreshAuthStatuses = useCallback(() => {
+    const epoch = ++refreshEpochRef.current;
     setAuthStatus((prev) => {
       const next: Record<string, AuthEntry> = { ...prev };
       for (const a of groupAgents) next[a] = "loading";
@@ -36,9 +43,11 @@ export function useProviderAuthStatus(): UseProviderAuthStatusResult {
       const provider = apiAgentProvider(agent);
       getProviderAuthStatus(provider)
         .then((res) => {
+          if (refreshEpochRef.current !== epoch) return;
           setAuthStatus((prev) => ({ ...prev, [agent]: res }));
         })
         .catch((err) => {
+          if (refreshEpochRef.current !== epoch) return;
           // On failure, show as service_down with the error hint — better
           // than leaving the row stuck in a spinner.
           console.warn(`getProviderAuthStatus(${provider}) failed`, err);
@@ -49,6 +58,14 @@ export function useProviderAuthStatus(): UseProviderAuthStatusResult {
         });
     }
   }, [groupAgents]);
+
+  useEffect(() => {
+    return () => {
+      // Invalidate any in-flight refresh so it can't setState after unmount.
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: this epoch counter is deliberately bumped in cleanup; it is not a stale DOM ref.
+      refreshEpochRef.current++;
+    };
+  }, []);
 
   useEffect(() => {
     refreshAuthStatuses();
