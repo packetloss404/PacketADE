@@ -1,21 +1,24 @@
 import { memo, useEffect, useState } from "react";
-import { ChevronRight } from "lucide-react";
-import { ToolDiffView } from "../ToolDiffView";
+import { ChevronRight, FileEdit } from "lucide-react";
 import { StatusPill } from "../tool-cards/StatusPill";
 import {
   isEditToolName,
   materializeEdits,
   parseEditToolCalls,
 } from "@/lib/parseToolInput";
+import { countLineChanges } from "@/lib/diffUtils";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
+import { useReviewStore } from "@/stores/reviewStore";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 function ToolCallCardImpl({
   toolCall,
+  conversationId,
   projectPath,
   verbosity = "normal",
 }: {
   toolCall: AgentToolCall;
+  conversationId: string;
   projectPath: string;
   verbosity?: "summary" | "normal" | "verbose";
 }) {
@@ -65,34 +68,54 @@ function ToolCallCardImpl({
 
   const isError = toolCall.status === "error";
 
+  // P1-8: inline transcript edits collapse to a one-line file chip
+  // (DiffPaneTrigger-style +N/-M). Clicking deep-links into the canonical
+  // review surface focused on this file — the full diff (with the protected
+  // per-row comment composer) lives there, not in the transcript.
   if (writeFileInput) {
+    const baseName =
+      writeFileInput.path.split(/[\\/]/).pop() ?? writeFileInput.path;
+    const counts =
+      baselineContent !== undefined
+        ? countLineChanges(baselineContent ?? "", writeFileInput.content)
+        : null;
+    const isNewFile = baselineContent === null;
     return (
-      <div
-        className={`border rounded overflow-hidden ${
+      <button
+        type="button"
+        onClick={() =>
+          useReviewStore
+            .getState()
+            .openForConversation(conversationId, writeFileInput.path)
+        }
+        title={`Review ${writeFileInput.path}`}
+        className={`w-full flex items-center gap-2 px-2 py-1 border rounded text-left transition-colors hover:bg-bg-tertiary ${
           isError
             ? "border-accent-red/30 bg-accent-red/5"
             : "border-bg-border bg-bg-secondary"
         }`}
       >
-        <div className="flex items-center gap-2 px-2 py-1 bg-bg-tertiary border-b border-line-soft">
-          <span className="text-xs font-medium text-text-primary">Edit</span>
-          {toolCall.file && (
-            <span className="font-mono text-[10px] text-text-secondary truncate">
-              {toolCall.file}
-            </span>
-          )}
-          <span className="flex-1" />
-          {statusPill}
-        </div>
-        <ToolDiffView
-          projectPath={projectPath}
-          filePath={writeFileInput.path}
-          newContent={writeFileInput.content}
-          // Recorded per-call baseline: null = new file, string = pre-edit
-          // content, undefined = none recorded (fall back to disk).
-          oldContent={baselineContent}
-        />
-      </div>
+        <FileEdit size={12} className="text-text-secondary shrink-0" />
+        <span className="text-xs font-medium text-text-primary shrink-0">
+          Edit
+        </span>
+        <span className="font-mono text-[10px] text-text-secondary truncate">
+          {baseName}
+        </span>
+        {isNewFile && (
+          <span className="text-[9px] text-accent-green border border-accent-green/30 bg-accent-green/10 px-1 rounded shrink-0">
+            new
+          </span>
+        )}
+        {counts && (
+          <span className="flex items-center gap-1 font-mono text-[10px] shrink-0">
+            <span className="text-accent-green">+{counts.added}</span>
+            <span className="text-accent-red">-{counts.removed}</span>
+          </span>
+        )}
+        <span className="flex-1" />
+        {statusPill}
+      </button>
     );
   }
 

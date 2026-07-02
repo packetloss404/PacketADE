@@ -1,3 +1,4 @@
+import * as Diff from "diff";
 import {
   materializeEdits,
   parseEditToolCalls,
@@ -117,6 +118,29 @@ export function aggregateWriteFiles(
     map.set(path, { path, content, writeCount: group.writeCount });
   }
   return map;
+}
+
+/**
+ * Count added/removed lines between two file contents. THE shared quick
+ * +N/-M counter for compact chips and summaries (one counting convention,
+ * matching how the review surface's hunk engine sees the change).
+ */
+export function countLineChanges(
+  before: string,
+  after: string,
+): { added: number; removed: number } {
+  const parts = Diff.diffLines(before, after);
+  let added = 0;
+  let removed = 0;
+  for (const part of parts) {
+    const trimmed = part.value.endsWith("\n")
+      ? part.value.slice(0, -1)
+      : part.value;
+    const lines = trimmed.length === 0 ? 0 : trimmed.split("\n").length;
+    if (part.added) added += lines;
+    else if (part.removed) removed += lines;
+  }
+  return { added, removed };
 }
 
 /**

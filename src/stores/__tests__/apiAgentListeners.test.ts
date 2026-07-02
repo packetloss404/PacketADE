@@ -468,6 +468,14 @@ describe("apiAgentListeners baseline recording", () => {
     expect(store.getBaseline("conv-abs", "src/a.ts")).toEqual({ content: "v0" });
     expect(store.getBaseline("conv-abs", "src/b.ts")).toEqual({ content: "v0b" });
     expect(store.getToolCallBaseline("tc-1")?.path).toBe("src/a.ts");
+
+    // The stored pending edit itself must carry the relative path too: the
+    // review surface dedupes/deep-links/labels pending edits against the
+    // transcript's project-relative keys, so a raw absolute path renders the
+    // same file twice and double-counts it in every badge.
+    const { useAgentApprovalStore } = await import("@/stores/agentApprovalStore");
+    const pending = useAgentApprovalStore.getState().edits.get("conv-abs");
+    expect(pending?.map((e) => e.path)).toEqual(["src/b.ts"]);
   });
 
   it("keeps the first recorded baseline per path across repeated edits", async () => {

@@ -98,6 +98,7 @@ export const ToolCallRenderer = memo(function ToolCallRenderer({
           <ToolCallCard
             key={tc.id}
             toolCall={tc}
+            conversationId={conversationId}
             projectPath={projectPath}
             verbosity={verbosity}
           />

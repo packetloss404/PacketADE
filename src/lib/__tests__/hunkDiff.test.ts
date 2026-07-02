@@ -4,7 +4,9 @@ import { applyAcceptedHunks, parseHunks } from "@/lib/hunkDiff";
 /**
  * P1-7: coverage for the keep-list hunk engine (the ONLY hunk engine after
  * the review-surface consolidation). This is file-writing logic —
- * applyAcceptedHunks output goes straight to disk via HunkSelectableDiff.
+ * applyAcceptedHunks output backs both halves of the canonical review
+ * surface: merged content for respondEdit on pending edits, and per-hunk
+ * Undo reverts on applied edits.
  */
 describe("parseHunks", () => {
   it("returns no hunks for identical content", () => {
@@ -104,5 +106,58 @@ describe("applyAcceptedHunks", () => {
       applyAcceptedHunks(before, hunks, new Set(hunks.map((h) => h.id))),
     ).toBe(after);
     expect(applyAcceptedHunks(before, hunks, new Set())).toBe(before);
+  });
+});
+
+/**
+ * P1-8 keep/undo math: the review surface reverts an applied hunk by
+ * rebuilding the file from the recorded baseline with every OTHER hunk
+ * accepted. These pin the identities that make that safe.
+ */
+describe("keep/undo math (P1-8 review surface)", () => {
+  const baseline = "line1\nline2\nline3\nline4\nline5\n";
+  const disk = "line1\nCHANGED2\nline3\nline4\nCHANGED5\nADDED6\n";
+
+  it("accept-all reconstructs the on-disk content exactly (undo's precondition)", () => {
+    const hunks = parseHunks(baseline, disk);
+    const all = new Set(hunks.map((h) => h.id));
+    expect(applyAcceptedHunks(baseline, hunks, all)).toBe(disk);
+  });
+
+  it("undoing one hunk restores only that hunk's original lines", () => {
+    const hunks = parseHunks(baseline, disk);
+    expect(hunks).toHaveLength(2);
+    // Undo the first hunk (line2 replace) = accept everything but it.
+    const keepAllButFirst = new Set(hunks.slice(1).map((h) => h.id));
+    expect(applyAcceptedHunks(baseline, hunks, keepAllButFirst)).toBe(
+      "line1\nline2\nline3\nline4\nCHANGED5\nADDED6\n",
+    );
+    // Undo the second hunk (line5 replace + trailing add) instead.
+    const keepAllButSecond = new Set([hunks[0].id]);
+    expect(applyAcceptedHunks(baseline, hunks, keepAllButSecond)).toBe(
+      "line1\nCHANGED2\nline3\nline4\nline5\n",
+    );
+  });
+
+  it("undoing every hunk restores the baseline byte-for-byte", () => {
+    const hunks = parseHunks(baseline, disk);
+    expect(applyAcceptedHunks(baseline, hunks, new Set())).toBe(baseline);
+  });
+
+  it("a replace is ONE hunk — both sides can never land together (the old engine's corruption)", () => {
+    // PendingEditPrompt's deleted private engine emitted the removed and
+    // added runs of a replace as separate selectable units, so accepting
+    // both duplicated the region. parseHunks coalesces them: keeping the
+    // hunk yields the new side, undoing it the old side — never both.
+    const before = "keep\nold line\nkeep2\n";
+    const after = "keep\nnew line\nkeep2\n";
+    const hunks = parseHunks(before, after);
+    expect(hunks).toHaveLength(1);
+    const kept = applyAcceptedHunks(before, hunks, new Set([hunks[0].id]));
+    const undone = applyAcceptedHunks(before, hunks, new Set());
+    expect(kept).toBe(after);
+    expect(undone).toBe(before);
+    expect(kept).not.toContain("old line");
+    expect(undone).not.toContain("new line");
   });
 });
