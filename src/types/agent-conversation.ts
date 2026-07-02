@@ -39,6 +39,10 @@ export interface AgentMessage {
    * OpenAI o-series). Billed at the OUTPUT rate by every provider that
    * exposes them — counted alongside outputTokens in cost math. */
   reasoningTokens?: number;
+  /** Estimated USD cost of this turn, stamped at receipt time from the
+   * frontend pricing table (see conversationCost.estimateTurnCostUsd).
+   * Absent when the model has no pricing entry. */
+  costUsd?: number;
   /** Extended thinking text produced by this turn (Anthropic). */
   thinking?: string;
 }

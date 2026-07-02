@@ -16,6 +16,7 @@ import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useGoalStore } from "@/stores/goalStore";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { buildHandoffPrompt } from "@/lib/conversationHandoff";
+import { parseToolInput } from "@/lib/parseToolInput";
 import {
   getProviderAuthStatus,
   type ProviderAuthStatus,
@@ -40,18 +41,10 @@ interface PlanItem {
  * structured `input` (object) and stringified-JSON shapes.
  */
 function parseTodoWrite(tc: AgentToolCall): PlanItem[] | null {
-  const raw = (tc as AgentToolCall & { input?: unknown }).input;
-  if (raw == null) return null;
-  let obj: unknown = raw;
-  if (typeof raw === "string") {
-    try {
-      obj = JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-  if (!obj || typeof obj !== "object") return null;
-  const rec = obj as { todos?: unknown };
+  const rec = parseToolInput(
+    (tc as AgentToolCall & { input?: unknown }).input,
+  ) as { todos?: unknown } | null;
+  if (!rec) return null;
   if (!Array.isArray(rec.todos)) return null;
   const out: PlanItem[] = [];
   for (const t of rec.todos) {

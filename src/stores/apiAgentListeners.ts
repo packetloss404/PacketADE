@@ -14,7 +14,9 @@ import {
   apiAgentTurnSummaryEvent,
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
+import { createStreamCoalescer } from "@/lib/streamCoalescer";
 import { sendApiAgentMessage } from "@/lib/tauri";
+import { estimateTurnCostUsd } from "@/lib/conversationCost";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
 import {
   notifySessionComplete,
@@ -110,22 +112,42 @@ export async function installApiAgentListeners(conversationId: string): Promise<
   const setState = useAgentTaskStore.setState;
   const getState = useAgentTaskStore.getState;
 
-  const chunkUnlisten = await listen<string>(apiAgentChunkEvent(id), (event) => {
+  // rAF-coalesced application of streaming deltas. Token/thinking events can
+  // arrive dozens of times per second, and writing the store per event
+  // rebuilt the conversations array (and re-ran every subscribed selector)
+  // once per token. Buffer the deltas and land at most one store write + one
+  // save request per frame, replacing only this conversation's entry instead
+  // of remapping the whole array. done/error/thinking-stop call `flushNow()`
+  // first so a settling turn never loses or reorders tail chunks.
+  const coalescer = createStreamCoalescer(({ content, thinking }) => {
+    if (thinking) {
+      useAgentStreamingStore.getState().appendThinking(id, thinking);
+    }
+    const conversations = getState().conversations;
+    const index = conversations.findIndex((c) => c.id === id);
+    if (index === -1) return;
+    const conv = conversations[index];
     let touched = false;
-    setState((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) => {
-          if (m.isStreaming && m.role === "assistant") {
-            return { ...m, content: m.content + event.payload };
-          }
-          return m;
-        });
+    const messages = conv.messages.map((m) => {
+      if (m.isStreaming && m.role === "assistant") {
         touched = true;
-        return { ...c, messages, updatedAt: Date.now() };
-      }),
-    }));
-    if (touched) requestConversationSave(id);
+        return {
+          ...m,
+          content: content ? m.content + content : m.content,
+          thinking: thinking ? (m.thinking ?? "") + thinking : m.thinking,
+        };
+      }
+      return m;
+    });
+    if (!touched) return;
+    const next = [...conversations];
+    next[index] = { ...conv, messages, updatedAt: Date.now() };
+    setState({ conversations: next });
+    requestConversationSave(id);
+  });
+
+  const chunkUnlisten = await listen<string>(apiAgentChunkEvent(id), (event) => {
+    coalescer.pushContent(event.payload);
   });
 
   const toolStartUnlisten = await listen<{ id: string; name: string }>(
@@ -199,6 +221,10 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     cache_creation_input_tokens: number;
     resume_token?: string | null;
   }>(apiAgentDoneEvent(id), (event) => {
+    // Land any buffered stream deltas before flipping isStreaming off —
+    // otherwise the pending frame would find no streaming message and the
+    // turn's tail chunks would be lost.
+    coalescer.flushNow();
     let updated: AgentConversation | undefined;
     let nextQueued: string | undefined;
     let promotedQueuedMessageId: string | undefined;
@@ -214,6 +240,17 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                 outputTokens: event.payload.output_tokens,
                 cacheReadTokens: event.payload.cache_read_input_tokens,
                 cacheWriteTokens: event.payload.cache_creation_input_tokens,
+                // Stamp the estimated USD cost at receipt time so render
+                // surfaces never need per-message IPC (undefined when the
+                // model has no pricing entry). Reasoning tokens landed on
+                // the message via earlier turn-summary events.
+                costUsd:
+                  estimateTurnCostUsd(c.model, {
+                    inputTokens: event.payload.input_tokens,
+                    outputTokens: event.payload.output_tokens,
+                    cacheReadTokens: event.payload.cache_read_input_tokens,
+                    reasoningTokens: m.reasoningTokens,
+                  }) ?? undefined,
               }
             : m,
         );
@@ -272,6 +309,9 @@ export async function installApiAgentListeners(conversationId: string): Promise<
   });
 
   const errorUnlisten = await listen<{ message: string }>(apiAgentErrorEvent(id), (event) => {
+    // Same as `done`: buffered deltas must land while the message is still
+    // streaming, and before any failover retry forks the transcript.
+    coalescer.flushNow();
     const conv = getState().conversations.find((c) => c.id === id);
     if (
       conv &&
@@ -337,28 +377,17 @@ export async function installApiAgentListeners(conversationId: string): Promise<
   });
 
   const thinkingUnlisten = await listen<{ text: string }>(apiAgentThinkingEvent(id), (event) => {
-    // Reasoning deltas accumulate in agentStreamingStore (ephemeral).
-    // We still mirror each delta onto the streaming assistant message's
-    // `thinking` field so the persisted transcript has the full chain of
-    // thought when the turn ends.
-    useAgentStreamingStore.getState().appendThinking(id, event.payload.text);
-    let touched = false;
-    setState((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const messages = c.messages.map((m) =>
-          m.isStreaming && m.role === "assistant"
-            ? { ...m, thinking: (m.thinking ?? "") + event.payload.text }
-            : m,
-        );
-        touched = true;
-        return { ...c, messages, updatedAt: Date.now() };
-      }),
-    }));
-    if (touched) requestConversationSave(id);
+    // Reasoning deltas accumulate in agentStreamingStore (ephemeral) and
+    // mirror onto the streaming assistant message's `thinking` field so the
+    // persisted transcript keeps the full chain of thought — both applied
+    // per-frame by the coalescer above.
+    coalescer.pushThinking(event.payload.text);
   });
 
   const thinkingStopUnlisten = await listen<unknown>(apiAgentThinkingStopEvent(id), () => {
+    // Flush so the final buffered reasoning deltas land on the message (and
+    // in the live store) before the live buffer is cleared.
+    coalescer.flushNow();
     useAgentStreamingStore.getState().clearThinking(id);
   });
 
@@ -437,6 +466,14 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                 cacheReadTokens: event.payload.cache_read_input_tokens,
                 cacheWriteTokens: event.payload.cache_creation_input_tokens,
                 reasoningTokens: event.payload.reasoning_tokens ?? m.reasoningTokens,
+                costUsd:
+                  estimateTurnCostUsd(c.model, {
+                    inputTokens: event.payload.input_tokens,
+                    outputTokens: event.payload.output_tokens,
+                    cacheReadTokens: event.payload.cache_read_input_tokens,
+                    reasoningTokens:
+                      event.payload.reasoning_tokens ?? m.reasoningTokens,
+                  }) ?? undefined,
               }
             : m,
         );
@@ -485,6 +522,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
   });
 
   return () => {
+    coalescer.dispose();
     chunkUnlisten();
     toolStartUnlisten();
     toolResultUnlisten();

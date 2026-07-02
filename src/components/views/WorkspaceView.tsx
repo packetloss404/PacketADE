@@ -13,7 +13,6 @@ import { isOnboardingComplete } from "@/lib/onboarding";
 import { useState, useRef, useEffect } from "react";
 import { LayoutGrid, GitBranch, FileText, Plus, Zap, Brain } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
-import { PaneLayoutControls } from "@/components/workspace/PaneLayoutControls";
 import type { WorkspaceAgentSlot, Workspace } from "@/types/workspace";
 
 const agentLabel: Record<WorkspaceAgentSlot, string> = {
@@ -221,7 +220,6 @@ export function WorkspaceView() {
                   <GitBranch size={12} />
                 </button>
               )}
-              <PaneLayoutControls />
               <button
                 onClick={() =>
                   activeWorkspace && setBypassPermissions(activeWorkspace.id, !bypassOn)

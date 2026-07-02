@@ -207,7 +207,8 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
 
   // Reach the mosaic drag source from the surrounding MosaicWindow so the
   // unified header bar acts as the drag handle for reordering tiles.
-  // Context may be null when pane is rendered outside Mosaic (e.g. zoomed overlay).
+  // Context null-guard is defensive — panes are always rendered inside Mosaic
+  // (zoom reuses the mounted tile rather than rendering outside the mosaic).
   const mosaicCtx = useContext(MosaicWindowContext);
   const mosaicWindowActions = mosaicCtx?.mosaicWindowActions ?? null;
 
@@ -673,7 +674,13 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     : `border border-bg-border ${accentBorderClass}`;
 
   return (
-    <div className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass}`}>
+    // data-pane-zoomed lets mosaic-overrides.css maximize this pane's
+    // already-mounted mosaic tile when zoomed (.mosaic-zoom-active) instead
+    // of mounting a duplicate WorkspacePane (which would spawn a second PTY).
+    <div
+      data-pane-zoomed={isZoomed || undefined}
+      className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass}`}
+    >
       <TerminalPane
         paneId={pane.id}
         cliCommand={effectiveCommand}

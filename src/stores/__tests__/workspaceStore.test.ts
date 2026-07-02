@@ -14,7 +14,6 @@ describe("workspaceStore.createWorkspace", () => {
     useWorkspaceStore.setState({
       workspaces: [],
       activeWorkspaceId: null,
-      keepTerminalsAlive: false,
       zoomedPaneId: null,
     });
     // Reset relevant slices that createWorkspace touches.

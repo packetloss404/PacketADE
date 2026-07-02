@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { Bot } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
+import { parseToolInput } from "@/lib/parseToolInput";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { BaseToolCard } from "./tool-cards/BaseToolCard";
 import { StatusPill } from "./tool-cards/StatusPill";
@@ -18,15 +19,12 @@ interface SubagentToolCallCardProps {
 }
 
 function parseSubagentInput(raw: string | undefined): SubagentInput {
-  if (!raw) return { task: "" };
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const task = typeof parsed.task === "string" ? parsed.task : "";
-    const model = typeof parsed.model === "string" ? parsed.model : undefined;
-    return { task, model };
-  } catch {
-    return { task: raw };
-  }
+  const parsed = parseToolInput(raw);
+  // Undecodable input is treated as a bare task description.
+  if (!parsed) return { task: raw ?? "" };
+  const task = typeof parsed.task === "string" ? parsed.task : "";
+  const model = typeof parsed.model === "string" ? parsed.model : undefined;
+  return { task, model };
 }
 
 function truncate(text: string, max: number): string {
