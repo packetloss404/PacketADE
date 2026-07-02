@@ -1,10 +1,8 @@
 import { useState } from "react";
 import {
   Brain,
-  Compass,
   Copy,
   Download,
-  FileCheck2,
   FileJson,
   MoreVertical,
   PanelRightOpen,
@@ -13,7 +11,7 @@ import {
 } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { AgentModeChip } from "../AgentModeChip";
+import { AgentModeChip, type AgentMode } from "../AgentModeChip";
 import { ContextUsageRing } from "../ContextUsageRing";
 import { ContinueInMenu } from "../ContinueInMenu";
 import { DiffPaneTrigger } from "../DiffPaneTrigger";
@@ -36,13 +34,9 @@ interface HeaderActionsProps {
   setShowRewind: (updater: (v: boolean) => boolean) => void;
   onClose: () => void;
   onCycleMode: () => void;
+  onSelectMode: (mode: AgentMode) => void;
+  onSetApproveWrites: (on: boolean) => void;
   onChangeModel: (model: string) => void;
-  setPlanMode: (id: string, on: boolean) => Promise<void> | void;
-  setPermissionMode: (
-    id: string,
-    mode: "auto" | "ask_for_risky" | "allow_all" | "deny_all",
-  ) => Promise<void> | void;
-  setApproveWrites: (id: string, on: boolean) => Promise<void> | void;
   onExport: () => void;
 }
 
@@ -56,10 +50,9 @@ export function HeaderActions({
   setShowRewind,
   onClose,
   onCycleMode,
+  onSelectMode,
+  onSetApproveWrites,
   onChangeModel,
-  setPlanMode,
-  setPermissionMode,
-  setApproveWrites,
   onExport,
 }: HeaderActionsProps) {
   const memoryGetContext = useMemoryStore((s) => s.getContextForSession);
@@ -181,74 +174,14 @@ export function HeaderActions({
 
       {conversation.mode === "api" && (
         <div className="flex items-center gap-1.5">
-          <AgentModeChip conversation={conversation} onCycle={onCycleMode} />
-          <Tooltip
-            content={
-              conversation.planMode
-                ? "Plan mode ON — writes/bash disabled"
-                : "Plan mode OFF — all tools enabled"
-            }
-          >
-            <button
-              type="button"
-              onClick={() => void setPlanMode(conversationId, !conversation.planMode)}
-              aria-pressed={!!conversation.planMode}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
-                conversation.planMode
-                  ? "border-accent-amber/40 text-accent-amber bg-accent-amber/15"
-                  : "border-bg-border text-text-muted hover:text-text-primary"
-              }`}
-            >
-              <Compass size={11} />
-              Plan
-            </button>
-          </Tooltip>
-          <div data-agent-pane-permissions-dropdown={conversationId}>
-            <Tooltip content="Permission mode for risky tools">
-              <select
-                value={conversation.permissionMode ?? "auto"}
-                onChange={(e) =>
-                  void setPermissionMode(
-                    conversationId,
-                    e.target.value as
-                      | "auto"
-                      | "ask_for_risky"
-                      | "allow_all"
-                      | "deny_all",
-                  )
-                }
-                className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
-              >
-                <option value="auto">Auto</option>
-                <option value="ask_for_risky">Ask risky</option>
-                <option value="allow_all">Allow all</option>
-                <option value="deny_all">Deny risky</option>
-              </select>
-            </Tooltip>
+          <div data-agent-pane-mode-chip={conversationId}>
+            <AgentModeChip
+              conversation={conversation}
+              onCycle={onCycleMode}
+              onSelectMode={onSelectMode}
+              onSetApproveWrites={onSetApproveWrites}
+            />
           </div>
-          <Tooltip
-            content={
-              conversation.approveWrites
-                ? "Approve writes ON — confirm each write_file"
-                : "Approve writes OFF"
-            }
-          >
-            <button
-              type="button"
-              onClick={() =>
-                void setApproveWrites(conversationId, !conversation.approveWrites)
-              }
-              aria-pressed={!!conversation.approveWrites}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] transition-colors ${
-                conversation.approveWrites
-                  ? "border-accent-amber/40 text-accent-amber bg-accent-amber/15"
-                  : "border-bg-border text-text-muted hover:text-text-primary"
-              }`}
-            >
-              <FileCheck2 size={11} />
-              Approve
-            </button>
-          </Tooltip>
           {copyState !== "idle" && (
             <span
               className={`text-[10px] ${

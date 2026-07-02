@@ -12,6 +12,7 @@ import { SessionHealthBar } from "./SessionHealthBar";
 import { PlanPanel } from "./PlanPanel";
 import { SpecPanel } from "./SpecPanel";
 import { deriveMode, flagsForMode, nextMode } from "./agentModeChipUtils";
+import type { AgentMode } from "./AgentModeChip";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import {
@@ -395,22 +396,27 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     void actions.cancelActiveConversation(conversationId);
   }
 
-  // Claude-Code-style mode cycle. Applies flagsForMode(next) to the
-  // conversation so the chip always reflects the actual posture.
-  function cycleMode() {
+  // Claude-Code-style mode set/cycle. Applies flagsForMode(next) to the
+  // conversation so the chip always reflects the actual posture. The current
+  // approveWrites is threaded through flagsForMode so a mode change can never
+  // clobber the fine flag.
+  function applyMode(next: AgentMode) {
     if (!conversation || conversation.mode !== "api") return;
-    const current = deriveMode(conversation);
-    const next = nextMode(current);
-    const flags = flagsForMode(next);
-    if (flags.planMode !== conversation.planMode) {
+    const flags = flagsForMode(next, conversation.approveWrites ?? false);
+    if (flags.planMode !== (conversation.planMode ?? false)) {
       void actions.setPlanMode(conversationId, flags.planMode);
     }
-    if (flags.permissionMode !== conversation.permissionMode) {
+    if (flags.permissionMode !== (conversation.permissionMode ?? "auto")) {
       void actions.setPermissionMode(conversationId, flags.permissionMode);
     }
     if (flags.approveWrites !== (conversation.approveWrites ?? false)) {
       void actions.setApproveWrites(conversationId, flags.approveWrites);
     }
+  }
+
+  function cycleMode() {
+    if (!conversation || conversation.mode !== "api") return;
+    applyMode(nextMode(deriveMode(conversation)));
   }
 
   // Cursor-style "reasoning nudge" — Alt+. raises model thoroughness, Alt+,
@@ -524,10 +530,9 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           setShowRewind={setShowRewind}
           onClose={onClose}
           onCycleMode={cycleMode}
+          onSelectMode={applyMode}
+          onSetApproveWrites={(on) => void actions.setApproveWrites(conversationId, on)}
           onChangeModel={(model) => void actions.changeModel(conversationId, model)}
-          setPlanMode={actions.setPlanMode}
-          setPermissionMode={actions.setPermissionMode}
-          setApproveWrites={actions.setApproveWrites}
           onExport={() => void handleExport(conversation)}
         />
       </div>
