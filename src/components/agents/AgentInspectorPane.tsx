@@ -19,12 +19,12 @@ import {
 import { aggregateConversationCost, formatCostPill } from "@/lib/conversationCost";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { AgentPreviewPane } from "./AgentPreviewPane";
-import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
+import { ReviewSurface } from "./review/ReviewSurface";
 import { AgentFilePane } from "./AgentFilePane";
 import { PlanPanel } from "./PlanPanel";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { logSwallowed } from "@/lib/logSwallowed";
-import { useReviewedDiffs } from "./hooks/useReviewedDiffs";
+import { useUnviewedCount } from "./review/useUnviewedCount";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -77,7 +77,7 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
   const [tab, setTab] = useState<Tab>("inspector");
   const [width, setWidth] = useState<number>(() => readPersistedWidth());
   const [isDragging, setIsDragging] = useState(false);
-  const { unreviewedCount } = useReviewedDiffs(conversationId);
+  const unreviewedCount = useUnviewedCount(conversationId);
 
   // Auto-switch to the Preview tab when the preview store flips to open
   // (e.g. clicking a .md link in chat or detecting a plan response).
@@ -292,7 +292,7 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         )}
         {tab === "diff" && (
           conversation.mode === "api" ? (
-            <EmbeddedDiffPane conversationId={conversationId} />
+            <ReviewSurface conversationId={conversationId} embedded />
           ) : (
             <div className="flex-1 flex items-center justify-center bg-bg-primary">
               <EmptyState
@@ -615,10 +615,11 @@ function deriveLatestPlan(messages: { role: string; content: string }[]): {
 }
 
 /**
- * Small accent-green pill rendered on the Diff tab when there are
- * unreviewed `write_file` tool calls. Caps display at "9+" so the badge
- * stays compact. `compact=true` is used in the mini-icon strip (collapsed
- * sidebar) where the host button is only 24px wide.
+ * Small accent-green pill rendered on the Diff tab when the review surface
+ * has files not yet marked Viewed (or gated edits awaiting a decision).
+ * Caps display at "9+" so the badge stays compact. `compact=true` is used
+ * in the mini-icon strip (collapsed sidebar) where the host button is only
+ * 24px wide.
  */
 function UnreviewedBadge({
   count,

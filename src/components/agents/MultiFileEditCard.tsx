@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import * as Diff from "diff";
 import {
   ChevronRight,
   FileEdit,
@@ -8,12 +7,16 @@ import {
   FilePlus2,
   Folder,
 } from "lucide-react";
-import { useDiffPaneStore } from "../../stores/diffPaneStore";
+import { useReviewStore } from "@/stores/reviewStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { Spinner } from "@/components/ui/Spinner";
 import { materializeEdits } from "@/lib/parseToolInput";
-import { collectEditGroups, type FileEditGroup } from "@/lib/diffUtils";
+import {
+  collectEditGroups,
+  countLineChanges,
+  type FileEditGroup,
+} from "@/lib/diffUtils";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface MultiFileEditCardProps {
@@ -52,24 +55,6 @@ function buildSeeds(
     removed: 0,
     loading: true,
   }));
-}
-
-function countDiffLines(orig: string, next: string): {
-  added: number;
-  removed: number;
-} {
-  const parts = Diff.diffLines(orig, next);
-  let added = 0;
-  let removed = 0;
-  for (const part of parts) {
-    const trimmed = part.value.endsWith("\n")
-      ? part.value.slice(0, -1)
-      : part.value;
-    const lines = trimmed.length === 0 ? 0 : trimmed.split("\n").length;
-    if (part.added) added += lines;
-    else if (part.removed) removed += lines;
-  }
-  return { added, removed };
 }
 
 const KIND_ORDER: FileKind[] = ["new", "modified", "deleted"];
@@ -150,7 +135,7 @@ function MultiFileEditCardImpl({
             } else {
               kind = "modified";
             }
-            const { added, removed } = countDiffLines(
+            const { added, removed } = countLineChanges(
               hasOriginal ? original : "",
               newContent,
             );
@@ -196,7 +181,7 @@ function MultiFileEditCardImpl({
     summaryParts.length > 0 ? `: ${summaryParts.join(", ")}` : "";
 
   const handleOpenAll = () => {
-    useDiffPaneStore.getState().openForConversation(conversationId);
+    useReviewStore.getState().openForConversation(conversationId);
   };
 
   const handleOpenFile = (path: string) => {
@@ -204,7 +189,7 @@ function MultiFileEditCardImpl({
       usePreviewPaneStore.getState().openMarkdown(path);
       return;
     }
-    useDiffPaneStore.getState().openForConversation(conversationId, path);
+    useReviewStore.getState().openForConversation(conversationId, path);
   };
 
   return (
@@ -280,7 +265,7 @@ function MultiFileEditCardImpl({
               onClick={handleOpenAll}
               className="text-[11px] text-text-muted hover:text-text-primary transition-colors"
             >
-              Open all in diff pane
+              Review all
             </button>
           </div>
         </div>

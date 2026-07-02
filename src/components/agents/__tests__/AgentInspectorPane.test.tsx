@@ -4,7 +4,7 @@
  * Covers: tab switching, collapse/expand, resize-handle clamping and
  * persistence, auto-switch to Preview when the preview store flips, the
  * Diff tab's empty-state for PTY conversations, and the Files tab's SSH
- * guard. Child panes (AgentPreviewPane, EmbeddedDiffPane) are stubbed
+ * guard. Child panes (AgentPreviewPane, ReviewSurface) are stubbed
  * with test-id sentinels; AgentFilePane renders its real SSH branch so
  * the guard copy is verified against the live component.
  */
@@ -37,8 +37,8 @@ vi.mock("@/components/agents/AgentPreviewPane", () => ({
   AgentPreviewPane: () => <div data-testid="preview-pane" />,
 }));
 
-vi.mock("@/components/agents/EmbeddedDiffPane", () => ({
-  EmbeddedDiffPane: () => <div data-testid="diff-pane" />,
+vi.mock("@/components/agents/review/ReviewSurface", () => ({
+  ReviewSurface: () => <div data-testid="diff-pane" />,
 }));
 
 import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
@@ -211,7 +211,7 @@ describe("AgentInspectorPane", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: /diff/i }));
 
-    // EmbeddedDiffPane is NOT mounted for pty conversations.
+    // The review surface is NOT mounted for pty conversations.
     expect(screen.queryByTestId("diff-pane")).not.toBeInTheDocument();
     expect(
       screen.getByText(/diffs are only tracked for api-mode conversations/i),

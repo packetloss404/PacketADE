@@ -33,6 +33,9 @@ import { PendingDiffCommentsStrip } from "./chat/PendingDiffCommentsStrip";
 import { MessageList } from "./chat/MessageList";
 import { PendingApprovalsSection } from "./chat/PendingApprovalsSection";
 import { CancelPendingButton } from "./chat/CancelPendingButton";
+import { ReviewBar } from "./review/ReviewBar";
+import { ReviewSurface } from "./review/ReviewSurface";
+import { useReviewStore } from "@/stores/reviewStore";
 import { useScrollState } from "./hooks/useScrollState";
 import { useVoiceTranscript } from "./hooks/useVoiceTranscript";
 import { useLatestPlanPreview } from "./hooks/useLatestPlanPreview";
@@ -146,6 +149,12 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const pendingEdits = useAgentApprovalStore(
     (s) => s.edits.get(conversationId) ?? EMPTY_PENDING_EDITS,
   );
+  // Canonical review surface (P1-8): expanded state lives in reviewStore so
+  // transcript chips / MultiFileEditCard / the header chip can deep-link.
+  const reviewOpen = useReviewStore(
+    (s) => s.open && s.conversationId === conversationId,
+  );
+  const closeReview = useReviewStore((s) => s.close);
 
   // Preview pane + settings selectors grouped to reduce subscription count.
   const preview = usePreviewPaneStore(
@@ -585,15 +594,23 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
               </button>
             </Tooltip>
           )}
+          {/* Expanded canonical review surface — takes over the transcript
+              area (header/composer stay visible) until collapsed. */}
+          {reviewOpen && (
+            <div className="absolute inset-0 z-20 bg-bg-primary">
+              <ReviewSurface
+                conversationId={conversationId}
+                onClose={closeReview}
+              />
+            </div>
+          )}
         </div>
       </ClickablePathsRoot>
 
       <PendingApprovalsSection
         conversation={conversation}
         conversationId={conversationId}
-        pendingEdits={pendingEdits}
         pendingPermissions={pendingPermissions}
-        respondEdit={approvalActions.respondEdit}
         respondPermission={approvalActions.respondPermission}
         cancelPendingTools={approvalActions.cancelPendingTools}
         appendAllowedToolPattern={actions.appendAllowedToolPattern}
@@ -604,6 +621,16 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           conversation={conversation}
           onRemove={(id) => actions.removeDiffComment(conversationId, id)}
           onClear={() => actions.clearDiffComments(conversationId)}
+        />
+      )}
+
+      {conversation.mode === "api" && (
+        <ReviewBar
+          conversationId={conversationId}
+          diffTotals={diffTotals}
+          pendingEdits={pendingEdits}
+          pendingPermissionCount={pendingPermissions.length}
+          respondEdit={approvalActions.respondEdit}
         />
       )}
 

@@ -5,7 +5,6 @@ import { LeftRail } from "@/components/layout/LeftRail";
 import { StatusStrip } from "@/components/layout/StatusStrip";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
-import { DiffPane } from "@/components/agents/DiffPane";
 import { SideChatOverlay } from "@/components/agents/SideChatOverlay";
 import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
 import { useDictationTarget } from "@/hooks/useDictationTarget";
@@ -288,7 +287,6 @@ export default function App() {
         </div>
         <StatusStrip />
         {commandPaletteOpen && <CommandPalette />}
-        <DiffPane />
         <SideChatOverlay />
         {loginCli && (
           <Suspense fallback={null}>

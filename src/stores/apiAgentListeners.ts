@@ -426,18 +426,27 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     if (!conv) return;
     // Gated writes carry their pre-edit baseline on `before` — record it so
     // review surfaces diff against the true "before" after the edit applies.
-    // Keyed project-relative: the runtimes emit raw tool paths (absolute for
-    // Claude Code / Codex), while the transcript edit layer keys descriptors
-    // project-relative.
+    // Both the baseline key AND the stored pending edit are keyed project-
+    // relative: the runtimes emit raw tool paths (absolute for Claude Code /
+    // Codex), while the transcript edit layer keys descriptors project-
+    // relative — the review surface dedupes, deep-links and displays pending
+    // edits against those keys, so a raw absolute path would render the same
+    // file twice and double-count it.
+    const relativePath = toProjectRelativePath(
+      event.payload.path,
+      conv.projectPath,
+    );
     useEditBaselineStore
       .getState()
       .recordBaseline(
         id,
-        toProjectRelativePath(event.payload.path, conv.projectPath),
+        relativePath,
         event.payload.before ?? null,
         event.payload.id,
       );
-    useAgentApprovalStore.getState().addPendingEdit(id, event.payload);
+    useAgentApprovalStore
+      .getState()
+      .addPendingEdit(id, { ...event.payload, path: relativePath });
     void notifyApprovalNeeded(id, conv.title);
   });
 
