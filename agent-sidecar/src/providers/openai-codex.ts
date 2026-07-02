@@ -51,6 +51,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { promises as fsPromises } from "node:fs";
+import * as nodePath from "node:path";
 import type {
   EditResponseRequest,
   Emit,
@@ -551,6 +553,51 @@ export class OpenAICodexProvider implements ProviderHandler {
   }
 
   /**
+   * P1-7: read the pre-edit content for every path a Codex `file_change`
+   * item names and emit a non-blocking `edit_baseline` per path, so the
+   * host's review surfaces can diff the applied patch against the true
+   * "before" instead of live disk. Best-effort: unreadable paths emit a
+   * "file did not exist" baseline (before absent), and Codex applying the
+   * patch before `item.started` lands is tolerated because the host store
+   * is first-wins per path.
+   */
+  private async captureFileChangeBaselines(
+    item: Record<string, unknown>,
+    sessionId: string,
+    itemId: string,
+    emit: Emit,
+  ): Promise<void> {
+    const changes = item.changes;
+    if (!Array.isArray(changes)) return;
+    const projectPath = this.lastReq?.projectPath ?? "";
+    for (const change of changes) {
+      let rawPath: string | undefined;
+      if (typeof change === "string") {
+        rawPath = change;
+      } else if (change && typeof change === "object") {
+        const c = change as Record<string, unknown>;
+        rawPath = typeof c.path === "string" ? c.path : undefined;
+      }
+      if (!rawPath) continue;
+      const resolved = nodePath.isAbsolute(rawPath)
+        ? rawPath
+        : nodePath.join(projectPath, rawPath);
+      const before = await fsPromises
+        .readFile(resolved, "utf8")
+        .catch(() => null);
+      emit({
+        type: "edit_baseline",
+        sessionId,
+        toolUseId: itemId,
+        // Emit the path exactly as Codex reported it so it matches the
+        // tool call's `changes` list in the transcript.
+        path: rawPath,
+        before: before ?? undefined,
+      });
+    }
+  }
+
+  /**
    * Translate a single JSONL event from Codex into sidecar protocol events.
    * Codex's event schema is not formally documented; we match on `type`
    * (or `msg.type` for envelope-wrapped variants) and handle the common
@@ -706,6 +753,14 @@ export class OpenAICodexProvider implements ProviderHandler {
             isError: pickString(item, "status") === "failed",
           });
         } else {
+          if (typeStr === "item.started") {
+            // P1-7: best-effort pre-edit baseline capture — Codex applies
+            // patches inside its own sandbox, so this is the only moment we
+            // can read the "before" content. Fire-and-forget; the host store
+            // is first-wins per path, so a late/post-apply read never
+            // overwrites a real baseline.
+            void this.captureFileChangeBaselines(item, sessionId, itemId, emit);
+          }
           emit({ type: "tool_start", sessionId, toolUseId: itemId, name: "apply_patch", input: item });
         }
         return;

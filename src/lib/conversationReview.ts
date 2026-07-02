@@ -1,36 +1,19 @@
 import * as Diff from "diff";
 import { readFileForDiff } from "@/lib/tauri";
-import { parseWriteFileInput } from "@/lib/parseToolInput";
+import { materializeEdits } from "@/lib/parseToolInput";
+import { collectConversationEditGroups } from "@/lib/diffUtils";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import type { AgentConversation } from "@/types/agent-conversation";
-
-/**
- * Parse the latest `write_file` tool call per path from a conversation.
- * Tolerant of both stringified-JSON and structured `input` shapes (via the
- * shared `parseWriteFileInput` decoder) — same latest-wins walk as
- * `aggregateConversationDiffs.collectLatestWrites`, duplicated here to keep
- * this module independent.
- */
-function collectLatestWrites(conv: AgentConversation): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const msg of conv.messages) {
-    if (!msg.toolCalls?.length) continue;
-    for (const tc of msg.toolCalls) {
-      if (tc.name !== "write_file") continue;
-      const parsed = parseWriteFileInput(tc);
-      if (parsed) map.set(parsed.path, parsed.content);
-    }
-  }
-  return map;
-}
 
 /** Limit to keep prompts under model context windows for big sweeps. */
 const MAX_REVIEW_BYTES = 60_000;
 
 /**
  * Build a unified-diff prompt body for the Reviewer subagent. Walks every
- * pending write_file in the conversation, reads the on-disk version for
- * the "before" side, and stitches them into a single markdown blob the
- * reviewer can read in one pass.
+ * edit-bearing tool call in the conversation (all providers, via the shared
+ * canonical-edit collector), takes the recorded pre-edit baseline for the
+ * "before" side (falling back to disk when none was recorded), and stitches
+ * the diffs into a single markdown blob the reviewer can read in one pass.
  *
  * Returns null when there's nothing staged to review (so the caller can
  * surface a friendly "no diff" message instead of opening an empty
@@ -39,20 +22,38 @@ const MAX_REVIEW_BYTES = 60_000;
 export async function buildReviewPrompt(
   conversation: AgentConversation,
 ): Promise<string | null> {
-  const writes = collectLatestWrites(conversation);
-  if (writes.size === 0) return null;
+  const groups = collectConversationEditGroups(conversation);
+  if (groups.size === 0) return null;
+  const getBaseline = useEditBaselineStore.getState().getBaseline;
 
   const sections: string[] = [];
   let totalBytes = 0;
   let truncated = false;
 
-  for (const [path, newContent] of writes) {
+  for (const [path, group] of groups) {
+    const baseline = getBaseline(conversation.id, path);
     let orig: string | null;
-    try {
-      orig = await readFileForDiff(conversation.projectPath, path);
-    } catch {
-      orig = null;
+    if (baseline !== undefined) {
+      orig = baseline.content;
+    } else {
+      try {
+        orig = (await readFileForDiff(conversation.projectPath, path)) ?? null;
+      } catch {
+        orig = null;
+      }
     }
+    let newContent = materializeEdits(group.edits, orig);
+    if (newContent === null) {
+      // Transcript can't reproduce the content (e.g. Codex apply_patch) —
+      // the applied on-disk result is the truthful "after".
+      try {
+        newContent =
+          (await readFileForDiff(conversation.projectPath, path)) ?? null;
+      } catch {
+        newContent = null;
+      }
+    }
+    if (newContent === null) continue;
     const beforeLabel = orig === null ? "(new file)" : path;
     const patch = Diff.createPatch(
       path,
@@ -70,7 +71,9 @@ export async function buildReviewPrompt(
     totalBytes += block.length;
   }
 
-  const header = `Review the following staged changes from conversation "${conversation.title}". Files: ${writes.size}.${truncated ? " (truncated to fit context)" : ""}\n\nReturn 🛑 Blockers / ⚠️ Concerns / 💡 Nits with file:line citations.`;
+  if (sections.length === 0) return null;
+
+  const header = `Review the following staged changes from conversation "${conversation.title}". Files: ${groups.size}.${truncated ? " (truncated to fit context)" : ""}\n\nReturn 🛑 Blockers / ⚠️ Concerns / 💡 Nits with file:line citations.`;
 
   return header + sections.join("");
 }

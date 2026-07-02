@@ -2,7 +2,12 @@ import { memo, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { ToolDiffView } from "../ToolDiffView";
 import { StatusPill } from "../tool-cards/StatusPill";
-import { parseWriteFileInput } from "@/lib/parseToolInput";
+import {
+  isEditToolName,
+  materializeEdits,
+  parseEditToolCalls,
+} from "@/lib/parseToolInput";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 function ToolCallCardImpl({
@@ -22,8 +27,34 @@ function ToolCallCardImpl({
     setExpanded(verbosity === "verbose");
   }, [verbosity]);
 
-  const writeFileInput =
-    toolCall.name === "write_file" ? parseWriteFileInput(toolCall) : null;
+  // Normalized edit descriptor: fires for every provider's edit tools
+  // (write_file, Write/Edit/MultiEdit/NotebookEdit, apply_patch), not just
+  // the legacy in-process `write_file`. `projectPath` relativizes absolute
+  // Claude Code / Codex paths so disk fallbacks and baseline keys line up.
+  const edits = isEditToolName(toolCall.name)
+    ? parseEditToolCalls(toolCall, projectPath)
+    : [];
+  const singleEdit = edits.length === 1 ? edits[0] : null;
+  // Pre-edit content recorded for THIS call (per-tool-call baseline) so the
+  // diff stays truthful after the edit applies. Subscribed so a baseline
+  // arriving after the card mounted re-renders it.
+  const callBaseline = useEditBaselineStore((s) =>
+    s.byToolCall.get(toolCall.id),
+  );
+  const baselineContent =
+    callBaseline && singleEdit && callBaseline.path === singleEdit.path
+      ? callBaseline.content
+      : undefined;
+  // Replacement chains (Edit/MultiEdit) need the baseline to materialize;
+  // without one there is nothing to diff — fall through to the generic card.
+  const writeFileInput = singleEdit
+    ? (() => {
+        const after = materializeEdits([singleEdit], baselineContent ?? null);
+        return after !== null
+          ? { path: singleEdit.path, content: after }
+          : null;
+      })()
+    : null;
 
   const statusPill =
     toolCall.status === "running" ? (
@@ -57,6 +88,9 @@ function ToolCallCardImpl({
           projectPath={projectPath}
           filePath={writeFileInput.path}
           newContent={writeFileInput.content}
+          // Recorded per-call baseline: null = new file, string = pre-edit
+          // content, undefined = none recorded (fall back to disk).
+          oldContent={baselineContent}
         />
       </div>
     );

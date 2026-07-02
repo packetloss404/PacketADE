@@ -152,6 +152,9 @@ fn permission_request_event(session_id: &str) -> String {
 fn pending_edit_event(session_id: &str) -> String {
     format!("api-agent:pending-edit:{}", session_id)
 }
+fn edit_baseline_event(session_id: &str) -> String {
+    format!("api-agent:edit-baseline:{}", session_id)
+}
 
 async fn mark_attempt_reviewing_for_session(session_id: &str) {
     let _ = crate::commands::flight_attempts::update_attempt_status_by_session(
@@ -191,6 +194,18 @@ struct PendingEditPayload {
     content: String,
     /// Prior file content (None for new files) so the frontend can render
     /// a real before/after diff instead of just the new content.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    before: Option<String>,
+}
+
+/// P1-7: non-blocking pre-edit baseline for auto-applied writes
+/// (approve-writes off). The frontend records it so review surfaces diff
+/// applied edits against the true "before" instead of live disk.
+#[derive(Clone, Serialize)]
+struct EditBaselinePayload {
+    id: String,
+    path: String,
+    /// Pre-edit file content (None when the file did not exist).
     #[serde(skip_serializing_if = "Option::is_none")]
     before: Option<String>,
 }
@@ -2047,6 +2062,34 @@ async fn run_agent_loop(
                                     },
                                 );
                                 return (tc.id.clone(), err);
+                            }
+                        }
+                    } else if tc.name == "write_file" {
+                        // P1-7: no approval gate, but still capture the
+                        // pre-edit baseline so review surfaces can diff the
+                        // applied result against the true "before" instead
+                        // of live disk. Local targets only — a remote read
+                        // here could mislabel an existing file as new.
+                        if let Some(path) = tc.arguments.get("path").and_then(|v| v.as_str()) {
+                            if let ExecutionTarget::Local { project_path } = &execution {
+                                let before = match tool_runtime::resolve_workspace_path(
+                                    path,
+                                    project_path,
+                                    false,
+                                ) {
+                                    Ok(resolved) => {
+                                        tokio::fs::read_to_string(resolved).await.ok()
+                                    }
+                                    Err(_) => None,
+                                };
+                                let _ = app_handle.emit(
+                                    &edit_baseline_event(&session_id),
+                                    EditBaselinePayload {
+                                        id: tc.id.clone(),
+                                        path: path.to_string(),
+                                        before,
+                                    },
+                                );
                             }
                         }
                     }

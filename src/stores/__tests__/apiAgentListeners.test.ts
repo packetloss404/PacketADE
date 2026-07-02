@@ -23,6 +23,9 @@ vi.mock("@/lib/agentsMd", () => ({
 
 vi.mock("@/lib/notifications", () => ({
   notifyConversationDone: vi.fn().mockResolvedValue(undefined),
+  notifySessionComplete: vi.fn().mockResolvedValue(undefined),
+  notifySessionError: vi.fn().mockResolvedValue(undefined),
+  notifyApprovalNeeded: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/stores/memoryStore", () => ({
@@ -325,5 +328,236 @@ describe("apiAgentListeners queued message drain", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * P1-7: baseline recording + tool-input plumbing. Every edit-bearing tool
+ * call must store its pre-edit content (from `pending_edit.before` for
+ * gated writes, from `edit_baseline` for auto-applied ones), and the raw
+ * tool input delivered on tool_start (sidecar path) must survive the
+ * tool_result merge so the transcript edit layer can parse it.
+ */
+describe("apiAgentListeners baseline recording", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doUnmock("@/stores/agentTaskStore");
+    vi.doUnmock("@/stores/apiAgentListeners");
+    localStorage.clear();
+    listeners = new Map();
+    listenMock.mockImplementation((eventName: string, callback: EventListener) => {
+      listeners.set(eventName, callback);
+      return Promise.resolve(() => {});
+    });
+    invokeMock.mockResolvedValue(undefined);
+    loadConversationsMock.mockResolvedValue([]);
+    sendApiAgentMessageMock.mockResolvedValue(undefined);
+  });
+
+  function makeApiConversation(id: string): AgentConversation {
+    return {
+      id,
+      title: "Baselines",
+      agent: "api-claude",
+      projectPath: "/proj",
+      status: "active",
+      messages: [
+        makeMessage({ id: "msg-user", content: "go" }),
+        makeMessage({
+          id: "msg-assistant",
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+        }),
+      ],
+      sessionId: id,
+      rawOutput: "",
+      createdAt: 1,
+      updatedAt: 1,
+      mode: "api",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    };
+  }
+
+  it("records the pre-edit baseline from pending_edit.before (gated writes)", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    const { useEditBaselineStore } = await import("@/stores/editBaselineStore");
+    useAgentTaskStore.setState({
+      conversations: [makeApiConversation("conv-pe")],
+      selectedConversationId: "conv-pe",
+    });
+    await installApiAgentListeners("conv-pe");
+
+    listeners.get("api-agent:pending-edit:conv-pe")?.({
+      payload: {
+        id: "tc-1",
+        path: "src/a.ts",
+        content: "after content",
+        before: "before content",
+      },
+    });
+
+    const store = useEditBaselineStore.getState();
+    expect(store.getBaseline("conv-pe", "src/a.ts")).toEqual({
+      content: "before content",
+    });
+    expect(store.getToolCallBaseline("tc-1")).toEqual({
+      conversationId: "conv-pe",
+      path: "src/a.ts",
+      content: "before content",
+    });
+  });
+
+  it("records baselines from edit_baseline events (auto-applied writes), null for new files", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    const { useEditBaselineStore } = await import("@/stores/editBaselineStore");
+    useAgentTaskStore.setState({
+      conversations: [makeApiConversation("conv-eb")],
+      selectedConversationId: "conv-eb",
+    });
+    await installApiAgentListeners("conv-eb");
+
+    const emit = listeners.get("api-agent:edit-baseline:conv-eb");
+    expect(emit).toBeDefined();
+    emit?.({
+      payload: { id: "tc-1", path: "src/a.ts", before: "original body" },
+    });
+    // `before` absent = the file did not exist.
+    emit?.({ payload: { id: "tc-2", path: "src/new.ts" } });
+
+    const store = useEditBaselineStore.getState();
+    expect(store.getBaseline("conv-eb", "src/a.ts")).toEqual({
+      content: "original body",
+    });
+    expect(store.getBaseline("conv-eb", "src/new.ts")).toEqual({
+      content: null,
+    });
+    expect(store.getToolCallBaseline("tc-2")?.content).toBeNull();
+  });
+
+  it("relativizes absolute runtime paths so baseline keys match the canonical descriptors", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    const { useEditBaselineStore } = await import("@/stores/editBaselineStore");
+    useAgentTaskStore.setState({
+      conversations: [makeApiConversation("conv-abs")],
+      selectedConversationId: "conv-abs",
+    });
+    await installApiAgentListeners("conv-abs");
+
+    // Claude Code's PreToolUse hook emits the raw absolute file_path; the
+    // transcript edit layer keys project-relative — the recorded baseline
+    // must land under the relative key or no surface ever finds it.
+    listeners.get("api-agent:edit-baseline:conv-abs")?.({
+      payload: { id: "tc-1", path: "/proj/src/a.ts", before: "v0" },
+    });
+    listeners.get("api-agent:pending-edit:conv-abs")?.({
+      payload: {
+        id: "tc-2",
+        path: "/proj/src/b.ts",
+        content: "after",
+        before: "v0b",
+      },
+    });
+
+    const store = useEditBaselineStore.getState();
+    expect(store.getBaseline("conv-abs", "src/a.ts")).toEqual({ content: "v0" });
+    expect(store.getBaseline("conv-abs", "src/b.ts")).toEqual({ content: "v0b" });
+    expect(store.getToolCallBaseline("tc-1")?.path).toBe("src/a.ts");
+  });
+
+  it("keeps the first recorded baseline per path across repeated edits", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    const { useEditBaselineStore } = await import("@/stores/editBaselineStore");
+    useAgentTaskStore.setState({
+      conversations: [makeApiConversation("conv-fw")],
+      selectedConversationId: "conv-fw",
+    });
+    await installApiAgentListeners("conv-fw");
+
+    const emit = listeners.get("api-agent:edit-baseline:conv-fw");
+    emit?.({ payload: { id: "tc-1", path: "src/a.ts", before: "v0" } });
+    // Second edit of the same file in the turn: `before` is now the
+    // intermediate state — must NOT replace the pre-turn baseline.
+    emit?.({ payload: { id: "tc-2", path: "src/a.ts", before: "v1" } });
+
+    const store = useEditBaselineStore.getState();
+    expect(store.getBaseline("conv-fw", "src/a.ts")).toEqual({ content: "v0" });
+    expect(store.getToolCallBaseline("tc-2")?.content).toBe("v1");
+  });
+
+  it("stores tool input from tool_start and keeps it when tool_result omits it (sidecar path)", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    useAgentTaskStore.setState({
+      conversations: [makeApiConversation("conv-in")],
+      selectedConversationId: "conv-in",
+    });
+    await installApiAgentListeners("conv-in");
+
+    const writeInput = JSON.stringify({
+      file_path: "/proj/src/a.ts",
+      content: "body\n",
+    });
+    listeners.get("api-agent:tool-start:conv-in")?.({
+      payload: { id: "tc-1", name: "Write", input: writeInput },
+    });
+    // Sidecar results don't echo the input back (empty string from Rust).
+    listeners.get("api-agent:tool-result:conv-in")?.({
+      payload: {
+        id: "tc-1",
+        name: "",
+        content: "ok",
+        is_error: false,
+        input: "",
+      },
+    });
+
+    const conv = useAgentTaskStore
+      .getState()
+      .conversations.find((c) => c.id === "conv-in");
+    const tc = conv?.messages
+      .flatMap((m) => m.toolCalls ?? [])
+      .find((t) => t.id === "tc-1");
+    expect(tc?.status).toBe("done");
+    expect(tc?.name).toBe("Write");
+    expect(tc?.input).toBe(writeInput);
+  });
+
+  it("still prefers the tool_result input when one is provided (in-process path)", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    useAgentTaskStore.setState({
+      conversations: [makeApiConversation("conv-ip")],
+      selectedConversationId: "conv-ip",
+    });
+    await installApiAgentListeners("conv-ip");
+
+    listeners.get("api-agent:tool-start:conv-ip")?.({
+      payload: { id: "tc-1", name: "write_file" },
+    });
+    const resultInput = JSON.stringify({ path: "src/b.ts", content: "x" });
+    listeners.get("api-agent:tool-result:conv-ip")?.({
+      payload: {
+        id: "tc-1",
+        name: "write_file",
+        content: "ok",
+        is_error: false,
+        input: resultInput,
+      },
+    });
+
+    const conv = useAgentTaskStore
+      .getState()
+      .conversations.find((c) => c.id === "conv-ip");
+    const tc = conv?.messages
+      .flatMap((m) => m.toolCalls ?? [])
+      .find((t) => t.id === "tc-1");
+    expect(tc?.input).toBe(resultInput);
   });
 });

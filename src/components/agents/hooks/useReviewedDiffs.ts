@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { parseWriteFile } from "@/lib/diffUtils";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
+import { parseEditToolCalls } from "@/lib/parseToolInput";
+import { aggregateWriteFiles } from "@/lib/diffUtils";
 import { logSwallowed } from "@/lib/logSwallowed";
+import type { AgentConversation } from "@/types/agent-conversation";
 
 /**
  * Persistent storage key for the per-conversation reviewed-tool-call sets.
@@ -71,34 +74,44 @@ interface WriteCall {
 }
 
 /**
- * Walk a conversation's messages and return every `write_file` tool call as
- * `{ id, path }`. Order matches chronological message order.
+ * Walk a conversation's messages and return every edit-bearing tool call
+ * (any provider's edit tools, via the shared normalization map) as
+ * `{ id, path }` pairs — one per touched path, so a multi-file apply_patch
+ * contributes an entry per file. Order matches chronological message order.
+ *
+ * ONLY paths that appear in the Diff tab's reviewable file list
+ * (`aggregateWriteFiles`) are included: the badge's sole clear mechanism is
+ * selecting a file in that list, so counting a call the list omits (Codex
+ * path-only descriptors, replacement chains with no recorded baseline)
+ * would demand attention the user has no way to dismiss.
+ *
+ * Exported for tests.
  */
-function collectWriteCalls(
-  conversation:
-    | {
-        messages: { toolCalls?: { id: string; name: string; input?: unknown }[] }[];
-      }
-    | undefined,
+export function collectReviewableWriteCalls(
+  conversation: AgentConversation | undefined,
 ): WriteCall[] {
   const out: WriteCall[] = [];
   if (!conversation) return out;
+  const reviewable = aggregateWriteFiles(conversation);
   for (const msg of conversation.messages) {
     if (!msg.toolCalls?.length) continue;
     for (const tc of msg.toolCalls) {
-      const parsed = parseWriteFile(tc as Parameters<typeof parseWriteFile>[0]);
-      if (!parsed) continue;
-      out.push({ id: tc.id, path: parsed.path });
+      const edits = parseEditToolCalls(tc, conversation.projectPath);
+      for (const edit of edits) {
+        if (!reviewable.has(edit.path)) continue;
+        out.push({ id: tc.id, path: edit.path });
+      }
     }
   }
   return out;
 }
 
 export interface UseReviewedDiffsReturn {
-  /** Number of `write_file` tool calls the user has not yet acknowledged. */
+  /** Number of reviewable edit-bearing tool calls the user has not yet
+   * acknowledged (only calls whose files appear in the Diff tab's list). */
   unreviewedCount: number;
   /**
-   * Mark every `write_file` tool call whose payload targets `path` as
+   * Mark every edit-bearing tool call whose payload targets `path` as
    * reviewed. The reviewed-set lives in localStorage under
    * {@link STORAGE_KEY}.
    */
@@ -108,13 +121,13 @@ export interface UseReviewedDiffsReturn {
 }
 
 /**
- * Tracks which `write_file` tool calls in a conversation the user has
+ * Tracks which edit-bearing tool calls in a conversation the user has
  * "reviewed". Persisted per-conversation in localStorage so the badge
  * count survives reloads.
  *
  * Returns `{ unreviewedCount, markReviewed, markToolCallReviewed }`.
  * `unreviewedCount` is `0` when the conversation is missing or has no
- * `write_file` tool calls at all.
+ * reviewable edit-bearing tool calls at all.
  */
 export function useReviewedDiffs(
   conversationId: string | null | undefined,
@@ -134,9 +147,18 @@ export function useReviewedDiffs(
     };
   }, []);
 
+  // Reviewability depends on recorded baselines (aggregateWriteFiles reads
+  // the baseline store via getState()), so re-collect when this
+  // conversation's baseline map changes — e.g. an Edit chain becomes
+  // materializable the moment its edit_baseline event lands.
+  const baselinePaths = useEditBaselineStore((s) =>
+    conversationId ? s.byConversation.get(conversationId) : undefined,
+  );
+
   const writeCalls = useMemo(
-    () => collectWriteCalls(conversation),
-    [conversation],
+    () => collectReviewableWriteCalls(conversation),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: `baselinePaths` is a re-run trigger, not read in the body.
+    [conversation, baselinePaths],
   );
 
   const reviewedSet = useMemo<Set<string>>(() => {
@@ -150,9 +172,11 @@ export function useReviewedDiffs(
 
   const unreviewedCount = useMemo(() => {
     if (writeCalls.length === 0) return 0;
-    let n = 0;
-    for (const c of writeCalls) if (!reviewedSet.has(c.id)) n += 1;
-    return n;
+    // Count distinct tool calls: a multi-file apply_patch contributes one
+    // WriteCall per path but should count once toward the badge.
+    const unreviewed = new Set<string>();
+    for (const c of writeCalls) if (!reviewedSet.has(c.id)) unreviewed.add(c.id);
+    return unreviewed.size;
   }, [writeCalls, reviewedSet]);
 
   const markToolCallReviewed = useCallback(

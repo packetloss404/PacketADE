@@ -275,6 +275,18 @@ export type SidecarEvent =
       before?: string;
       after: string;
     }
+  /** P1-7: non-blocking pre-edit baseline capture. Emitted for every
+   * edit-bearing tool call that does NOT go through the blocking
+   * `pending_edit` approval flow (approveWrites off), so the host can diff
+   * applied edits against the true pre-edit content instead of live disk.
+   * `before` is absent when the file did not exist. */
+  | {
+      type: "edit_baseline";
+      sessionId: string;
+      toolUseId?: string;
+      path: string;
+      before?: string;
+    }
   | {
       type: "done";
       sessionId: string;
