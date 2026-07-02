@@ -3,8 +3,8 @@ import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
 
 /**
  * USD cost per million tokens, by model identifier.
- * Used for a cheap inline estimate in the sidebar pill.
- * For accurate per-turn costs use the `calculateTurnCost` Tauri command.
+ * Used for the inline estimates in the sidebar pill and the per-turn
+ * `costUsd` stamped on assistant messages at receipt time.
  */
 const COST_PER_MTOK: Record<string, { input: number; output: number }> = {
   "claude-opus-4-8": { input: 15, output: 75 },
@@ -71,6 +71,40 @@ function rateLookupKeys(model: string): string[] {
  * provider-specific math when accuracy matters.
  */
 const CACHED_INPUT_RATE_RATIO = 0.25;
+
+/**
+ * Estimate the USD cost of a single turn from the lookup-table rates.
+ * Same math as `aggregateConversationCost`, scoped to one message's token
+ * counts: new input at the input rate, cached input at the discounted
+ * rate, output + reasoning at the output rate. Returns `null` when the
+ * model is unknown so callers can hide the cost.
+ *
+ * Used to stamp `costUsd` on assistant messages at receipt time
+ * (apiAgentListeners) — no per-message IPC.
+ */
+export function estimateTurnCostUsd(
+  model: string | undefined,
+  tokens: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    reasoningTokens?: number;
+  },
+): number | null {
+  const rates = lookupRates(model);
+  if (!rates) return null;
+  const input = tokens.inputTokens ?? 0;
+  const cached = tokens.cacheReadTokens ?? 0;
+  const output = tokens.outputTokens ?? 0;
+  const reasoning = tokens.reasoningTokens ?? 0;
+  const newInputTokens = Math.max(0, input - cached);
+  return (
+    (newInputTokens * rates.input) / 1_000_000 +
+    (cached * rates.input * CACHED_INPUT_RATE_RATIO) / 1_000_000 +
+    (output * rates.output) / 1_000_000 +
+    (reasoning * rates.output) / 1_000_000
+  );
+}
 
 /**
  * Sum input + output (+ reasoning) tokens across all messages in a

@@ -16,10 +16,8 @@ const HELP_CHEATSHEET =
   "\n" +
   "- Enter — send\n" +
   "- Shift+Enter — newline\n" +
-  "- Tab — send as queued (delivered after the current turn finishes)\n" +
   "- Ctrl+Enter — also sends\n" +
   "- Shift+Tab — cycle mode (default → plan → manual → deny → yolo)\n" +
-  "- Alt+. / Alt+, — nudge model toward thorough / fast\n" +
   "- @ — mention a file\n" +
   "- / — run a slash command (try /usage, /history, /review)\n" +
   "- Stop button — cancels mid-stream";

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { ArrowDown, ArrowLeft, Bookmark, ChevronUp, MessageSquareOff, Mic, Send, Server, Sparkles, Square, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ChevronUp, MessageSquareOff, Mic, Send, Server, Sparkles, Square } from "lucide-react";
 import { MentionSourcePicker } from "./MentionSourcePicker";
 import { SlashCommandPopover, type SlashSelection } from "./SlashCommandPopover";
 import { BUILTIN_SLASH_NAMES, TEMPLATE_SOURCE_TAG } from "./slashCommandConstants";
@@ -15,6 +15,7 @@ import { deriveMode, flagsForMode, nextMode } from "./agentModeChipUtils";
 import type { AgentMode } from "./AgentModeChip";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAgentDraftStore } from "@/stores/agentDraftStore";
 import {
   EMPTY_PENDING_EDITS,
   EMPTY_PENDING_PERMISSIONS,
@@ -25,7 +26,6 @@ import { usePromptStore } from "@/stores/promptStore";
 import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useMemoryStore } from "@/stores/memoryStore";
-import { API_PROVIDERS, getModelSpeed } from "@/lib/api-models";
 import { HeaderActions } from "./chat/HeaderActions";
 import { handleExport } from "./chat/handleExport";
 import { EmptyConversationHint } from "./chat/EmptyConversationHint";
@@ -165,14 +165,19 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const memoryPatterns = useMemoryStore((s) => s.patterns);
   const getMemoryItemsForSession = useMemoryStore((s) => s.getContextItemsForSession);
 
-  const [input, setInput] = useState("");
+  // Composer text lives in the per-conversation draft store (keyed by
+  // conversation id), so switching conversations never bleeds or loses a
+  // half-typed draft. Cleared on send.
+  const input = useAgentDraftStore((s) => s.drafts[conversationId] ?? "");
+  const setDraft = useAgentDraftStore((s) => s.setDraft);
+  const setInput = useCallback(
+    (text: string) => setDraft(conversationId, text),
+    [conversationId, setDraft],
+  );
   const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
   const [showRewind, setShowRewind] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const historySourceRef = useRef<"user" | "history">("user");
-  // Ctrl+S stash slot. Single slot — newer stash replaces older. Survives the
-  // chat session but not a remount.
-  const [stashedDraft, setStashedDraft] = useState<string | null>(null);
   // Inline edit of a prior user message. Submit forks the conversation here.
   const [editState, setEditState] = useState<{ id: string | null; text: string }>({
     id: null,
@@ -183,9 +188,13 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const { messagesContainerRef, messagesContentRef, messagesEndRef, isAtBottom, unreadCount, jumpToBottom } =
     useScrollState(conversationId, conversation?.messages);
 
-  const appendToInput = useCallback((chunk: string) => {
-    setInput((prev) => prev + chunk);
-  }, []);
+  const appendToInput = useCallback(
+    (chunk: string) => {
+      const current = useAgentDraftStore.getState().drafts[conversationId] ?? "";
+      setDraft(conversationId, current + chunk);
+    },
+    [conversationId, setDraft],
+  );
   const voice = useVoiceTranscript(appendToInput);
 
   useLatestPlanPreview(conversation, preview.openPlanPreview);
@@ -288,8 +297,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   // isActive = actively streaming / waiting for the agent ("running" in the UI sense).
   const isActive = conversation.status === "active";
   const messages = conversation.messages;
-
-  const providerInfo = API_PROVIDERS.find((p) => p.agentCli === conversation.agent);
 
   /* ----------------- popover / input handling ----------------- */
 
@@ -419,30 +426,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     applyMode(nextMode(deriveMode(conversation)));
   }
 
-  // Cursor-style "reasoning nudge" — Alt+. raises model thoroughness, Alt+,
-  // drops it. Walks the provider's model list to the next model whose speed
-  // heuristic matches the desired direction.
-  function nudgeReasoning(direction: "up" | "down") {
-    if (!conversation || conversation.mode !== "api") return;
-    if (!providerInfo) return;
-    const current = conversation.model;
-    if (!current) return;
-    const currentSpeed = getModelSpeed(current);
-    const SPEED_ORDER: Array<"fast" | "balanced" | "thorough"> = ["fast", "balanced", "thorough"];
-    const currentIdx = SPEED_ORDER.indexOf(currentSpeed);
-    const targetIdx =
-      direction === "up"
-        ? Math.min(SPEED_ORDER.length - 1, currentIdx + 1)
-        : Math.max(0, currentIdx - 1);
-    if (targetIdx === currentIdx) return;
-    const targetSpeed = SPEED_ORDER[targetIdx];
-    const candidate = providerInfo.models.find(
-      (m) => getModelSpeed(m.value) === targetSpeed && m.value !== current,
-    );
-    if (!candidate) return;
-    void actions.changeModel(conversationId, candidate.value);
-  }
-
   function handleOpenMarkdown(path: string) {
     if (!/\.mdx?$/i.test(path)) return;
     preview.openMarkdownPreview(path);
@@ -461,9 +444,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     popoverItemCount,
     allCustomSlashCommands,
     userSkills,
-    setStashedDraft,
     cycleMode,
-    nudgeReasoning,
     runSlashCommand,
     handleSend,
   });
@@ -631,34 +612,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           <div className="pointer-events-none absolute right-3 top-1 inline-flex select-none items-center gap-0.5 font-mono text-[10px] text-text-faint">
             <ChevronUp size={10} />
             {historyIndex + 1}/{turnCount}
-          </div>
-        )}
-        {stashedDraft !== null && (
-          <div className="mb-1.5 inline-flex items-center gap-1.5 rounded bg-bg-tertiary px-2 py-0.5 text-[11px] text-text-secondary">
-            <Bookmark size={11} className="text-text-muted" />
-            <span className="max-w-[260px] truncate">
-              Stashed draft ({stashedDraft.length} chars)
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setInput(stashedDraft);
-                setStashedDraft(null);
-                setTimeout(() => textareaRef.current?.focus(), 0);
-              }}
-              className="text-text-secondary underline hover:text-text-primary"
-            >
-              restore
-            </button>
-            <Tooltip content="Discard stash">
-              <button
-                type="button"
-                onClick={() => setStashedDraft(null)}
-                className="ml-1 text-text-muted hover:text-text-primary"
-              >
-                <X size={11} />
-              </button>
-            </Tooltip>
           </div>
         )}
         <div className="absolute bottom-full left-3 right-3" data-agent-pane-mention-popover>

@@ -2701,22 +2701,6 @@ export async function changeAgentModel(sessionId: string, newModel: string): Pro
   return invoke("change_model", { sessionId, newModel });
 }
 
-export async function calculateTurnCost(
-  model: string,
-  inputTokens: number,
-  outputTokens: number,
-  cacheRead: number,
-  cacheWrite: number,
-): Promise<number> {
-  return invoke<number>("calculate_turn_cost", {
-    model,
-    inputTokens,
-    outputTokens,
-    cacheRead,
-    cacheWrite,
-  });
-}
-
 export async function listProjectFiles(
   projectPath: string,
   filter?: string,

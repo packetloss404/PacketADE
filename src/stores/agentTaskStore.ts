@@ -62,6 +62,7 @@ import { useAgentStore } from "@/stores/agentStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
+import { useAgentDraftStore } from "@/stores/agentDraftStore";
 import { useCliOverrideStore } from "@/stores/cliOverrideStore";
 import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
 import { loadAgentsMd } from "@/lib/agentsMd";
@@ -1013,6 +1014,8 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     useAgentApprovalStore.getState().clearConversation(id);
     useAgentPlanStore.getState().clearConversation(id);
     useAgentStreamingStore.getState().clearConversation(id);
+    // Drop the persisted composer draft so the localStorage map stays bounded.
+    useAgentDraftStore.getState().clearDraft(id);
     // Best-effort remove persisted file (API mode only)
     if (conv?.mode === "api") {
       deleteConversationFile(id).catch((e) =>
