@@ -10,37 +10,59 @@ export interface ModeFlags {
   approveWrites: boolean;
 }
 
-const MODE_ORDER: AgentMode[] = ["default", "plan", "manual", "yolo"];
+export const MODE_ORDER: AgentMode[] = [
+  "default",
+  "plan",
+  "manual",
+  "deny",
+  "yolo",
+];
 
-/** Translate the conversation's three flag fields into a single mode label. */
+/**
+ * Translate the conversation's flag fields into a single mode label.
+ *
+ * The mode is a bijection over (planMode, permissionMode) ONLY — every
+ * permission posture (including deny_all) has its own label, and
+ * `approveWrites` is an orthogonal fine flag surfaced in the chip's popover
+ * rather than folded into the label. That separation is what lets
+ * `flagsForMode` round-trip approveWrites untouched.
+ */
 export function deriveMode(conv: AgentConversation): AgentMode {
   if (conv.planMode) return "plan";
-  if (conv.permissionMode === "allow_all") return "yolo";
-  if (conv.permissionMode === "ask_for_risky" || conv.approveWrites)
-    return "manual";
-  return "default";
+  switch (conv.permissionMode ?? "auto") {
+    case "allow_all":
+      return "yolo";
+    case "deny_all":
+      return "deny";
+    case "ask_for_risky":
+      return "manual";
+    default:
+      return "default";
+  }
 }
 
-/** Reverse map: which flag values represent each mode. */
-export function flagsForMode(mode: AgentMode): ModeFlags {
+/**
+ * Reverse map: which flag values represent each mode. The caller passes the
+ * conversation's current `approveWrites`, which is carried through unchanged
+ * in every branch — cycling or picking a mode must never clobber it.
+ */
+export function flagsForMode(mode: AgentMode, approveWrites = false): ModeFlags {
   switch (mode) {
     case "plan":
-      return { planMode: true, permissionMode: "auto", approveWrites: false };
+      return { planMode: true, permissionMode: "auto", approveWrites };
     case "manual":
       return {
         planMode: false,
         permissionMode: "ask_for_risky",
-        approveWrites: false,
+        approveWrites,
       };
+    case "deny":
+      return { planMode: false, permissionMode: "deny_all", approveWrites };
     case "yolo":
-      return {
-        planMode: false,
-        permissionMode: "allow_all",
-        approveWrites: false,
-      };
+      return { planMode: false, permissionMode: "allow_all", approveWrites };
     case "default":
     default:
-      return { planMode: false, permissionMode: "auto", approveWrites: false };
+      return { planMode: false, permissionMode: "auto", approveWrites };
   }
 }
 
