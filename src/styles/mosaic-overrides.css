@@ -57,6 +57,26 @@
   background: var(--color-bg-primary);
 }
 
+/* Pane zoom — maximize the already-mounted tile instead of mounting a
+   second WorkspacePane. A duplicate pane instance would auto-start a second
+   agent PTY for the same pane (duplicate spawn + orphaned session on
+   unzoom). Hiding instead of unmounting keeps every pane's PTY alive across
+   zoom in/out. The zoomed tile's inline percentage bounds from react-mosaic
+   are overridden with !important to fill the container. */
+.mosaic-zoom-active .mosaic-tile,
+.mosaic-zoom-active .mosaic-split {
+  visibility: hidden;
+}
+
+.mosaic-zoom-active .mosaic-tile:has([data-pane-zoomed="true"]) {
+  visibility: visible;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  z-index: 3;
+}
+
 /* Drop target preview during drag */
 .mosaic-drop-target .drop-target-container .drop-target {
   border: 2px solid color-mix(in srgb, var(--color-accent-purple) 60%, transparent);
