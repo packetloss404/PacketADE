@@ -1,3 +1,4 @@
+import { parseWriteFileInput } from "@/lib/parseToolInput";
 import type {
   AgentConversation,
   AgentToolCall,
@@ -22,27 +23,7 @@ export function parseWriteFile(
   tc: AgentToolCall,
 ): { path: string; content: string } | null {
   if (tc.name !== "write_file") return null;
-  const raw = (tc as AgentToolCall & { input?: unknown }).input;
-  if (raw == null) return null;
-  try {
-    let obj: unknown = raw;
-    if (typeof raw === "string") obj = JSON.parse(raw);
-    if (obj && typeof obj === "object") {
-      const rec = obj as Record<string, unknown>;
-      const path =
-        typeof rec.path === "string"
-          ? rec.path
-          : typeof rec.file_path === "string"
-            ? rec.file_path
-            : undefined;
-      const content =
-        typeof rec.content === "string" ? rec.content : undefined;
-      if (path && content != null) return { path, content };
-    }
-  } catch {
-    return null;
-  }
-  return null;
+  return parseWriteFileInput(tc);
 }
 
 /**

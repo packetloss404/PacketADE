@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, RotateCw, Terminal } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
+import { parseToolInput } from "@/lib/parseToolInput";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { BaseToolCard } from "./tool-cards/BaseToolCard";
@@ -19,16 +20,13 @@ interface BashToolCallCardProps {
 }
 
 function parseBashInput(raw: string | undefined): BashInput {
-  if (!raw) return { command: "" };
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const command =
-      typeof parsed.command === "string" ? parsed.command : "";
-    const cwd = typeof parsed.cwd === "string" ? parsed.cwd : undefined;
-    return { command, cwd };
-  } catch {
-    return { command: raw };
-  }
+  const parsed = parseToolInput(raw);
+  // Undecodable input is treated as a bare command string.
+  if (!parsed) return { command: raw ?? "" };
+  const command =
+    typeof parsed.command === "string" ? parsed.command : "";
+  const cwd = typeof parsed.cwd === "string" ? parsed.cwd : undefined;
+  return { command, cwd };
 }
 
 function BashToolCallCardImpl({

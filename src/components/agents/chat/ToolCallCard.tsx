@@ -2,41 +2,8 @@ import { memo, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { ToolDiffView } from "../ToolDiffView";
 import { StatusPill } from "../tool-cards/StatusPill";
+import { parseWriteFileInput } from "@/lib/parseToolInput";
 import type { AgentToolCall } from "@/types/agent-conversation";
-
-interface WriteFileInput {
-  path?: string;
-  content?: string;
-}
-
-/**
- * Parse a tool call's `input` field (if captured on the tool call) for
- * write_file path+content. Returns null if unavailable or malformed.
- */
-function parseWriteFileInput(tc: AgentToolCall): WriteFileInput | null {
-  const anyTc = tc as AgentToolCall & { input?: unknown };
-  const raw = anyTc.input;
-  if (raw == null) return null;
-  try {
-    let obj: unknown = raw;
-    if (typeof raw === "string") obj = JSON.parse(raw);
-    if (obj && typeof obj === "object") {
-      const rec = obj as Record<string, unknown>;
-      const path =
-        typeof rec.path === "string"
-          ? rec.path
-          : typeof rec.file_path === "string"
-            ? (rec.file_path as string)
-            : undefined;
-      const content =
-        typeof rec.content === "string" ? rec.content : undefined;
-      if (path && content != null) return { path, content };
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
 
 function ToolCallCardImpl({
   toolCall,
@@ -88,8 +55,8 @@ function ToolCallCardImpl({
         </div>
         <ToolDiffView
           projectPath={projectPath}
-          filePath={writeFileInput.path!}
-          newContent={writeFileInput.content!}
+          filePath={writeFileInput.path}
+          newContent={writeFileInput.content}
         />
       </div>
     );

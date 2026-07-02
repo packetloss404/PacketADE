@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import { ChevronRight, Compass } from "lucide-react";
+import { parseToolInput } from "@/lib/parseToolInput";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface ExplorationRollupCardProps {
@@ -15,16 +16,6 @@ interface ExplorationStats {
 const READ_TOOLS = new Set(["read_file", "Read"]);
 const SEARCH_TOOLS = new Set(["grep", "Grep", "glob", "Glob", "search"]);
 const LIST_TOOLS = new Set(["list_directory", "list_files", "LS", "ls"]);
-
-function parseInput(raw: string | undefined): Record<string, unknown> {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
 
 function pickPath(args: Record<string, unknown>): string {
   const candidates = ["path", "file_path", "rel_path", "filename", "file"];
@@ -53,7 +44,7 @@ function ExplorationRollupCardImpl({ toolCalls }: ExplorationRollupCardProps) {
     const listings: ExplorationStats["listings"] = [];
     for (const tc of toolCalls) {
       if (tc.status === "running") continue;
-      const args = parseInput(tc.input);
+      const args = parseToolInput(tc.input) ?? {};
       if (READ_TOOLS.has(tc.name)) {
         const path = pickPath(args) || tc.file || "";
         if (path) fileReads.push({ id: tc.id, path });
