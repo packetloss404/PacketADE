@@ -5,12 +5,21 @@ import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface ExplorationRollupCardProps {
   toolCalls: AgentToolCall[];
+  /** Whether the owning message is still streaming. Nothing ever settles a
+   * tool call's "running" status on cancel/error/restart, so a settled
+   * message can carry orphaned running calls forever — they must not keep
+   * the card in its live "Exploring… (N in flight)" state. */
+  isStreaming?: boolean;
 }
 
 interface ExplorationStats {
   fileReads: { id: string; path: string }[];
   searches: { id: string; query: string }[];
   listings: { id: string; path: string }[];
+  /** Exploration calls still in flight (tool_start seen, no result yet).
+   * Their input isn't known until the result event lands, so they only
+   * contribute a live "N in flight" count. */
+  running: number;
 }
 
 const READ_TOOLS = new Set(["read_file", "Read"]);
@@ -35,15 +44,22 @@ function pickQuery(args: Record<string, unknown>): string {
   return "";
 }
 
-function ExplorationRollupCardImpl({ toolCalls }: ExplorationRollupCardProps) {
+function ExplorationRollupCardImpl({ toolCalls, isStreaming }: ExplorationRollupCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const stats = useMemo<ExplorationStats>(() => {
     const fileReads: ExplorationStats["fileReads"] = [];
     const searches: ExplorationStats["searches"] = [];
     const listings: ExplorationStats["listings"] = [];
+    let running = 0;
     for (const tc of toolCalls) {
-      if (tc.status === "running") continue;
+      const isExploration =
+        READ_TOOLS.has(tc.name) || SEARCH_TOOLS.has(tc.name) || LIST_TOOLS.has(tc.name);
+      if (!isExploration) continue;
+      if (tc.status === "running") {
+        running += 1;
+        continue;
+      }
       const args = parseToolInput(tc.input) ?? {};
       if (READ_TOOLS.has(tc.name)) {
         const path = pickPath(args) || tc.file || "";
@@ -56,11 +72,16 @@ function ExplorationRollupCardImpl({ toolCalls }: ExplorationRollupCardProps) {
         if (path) listings.push({ id: tc.id, path });
       }
     }
-    return { fileReads, searches, listings };
+    return { fileReads, searches, listings, running };
   }, [toolCalls]);
 
+  // Once the message has settled, any still-"running" calls are orphans
+  // (cancelled turn, backend error, or hydrated transcript) — ignore them so
+  // the card can't display "Exploring… (N in flight)" forever, matching the
+  // pre-rollup behavior where such calls simply became invisible at settle.
+  const running = isStreaming ? stats.running : 0;
   const total = stats.fileReads.length + stats.searches.length + stats.listings.length;
-  if (total === 0) return null;
+  if (total === 0 && running === 0) return null;
 
   const summaryParts: string[] = [];
   if (stats.fileReads.length > 0) {
@@ -78,7 +99,16 @@ function ExplorationRollupCardImpl({ toolCalls }: ExplorationRollupCardProps) {
       `${stats.listings.length} listing${stats.listings.length === 1 ? "" : "s"}`,
     );
   }
-  const summary = `Explored ${summaryParts.join(", ")}`;
+  // Live/incremental: the card is THE streaming representation of exploration
+  // tools (they never render individual cards), so counts tick up as results
+  // land and only the verb flips at stream settle — no layout snap.
+  const verb = running > 0 ? "Exploring" : "Explored";
+  const summary =
+    summaryParts.length > 0
+      ? `${verb} ${summaryParts.join(", ")}${
+          running > 0 ? ` (${running} in flight)` : ""
+        }`
+      : `Exploring (${running} in flight)…`;
 
   return (
     <div className="bg-bg-hover rounded text-[10px] text-text-muted border border-bg-border">
