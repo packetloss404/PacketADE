@@ -6,6 +6,7 @@ import { StatusStrip } from "@/components/layout/StatusStrip";
 import { WelcomeScreen } from "@/components/views/WelcomeScreen";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { SideChatOverlay } from "@/components/agents/SideChatOverlay";
+import { PinnedApprovalBanner } from "@/components/agents/PinnedApprovalBanner";
 import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
 import { useDictationTarget } from "@/hooks/useDictationTarget";
 import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts";
@@ -288,6 +289,9 @@ export default function App() {
         <StatusStrip />
         {commandPaletteOpen && <CommandPalette />}
         <SideChatOverlay />
+        {/* P1-9: blocking approvals in conversations that aren't on screen
+            stay pinned at the viewport edge until answered. */}
+        <PinnedApprovalBanner />
         {loginCli && (
           <Suspense fallback={null}>
             <LoginPtyModal

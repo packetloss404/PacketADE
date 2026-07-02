@@ -1054,7 +1054,18 @@ export class AnthropicProvider implements ProviderHandler {
     ) {
       resolver({ behavior: "allow" });
     } else {
-      resolver({ behavior: "deny", message: "denied by user" });
+      // Deny-and-continue: no `interrupt`, so the SDK fabricates a tool
+      // result and the turn keeps going. The user's reason (when given)
+      // becomes that result's message, steering the model's next step.
+      const reason =
+        typeof req.reason === "string" ? req.reason.trim() : "";
+      resolver({
+        behavior: "deny",
+        message:
+          reason.length > 0
+            ? `Denied by user. User's guidance: ${reason}`
+            : "denied by user",
+      });
     }
   }
 

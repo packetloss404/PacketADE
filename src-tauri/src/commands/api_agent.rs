@@ -64,7 +64,10 @@ impl PermissionMode {
 pub enum PermissionDecision {
     AllowOnce,
     AllowAlways,
-    Deny,
+    /// Deny-and-continue: `reason`, when present, is the user's steering
+    /// text — folded into the synthetic tool result so the model is
+    /// redirected instead of stalled on a bare refusal.
+    Deny { reason: Option<String> },
 }
 
 #[derive(Debug, Clone)]
@@ -1090,11 +1093,12 @@ pub async fn respond_permission(
     session_id: String,
     tool_id: String,
     decision: String,
+    reason: Option<String>,
 ) -> Result<(), String> {
     // Phase 3 slice C: forward to sidecar if it owns this session.
     if sidecar.owns_session(&session_id) {
         return sidecar
-            .forward_permission(session_id, tool_id, decision)
+            .forward_permission(session_id, tool_id, decision, reason)
             .await;
     }
 
@@ -1102,7 +1106,7 @@ pub async fn respond_permission(
     let decision = match decision.as_str() {
         "allow_once" => PermissionDecision::AllowOnce,
         "allow_always" => PermissionDecision::AllowAlways,
-        "deny" => PermissionDecision::Deny,
+        "deny" => PermissionDecision::Deny { reason },
         _ => return Err(format!("Unknown decision: {}", decision)),
     };
     let sender = {
@@ -1214,7 +1218,7 @@ pub async fn cancel_pending_tools(
         pending.drain().collect()
     };
     for (_, tx) in perm_senders {
-        let _ = tx.send(PermissionDecision::Deny);
+        let _ = tx.send(PermissionDecision::Deny { reason: None });
     }
 
     let edit_senders: Vec<_> = {
@@ -1839,21 +1843,39 @@ async fn run_agent_loop(
                                         .unwrap_or_default(),
                                 },
                             );
-                            match tokio::time::timeout(Duration::from_secs(300), rx).await {
-                                Ok(Ok(PermissionDecision::AllowOnce)) => {
+                            // A dropped response channel counts as a plain
+                            // deny so the or-pattern below stays exhaustive.
+                            match tokio::time::timeout(Duration::from_secs(300), rx)
+                                .await
+                                .map(|r| r.unwrap_or(PermissionDecision::Deny { reason: None }))
+                            {
+                                Ok(PermissionDecision::AllowOnce) => {
                                     // proceed
                                 }
-                                Ok(Ok(PermissionDecision::AllowAlways)) => {
+                                Ok(PermissionDecision::AllowAlways) => {
                                     let mut configs = state.configs.lock().await;
                                     if let Some(cfg) = configs.get_mut(&session_id) {
                                         cfg.auto_allow_tools.insert(tc.name.clone());
                                     }
                                 }
-                                Ok(Ok(PermissionDecision::Deny)) | Ok(Err(_)) => {
+                                Ok(PermissionDecision::Deny { reason }) => {
+                                    // Deny-and-continue: the reason steers the
+                                    // model's next step instead of stalling it.
+                                    let content = match reason
+                                        .as_deref()
+                                        .map(str::trim)
+                                        .filter(|r| !r.is_empty())
+                                    {
+                                        Some(r) => format!(
+                                            "User denied permission for this tool call. User's guidance: {}",
+                                            r
+                                        ),
+                                        None => "User denied permission for this tool call."
+                                            .to_string(),
+                                    };
                                     let err = ToolResult {
                                         tool_call_id: tc.id.clone(),
-                                        content: "User denied permission for this tool call."
-                                            .to_string(),
+                                        content,
                                         is_error: true,
                                     };
                                     let _ = app_handle.emit(

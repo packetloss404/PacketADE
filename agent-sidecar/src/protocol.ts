@@ -130,6 +130,11 @@ export type PermissionResponseRequest = {
   sessionId: string;
   toolUseId: string;
   decision: "approve" | "allow_once" | "allow_always" | "deny";
+  /** P1-9 deny-and-continue: optional user steering text carried with a
+   * "deny". Providers fold it into the denial message the model sees so a
+   * rejection redirects the agent instead of stalling the turn. Ignored
+   * for allow decisions. */
+  reason?: string;
 };
 
 export type EditResponseRequest = {

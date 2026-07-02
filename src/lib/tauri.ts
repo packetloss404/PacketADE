@@ -2600,8 +2600,17 @@ export async function respondPermission(
   sessionId: string,
   toolId: string,
   decision: "allow_once" | "allow_always" | "deny",
+  /** P1-9 deny-and-continue: optional steering text carried with a "deny".
+   * The provider folds it into the synthetic tool result so the model is
+   * redirected instead of stalled. Ignored for allow decisions. */
+  reason?: string,
 ): Promise<void> {
-  return invoke("respond_permission", { sessionId, toolId, decision });
+  return invoke("respond_permission", {
+    sessionId,
+    toolId,
+    decision,
+    reason: reason ?? null,
+  });
 }
 
 export async function setApproveWrites(sessionId: string, enabled: boolean): Promise<void> {
