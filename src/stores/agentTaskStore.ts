@@ -258,25 +258,6 @@ function apiAgentCommandPath(agent: AgentCli): string | null {
   const manualPath = useCliOverrideStore.getState().overrides.codex?.manualPath.trim();
   return manualPath || null;
 }
-export type AgentTaskStatus = "running" | "done" | "failed" | "cancelled";
-
-export interface AgentTask {
-  id: string;
-  title: string;
-  description: string;
-  agent: AgentCli;
-  projectPath: string;
-  status: AgentTaskStatus;
-  sessionId: string | null;
-  output: string;
-  startedAt: number;
-  completedAt: number | null;
-  exitCode: number | null;
-}
-
-/** Max output buffer per task (256 KB) to avoid memory bloat */
-const MAX_OUTPUT_SIZE = 256 * 1024;
-
 /** Fallback command names for PTY-based agents if the agent store has not hydrated yet. */
 const CLI_COMMANDS: Record<BuiltinCliAgent, string> = {
   "claude-code": "claude",
@@ -464,34 +445,18 @@ export interface CreateApiConversationOptions {
 }
 
 interface AgentTaskStore {
-  // --- Existing task state (used by Flight orchestration and legacy task launches) ---
-  tasks: AgentTask[];
-  selectedTaskId: string | null;
+  // --- Composer state (shared by the launch composer and chat input) ---
   selectedRepo: string | null;
   inputMode: AgentInputMode;
   agentInputText: string;
-  selectedServerId: string | null;
 
   // --- Conversation state ---
   conversations: AgentConversation[];
   selectedConversationId: string | null;
 
-  // --- Existing task actions ---
-  launchTask: (
-    title: string,
-    description: string,
-    agent: AgentCli,
-    projectPath: string,
-  ) => Promise<string>;
-  cancelTask: (id: string) => void;
-  deleteTask: (id: string) => void;
-  selectTask: (id: string | null) => void;
-  appendOutput: (id: string, text: string) => void;
-  completeTask: (id: string, exitCode: number | null) => void;
   setSelectedRepo: (repo: string | null) => void;
   setInputMode: (mode: AgentInputMode) => void;
   setAgentInputText: (text: string) => void;
-  setSelectedServerId: (id: string | null) => void;
 
   // --- Conversation actions ---
   createConversation: (agent: AgentCli, projectPath: string) => Promise<string>;
@@ -585,139 +550,17 @@ async function ensureApiAgentListeners(id: string): Promise<void> {
 }
 
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
-  tasks: [],
-  selectedTaskId: null,
   selectedRepo: null,
   inputMode: "build",
   agentInputText: "",
-  selectedServerId: null,
 
   // --- Conversation state ---
   conversations: [],
   selectedConversationId: null,
 
-  launchTask: async (title, description, agent, projectPath) => {
-    const id = generateId("agt");
-    const launch = resolveCliLaunch(agent, { includeAutonomyFlag: true });
-    if (!launch) return id; // API agents don't use PTY tasks
-
-    const task: AgentTask = {
-      id,
-      title,
-      description,
-      agent,
-      projectPath,
-      status: "running",
-      sessionId: null,
-      output: "",
-      startedAt: Date.now(),
-      completedAt: null,
-      exitCode: null,
-    };
-
-    set((s) => ({
-      tasks: [task, ...s.tasks],
-      selectedTaskId: id,
-    }));
-
-    try {
-      const sessionId = await createPtySession(
-        projectPath,
-        120,
-        40,
-        launch.command,
-        launch.args.length > 0 ? launch.args : null,
-      );
-
-      // Store the session ID
-      set((s) => ({
-        tasks: s.tasks.map((t) => (t.id === id ? { ...t, sessionId } : t)),
-      }));
-
-      await installPtyListenersWithReplay(
-        sessionId,
-        (chunk) => get().appendOutput(id, chunk),
-        () => get().completeTask(id, 0),
-      );
-
-      // Send the task description as the initial prompt after a brief delay
-      // (Claude is ready immediately; other CLIs need time to init)
-      const delay = agent === "claude-code" ? 500 : 3000;
-      setTimeout(() => {
-        void writePty(sessionId, description + "\r");
-      }, delay);
-    } catch (err) {
-      set((s) => ({
-        tasks: s.tasks.map((t) =>
-          t.id === id
-            ? {
-                ...t,
-                status: "failed",
-                completedAt: Date.now(),
-                output: t.output + `\nFailed to start: ${err}`,
-              }
-            : t,
-        ),
-      }));
-    }
-
-    return id;
-  },
-
-  cancelTask: (id) => {
-    const task = get().tasks.find((t) => t.id === id);
-    if (!task || task.status !== "running" || !task.sessionId) return;
-
-    // Cancel kills the task's PTY — swallow if already exited.
-    void killPty(task.sessionId).catch(() => {});
-    set((s) => ({
-      tasks: s.tasks.map((t) =>
-        t.id === id ? { ...t, status: "cancelled", completedAt: Date.now() } : t,
-      ),
-    }));
-  },
-
-  deleteTask: (id) => {
-    const task = get().tasks.find((t) => t.id === id);
-    if (task?.status === "running" && task.sessionId) {
-      // Delete tears down any live PTY — swallow if already exited.
-      void killPty(task.sessionId).catch(() => {});
-    }
-    set((s) => ({
-      tasks: s.tasks.filter((t) => t.id !== id),
-      selectedTaskId: s.selectedTaskId === id ? null : s.selectedTaskId,
-    }));
-  },
-
-  selectTask: (id) => set({ selectedTaskId: id }),
   setSelectedRepo: (repo) => set({ selectedRepo: repo }),
   setInputMode: (mode) => set({ inputMode: mode }),
   setAgentInputText: (text) => set({ agentInputText: text }),
-  setSelectedServerId: (id) => set({ selectedServerId: id }),
-
-  appendOutput: (id, text) => {
-    set((s) => ({
-      tasks: s.tasks.map((t) => {
-        if (t.id !== id) return t;
-        const newOutput = t.output + text;
-        return {
-          ...t,
-          output:
-            newOutput.length > MAX_OUTPUT_SIZE ? newOutput.slice(-MAX_OUTPUT_SIZE) : newOutput,
-        };
-      }),
-    }));
-  },
-
-  completeTask: (id, exitCode) => {
-    set((s) => ({
-      tasks: s.tasks.map((t) =>
-        t.id === id && t.status === "running"
-          ? { ...t, status: exitCode === 0 ? "done" : "failed", completedAt: Date.now(), exitCode }
-          : t,
-      ),
-    }));
-  },
 
   // ─── Conversation actions ────────────────────────────────────────────
 
