@@ -131,24 +131,23 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="flex-1 relative overflow-hidden">
-        {/* Mosaic layout — hidden when a pane is zoomed but kept mounted to preserve state */}
-        <div className={zoomedPane ? "invisible absolute inset-0" : "contents"}>
-          <Mosaic<string>
-            renderTile={renderTile}
-            value={tree}
-            onChange={handleChange}
-            className=""
-          />
-        </div>
+        {/* Zoom maximizes the ALREADY-MOUNTED tile via CSS (see
+            mosaic-overrides.css: .mosaic-zoom-active) instead of mounting a
+            second WorkspacePane — a duplicate pane instance would auto-start
+            a second agent PTY for the same pane, clobbering setPaneSession
+            and orphaning the original session on unmount. Non-zoomed tiles
+            stay mounted (hidden) so every PTY survives zoom in/out. */}
+        <Mosaic<string>
+          renderTile={renderTile}
+          value={tree}
+          onChange={handleChange}
+          className={zoomedPane ? "mosaic-zoom-active" : ""}
+        />
 
-        {/* Zoomed pane overlay */}
         {zoomedPane && (
-          <div className="absolute inset-0 z-10 flex flex-col bg-bg-primary">
-            <WorkspacePane pane={zoomedPane} workspaceId={workspace.id} />
-            <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded bg-bg-secondary/90 border border-bg-border text-[10px] text-text-muted select-none">
-              <Minimize2 size={10} />
-              <span>Press Esc to exit zoom</span>
-            </div>
+          <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded bg-bg-secondary/90 border border-bg-border text-[10px] text-text-muted select-none">
+            <Minimize2 size={10} />
+            <span>Press Esc to exit zoom</span>
           </div>
         )}
       </div>
