@@ -3,11 +3,10 @@ import { Pencil, RotateCw } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { calculateTurnCost } from "@/lib/tauri";
+import { estimateTurnCostUsd } from "@/lib/conversationCost";
 import { ExplorationRollupCard } from "../ExplorationRollupCard";
 import { PlanModeApprovalMenu } from "../PlanModeApprovalMenu";
 import { ThinkingBlock } from "../ThinkingBlock";
-import { AgentQuickActions } from "../AgentQuickActions";
 import { looksLikePlan } from "../planDetection";
 import { ToolCallRenderer } from "./ToolCallRenderer";
 import type {
@@ -60,8 +59,6 @@ export function MessageList({
   const lastAssistantMessage = [...messages]
     .reverse()
     .find((m) => m.role === "assistant");
-  const isIdle = conversation.status === "idle";
-  const showQuickActions = isIdle && lastAssistantMessage !== undefined;
   const showThinking =
     isActive &&
     (!lastMessage || lastMessage.role === "user") &&
@@ -142,12 +139,6 @@ export function MessageList({
               onSubmitEdit={() => onSubmitEdit(msg.id)}
               onCancelEdit={onCancelEdit}
             />
-            {showQuickActions && isLastAssistant && (
-              <AgentQuickActions
-                conversationId={conversationId}
-                message={msg}
-              />
-            )}
           </LazyMessageRow>
         );
       })}
@@ -403,6 +394,10 @@ function MessageBubble({
   );
 }
 
+// Per-turn token count with the USD cost revealed on hover. Cost comes from
+// the `costUsd` stamped on the message at receipt time (apiAgentListeners),
+// falling back to the same frontend estimate for older persisted messages —
+// no per-message IPC. The session aggregate stays in aggregateConversationCost.
 function AssistantCostPill({
   message,
   model,
@@ -410,42 +405,16 @@ function AssistantCostPill({
   message: AgentMessage;
   model: string;
 }) {
-  const [cost, setCost] = useState<number | null>(null);
-
-  const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } =
-    message;
-
-  useEffect(() => {
-    if (inputTokens == null || outputTokens == null || !model) {
-      setCost(null);
-      return;
-    }
-    let cancelled = false;
-    calculateTurnCost(
-      model,
-      inputTokens,
-      outputTokens,
-      cacheReadTokens ?? 0,
-      cacheWriteTokens ?? 0,
-    )
-      .then((n) => {
-        if (!cancelled) setCost(n);
-      })
-      .catch(() => {
-        if (!cancelled) setCost(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, model]);
-
+  const { inputTokens, outputTokens } = message;
   if (inputTokens == null || outputTokens == null) return null;
   const totalTokens = inputTokens + outputTokens;
-  return (
+  const cost = message.costUsd ?? estimateTurnCostUsd(model, message);
+  const pill = (
     <div className="text-[10px] text-text-muted font-mono">
       {totalTokens} tok
-      {cost != null && ` · $${cost.toFixed(4)}`}
     </div>
   );
+  if (cost == null) return pill;
+  return <Tooltip content={`~$${cost.toFixed(4)} this turn`}>{pill}</Tooltip>;
 }
 

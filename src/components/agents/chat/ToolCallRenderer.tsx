@@ -75,7 +75,6 @@ export const ToolCallRenderer = memo(function ToolCallRenderer({
             <BashToolCallCard
               key={tc.id}
               toolCall={tc}
-              conversationId={conversationId}
               verbosity={verbosity}
             />
           );

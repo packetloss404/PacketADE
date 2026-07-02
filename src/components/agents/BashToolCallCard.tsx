@@ -1,9 +1,8 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Copy, RotateCw, Terminal } from "lucide-react";
+import { CheckCircle2, Copy, Terminal } from "lucide-react";
 
 import type { AgentToolCall } from "@/types/agent-conversation";
 import { parseToolInput } from "@/lib/parseToolInput";
-import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { BaseToolCard } from "./tool-cards/BaseToolCard";
 import { StatusPill } from "./tool-cards/StatusPill";
@@ -15,7 +14,6 @@ interface BashInput {
 
 interface BashToolCallCardProps {
   toolCall: AgentToolCall;
-  conversationId: string;
   verbosity?: "summary" | "normal" | "verbose";
 }
 
@@ -31,7 +29,6 @@ function parseBashInput(raw: string | undefined): BashInput {
 
 function BashToolCallCardImpl({
   toolCall,
-  conversationId,
   verbosity = "normal",
 }: BashToolCallCardProps) {
   const { command, cwd } = useMemo(
@@ -63,13 +60,6 @@ function BashToolCallCardImpl({
     }
   };
 
-  const handleRerun = () => {
-    if (!command) return;
-    useAgentTaskStore
-      .getState()
-      .sendMessage(conversationId, `Re-run \`${command}\``);
-  };
-
   // F5: prefer the real exit code from `tool_output_extended` over the
   // status-derived best guess. Status only tells us "errored or didn't" —
   // a real `exit 137` is meaningfully different from `exit 1`.
@@ -88,32 +78,20 @@ function BashToolCallCardImpl({
     );
 
   const headerActions = (
-    <>
-      <Tooltip content={copied ? "Copied!" : "Copy command"}>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
-          aria-label="Copy command"
-        >
-          {copied ? (
-            <CheckCircle2 size={11} className="text-accent-green" />
-          ) : (
-            <Copy size={11} />
-          )}
-        </button>
-      </Tooltip>
-      <Tooltip content="Ask agent to re-run this command">
-        <button
-          type="button"
-          onClick={handleRerun}
-          className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
-          aria-label="Ask agent to re-run this command"
-        >
-          <RotateCw size={11} />
-        </button>
-      </Tooltip>
-    </>
+    <Tooltip content={copied ? "Copied!" : "Copy command"}>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="text-text-muted hover:text-text-primary transition-colors p-0.5 rounded hover:bg-bg-border"
+        aria-label="Copy command"
+      >
+        {copied ? (
+          <CheckCircle2 size={11} className="text-accent-green" />
+        ) : (
+          <Copy size={11} />
+        )}
+      </button>
+    </Tooltip>
   );
 
   const subHeader =

@@ -35,9 +35,7 @@ interface ChatKeyboardDeps {
   popoverItemCount: number;
   allCustomSlashCommands: SlashCommandDef[];
   userSkills: SkillDef[];
-  setStashedDraft: (s: string | null) => void;
   cycleMode: () => void;
-  nudgeReasoning: (dir: "up" | "down") => void;
   runSlashCommand: (sel: SlashSelection) => void;
   handleSend: () => void;
 }
@@ -45,7 +43,8 @@ interface ChatKeyboardDeps {
 /**
  * Builds the textarea keyDown handler. Wraps the layered key routing logic:
  * popover-aware mention/slash navigation, shell-style ↑/↓ history, Shift+Tab
- * mode cycle, Alt+./, reasoning nudge, Ctrl+S stash, Enter/Tab send.
+ * mode cycle, Enter send. Bare Tab is deliberately NOT handled outside the
+ * popovers so it keeps its native focus-navigation behavior.
  *
  * Not a hook itself (doesn't call React internals) — naming follows
  * factory-style helpers.
@@ -64,9 +63,7 @@ export function buildChatKeyboardHandler(deps: ChatKeyboardDeps) {
     popoverItemCount,
     allCustomSlashCommands,
     userSkills,
-    setStashedDraft,
     cycleMode,
-    nudgeReasoning,
     runSlashCommand,
     handleSend,
   } = deps;
@@ -237,38 +234,12 @@ export function buildChatKeyboardHandler(deps: ChatKeyboardDeps) {
       return;
     }
 
-    // Key off physical codes, not e.key: on macOS WKWebView Option+. / Option+,
-    // emit the composed glyphs "≥" / "≤", so matching e.key never fires.
-    if (e.altKey && (e.code === "Period" || e.code === "Comma")) {
-      e.preventDefault();
-      nudgeReasoning(e.code === "Period" ? "up" : "down");
-      return;
-    }
-
-    // Ctrl+S — stash the current draft. Composer clears, chip appears above.
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-      if (input.trim().length > 0) {
-        e.preventDefault();
-        setStashedDraft(input);
-        setInput("");
-        setHistoryIndex(-1);
-        return;
-      }
-    }
-
     if (e.ctrlKey && e.key === "Enter") {
       e.preventDefault();
       handleSend();
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-      return;
-    }
-    // Tab outside any popover sends-as-queued. sendMessage already routes to
-    // queueing when the agent is mid-stream.
-    if (e.key === "Tab" && !e.shiftKey && input.trim().length > 0) {
       e.preventDefault();
       handleSend();
     }

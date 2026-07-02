@@ -15,6 +15,7 @@ import {
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import { sendApiAgentMessage } from "@/lib/tauri";
+import { estimateTurnCostUsd } from "@/lib/conversationCost";
 import { looksLikeRateLimit, pickFailoverModel } from "@/lib/autoFailover";
 import {
   notifySessionComplete,
@@ -214,6 +215,17 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                 outputTokens: event.payload.output_tokens,
                 cacheReadTokens: event.payload.cache_read_input_tokens,
                 cacheWriteTokens: event.payload.cache_creation_input_tokens,
+                // Stamp the estimated USD cost at receipt time so render
+                // surfaces never need per-message IPC (undefined when the
+                // model has no pricing entry). Reasoning tokens landed on
+                // the message via earlier turn-summary events.
+                costUsd:
+                  estimateTurnCostUsd(c.model, {
+                    inputTokens: event.payload.input_tokens,
+                    outputTokens: event.payload.output_tokens,
+                    cacheReadTokens: event.payload.cache_read_input_tokens,
+                    reasoningTokens: m.reasoningTokens,
+                  }) ?? undefined,
               }
             : m,
         );
@@ -437,6 +449,14 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                 cacheReadTokens: event.payload.cache_read_input_tokens,
                 cacheWriteTokens: event.payload.cache_creation_input_tokens,
                 reasoningTokens: event.payload.reasoning_tokens ?? m.reasoningTokens,
+                costUsd:
+                  estimateTurnCostUsd(c.model, {
+                    inputTokens: event.payload.input_tokens,
+                    outputTokens: event.payload.output_tokens,
+                    cacheReadTokens: event.payload.cache_read_input_tokens,
+                    reasoningTokens:
+                      event.payload.reasoning_tokens ?? m.reasoningTokens,
+                  }) ?? undefined,
               }
             : m,
         );

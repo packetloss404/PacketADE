@@ -33,11 +33,6 @@ export function EmptyConversationHint() {
           <span>history</span>
           <span className="text-text-muted">·</span>
           <kbd className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[10px] font-mono">
-            ⌃S
-          </kbd>
-          <span>stash</span>
-          <span className="text-text-muted">·</span>
-          <kbd className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[10px] font-mono">
             ⌃N
           </kbd>
           <span>new</span>
