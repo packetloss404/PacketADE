@@ -49,8 +49,6 @@ vi.mock("@/lib/tauri", () => ({
   setApproveWrites: vi.fn(),
   respondEdit: vi.fn(),
   retryLastTurn: vi.fn(),
-  saveCheckpoint: vi.fn(),
-  listCheckpoints: vi.fn(),
   exportConversationMarkdown: vi.fn(),
 }));
 

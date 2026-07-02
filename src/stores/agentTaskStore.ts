@@ -17,8 +17,6 @@ import {
   setPermissionMode as tauriSetPermissionMode,
   setApproveWrites as tauriSetApproveWrites,
   retryLastTurn as tauriRetryLastTurn,
-  saveCheckpoint as tauriSaveCheckpoint,
-  listCheckpoints as tauriListCheckpoints,
   exportConversationMarkdown,
   type ImageAttachment,
   type ResumeMessage,
@@ -518,13 +516,6 @@ interface AgentTaskStore {
    * forward from that fork point. File-state rewind isn't part of this v1
    * pass — only the transcript forks. */
   forkAndResend: (id: string, messageId: string, newContent: string) => Promise<void>;
-  saveCheckpoint: (id: string) => Promise<string | null>;
-  listCheckpoints: (
-    id: string,
-  ) => Promise<
-    Array<{ id: string; createdAt: string; messageCount: number; messages: AgentMessage[] }>
-  >;
-  restoreCheckpoint: (id: string, rawJson: string) => void;
   exportConversation: (id: string) => Promise<string>;
   /** F1: re-establish a hydrated conversation that lost its live session
    * across an app restart. Re-attaches `api-agent:*` listeners and calls
@@ -1121,6 +1112,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
   setPlanMode: async (id, enabled) => {
     await tauriSetPlanMode(id, enabled);
+    // Entering plan mode starts a fresh planning round — re-arm approval so
+    // approvePlan's idempotency guard (which kills repeat-click double-sends
+    // within a round) can't dead-end a conversation that approved an earlier
+    // plan.
+    if (enabled) useAgentPlanStore.getState().resetPlanApproval(id);
     let updated: AgentConversation | undefined;
     set((s) => ({
       conversations: s.conversations.map((c) => {
@@ -1331,6 +1327,12 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     // store handles maybeResolveTaskApproval internally.
     useAgentApprovalStore.getState().clearConversation(id);
     useAgentStreamingStore.getState().clearThinking(id);
+    // The plan substore holds post-restore-point state (TodoWrite checklist,
+    // planApproved) that would otherwise survive the rewind as a stale
+    // phantom over the truncated transcript. Clear it — PlanPanel falls back
+    // to re-deriving any plan still present in the kept prefix from its
+    // tool calls.
+    useAgentPlanStore.getState().clearConversation(id);
 
     // Send the edited content as the next user turn — sendMessage handles
     // session re-establishment for api-mode conversations that lost their
@@ -1392,84 +1394,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       return;
     }
     if (updated) scheduleSave(updated);
-  },
-
-  saveCheckpoint: async (id) => {
-    const conv = get().conversations.find((c) => c.id === id);
-    if (!conv) return null;
-    const payload = JSON.stringify({
-      createdAt: new Date().toISOString(),
-      messageCount: conv.messages.length,
-      messages: conv.messages,
-    });
-    try {
-      return await tauriSaveCheckpoint(id, payload);
-    } catch (e) {
-      console.warn("Failed to save checkpoint:", e);
-      return null;
-    }
-  },
-
-  listCheckpoints: async (id) => {
-    try {
-      const raw = await tauriListCheckpoints(id);
-      const parsed: Array<{
-        id: string;
-        createdAt: string;
-        messageCount: number;
-        messages: AgentMessage[];
-      }> = [];
-      for (let i = 0; i < raw.length; i++) {
-        try {
-          const obj = JSON.parse(raw[i]);
-          parsed.push({
-            id: `chk_${i}`,
-            createdAt: obj.createdAt ?? "",
-            messageCount:
-              obj.messageCount ?? (Array.isArray(obj.messages) ? obj.messages.length : 0),
-            messages: Array.isArray(obj.messages) ? obj.messages : Array.isArray(obj) ? obj : [],
-          });
-        } catch {
-          continue;
-        }
-      }
-      return parsed;
-    } catch (e) {
-      console.warn("Failed to list checkpoints:", e);
-      return [];
-    }
-  },
-
-  restoreCheckpoint: (id, rawJson) => {
-    try {
-      const obj = JSON.parse(rawJson);
-      const messages: AgentMessage[] = Array.isArray(obj)
-        ? obj
-        : Array.isArray(obj.messages)
-          ? obj.messages
-          : [];
-      let updated: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const next = {
-            ...c,
-            messages: messages.map((m) => ({ ...m, isStreaming: false })),
-            updatedAt: Date.now(),
-          };
-          updated = next;
-          return next;
-        }),
-      }));
-      // Snapshot only restores messages; substores hold post-snapshot
-      // pending permissions / plan / thinking that would otherwise stick.
-      useAgentApprovalStore.getState().clearConversation(id);
-      useAgentPlanStore.getState().clearConversation(id);
-      useAgentStreamingStore.getState().clearConversation(id);
-      if (updated) scheduleSave(updated);
-    } catch (e) {
-      console.warn("Failed to restore checkpoint:", e);
-    }
   },
 
   exportConversation: async (id) => {

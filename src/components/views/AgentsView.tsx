@@ -5,7 +5,6 @@ import {
   type AgentCli,
   type AgentSshConfigInput,
 } from "@/stores/agentTaskStore";
-import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useProfileStore } from "@/stores/profileStore";
@@ -196,13 +195,10 @@ export function AgentsView() {
       const launchPermissionMode: "auto" | "ask_for_risky" =
         agentMode === "manual" ? "ask_for_risky" : "auto";
       const launchApproveWrites = false;
-      // F10: Plan mode now drives the three-stage Spec → Plan → Code FSM.
-      // Tell the agent to lead with bullet success criteria and STOP — the
-      // SpecPanel will render those criteria as editable rows for the user.
-      const initialMessage =
-        agentMode === "plan"
-          ? `Before any plan or code, propose 3-7 success-criterion bullets for this task and STOP. Wait for the user to lock the spec before producing a Plan.\n\nTask:\n${text}`
-          : text;
+      // Plan mode alone drives planning: the backend plan-mode posture keeps
+      // the agent read-only and the inline PlanModeApprovalMenu carries the
+      // approval when the plan lands.
+      const initialMessage = text;
 
       const att = attachments.length > 0 ? attachments : null;
       let sshProjectPath: string | null = null;
@@ -247,14 +243,13 @@ export function AgentsView() {
 
       setLaunchError(null);
       void (async () => {
-        let convId: string | undefined;
         try {
         if (sshTarget && sshProjectPath) {
           // Stamp lastConnectedAt so the recents ordering reflects use.
           useServerStore.getState().updateServer(sshTarget.serverId, {
             lastConnectedAt: Date.now(),
           });
-          convId = await createApiConversation({
+          await createApiConversation({
             agent: selectedAgent,
             projectPath: sshProjectPath,
             model,
@@ -298,7 +293,7 @@ export function AgentsView() {
             }
           }
 
-          convId = await createApiConversation({
+          await createApiConversation({
             agent: selectedAgent,
             projectPath: effectiveProjectPath,
             model,
@@ -314,13 +309,6 @@ export function AgentsView() {
             permissionMode: launchPermissionMode,
             approveWrites: launchApproveWrites,
           });
-        }
-        // F10: enter the spec stage so SpecPanel renders criteria as the
-        // model emits them. The model is instructed to bullet-and-stop.
-        if (convId && agentMode === "plan") {
-          const plans = useAgentPlanStore.getState();
-          plans.setSpec(convId, []);
-          plans.setSpecStage(convId, "spec");
         }
         // Clear the composer only once the launch actually succeeded, so a
         // failed launch keeps the user's typed prompt intact for a retry.

@@ -163,17 +163,14 @@ interface PlanPanelProps {
  */
 export function PlanPanel({ conversation }: PlanPanelProps) {
   const storedPlan = useAgentPlanStore((s) => s.plan.get(conversation.id));
-  const specStage = useAgentPlanStore((s) => s.specStage.get(conversation.id));
   const planApproved = useAgentPlanStore(
     (s) => s.planApproved.get(conversation.id) ?? false,
   );
-  const spec = useAgentPlanStore((s) => s.spec.get(conversation.id));
   const items = useMemo(
     () => latestPlan(conversation, storedPlan),
     [conversation, storedPlan],
   );
   const [collapsed, setCollapsed] = useState(false);
-  const approvePlan = useAgentPlanStore((s) => s.approvePlan);
   const createApiConversation = useAgentTaskStore(
     (s) => s.createApiConversation,
   );
@@ -245,15 +242,18 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
 
   if (!items) return null;
 
-  const awaitingPlanApproval = specStage === "plan" && !planApproved;
-  const handoffEligible =
-    isClaudeParent && (items.length > 0 || (spec?.criteria.length ?? 0) > 0);
+  // The plan stays a "proposal" while plan mode is on and the user hasn't
+  // approved it yet. Approval happens on the inline PlanModeApprovalMenu,
+  // which calls agentPlanStore.approvePlan — flipping planApproved here and
+  // lifting plan mode, so this derivation clears on approval.
+  const awaitingPlanApproval = (conversation.planMode ?? false) && !planApproved;
+  const handoffEligible = isClaudeParent && items.length > 0;
 
   async function handleHandoff(): Promise<void> {
     if (!conversation.model) return;
     setHandingOff(true);
     try {
-      const prompt = buildHandoffPrompt(conversation, spec, storedPlan);
+      const prompt = buildHandoffPrompt(conversation, storedPlan);
       const codexProvider = API_PROVIDERS.find(
         (p) => p.agentCli === "api-openai-codex",
       );
@@ -339,14 +339,14 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
       {awaitingPlanApproval && (
         <div className="flex items-center gap-2 px-3 py-1.5 border-t border-bg-border">
           <span className="text-[10px] text-text-muted flex-1">
-            Plan is a proposal — approve to lift plan-mode and execute.
+            Plan is a proposal — approve it inline where the plan ends.
           </span>
           {handoffEligible && (
             <Tooltip
               content={
                 !codexReady
                   ? "Codex login required (run `codex login` or sign in via the provider dropdown)"
-                  : "Hand the approved plan off to a fresh Codex conversation for execution"
+                  : "Hand the plan off to a fresh Codex conversation for execution"
               }
             >
               <button
@@ -359,13 +359,6 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
               </button>
             </Tooltip>
           )}
-          <button
-            type="button"
-            onClick={() => approvePlan(conversation.id)}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
-          >
-            <Play size={11} /> Approve & execute
-          </button>
         </div>
       )}
       {/* B5 — goal binding row. Renders when this conversation has been

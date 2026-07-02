@@ -77,8 +77,6 @@ vi.mock("@/lib/tauri", () => ({
   setApproveWrites: vi.fn(),
   respondEdit: vi.fn(),
   retryLastTurn: vi.fn(),
-  saveCheckpoint: vi.fn(),
-  listCheckpoints: vi.fn(),
   exportConversationMarkdown: vi.fn(),
   saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
 }));
@@ -151,18 +149,20 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
       .getState()
       .createApiConversation({ agent: "api-openai", projectPath: "D:/projects/example", model: "gpt-4o", initialMessage: "kickoff" });
 
-    useAgentPlanStore.getState().setSpec(id, ["criterion"]);
-    useAgentPlanStore.getState().setSpecStage(id, "plan");
     useAgentPlanStore.getState().setPlan(id, [
       { id: "t1", content: "do thing", status: "pending" },
     ]);
-    expect(useAgentPlanStore.getState().spec.has(id)).toBe(true);
+    // Seed the approval flag directly — approvePlan's side effects (execute
+    // turn) are covered by agentPlanStore.test.ts and would fire a real
+    // send here.
+    useAgentPlanStore.setState((s) => ({
+      planApproved: new Map(s.planApproved).set(id, true),
+    }));
     expect(useAgentPlanStore.getState().plan.has(id)).toBe(true);
+    expect(useAgentPlanStore.getState().planApproved.has(id)).toBe(true);
 
     useAgentTaskStore.getState().deleteConversation(id);
 
-    expect(useAgentPlanStore.getState().spec.has(id)).toBe(false);
-    expect(useAgentPlanStore.getState().specStage.has(id)).toBe(false);
     expect(useAgentPlanStore.getState().plan.has(id)).toBe(false);
     expect(useAgentPlanStore.getState().planApproved.has(id)).toBe(false);
   });

@@ -1,4 +1,5 @@
 import { Check, Edit3, Eye, MessageSquare } from "lucide-react";
+import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 
 interface PlanModeApprovalMenuProps {
@@ -67,42 +68,39 @@ export function PlanModeApprovalMenu({
   conversationId,
   onProceed,
 }: PlanModeApprovalMenuProps) {
-  const setPlanMode = useAgentTaskStore((s) => s.setPlanMode);
-  const setPermissionMode = useAgentTaskStore((s) => s.setPermissionMode);
-  const setApproveWrites = useAgentTaskStore(
-    (s) => (s as { setApproveWrites?: (id: string, enabled: boolean) => Promise<void> })
-      .setApproveWrites,
-  );
   const sendMessage = useAgentTaskStore((s) => s.sendMessage);
+  // Unified approval path: approvePlan flips planApproved (so PlanPanel's
+  // proposed/approved state stays in sync), lifts plan mode, applies the
+  // chosen permission posture AFTER the lift (sidecar sessions share one
+  // wire dimension between plan and permission mode, so setting the posture
+  // first would get clobbered back to "default"), and dispatches the
+  // execute turn exactly once — repeat clicks no-op instead of
+  // double-sending.
+  const approvePlan = useAgentPlanStore((s) => s.approvePlan);
 
-  const handle = async (key: ChoiceKey) => {
+  const handle = (key: ChoiceKey) => {
     switch (key) {
       case "execute": {
-        await setPlanMode(conversationId, false);
-        await setPermissionMode(conversationId, "auto");
-        sendMessage(conversationId, "Plan approved — implement it now.");
+        approvePlan(conversationId, "Plan approved — implement it now.", {
+          permissionMode: "auto",
+        });
         onProceed?.();
         break;
       }
       case "accept-edits": {
-        await setPlanMode(conversationId, false);
-        await setPermissionMode(conversationId, "auto");
-        if (setApproveWrites) {
-          await setApproveWrites(conversationId, false);
-        }
-        sendMessage(
+        approvePlan(
           conversationId,
           "Plan approved — implement it. Make edits without asking; ask before destructive shell commands.",
+          { permissionMode: "auto", approveWrites: false },
         );
         onProceed?.();
         break;
       }
       case "review-each": {
-        await setPlanMode(conversationId, false);
-        await setPermissionMode(conversationId, "ask_for_risky");
-        sendMessage(
+        approvePlan(
           conversationId,
           "Plan approved — implement step by step; I'll review each edit.",
+          { permissionMode: "ask_for_risky" },
         );
         onProceed?.();
         break;
@@ -111,7 +109,7 @@ export function PlanModeApprovalMenu({
         // Keep plan mode ON — just nudge the model to refine.
         sendMessage(
           conversationId,
-          "Refine the plan first — explain trade-offs in approach X vs Y, then I'll choose.",
+          "Don't implement yet — refine the plan: call out risks, open questions, and any alternatives worth weighing, then wait for my approval.",
         );
         break;
       }
@@ -134,7 +132,7 @@ export function PlanModeApprovalMenu({
             <button
               key={c.key}
               type="button"
-              onClick={() => void handle(c.key)}
+              onClick={() => handle(c.key)}
               className={`flex items-start gap-2 text-[11px] px-2 py-1.5 rounded text-left w-full ${TONE_CLASSES[c.tone]}`}
             >
               <Icon size={12} className="mt-0.5 shrink-0" />

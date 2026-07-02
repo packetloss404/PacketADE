@@ -5,7 +5,7 @@ import type { AgentConversation } from "@/types/agent-conversation";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 
 /** Build a serializable snapshot of a conversation for `saveConversation`.
- * Pulls plan/spec state out of `agentPlanStore` so the persisted record
+ * Pulls plan state out of `agentPlanStore` so the persisted record
  * keeps its on-disk shape even though those fields no longer live on the
  * in-memory conversation object. Ephemeral substores (approval,
  * streaming) are intentionally omitted — they reset on hydration. */
@@ -13,8 +13,6 @@ function snapshotForPersist(conv: AgentConversation): AgentConversation {
   const plans = useAgentPlanStore.getState();
   return {
     ...conv,
-    spec: plans.getSpec(conv.id),
-    specStage: plans.getSpecStage(conv.id),
     plan: plans.getPlan(conv.id),
     planApproved: plans.getPlanApproved(conv.id) || undefined,
   };
@@ -91,13 +89,12 @@ export function hydrateConversations(): void {
           conv.status = "idle";
           conv.messages = (conv.messages ?? []).map((m) => ({ ...m, isStreaming: false }));
           conv.queuedMessages = [];
-          // Push persisted plan/spec state into the plan substore — it is the
+          // Push persisted plan state into the plan substore — it is the
           // runtime source of truth. The conversation's own copies are kept
           // for back-compat with code that hasn't migrated yet but the live
-          // UI reads from the store.
+          // UI reads from the store. (Legacy spec/specStage fields from the
+          // retired Spec FSM are simply ignored on parse.)
           useAgentPlanStore.getState().hydrateConversation(conv.id, {
-            spec: conv.spec,
-            specStage: conv.specStage,
             plan: conv.plan,
             planApproved: conv.planApproved,
           });

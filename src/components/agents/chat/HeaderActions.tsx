@@ -6,7 +6,6 @@ import {
   FileJson,
   MoreVertical,
   PanelRightOpen,
-  RotateCcw,
   X,
 } from "lucide-react";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
@@ -30,8 +29,6 @@ interface HeaderActionsProps {
   diffTotals: { fileCount: number; totalAdds: number; totalDels: number };
   previewOpen: boolean;
   togglePreview: () => void;
-  showRewind: boolean;
-  setShowRewind: (updater: (v: boolean) => boolean) => void;
   onClose: () => void;
   onCycleMode: () => void;
   onSelectMode: (mode: AgentMode) => void;
@@ -46,8 +43,6 @@ export function HeaderActions({
   diffTotals,
   previewOpen,
   togglePreview,
-  showRewind,
-  setShowRewind,
   onClose,
   onCycleMode,
   onSelectMode,
@@ -244,20 +239,6 @@ export function HeaderActions({
       </Tooltip>
 
       <ContinueInMenu conversation={conversation} />
-
-      <Tooltip content="Rewind / checkpoints">
-        <button
-          onClick={() => setShowRewind((v) => !v)}
-          aria-pressed={showRewind}
-          className={`p-0.5 rounded transition-colors ${
-            showRewind
-              ? "text-accent-blue bg-accent-blue/10"
-              : "text-text-muted hover:text-text-primary"
-          }`}
-        >
-          <RotateCcw size={12} />
-        </button>
-      </Tooltip>
 
       <Tooltip content="Back to list">
         <button
