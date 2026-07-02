@@ -10,8 +10,10 @@ import {
 } from "lucide-react";
 import { useDiffPaneStore } from "../../stores/diffPaneStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { Spinner } from "@/components/ui/Spinner";
-import { parseWriteFileInput } from "@/lib/parseToolInput";
+import { materializeEdits } from "@/lib/parseToolInput";
+import { collectEditGroups, type FileEditGroup } from "@/lib/diffUtils";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface MultiFileEditCardProps {
@@ -24,7 +26,7 @@ type FileKind = "new" | "modified" | "deleted";
 
 interface FileEntry {
   path: string;
-  newContent: string;
+  group: FileEditGroup;
   kind: FileKind;
   added: number;
   removed: number;
@@ -32,26 +34,24 @@ interface FileEntry {
 }
 
 /**
- * Build one seed entry per unique file path. If the agent writes the same
- * file twice in a turn (e.g. scaffold then patch), the last write wins so we
- * render one row per file (no duplicate React keys) and count files, not
- * writes.
+ * Build one seed entry per unique file path via the shared canonical-edit
+ * collector (fires for write_file, Claude Code's Write/Edit/MultiEdit/
+ * NotebookEdit, and Codex apply_patch alike). If the agent edits the same
+ * file twice in a turn, the chain collapses into one row per file (no
+ * duplicate React keys) and we count files, not writes.
  */
-function buildSeeds(toolCalls: AgentToolCall[]): FileEntry[] {
-  const byPath = new Map<string, FileEntry>();
-  for (const call of toolCalls) {
-    const parsed = parseWriteFileInput(call);
-    if (!parsed) continue;
-    byPath.set(parsed.path, {
-      path: parsed.path,
-      newContent: parsed.content,
-      kind: "modified",
-      added: 0,
-      removed: 0,
-      loading: true,
-    });
-  }
-  return [...byPath.values()];
+function buildSeeds(
+  toolCalls: AgentToolCall[],
+  projectPath: string,
+): FileEntry[] {
+  return [...collectEditGroups(toolCalls, projectPath).values()].map((group) => ({
+    path: group.path,
+    group,
+    kind: "modified" as FileKind,
+    added: 0,
+    removed: 0,
+    loading: true,
+  }));
 }
 
 function countDiffLines(orig: string, next: string): {
@@ -95,27 +95,53 @@ function MultiFileEditCardImpl({
 }: MultiFileEditCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [entries, setEntries] = useState<FileEntry[]>(() =>
-    buildSeeds(toolCalls),
+    buildSeeds(toolCalls, projectPath),
   );
 
   useEffect(() => {
     let cancelled = false;
-    const seeds = buildSeeds(toolCalls);
+    const seeds = buildSeeds(toolCalls, projectPath);
     setEntries(seeds);
 
     (async () => {
+      const { getBaseline, getToolCallBaseline } =
+        useEditBaselineStore.getState();
       const resolved: FileEntry[] = await Promise.all(
         seeds.map(async (entry) => {
           try {
-            const original = await invoke<string | null>("read_file_for_diff", {
-              projectPath,
-              relPath: entry.path,
-            });
-            const hasOriginal =
-              original !== null &&
-              original !== undefined &&
-              original.length > 0;
-            const isEmptyNew = entry.newContent.length === 0;
+            // "Before" = the recorded pre-edit baseline when one exists —
+            // never live disk — so counts stay truthful after the edit
+            // applies. This card renders ONE MESSAGE's edit chain, so
+            // prefer the per-call baseline of this run's first edit of the
+            // path (content immediately before the turn) over the
+            // conversation-level first-wins baseline — a file re-edited in
+            // a later turn must not replay a partial chain on pre-turn-1
+            // content. Disk is only the fallback for legacy sessions with
+            // no recorded baseline.
+            const callBaseline = getToolCallBaseline(entry.group.firstToolCallId);
+            const baseline =
+              callBaseline && callBaseline.path === entry.path
+                ? { content: callBaseline.content }
+                : getBaseline(conversationId, entry.path);
+            const original =
+              baseline !== undefined
+                ? baseline.content
+                : ((await invoke<string | null>("read_file_for_diff", {
+                    projectPath,
+                    relPath: entry.path,
+                  })) ?? null);
+            // "After" = the transcript's edit chain replayed on the
+            // baseline; when it can't be reproduced (Codex apply_patch),
+            // the applied on-disk result is the truthful after.
+            const newContent =
+              materializeEdits(entry.group.edits, original) ??
+              (await invoke<string | null>("read_file_for_diff", {
+                projectPath,
+                relPath: entry.path,
+              })) ??
+              "";
+            const hasOriginal = original !== null && original.length > 0;
+            const isEmptyNew = newContent.length === 0;
             let kind: FileKind;
             if (!hasOriginal) {
               kind = "new";
@@ -125,8 +151,8 @@ function MultiFileEditCardImpl({
               kind = "modified";
             }
             const { added, removed } = countDiffLines(
-              hasOriginal ? (original as string) : "",
-              entry.newContent,
+              hasOriginal ? original : "",
+              newContent,
             );
             return { ...entry, kind, added, removed, loading: false };
           } catch {

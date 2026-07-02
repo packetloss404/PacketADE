@@ -73,6 +73,12 @@ export function apiAgentPendingEditEvent(sessionId: string): string {
   return `api-agent:pending-edit:${sessionId}`;
 }
 
+/** P1-7: non-blocking pre-edit baseline capture for auto-applied writes.
+ * Gated writes carry their baseline on `pending_edit.before` instead. */
+export function apiAgentEditBaselineEvent(sessionId: string): string {
+  return `api-agent:edit-baseline:${sessionId}`;
+}
+
 // v3 additions
 export function apiAgentPlanBlockEvent(sessionId: string): string {
   return `api-agent:plan-block:${sessionId}`;

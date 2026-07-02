@@ -9,11 +9,13 @@ import {
   apiAgentThinkingStopEvent,
   apiAgentPermissionRequestEvent,
   apiAgentPendingEditEvent,
+  apiAgentEditBaselineEvent,
   apiAgentPlanBlockEvent,
   apiAgentToolOutputExtendedEvent,
   apiAgentTurnSummaryEvent,
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
+import { toProjectRelativePath } from "@/lib/parseToolInput";
 import { createStreamCoalescer } from "@/lib/streamCoalescer";
 import { sendApiAgentMessage } from "@/lib/tauri";
 import { estimateTurnCostUsd } from "@/lib/conversationCost";
@@ -25,6 +27,7 @@ import {
 } from "@/lib/notifications";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
 import {
@@ -150,7 +153,15 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     coalescer.pushContent(event.payload);
   });
 
-  const toolStartUnlisten = await listen<{ id: string; name: string }>(
+  // `input` (raw tool-input JSON) arrives with tool_start on the sidecar
+  // path (Claude Code / Codex forward it at tool_use time) and with
+  // tool_result on the in-process path. Stash whichever arrives so the
+  // transcript edit layer can parse Write/Edit/apply_patch calls.
+  const toolStartUnlisten = await listen<{
+    id: string;
+    name: string;
+    input?: string | null;
+  }>(
     apiAgentToolStartEvent(id),
     (event) => {
       let touched = false;
@@ -165,6 +176,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                   id: event.payload.id,
                   name: event.payload.name,
                   status: "running" as const,
+                  input: event.payload.input ?? undefined,
                 },
               ];
               return { ...m, toolCalls };
@@ -199,7 +211,9 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                     status: (event.payload.is_error ? "error" : "done") as AgentToolCall["status"],
                     summary: event.payload.content.slice(0, 200),
                     fullContent: event.payload.content,
-                    input: event.payload.input,
+                    // Sidecar results don't echo the input; keep the copy
+                    // captured at tool_start instead of clobbering it with "".
+                    input: event.payload.input || tc.input,
                   }
                 : tc,
             );
@@ -410,8 +424,42 @@ export async function installApiAgentListeners(conversationId: string): Promise<
   const pendingEditUnlisten = await listen<PendingEdit>(apiAgentPendingEditEvent(id), (event) => {
     const conv = getState().conversations.find((c) => c.id === id);
     if (!conv) return;
+    // Gated writes carry their pre-edit baseline on `before` — record it so
+    // review surfaces diff against the true "before" after the edit applies.
+    // Keyed project-relative: the runtimes emit raw tool paths (absolute for
+    // Claude Code / Codex), while the transcript edit layer keys descriptors
+    // project-relative.
+    useEditBaselineStore
+      .getState()
+      .recordBaseline(
+        id,
+        toProjectRelativePath(event.payload.path, conv.projectPath),
+        event.payload.before ?? null,
+        event.payload.id,
+      );
     useAgentApprovalStore.getState().addPendingEdit(id, event.payload);
     void notifyApprovalNeeded(id, conv.title);
+  });
+
+  // P1-7: non-blocking baseline capture for auto-applied writes (approve-
+  // writes off). Every edit-bearing tool call stores the pre-edit file
+  // content; `before` is null/absent when the file did not exist. Keys are
+  // project-relative to match the canonical edit descriptors.
+  const editBaselineUnlisten = await listen<{
+    id: string;
+    path: string;
+    before?: string | null;
+  }>(apiAgentEditBaselineEvent(id), (event) => {
+    const conv = getState().conversations.find((c) => c.id === id);
+    if (!conv) return;
+    useEditBaselineStore
+      .getState()
+      .recordBaseline(
+        id,
+        toProjectRelativePath(event.payload.path, conv.projectPath),
+        event.payload.before ?? null,
+        event.payload.id,
+      );
   });
 
   const planBlockUnlisten = await listen<{ items: AgentPlanItem[] }>(
@@ -532,6 +580,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     thinkingStopUnlisten();
     permissionReqUnlisten();
     pendingEditUnlisten();
+    editBaselineUnlisten();
     planBlockUnlisten();
     toolOutputExtendedUnlisten();
     turnSummaryUnlisten();

@@ -4,6 +4,7 @@ import { MultiFileEditCard } from "../MultiFileEditCard";
 import { SubagentToolCallCard } from "../SubagentToolCallCard";
 import { TaskListCard } from "../TaskListCard";
 import { ToolCallCard } from "./ToolCallCard";
+import { isEditToolCall } from "@/lib/parseToolInput";
 import type {
   AgentToolCall,
   TranscriptVerbosity,
@@ -48,10 +49,12 @@ export const ToolCallRenderer = memo(function ToolCallRenderer({
   const visible = toolCalls.filter((tc) => !EXPLORED_TOOL_NAMES.has(tc.name));
   if (visible.length === 0) return null;
 
+  // Edit-bearing calls across every runtime (write_file, Claude Code's
+  // Write/Edit/MultiEdit/NotebookEdit, Codex apply_patch) — normalized by
+  // parseEditToolCalls so grouping fires for all providers.
   const writeFileCalls = visible.filter(
     (tc) =>
-      tc.name === "write_file" &&
-      (tc.status === "done" || tc.status === "error"),
+      (tc.status === "done" || tc.status === "error") && isEditToolCall(tc),
   );
   const otherCalls = visible.filter((tc) => !writeFileCalls.includes(tc));
   const groupWrites = writeFileCalls.length >= 3;

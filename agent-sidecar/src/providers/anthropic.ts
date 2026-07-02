@@ -189,11 +189,14 @@ interface PendingEditMeta {
 }
 
 /**
- * Tools whose PreToolUse we intercept to surface a before/after diff preview
- * via the `pending_edit` protocol event. Any other tool falls through to the
- * SDK's regular `canUseTool` permission flow.
+ * Tools whose PreToolUse we intercept: with approveWrites on we surface a
+ * before/after diff preview via the blocking `pending_edit` protocol event;
+ * otherwise we capture the pre-edit file content and emit a non-blocking
+ * `edit_baseline` so the host's review surfaces can diff applied edits
+ * against the true "before" instead of live disk (P1-7). Any other tool
+ * falls through to the SDK's regular `canUseTool` permission flow.
  */
-const WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
+const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 /**
  * Build the SDK's user-message `content` field. When attachments are present
@@ -315,16 +318,16 @@ function parseTodoWriteInput(input: unknown): PlanItem[] | null {
 
 /**
  * Read the current contents of `path` for the "before" side of a diff. If the
- * file doesn't exist yet (first-time Write), return an empty string. Any other
- * I/O error is also squashed to "" so the hook never blocks the model on a
- * transient read failure — the user still sees the `after` content and can
- * reject the edit.
+ * file doesn't exist yet (first-time Write), return null. Any other I/O error
+ * is also squashed to null so the hook never blocks the model on a transient
+ * read failure — the user still sees the `after` content and can reject the
+ * edit. Callers that need a string "before" coalesce null to "".
  */
-async function readBefore(path: string): Promise<string> {
+async function readBefore(path: string): Promise<string | null> {
   try {
     return await fsPromises.readFile(path, "utf8");
   } catch {
-    return "";
+    return null;
   }
 }
 
@@ -493,22 +496,25 @@ export class AnthropicProvider implements ProviderHandler {
       });
     };
 
-    // PreToolUse hook: intercept Write / Edit / NotebookEdit, read current
-    // file contents, compose before+after, and park the hook on a resolver
-    // keyed by `tool_use_id`. The supervisor sends `edit_response` which
+    // PreToolUse hook: intercept Write / Edit / MultiEdit / NotebookEdit and
+    // read the current file contents (the per-tool-call baseline). With
+    // approveWrites on, compose before+after and park the hook on a resolver
+    // keyed by `tool_use_id` — the supervisor sends `edit_response` which
     // resolves the hook and lets the SDK proceed or abort the tool call.
+    // With approveWrites off, emit a non-blocking `edit_baseline` instead so
+    // every edit-bearing tool call still records its pre-edit content.
     //
     // Non-write tools fall straight through with `{ continue: true }`; they
     // still go through `canUseTool` above for the regular permission prompt.
     const preToolUse: HookCallback = async (rawInput, toolUseID, { signal }) => {
       const input = rawInput as PreToolUseHookInput;
-      if (!this.approveWrites || !WRITE_TOOLS.has(input.tool_name)) {
+      if (!WRITE_TOOLS.has(input.tool_name)) {
         return { continue: true };
       }
       const ti = (input.tool_input ?? {}) as Record<string, unknown>;
-      // File path lives under `file_path` for Write/Edit, `notebook_path` for
-      // NotebookEdit. If neither is present, bail — we can't build a diff, so
-      // we defer to the normal canUseTool permission flow.
+      // File path lives under `file_path` for Write/Edit/MultiEdit,
+      // `notebook_path` for NotebookEdit. If neither is present, bail — we
+      // can't build a diff, so we defer to the normal canUseTool flow.
       const path =
         typeof ti.file_path === "string"
           ? ti.file_path
@@ -517,26 +523,52 @@ export class AnthropicProvider implements ProviderHandler {
             : null;
       if (!path) return { continue: true };
 
-      let before: string;
+      const key = toolUseID ?? input.tool_use_id;
+      const beforeOnDisk = await readBefore(path);
+
+      if (!this.approveWrites) {
+        // P1-7: baseline capture without blocking. `before` absent = the
+        // file did not exist (first-time Write).
+        const baselineEmit = this.emitCurrent;
+        if (baselineEmit) {
+          baselineEmit({
+            type: "edit_baseline",
+            sessionId: req.sessionId,
+            toolUseId: key,
+            path,
+            before: beforeOnDisk ?? undefined,
+          });
+        }
+        return { continue: true };
+      }
+
+      const before = beforeOnDisk ?? "";
       let after: string;
       if (input.tool_name === "Write") {
-        before = await readBefore(path);
         after = typeof ti.content === "string" ? (ti.content as string) : "";
       } else if (input.tool_name === "Edit") {
-        before = await readBefore(path);
         const oldString = typeof ti.old_string === "string" ? (ti.old_string as string) : "";
         const newString = typeof ti.new_string === "string" ? (ti.new_string as string) : "";
         const replaceAll = ti.replace_all === true;
         after = applyEditReplacement(before, oldString, newString, replaceAll);
+      } else if (input.tool_name === "MultiEdit") {
+        // Sequential old→new replacements, applied the way the SDK's
+        // MultiEdit tool applies them.
+        after = before;
+        const edits = Array.isArray(ti.edits) ? ti.edits : [];
+        for (const e of edits) {
+          if (!e || typeof e !== "object") continue;
+          const r = e as Record<string, unknown>;
+          const oldString = typeof r.old_string === "string" ? r.old_string : "";
+          const newString = typeof r.new_string === "string" ? r.new_string : "";
+          after = applyEditReplacement(after, oldString, newString, r.replace_all === true);
+        }
       } else {
         // NotebookEdit: we don't parse the .ipynb JSON here; preview the raw
         // new_source as "after" so the user still sees what will be written.
         // Full notebook-cell diffing is a future refinement.
-        before = await readBefore(path);
         after = typeof ti.new_source === "string" ? (ti.new_source as string) : "";
       }
-
-      const key = toolUseID ?? input.tool_use_id;
       const currentEmit = this.emitCurrent;
       if (currentEmit) {
         currentEmit({
