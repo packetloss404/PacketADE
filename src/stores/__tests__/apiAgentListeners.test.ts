@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConversation, AgentMessage } from "@/types/agent-conversation";
 
 type EventListener = (event: { payload: unknown }) => void;
@@ -106,6 +106,135 @@ function messageShape(message: AgentMessage) {
     streaming: message.isStreaming === true,
   };
 }
+
+describe("apiAgentListeners chunk coalescing", () => {
+  let rafCallbacks: FrameRequestCallback[];
+
+  function runFrame() {
+    const callbacks = rafCallbacks;
+    rafCallbacks = [];
+    for (const cb of callbacks) cb(performance.now());
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doUnmock("@/stores/agentTaskStore");
+    vi.doUnmock("@/stores/apiAgentListeners");
+    localStorage.clear();
+    listeners = new Map();
+    listenMock.mockImplementation((eventName: string, callback: EventListener) => {
+      listeners.set(eventName, callback);
+      return Promise.resolve(() => {});
+    });
+    invokeMock.mockResolvedValue(undefined);
+    loadConversationsMock.mockResolvedValue([]);
+    sendApiAgentMessageMock.mockResolvedValue(undefined);
+    rafCallbacks = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function makeStreamingConversation(id: string): AgentConversation {
+    return {
+      id,
+      title: "Streaming",
+      agent: "api-openai",
+      projectPath: "D:/projects/example",
+      status: "active",
+      messages: [
+        makeMessage({ id: "msg-user", content: "go" }),
+        makeMessage({
+          id: "msg-assistant",
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+        }),
+      ],
+      sessionId: id,
+      rawOutput: "",
+      createdAt: 1,
+      updatedAt: 1,
+      mode: "api",
+      provider: "openai",
+      model: "gpt-4o",
+    };
+  }
+
+  it("buffers a chunk burst and applies it as a single ordered store write per frame", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    useAgentTaskStore.setState({
+      conversations: [makeStreamingConversation("conv-burst")],
+      selectedConversationId: "conv-burst",
+    });
+    await installApiAgentListeners("conv-burst");
+
+    const writes = vi.fn();
+    const unsubscribe = useAgentTaskStore.subscribe(writes);
+    const chunk = listeners.get("api-agent:chunk:conv-burst");
+    const thinking = listeners.get("api-agent:thinking:conv-burst");
+
+    chunk?.({ payload: "Hel" });
+    chunk?.({ payload: "lo " });
+    thinking?.({ payload: { text: "pondering" } });
+    chunk?.({ payload: "world" });
+
+    // Nothing lands until the frame flush — per-token store writes are gone.
+    expect(writes).not.toHaveBeenCalled();
+
+    runFrame();
+
+    expect(writes).toHaveBeenCalledTimes(1);
+    const msg = useAgentTaskStore
+      .getState()
+      .conversations.find((c) => c.id === "conv-burst")
+      ?.messages.find((m) => m.role === "assistant");
+    expect(msg?.content).toBe("Hello world");
+    expect(msg?.thinking).toBe("pondering");
+    expect(msg?.isStreaming).toBe(true);
+    unsubscribe();
+  });
+
+  it("flushes buffered tail chunks before `done` settles the message (no lost chunks)", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    useAgentTaskStore.setState({
+      conversations: [makeStreamingConversation("conv-settle")],
+      selectedConversationId: "conv-settle",
+    });
+    await installApiAgentListeners("conv-settle");
+
+    const chunk = listeners.get("api-agent:chunk:conv-settle");
+    chunk?.({ payload: "final " });
+    chunk?.({ payload: "words" });
+    // `done` arrives while a flush is still pending in the frame queue.
+    listeners.get("api-agent:done:conv-settle")?.({
+      payload: {
+        input_tokens: 1,
+        output_tokens: 2,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
+    // A late frame after settle must not re-apply anything.
+    runFrame();
+
+    const msg = useAgentTaskStore
+      .getState()
+      .conversations.find((c) => c.id === "conv-settle")
+      ?.messages.find((m) => m.role === "assistant");
+    expect(msg?.content).toBe("final words");
+    expect(msg?.isStreaming).toBe(false);
+  });
+});
 
 describe("apiAgentListeners queued message drain", () => {
   beforeEach(() => {

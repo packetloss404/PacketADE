@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Pencil, RotateCw } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { Spinner } from "@/components/ui/Spinner";
@@ -21,8 +29,9 @@ import type {
 const TAIL_FORCE_MOUNT = 10;
 // Reserved height for a not-yet-mounted row. Keeps the scroll container
 // overflowing (so off-screen rows stay off-screen) and gives the scrollbar a
-// sensible size before real heights are known. Browser scroll anchoring
-// smooths the reflow as rows mount.
+// sensible size before real heights are known. WKWebView has NO CSS scroll
+// anchoring, so LazyMessageRow compensates scrollTop manually when a row
+// mounts above the viewport (see the layout effect there).
 const PLACEHOLDER_MIN_HEIGHT = 72;
 
 interface MessageListProps {
@@ -120,7 +129,12 @@ export function MessageList({
         // streaming card, quick actions and diff viewer never get windowed out.
         const forceMount = index >= tailStart || isLastAssistant;
         return (
-          <LazyMessageRow key={msg.id} forceMount={forceMount} register={register}>
+          <LazyMessageRow
+            key={msg.id}
+            forceMount={forceMount}
+            register={register}
+            scrollContainerRef={scrollContainerRef}
+          >
             <MessageBubble
               message={msg}
               conversation={conversation}
@@ -172,14 +186,19 @@ export function MessageList({
 function LazyMessageRow({
   forceMount,
   register,
+  scrollContainerRef,
   children,
 }: {
   forceMount: boolean;
   register: (el: Element, onVisible: () => void) => () => void;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(forceMount);
   const rowRef = useRef<HTMLDivElement>(null);
+  // Placeholder height captured at the moment the observer told this row to
+  // mount; consumed by the compensation layout effect below.
+  const placeholderHeightRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (forceMount) {
@@ -188,8 +207,33 @@ function LazyMessageRow({
     }
     const el = rowRef.current;
     if (!el) return;
-    return register(el, () => setMounted(true));
+    return register(el, () => {
+      placeholderHeightRef.current = el.getBoundingClientRect().height;
+      setMounted(true);
+    });
   }, [forceMount, register]);
+
+  // WKWebView has no CSS scroll anchoring, so when a placeholder above the
+  // viewport grows to its real height the visible content lurches down by the
+  // difference (Safari never adjusts scrollTop the way Chromium/Gecko do).
+  // Compensate manually: measure the height delta in a layout effect (same
+  // frame, before paint) and shift the scroll container by it when the row
+  // sits above the viewport top. Rows at/below the viewport top need nothing,
+  // and the at-bottom pin in useScrollState still owns the follow behavior.
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    const placeholderHeight = placeholderHeightRef.current;
+    placeholderHeightRef.current = null;
+    if (placeholderHeight == null) return;
+    const el = rowRef.current;
+    const container = scrollContainerRef?.current;
+    if (!el || !container) return;
+    const delta = el.getBoundingClientRect().height - placeholderHeight;
+    if (delta === 0) return;
+    if (el.getBoundingClientRect().top < container.getBoundingClientRect().top) {
+      container.scrollBy(0, delta);
+    }
+  }, [mounted, scrollContainerRef]);
 
   return (
     <div
@@ -339,14 +383,16 @@ function MessageBubble({
             />
           )}
 
-        {message.toolCalls && message.toolCalls.length > 0 && !message.isStreaming && (
-          <ExplorationRollupCard toolCalls={message.toolCalls} />
+        {message.toolCalls && message.toolCalls.length > 0 && (
+          <ExplorationRollupCard
+            toolCalls={message.toolCalls}
+            isStreaming={message.isStreaming}
+          />
         )}
 
         {message.toolCalls && message.toolCalls.length > 0 && (
           <ToolCallRenderer
             toolCalls={message.toolCalls}
-            isStreaming={message.isStreaming}
             conversationId={conversation.id}
             projectPath={conversation.projectPath}
             verbosity={verbosity}
