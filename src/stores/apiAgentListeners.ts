@@ -16,6 +16,11 @@ import {
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import { toProjectRelativePath } from "@/lib/parseToolInput";
+import { classifyToolTier, decideApprovalGate } from "@/lib/approvalTiers";
+// Pure util module (no React) — deriveMode is P0-4's one bijection over the
+// conversation's permission flags and stays the single source of truth for
+// what posture a session is in.
+import { deriveMode } from "@/components/agents/agentModeChipUtils";
 import { createStreamCoalescer } from "@/lib/streamCoalescer";
 import { sendApiAgentMessage } from "@/lib/tauri";
 import { estimateTurnCostUsd } from "@/lib/conversationCost";
@@ -414,6 +419,23 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       // fires the orchestrator `approval_needed` flip internally.
       const conv = getState().conversations.find((c) => c.id === id);
       if (!conv) return;
+      // P1-9 tiered gating: read/search tools never prompt; in-project
+      // edits auto-apply into the post-hoc review bar (baselines from
+      // P1-7, surface from P1-8). Only shell/network/out-of-project
+      // requests fall through to a blocking prompt. The mode chip rules:
+      // tiering applies under Default/yolo, reads-only under manual, and
+      // plan / deny-risky postures keep every prompt.
+      const tier = classifyToolTier(
+        event.payload.name,
+        event.payload.arguments,
+        conv.projectPath,
+      );
+      if (decideApprovalGate(deriveMode(conv), tier) === "auto_allow") {
+        void useAgentApprovalStore
+          .getState()
+          .autoAllowPermission(id, event.payload.id);
+        return;
+      }
       useAgentApprovalStore.getState().addPendingPermission(id, event.payload);
       // Long autonomous runs pause here for approval — ping the user (pref-gated
       // + per-session debounced) so they know an unattended run needs them.

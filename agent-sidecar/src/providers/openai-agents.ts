@@ -307,8 +307,15 @@ export class OpenAIAgentsProvider implements ProviderHandler {
         alwaysApprove: req.decision === "allow_always",
       });
     } else {
+      // Deny-and-continue: fold the user's steering text (when given) into
+      // the rejection message so the model is redirected, not just refused.
+      const reason =
+        typeof req.reason === "string" ? req.reason.trim() : "";
       this.interruptedState.reject(pending.item, {
-        message: "User denied permission for this tool call.",
+        message:
+          reason.length > 0
+            ? `User denied permission for this tool call. User's guidance: ${reason}`
+            : "User denied permission for this tool call.",
       });
     }
 

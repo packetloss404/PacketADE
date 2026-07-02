@@ -72,9 +72,12 @@ export function PendingApprovalsSection({
 
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
+  // P1-9: Y/N stays live while the section is collapsed — the top prompt is
+  // still the target, so a stacked queue can be drained from the keyboard
+  // without expanding. The typing-context guards below keep "y"/"n" usable
+  // in the composer and any focused input.
   useEffect(() => {
     if (totalCount === 0) return;
-    if (collapsed) return;
     if (commandPaletteOpen) return;
     if (!topPermission) return;
 
@@ -100,7 +103,6 @@ export function PendingApprovalsSection({
     return () => document.removeEventListener("keydown", handler);
   }, [
     totalCount,
-    collapsed,
     commandPaletteOpen,
     topPermission,
     conversationId,
@@ -142,7 +144,7 @@ export function PendingApprovalsSection({
               {totalCount} pending approval{totalCount === 1 ? "" : "s"}
             </span>
             <span className="text-text-muted">
-              · press Y/N when expanded
+              · Y allow · N deny (top prompt: {pendingPermissions[0]?.name})
             </span>
           </button>
           <CancelPendingButton
@@ -195,8 +197,8 @@ export function PendingApprovalsSection({
           onAllowAlways={(toolId) =>
             void respondPermission(conversationId, toolId, "allow_always")
           }
-          onDeny={(toolId) =>
-            void respondPermission(conversationId, toolId, "deny")
+          onDeny={(toolId, reason) =>
+            void respondPermission(conversationId, toolId, "deny", reason)
           }
           onAllowAlwaysWithPattern={(toolId, pattern) => {
             void respondPermission(conversationId, toolId, "allow_always");

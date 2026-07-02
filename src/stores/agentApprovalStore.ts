@@ -85,7 +85,16 @@ interface AgentApprovalState {
     conversationId: string,
     toolId: string,
     decision: "allow_once" | "allow_always" | "deny",
+    /** P1-9 deny-and-continue: optional user guidance forwarded with a
+     * "deny" so the model is steered ("don't touch prod — use the staging
+     * config") instead of stalled on a bare refusal. */
+    reason?: string,
   ) => Promise<void>;
+  /** P1-9 tiered gating: answer a permission request `allow_once` WITHOUT
+   * it ever entering the prompt queue. Called by the permission-request
+   * listener for read/search tools and in-project edits under Default mode
+   * — no queue bookkeeping, no task wake-up, no notification. */
+  autoAllowPermission: (conversationId: string, toolId: string) => Promise<void>;
   respondEdit: (
     conversationId: string,
     toolId: string,
@@ -133,8 +142,8 @@ export const useAgentApprovalStore = create<AgentApprovalState>((set, get) => ({
     fireTaskApprovalNeeded(conversationId);
   },
 
-  respondPermission: async (conversationId, toolId, decision) => {
-    await tauriRespondPermission(conversationId, toolId, decision);
+  respondPermission: async (conversationId, toolId, decision, reason) => {
+    await tauriRespondPermission(conversationId, toolId, decision, reason);
     set((s) => {
       const next = new Map(s.permissions);
       const existing = next.get(conversationId) ?? [];
@@ -150,6 +159,14 @@ export const useAgentApprovalStore = create<AgentApprovalState>((set, get) => ({
       return { permissions: next };
     });
     maybeResolveTaskApproval(conversationId, get());
+  },
+
+  autoAllowPermission: async (conversationId, toolId) => {
+    try {
+      await tauriRespondPermission(conversationId, toolId, "allow_once");
+    } catch (e) {
+      console.warn("autoAllowPermission failed:", e);
+    }
   },
 
   respondEdit: async (conversationId, toolId, decision, mergedContent) => {

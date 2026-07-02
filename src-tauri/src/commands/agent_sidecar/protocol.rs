@@ -286,19 +286,25 @@ impl SidecarManager {
         result
     }
 
-    /// Forward a permission decision to the sidecar.
+    /// Forward a permission decision to the sidecar. `reason`, when set on a
+    /// deny, carries the user's steering text — providers fold it into the
+    /// synthetic tool result so the model is redirected, not just refused.
     pub async fn forward_permission(
         &self,
         session_id: String,
         tool_use_id: String,
         decision: String,
+        reason: Option<String>,
     ) -> Result<(), String> {
-        let req = json!({
+        let mut req = json!({
             "type": "permission_response",
             "sessionId": session_id,
             "toolUseId": tool_use_id,
             "decision": decision,
         });
+        if let Some(r) = reason {
+            req["reason"] = json!(r);
+        }
         self.send_json_for_session(&session_id, req).await
     }
 

@@ -107,8 +107,68 @@ describe("agentApprovalStore", () => {
 
     await useAgentApprovalStore.getState().respondPermission("conv-A", "perm-1", "allow_once");
 
-    expect(respondPermissionMock).toHaveBeenCalledWith("conv-A", "perm-1", "allow_once");
+    expect(respondPermissionMock).toHaveBeenCalledWith(
+      "conv-A",
+      "perm-1",
+      "allow_once",
+      undefined,
+    );
     expect(useAgentApprovalStore.getState().permissions.get("conv-A")).toEqual([p2]);
+  });
+
+  it("respondPermission forwards the deny-and-continue reason payload", async () => {
+    const { useAgentApprovalStore } = await import("@/stores/agentApprovalStore");
+    const p1 = makePermission({ id: "perm-1" });
+    useAgentApprovalStore.setState({
+      permissions: new Map([["conv-A", [p1]]]),
+      edits: new Map(),
+    });
+
+    await useAgentApprovalStore
+      .getState()
+      .respondPermission("conv-A", "perm-1", "deny", "use the staging config instead");
+
+    expect(respondPermissionMock).toHaveBeenCalledWith(
+      "conv-A",
+      "perm-1",
+      "deny",
+      "use the staging config instead",
+    );
+    expect(useAgentApprovalStore.getState().permissions.has("conv-A")).toBe(false);
+  });
+
+  it("autoAllowPermission answers allow_once without touching the prompt queues", async () => {
+    const { useAgentApprovalStore } = await import("@/stores/agentApprovalStore");
+    const unrelated = makePermission({ id: "perm-other" });
+    useAgentApprovalStore.setState({
+      permissions: new Map([["conv-A", [unrelated]]]),
+      edits: new Map(),
+    });
+
+    await useAgentApprovalStore.getState().autoAllowPermission("conv-A", "tool-9");
+
+    expect(respondPermissionMock).toHaveBeenCalledWith("conv-A", "tool-9", "allow_once");
+    // No queue bookkeeping: the auto-allowed tool never entered the queue,
+    // and existing entries are untouched.
+    expect(useAgentApprovalStore.getState().permissions.get("conv-A")).toEqual([
+      unrelated,
+    ]);
+  });
+
+  it("autoAllowPermission swallows backend failures with a warning", async () => {
+    const { useAgentApprovalStore } = await import("@/stores/agentApprovalStore");
+    respondPermissionMock.mockRejectedValueOnce(new Error("gone"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(
+      useAgentApprovalStore.getState().autoAllowPermission("conv-A", "tool-9"),
+    ).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "autoAllowPermission failed:",
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("respondPermission drops the conversation key when the queue empties", async () => {
