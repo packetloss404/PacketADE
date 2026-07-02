@@ -23,7 +23,6 @@ export interface WorkspaceSessionConfig {
 interface WorkspaceStore {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
-  keepTerminalsAlive: boolean;
   /**
    * v0.8 setting: when true, the New Workspace modal pre-checks the
    * "Bypass permission prompts" toggle. Per-workspace state is still
@@ -54,14 +53,12 @@ interface WorkspaceStore {
   removePinnedCommand: (workspaceId: string, paneId: string, index: number) => void;
   addPane: (workspaceId: string, agentId: WorkspaceAgentSlot) => string | null;
   removePane: (workspaceId: string, paneId: string) => void;
-  setKeepTerminalsAlive: (keep: boolean) => void;
   setDefaultBypassPermissions: (value: boolean) => void;
   setAutoBindGithubRepo: (value: boolean) => void;
   setZoomedPane: (paneId: string | null) => void;
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
 
-const KEEP_ALIVE_KEY = "packetade:workspace-keep-alive";
 const DEFAULT_BYPASS_KEY = "packetade:workspace-default-bypass";
 const AUTO_BIND_GITHUB_KEY = "packetade:workspace-auto-bind-github";
 
@@ -142,17 +139,9 @@ function commitWorkspaces(
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaces: loadCachedWorkspaces(),
   activeWorkspaceId: null,
-  keepTerminalsAlive: typeof localStorage !== "undefined" && localStorage.getItem(KEEP_ALIVE_KEY) === "true",
   defaultBypassPermissions: readBooleanFlag(DEFAULT_BYPASS_KEY, false),
   autoBindGithubRepo: readBooleanFlag(AUTO_BIND_GITHUB_KEY, true),
   zoomedPaneId: null,
-
-  setKeepTerminalsAlive: (keep) => {
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(KEEP_ALIVE_KEY, String(keep));
-    }
-    set({ keepTerminalsAlive: keep });
-  },
 
   setDefaultBypassPermissions: (value) => {
     writeBooleanFlag(DEFAULT_BYPASS_KEY, value);

@@ -2,8 +2,6 @@ import { useState, useMemo } from "react";
 import {
   ChevronDown,
   ChevronRight,
-  ChevronLeft,
-  ChevronsRight,
   Plus,
   Folder,
   Github,
@@ -37,8 +35,6 @@ export function WorkspaceSidebar() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
-  const keepTerminalsAlive = useWorkspaceStore((s) => s.keepTerminalsAlive);
-  const setKeepTerminalsAlive = useWorkspaceStore((s) => s.setKeepTerminalsAlive);
 
   const projectPath = useLayoutStore((s) => s.projectPath);
   const patterns = useMemoryStore((s) => s.patterns);
@@ -167,15 +163,6 @@ export function WorkspaceSidebar() {
         <span className="text-[11px] font-medium text-text-primary truncate flex-1">
           {projectName}
         </span>
-        <button className="p-0.5 text-text-muted hover:text-text-primary transition-colors" title="Sort">
-          <ChevronsRight size={11} />
-        </button>
-        <button className="p-0.5 text-text-muted hover:text-text-primary transition-colors" title="Previous">
-          <ChevronLeft size={11} />
-        </button>
-        <button className="p-0.5 text-text-muted hover:text-text-primary transition-colors" title="Next">
-          <ChevronRight size={11} />
-        </button>
       </div>
 
       {/* Filter */}
@@ -433,21 +420,6 @@ export function WorkspaceSidebar() {
             )}
           </div>
         )}
-      </div>
-
-      {/* Footer */}
-      <div className="border-t border-bg-border">
-        <button
-          onClick={() => setKeepTerminalsAlive(!keepTerminalsAlive)}
-          className="flex items-center gap-2 w-full px-3 py-2 hover:bg-bg-hover transition-colors text-left"
-        >
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${
-              keepTerminalsAlive ? "bg-accent-green" : "bg-text-muted"
-            }`}
-          />
-          <span className="text-[11px] text-text-secondary">Keep terminals alive</span>
-        </button>
       </div>
 
       {showCreate && (

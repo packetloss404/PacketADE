@@ -22,7 +22,6 @@ const mocks = vi.hoisted(() => {
     getActiveWorkspace: vi.fn(() => activeWorkspace),
   };
   const agentTaskState = {
-    launchTask: vi.fn(),
     createApiConversation: vi.fn(),
     selectConversation: vi.fn(),
   };
@@ -101,7 +100,6 @@ vi.mock("@/stores/ideationStore", () => ({
   ),
 }));
 
-import { NewAgentTaskModal } from "@/components/agents/NewAgentTaskModal";
 import { IdeaCard } from "@/components/views/ideation/IdeaCard";
 import { IdeaDetail } from "@/components/views/ideation/IdeaDetail";
 
@@ -123,36 +121,7 @@ function makeIdea(overrides: Partial<Idea> = {}): Idea {
 describe("project-based agent creation flows", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.agentTaskState.launchTask.mockResolvedValue("task-1");
     mocks.agentTaskState.createApiConversation.mockResolvedValue("conversation-1");
-  });
-
-  it("launches NewAgentTaskModal tasks in the layout project path", async () => {
-    const onClose = vi.fn();
-    render(<NewAgentTaskModal onClose={onClose} />);
-
-    fireEvent.change(screen.getByPlaceholderText("Short name for this task"), {
-      target: { value: "Investigate parser" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Describe what the agent should do..."), {
-      target: { value: "Find the parser duplication and suggest a cleanup." },
-    });
-    fireEvent.click(screen.getByText("Launch Agent"));
-
-    await waitFor(() => expect(mocks.agentTaskState.launchTask).toHaveBeenCalledTimes(1));
-    expect(mocks.agentTaskState.launchTask).toHaveBeenCalledWith(
-      "Investigate parser",
-      "Find the parser duplication and suggest a cleanup.",
-      "claude-code",
-      mocks.layoutState.projectPath,
-    );
-    expect(mocks.agentTaskState.launchTask).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      mocks.activeWorkspace.projectPath,
-    );
-    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("asks Scout from an idea card using the active workspace project path without a workspace id", async () => {

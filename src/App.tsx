@@ -13,7 +13,6 @@ import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useMosaicStore } from "@/stores/mosaicStore";
 import { useAppStore, getModuleId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { useDictationStore } from "@/stores/dictationStore";
@@ -147,15 +146,6 @@ export default function App() {
           pushToTalkActiveRef.current = false;
           void ds.stopRecording().then(() => useDictationStore.getState().clearResult());
           return;
-        }
-      }
-      // Ctrl+1/2/3/4 to switch panes (uses mosaic leaf order for spatial consistency)
-      if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "4") {
-        e.preventDefault();
-        const orderedIds = useMosaicStore.getState().getLeafOrder();
-        const idx = parseInt(e.key) - 1;
-        if (idx < orderedIds.length) {
-          useLayoutStore.getState().setActivePaneId(orderedIds[idx]);
         }
       }
       // Ctrl+Shift+1/2/3/4/5/6 to switch views
