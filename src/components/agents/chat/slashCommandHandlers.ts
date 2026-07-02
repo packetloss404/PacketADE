@@ -164,10 +164,8 @@ export const slashCommandHandlers: Record<
     }
     const plans = useAgentPlanStore.getState();
     const plan = plans.getPlan(conversationId);
-    const spec = plans.getSpec(conversationId);
     const title =
       (plan && plan[0]?.content) ||
-      spec?.criteria[0] ||
       conversation.title ||
       "Untitled goal";
     const linkedFlight = useFlightStore

@@ -72,8 +72,6 @@ vi.mock("@/lib/tauri", () => ({
   setApproveWrites: vi.fn(),
   respondEdit: vi.fn(),
   retryLastTurn: (...args: unknown[]) => retryLastTurnMock(...args),
-  saveCheckpoint: vi.fn(),
-  listCheckpoints: vi.fn(),
   exportConversationMarkdown: vi.fn(),
   saveWorkspacesSlice: (...args: unknown[]) => saveWorkspacesSliceMock(...args),
 }));

@@ -2638,18 +2638,6 @@ export async function retryLastTurn(sessionId: string, newModel?: string): Promi
   return invoke("retry_last_turn", { sessionId, newModel: newModel ?? null });
 }
 
-export async function saveCheckpoint(sessionId: string, data: string): Promise<string> {
-  return invoke<string>("save_checkpoint", { sessionId, data });
-}
-
-export async function listCheckpoints(sessionId: string): Promise<string[]> {
-  return invoke<string[]>("list_checkpoints", { sessionId });
-}
-
-export async function deleteCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
-  return invoke("delete_checkpoint", { sessionId, checkpointId });
-}
-
 export async function exportConversationMarkdown(
   title: string,
   model: string,

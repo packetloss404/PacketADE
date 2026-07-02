@@ -164,16 +164,9 @@ export interface AgentConversation {
    * `McpServerEntry.name` from `useMcpStore`. Sidecar protocol has no
    * mid-session MCP swap, so flips here apply on the NEXT session start. */
   enabledMcpServerIds?: string[];
-  /** F10: Plan-first three-stage FSM. `"spec"` = collecting success
-   * criteria; `"plan"` = model has produced a plan (TodoWrite) waiting on
-   * user approval; `"code"` = approved, executing. Undefined = the
-   * pre-feature flow (mode buttons + planMode toggle drive everything). */
-  specStage?: "spec" | "plan" | "code";
-  /** F10: editable success-criteria bullets. Iterated by the user during
-   * specStage="spec"; locked when the user approves the spec. */
-  spec?: { criteria: string[]; status: "draft" | "approved"; updatedAt: number };
-  /** F10: true once the user has approved the model's plan. Setting this
-   * lifts plan mode and dispatches the "execute" turn. */
+  /** True once the user has approved the model's plan (unified path:
+   * PlanModeApprovalMenu → agentPlanStore.approvePlan). Approval lifts
+   * plan mode and dispatches the "execute" turn. */
   planApproved?: boolean;
   /** B1: hover-`+` diff comments queued by the user on pending edits.
    * Folded into the next user turn as a "File comments:" preamble and

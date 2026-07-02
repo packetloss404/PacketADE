@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Pencil, RotateCw } from "lucide-react";
+import { Pencil, RotateCcw, RotateCw } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -43,6 +43,9 @@ interface MessageListProps {
   onChangeEdit: (text: string) => void;
   onSubmitEdit: (msgId: string) => void;
   onCancelEdit: () => void;
+  /** Inline per-message Restore: truncates the transcript to before this
+   * message and re-runs it, via forkAndResend (subsumes checkpoints). */
+  onRestoreFrom: (msgId: string, content: string) => void;
   onRetryLastTurn: () => void;
   isActive: boolean;
   // Scroll container that owns the message viewport (from AgentChatPane).
@@ -59,6 +62,7 @@ export function MessageList({
   onChangeEdit,
   onSubmitEdit,
   onCancelEdit,
+  onRestoreFrom,
   onRetryLastTurn,
   isActive,
   scrollContainerRef,
@@ -147,6 +151,11 @@ export function MessageList({
               onStartEdit={
                 msg.role === "user"
                   ? () => onStartEdit(msg.id, msg.content)
+                  : undefined
+              }
+              onRestoreFrom={
+                msg.role === "user"
+                  ? () => onRestoreFrom(msg.id, msg.content)
                   : undefined
               }
               onChangeEdit={onChangeEdit}
@@ -254,6 +263,7 @@ function MessageBubble({
   isEditing,
   editingText,
   onStartEdit,
+  onRestoreFrom,
   onChangeEdit,
   onSubmitEdit,
   onCancelEdit,
@@ -265,10 +275,16 @@ function MessageBubble({
   isEditing?: boolean;
   editingText?: string;
   onStartEdit?: () => void;
+  onRestoreFrom?: () => void;
   onChangeEdit?: (text: string) => void;
   onSubmitEdit?: () => void;
   onCancelEdit?: () => void;
 }) {
+  // Two-step confirm for the inline Restore action — it discards every
+  // later message (fork-and-resend truncates in place), so a single stray
+  // hover-click must not be destructive. Local state is safe here: rows
+  // are mount-once (LazyMessageRow never unmounts them).
+  const [confirmingRestore, setConfirmingRestore] = useState(false);
   if (message.role === "system") {
     return (
       <div className="flex justify-center">
@@ -339,32 +355,74 @@ function MessageBubble({
       );
     }
     return (
-      <div className="group flex justify-end">
-        <div
-          className={`max-w-[85%] px-3 py-1.5 rounded text-xs text-text-primary relative ${
-            message.queued
-              ? "bg-accent-amber/10 border border-accent-amber/30"
-              : "bg-accent-blue/15"
-          }`}
-        >
-          <div className="whitespace-pre-wrap break-words">{message.content}</div>
-          {message.queued && (
-            <span className="text-[10px] text-accent-amber ml-1">
-              (queued)
-            </span>
-          )}
-          {onStartEdit && !message.queued && (
-            <Tooltip content="Edit & resend — forks the conversation from this turn">
-              <button
-                type="button"
-                onClick={onStartEdit}
-                className="absolute -left-6 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-opacity transition-colors"
-              >
-                <Pencil size={11} />
-              </button>
-            </Tooltip>
-          )}
+      <div className="flex flex-col items-end">
+        <div className="group flex w-full justify-end">
+          <div
+            className={`max-w-[85%] px-3 py-1.5 rounded text-xs text-text-primary relative ${
+              message.queued
+                ? "bg-accent-amber/10 border border-accent-amber/30"
+                : "bg-accent-blue/15"
+            }`}
+          >
+            <div className="whitespace-pre-wrap break-words">{message.content}</div>
+            {message.queued && (
+              <span className="text-[10px] text-accent-amber ml-1">
+                (queued)
+              </span>
+            )}
+            {!message.queued && (onStartEdit || onRestoreFrom) && (
+              <div className="absolute -left-6 top-1/2 flex -translate-y-1/2 flex-col gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                {onStartEdit && (
+                  <Tooltip content="Edit & resend — forks the conversation from this turn">
+                    <button
+                      type="button"
+                      onClick={onStartEdit}
+                      className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                  </Tooltip>
+                )}
+                {onRestoreFrom && (
+                  <Tooltip content="Restore — rewind to this turn and re-run it">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingRestore(true)}
+                      className="p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                    >
+                      <RotateCcw size={11} />
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+            )}
+          </div>
         </div>
+        {confirmingRestore && (
+          <div className="mt-1 flex items-center gap-2 rounded border border-accent-amber/40 bg-accent-amber/10 px-2 py-1">
+            <span className="text-[10px] text-accent-amber">
+              Restore from here? Later messages are discarded and this turn
+              re-runs.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmingRestore(false);
+                onRestoreFrom?.();
+              }}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-accent-amber/20 hover:bg-accent-amber/30 text-accent-amber font-medium transition-colors"
+            >
+              Restore
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingRestore(false)}
+              className="text-[10px] px-1.5 py-0.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     );
   }

@@ -6,11 +6,9 @@ import { SlashCommandPopover, type SlashSelection } from "./SlashCommandPopover"
 import { BUILTIN_SLASH_NAMES, TEMPLATE_SOURCE_TAG } from "./slashCommandConstants";
 import type { SlashCommandDef } from "@/lib/tauri";
 import { MemoryInjectionCard } from "./MemoryInjectionCard";
-import { CheckpointPanel } from "./CheckpointPanel";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
 import { SessionHealthBar } from "./SessionHealthBar";
 import { PlanPanel } from "./PlanPanel";
-import { SpecPanel } from "./SpecPanel";
 import { deriveMode, flagsForMode, nextMode } from "./agentModeChipUtils";
 import type { AgentMode } from "./AgentModeChip";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
@@ -184,7 +182,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     [conversationId, setDraft],
   );
   const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
-  const [showRewind, setShowRewind] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const historySourceRef = useRef<"user" | "history">("user");
   // Inline edit of a prior user message. Submit forks the conversation here.
@@ -516,8 +513,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           diffTotals={diffTotals}
           previewOpen={preview.previewOpen}
           togglePreview={preview.togglePreview}
-          showRewind={showRewind}
-          setShowRewind={setShowRewind}
           onClose={onClose}
           onCycleMode={cycleMode}
           onSelectMode={applyMode}
@@ -541,8 +536,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         }}
       />
 
-      {/* F10: Spec → Plan → Code FSM. SpecPanel renders only during specStage="spec". */}
-      <SpecPanel conversation={conversation} />
       <PlanPanel conversation={conversation} />
 
       <ClickablePathsRoot
@@ -574,6 +567,9 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
                   void actions.forkAndResend(conversationId, msgId, text);
                 }}
                 onCancelEdit={() => setEditState({ id: null, text: "" })}
+                onRestoreFrom={(msgId, content) =>
+                  void actions.forkAndResend(conversationId, msgId, content)
+                }
                 onRetryLastTurn={() => void actions.retryLastTurn(conversationId)}
                 isActive={isActive}
                 scrollContainerRef={messagesContainerRef}
@@ -724,11 +720,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   return (
     <div className="flex h-full bg-bg-primary">
       <div className="min-w-0 flex-1">{chatContent}</div>
-      {showRewind && (
-        <div className="w-72 shrink-0 border-l border-bg-border">
-          <CheckpointPanel conversationId={conversationId} onClose={() => setShowRewind(false)} />
-        </div>
-      )}
     </div>
   );
 }
