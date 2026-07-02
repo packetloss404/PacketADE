@@ -1,15 +1,14 @@
 import * as Diff from "diff";
 import { readFileForDiff } from "@/lib/tauri";
-import type {
-  AgentConversation,
-  AgentToolCall,
-} from "@/types/agent-conversation";
+import { parseWriteFileInput } from "@/lib/parseToolInput";
+import type { AgentConversation } from "@/types/agent-conversation";
 
 /**
  * Parse the latest `write_file` tool call per path from a conversation.
- * Tolerant of both stringified-JSON and structured `input` shapes — same
- * logic as `aggregateConversationDiffs.collectLatestWrites`, duplicated here
- * to keep this module independent.
+ * Tolerant of both stringified-JSON and structured `input` shapes (via the
+ * shared `parseWriteFileInput` decoder) — same latest-wins walk as
+ * `aggregateConversationDiffs.collectLatestWrites`, duplicated here to keep
+ * this module independent.
  */
 function collectLatestWrites(conv: AgentConversation): Map<string, string> {
   const map = new Map<string, string>();
@@ -17,26 +16,8 @@ function collectLatestWrites(conv: AgentConversation): Map<string, string> {
     if (!msg.toolCalls?.length) continue;
     for (const tc of msg.toolCalls) {
       if (tc.name !== "write_file") continue;
-      const raw = (tc as AgentToolCall & { input?: unknown }).input;
-      if (raw == null) continue;
-      try {
-        let obj: unknown = raw;
-        if (typeof raw === "string") obj = JSON.parse(raw);
-        if (obj && typeof obj === "object") {
-          const rec = obj as Record<string, unknown>;
-          const path =
-            typeof rec.path === "string"
-              ? rec.path
-              : typeof rec.file_path === "string"
-                ? rec.file_path
-                : undefined;
-          const content =
-            typeof rec.content === "string" ? rec.content : undefined;
-          if (path && content != null) map.set(path, content);
-        }
-      } catch {
-        // skip malformed
-      }
+      const parsed = parseWriteFileInput(tc);
+      if (parsed) map.set(parsed.path, parsed.content);
     }
   }
   return map;

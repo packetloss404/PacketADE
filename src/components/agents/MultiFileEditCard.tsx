@@ -11,6 +11,7 @@ import {
 import { useDiffPaneStore } from "../../stores/diffPaneStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { Spinner } from "@/components/ui/Spinner";
+import { parseWriteFileInput } from "@/lib/parseToolInput";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface MultiFileEditCardProps {
@@ -30,17 +31,6 @@ interface FileEntry {
   loading: boolean;
 }
 
-function extractWriteFileInput(
-  call: AgentToolCall,
-): { path: string; content: string } | null {
-  const input = call.input as { path?: unknown; content?: unknown } | null;
-  if (!input || typeof input !== "object") return null;
-  const path = typeof input.path === "string" ? input.path : null;
-  const content = typeof input.content === "string" ? input.content : "";
-  if (!path) return null;
-  return { path, content };
-}
-
 /**
  * Build one seed entry per unique file path. If the agent writes the same
  * file twice in a turn (e.g. scaffold then patch), the last write wins so we
@@ -50,7 +40,7 @@ function extractWriteFileInput(
 function buildSeeds(toolCalls: AgentToolCall[]): FileEntry[] {
   const byPath = new Map<string, FileEntry>();
   for (const call of toolCalls) {
-    const parsed = extractWriteFileInput(call);
+    const parsed = parseWriteFileInput(call);
     if (!parsed) continue;
     byPath.set(parsed.path, {
       path: parsed.path,
