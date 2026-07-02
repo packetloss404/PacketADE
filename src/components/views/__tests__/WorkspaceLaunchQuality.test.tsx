@@ -148,12 +148,6 @@ vi.mock("@/stores/editorStore", () => ({
   ),
 }));
 
-vi.mock("@/stores/mosaicStore", () => ({
-  useMosaicStore: vi.fn((selector: (state: { applyPreset: () => void }) => unknown) =>
-    selector({ applyPreset: vi.fn() }),
-  ),
-}));
-
 vi.mock("@/stores/memoryStore", () => ({
   useMemoryStore: vi.fn(
     (selector: (state: { patterns: unknown[]; isLearning: boolean }) => unknown) =>

@@ -1,13 +1,20 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Pencil, RotateCw } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { calculateTurnCost } from "@/lib/tauri";
+import { estimateTurnCostUsd } from "@/lib/conversationCost";
 import { ExplorationRollupCard } from "../ExplorationRollupCard";
 import { PlanModeApprovalMenu } from "../PlanModeApprovalMenu";
 import { ThinkingBlock } from "../ThinkingBlock";
-import { AgentQuickActions } from "../AgentQuickActions";
 import { looksLikePlan } from "../planDetection";
 import { ToolCallRenderer } from "./ToolCallRenderer";
 import type {
@@ -22,8 +29,9 @@ import type {
 const TAIL_FORCE_MOUNT = 10;
 // Reserved height for a not-yet-mounted row. Keeps the scroll container
 // overflowing (so off-screen rows stay off-screen) and gives the scrollbar a
-// sensible size before real heights are known. Browser scroll anchoring
-// smooths the reflow as rows mount.
+// sensible size before real heights are known. WKWebView has NO CSS scroll
+// anchoring, so LazyMessageRow compensates scrollTop manually when a row
+// mounts above the viewport (see the layout effect there).
 const PLACEHOLDER_MIN_HEIGHT = 72;
 
 interface MessageListProps {
@@ -60,8 +68,6 @@ export function MessageList({
   const lastAssistantMessage = [...messages]
     .reverse()
     .find((m) => m.role === "assistant");
-  const isIdle = conversation.status === "idle";
-  const showQuickActions = isIdle && lastAssistantMessage !== undefined;
   const showThinking =
     isActive &&
     (!lastMessage || lastMessage.role === "user") &&
@@ -123,7 +129,12 @@ export function MessageList({
         // streaming card, quick actions and diff viewer never get windowed out.
         const forceMount = index >= tailStart || isLastAssistant;
         return (
-          <LazyMessageRow key={msg.id} forceMount={forceMount} register={register}>
+          <LazyMessageRow
+            key={msg.id}
+            forceMount={forceMount}
+            register={register}
+            scrollContainerRef={scrollContainerRef}
+          >
             <MessageBubble
               message={msg}
               conversation={conversation}
@@ -142,12 +153,6 @@ export function MessageList({
               onSubmitEdit={() => onSubmitEdit(msg.id)}
               onCancelEdit={onCancelEdit}
             />
-            {showQuickActions && isLastAssistant && (
-              <AgentQuickActions
-                conversationId={conversationId}
-                message={msg}
-              />
-            )}
           </LazyMessageRow>
         );
       })}
@@ -181,14 +186,19 @@ export function MessageList({
 function LazyMessageRow({
   forceMount,
   register,
+  scrollContainerRef,
   children,
 }: {
   forceMount: boolean;
   register: (el: Element, onVisible: () => void) => () => void;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(forceMount);
   const rowRef = useRef<HTMLDivElement>(null);
+  // Placeholder height captured at the moment the observer told this row to
+  // mount; consumed by the compensation layout effect below.
+  const placeholderHeightRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (forceMount) {
@@ -197,8 +207,33 @@ function LazyMessageRow({
     }
     const el = rowRef.current;
     if (!el) return;
-    return register(el, () => setMounted(true));
+    return register(el, () => {
+      placeholderHeightRef.current = el.getBoundingClientRect().height;
+      setMounted(true);
+    });
   }, [forceMount, register]);
+
+  // WKWebView has no CSS scroll anchoring, so when a placeholder above the
+  // viewport grows to its real height the visible content lurches down by the
+  // difference (Safari never adjusts scrollTop the way Chromium/Gecko do).
+  // Compensate manually: measure the height delta in a layout effect (same
+  // frame, before paint) and shift the scroll container by it when the row
+  // sits above the viewport top. Rows at/below the viewport top need nothing,
+  // and the at-bottom pin in useScrollState still owns the follow behavior.
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    const placeholderHeight = placeholderHeightRef.current;
+    placeholderHeightRef.current = null;
+    if (placeholderHeight == null) return;
+    const el = rowRef.current;
+    const container = scrollContainerRef?.current;
+    if (!el || !container) return;
+    const delta = el.getBoundingClientRect().height - placeholderHeight;
+    if (delta === 0) return;
+    if (el.getBoundingClientRect().top < container.getBoundingClientRect().top) {
+      container.scrollBy(0, delta);
+    }
+  }, [mounted, scrollContainerRef]);
 
   return (
     <div
@@ -348,14 +383,16 @@ function MessageBubble({
             />
           )}
 
-        {message.toolCalls && message.toolCalls.length > 0 && !message.isStreaming && (
-          <ExplorationRollupCard toolCalls={message.toolCalls} />
+        {message.toolCalls && message.toolCalls.length > 0 && (
+          <ExplorationRollupCard
+            toolCalls={message.toolCalls}
+            isStreaming={message.isStreaming}
+          />
         )}
 
         {message.toolCalls && message.toolCalls.length > 0 && (
           <ToolCallRenderer
             toolCalls={message.toolCalls}
-            isStreaming={message.isStreaming}
             conversationId={conversation.id}
             projectPath={conversation.projectPath}
             verbosity={verbosity}
@@ -403,6 +440,10 @@ function MessageBubble({
   );
 }
 
+// Per-turn token count with the USD cost revealed on hover. Cost comes from
+// the `costUsd` stamped on the message at receipt time (apiAgentListeners),
+// falling back to the same frontend estimate for older persisted messages —
+// no per-message IPC. The session aggregate stays in aggregateConversationCost.
 function AssistantCostPill({
   message,
   model,
@@ -410,42 +451,16 @@ function AssistantCostPill({
   message: AgentMessage;
   model: string;
 }) {
-  const [cost, setCost] = useState<number | null>(null);
-
-  const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } =
-    message;
-
-  useEffect(() => {
-    if (inputTokens == null || outputTokens == null || !model) {
-      setCost(null);
-      return;
-    }
-    let cancelled = false;
-    calculateTurnCost(
-      model,
-      inputTokens,
-      outputTokens,
-      cacheReadTokens ?? 0,
-      cacheWriteTokens ?? 0,
-    )
-      .then((n) => {
-        if (!cancelled) setCost(n);
-      })
-      .catch(() => {
-        if (!cancelled) setCost(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, model]);
-
+  const { inputTokens, outputTokens } = message;
   if (inputTokens == null || outputTokens == null) return null;
   const totalTokens = inputTokens + outputTokens;
-  return (
+  const cost = message.costUsd ?? estimateTurnCostUsd(model, message);
+  const pill = (
     <div className="text-[10px] text-text-muted font-mono">
       {totalTokens} tok
-      {cost != null && ` · $${cost.toFixed(4)}`}
     </div>
   );
+  if (cost == null) return pill;
+  return <Tooltip content={`~$${cost.toFixed(4)} this turn`}>{pill}</Tooltip>;
 }
 

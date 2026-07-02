@@ -6,6 +6,7 @@ import {
   MouseEvent as ReactMouseEvent,
 } from "react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAgentDraftStore } from "@/stores/agentDraftStore";
 import { PathContextMenu } from "./PathContextMenu";
 
 /**
@@ -113,7 +114,18 @@ export function ClickablePathsRoot({
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   const handleAttach = useCallback((path: string) => {
-    const { agentInputText, setAgentInputText } = useAgentTaskStore.getState();
+    const { selectedConversationId, agentInputText, setAgentInputText } =
+      useAgentTaskStore.getState();
+    // Inside a chat, append to that conversation's draft so the mention
+    // lands in the composer the user is looking at instead of bleeding
+    // into the global launch composer text.
+    if (selectedConversationId) {
+      const { drafts, setDraft } = useAgentDraftStore.getState();
+      const prev = drafts[selectedConversationId] ?? "";
+      const sep = prev.length === 0 || prev.endsWith(" ") ? "" : " ";
+      setDraft(selectedConversationId, `${prev}${sep}@${path} `);
+      return;
+    }
     const prev = agentInputText ?? "";
     const sep = prev.length === 0 || prev.endsWith(" ") ? "" : " ";
     setAgentInputText(`${prev}${sep}@${path} `);

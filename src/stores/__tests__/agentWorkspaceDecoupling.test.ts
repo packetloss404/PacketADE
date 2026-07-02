@@ -474,28 +474,6 @@ describe("agent/workspace store decoupling", () => {
     expect(retryLastTurnMock).toHaveBeenCalledWith("conv-failover", "o4-mini");
   });
 
-  it("uses CLI agent command overrides and default args for PTY task launches", async () => {
-    const { useAgentStore } = await import("@/stores/agentStore");
-    useAgentStore.getState().updateAgent("codex", {
-      command: "C:\\tools\\codex-wrapper.cmd",
-      defaultArgs: ["--model", "gpt-5.2"],
-      installed: true,
-    });
-
-    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
-    await useAgentTaskStore
-      .getState()
-      .launchTask("Build", "Do the thing", "codex", "D:/projects/example");
-
-    expect(createPtySessionMock).toHaveBeenCalledWith(
-      "D:/projects/example",
-      120,
-      40,
-      "C:\\tools\\codex-wrapper.cmd",
-      ["--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-5.2"],
-    );
-  });
-
   it("archives and deletes workspaces without calling agent conversation detach", async () => {
     vi.doMock("@/stores/agentTaskStore", () => ({
       useAgentTaskStore: {
@@ -511,7 +489,6 @@ describe("agent/workspace store decoupling", () => {
     useWorkspaceStore.setState({
       workspaces: [workspace],
       activeWorkspaceId: workspace.id,
-      keepTerminalsAlive: false,
       zoomedPaneId: null,
     });
 

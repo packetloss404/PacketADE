@@ -2,8 +2,6 @@ import { Terminal } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 export function WorkspaceSettingsCard() {
-  const keepTerminalsAlive = useWorkspaceStore((s) => s.keepTerminalsAlive);
-  const setKeepTerminalsAlive = useWorkspaceStore((s) => s.setKeepTerminalsAlive);
   const defaultBypassPermissions = useWorkspaceStore((s) => s.defaultBypassPermissions);
   const setDefaultBypassPermissions = useWorkspaceStore((s) => s.setDefaultBypassPermissions);
   const autoBindGithubRepo = useWorkspaceStore((s) => s.autoBindGithubRepo);
@@ -22,13 +20,6 @@ export function WorkspaceSettingsCard() {
       </p>
 
       <div className="space-y-2">
-        <Row
-          title="Keep terminals alive"
-          description="Keep Workspace pane terminal sessions running when switching away from that pane."
-          checked={keepTerminalsAlive}
-          onChange={setKeepTerminalsAlive}
-        />
-
         <Row
           title="Default new workspaces to bypass permission prompts"
           description="When you create a new workspace, pre-check the 'Bypass permission prompts' option. Existing workspaces are unaffected."

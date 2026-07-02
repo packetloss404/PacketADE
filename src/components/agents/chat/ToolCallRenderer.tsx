@@ -25,7 +25,6 @@ const EXPLORED_TOOL_NAMES = new Set([
 
 interface ToolCallRendererProps {
   toolCalls: AgentToolCall[];
-  isStreaming: boolean | undefined;
   conversationId: string;
   projectPath: string;
   verbosity: TranscriptVerbosity;
@@ -36,19 +35,17 @@ interface ToolCallRendererProps {
 // chunk arrived) avoids re-rendering 40+ tool cards on every token.
 export const ToolCallRenderer = memo(function ToolCallRenderer({
   toolCalls,
-  isStreaming,
   conversationId,
   projectPath,
   verbosity,
 }: ToolCallRendererProps) {
   if (!toolCalls.length) return null;
 
-  // Hide explored-only tool calls (already summarized via ExplorationRollupCard
-  // above) when the turn has settled. Keep them visible during streaming so the
-  // user can watch progress.
-  const visible = isStreaming
-    ? toolCalls
-    : toolCalls.filter((tc) => !EXPLORED_TOOL_NAMES.has(tc.name));
+  // Hide exploration tool calls unconditionally: ExplorationRollupCard (above)
+  // is their live streaming representation AND their settled summary, so the
+  // stream→settle transition doesn't swap dozens of cards for one rollup (the
+  // single-frame layout snap that destroyed scroll position).
+  const visible = toolCalls.filter((tc) => !EXPLORED_TOOL_NAMES.has(tc.name));
   if (visible.length === 0) return null;
 
   const writeFileCalls = visible.filter(
@@ -75,7 +72,6 @@ export const ToolCallRenderer = memo(function ToolCallRenderer({
             <BashToolCallCard
               key={tc.id}
               toolCall={tc}
-              conversationId={conversationId}
               verbosity={verbosity}
             />
           );

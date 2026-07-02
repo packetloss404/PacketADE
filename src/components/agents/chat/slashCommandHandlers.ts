@@ -16,10 +16,8 @@ const HELP_CHEATSHEET =
   "\n" +
   "- Enter — send\n" +
   "- Shift+Enter — newline\n" +
-  "- Tab — send as queued (delivered after the current turn finishes)\n" +
   "- Ctrl+Enter — also sends\n" +
-  "- Shift+Tab — cycle mode (default → plan → manual → yolo)\n" +
-  "- Alt+. / Alt+, — nudge model toward thorough / fast\n" +
+  "- Shift+Tab — cycle mode (default → plan → manual → deny → yolo)\n" +
   "- @ — mention a file\n" +
   "- / — run a slash command (try /usage, /history, /review)\n" +
   "- Stop button — cancels mid-stream";
@@ -118,10 +116,10 @@ export const slashCommandHandlers: Record<
 
   permissions: ({ conversationId }) => {
     setTimeout(() => {
-      const sel = document.querySelector<HTMLSelectElement>(
-        `[data-agent-pane-permissions-dropdown="${conversationId}"] select`,
+      const btn = document.querySelector<HTMLButtonElement>(
+        `[data-agent-pane-mode-chip="${conversationId}"] button[aria-label="Permission options"]`,
       );
-      sel?.focus();
+      btn?.click();
     }, 0);
   },
 
