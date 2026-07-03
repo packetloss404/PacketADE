@@ -2,7 +2,6 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useEditorStore } from "@/stores/editorStore";
-import { useMemoryStore } from "@/stores/memoryStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useServerStore } from "@/stores/serverStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
@@ -11,8 +10,9 @@ import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
 import { EditorPane } from "@/components/editor/EditorPane";
 import { isOnboardingComplete } from "@/lib/onboarding";
 import { useState, useRef, useEffect } from "react";
-import { LayoutGrid, GitBranch, FileText, Plus, Zap, Brain } from "lucide-react";
+import { LayoutGrid, GitBranch, FileText, Plus, Zap } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
+import { getAgentColor } from "@/lib/agentColors";
 import type { WorkspaceAgentSlot, Workspace } from "@/types/workspace";
 
 const agentLabel: Record<WorkspaceAgentSlot, string> = {
@@ -24,15 +24,6 @@ const agentLabel: Record<WorkspaceAgentSlot, string> = {
   packetcode: "PacketCode",
 };
 
-const agentColor: Record<WorkspaceAgentSlot, string> = {
-  terminal: "bg-text-muted/20 text-text-secondary",
-  "claude-code": "bg-accent-green/20 text-accent-green",
-  codex: "bg-blue-500/20 text-blue-400",
-  gemini: "bg-purple-500/20 text-purple-400",
-  opencode: "bg-orange-500/20 text-orange-400",
-  packetcode: "bg-purple-500/20 text-purple-400",
-};
-
 export function WorkspaceView() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
@@ -40,8 +31,6 @@ export function WorkspaceView() {
   const setBypassPermissions = useWorkspaceStore((s) => s.setBypassPermissions);
   const initialized = useAppStore((s) => s.initialized);
   const projectPath = useLayoutStore((s) => s.projectPath);
-  const memoryPatterns = useMemoryStore((s) => s.patterns);
-  const memoryLearning = useMemoryStore((s) => s.isLearning);
   const [onboardingDone, setOnboardingDone] = useState<boolean>(() => isOnboardingComplete());
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [addAgentOpen, setAddAgentOpen] = useState(false);
@@ -74,7 +63,6 @@ export function WorkspaceView() {
     initialized && !onboardingDone && activeNonArchived.length === 0 && !projectPath;
 
   const bypassOn = activeWorkspace?.bypassPermissions ?? false;
-  const memoryActive = memoryLearning || memoryPatterns.length > 0;
 
   // Close add-agent popover on outside click
   useEffect(() => {
@@ -140,15 +128,18 @@ export function WorkspaceView() {
             <div className="flex-1" />
             <div className="flex items-center gap-2">
               {activeWorkspace &&
-                Object.entries(agentCounts).map(([agent, count]) => (
-                  <span
-                    key={agent}
-                    className={`rounded px-1.5 py-0.5 text-[10px] ${agentColor[agent as WorkspaceAgentSlot] || "bg-text-muted/20 text-text-secondary"}`}
-                  >
-                    {agentLabel[agent as WorkspaceAgentSlot] || agent}
-                    {(count as number) > 1 && ` x${count}`}
-                  </span>
-                ))}
+                Object.entries(agentCounts).map(([agent, count]) => {
+                  const c = getAgentColor(agent);
+                  return (
+                    <span
+                      key={agent}
+                      className={`rounded px-1.5 py-0.5 text-[10px] ${c.bg} ${c.text}`}
+                    >
+                      {agentLabel[agent as WorkspaceAgentSlot] || agent}
+                      {(count as number) > 1 && ` x${count}`}
+                    </span>
+                  );
+                })}
               {activeWorkspace && (
                 <div className="relative" ref={addAgentRef}>
                   <button
@@ -197,7 +188,7 @@ export function WorkspaceView() {
                             }`}
                           >
                             <span
-                              className={`h-2 w-2 rounded-full ${agentColor[agent]?.split(" ")[0] ?? "bg-text-muted/20"}`}
+                              className={`h-2 w-2 rounded-full ${getAgentColor(agent).text} bg-current`}
                             />
                             {agentLabel[agent]}
                           </button>
@@ -235,21 +226,6 @@ export function WorkspaceView() {
                 <Zap size={10} />
                 <span>Bypass perms: {bypassOn ? "on" : "off"}</span>
               </button>
-              <span
-                className={`flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] ${
-                  memoryActive
-                    ? "border-accent-line bg-accent-soft text-accent-green"
-                    : "border-bg-border bg-bg-secondary text-text-muted"
-                }`}
-                title={
-                  memoryLearning
-                    ? "Memory layer is summarizing recent sessions"
-                    : "Top patterns will be injected on next session"
-                }
-              >
-                <Brain size={10} />
-                <span>{memoryLearning ? "Memory learning" : "Memory injecting"}</span>
-              </span>
             </div>
           </div>
         )}

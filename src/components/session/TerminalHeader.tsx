@@ -1,4 +1,5 @@
 import { X, RotateCcw, Plus } from "lucide-react";
+import { getAgentColor } from "@/lib/agentColors";
 
 interface TerminalHeaderProps {
   alive: boolean;
@@ -21,6 +22,7 @@ export function TerminalHeader({
   onClose,
   showCloseButton,
 }: TerminalHeaderProps) {
+  const c = getAgentColor(cliCommand);
   return (
     <div className="flex items-center justify-between px-3 py-1 bg-bg-secondary border-b border-bg-border">
       <div className="flex items-center gap-2">
@@ -36,15 +38,7 @@ export function TerminalHeader({
           }`}
         />
         <span
-          className="text-[10px] px-2 py-0.5 rounded-full text-white font-medium"
-          style={{
-            backgroundColor:
-              cliCommand === "claude" ? "#f0b400"
-              : cliCommand === "gemini" ? "#8ab4f8"
-              : cliCommand === "opencode" ? "#3fb950"
-              : cliCommand === "packetcode" ? "#a89ad9"
-              : "#58a6ff",
-          }}
+          className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.text} ${c.bg} border ${c.border}`}
         >
           {cliCommand === "claude" ? "Claude"
             : cliCommand === "gemini" ? "Gemini"

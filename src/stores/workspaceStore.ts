@@ -78,16 +78,13 @@ function writeBooleanFlag(key: string, value: boolean) {
   }
 }
 
-const PANE_COLORS = ["accent-green", "accent-blue", "accent-amber", "accent-purple", "accent-red", "accent-cyan"];
-
 let wsCounter = 0;
 
 function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
-  return agents.map((agent, index) => ({
+  return agents.map((agent) => ({
     id: `ws-pane-${++wsCounter}`,
     agentId: agent,
     sessionId: null,
-    accentColor: PANE_COLORS[index % PANE_COLORS.length],
   }));
 }
 
@@ -343,8 +340,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   addPane: (workspaceId, agentId) => {
     const newPaneId = `ws-pane-${++wsCounter}`;
-    const ws = get().workspaces.find((w) => w.id === workspaceId);
-    const colorIndex = ws ? ws.panes.length : 0;
     set(commitWorkspaces((s) => {
       const workspaces = s.workspaces.map((w) => {
         if (w.id !== workspaceId) return w;
@@ -352,7 +347,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           id: newPaneId,
           agentId,
           sessionId: null,
-          accentColor: PANE_COLORS[colorIndex % PANE_COLORS.length],
         };
         return {
           ...w,

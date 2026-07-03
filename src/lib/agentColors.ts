@@ -1,13 +1,13 @@
 /**
  * Single source of truth for agent-identity and status colors.
  *
- * The Agents tab (`AgentSidebar`) and the Workspaces flow (`NewAgentModal`,
- * live tiles) previously each hand-rolled their own agent → color map, and
- * they disagreed: the sidebar used on-token `text-accent-*` classes while the
- * modal used off-token raw Tailwind (`bg-blue-500`, `bg-purple-500`,
- * `bg-orange-500`). This module unifies both onto the Graphite accent tokens
- * so a given agent looks identical everywhere, and so "running"/"active" is
- * ONE color app-wide.
+ * The Agents tab (`AgentSidebar`) and the Workspaces flow (workspace tiles,
+ * WorkspaceView, TerminalHeader) previously each hand-rolled their own
+ * agent → color map, and they disagreed: some used on-token `text-accent-*`
+ * classes while others used off-token raw Tailwind (`bg-blue-500`,
+ * `bg-purple-500`, `bg-orange-500`) or inline hex. This module unifies all
+ * of them onto the Graphite accent tokens so a given agent looks identical
+ * everywhere, and so "running"/"active" is ONE color app-wide.
  *
  * Dependency-free (React/lucide callers only). Every returned string is a
  * design-token className — never a raw Tailwind color.
@@ -50,7 +50,7 @@ const FAMILY_COLORS: Record<AgentFamily, AgentColor> = {
  */
 function agentFamily(agentId: string): AgentFamily {
   const id = agentId.toLowerCase();
-  if (id === "claude-code" || id.startsWith("api-claude")) return "claude";
+  if (id === "claude" || id === "claude-code" || id.startsWith("api-claude")) return "claude";
   if (id === "codex" || id.startsWith("api-openai")) return "codex";
   if (id === "gemini") return "gemini";
   // Ollama (local) shares OpenCode's slot color in the legacy sidebar map.

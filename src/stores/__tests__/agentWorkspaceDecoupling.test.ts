@@ -87,7 +87,6 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
         id: "pane-1",
         agentId: "codex",
         sessionId: "session-1",
-        accentColor: "accent-green",
       },
     ],
     projectPath: "D:/projects/example",

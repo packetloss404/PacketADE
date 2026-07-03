@@ -5,7 +5,6 @@ export interface WorkspacePane {
   agentId: WorkspaceAgentSlot;
   sessionId: string | null;
   gridPosition?: { row: number; col: number };
-  accentColor?: string; // tailwind color token, e.g. "accent-green", "accent-blue", "accent-amber", "accent-purple", "accent-red"
   pinnedCommands?: string[]; // max 5 saved commands
 
   // === Orchestration metadata (Track B migration from layoutStore) ===

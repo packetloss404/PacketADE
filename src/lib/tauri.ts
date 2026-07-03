@@ -24,7 +24,6 @@ import type { ServerConfig } from "@/types/server";
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
   Pick<
     Workspace["panes"][number],
-    | "accentColor"
     | "pinnedCommands"
     | "taskId"
     | "flightId"
@@ -1446,7 +1445,6 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       agentId: pane.agentId,
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition,
-      accentColor: pane.accentColor,
       pinnedCommands: pane.pinnedCommands,
       taskId: pane.taskId,
       flightId: pane.flightId,
@@ -1479,7 +1477,6 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       agentId: pane.agentId,
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition ?? { row: 0, col: index },
-      accentColor: pane.accentColor,
       pinnedCommands: pane.pinnedCommands,
       taskId: pane.taskId,
       flightId: pane.flightId,
