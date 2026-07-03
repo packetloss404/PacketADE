@@ -179,7 +179,7 @@ export function MessageList({
 
       {showThinking && (
         <div className="flex items-start gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary border border-bg-border rounded text-[11px] text-text-muted">
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary rounded text-ui text-text-muted">
             <Spinner size={10} className="text-text-muted" label="Thinking" />
             Thinking...
           </div>
@@ -292,10 +292,10 @@ function MessageBubble({
   if (message.role === "system") {
     return (
       <div className="flex justify-center">
-        <div className="text-[10px] text-text-muted px-2 py-1 bg-bg-secondary/50 border border-bg-border rounded max-w-[90%]">
+        <div className="text-meta text-text-muted px-2 py-1 bg-bg-secondary/50 rounded max-w-[90%]">
           <MarkdownRenderer
             content={message.content}
-            className="text-[10px] leading-relaxed"
+            className="text-meta leading-relaxed"
           />
         </div>
       </div>
@@ -328,7 +328,7 @@ function MessageBubble({
             />
             <div className="flex items-center justify-between gap-2">
               <Tooltip content="Truncates the transcript to this point and re-runs from here">
-                <span className="text-[10px] text-text-muted">
+                <span className="text-meta text-text-muted">
                   Forks the conversation from this turn
                 </span>
               </Tooltip>
@@ -337,7 +337,7 @@ function MessageBubble({
                   <button
                     type="button"
                     onClick={onCancelEdit}
-                    className="text-[11px] px-2 py-0.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+                    className="text-ui px-2 py-0.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
                   >
                     Cancel
                   </button>
@@ -347,7 +347,7 @@ function MessageBubble({
                     type="button"
                     onClick={onSubmitEdit}
                     disabled={!(editingText ?? "").trim()}
-                    className="text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="text-ui px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Resend
                   </button>
@@ -364,13 +364,13 @@ function MessageBubble({
           <div
             className={`max-w-[85%] px-3 py-1.5 rounded text-xs text-text-primary relative ${
               message.queued
-                ? "bg-accent-amber/10 border border-accent-amber/30"
+                ? "bg-accent-amber/10"
                 : "bg-accent-blue/15"
             }`}
           >
             <div className="whitespace-pre-wrap break-words">{message.content}</div>
             {message.queued && (
-              <span className="text-[10px] text-accent-amber ml-1">
+              <span className="text-meta text-accent-amber ml-1">
                 (queued)
               </span>
             )}
@@ -403,8 +403,8 @@ function MessageBubble({
           </div>
         </div>
         {confirmingRestore && (
-          <div className="mt-1 flex items-center gap-2 rounded border border-accent-amber/40 bg-accent-amber/10 px-2 py-1">
-            <span className="text-[10px] text-accent-amber">
+          <div className="mt-1 flex items-center gap-2 rounded bg-accent-amber/10 px-2 py-1">
+            <span className="text-meta text-accent-amber">
               Restore from here? Later messages are discarded and this turn
               re-runs.
             </span>
@@ -414,14 +414,14 @@ function MessageBubble({
                 setConfirmingRestore(false);
                 onRestoreFrom?.();
               }}
-              className="text-[10px] px-1.5 py-0.5 rounded bg-accent-amber/20 hover:bg-accent-amber/30 text-accent-amber font-medium transition-colors"
+              className="text-ui px-1.5 py-0.5 rounded bg-accent-amber/20 hover:bg-accent-amber/30 text-accent-amber font-medium transition-colors"
             >
               Restore
             </button>
             <button
               type="button"
               onClick={() => setConfirmingRestore(false)}
-              className="text-[10px] px-1.5 py-0.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+              className="text-ui px-1.5 py-0.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
             >
               Cancel
             </button>
@@ -460,7 +460,7 @@ function MessageBubble({
         )}
 
         {message.content && (
-          <div className="px-3 py-2 bg-bg-secondary border border-bg-border rounded text-xs">
+          <div className="px-3 py-2 bg-bg-secondary rounded text-xs">
             <MarkdownRenderer
               content={message.content}
               className="text-xs leading-relaxed"
@@ -472,7 +472,7 @@ function MessageBubble({
         )}
 
         {message.isStreaming && !message.content && (
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary border border-bg-border rounded text-[11px] text-text-muted">
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-bg-secondary rounded text-ui text-text-muted">
             <Spinner size={10} className="text-accent-green" label="Responding" />
             Responding...
           </div>
@@ -488,7 +488,7 @@ function MessageBubble({
               <button
                 type="button"
                 onClick={onRetry}
-                className="text-text-muted hover:text-text-primary text-[10px] p-0.5 rounded transition-colors"
+                className="text-text-muted hover:text-text-primary text-meta p-0.5 rounded transition-colors"
               >
                 <RotateCw size={11} />
               </button>
@@ -516,7 +516,7 @@ function AssistantCostPill({
   const totalTokens = inputTokens + outputTokens;
   const cost = message.costUsd ?? estimateTurnCostUsd(model, message);
   const pill = (
-    <div className="text-[10px] text-text-muted font-mono">
+    <div className="text-meta text-text-muted font-mono">
       {totalTokens} tok
     </div>
   );

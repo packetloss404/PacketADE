@@ -17,7 +17,7 @@ interface SegmentedControlProps<T extends string> {
 }
 
 const sizes = {
-  xs: "px-2 py-0.5 text-[11px] gap-1",
+  xs: "px-2 py-0.5 text-ui gap-1",
   sm: "px-2.5 py-1 text-xs gap-1.5",
 };
 

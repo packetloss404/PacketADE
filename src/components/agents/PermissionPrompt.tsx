@@ -113,7 +113,7 @@ export function PermissionPrompt({
         ) : (
           <ShieldAlert size={14} className="text-accent-amber shrink-0" />
         )}
-        <span className="text-xs text-text-primary">
+        <span className="text-ui text-text-primary">
           Run{" "}
           <code
             className={`font-mono ${destructive ? "text-accent-red" : "text-accent-amber"}`}
@@ -131,7 +131,7 @@ export function PermissionPrompt({
       {bashCommand !== null ? (
         <>
           <pre
-            className={`text-[11px] font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap ${
+            className={`text-ui font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap ${
               destructive ? "text-accent-red" : "text-text-primary"
             }`}
           >
@@ -140,7 +140,7 @@ export function PermissionPrompt({
           <button
             type="button"
             onClick={() => setShowRaw((v) => !v)}
-            className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors self-start"
+            className="flex items-center gap-1 text-ui text-text-muted hover:text-text-secondary transition-colors self-start"
           >
             <ChevronRight
               size={10}
@@ -149,13 +149,13 @@ export function PermissionPrompt({
             Raw arguments
           </button>
           {showRaw && (
-            <pre className="text-[10px] font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto text-text-secondary whitespace-pre-wrap">
+            <pre className="text-meta font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto text-text-secondary whitespace-pre-wrap">
               {prettyJson(item.arguments)}
             </pre>
           )}
         </>
       ) : (
-        <pre className="text-[10px] font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto text-text-secondary whitespace-pre-wrap">
+        <pre className="text-meta font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto text-text-secondary whitespace-pre-wrap">
           {prettyJson(item.arguments)}
         </pre>
       )}
@@ -166,11 +166,11 @@ export function PermissionPrompt({
           <button
             type="button"
             onClick={() => onAllowOnce(item.id)}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-l bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
+            className="flex items-center gap-1 text-ui px-2 py-1 rounded-l bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
           >
             <Check size={12} /> Allow
             {showKeyboardHints && (
-              <kbd className="ml-1 text-[10px] font-mono text-accent-green/80 border border-accent-green/40 rounded px-1 leading-none py-0.5">
+              <kbd className="ml-1 text-meta font-mono text-accent-green/80 border border-accent-green/40 rounded px-1 leading-none py-0.5">
                 Y
               </kbd>
             )}
@@ -200,7 +200,7 @@ export function PermissionPrompt({
                   setScopeOpen(false);
                   onAllowOnce(item.id);
                 }}
-                className="w-full text-left px-3 py-1.5 text-[11px] text-text-primary hover:bg-bg-hover transition-colors"
+                className="w-full text-left px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors"
               >
                 Allow once
               </button>
@@ -211,10 +211,10 @@ export function PermissionPrompt({
                   setScopeOpen(false);
                   onAllowAlways(item.id);
                 }}
-                className="w-full text-left px-3 py-1.5 text-[11px] text-text-primary hover:bg-bg-hover transition-colors"
+                className="w-full text-left px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors"
               >
                 Allow for this session
-                <span className="text-[10px] text-text-muted ml-1">
+                <span className="text-meta text-text-muted ml-1">
                   (no rule saved)
                 </span>
               </button>
@@ -232,7 +232,7 @@ export function PermissionPrompt({
                       ? "Pattern already in this conversation's allowlist"
                       : "Always allow this pattern in this conversation"
                   }
-                  className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-1.5 ${
+                  className={`w-full text-left px-3 py-1.5 text-ui transition-colors flex items-center gap-1.5 ${
                     alreadyAllowed
                       ? "text-text-muted opacity-60 cursor-not-allowed"
                       : "text-accent-blue hover:bg-bg-hover"
@@ -240,11 +240,11 @@ export function PermissionPrompt({
                 >
                   <Sparkles size={11} className="shrink-0" />
                   <span>Always allow</span>
-                  <code className="font-mono text-[10px] bg-accent-blue/10 text-accent-blue px-1 rounded">
+                  <code className="font-mono text-meta bg-accent-blue/10 text-accent-blue px-1 rounded">
                     {pattern}
                   </code>
                   {alreadyAllowed && (
-                    <span className="text-[10px] text-text-muted ml-auto">
+                    <span className="text-meta text-text-muted ml-auto">
                       already in
                     </span>
                   )}
@@ -256,11 +256,11 @@ export function PermissionPrompt({
         <button
           type="button"
           onClick={() => onDeny(item.id)}
-          className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
+          className="ml-auto flex items-center gap-1 text-ui px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
         >
           <X size={12} /> Deny
           {showKeyboardHints && (
-            <kbd className="ml-1 text-[10px] font-mono text-accent-red/80 border border-accent-red/40 rounded px-1 leading-none py-0.5">
+            <kbd className="ml-1 text-meta font-mono text-accent-red/80 border border-accent-red/40 rounded px-1 leading-none py-0.5">
               N
             </kbd>
           )}
@@ -270,7 +270,7 @@ export function PermissionPrompt({
           onClick={() => setReasonOpen((v) => !v)}
           aria-expanded={reasonOpen}
           title="Deny and tell the agent what to do instead — the turn continues"
-          className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded text-text-muted hover:text-accent-red transition-colors"
+          className="flex items-center gap-1 text-ui px-1.5 py-1 rounded text-text-muted hover:text-accent-red transition-colors"
         >
           <MessageSquare size={11} />
           with reason…
@@ -297,12 +297,12 @@ export function PermissionPrompt({
             }}
             placeholder="Why not / what to do instead — sent to the agent"
             aria-label="Denial reason"
-            className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-red/60"
+            className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-ui text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-red/60"
           />
           <button
             type="button"
             onClick={submitDenyWithReason}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
+            className="flex items-center gap-1 text-ui px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
           >
             <X size={12} /> Deny & steer
           </button>

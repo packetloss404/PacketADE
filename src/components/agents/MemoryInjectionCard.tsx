@@ -25,20 +25,20 @@ export function MemoryInjectionCard({
   if (approxTokens != null) stats.push(`~${approxTokens} tok`);
 
   return (
-    <div className="flex items-start gap-2 rounded border border-dashed border-accent-line bg-accent-soft px-2 py-2 text-[11px] text-text-secondary">
+    <div className="flex items-start gap-2 rounded border border-dashed border-accent-line bg-accent-soft px-2 py-2 text-ui text-text-secondary">
       <Sparkles size={12} className="mt-0.5 shrink-0 text-accent-green" />
       <div className="min-w-0 flex-1">
         <div className="mb-0.5 flex items-center gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-green">
+          <span className="text-meta font-semibold uppercase tracking-wide text-accent-green">
             Memory brief injected
           </span>
           {stats.length > 0 && (
-            <span className="text-[10px] text-text-muted">{stats.join(" · ")}</span>
+            <span className="text-meta text-text-muted">{stats.join(" · ")}</span>
           )}
           <span className="flex-1" />
-          <span className="text-[10px] text-text-muted">compact · per-conv toggle</span>
+          <span className="text-meta text-text-muted">compact · per-conv toggle</span>
         </div>
-        <div className="text-[11px] leading-relaxed text-text-secondary">
+        <div className="text-ui leading-relaxed text-text-secondary">
           A bounded brief of learned patterns, flight lessons, and recent summaries was prepended
           to the system prompt for this conversation.
         </div>

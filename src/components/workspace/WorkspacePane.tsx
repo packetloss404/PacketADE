@@ -192,14 +192,14 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
               ? "error"
               : "idle";
       const statusPillClass = notInstalled
-        ? "bg-bg-elevated text-accent-amber border border-bg-border"
+        ? "bg-bg-elevated text-accent-amber"
         : state.showApproval
-          ? "bg-accent-soft text-accent-amber border border-accent-line"
+          ? "bg-accent-soft text-accent-amber"
           : state.alive
-            ? "bg-accent-soft text-accent-green border border-accent-line"
+            ? "bg-accent-soft text-accent-green"
             : state.error
-              ? "bg-bg-elevated text-accent-red border border-bg-border"
-              : "bg-bg-elevated text-text-muted border border-bg-border";
+              ? "bg-bg-elevated text-accent-red"
+              : "bg-bg-elevated text-text-muted";
 
       const headerContent = (
         <div
@@ -210,10 +210,10 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
           <span
             className={`h-2 w-2 shrink-0 rounded-full ${c.text} bg-current ${state.alive ? "animate-pulse" : ""}`}
           />
-          <span className={`truncate text-[11px] font-semibold ${c.text}`}>{agentName}</span>
+          <span className={`truncate text-ui font-semibold ${c.text}`}>{agentName}</span>
           <div className="flex-1" />
           <span
-            className={`shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[9px] ${statusPillClass}`}
+            className={`shrink-0 rounded-full px-1.5 py-0.5 font-mono text-meta ${statusPillClass}`}
             title={state.error ?? statusLabel}
           >
             {statusLabel}
@@ -255,7 +255,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                           setOverflowView("model");
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="w-full px-3 py-1.5 text-left text-[10px] text-text-primary transition-colors hover:bg-bg-hover"
+                        className="w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover"
                       >
                         Model: {modelLabel}
                       </button>
@@ -267,7 +267,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                           setOverflowView("prompts");
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="w-full px-3 py-1.5 text-left text-[10px] text-text-primary transition-colors hover:bg-bg-hover"
+                        className="w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover"
                       >
                         Send prompt…
                       </button>
@@ -278,7 +278,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                         setOverflowView("pins");
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="w-full px-3 py-1.5 text-left text-[10px] text-text-primary transition-colors hover:bg-bg-hover"
+                      className="w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover"
                     >
                       Pinned commands ({pinnedCommands.length}/5)
                     </button>
@@ -290,7 +290,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                         setShowOverflow(false);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="w-full px-3 py-1.5 text-left text-[10px] text-text-primary transition-colors hover:bg-bg-hover"
+                      className="w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover"
                     >
                       {state.alive ? "Restart session" : "Start session"}
                     </button>
@@ -302,7 +302,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                         setShowOverflow(false);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="w-full px-3 py-1.5 text-left text-[10px] text-text-primary transition-colors hover:bg-accent-red/10 hover:text-accent-red"
+                      className="w-full px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-accent-red/10 hover:text-accent-red"
                     >
                       Close pane
                     </button>
@@ -316,7 +316,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                         setOverflowView("root");
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="w-full px-3 py-1 text-left text-[9px] uppercase tracking-wide text-text-muted transition-colors hover:text-text-primary"
+                      className="w-full px-3 py-1 text-left text-meta uppercase tracking-wide text-text-muted transition-colors hover:text-text-primary"
                     >
                       ← Back
                     </button>
@@ -328,7 +328,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                         setOverflowView("root");
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className={`w-full px-3 py-1.5 text-left text-[10px] transition-colors hover:bg-bg-hover ${
+                      className={`w-full px-3 py-1.5 text-left text-ui transition-colors hover:bg-bg-hover ${
                         !model ? "font-medium text-accent-green" : "text-text-primary"
                       }`}
                     >
@@ -346,7 +346,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                           setOverflowView("root");
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className={`w-full px-3 py-1.5 text-left text-[10px] transition-colors hover:bg-bg-hover ${
+                        className={`w-full px-3 py-1.5 text-left text-ui transition-colors hover:bg-bg-hover ${
                           model === m.value ? "font-medium text-accent-green" : "text-text-primary"
                         }`}
                       >
@@ -354,7 +354,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                       </button>
                     ))}
                     <div className="mt-1 border-t border-bg-border px-3 py-1 pt-1">
-                      <span className="text-[9px] text-text-muted">Takes effect on next session</span>
+                      <span className="text-meta text-text-muted">Takes effect on next session</span>
                     </div>
                   </div>
                 )}
@@ -366,12 +366,12 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                         setOverflowView("root");
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="w-full px-3 py-1 text-left text-[9px] uppercase tracking-wide text-text-muted transition-colors hover:text-text-primary"
+                      className="w-full px-3 py-1 text-left text-meta uppercase tracking-wide text-text-muted transition-colors hover:text-text-primary"
                     >
                       ← Back
                     </button>
                     {promptTemplates.length === 0 ? (
-                      <div className="px-3 py-2 text-[10px] text-text-muted">
+                      <div className="px-3 py-2 text-ui text-text-muted">
                         No templates yet. Add some in Settings → Prompt Templates.
                       </div>
                     ) : (
@@ -383,11 +383,11 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                             sendPromptTemplate(t.id);
                           }}
                           onMouseDown={(e) => e.stopPropagation()}
-                          className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[10px] text-text-primary transition-colors hover:bg-bg-hover"
+                          className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover"
                           title={t.content}
                         >
                           <span className="truncate">{t.name}</span>
-                          <span className="ml-auto text-[9px] text-text-muted">{t.category}</span>
+                          <span className="ml-auto text-meta text-text-muted">{t.category}</span>
                         </button>
                       ))
                     )}
@@ -401,17 +401,17 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                         setOverflowView("root");
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className="w-full px-3 py-1 text-left text-[9px] uppercase tracking-wide text-text-muted transition-colors hover:text-text-primary"
+                      className="w-full px-3 py-1 text-left text-meta uppercase tracking-wide text-text-muted transition-colors hover:text-text-primary"
                     >
                       ← Back
                     </button>
                     <div className="space-y-1.5 px-3 pb-2">
-                      <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                      <div className="text-meta font-medium uppercase tracking-wider text-text-muted">
                         Pinned Commands ({pinnedCommands.length}/5)
                       </div>
                       {pinnedCommands.map((cmd, i) => (
                         <div key={i} className="group flex items-center gap-1">
-                          <span className="flex-1 truncate text-[11px] text-text-secondary" title={cmd}>
+                          <span className="flex-1 truncate text-ui text-text-secondary" title={cmd}>
                             {cmd}
                           </span>
                           <button
@@ -458,7 +458,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                             onChange={(e) => setNewPinCmd(e.target.value)}
                             onMouseDown={(e) => e.stopPropagation()}
                             placeholder="Add command..."
-                            className="flex-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-[11px] text-text-primary focus:border-accent-blue focus:outline-none"
+                            className="flex-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-ui text-text-primary focus:border-accent-blue focus:outline-none"
                           />
                           <button
                             type="submit"
@@ -487,7 +487,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
                 key={i}
                 onClick={() => runCommand(cmd)}
                 disabled={!pane.sessionId}
-                className="max-w-[120px] truncate rounded bg-bg-hover px-2 py-0.5 text-[9px] text-text-secondary hover:text-text-primary disabled:opacity-40"
+                className="max-w-[120px] truncate rounded bg-bg-hover px-2 py-0.5 text-meta text-text-secondary hover:text-text-primary disabled:opacity-40"
                 title={cmd}
               >
                 {cmd}

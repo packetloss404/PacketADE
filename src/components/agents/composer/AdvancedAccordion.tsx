@@ -98,7 +98,7 @@ export function AdvancedAccordion({
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors"
+            className="flex items-center gap-1 text-ui text-text-muted hover:text-text-primary transition-colors"
             aria-expanded={open}
           >
             <ChevronRight

@@ -66,7 +66,7 @@ function SubagentToolCallCardImpl({
 
   const subHeader =
     verbosity === "verbose" && model ? (
-      <div className="px-2 pb-1 font-mono text-[10px] text-text-faint truncate">
+      <div className="px-2 pb-1 font-mono text-meta text-text-faint truncate">
         model: {model}
       </div>
     ) : undefined;
@@ -87,7 +87,7 @@ function SubagentToolCallCardImpl({
       }}
       isError={toolCall.status === "error"}
       footer={
-        <div className="px-2 pb-1 flex items-center gap-1 text-[9px] uppercase tracking-wide text-text-faint">
+        <div className="px-2 pb-1 flex items-center gap-1 text-meta uppercase tracking-wide text-text-faint">
           <Bot size={9} />
           <span>Sub-agent</span>
         </div>
@@ -96,10 +96,10 @@ function SubagentToolCallCardImpl({
       <div className="bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
         <MarkdownRenderer
           content={body}
-          className="text-[11px] leading-relaxed"
+          className="text-ui leading-relaxed"
         />
         {verbosity === "verbose" && toolCall.input && (
-          <pre className="mt-2 pt-2 border-t border-bg-border text-[10px] font-mono whitespace-pre-wrap text-text-muted">
+          <pre className="mt-2 pt-2 border-t border-bg-border text-meta font-mono whitespace-pre-wrap text-text-muted">
             {(() => {
               try {
                 return JSON.stringify(JSON.parse(toolCall.input), null, 2);

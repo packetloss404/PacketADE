@@ -94,7 +94,7 @@ function BashToolCallCardImpl({ toolCall }: BashToolCallCardProps) {
 
   const subHeader =
     verbosity === "verbose" && cwd ? (
-      <div className="px-2 pb-1 font-mono text-[10px] text-text-faint truncate">
+      <div className="px-2 pb-1 font-mono text-meta text-text-faint truncate">
         cwd: {cwd}
       </div>
     ) : undefined;
@@ -118,7 +118,7 @@ function BashToolCallCardImpl({ toolCall }: BashToolCallCardProps) {
       }}
       isError={toolCall.status === "error"}
     >
-      <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
+      <pre className="text-ui font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
         {body}
       </pre>
     </BaseToolCard>

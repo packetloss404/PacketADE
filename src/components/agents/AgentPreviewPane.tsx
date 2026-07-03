@@ -148,7 +148,7 @@ export function AgentPreviewPane({
         <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary border-b border-bg-border shrink-0">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
             <BookOpen size={14} className="text-text-secondary shrink-0" />
-            <span className="text-xs font-medium text-text-primary truncate">
+            <span className="text-ui font-medium text-text-primary truncate">
               {activeTab === "markdown"
                 ? fileLabel(markdownPath)
                 : activeTab === "plan"
@@ -185,7 +185,7 @@ export function AgentPreviewPane({
               onClick={() => setActiveTab(tab)}
               role="tab"
               aria-selected={active}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition-colors ${
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-ui transition-colors ${
                 active
                   ? "bg-accent-green/20 text-accent-green"
                   : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
@@ -210,7 +210,7 @@ export function AgentPreviewPane({
             value={browserDraft}
             onChange={(event) => setBrowserDraft(event.target.value)}
             placeholder="https://example.com"
-            className="flex-1 min-w-0 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
+            className="flex-1 min-w-0 bg-bg-primary border border-bg-border rounded px-2 py-1 text-ui text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
           />
           <Tooltip content="Load">
             <button
@@ -246,13 +246,13 @@ export function AgentPreviewPane({
               />
             )}
             {markdownLoading && (
-              <div className="flex items-center gap-2 text-[11px] text-text-muted">
+              <div className="flex items-center gap-2 text-ui text-text-muted">
                 <Spinner size={12} />
                 Loading markdown…
               </div>
             )}
             {markdownError && (
-              <div className="flex items-start gap-2 text-[11px] text-accent-red bg-accent-red/10 border border-accent-red/30 rounded p-2">
+              <div className="flex items-start gap-2 text-ui text-accent-red bg-accent-red/10 border border-accent-red/30 rounded p-2">
                 <AlertCircle size={12} className="mt-0.5 shrink-0" />
                 <span className="break-words">{markdownError}</span>
               </div>

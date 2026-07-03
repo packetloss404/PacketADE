@@ -20,7 +20,7 @@ const tones: Record<BadgeTone, string> = {
 export function Badge({ tone = "neutral", children, className = "" }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${tones[tone]} ${className}`}
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-meta font-medium ${tones[tone]} ${className}`}
     >
       {children}
     </span>

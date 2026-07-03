@@ -104,7 +104,7 @@ export function AgentHeaderBadges({
     <>
       {provider && (
         <Tooltip content={authHint || `Provider: ${provider}`}>
-          <span className="flex items-center gap-1 text-[10px] bg-bg-secondary border border-bg-border rounded px-1.5 py-0.5">
+          <span className="flex items-center gap-1 text-meta bg-bg-secondary rounded px-1.5 py-0.5">
             <AuthBadge status={authStatus} />
             <span className="text-text-muted leading-none">{provider}</span>
           </span>
@@ -119,7 +119,7 @@ export function AgentHeaderBadges({
               setActiveFlight(linkedFlight.id);
               setActiveView("flights");
             }}
-            className="flex items-center gap-1 text-[10px] text-accent-purple bg-accent-purple/10 border border-accent-purple/30 rounded px-1.5 py-0.5 hover:bg-accent-purple/20 transition-colors"
+            className="flex items-center gap-1 text-meta text-accent-purple bg-accent-purple/10 border border-accent-purple/30 rounded px-1.5 py-0.5 hover:bg-accent-purple/20 transition-colors"
           >
             <Plane size={10} />
             <span className="truncate max-w-[120px]">{linkedFlight.title}</span>

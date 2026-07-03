@@ -33,14 +33,14 @@ export function PendingApprovalsRollup({
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 rounded border border-accent-amber/40 bg-accent-amber/5">
       <ShieldAlert size={12} className="text-accent-amber shrink-0" />
-      <span className="text-[11px] text-text-secondary flex-1">
+      <span className="text-ui text-text-secondary flex-1">
         {pendingPermissions.length} pending tool permissions
       </span>
       <Tooltip content="Allow every pending tool call once">
         <button
           type="button"
           onClick={onAllowAllPermissions}
-          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
+          className="flex items-center gap-1 text-ui px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
         >
           <Check size={11} /> Allow all
         </button>
@@ -49,7 +49,7 @@ export function PendingApprovalsRollup({
         <button
           type="button"
           onClick={onDenyAllPermissions}
-          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
+          className="flex items-center gap-1 text-ui px-2 py-0.5 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
         >
           <X size={11} /> Deny all
         </button>
@@ -58,7 +58,7 @@ export function PendingApprovalsRollup({
         <button
           type="button"
           onClick={onCancelAllPending}
-          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-bg-border text-text-muted hover:bg-bg-hover transition-colors"
+          className="flex items-center gap-1 text-ui px-2 py-0.5 rounded border border-bg-border text-text-muted hover:bg-bg-hover transition-colors"
         >
           <Ban size={11} />
         </button>

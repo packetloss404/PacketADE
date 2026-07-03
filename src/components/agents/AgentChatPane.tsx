@@ -64,7 +64,7 @@ function BackToParentLink({ parentId }: { parentId: string }) {
       <button
         type="button"
         onClick={() => selectConversation(parentId)}
-        className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-muted transition-colors hover:text-accent-blue"
+        className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-ui text-text-muted transition-colors hover:text-accent-blue"
       >
         <ArrowLeft size={11} />
         back to plan
@@ -174,8 +174,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-bg-primary">
         <MessageSquareOff size={24} className="text-text-muted opacity-40" />
-        <span className="text-xs text-text-secondary">Conversation not found</span>
-        <span className="text-[10px] text-text-muted">It may have been deleted.</span>
+        <span className="text-ui text-text-secondary">Conversation not found</span>
+        <span className="text-meta text-text-muted">It may have been deleted.</span>
       </div>
     );
   }
@@ -241,19 +241,19 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           <Sparkles size={13} className="text-accent-green" />
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="truncate text-sm font-semibold text-text-primary">
+          <span className="truncate text-ui font-semibold text-text-primary">
             {conversation.title || agentLabel}
           </span>
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${agentColor.text} bg-current ${isActive ? "animate-pulse motion-reduce:animate-none" : ""}`}
           />
-          <span className={`text-[10px] font-medium ${status.className}`}>{status.label}</span>
+          <span className={`text-meta font-medium ${status.className}`}>{status.label}</span>
           {conversation.sshTarget && (
             <Tooltip
               content={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
               side="bottom"
             >
-              <span className="flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent-green">
+              <span className="flex items-center gap-1 rounded bg-accent-soft px-1.5 py-0.5 text-meta text-accent-green">
                 <Server size={10} />
                 {conversation.sshTarget.host}
               </span>
@@ -297,7 +297,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             {/* Inner content wrapper carries the row spacing and is measured by
                 the ResizeObserver in useScrollState so "stick to bottom" stays
                 pinned as virtualized rows lazily mount and grow. */}
-            <div ref={messagesContentRef} className="space-y-2.5">
+            <div ref={messagesContentRef} className="space-y-turn">
               {conversation.mode === "api" && conversation.memoryContextEnabled && (
                 <MemoryInjectionCard {...memoryBriefStats} />
               )}
@@ -333,7 +333,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
               <button
                 type="button"
                 onClick={jumpToBottom}
-                className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-bg-border bg-bg-primary px-3 py-1 text-xs text-text-secondary shadow-md transition-colors hover:border-accent-green/60 hover:text-text-primary"
+                className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-bg-border bg-bg-primary px-3 py-1 text-ui text-text-secondary shadow-md transition-colors hover:border-accent-green/60 hover:text-text-primary"
               >
                 <ArrowDown size={12} />
                 <span>{unreadCount > 0 ? `${unreadCount} new` : "Latest"}</span>

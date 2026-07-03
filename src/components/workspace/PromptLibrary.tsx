@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BookOpen, Terminal, MessageSquare, Copy, Pencil, Trash2, Plus, Check, X, Search } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { usePromptStore } from "@/stores/promptStore";
 import type { PromptTemplate } from "@/types/prompt";
 
@@ -20,6 +21,35 @@ const CATEGORY_COLORS: Record<string, string> = {
   feature: "bg-accent-purple/20 text-accent-purple",
   custom: "bg-text-muted/20 text-text-muted",
 };
+
+/** Non-native category picker for the create/edit forms below — the styled
+ * Dropdown/DropdownItem equivalent of a `<select>`, matching the pattern
+ * used by composer/ProviderPicker. Excludes the "all" filter entry, which
+ * only makes sense for the tab row, not a template's own category. */
+function CategoryPicker({
+  value,
+  onChange,
+}: {
+  value: PromptTemplate["category"];
+  onChange: (category: PromptTemplate["category"]) => void;
+}) {
+  const options = CATEGORIES.filter((c) => c.key !== "all") as {
+    key: PromptTemplate["category"];
+    label: string;
+  }[];
+  const current = options.find((c) => c.key === value);
+  return (
+    <Dropdown
+      trigger={<span className="text-text-primary">{current?.label ?? value}</span>}
+    >
+      {options.map((c) => (
+        <DropdownItem key={c.key} onClick={() => onChange(c.key)}>
+          {c.label}
+        </DropdownItem>
+      ))}
+    </Dropdown>
+  );
+}
 
 interface PromptLibraryProps {
   onClose: () => void;
@@ -120,7 +150,7 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
           <button
             onClick={startCreate}
             disabled={isCreating}
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-accent-green/20 text-accent-green rounded hover:bg-accent-green/30 transition-colors disabled:opacity-40"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-ui bg-accent-green/20 text-accent-green rounded hover:bg-accent-green/30 transition-colors disabled:opacity-40"
           >
             <Plus size={12} />
             New
@@ -133,7 +163,7 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
             <button
               key={cat.key}
               onClick={() => setActiveCategory(cat.key)}
-              className={`px-2 py-1 text-[11px] rounded transition-colors ${
+              className={`px-2 py-1 text-ui rounded transition-colors ${
                 activeCategory === cat.key
                   ? "bg-accent-green/20 text-accent-green"
                   : "text-text-muted hover:text-text-primary hover:bg-bg-hover"
@@ -165,17 +195,7 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
                 className="w-full px-2.5 py-1.5 text-xs bg-bg-secondary border border-bg-border rounded text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-green/50 resize-none"
               />
               <div className="flex items-center gap-2">
-                <select
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value as PromptTemplate["category"])}
-                  className="px-2 py-1 text-[11px] bg-bg-secondary border border-bg-border rounded text-text-primary focus:outline-none"
-                >
-                  <option value="general">General</option>
-                  <option value="review">Review</option>
-                  <option value="debugging">Debug</option>
-                  <option value="feature">Feature</option>
-                  <option value="custom">Custom</option>
-                </select>
+                <CategoryPicker value={editCategory} onChange={setEditCategory} />
                 <div className="flex-1" />
                 <button onClick={cancelEdit} className="p-1 text-text-muted hover:text-text-primary transition-colors">
                   <X size={14} />
@@ -206,17 +226,7 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
                     className="w-full px-2.5 py-1.5 text-xs bg-bg-secondary border border-bg-border rounded text-text-primary focus:outline-none focus:border-accent-green/50 resize-none"
                   />
                   <div className="flex items-center gap-2">
-                    <select
-                      value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value as PromptTemplate["category"])}
-                      className="px-2 py-1 text-[11px] bg-bg-secondary border border-bg-border rounded text-text-primary focus:outline-none"
-                    >
-                      <option value="general">General</option>
-                      <option value="review">Review</option>
-                      <option value="debugging">Debug</option>
-                      <option value="feature">Feature</option>
-                      <option value="custom">Custom</option>
-                    </select>
+                    <CategoryPicker value={editCategory} onChange={setEditCategory} />
                     <div className="flex-1" />
                     <button onClick={cancelEdit} className="p-1 text-text-muted hover:text-text-primary transition-colors">
                       <X size={14} />
@@ -230,23 +240,23 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
                 /* Display mode */
                 <>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium text-text-primary">{t.name}</span>
-                    <span className={`px-1.5 py-0.5 text-[9px] rounded-full ${CATEGORY_COLORS[t.category] || CATEGORY_COLORS.custom}`}>
+                    <span className="text-ui font-medium text-text-primary">{t.name}</span>
+                    <span className={`px-1.5 py-0.5 text-meta rounded-full ${CATEGORY_COLORS[t.category] || CATEGORY_COLORS.custom}`}>
                       {t.category}
                     </span>
                     {t.id.startsWith("builtin-") && (
-                      <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-accent-purple/15 text-accent-purple">
+                      <span className="px-1.5 py-0.5 text-meta rounded-full bg-accent-purple/15 text-accent-purple">
                         built-in
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-text-secondary mb-2 leading-relaxed">
+                  <p className="text-ui text-text-secondary mb-2 leading-relaxed">
                     {t.content.length > 80 ? t.content.slice(0, 80) + "..." : t.content}
                   </p>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleSendTerminal(t.id)}
-                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-accent-green bg-bg-secondary rounded transition-colors"
+                      className="flex items-center gap-1 px-2 py-0.5 text-ui text-text-muted hover:text-accent-green bg-bg-secondary rounded transition-colors"
                       title="Send to Terminal — writes this prompt to the active PTY session."
                     >
                       <Terminal size={10} />
@@ -254,7 +264,7 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
                     </button>
                     <button
                       onClick={() => handleSendScout(t.id)}
-                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-accent-cyan bg-bg-secondary rounded transition-colors"
+                      className="flex items-center gap-1 px-2 py-0.5 text-ui text-text-muted hover:text-accent-cyan bg-bg-secondary rounded transition-colors"
                       title="Send to Scout — opens a read-only agent chat with this prompt and project memory."
                     >
                       <MessageSquare size={10} />
@@ -262,7 +272,7 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
                     </button>
                     <button
                       onClick={() => handleCopy(t.content)}
-                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-text-primary bg-bg-secondary rounded transition-colors"
+                      className="flex items-center gap-1 px-2 py-0.5 text-ui text-text-muted hover:text-text-primary bg-bg-secondary rounded transition-colors"
                       title="Copy prompt content to clipboard."
                     >
                       <Copy size={10} />
@@ -290,7 +300,7 @@ export function PromptLibrary({ onClose }: PromptLibraryProps) {
           ))}
 
           {filtered.length === 0 && !isCreating && (
-            <div className="text-center py-8 text-text-muted text-xs">
+            <div className="text-center py-8 text-text-muted text-ui">
               No templates found. Click "New" to create one.
             </div>
           )}

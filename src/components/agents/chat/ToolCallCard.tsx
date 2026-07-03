@@ -98,19 +98,19 @@ function ToolCallCardImpl({
         }`}
       >
         <FileEdit size={12} className="text-text-secondary shrink-0" />
-        <span className="text-xs font-medium text-text-primary shrink-0">
+        <span className="text-ui font-medium text-text-primary shrink-0">
           Edit
         </span>
-        <span className="font-mono text-[10px] text-text-secondary truncate">
+        <span className="font-mono text-ui text-text-secondary truncate">
           {baseName}
         </span>
         {isNewFile && (
-          <span className="text-[9px] text-accent-green border border-accent-green/30 bg-accent-green/10 px-1 rounded shrink-0">
+          <span className="text-meta text-accent-green bg-accent-green/10 px-1 rounded shrink-0">
             new
           </span>
         )}
         {counts && (
-          <span className="flex items-center gap-1 font-mono text-[10px] shrink-0">
+          <span className="flex items-center gap-1 font-mono text-meta shrink-0">
             <span className="text-accent-green">+{counts.added}</span>
             <span className="text-accent-red">-{counts.removed}</span>
           </span>
@@ -152,11 +152,11 @@ function ToolCallCardImpl({
       toggleLabel={{ expanded: "Collapse output", collapsed: "Expand output" }}
       isError={isError}
     >
-      <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
+      <pre className="text-ui font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
         {body}
       </pre>
       {verbosity === "verbose" && toolCall.input && (
-        <pre className="text-[10px] font-mono whitespace-pre-wrap bg-bg-secondary border-t border-line-soft p-2 mx-1 mb-1 max-h-48 overflow-y-auto text-text-muted">
+        <pre className="text-meta font-mono whitespace-pre-wrap bg-bg-secondary border-t border-line-soft p-2 mx-1 mb-1 max-h-48 overflow-y-auto text-text-muted">
           input: {toolCall.input}
         </pre>
       )}

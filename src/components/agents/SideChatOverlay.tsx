@@ -93,7 +93,7 @@ export function SideChatOverlay() {
 
   return (
     <div
-      className="fixed bottom-[34px] right-4 w-[320px] h-[400px] bg-bg-secondary border border-accent-purple/30 rounded shadow-2xl flex flex-col z-50 text-[11px] origin-bottom-right animate-[popoverIn_150ms_ease-out] motion-reduce:animate-none"
+      className="fixed bottom-[34px] right-4 w-[320px] h-[400px] bg-bg-secondary border border-accent-purple/30 rounded shadow-2xl flex flex-col z-50 text-ui origin-bottom-right animate-[popoverIn_150ms_ease-out] motion-reduce:animate-none"
       role="dialog"
       aria-label="Side chat"
     >
@@ -101,7 +101,7 @@ export function SideChatOverlay() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-bg-border">
         <div className="flex items-center gap-1.5">
           <MessageSquarePlus size={12} className="text-accent-purple" />
-          <span className="text-xs font-semibold text-text-primary">Side chat</span>
+          <span className="text-ui font-semibold text-text-primary">Side chat</span>
         </div>
         <button
           onClick={close}
@@ -131,7 +131,7 @@ export function SideChatOverlay() {
         )}
         {answer && (
           <div className="leading-relaxed">
-            <MarkdownRenderer content={answer} className="text-[11px]" />
+            <MarkdownRenderer content={answer} className="text-ui" />
             {isStreaming && (
               <span
                 className="inline-block w-1.5 h-3 bg-accent-purple/70 animate-pulse ml-0.5 align-baseline"
@@ -147,7 +147,7 @@ export function SideChatOverlay() {
                 type="button"
                 onClick={handleInsertIntoChat}
                 disabled={!hasConversation}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-accent-purple/15 text-accent-purple hover:bg-accent-purple/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-ui bg-accent-purple/15 text-accent-purple hover:bg-accent-purple/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 <MessageSquareShare size={12} />
                 <span>Insert into chat</span>
@@ -157,7 +157,7 @@ export function SideChatOverlay() {
               <button
                 type="button"
                 onClick={handleCopyAnswer}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-bg-primary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-ui bg-bg-primary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
               >
                 {copied ? <Check size={12} className="text-accent-green" /> : <Copy size={12} />}
                 <span>{copied ? "Copied" : "Copy answer"}</span>
@@ -176,7 +176,7 @@ export function SideChatOverlay() {
           onKeyDown={handleKeyDown}
           placeholder="Ask anything..."
           rows={2}
-          className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:border-accent-purple/50"
+          className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-ui text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:border-accent-purple/50"
           disabled={isStreaming}
         />
         <button

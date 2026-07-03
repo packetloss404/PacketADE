@@ -101,7 +101,7 @@ export function ReviewBar({
           size={12}
           className={hasPending ? "text-accent-amber" : "text-text-secondary"}
         />
-        <span className="text-[11px] font-mono text-text-secondary">
+        <span className="text-ui font-mono text-text-secondary">
           {fileCount} file{fileCount === 1 ? "" : "s"}
           <span className="text-accent-green ml-1.5">
             +{diffTotals.totalAdds}
@@ -109,7 +109,7 @@ export function ReviewBar({
           <span className="text-accent-red ml-1">-{diffTotals.totalDels}</span>
         </span>
         {hasPending && (
-          <span className="text-[10px] text-accent-amber">
+          <span className="text-meta text-accent-amber">
             {pendingEdits.length} awaiting review
             {ynActive && (
               <span className="text-text-muted ml-1.5">
@@ -119,7 +119,7 @@ export function ReviewBar({
           </span>
         )}
         <span className="flex-1" />
-        <span className="flex items-center gap-1 text-[11px] font-medium text-text-secondary">
+        <span className="flex items-center gap-1 text-ui font-medium text-text-secondary">
           Review
           <ChevronUp
             size={12}

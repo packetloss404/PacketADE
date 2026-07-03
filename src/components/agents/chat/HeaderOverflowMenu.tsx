@@ -84,7 +84,7 @@ export function HeaderOverflowMenu({
           <div className="px-3 py-1.5 border-b border-bg-border">
             <Tooltip content="Cycle with ⌘⇧V / Ctrl+Shift+V. Summary collapses tool detail; Verbose shows raw inputs.">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] text-text-secondary">
+                <span className="text-ui text-text-secondary">
                   View mode
                 </span>
                 <div className="flex items-center gap-0.5 bg-bg-secondary border border-bg-border rounded p-0.5">
@@ -94,7 +94,7 @@ export function HeaderOverflowMenu({
                       type="button"
                       onClick={() => setTranscriptViewMode(opt.value)}
                       aria-pressed={viewMode === opt.value}
-                      className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                      className={`px-1.5 py-0.5 rounded text-ui transition-colors ${
                         viewMode === opt.value
                           ? "bg-bg-elevated text-text-primary"
                           : "text-text-secondary hover:text-text-primary"
@@ -138,7 +138,7 @@ export function HeaderOverflowMenu({
                   : "Memory context OFF — click to include learned patterns in system prompt"
               }
               aria-pressed={!!conversation.memoryContextEnabled}
-              className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-text-primary hover:bg-bg-hover transition-colors border-b border-bg-border"
+              className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors border-b border-bg-border"
             >
               <span className="flex items-center gap-1.5">
                 <Brain size={11} />
@@ -160,7 +160,7 @@ export function HeaderOverflowMenu({
             type="button"
             onClick={togglePreview}
             aria-pressed={previewOpen}
-            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-text-primary hover:bg-bg-hover transition-colors border-b border-bg-border"
+            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors border-b border-bg-border"
           >
             <PanelRightOpen size={11} />
             {previewOpen ? "Hide preview pane" : "Show preview pane"}
@@ -168,17 +168,17 @@ export function HeaderOverflowMenu({
 
           <div className="border-b border-bg-border">
             <DropdownItem onClick={onExport}>
-              <span className="flex items-center gap-1.5 text-[11px]">
+              <span className="flex items-center gap-1.5 text-ui">
                 <Download size={11} /> Export as Markdown
               </span>
             </DropdownItem>
             <DropdownItem onClick={() => exportConversationJson(conversation)}>
-              <span className="flex items-center gap-1.5 text-[11px]">
+              <span className="flex items-center gap-1.5 text-ui">
                 <FileJson size={11} /> Export as JSON
               </span>
             </DropdownItem>
             <DropdownItem onClick={() => void handleCopyTranscript()}>
-              <span className="flex items-center gap-1.5 text-[11px]">
+              <span className="flex items-center gap-1.5 text-ui">
                 <Copy size={11} /> Copy transcript
               </span>
             </DropdownItem>
@@ -188,7 +188,7 @@ export function HeaderOverflowMenu({
         </div>
       </Dropdown>
       {feedback && (
-        <div className="absolute top-full right-0 mt-1 z-50 px-2 py-1 text-[10px] bg-bg-elevated border border-bg-border rounded shadow text-text-secondary whitespace-nowrap">
+        <div className="absolute top-full right-0 mt-1 z-50 px-2 py-1 text-meta bg-bg-elevated border border-bg-border rounded shadow text-text-secondary whitespace-nowrap">
           {feedback}
         </div>
       )}

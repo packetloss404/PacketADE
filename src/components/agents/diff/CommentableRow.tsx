@@ -73,7 +73,7 @@ export function CommentableRow({
           <button
             type="button"
             onClick={() => setComposerOpen(true)}
-            className={`sticky right-1 ml-auto self-start flex items-center justify-center w-5 h-5 rounded text-[10px] transition-opacity ${
+            className={`sticky right-1 ml-auto self-start flex items-center justify-center w-5 h-5 rounded text-meta transition-opacity ${
               hasComment
                 ? "opacity-100 bg-accent-blue/20 text-accent-blue"
                 : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 bg-bg-secondary border border-bg-border text-text-muted hover:text-accent-blue hover:border-accent-blue/40"
@@ -90,7 +90,7 @@ export function CommentableRow({
       </DiffRowView>
       {composerOpen && (
         <div className="flex items-center gap-1 min-w-full px-2 py-1 bg-bg-secondary border-y border-accent-blue/30">
-          <span className="text-[10px] text-text-muted shrink-0 font-mono">
+          <span className="text-meta text-text-muted shrink-0 font-mono">
             {filePath}:{anchor.line} —
           </span>
           <input
@@ -113,7 +113,7 @@ export function CommentableRow({
             }}
             autoFocus
             placeholder="Add a comment (Enter to queue, Esc to cancel)"
-            className="flex-1 bg-bg-primary border border-bg-border rounded px-1.5 py-0.5 text-[11px] text-text-primary focus:outline-none focus:border-accent-blue/60"
+            className="flex-1 bg-bg-primary border border-bg-border rounded px-1.5 py-0.5 text-ui text-text-primary focus:outline-none focus:border-accent-blue/60"
           />
           <Tooltip content="Queue comment">
             <button
