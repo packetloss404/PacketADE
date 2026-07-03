@@ -508,7 +508,7 @@ function FlightRow({
   // Inline two-step confirm: first trash click flips this to true and we
   // show a small Confirm? row with check / cancel buttons. Auto-reverts
   // after 3s if the user does nothing — matches the destructive-action
-  // pattern used elsewhere in this codebase (CommitModal etc).
+  // pattern used elsewhere in this codebase (NewFlightModal, GitDashboard).
   const [confirming, setConfirming] = useState(false);
   useEffect(() => {
     if (!confirming) return;

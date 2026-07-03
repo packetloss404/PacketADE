@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   GitBranch,
   RefreshCw,
@@ -15,48 +15,37 @@ import {
   Server,
   FileCheck2,
   ShieldCheck,
+  Link2,
 } from "lucide-react";
 import {
   getGitBranch,
   getGitStatus,
   getGitBranchRemote,
   getGitStatusRemote,
-  gitCommit,
   gitPush,
   gitPull,
   gitCreateBranch,
   toGitServerConfigInput,
 } from "@/lib/tauri";
+import {
+  type ChangedFile,
+  parseGitStatus,
+  stageFile,
+  unstageFile,
+  stageAllFiles,
+  unstageAllFiles,
+  commitStaged,
+  findLinkedIssue,
+} from "@/lib/gitCommitFlow";
 import { useServerStore } from "@/stores/serverStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
+import { useIssueStore } from "@/stores/issueStore";
 import {
   matchGitFilesToFlightTasks,
   flightReviewKey,
   type FlightReviewTaskRef,
 } from "@/lib/flightReview";
-
-interface ChangedFile {
-  status: string;
-  path: string;
-  staged: boolean;
-}
-
-function parseGitStatus(output: string): ChangedFile[] {
-  if (!output.trim()) return [];
-  return output
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const rawStatus = line.substring(0, 2);
-      return {
-        status: rawStatus.trim(),
-        path: line.substring(3).trim(),
-        staged: rawStatus[0] !== " " && rawStatus[0] !== "?",
-      };
-    });
-}
 
 function statusIcon(status: string) {
   switch (status) {
@@ -144,13 +133,45 @@ function reviewTitle(refs: FlightReviewTaskRef[]): string {
     .join("\n");
 }
 
+/** Per-row staging checkbox. A plain `<input>` doesn't support the
+ *  `indeterminate` visual state via a prop — it has to be set on the DOM
+ *  node directly, hence the ref effect. */
+function StageCheckbox({
+  file,
+  disabled,
+  onToggle,
+}: {
+  file: ChangedFile;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = file.staged && file.unstaged;
+    }
+  }, [file.staged, file.unstaged]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={file.staged && !file.unstaged}
+      disabled={disabled}
+      onChange={onToggle}
+      onClick={(e) => e.stopPropagation()}
+      className="h-3 w-3 shrink-0 accent-accent-green disabled:opacity-40"
+      title={file.staged ? "Staged — click to unstage" : "Unstaged — click to stage"}
+    />
+  );
+}
+
 export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboardProps) {
   const [branch, setBranch] = useState<string>("");
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [commitMsg, setCommitMsg] = useState("");
-  const [stageAll, setStageAll] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [stagingBusy, setStagingBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const [newBranch, setNewBranch] = useState("");
   const [showBranchInput, setShowBranchInput] = useState(false);
@@ -162,6 +183,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
   const flights = useFlightStore((s) => s.flights);
   const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
   const setActiveView = useAppStore((s) => s.setActiveView);
+  const issues = useIssueStore((s) => s.issues);
   const isRemote = !!serverId;
 
   const reviewContext = useMemo(
@@ -174,10 +196,8 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
     [files, flights, projectPath, workspaceId],
   );
 
-  const commitCandidateFiles = useMemo(
-    () => (stageAll ? files : files.filter((file) => file.staged)),
-    [files, stageAll],
-  );
+  const commitCandidateFiles = useMemo(() => files.filter((file) => file.staged), [files]);
+  const stagedCount = commitCandidateFiles.length;
 
   const commitContext = useMemo(() => {
     const candidatePaths = new Set(commitCandidateFiles.map((file) => flightReviewKey(file.path)));
@@ -196,6 +216,12 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
       sessionId: sessionIds.length === 1 ? sessionIds[0] : null,
     };
   }, [commitCandidateFiles, reviewContext.matchesByPath]);
+
+  // P1-15: transplanted from CommitModal — auto-seed the commit message
+  // with a `Fixes #N` trailer when the active workspace is bound to an
+  // open Issue, so the server-side close-loop can flip it to `done`.
+  const linkedIssue = useMemo(() => findLinkedIssue(issues, workspaceId ?? null), [issues, workspaceId]);
+  const seededRef = useRef(false);
 
   const openReviewFlight = useCallback(() => {
     const [flightId] = reviewContext.flightIds;
@@ -251,11 +277,29 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
     return () => clearTimeout(t);
   }, [feedback]);
 
+  // P1-15: a workspace switch must not carry a half-typed message (or a
+  // stale `Fixes #N` seed) into another repo — this replaces
+  // CommitModal's snapshotted-path guard now that GitDashboard stays
+  // mounted across active-workspace changes.
+  useEffect(() => {
+    seededRef.current = false;
+    setCommitMsg("");
+  }, [projectPath, workspaceId]);
+
+  useEffect(() => {
+    if (isRemote) return;
+    if (seededRef.current) return;
+    if (!linkedIssue) return;
+    seededRef.current = true;
+    setCommitMsg((prev) => (prev.length > 0 ? prev : `Fixes #${linkedIssue.num}\n\n`));
+  }, [isRemote, linkedIssue]);
+
   async function handleCommit() {
-    if (!commitMsg.trim() || files.length === 0) return;
+    if (!commitMsg.trim() || stagedCount === 0) return;
+    const path = projectPath;
     setActionLoading("commit");
     try {
-      const result = await gitCommit(projectPath, commitMsg.trim(), stageAll, commitContext);
+      const result = await commitStaged(path, commitMsg, commitContext);
       setCommitMsg("");
       setFeedback({ type: "ok", msg: result || "Committed successfully" });
       await refresh();
@@ -307,10 +351,55 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
     }
   }
 
+  async function handleToggleStage(file: ChangedFile) {
+    if (stagingBusy) return;
+    setStagingBusy(true);
+    try {
+      const fullyStaged = file.staged && !file.unstaged;
+      if (fullyStaged) {
+        await unstageFile(projectPath, file);
+      } else {
+        await stageFile(projectPath, file);
+      }
+      await refresh();
+    } catch (e: unknown) {
+      setFeedback({ type: "err", msg: `${file.staged ? "Unstage" : "Stage"} failed: ${e}` });
+    } finally {
+      setStagingBusy(false);
+    }
+  }
+
+  async function handleStageAll() {
+    if (stagingBusy) return;
+    setStagingBusy(true);
+    try {
+      await stageAllFiles(projectPath, files);
+      await refresh();
+    } catch (e: unknown) {
+      setFeedback({ type: "err", msg: `Stage all failed: ${e}` });
+    } finally {
+      setStagingBusy(false);
+    }
+  }
+
+  async function handleUnstageAll() {
+    if (stagingBusy) return;
+    setStagingBusy(true);
+    try {
+      await unstageAllFiles(projectPath, files);
+      await refresh();
+    } catch (e: unknown) {
+      setFeedback({ type: "err", msg: `Unstage all failed: ${e}` });
+    } finally {
+      setStagingBusy(false);
+    }
+  }
+
   // Phase 3.3: remote workspaces are read-only in this slice — commit /
   // push / pull / create-branch over SSH lands in a later phase. Disable
   // the action buttons but still expose status + refresh.
   const remoteReadOnlyTip = isRemote ? "Remote commit/push/pull not yet supported" : undefined;
+  const hasUnstaged = files.some((f) => f.unstaged);
 
   return (
     <div className="flex h-full flex-col overflow-hidden text-xs">
@@ -445,6 +534,32 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
         </div>
       )}
 
+      {/* Select-all affordance — local workspaces only */}
+      {!loadError && !isRemote && files.length > 0 && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-bg-border px-3 py-1 text-[10px] text-text-muted">
+          <span>
+            {stagedCount} of {files.length} staged
+          </span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={handleStageAll}
+            disabled={stagingBusy || !hasUnstaged}
+            className="rounded px-1.5 py-0.5 text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary disabled:opacity-40"
+          >
+            Stage all
+          </button>
+          <button
+            type="button"
+            onClick={handleUnstageAll}
+            disabled={stagingBusy || stagedCount === 0}
+            className="rounded px-1.5 py-0.5 text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary disabled:opacity-40"
+          >
+            Unstage all
+          </button>
+        </div>
+      )}
+
       {/* Changed files list */}
       <div className="flex-1 overflow-y-auto px-1 py-1">
         {loadError && (
@@ -509,6 +624,13 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
                 key={`${f.path}-${i}`}
                 className="group flex items-center gap-1.5 rounded px-2 py-[3px] transition-colors hover:bg-bg-secondary"
               >
+                {!isRemote && (
+                  <StageCheckbox
+                    file={f}
+                    disabled={stagingBusy}
+                    onToggle={() => handleToggleStage(f)}
+                  />
+                )}
                 {statusIcon(f.status)}
                 <span className={`w-5 shrink-0 font-mono text-[10px] ${statusColor(f.status)}`}>
                   {f.status}
@@ -544,15 +666,18 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
         </div>
       ) : (
         <div className="shrink-0 space-y-1.5 border-t border-bg-border bg-bg-secondary px-3 py-2">
-          <label className="flex cursor-pointer select-none items-center gap-1.5 text-[10px] text-text-muted">
-            <input
-              type="checkbox"
-              checked={stageAll}
-              onChange={(e) => setStageAll(e.target.checked)}
-              className="h-3 w-3 accent-accent-green"
-            />
-            Stage all changes
-          </label>
+          {linkedIssue && (
+            <div
+              className="flex items-center gap-1.5 text-[10px] text-text-muted"
+              title={`This commit will auto-close ${linkedIssue.issue.ticketId} when it lands.`}
+            >
+              <Link2 size={10} className="text-accent-blue/70 shrink-0" />
+              <span className="truncate">
+                Linked to Issue #{linkedIssue.num}:{" "}
+                <span className="text-text-secondary">{linkedIssue.issue.title}</span>
+              </span>
+            </div>
+          )}
           {reviewContext.linkedFileCount > 0 ? (
             <div className="flex items-center gap-1.5 text-[10px] text-accent-amber">
               <FileCheck2 size={10} />
@@ -563,7 +688,9 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
             </div>
           ) : (
             <div className="text-[10px] text-text-muted">
-              Flight-linked commits receive PacketADE trailers when a task match is found.
+              {stagedCount === 0
+                ? "Commits staged files only — stage files above"
+                : "Flight-linked commits receive PacketADE trailers when a task match is found."}
             </div>
           )}
           <textarea
@@ -581,7 +708,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
           />
           <button
             onClick={handleCommit}
-            disabled={!commitMsg.trim() || files.length === 0 || !!actionLoading}
+            disabled={!commitMsg.trim() || stagedCount === 0 || !!actionLoading}
             className="bg-accent-green/20 hover:bg-accent-green/30 flex w-full items-center justify-center gap-1.5 rounded py-1 text-[11px] font-medium text-accent-green transition-colors disabled:cursor-not-allowed disabled:opacity-30"
           >
             {actionLoading === "commit" ? (
@@ -589,9 +716,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
             ) : (
               <Check size={11} />
             )}
-            {reviewContext.linkedFileCount > 0
-              ? `Commit after review${stageAll ? " (stage all)" : ""}`
-              : `Commit${stageAll ? " (stage all)" : ""}`}
+            {reviewContext.linkedFileCount > 0 ? "Commit after review" : "Commit staged"}
           </button>
         </div>
       )}
