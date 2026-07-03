@@ -54,18 +54,41 @@ export function requestConversationSave(conversationId: string): void {
   if (conv) scheduleSave(conv);
 }
 
-/** One-time pass over hydrated conversations: any conversation with
- * status === "done" that has been idle longer than the Agents settings
- * threshold and isn't already archived gets auto-archived. Mutates `conv` in
- * place and returns whether it changed (so callers can re-persist). */
-function maybeAutoArchive(conv: AgentConversation): boolean {
+/** Predicate: should this conversation be auto-archived right now? A
+ * conversation qualifies once it's status === "done", not already archived,
+ * the Agents settings idle threshold is enabled (non-null), and it has been
+ * idle longer than that threshold. Shared by the cold-start hydration pass
+ * and the live runtime sweep so both agree on one definition of "stale". */
+export function shouldAutoArchive(conv: AgentConversation): boolean {
   if (conv.archived) return false;
   if (conv.status !== "done") return false;
   const autoArchiveIdleMs = getAgentAutoArchiveIdleMs();
   if (autoArchiveIdleMs === null) return false;
   if (conv.updatedAt >= Date.now() - autoArchiveIdleMs) return false;
+  return true;
+}
+
+/** One-time pass over hydrated conversations: any conversation with
+ * status === "done" that has been idle longer than the Agents settings
+ * threshold and isn't already archived gets auto-archived. Mutates `conv` in
+ * place and returns whether it changed (so callers can re-persist). */
+function maybeAutoArchive(conv: AgentConversation): boolean {
+  if (!shouldAutoArchive(conv)) return false;
   conv.archived = true;
   return true;
+}
+
+/** Live runtime sweep: archives every currently-loaded conversation that
+ * qualifies under `shouldAutoArchive`. Unlike `maybeAutoArchive` (cold-start
+ * only, mutates a not-yet-in-store record), this runs against the live
+ * agentTaskStore and goes through `archiveConversation` so the archive
+ * bumps `updatedAt` and schedules a save the normal way — which also keeps
+ * an archived conversation from being swept again next run. */
+export function sweepAutoArchive(): void {
+  const { conversations, archiveConversation } = useAgentTaskStore.getState();
+  for (const conv of conversations) {
+    if (shouldAutoArchive(conv)) archiveConversation(conv.id);
+  }
 }
 
 /** Hydrate persisted API conversations on module load.

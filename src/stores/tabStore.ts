@@ -10,20 +10,16 @@ export type SessionStatus =
   | "done"
   | "error";
 
-const STATUS_LABELS: Record<SessionStatus, string[]> = {
-  idle: ["Idle"],
-  starting: ["Warming up..."],
-  thinking: ["Crunching...", "Imagining...", "Pondering...", "Brewing...", "Concocting..."],
-  running: ["Working...", "Crafting...", "Building..."],
-  waiting_approval: ["Needs approval"],
-  waiting_input: ["Waiting for input"],
-  done: ["Cogitated", "Brewed", "Baked", "Crafted"],
-  error: ["Error"],
+const STATUS_LABELS: Record<SessionStatus, string> = {
+  idle: "Idle",
+  starting: "Starting…",
+  thinking: "Thinking…",
+  running: "Working…",
+  waiting_approval: "Needs approval",
+  waiting_input: "Needs input",
+  done: "Done",
+  error: "Error",
 };
-
-function pickRandom(arr: string[]): string {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
 
 export interface SessionTab {
   id: string;
@@ -56,7 +52,7 @@ export const useTabStore = create<TabStore>((set, get) => ({
   activeTabId: null,
 
   addTab: (tab) => {
-    const statusLabel = pickRandom(STATUS_LABELS[tab.status]);
+    const statusLabel = STATUS_LABELS[tab.status];
     const newTab: SessionTab = { ...tab, statusLabel, durationMs: 0 };
     set((s) => ({
       tabs: [...s.tabs, newTab],
@@ -88,8 +84,8 @@ export const useTabStore = create<TabStore>((set, get) => ({
               status,
               statusLabel:
                 status === "done"
-                  ? `${pickRandom(STATUS_LABELS.done)} for ${formatDuration(t.durationMs)}`
-                  : pickRandom(STATUS_LABELS[status]),
+                  ? `Done in ${formatDuration(t.durationMs)}`
+                  : STATUS_LABELS[status],
             }
           : t
       ),
@@ -105,9 +101,9 @@ export const useTabStore = create<TabStore>((set, get) => ({
               durationMs,
               statusLabel:
                 t.status === "thinking" || t.status === "running"
-                  ? `${t.statusLabel.split("(")[0].trim()} (${formatDuration(durationMs)})`
+                  ? `${STATUS_LABELS[t.status]} (${formatDuration(durationMs)})`
                   : t.status === "done"
-                    ? `${pickRandom(STATUS_LABELS.done)} for ${formatDuration(durationMs)}`
+                    ? `Done in ${formatDuration(durationMs)}`
                     : t.statusLabel,
             }
           : t
