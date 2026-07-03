@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, lazy, Suspense } from "react";
-import { FolderOpen, Wrench, ArrowDown, ArrowUp, GitCommit, Bell, Mic, Search, Plus, ChevronDown, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
+import { FolderOpen, Wrench, Bell, Mic, Search, Plus, ChevronDown, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
@@ -9,13 +9,10 @@ import { useAppStore, isModuleView, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { getModulesSorted } from "@/modules/registry";
-import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
-import { CommitModal } from "@/components/workspace/CommitModal";
 import { Modal } from "@/components/ui/Modal";
-import { gitPull, gitPush, getGitBranch } from "@/lib/tauri";
 
 // Lazy-loaded so the markdown vendor chunk (react-markdown +
 // react-syntax-highlighter) leaves the entry chunk; only fetched when the
@@ -34,7 +31,6 @@ function basenameOfPath(p: string): string {
 export function Toolbar() {
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
   const projectPath = useLayoutStore((s) => s.projectPath);
-  const gitBranch = useGitInfo();
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [showNewFlight, setShowNewFlight] = useState(false);
@@ -269,9 +265,6 @@ export function Toolbar() {
 
         <div className="w-px h-4 bg-bg-border self-center" />
 
-        {/* Git actions */}
-        {gitBranch && <GitActionButtons />}
-
         {/* Open project folder */}
         {(() => {
           const folderTooltip = activeWorkspace
@@ -422,74 +415,5 @@ function FolderPickerFollowUp({
         </div>
       </div>
     </Modal>
-  );
-}
-
-function GitActionButtons() {
-  const projectPath = useLayoutStore((s) => s.projectPath);
-  const setGitBranch = useAppStore((s) => s.setGitBranch);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [showCommitModal, setShowCommitModal] = useState(false);
-
-  async function handleGitAction(action: "pull" | "push") {
-    if (busy) return;
-    setBusy(action);
-    try {
-      if (action === "pull") {
-        await gitPull(projectPath);
-      } else if (action === "push") {
-        await gitPush(projectPath);
-      }
-    } catch (err) {
-      console.error(`Git ${action} failed:`, err);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function refreshGitBranch() {
-    try {
-      const branch = await getGitBranch(projectPath);
-      setGitBranch(branch);
-    } catch {
-      // poll-based fallback handles the next refresh
-    }
-  }
-
-  return (
-    <>
-      <div className="flex items-center bg-bg-elevated rounded">
-        <button
-          onClick={() => handleGitAction("pull")}
-          disabled={busy !== null}
-          className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-          title="Git Pull — fetch and merge the latest commits from the upstream branch."
-        >
-          <ArrowDown size={12} />
-        </button>
-        <button
-          onClick={() => handleGitAction("push")}
-          disabled={busy !== null}
-          className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-          title="Git Push — publish local commits on the current branch to the remote."
-        >
-          <ArrowUp size={12} />
-        </button>
-        <button
-          onClick={() => setShowCommitModal(true)}
-          disabled={busy !== null}
-          className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-          title="Git Commit — commit any staged changes with a message you provide. Does not stage files."
-        >
-          <GitCommit size={12} />
-        </button>
-      </div>
-      <CommitModal
-        open={showCommitModal}
-        onClose={() => setShowCommitModal(false)}
-        projectPath={projectPath}
-        onCommitted={refreshGitBranch}
-      />
-    </>
   );
 }

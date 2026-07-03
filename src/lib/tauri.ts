@@ -578,6 +578,19 @@ export async function gitCreateBranch(
   return invoke<string>("git_create_branch", { projectPath, branchName, checkout });
 }
 
+/** P1-15: explicit `git add -- <paths>` for the per-file staging control
+ *  in GitDashboard. `git_commit` rejects `stage_all` commits, so this is
+ *  the only path that puts changes in the index through the in-app flow. */
+export async function gitStageFiles(projectPath: string, paths: string[]): Promise<string> {
+  return invoke<string>("git_stage_files", { projectPath, paths });
+}
+
+/** P1-15: explicit `git restore --staged -- <paths>` — the unstage
+ *  counterpart of `gitStageFiles`. */
+export async function gitUnstageFiles(projectPath: string, paths: string[]): Promise<string> {
+  return invoke<string>("git_unstage_files", { projectPath, paths });
+}
+
 /**
  * v0.8-15: read `git remote get-url origin` for a project path. Returns
  * the remote URL when configured, `null` when the repo has no `origin`
