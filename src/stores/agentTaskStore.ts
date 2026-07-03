@@ -446,10 +446,11 @@ export interface CreateApiConversationOptions {
 }
 
 interface AgentTaskStore {
-  // --- Composer state (shared by the launch composer and chat input) ---
+  // --- Composer state ---
+  // (Composer draft text lives in agentDraftStore — keyed per conversation,
+  // plus a launch slot — so no draft can bleed across composers.)
   selectedRepo: string | null;
   inputMode: AgentInputMode;
-  agentInputText: string;
 
   // --- Conversation state ---
   conversations: AgentConversation[];
@@ -457,7 +458,6 @@ interface AgentTaskStore {
 
   setSelectedRepo: (repo: string | null) => void;
   setInputMode: (mode: AgentInputMode) => void;
-  setAgentInputText: (text: string) => void;
 
   // --- Conversation actions ---
   createConversation: (agent: AgentCli, projectPath: string) => Promise<string>;
@@ -546,7 +546,6 @@ async function ensureApiAgentListeners(id: string): Promise<void> {
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   selectedRepo: null,
   inputMode: "build",
-  agentInputText: "",
 
   // --- Conversation state ---
   conversations: [],
@@ -554,7 +553,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
   setSelectedRepo: (repo) => set({ selectedRepo: repo }),
   setInputMode: (mode) => set({ inputMode: mode }),
-  setAgentInputText: (text) => set({ agentInputText: text }),
 
   // ─── Conversation actions ────────────────────────────────────────────
 

@@ -28,6 +28,10 @@ interface DropdownProps {
   align?: "left" | "right";
   searchable?: boolean;
   searchPlaceholder?: string;
+  /** Imperative "open now" channel: incrementing this counter opens the
+   * menu (e.g. the `/model` slash command targeting the header model
+   * dropdown). Leave undefined for purely click-driven dropdowns. */
+  openSignal?: number;
 }
 
 function stringifyChildren(node: ReactNode): string {
@@ -51,8 +55,13 @@ export function Dropdown({
   align = "left",
   searchable = false,
   searchPlaceholder = "Search…",
+  openSignal,
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (openSignal !== undefined && openSignal > 0) setOpen(true);
+  }, [openSignal]);
   const [filter, setFilter] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);

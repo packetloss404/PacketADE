@@ -3,6 +3,7 @@ import { Ban, Bot, Check, ChevronDown, Compass, FileCheck2, Hand, Zap } from "lu
 import { Tooltip } from "@/components/ui/Tooltip";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { deriveMode, MODE_ORDER, nextMode } from "./agentModeChipUtils";
+import { addPaneControlListener, OPEN_MODE_CHIP_EVENT } from "./paneEvents";
 
 /**
  * Cursor-style five-state agent mode. Derived from the underlying
@@ -109,6 +110,15 @@ export function AgentModeChip({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
+
+  // `/permissions` slash command → open this chip's fine-flags popover.
+  useEffect(
+    () =>
+      addPaneControlListener(OPEN_MODE_CHIP_EVENT, conversation.id, () =>
+        setOpen(true),
+      ),
+    [conversation.id],
+  );
 
   return (
     <div ref={rootRef} className="relative flex items-stretch">

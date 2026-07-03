@@ -9,8 +9,9 @@ import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
+import { LAUNCH_DRAFT_KEY, useAgentDraftStore } from "@/stores/agentDraftStore";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
-import { AgentInputArea } from "@/components/agents/AgentInputArea";
+import { Composer } from "@/components/agents/composer/Composer";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
 import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
@@ -28,7 +29,7 @@ import { isSshUri, parseSshUri } from "@/lib/ssh-uri";
 import type {
   AgentMode,
   ComposerMode,
-} from "@/components/agents/AgentInputArea";
+} from "@/components/agents/composer/utils";
 
 /**
  * Preference order for the initial auto-picked agent on a fresh Agents pane.
@@ -52,8 +53,6 @@ const DEFAULT_AGENT: AgentCli = "api-minimax";
 const DEFAULT_MODEL = "MiniMax-M3";
 
 export function AgentsView() {
-  const agentInputText = useAgentTaskStore((s) => s.agentInputText);
-  const setAgentInputText = useAgentTaskStore((s) => s.setAgentInputText);
   const selectedRepo = useAgentTaskStore((s) => s.selectedRepo);
   const selectedConversationId = useAgentTaskStore((s) => s.selectedConversationId);
   const selectConversation = useAgentTaskStore((s) => s.selectConversation);
@@ -168,8 +167,8 @@ export function AgentsView() {
   }, [handleNewAgent]);
 
   const handleLaunch = useCallback(
-    (attachments: ImageAttachment[]) => {
-      const text = agentInputText.trim();
+    (rawText: string, attachments: ImageAttachment[]) => {
+      const text = rawText.trim();
       if (!text) return false;
       if (!selectedRepo) return false;
 
@@ -312,7 +311,7 @@ export function AgentsView() {
         }
         // Clear the composer only once the launch actually succeeded, so a
         // failed launch keeps the user's typed prompt intact for a retry.
-        setAgentInputText("");
+        useAgentDraftStore.getState().clearDraft(LAUNCH_DRAFT_KEY);
         } catch (e) {
           setLaunchError(
             e instanceof Error ? e.message : "Failed to launch agent.",
@@ -322,11 +321,9 @@ export function AgentsView() {
       return true;
     },
     [
-      agentInputText,
       selectedRepo,
       selectedAgent,
       selectedModel,
-      setAgentInputText,
       setLaunchError,
       createApiConversation,
       agentMode,
@@ -364,7 +361,8 @@ export function AgentsView() {
           </ErrorBoundary>
         </>
       ) : (
-        <AgentInputArea
+        <Composer
+          variant="launch"
           textareaRef={textareaRef}
           selectedAgent={selectedAgent}
           onAgentChange={setSelectedAgent}
