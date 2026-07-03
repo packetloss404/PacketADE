@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, lazy, Suspense } from "react";
-import { FolderOpen, Wrench, ArrowDown, ArrowUp, GitCommit, Bell, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
+import { FolderOpen, Wrench, ArrowDown, ArrowUp, GitCommit, Bell, Mic, Search, Plus, ChevronDown, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
@@ -12,7 +12,6 @@ import { getModulesSorted } from "@/modules/registry";
 import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { NewAgentModal } from "@/components/workspace/NewAgentModal";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
 import { CommitModal } from "@/components/workspace/CommitModal";
 import { Modal } from "@/components/ui/Modal";
@@ -39,7 +38,6 @@ export function Toolbar() {
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [showNewFlight, setShowNewFlight] = useState(false);
-  const [showNewAgent, setShowNewAgent] = useState(false);
   const [showNewIssue, setShowNewIssue] = useState(false);
   // v0.8.8: when no workspace is active, picking a folder pops a small
   // disambiguation dialog (create-new vs. set-default-only). Holds the
@@ -101,15 +99,6 @@ export function Toolbar() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showNewMenu]);
-
-  // Global event hook: CommandPalette's "New Agent" entry dispatches
-  // `packetade:open-new-agent` so it routes through the same modal as
-  // the Toolbar's "+ New → New Agent" item without lifting modal state.
-  useEffect(() => {
-    const open = () => setShowNewAgent(true);
-    window.addEventListener("packetade:open-new-agent", open);
-    return () => window.removeEventListener("packetade:open-new-agent", open);
-  }, []);
 
   async function handleOpenFolder() {
     // v0.8.8: smart picker. With an active workspace, the title makes it
@@ -187,11 +176,6 @@ export function Toolbar() {
 
           {showNewMenu && (
             <div className="absolute top-full left-0 mt-1 w-52 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
-              <DropdownItem
-                icon={<Zap size={12} className="text-accent-green" />}
-                label="New Agent"
-                onClick={() => { setShowNewAgent(true); setShowNewMenu(false); }}
-              />
               <DropdownItem
                 icon={<Target size={12} className="text-accent-green" />}
                 label="New Flight"
@@ -345,9 +329,6 @@ export function Toolbar() {
       </div>
 
       {/* Modals */}
-      {showNewAgent && (
-        <NewAgentModal onClose={() => setShowNewAgent(false)} />
-      )}
       {showNewFlight && (
         <Suspense fallback={null}>
           <NewFlightModal onClose={() => setShowNewFlight(false)} />
