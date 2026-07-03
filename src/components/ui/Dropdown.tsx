@@ -145,7 +145,7 @@ export function Dropdown({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+        className="flex items-center gap-1 px-2 py-1 text-ui text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
       >
         {trigger}
         <ChevronDown
@@ -167,13 +167,13 @@ export function Dropdown({
                   onChange={(e) => setFilter(e.target.value)}
                   onKeyDown={handleSearchKeyDown}
                   placeholder={searchPlaceholder}
-                  className="w-full bg-bg-primary border border-bg-border text-xs px-2 py-1 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green rounded"
+                  className="w-full bg-bg-primary border border-bg-border text-ui px-2 py-1 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green rounded"
                 />
               </div>
             )}
             {children}
             {searchable && normalizedFilter !== "" && visibleItemCount === 0 && (
-              <div className="text-[11px] text-text-muted px-2 py-1">
+              <div className="text-ui text-text-muted px-2 py-1">
                 No matches
               </div>
             )}
@@ -205,7 +205,7 @@ export function DropdownItem({ onClick, children }: DropdownItemProps) {
         onClick?.();
         close();
       }}
-      className="w-full text-left px-3 py-1.5 text-xs text-text-primary hover:bg-bg-hover transition-colors"
+      className="w-full text-left px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors"
     >
       {children}
     </button>

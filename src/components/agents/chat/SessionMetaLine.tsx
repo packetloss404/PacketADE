@@ -96,7 +96,7 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
   }, [isApi, conversation.messages, conversation.model]);
 
   return (
-    <div className="flex items-center gap-3 px-3 py-1 bg-bg-primary border-b border-line-soft text-[10px] text-text-muted shrink-0 overflow-hidden">
+    <div className="flex items-center gap-3 px-3 py-1 bg-bg-primary border-b border-line-soft text-meta text-text-muted shrink-0 overflow-hidden">
       {/* Project pill */}
       <Tooltip content={projectPath || "No project"} side="bottom">
         <span className="flex items-center gap-1.5 shrink-0 cursor-default">

@@ -36,7 +36,7 @@ export function ProfilePicker({
       }
     >
       {profiles.length === 0 ? (
-        <div className="px-3 py-1.5 text-[10px] text-text-muted">
+        <div className="px-3 py-1.5 text-ui text-text-muted">
           No profiles
         </div>
       ) : (
@@ -62,7 +62,7 @@ export function ProfilePicker({
               >
                 {p.name}
               </span>
-              <span className="text-text-muted text-[9px] ml-1 truncate max-w-[200px]">
+              <span className="text-text-muted text-meta ml-1 truncate max-w-[200px]">
                 {p.description}
               </span>
               {selectedProfileId === p.id && (

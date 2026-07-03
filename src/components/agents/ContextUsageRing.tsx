@@ -113,7 +113,7 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
       tabIndex={0}
       role="img"
       aria-label={`Context usage ${pct} percent, ${formatTokens(inContext)} of ${formatTokens(limit)}`}
-      className="relative inline-flex items-center gap-1 text-[10px] text-text-muted font-mono cursor-default rounded outline-none focus-visible:ring-1 focus-visible:ring-accent-line"
+      className="relative inline-flex items-center gap-1 text-meta text-text-muted font-mono cursor-default rounded outline-none focus-visible:ring-1 focus-visible:ring-accent-line"
       onMouseEnter={() => {
         if (hoverTimerRef.current !== null) {
           window.clearTimeout(hoverTimerRef.current);
@@ -164,7 +164,7 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
 
       {hover && (
         <div
-          className="absolute right-0 top-full mt-1 z-30 min-w-[180px] rounded border border-bg-border bg-bg-secondary px-2 py-1.5 shadow-md text-[10px] text-text-secondary"
+          className="absolute right-0 top-full mt-1 z-30 min-w-[180px] rounded border border-bg-border bg-bg-secondary px-2 py-1.5 shadow-md text-meta text-text-secondary"
           role="tooltip"
         >
           <div className="text-text-primary font-medium mb-1">
@@ -203,7 +203,7 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
               </span>
             </div>
           )}
-          <div className="border-t border-bg-border mt-1 pt-1 text-[9px] text-text-muted leading-snug">
+          <div className="border-t border-bg-border mt-1 pt-1 text-meta text-text-muted leading-snug">
             Context = input + cache resent on the latest turn. Output and
             reasoning are billed separately and don't sit in the window.
           </div>

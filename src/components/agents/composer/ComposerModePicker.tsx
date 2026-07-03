@@ -51,7 +51,7 @@ export function ComposerModePicker({ value, onChange }: ComposerModePickerProps)
                 type="button"
                 disabled={isDisabled}
                 onClick={() => !isDisabled && onChange?.(opt.mode)}
-                className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] transition-colors motion-reduce:transition-none ${
+                className={`flex items-center gap-1 px-1.5 py-0.5 text-ui transition-colors motion-reduce:transition-none ${
                   isDisabled
                     ? "text-text-faint opacity-50 cursor-not-allowed"
                     : isActive
@@ -66,7 +66,7 @@ export function ComposerModePicker({ value, onChange }: ComposerModePickerProps)
           );
         })}
       </div>
-      <span className="text-[9px] text-text-muted mt-0.5 leading-tight">
+      <span className="text-meta text-text-muted mt-0.5 leading-tight">
         Persists as default for new conversations.
       </span>
     </div>

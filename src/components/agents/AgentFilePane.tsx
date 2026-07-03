@@ -324,7 +324,7 @@ export function AgentFilePane({
           </button>
         </Tooltip>
         <div className="flex-1 min-w-0 overflow-x-auto">
-          <div className="flex items-center gap-0.5 text-[11px] font-mono whitespace-nowrap">
+          <div className="flex items-center gap-0.5 text-ui font-mono whitespace-nowrap">
             {segments.map((seg, i) => {
               const isLast = i === segments.length - 1;
               return (
@@ -354,11 +354,11 @@ export function AgentFilePane({
       {/* Body */}
       <div ref={listRef} className="flex-1 overflow-y-auto relative">
         {error && (
-          <div className="flex items-start gap-2 m-3 px-2 py-2 bg-accent-red/10 border border-accent-red/30 rounded text-[11px] text-accent-red">
+          <div className="flex items-start gap-2 m-3 px-2 py-2 bg-accent-red/10 border border-accent-red/30 rounded text-ui text-accent-red">
             <AlertCircle size={12} className="mt-0.5 shrink-0" />
             <div className="min-w-0">
               <div className="font-medium">Failed to list directory</div>
-              <div className="text-[10px] text-accent-red/80 break-all mt-0.5">
+              <div className="text-meta text-accent-red/80 break-all mt-0.5">
                 {error}
               </div>
             </div>
@@ -368,7 +368,7 @@ export function AgentFilePane({
         {!error && loading && entries.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-2">
             <Spinner size={20} className="text-text-muted opacity-40" />
-            <span className="text-[11px] text-text-muted">Loading…</span>
+            <span className="text-ui text-text-muted">Loading…</span>
           </div>
         )}
 
@@ -393,7 +393,7 @@ export function AgentFilePane({
                     openEntry(entry);
                   }}
                   onMouseEnter={() => setHighlightedIdx(idx)}
-                  className={`w-full flex items-center gap-2 px-3 py-1 text-left text-[11px] border-l-2 transition-colors ${
+                  className={`w-full flex items-center gap-2 px-3 py-1 text-left text-ui border-l-2 transition-colors ${
                     isSelected
                       ? "bg-accent-purple/15 border-accent-purple text-text-primary"
                       : isHighlighted
@@ -412,7 +412,7 @@ export function AgentFilePane({
                     {entry.name}
                   </span>
                   {!entry.is_dir && (
-                    <span className="text-[10px] text-text-muted shrink-0 tabular-nums">
+                    <span className="text-meta text-text-muted shrink-0 tabular-nums">
                       {formatSize(entry.size)}
                     </span>
                   )}
@@ -420,7 +420,7 @@ export function AgentFilePane({
               );
             })}
             {truncated > 0 && (
-              <div className="px-3 py-1.5 text-[10px] text-text-muted italic">
+              <div className="px-3 py-1.5 text-meta text-text-muted italic">
                 + {truncated} more (showing first {MAX_ENTRIES})
               </div>
             )}
@@ -430,7 +430,7 @@ export function AgentFilePane({
         {/* Copy toast */}
         {copiedPath && (
           <div
-            className="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-1 bg-accent-green/15 border border-accent-green/40 rounded text-[10px] text-accent-green shadow-md pointer-events-none"
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-1 bg-accent-green/15 border border-accent-green/40 rounded text-meta text-accent-green shadow-md pointer-events-none"
             role="status"
           >
             copied!

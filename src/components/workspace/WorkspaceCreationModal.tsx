@@ -409,7 +409,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+            className="px-3 py-1.5 text-ui text-text-secondary hover:text-text-primary transition-colors"
           >
             Cancel
           </button>
@@ -417,7 +417,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             onClick={handleCreate}
             disabled={saveBlockedReason !== null}
             title={saveBlockedReason ?? undefined}
-            className="px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
+            className="px-4 py-1.5 text-ui bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
           >
             Create Workspace
           </button>
@@ -429,7 +429,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             selection and (if empty) the name, so most launches never touch
             anything below. */}
         <div>
-          <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">
+          <label className="text-meta text-text-muted block mb-2 uppercase tracking-wider">
             <Zap size={10} className="inline mr-1 -mt-px" />
             Templates
           </label>
@@ -448,7 +448,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                   onClick={() => applyTemplate(tpl)}
                   disabled={disabled}
                   title={unavailableLabels.length > 0 ? `Unavailable: ${unavailableLabels.join(", ")}` : tpl.description}
-                  className={`flex flex-col items-start px-3 py-2 text-[11px] rounded border transition-colors ${
+                  className={`flex flex-col items-start px-3 py-2 text-ui rounded border transition-colors ${
                     isActive
                       ? "bg-accent-green/15 border-accent-green/40"
                       : "bg-bg-primary border-bg-border hover:border-text-muted/30"
@@ -457,8 +457,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                   <span className={`font-medium ${isActive ? "text-accent-green" : "text-text-primary"}`}>
                     {tpl.label}
                   </span>
-                  <span className="text-[10px] text-text-muted mt-0.5">{tpl.description}</span>
-                  <span className="text-[10px] text-text-muted mt-1 opacity-70">
+                  <span className="text-meta text-text-muted mt-0.5">{tpl.description}</span>
+                  <span className="text-meta text-text-muted mt-1 opacity-70">
                     {agentLabels.join(" + ")}
                   </span>
                 </button>
@@ -469,7 +469,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
         {/* Name */}
         <div>
-          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Workspace Name</label>
+          <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Workspace Name</label>
           <input
             type="text"
             value={name}
@@ -484,7 +484,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             Advanced since it's the less-common path. */}
         {locationMode === "local" && (
           <div ref={projectDropdownRef}>
-            <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Project</label>
+            <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Project</label>
             <div className="flex items-stretch gap-1.5">
               <div className="relative flex-1 min-w-0">
                 <button
@@ -501,7 +501,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                     }
                     setProjectDropdownOpen(!projectDropdownOpen);
                   }}
-                  className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
+                  className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-ui text-left hover:border-text-muted/30 transition-colors"
                 >
                   <FolderOpen size={12} className="text-accent-green flex-shrink-0" />
                   {selectedProjectPath ? (
@@ -509,7 +509,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                       <span className="flex-1 truncate text-text-primary" title={selectedProjectPath}>
                         {selectedProjectPath.split(/[\\/]/).pop()}
                       </span>
-                      <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={selectedProjectPath}>
+                      <span className="text-meta text-text-muted truncate max-w-[200px]" title={selectedProjectPath}>
                         {selectedProjectPath}
                       </span>
                     </>
@@ -537,8 +537,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                         }`}
                       >
                         <FolderOpen size={11} className={p === selectedProjectPath ? "text-accent-green" : "text-text-muted"} />
-                        <span className="flex-1 truncate text-[11px] text-text-primary">{p.split(/[\\/]/).pop()}</span>
-                        <span className="text-[10px] text-text-muted truncate max-w-[180px]">{p}</span>
+                        <span className="flex-1 truncate text-ui text-text-primary">{p.split(/[\\/]/).pop()}</span>
+                        <span className="text-meta text-text-muted truncate max-w-[180px]">{p}</span>
                         {p === selectedProjectPath && <Check size={10} className="text-accent-green flex-shrink-0" />}
                       </button>
                     ))}
@@ -552,7 +552,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                 type="button"
                 onClick={handlePickProjectFolder}
                 title="Pick folder from disk"
-                className="flex items-center gap-1 px-2.5 text-[10px] text-text-muted hover:text-text-primary bg-bg-primary border border-bg-border rounded hover:border-text-muted/30 transition-colors"
+                className="flex items-center gap-1 px-2.5 text-ui text-text-muted hover:text-text-primary bg-bg-primary border border-bg-border rounded hover:border-text-muted/30 transition-colors"
               >
                 <FolderOpen size={11} />
                 Browse
@@ -573,12 +573,12 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
           <div className="flex w-full flex-col gap-4">
             {/* Location: Local vs Remote (SSH) */}
             <div>
-              <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Location</label>
+              <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Location</label>
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setLocationMode("local")}
-                  className={`flex items-center gap-2 px-3 py-2 text-[11px] rounded border transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-2 text-ui rounded border transition-colors ${
                     locationMode === "local"
                       ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
                       : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
@@ -587,13 +587,13 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                   <FolderOpen size={12} />
                   <span className="flex flex-col items-start">
                     <span>Local</span>
-                    <span className="text-[10px] text-text-muted">This machine</span>
+                    <span className="text-meta text-text-muted">This machine</span>
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setLocationMode("remote")}
-                  className={`flex items-center gap-2 px-3 py-2 text-[11px] rounded border transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-2 text-ui rounded border transition-colors ${
                     locationMode === "remote"
                       ? "bg-accent-blue/15 border-accent-blue/40 text-accent-blue font-medium"
                       : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
@@ -602,7 +602,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                   <Server size={12} />
                   <span className="flex flex-col items-start">
                     <span>Remote (SSH)</span>
-                    <span className="text-[10px] text-text-muted">Saved server</span>
+                    <span className="text-meta text-text-muted">Saved server</span>
                   </span>
                 </button>
               </div>
@@ -612,30 +612,30 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             {locationMode === "remote" && (
               <div className="flex flex-col gap-3">
                 {servers.length === 0 ? (
-                  <div className="rounded border border-bg-border bg-bg-primary px-3 py-3 text-[11px] text-text-secondary">
+                  <div className="rounded border border-bg-border bg-bg-primary px-3 py-3 text-ui text-text-secondary">
                     <div className="flex items-center gap-2 mb-1.5">
                       <Server size={12} className="text-text-muted" />
                       <span className="font-medium text-text-primary">No servers configured</span>
                     </div>
-                    <p className="text-text-muted text-[10px] mb-2">
+                    <p className="text-text-muted text-meta mb-2">
                       Add a server in the Tools view to use it as a remote workspace target.
                     </p>
                     <button
                       type="button"
                       onClick={handleOpenServersView}
-                      className="text-[11px] text-accent-blue hover:underline"
+                      className="text-ui text-accent-blue hover:underline"
                     >
                       Open Servers settings →
                     </button>
                   </div>
                 ) : (
                   <div ref={serverDropdownRef}>
-                    <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Server</label>
+                    <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Server</label>
                     <div className="relative">
                       <button
                         type="button"
                         onClick={() => setServerDropdownOpen(!serverDropdownOpen)}
-                        className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
+                        className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-ui text-left hover:border-text-muted/30 transition-colors"
                       >
                         <Server size={12} className="text-accent-blue flex-shrink-0" />
                         {server ? (
@@ -643,7 +643,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                             <span className="flex-1 truncate text-text-primary" title={server.name}>
                               {server.name}
                             </span>
-                            <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={`${server.username}@${server.host}:${server.port}`}>
+                            <span className="text-meta text-text-muted truncate max-w-[200px]" title={`${server.username}@${server.host}:${server.port}`}>
                               {server.username}@{server.host}:{server.port}
                             </span>
                           </>
@@ -673,8 +673,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                               }`}
                             >
                               <Server size={11} className={srv.id === serverId ? "text-accent-blue" : "text-text-muted"} />
-                              <span className="flex-1 truncate text-[11px] text-text-primary">{srv.name}</span>
-                              <span className="text-[10px] text-text-muted truncate max-w-[180px]">
+                              <span className="flex-1 truncate text-ui text-text-primary">{srv.name}</span>
+                              <span className="text-meta text-text-muted truncate max-w-[180px]">
                                 {srv.username}@{srv.host}:{srv.port}
                               </span>
                               {srv.id === serverId && <Check size={10} className="text-accent-blue flex-shrink-0" />}
@@ -688,7 +688,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
                 {/* Host-key warning */}
                 {server && !server.hostFingerprint && (
-                  <div className="rounded border border-accent-amber/30 bg-accent-amber/5 px-3 py-2 text-[11px] text-accent-amber flex items-start gap-2">
+                  <div className="rounded border border-accent-amber/30 bg-accent-amber/5 px-3 py-2 text-ui text-accent-amber flex items-start gap-2">
                     <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <div className="font-medium">Host key not verified.</div>
@@ -698,7 +698,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                       <button
                         type="button"
                         onClick={handleOpenServersView}
-                        className="mt-1 text-[11px] underline hover:text-accent-amber"
+                        className="mt-1 text-ui underline hover:text-accent-amber"
                       >
                         Open Servers settings →
                       </button>
@@ -709,7 +709,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                 {/* Remote project path input */}
                 {server && server.hostFingerprint && (
                   <div>
-                    <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">
+                    <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">
                       Remote Project Path
                     </label>
                     <input
@@ -727,9 +727,9 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
             {/* Agent Selection — multi-toggle buttons */}
             <div>
-              <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">Agents</label>
+              <label className="text-meta text-text-muted block mb-2 uppercase tracking-wider">Agents</label>
               {detecting && (
-                <p className="flex items-center gap-1 text-[10px] text-text-muted italic mb-2">
+                <p className="flex items-center gap-1 text-meta text-text-muted italic mb-2">
                   <Loader2 size={10} className="animate-spin" />
                   Checking CLI availability…
                 </p>
@@ -746,7 +746,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                         onClick={() => toggleAgent(slot.id)}
                         disabled={!installed}
                         title={installed ? slot.label : `${slot.label} not found — click the install link to set it up`}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded border transition-colors ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-ui rounded border transition-colors ${
                           isSelected
                             ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
                             : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
@@ -765,7 +765,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="text-[10px] text-accent-amber underline opacity-80 hover:opacity-100"
+                          className="text-meta text-accent-amber underline opacity-80 hover:opacity-100"
                           title={hint.label}
                         >
                           install
@@ -788,12 +788,12 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                     className="w-3 h-3 rounded border-bg-border accent-accent-amber"
                   />
                   <ShieldOff size={11} className={bypassPermissions ? "text-accent-amber" : "text-text-muted"} />
-                  <span className={`text-[11px] ${bypassPermissions ? "text-accent-amber" : "text-text-secondary"}`}>
+                  <span className={`text-ui ${bypassPermissions ? "text-accent-amber" : "text-text-secondary"}`}>
                     Bypass permissions
                   </span>
                 </label>
                 {bypassPermissions && selected.has("opencode") && (
-                  <span className="text-[10px] text-text-muted ml-5">
+                  <span className="text-meta text-text-muted ml-5">
                     Not applied to OpenCode — no equivalent CLI flag in current release. Approve tools in the TUI or set rules in opencode.json.
                   </span>
                 )}
@@ -808,10 +808,10 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
               if (models.length === 0) {
                 return (
                   <div key={slot.id} className="opacity-50">
-                    <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+                    <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
                       {slot.label} Model
                     </label>
-                    <span className="text-[11px] text-text-muted italic">Configured inside {slot.label}</span>
+                    <span className="text-ui text-text-muted italic">Configured inside {slot.label}</span>
                   </div>
                 );
               }
@@ -819,7 +819,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
               const currentModel = modelOverrides[slot.id] ?? null;
               return (
                 <div key={slot.id}>
-                  <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+                  <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
                     {slot.label} Model
                   </label>
                   <div className="flex flex-wrap gap-1.5">
@@ -827,7 +827,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                       <button
                         key={m.label}
                         onClick={() => setModelForAgent(slot.id, m.value)}
-                        className={`px-2.5 py-1 text-[11px] rounded border transition-colors ${
+                        className={`px-2.5 py-1 text-ui rounded border transition-colors ${
                           currentModel === m.value
                             ? "bg-accent-amber/15 border-accent-amber/40 text-accent-amber font-medium"
                             : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
@@ -849,7 +849,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
               const currentEffort = effortOverrides[slot.id] ?? null;
               return (
                 <div key={`effort-${slot.id}`}>
-                  <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+                  <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
                     {slot.label} Effort
                   </label>
                   <div className="flex flex-wrap gap-1.5">
@@ -857,7 +857,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                       <button
                         key={e.value}
                         onClick={() => setEffortOverrides((prev) => ({ ...prev, [slot.id]: e.value }))}
-                        className={`px-2.5 py-1 text-[11px] rounded border transition-colors ${
+                        className={`px-2.5 py-1 text-ui rounded border transition-colors ${
                           currentEffort === e.value
                             ? "bg-accent-purple/15 border-accent-purple/40 text-accent-purple font-medium"
                             : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
@@ -879,7 +879,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             {/* Prompt */}
             {selectedAiAgents.length > 0 && (
               <div>
-                <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+                <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
                   Initial Prompt
                 </label>
                 <textarea
@@ -889,7 +889,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                   placeholder="Describe the task for all agents..."
                   className="w-full bg-bg-primary border border-bg-border rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-amber resize-none"
                 />
-                <p className="text-[10px] text-text-muted mt-1">
+                <p className="text-meta text-text-muted mt-1">
                   Ctrl+Enter to create
                 </p>
               </div>
@@ -898,7 +898,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             {/* Grid Preview */}
             {preview && (
               <div>
-                <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">Layout Preview</label>
+                <label className="text-meta text-text-muted block mb-2 uppercase tracking-wider">Layout Preview</label>
                 <div
                   className="gap-1 max-w-[200px]"
                   style={{
@@ -913,7 +913,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                     return (
                       <div
                         key={`${cell.row}-${cell.col}`}
-                        className={`h-10 rounded flex items-center justify-center text-[9px] ${
+                        className={`h-10 rounded flex items-center justify-center text-meta ${
                           agent
                             ? "bg-accent-green/10 text-accent-green border border-accent-green/20"
                             : "border border-dashed border-bg-border text-text-muted"
@@ -940,14 +940,14 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   if (state.kind === "idle") {
     return (
-      <p className="text-[10px] text-text-muted mt-1">
+      <p className="text-meta text-text-muted mt-1">
         Type a path to verify it exists on the host.
       </p>
     );
   }
   if (state.kind === "probing") {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-text-muted mt-1">
+      <p className="flex items-center gap-1 text-meta text-text-muted mt-1">
         <Loader2 size={10} className="animate-spin" />
         Checking remote path…
       </p>
@@ -955,7 +955,7 @@ function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   }
   if (state.kind === "error") {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-accent-red mt-1">
+      <p className="flex items-center gap-1 text-meta text-accent-red mt-1">
         <XCircle size={10} />
         {state.message}
       </p>
@@ -965,7 +965,7 @@ function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   const { exists, isDirectory, isGitRepo } = state.result;
   if (!exists) {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-accent-amber mt-1">
+      <p className="flex items-center gap-1 text-meta text-accent-amber mt-1">
         <AlertTriangle size={10} />
         Path does not exist — it will be created when the workspace starts.
       </p>
@@ -973,7 +973,7 @@ function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   }
   if (!isDirectory) {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-accent-red mt-1">
+      <p className="flex items-center gap-1 text-meta text-accent-red mt-1">
         <XCircle size={10} />
         Path is a file, not a directory.
       </p>
@@ -981,14 +981,14 @@ function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   }
   if (isGitRepo) {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-accent-green mt-1">
+      <p className="flex items-center gap-1 text-meta text-accent-green mt-1">
         <GitBranch size={10} />
         Git repository detected.
       </p>
     );
   }
   return (
-    <p className="flex items-center gap-1 text-[10px] text-accent-green mt-1">
+    <p className="flex items-center gap-1 text-meta text-accent-green mt-1">
       <CheckCircle2 size={10} />
       Directory exists.
     </p>
@@ -1003,14 +1003,14 @@ function TemplatePicker({ onSelect }: { onSelect: (content: string) => void }) {
 
   return (
     <div>
-      <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+      <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
         Prompt Template
       </label>
       <div className="relative">
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] bg-bg-primary border border-bg-border rounded w-full text-left text-text-secondary hover:border-text-muted/30 transition-colors"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-ui bg-bg-primary border border-bg-border rounded w-full text-left text-text-secondary hover:border-text-muted/30 transition-colors"
         >
           <FileText size={11} className="text-accent-amber flex-shrink-0" />
           <span className="flex-1 truncate">Select a template...</span>
@@ -1026,8 +1026,8 @@ function TemplatePicker({ onSelect }: { onSelect: (content: string) => void }) {
                 }}
                 className="flex flex-col w-full px-3 py-2 text-left hover:bg-bg-hover transition-colors"
               >
-                <span className="text-[11px] text-text-primary">{t.name}</span>
-                <span className="text-[10px] text-text-muted truncate">
+                <span className="text-ui text-text-primary">{t.name}</span>
+                <span className="text-meta text-text-muted truncate">
                   {t.content.slice(0, 80)}
                 </span>
               </button>

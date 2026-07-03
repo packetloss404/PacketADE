@@ -78,7 +78,7 @@ export function PinnedApprovalBanner() {
       className="fixed bottom-8 right-4 z-40 flex items-center gap-2 max-w-[380px] px-3 py-2 rounded border border-accent-amber/50 bg-bg-elevated shadow-lg animate-[welcomeFadeIn_150ms_ease-out] motion-reduce:animate-none"
     >
       <ShieldAlert size={14} className="text-accent-amber shrink-0" />
-      <span className="min-w-0 flex-1 text-[11px] text-text-primary">
+      <span className="min-w-0 flex-1 text-ui text-text-primary">
         <span className="font-medium">
           {totalCount} approval{totalCount === 1 ? "" : "s"} waiting
         </span>{" "}
@@ -90,7 +90,7 @@ export function PinnedApprovalBanner() {
       <button
         type="button"
         onClick={jump}
-        className="shrink-0 text-[11px] px-2 py-1 rounded bg-accent-amber/15 hover:bg-accent-amber/25 text-accent-amber font-medium transition-colors"
+        className="shrink-0 text-ui px-2 py-1 rounded bg-accent-amber/15 hover:bg-accent-amber/25 text-accent-amber font-medium transition-colors"
       >
         Review
       </button>

@@ -140,7 +140,7 @@ function ExplorationRollupCardImpl({ toolCalls, isStreaming }: ExplorationRollup
         : verb;
 
   return (
-    <div className="bg-bg-hover rounded text-[10px] text-text-muted border border-bg-border">
+    <div className="bg-bg-hover rounded text-ui text-text-muted border border-bg-border">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -154,9 +154,9 @@ function ExplorationRollupCardImpl({ toolCalls, isStreaming }: ExplorationRollup
           }`}
         />
         <Compass size={12} className="text-text-muted shrink-0" />
-        <span className="text-[11px] text-text-secondary truncate flex-1">{summary}</span>
+        <span className="text-ui text-text-secondary truncate flex-1">{summary}</span>
         {stats.failed > 0 && (
-          <span className="text-[11px] text-accent-red shrink-0">
+          <span className="text-ui text-accent-red shrink-0">
             · {stats.failed} failed
           </span>
         )}
@@ -165,13 +165,13 @@ function ExplorationRollupCardImpl({ toolCalls, isStreaming }: ExplorationRollup
         <div className="px-2 pb-1.5 border-t border-bg-border flex flex-col gap-0.5 max-h-64 overflow-y-auto">
           {stats.fileReads.length > 0 && (
             <div className="pt-1">
-              <div className="text-[9px] uppercase tracking-wide text-text-faint mb-0.5">
+              <div className="text-meta uppercase tracking-wide text-text-faint mb-0.5">
                 Read
               </div>
               {stats.fileReads.map((r) => (
                 <div
                   key={r.id}
-                  className={`flex items-center gap-1 font-mono text-[10px] truncate ${
+                  className={`flex items-center gap-1 font-mono text-meta truncate ${
                     r.failed ? "text-accent-red" : "text-text-secondary"
                   }`}
                   title={r.path}
@@ -184,13 +184,13 @@ function ExplorationRollupCardImpl({ toolCalls, isStreaming }: ExplorationRollup
           )}
           {stats.searches.length > 0 && (
             <div className="pt-1">
-              <div className="text-[9px] uppercase tracking-wide text-text-faint mb-0.5">
+              <div className="text-meta uppercase tracking-wide text-text-faint mb-0.5">
                 Searched
               </div>
               {stats.searches.map((s) => (
                 <div
                   key={s.id}
-                  className={`flex items-center gap-1 font-mono text-[10px] truncate ${
+                  className={`flex items-center gap-1 font-mono text-meta truncate ${
                     s.failed ? "text-accent-red" : "text-text-secondary"
                   }`}
                   title={s.query}
@@ -203,13 +203,13 @@ function ExplorationRollupCardImpl({ toolCalls, isStreaming }: ExplorationRollup
           )}
           {stats.listings.length > 0 && (
             <div className="pt-1">
-              <div className="text-[9px] uppercase tracking-wide text-text-faint mb-0.5">
+              <div className="text-meta uppercase tracking-wide text-text-faint mb-0.5">
                 Listed
               </div>
               {stats.listings.map((l) => (
                 <div
                   key={l.id}
-                  className={`flex items-center gap-1 font-mono text-[10px] truncate ${
+                  className={`flex items-center gap-1 font-mono text-meta truncate ${
                     l.failed ? "text-accent-red" : "text-text-secondary"
                   }`}
                   title={l.path}

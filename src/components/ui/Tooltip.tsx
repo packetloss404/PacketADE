@@ -115,7 +115,7 @@ export function Tooltip({ content, children, side = "top", delay = 400 }: Toolti
           <span
             id={tipId}
             role="tooltip"
-            className={`pointer-events-none fixed z-[60] max-w-xs whitespace-normal bg-bg-elevated border border-line-strong text-text-secondary text-[11px] px-2 py-1 rounded shadow-lg transition-opacity motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
+            className={`pointer-events-none fixed z-[60] max-w-xs whitespace-normal bg-bg-elevated border border-line-strong text-text-secondary text-ui px-2 py-1 rounded shadow-lg transition-opacity motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
             style={{ left: coords.left, top: coords.top, transform: TRANSFORM[side] }}
           >
             {content}

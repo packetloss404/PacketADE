@@ -140,7 +140,7 @@ export function AgentModeChip({
         <button
           type="button"
           onClick={onCycle}
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-l border text-[10px] transition-colors motion-reduce:transition-none ${meta.color} ${meta.border} hover:brightness-110`}
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-l border text-ui transition-colors motion-reduce:transition-none ${meta.color} ${meta.border} hover:brightness-110`}
         >
           <Icon size={11} />
           {meta.label}
@@ -192,10 +192,10 @@ export function AgentModeChip({
                   className={`mt-0.5 shrink-0 ${selected ? "text-text-primary" : "text-text-muted"}`}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] text-text-primary">
+                  <span className="block text-ui text-text-primary">
                     {rowMeta.label}
                   </span>
-                  <span className="block text-[10px] text-text-muted">
+                  <span className="block text-meta text-text-muted">
                     {rowMeta.description}
                   </span>
                 </span>
@@ -218,15 +218,15 @@ export function AgentModeChip({
               className={`mt-0.5 shrink-0 ${approveWrites ? "text-accent-amber" : "text-text-muted"}`}
             />
             <span className="min-w-0 flex-1">
-              <span className="block text-[11px] text-text-primary">
+              <span className="block text-ui text-text-primary">
                 Approve writes
               </span>
-              <span className="block text-[10px] text-text-muted">
+              <span className="block text-meta text-text-muted">
                 Confirm each file write before it lands
               </span>
             </span>
             <span
-              className={`mt-0.5 shrink-0 text-[10px] ${approveWrites ? "text-accent-amber" : "text-text-muted"}`}
+              className={`mt-0.5 shrink-0 text-meta ${approveWrites ? "text-accent-amber" : "text-text-muted"}`}
             >
               {approveWrites ? "On" : "Off"}
             </span>

@@ -310,7 +310,7 @@ export interface DiffRowViewProps {
 export function DiffRowView({ row, language, children }: DiffRowViewProps) {
   return (
     <div
-      className={`group relative flex w-max min-w-full items-start text-[11px] font-mono leading-[1.5] text-text-primary ${TINT[row.kind]}`}
+      className={`group relative flex w-max min-w-full items-start text-ui font-mono leading-[1.5] text-text-primary ${TINT[row.kind]}`}
     >
       <span className="w-10 shrink-0 select-none pr-2 text-right text-text-faint">
         {row.oldLine ?? ""}

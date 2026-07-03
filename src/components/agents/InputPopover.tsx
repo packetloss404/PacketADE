@@ -61,19 +61,19 @@ export function InputPopover({
   return (
     <div ref={containerRef} className={classes} role="listbox">
       {loading ? (
-        <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-text-muted">
+        <div className="flex items-center gap-2 px-2 py-1.5 text-ui text-text-muted">
           <Spinner size={12} />
           Searching…
         </div>
       ) : items.length === 0 ? (
-        <div className="px-2 py-1.5 text-[11px] text-text-secondary italic">
+        <div className="px-2 py-1.5 text-ui text-text-secondary italic">
           {emptyLabel}
         </div>
       ) : (
         items.map((item, idx) => {
           const isHighlighted = idx === hi;
           const rowClasses = [
-            "flex items-center gap-2 px-2 py-1.5 cursor-pointer text-xs",
+            "flex items-center gap-2 px-2 py-1.5 cursor-pointer text-ui",
             "transition-colors motion-reduce:transition-none hover:bg-bg-hover",
             isHighlighted ? "bg-bg-hover" : "",
           ]
@@ -97,7 +97,7 @@ export function InputPopover({
               )}
               <span className="text-text-primary truncate">{item.label}</span>
               {item.description && (
-                <span className="text-[10px] text-text-secondary truncate ml-auto">
+                <span className="text-meta text-text-secondary truncate ml-auto">
                   {item.description}
                 </span>
               )}

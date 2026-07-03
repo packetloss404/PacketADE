@@ -46,7 +46,7 @@ export function ActionButtons({
         }}
         disabled={!launchReady}
         title={launchTitle}
-        className="flex items-center gap-1 px-3 py-1.5 rounded text-[11px] font-medium transition-colors bg-accent-green/20 text-accent-green hover:bg-accent-green/30 disabled:opacity-40 disabled:cursor-not-allowed"
+        className="flex items-center gap-1 px-3 py-1.5 rounded text-ui font-medium transition-colors bg-accent-green/20 text-accent-green hover:bg-accent-green/30 disabled:opacity-40 disabled:cursor-not-allowed"
       >
         <Send size={10} />
         {launchLabel}

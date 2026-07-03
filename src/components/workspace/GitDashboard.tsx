@@ -402,7 +402,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
   const hasUnstaged = files.some((f) => f.unstaged);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden text-xs">
+    <div className="flex h-full flex-col overflow-hidden text-ui">
       {/* Header: branch + actions */}
       <div className="flex shrink-0 items-center justify-between border-b border-bg-border bg-bg-secondary px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -416,7 +416,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
           </span>
           {isRemote && (
             <span
-              className="bg-accent-blue/10 shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[9px] text-accent-blue"
+              className="bg-accent-blue/10 shrink-0 rounded-full px-1.5 py-0.5 font-mono text-meta text-accent-blue"
               title={server ? `${server.username}@${server.host}` : "remote"}
             >
               remote
@@ -436,7 +436,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
           <button
             onClick={handlePull}
             disabled={!!actionLoading || isRemote}
-            className="flex items-center gap-1 rounded bg-bg-tertiary px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary disabled:opacity-40"
+            className="flex items-center gap-1 rounded bg-bg-tertiary px-1.5 py-0.5 text-ui text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary disabled:opacity-40"
             title={remoteReadOnlyTip ?? "Pull"}
           >
             {actionLoading === "pull" ? (
@@ -449,7 +449,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
           <button
             onClick={handlePush}
             disabled={!!actionLoading || isRemote}
-            className="flex items-center gap-1 rounded bg-bg-tertiary px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary disabled:opacity-40"
+            className="flex items-center gap-1 rounded bg-bg-tertiary px-1.5 py-0.5 text-ui text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary disabled:opacity-40"
             title={remoteReadOnlyTip ?? "Push"}
           >
             {actionLoading === "push" ? (
@@ -479,13 +479,13 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
             onChange={(e) => setNewBranch(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleCreateBranch()}
             placeholder="new-branch-name"
-            className="focus:border-accent-green/50 flex-1 rounded border border-bg-border bg-bg-primary px-2 py-0.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none"
+            className="focus:border-accent-green/50 flex-1 rounded border border-bg-border bg-bg-primary px-2 py-0.5 text-ui text-text-primary placeholder:text-text-muted focus:outline-none"
             autoFocus
           />
           <button
             onClick={handleCreateBranch}
             disabled={!newBranch.trim() || !!actionLoading}
-            className="bg-accent-green/20 hover:bg-accent-green/30 rounded px-1.5 py-0.5 text-[10px] text-accent-green transition-colors disabled:opacity-40"
+            className="bg-accent-green/20 hover:bg-accent-green/30 rounded px-1.5 py-0.5 text-ui text-accent-green transition-colors disabled:opacity-40"
           >
             {actionLoading === "branch" ? <Loader2 size={10} className="animate-spin" /> : "Create"}
           </button>
@@ -495,7 +495,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
       {/* Feedback toast */}
       {feedback && (
         <div
-          className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[10px] ${
+          className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-meta ${
             feedback.type === "ok"
               ? "bg-accent-green/10 text-accent-green"
               : "bg-red-500/10 text-red-400"
@@ -510,19 +510,19 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
         <div className="border-accent-amber/30 bg-accent-amber/5 mx-2 mt-2 shrink-0 rounded border px-2 py-1.5">
           <div className="flex items-center gap-1.5">
             <ShieldCheck size={11} className="shrink-0 text-accent-amber" />
-            <span className="text-[10px] font-semibold text-text-primary">
+            <span className="text-ui font-semibold text-text-primary">
               Review before commit
             </span>
             <span className="flex-1" />
             <button
               type="button"
               onClick={openReviewFlight}
-              className="hover:text-accent-amber/80 text-[10px] text-accent-amber transition-colors"
+              className="hover:text-accent-amber/80 text-ui text-accent-amber transition-colors"
             >
               Open flight
             </button>
           </div>
-          <div className="mt-0.5 text-[10px] leading-relaxed text-text-muted">
+          <div className="mt-0.5 text-meta leading-relaxed text-text-muted">
             {reviewContext.linkedFileCount} of {files.length} changed file
             {reviewContext.linkedFileCount === 1 ? "" : "s"} map to {reviewContext.taskCount}{" "}
             flight task
@@ -536,7 +536,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
 
       {/* Select-all affordance — local workspaces only */}
       {!loadError && !isRemote && files.length > 0 && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-bg-border px-3 py-1 text-[10px] text-text-muted">
+        <div className="flex shrink-0 items-center gap-2 border-b border-bg-border px-3 py-1 text-ui text-text-muted">
           <span>
             {stagedCount} of {files.length} staged
           </span>
@@ -563,7 +563,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
       {/* Changed files list */}
       <div className="flex-1 overflow-y-auto px-1 py-1">
         {loadError && (
-          <div className="flex flex-col items-center gap-2 px-3 py-4 text-[11px]">
+          <div className="flex flex-col items-center gap-2 px-3 py-4 text-ui">
             <AlertCircle size={20} className="text-accent-amber" />
             <div className="text-center text-text-secondary">
               {loadError.kind === "server-missing" && (
@@ -572,13 +572,13 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
               {loadError.kind === "not-a-repo" && (
                 <>
                   <div className="font-medium text-text-primary">Not a git repository</div>
-                  <div className="mt-0.5 text-[10px] text-text-muted">{projectPath}</div>
+                  <div className="mt-0.5 text-meta text-text-muted">{projectPath}</div>
                 </>
               )}
               {loadError.kind === "connection" && (
                 <>
                   <div className="font-medium text-text-primary">Unable to connect</div>
-                  <div className="mt-1 break-words text-[10px] text-text-muted">
+                  <div className="mt-1 break-words text-meta text-text-muted">
                     {loadError.msg}
                   </div>
                 </>
@@ -586,7 +586,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
               {loadError.kind === "other" && (
                 <>
                   <div className="font-medium text-text-primary">Failed to load git info</div>
-                  <div className="mt-1 break-words text-[10px] text-text-muted">
+                  <div className="mt-1 break-words text-meta text-text-muted">
                     {loadError.msg}
                   </div>
                 </>
@@ -596,7 +596,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
               <button
                 onClick={refresh}
                 disabled={loading}
-                className="mt-1 flex items-center gap-1.5 rounded bg-bg-tertiary px-2 py-1 text-[10px] text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary disabled:opacity-40"
+                className="mt-1 flex items-center gap-1.5 rounded bg-bg-tertiary px-2 py-1 text-ui text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary disabled:opacity-40"
               >
                 {loading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
                 Retry
@@ -605,12 +605,12 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
           </div>
         )}
         {!loadError && files.length === 0 && !loading && (
-          <div className="flex items-center justify-center py-6 text-[10px] text-text-muted">
+          <div className="flex items-center justify-center py-6 text-ui text-text-muted">
             Working tree clean
           </div>
         )}
         {!loadError && loading && files.length === 0 && (
-          <div className="flex items-center justify-center gap-1.5 py-6 text-[10px] text-text-muted">
+          <div className="flex items-center justify-center gap-1.5 py-6 text-ui text-text-muted">
             <Loader2 size={11} className="animate-spin" />
             Loading{isRemote ? " over SSH" : ""}...
           </div>
@@ -632,10 +632,10 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
                   />
                 )}
                 {statusIcon(f.status)}
-                <span className={`w-5 shrink-0 font-mono text-[10px] ${statusColor(f.status)}`}>
+                <span className={`w-5 shrink-0 font-mono text-meta ${statusColor(f.status)}`}>
                   {f.status}
                 </span>
-                <span className="truncate text-[11px] text-text-secondary" title={f.path}>
+                <span className="truncate text-ui text-text-secondary" title={f.path}>
                   {f.path}
                 </span>
                 {primaryRef && (
@@ -643,7 +643,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
                     type="button"
                     onClick={openReviewFlight}
                     title={reviewTitle(match.refs)}
-                    className="border-accent-amber/25 bg-accent-amber/10 hover:bg-accent-amber/15 ml-auto inline-flex min-w-0 max-w-[112px] shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] text-accent-amber transition-colors"
+                    className="border-accent-amber/25 bg-accent-amber/10 hover:bg-accent-amber/15 ml-auto inline-flex min-w-0 max-w-[112px] shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-meta text-accent-amber transition-colors"
                   >
                     <FileCheck2 size={9} className="shrink-0" />
                     <span className="truncate">
@@ -660,7 +660,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
           in a follow-up phase; for now we hide the form and surface a
           short note. */}
       {isRemote ? (
-        <div className="shrink-0 border-t border-bg-border bg-bg-secondary px-3 py-2 text-[10px] text-text-muted">
+        <div className="shrink-0 border-t border-bg-border bg-bg-secondary px-3 py-2 text-meta text-text-muted">
           Remote write actions (commit, push, pull, branch) are not yet supported. Use a terminal
           session on the remote host for now.
         </div>
@@ -668,7 +668,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
         <div className="shrink-0 space-y-1.5 border-t border-bg-border bg-bg-secondary px-3 py-2">
           {linkedIssue && (
             <div
-              className="flex items-center gap-1.5 text-[10px] text-text-muted"
+              className="flex items-center gap-1.5 text-meta text-text-muted"
               title={`This commit will auto-close ${linkedIssue.issue.ticketId} when it lands.`}
             >
               <Link2 size={10} className="text-accent-blue/70 shrink-0" />
@@ -679,7 +679,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
             </div>
           )}
           {reviewContext.linkedFileCount > 0 ? (
-            <div className="flex items-center gap-1.5 text-[10px] text-accent-amber">
+            <div className="flex items-center gap-1.5 text-meta text-accent-amber">
               <FileCheck2 size={10} />
               <span className="truncate">
                 Review {reviewContext.linkedFileCount} flight-linked file
@@ -687,7 +687,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
               </span>
             </div>
           ) : (
-            <div className="text-[10px] text-text-muted">
+            <div className="text-meta text-text-muted">
               {stagedCount === 0
                 ? "Commits staged files only — stage files above"
                 : "Flight-linked commits receive PacketADE trailers when a task match is found."}
@@ -698,7 +698,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
             onChange={(e) => setCommitMsg(e.target.value)}
             placeholder="Commit message..."
             rows={2}
-            className="focus:border-accent-green/50 w-full resize-none rounded border border-bg-border bg-bg-primary px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none"
+            className="focus:border-accent-green/50 w-full resize-none rounded border border-bg-border bg-bg-primary px-2 py-1 text-ui text-text-primary placeholder:text-text-muted focus:outline-none"
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
@@ -709,7 +709,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
           <button
             onClick={handleCommit}
             disabled={!commitMsg.trim() || stagedCount === 0 || !!actionLoading}
-            className="bg-accent-green/20 hover:bg-accent-green/30 flex w-full items-center justify-center gap-1.5 rounded py-1 text-[11px] font-medium text-accent-green transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+            className="bg-accent-green/20 hover:bg-accent-green/30 flex w-full items-center justify-center gap-1.5 rounded py-1 text-ui font-medium text-accent-green transition-colors disabled:cursor-not-allowed disabled:opacity-30"
           >
             {actionLoading === "commit" ? (
               <Loader2 size={11} className="animate-spin" />

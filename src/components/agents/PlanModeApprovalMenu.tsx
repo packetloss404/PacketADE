@@ -120,7 +120,7 @@ export function PlanModeApprovalMenu({
     <div className="bg-bg-secondary border border-accent-green/40 rounded p-3 flex flex-col gap-2 animate-[welcomeFadeIn_150ms_ease-out] motion-reduce:animate-none">
       <div className="flex items-center gap-2">
         <Check size={14} className="text-accent-green shrink-0" />
-        <span className="text-xs text-text-primary">
+        <span className="text-ui text-text-primary">
           Approve and proceed with this plan?
         </span>
       </div>
@@ -133,12 +133,12 @@ export function PlanModeApprovalMenu({
               key={c.key}
               type="button"
               onClick={() => handle(c.key)}
-              className={`flex items-start gap-2 text-[11px] px-2 py-1.5 rounded text-left w-full ${TONE_CLASSES[c.tone]}`}
+              className={`flex items-start gap-2 text-ui px-2 py-1.5 rounded text-left w-full ${TONE_CLASSES[c.tone]}`}
             >
               <Icon size={12} className="mt-0.5 shrink-0" />
               <span className="flex flex-col min-w-0">
                 <span>{c.label}</span>
-                <span className="text-[10px] text-text-muted leading-snug">
+                <span className="text-meta text-text-muted leading-snug">
                   {c.hint}
                 </span>
               </span>

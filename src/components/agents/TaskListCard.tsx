@@ -96,7 +96,7 @@ function TaskListCardImpl({ toolCall }: TaskListCardProps) {
 
   if (toolCall.status === "error") {
     return (
-      <div className="border border-accent-red/30 rounded text-[10px] text-accent-red bg-accent-red/5 px-2 py-1 flex items-center gap-1.5">
+      <div className="border border-accent-red/30 rounded text-ui text-accent-red bg-accent-red/5 px-2 py-1 flex items-center gap-1.5">
         <XCircle size={11} />
         <span className="font-mono">task_list</span>
         <span className="truncate">{content || "failed"}</span>
@@ -107,7 +107,7 @@ function TaskListCardImpl({ toolCall }: TaskListCardProps) {
   // While streaming, parsing may yield nothing — fall back to a tiny header.
   if (tasks.length === 0) {
     return (
-      <div className="border border-bg-border rounded text-[10px] text-text-muted bg-bg-hover px-2 py-1 flex items-center gap-1.5">
+      <div className="border border-bg-border rounded text-ui text-text-muted bg-bg-hover px-2 py-1 flex items-center gap-1.5">
         {toolCall.status === "running" ? (
           <Spinner size={11} />
         ) : (
@@ -136,8 +136,8 @@ function TaskListCardImpl({ toolCall }: TaskListCardProps) {
           }`}
         />
         <CheckSquare size={12} className="text-accent-green" />
-        <span className="text-[10px] font-mono text-text-secondary">tasks</span>
-        <span className="text-[10px] text-text-muted">
+        <span className="text-ui font-mono text-text-secondary">tasks</span>
+        <span className="text-meta text-text-muted">
           {counts.completed}/{counts.total} done
           {counts.inProgress > 0 ? ` · ${counts.inProgress} in progress` : ""}
         </span>
@@ -147,7 +147,7 @@ function TaskListCardImpl({ toolCall }: TaskListCardProps) {
           {tasks.map((t, i) => (
             <li
               key={`${i}-${t.title}`}
-              className={`flex items-center gap-1.5 text-[11px] leading-snug ${rowClassName(t.status)}`}
+              className={`flex items-center gap-1.5 text-ui leading-snug ${rowClassName(t.status)}`}
             >
               <StatusIcon status={t.status} />
               <span className="truncate">{t.title}</span>

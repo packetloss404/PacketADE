@@ -87,10 +87,10 @@ export function ModelSelector({
       searchPlaceholder="Search models…"
       openSignal={openSignal}
       trigger={
-        <span className="flex items-center gap-1.5 text-text-muted text-[10px]">
+        <span className="flex items-center gap-1.5 text-text-muted text-ui">
           <span>{triggerLabel}</span>
           <span
-            className={`px-1 py-px rounded text-[9px] font-medium ${speedClass}`}
+            className={`px-1 py-px rounded text-meta font-medium ${speedClass}`}
             title={`${MODEL_SPEED_LABEL[speed]} mode (heuristic)`}
           >
             {MODEL_SPEED_LABEL[speed]}
@@ -100,7 +100,7 @@ export function ModelSelector({
     >
       {isOllama ? (
         <>
-          <div className="flex items-center justify-between px-3 py-1 text-[9px] uppercase tracking-wide text-text-muted">
+          <div className="flex items-center justify-between px-3 py-1 text-meta uppercase tracking-wide text-text-muted">
             <span>Installed models</span>
             <button
               type="button"
@@ -133,7 +133,7 @@ export function ModelSelector({
               </DropdownItem>
             </>
           ) : ollamaModels.length === 0 ? (
-            <div className="px-3 py-1.5 text-text-muted text-[10px]">
+            <div className="px-3 py-1.5 text-text-muted text-meta">
               No models installed. Run{" "}
               <code className="text-text-secondary">
                 ollama pull &lt;model&gt;
@@ -149,7 +149,7 @@ export function ModelSelector({
                 <span className="flex items-center justify-between gap-2 w-full">
                   <span className="truncate">{m.name}</span>
                   {typeof m.size === "number" && (
-                    <span className="text-text-muted text-[9px] shrink-0">
+                    <span className="text-text-muted text-meta shrink-0">
                       {(m.size / 1e9).toFixed(1)} GB
                     </span>
                   )}
@@ -170,7 +170,7 @@ export function ModelSelector({
               <span className="flex items-center justify-between gap-3 w-full">
                 <span className="truncate">{m.label}</span>
                 {(ctx || price) && (
-                  <span className="flex items-center gap-2 shrink-0 text-text-muted text-[10px] tabular-nums">
+                  <span className="flex items-center gap-2 shrink-0 text-text-muted text-meta tabular-nums">
                     {ctx && <span>{ctx}</span>}
                     {price && <span>{price}</span>}
                   </span>

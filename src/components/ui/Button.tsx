@@ -19,7 +19,7 @@ const variants: Record<ButtonVariant, string> = {
 };
 
 const sizes = {
-  xs: "px-2 py-1 text-[11px]",
+  xs: "px-2 py-1 text-ui",
   sm: "px-3 py-1.5 text-xs",
   md: "px-4 py-2 text-sm",
 };

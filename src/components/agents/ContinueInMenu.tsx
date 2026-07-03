@@ -55,8 +55,8 @@ function MenuItem({
     >
       <span className="mt-0.5 text-text-secondary shrink-0">{icon}</span>
       <span className="flex flex-col min-w-0">
-        <span className="text-[11px] text-text-primary truncate">{label}</span>
-        <span className="text-[10px] text-text-muted truncate">{subtitle}</span>
+        <span className="text-ui text-text-primary truncate">{label}</span>
+        <span className="text-meta text-text-muted truncate">{subtitle}</span>
       </span>
     </button>
   );
@@ -156,7 +156,7 @@ export function ContinueInMenu({ conversation, onFeedback }: ContinueInMenuProps
 
   return (
     <div className="min-w-[240px] py-0.5" data-agent-pane-continue-in>
-      <div className="px-3 pt-1 pb-0.5 text-[10px] font-medium text-text-muted uppercase tracking-wide">
+      <div className="px-3 pt-1 pb-0.5 text-meta font-medium text-text-muted uppercase tracking-wide">
         Continue in
       </div>
       <MenuItem

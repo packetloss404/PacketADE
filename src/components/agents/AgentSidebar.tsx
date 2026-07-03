@@ -300,18 +300,18 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
             {isPinned && <Pin size={9} className="text-accent-amber fill-accent-amber shrink-0" />}
             <span>{isNeedsYou ? needsYouIcon() : statusIcon(conv.status)}</span>
             <span
-              className={`text-xs leading-tight truncate ${
+              className={`text-ui leading-tight truncate ${
                 isSelected ? "text-text-primary font-medium" : "text-text-secondary"
               }`}
             >
               {snippet ?? titleText}
             </span>
             <span className="flex-1" />
-            <span className="text-[10px] text-text-muted shrink-0">
+            <span className="text-meta text-text-muted shrink-0">
               {formatRelativeTime(conv.updatedAt)}
             </span>
           </div>
-          <div className={`text-[10px] font-medium ${getAgentColor(conv.agent).text}`}>
+          <div className={`text-meta font-medium ${getAgentColor(conv.agent).text}`}>
             {agentLabel(conv.agent)}
           </div>
         </button>
@@ -361,7 +361,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
     >
       {/* Sessions list header — matches design (label + count pill + search/plus icons) */}
       <div className="px-3 py-2 flex items-center gap-1.5 border-b border-line-soft">
-        <span className="text-[11px] font-semibold text-text-primary">Sessions</span>
+        <span className="text-ui font-semibold text-text-primary">Sessions</span>
         {conversations.length > 0 && (
           <Badge>
             {isSearching
@@ -407,7 +407,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`flex-1 text-[10px] py-0.5 rounded transition-colors ${
+                className={`flex-1 text-ui py-0.5 rounded transition-colors ${
                   isActive
                     ? "bg-accent-green/20 text-accent-green"
                     : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
@@ -438,7 +438,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                 }
               }}
               placeholder="Search messages, titles…"
-              className="w-full pl-6 pr-6 py-1 text-[10px] bg-bg-primary border border-bg-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
+              className="w-full pl-6 pr-6 py-1 text-ui bg-bg-primary border border-bg-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
             />
             {searchQuery && (
               <button
@@ -451,7 +451,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
             )}
           </div>
           {isSearching && (
-            <div className="text-[9px] text-text-muted mt-1 px-0.5">
+            <div className="text-meta text-text-muted mt-1 px-0.5">
               {searchStats.count} {searchStats.count === 1 ? "result" : "results"} across {searchStats.projects}{" "}
               {searchStats.projects === 1 ? "project" : "projects"}
             </div>
@@ -470,7 +470,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
               action={
                 <button
                   onClick={closeSearch}
-                  className="text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+                  className="text-ui text-text-muted hover:text-text-secondary transition-colors"
                 >
                   Clear search
                 </button>
@@ -497,7 +497,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
           <div>
             <div className="px-3 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-y border-line-soft">
               <Search size={10} className="text-accent-green shrink-0" />
-              <span className="text-[10px] font-semibold text-text-secondary truncate uppercase tracking-wide">
+              <span className="text-meta font-semibold text-text-secondary truncate uppercase tracking-wide">
                 Search results ({searchList.length})
               </span>
             </div>
@@ -509,10 +509,10 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
               <div>
                 <div className="px-3 py-1.5 flex items-center gap-1.5 bg-accent-amber/10 border-y border-accent-amber/30">
                   <BellRing size={10} className="text-accent-amber shrink-0" />
-                  <span className="text-[10px] font-semibold text-accent-amber truncate uppercase tracking-wide">
+                  <span className="text-meta font-semibold text-accent-amber truncate uppercase tracking-wide">
                     Needs you
                   </span>
-                  <span className="text-[10px] text-accent-amber shrink-0 ml-auto">
+                  <span className="text-meta text-accent-amber shrink-0 ml-auto">
                     {needsYouList.length}
                   </span>
                 </div>
@@ -578,14 +578,14 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                             setRenameValue("");
                           }
                         }}
-                        className="text-[10px] font-semibold bg-bg-primary border border-accent-green/50 rounded px-1 py-px text-text-primary uppercase tracking-wide focus:outline-none flex-1 min-w-0"
+                        className="text-meta font-semibold bg-bg-primary border border-accent-green/50 rounded px-1 py-px text-text-primary uppercase tracking-wide focus:outline-none flex-1 min-w-0"
                       />
                     ) : (
-                      <span className="text-[10px] font-semibold text-text-secondary truncate uppercase tracking-wide">
+                      <span className="text-meta font-semibold text-text-secondary truncate uppercase tracking-wide">
                         {headerLabel}
                       </span>
                     )}
-                    <span className="text-[10px] text-text-muted shrink-0 ml-auto">{convs.length}</span>
+                    <span className="text-meta text-text-muted shrink-0 ml-auto">{convs.length}</span>
                   </div>
 
                   {/* Agent conversations under this project */}
@@ -610,7 +610,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
             <div className="flex items-center justify-end gap-2">
               <button
                 onClick={() => setPendingDelete(null)}
-                className="px-3 py-1.5 rounded text-[11px] text-text-secondary hover:bg-bg-hover transition-colors"
+                className="px-3 py-1.5 rounded text-ui text-text-secondary hover:bg-bg-hover transition-colors"
               >
                 Cancel
               </button>
@@ -619,7 +619,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                   deleteConversation(pendingDelete.id);
                   setPendingDelete(null);
                 }}
-                className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-red/15 text-accent-red hover:bg-accent-red/25 transition-colors"
+                className="px-3 py-1.5 rounded text-ui font-medium bg-accent-red/15 text-accent-red hover:bg-accent-red/25 transition-colors"
               >
                 Delete
               </button>
@@ -627,12 +627,12 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
           }
         >
           <div className="px-5 py-4">
-            <p className="text-xs text-text-secondary">
+            <p className="text-ui text-text-secondary">
               Permanently delete{" "}
               <span className="text-text-primary">“{pendingDelete.title || "(untitled)"}”</span>
               ? This closes the session and removes its history.
             </p>
-            <p className="text-[10px] text-text-muted mt-2">This can’t be undone.</p>
+            <p className="text-meta text-text-muted mt-2">This can’t be undone.</p>
           </div>
         </Modal>
       )}
@@ -645,7 +645,7 @@ function SidebarFooter({ onNewAgent }: { onNewAgent: () => void }) {
     <div className="border-t border-line-strong bg-bg-tertiary px-2.5 py-2 flex items-center gap-1.5">
       <button
         onClick={onNewAgent}
-        className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 border border-accent-line rounded transition-colors"
+        className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-ui font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 border border-accent-line rounded transition-colors"
       >
         <Plus size={11} />
         New session

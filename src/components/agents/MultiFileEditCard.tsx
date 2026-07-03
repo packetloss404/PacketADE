@@ -207,7 +207,7 @@ function MultiFileEditCardImpl({
           }`}
         />
         <Folder size={12} className="text-accent-blue shrink-0" />
-        <span className="text-[11px] text-text-primary flex-1 truncate">
+        <span className="text-ui text-text-primary flex-1 truncate">
           Edited {totalCount} {totalCount === 1 ? "file" : "files"}
           {summarySuffix}
         </span>
@@ -222,7 +222,7 @@ function MultiFileEditCardImpl({
             return (
               <div key={kind}>
                 <div className="px-2 py-1 bg-bg-primary border-b border-bg-border">
-                  <span className="text-[10px] uppercase tracking-wide text-text-secondary">
+                  <span className="text-meta uppercase tracking-wide text-text-secondary">
                     {KIND_LABEL[kind]} ({list.length})
                   </span>
                 </div>
@@ -234,7 +234,7 @@ function MultiFileEditCardImpl({
                     className="w-full flex items-center gap-2 px-2 py-1 hover:bg-bg-tertiary transition-colors text-left border-b border-bg-border/40 last:border-b-0"
                   >
                     <KindIcon kind={entry.kind} />
-                    <span className="text-[11px] font-mono text-text-primary truncate flex-1">
+                    <span className="text-ui font-mono text-text-primary truncate flex-1">
                       {entry.path}
                     </span>
                     {entry.loading ? (
@@ -245,10 +245,10 @@ function MultiFileEditCardImpl({
                       />
                     ) : (
                       <span className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[11px] font-mono text-accent-green">
+                        <span className="text-ui font-mono text-accent-green">
                           +{entry.added}
                         </span>
-                        <span className="text-[11px] font-mono text-accent-red">
+                        <span className="text-ui font-mono text-accent-red">
                           -{entry.removed}
                         </span>
                       </span>
@@ -263,7 +263,7 @@ function MultiFileEditCardImpl({
             <button
               type="button"
               onClick={handleOpenAll}
-              className="text-[11px] text-text-muted hover:text-text-primary transition-colors"
+              className="text-ui text-text-muted hover:text-text-primary transition-colors"
             >
               Review all
             </button>

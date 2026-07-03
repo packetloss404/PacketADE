@@ -86,7 +86,7 @@ export function WorkspaceSidebar() {
       {/* Header — current project + nav */}
       <div className="flex items-center gap-1 px-3 py-2 border-b border-bg-border">
         <Folder size={11} className="text-accent-green flex-shrink-0" />
-        <span className="text-[11px] font-medium text-text-primary truncate flex-1">
+        <span className="text-ui font-medium text-text-primary truncate flex-1">
           {projectName}
         </span>
       </div>
@@ -98,7 +98,7 @@ export function WorkspaceSidebar() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter..."
-          className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+          className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1 text-ui text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
         />
       </div>
 
@@ -114,17 +114,17 @@ export function WorkspaceSidebar() {
           ) : (
             <ChevronRight size={10} className="text-text-muted" />
           )}
-          <span className="text-[10px] uppercase tracking-wide text-text-secondary font-semibold">
+          <span className="text-meta uppercase tracking-wide text-text-secondary font-semibold">
             Workspaces
           </span>
-          <span className="text-[10px] text-text-muted">({filteredWorkspaces.length})</span>
+          <span className="text-meta text-text-muted">({filteredWorkspaces.length})</span>
           <div className="flex-1" />
           <button
             onClick={(e) => {
               e.stopPropagation();
               setShowCreate(true);
             }}
-            className="flex items-center gap-0.5 text-[10px] text-accent-green hover:text-accent-green/80 transition-colors"
+            className="flex items-center gap-0.5 text-ui text-accent-green hover:text-accent-green/80 transition-colors"
             title="New workspace"
           >
             <Plus size={10} />
@@ -134,7 +134,7 @@ export function WorkspaceSidebar() {
         {workspacesOpen && (
           <div className="flex-1 min-h-0 overflow-y-auto pb-1">
             {filteredWorkspaces.length === 0 ? (
-              <div className="px-3 py-2 text-[10px] text-text-muted">No workspaces</div>
+              <div className="px-3 py-2 text-ui text-text-muted">No workspaces</div>
             ) : (
               workspacesByProject.map(([projPath, projWorkspaces]) => {
                 const isCurrent = normalizePath(projPath) === normalizePath(projectPath);
@@ -143,12 +143,12 @@ export function WorkspaceSidebar() {
                     {/* Project group header */}
                     <div className="flex items-center gap-1.5 px-3 py-1 mt-1">
                       <Folder size={9} className={isCurrent ? "text-accent-green" : "text-text-muted"} />
-                      <span className={`text-[9px] uppercase tracking-wide font-semibold truncate ${
+                      <span className={`text-meta uppercase tracking-wide font-semibold truncate ${
                         isCurrent ? "text-accent-green" : "text-text-muted"
                       }`}>
                         {shortName(projPath)}
                       </span>
-                      <span className="text-[9px] text-text-muted">({projWorkspaces.length})</span>
+                      <span className="text-meta text-text-muted">({projWorkspaces.length})</span>
                     </div>
                     {/* Workspace cards within this project */}
                     {projWorkspaces.map((ws) => {
@@ -172,7 +172,7 @@ export function WorkspaceSidebar() {
                             />
                             <div className="flex-1 min-w-0">
                               <div
-                                className={`text-[11px] font-medium truncate flex items-center gap-1.5 ${
+                                className={`text-ui font-medium truncate flex items-center gap-1.5 ${
                                   isActive ? "text-text-primary" : "text-text-secondary"
                                 }`}
                               >
@@ -180,7 +180,7 @@ export function WorkspaceSidebar() {
                                 {/* v0.8-15: workspace github bind badge */}
                                 {ws.githubRepo && (
                                   <span
-                                    className="flex items-center gap-0.5 text-[9px] text-text-muted bg-bg-primary border border-bg-border rounded px-1 py-px"
+                                    className="flex items-center gap-0.5 text-meta text-text-muted bg-bg-primary rounded px-1 py-px"
                                     title={`Linked to ${ws.githubRepo.owner}/${ws.githubRepo.repo}`}
                                   >
                                     <Github size={8} />
@@ -190,7 +190,7 @@ export function WorkspaceSidebar() {
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[9px] text-text-muted truncate">
+                              <div className="text-meta text-text-muted truncate">
                                 {shortName(ws.projectPath)}
                                 {" \u00b7 "}
                                 {new Date(ws.createdAt).toLocaleString("en-US", {

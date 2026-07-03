@@ -136,7 +136,7 @@ export function PendingApprovalsSection({
           <button
             type="button"
             onClick={() => setCollapsed(false)}
-            className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-text-primary hover:text-accent-amber transition-colors"
+            className="flex items-center gap-1.5 flex-1 text-left text-ui text-text-primary hover:text-accent-amber transition-colors"
             title="Expand to review each prompt"
           >
             <ChevronRight size={12} className="text-text-secondary shrink-0" />
@@ -168,7 +168,7 @@ export function PendingApprovalsSection({
           <button
             type="button"
             onClick={() => setCollapsed(true)}
-            className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+            className="flex items-center gap-1.5 flex-1 text-left text-ui text-text-secondary hover:text-text-primary transition-colors"
             title="Collapse approvals"
           >
             <ChevronDown size={12} className="text-text-secondary shrink-0" />

@@ -158,18 +158,18 @@ export function ReviewSurface({
     >
       <div className="flex items-center gap-2 px-3 py-2 border-b border-bg-border bg-bg-secondary shrink-0">
         <FileDiff size={12} className="text-text-secondary" />
-        <span className="text-[11px] font-medium text-text-primary">
+        <span className="text-ui font-medium text-text-primary">
           {embedded ? "Changes" : "Review changes"}
         </span>
-        <span className="text-[10px] font-mono text-text-secondary">
+        <span className="text-meta font-mono text-text-secondary">
           {fileCount} {fileCount === 1 ? "file" : "files"}
         </span>
-        <span className="flex items-center gap-1 text-[10px] font-mono">
+        <span className="flex items-center gap-1 text-meta font-mono">
           <span className="text-accent-green">+{totals.totalAdds}</span>
           <span className="text-accent-red">-{totals.totalDels}</span>
         </span>
         {pendingEdits.length > 0 && (
-          <span className="text-[10px] text-accent-amber">
+          <span className="text-meta text-accent-amber">
             {pendingEdits.length} awaiting review
           </span>
         )}
@@ -386,22 +386,22 @@ function PendingEditSection({
           <FileDiff size={12} className="text-accent-amber shrink-0" />
         )}
         <span
-          className="text-[11px] font-mono text-text-primary truncate flex-1"
+          className="text-ui font-mono text-text-primary truncate flex-1"
           title={edit.path}
         >
           {edit.path}
         </span>
-        <span className="flex items-center gap-1 text-[10px] font-mono shrink-0">
+        <span className="flex items-center gap-1 text-meta font-mono shrink-0">
           <span className="text-accent-green">+{adds}</span>
           <span className="text-accent-red">-{dels}</span>
         </span>
-        <span className="text-[9px] text-accent-amber shrink-0">
+        <span className="text-meta text-accent-amber shrink-0">
           awaiting review
         </span>
       </div>
 
       {error && (
-        <div className="px-2 py-1 text-[10px] text-accent-red bg-accent-red/10 border-t border-bg-border">
+        <div className="px-2 py-1 text-meta text-accent-red bg-accent-red/10 border-t border-bg-border">
           {error}
         </div>
       )}
@@ -432,10 +432,10 @@ function PendingEditSection({
                 ) : (
                   <Square size={12} className="text-text-secondary shrink-0" />
                 )}
-                <span className="text-[10px] font-mono text-text-secondary">
+                <span className="text-ui font-mono text-text-secondary">
                   Hunk {idx + 1} @ line {hunk.startLine}
                 </span>
-                <span className="ml-auto text-[10px] font-mono">
+                <span className="ml-auto text-meta font-mono">
                   <span className="text-accent-green">
                     +{hunk.newLines.length}
                   </span>{" "}
@@ -460,7 +460,7 @@ function PendingEditSection({
           type="button"
           onClick={() => void respond("keep")}
           disabled={responding}
-          className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-1 text-ui px-2 py-1 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {responding ? <Spinner size={11} /> : <CheckSquare size={12} />}
           {partial ? `Keep ${keptIds.size}/${hunks.length}` : "Keep"}
@@ -469,7 +469,7 @@ function PendingEditSection({
           type="button"
           onClick={() => void respond("undo")}
           disabled={responding}
-          className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="ml-auto flex items-center gap-1 text-ui px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Undo2 size={12} /> Undo all
         </button>
@@ -592,17 +592,17 @@ function AppliedFileSection({
           <FileDiff size={12} className="text-text-secondary shrink-0" />
         )}
         <span
-          className="text-[11px] font-mono text-text-primary truncate flex-1"
+          className="text-ui font-mono text-text-primary truncate flex-1"
           title={entry.path}
         >
           {entry.path}
         </span>
         {isNewFile && (
-          <span className="text-[9px] text-accent-green border border-accent-green/30 bg-accent-green/10 px-1 rounded shrink-0">
+          <span className="text-meta text-accent-green bg-accent-green/10 px-1 rounded shrink-0">
             new
           </span>
         )}
-        <span className="flex items-center gap-1 text-[10px] font-mono shrink-0">
+        <span className="flex items-center gap-1 text-meta font-mono shrink-0">
           <span className="text-accent-green">+{adds}</span>
           <span className="text-accent-red">-{dels}</span>
         </span>
@@ -612,13 +612,13 @@ function AppliedFileSection({
               type="button"
               onClick={() => void undoHunks(new Set(hunks.map((h) => h.id)))}
               disabled={busy}
-              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-accent-red transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-accent-red transition-colors disabled:opacity-50"
             >
               <Undo2 size={10} /> Undo all
             </button>
           </Tooltip>
         )}
-        <label className="flex items-center gap-1 text-[10px] text-text-secondary cursor-pointer select-none shrink-0">
+        <label className="flex items-center gap-1 text-ui text-text-secondary cursor-pointer select-none shrink-0">
           <input
             type="checkbox"
             checked={viewed}
@@ -632,7 +632,7 @@ function AppliedFileSection({
       </div>
 
       {error && (
-        <div className="px-2 py-1 text-[10px] text-accent-red bg-accent-red/10 border-t border-bg-border">
+        <div className="px-2 py-1 text-meta text-accent-red bg-accent-red/10 border-t border-bg-border">
           {error}
         </div>
       )}
@@ -640,17 +640,17 @@ function AppliedFileSection({
       {!viewed && (
         <div className="border-t border-bg-border">
           {disk.kind === "loading" ? (
-            <div className="px-3 py-3 flex items-center gap-1.5 text-[11px] text-text-secondary">
+            <div className="px-3 py-3 flex items-center gap-1.5 text-ui text-text-secondary">
               <Spinner size={12} className="text-text-muted" />
               Loading file from disk…
             </div>
           ) : disk.kind === "error" ? (
-            <div className="px-3 py-3 text-[11px] text-accent-red flex items-center gap-2">
+            <div className="px-3 py-3 text-ui text-accent-red flex items-center gap-2">
               <AlertCircle size={12} />
               Could not read this file from disk.
             </div>
           ) : hunks.length === 0 ? (
-            <div className="px-3 py-2 text-[11px] text-text-muted italic">
+            <div className="px-3 py-2 text-ui text-text-muted italic">
               No changes vs. on-disk content.
             </div>
           ) : (
@@ -658,10 +658,10 @@ function AppliedFileSection({
               {hunks.map((hunk, idx) => (
                 <div key={hunk.id} className="rounded border border-bg-border">
                   <div className="flex items-center gap-2 px-2 py-1">
-                    <span className="text-[10px] font-mono text-text-secondary">
+                    <span className="text-ui font-mono text-text-secondary">
                       Hunk {idx + 1} @ line {hunk.startLine}
                     </span>
-                    <span className="ml-auto text-[10px] font-mono">
+                    <span className="ml-auto text-meta font-mono">
                       <span className="text-accent-green">
                         +{hunk.newLines.length}
                       </span>{" "}
@@ -675,7 +675,7 @@ function AppliedFileSection({
                           type="button"
                           onClick={() => void undoHunks(new Set([hunk.id]))}
                           disabled={busy}
-                          className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-accent-red transition-colors disabled:opacity-50"
+                          className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-bg-border text-text-secondary hover:bg-bg-hover hover:text-accent-red transition-colors disabled:opacity-50"
                         >
                           <Undo2 size={10} /> Undo
                         </button>

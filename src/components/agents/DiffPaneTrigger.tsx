@@ -30,7 +30,7 @@ export function DiffPaneTrigger({
       type="button"
       onClick={() => openForConversation(conversationId)}
       title={`View ${fileCount} file change${fileCount === 1 ? "" : "s"}`}
-      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-bg-border bg-bg-tertiary hover:bg-bg-border hover:text-text-primary transition-colors text-[10px] font-mono"
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-bg-border bg-bg-tertiary hover:bg-bg-border hover:text-text-primary transition-colors text-ui font-mono"
     >
       <FileDiff size={10} className="text-text-secondary" />
       <span className="text-text-secondary">

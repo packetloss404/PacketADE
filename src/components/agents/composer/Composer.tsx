@@ -553,7 +553,7 @@ export function Composer(props: ComposerProps) {
       {staged.map((s) => (
         <div
           key={s.id}
-          className="flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded border border-bg-border bg-bg-secondary text-[10px] text-text-secondary"
+          className="flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded bg-bg-secondary text-meta text-text-secondary"
         >
           <Tooltip
             content={`${s.name} · ${(s.sizeBytes / 1024).toFixed(1)} KB`}
@@ -615,7 +615,7 @@ export function Composer(props: ComposerProps) {
         onDragLeave={handleDragLeave}
       >
         {historyIndex >= 0 && (
-          <div className="pointer-events-none absolute right-3 top-1 inline-flex select-none items-center gap-0.5 font-mono text-[10px] text-text-faint">
+          <div className="pointer-events-none absolute right-3 top-1 inline-flex select-none items-center gap-0.5 font-mono text-meta text-text-faint">
             <ChevronUp size={10} />
             {historyIndex + 1}/{turnCount}
           </div>
@@ -822,7 +822,7 @@ export function Composer(props: ComposerProps) {
           </div>
         </div>
 
-        <p className="text-[9px] text-text-muted mt-2 text-center">
+        <p className="text-meta text-text-muted mt-2 text-center">
           {COMPOSER_HELP_TEXT}
         </p>
       </div>
