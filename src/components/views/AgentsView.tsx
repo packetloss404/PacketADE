@@ -10,6 +10,7 @@ import { useServerStore } from "@/stores/serverStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { LAUNCH_DRAFT_KEY, useAgentDraftStore } from "@/stores/agentDraftStore";
+import { sweepAutoArchive } from "@/stores/agentConversationPersistence";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { Composer } from "@/components/agents/composer/Composer";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
@@ -91,6 +92,15 @@ export function AgentsView() {
   const handleProfileChange = useCallback((id: string) => {
     userPickedProfileRef.current = true;
     setSelectedProfileId(id);
+  }, []);
+
+  // Self-curating sidebar: sweep done+stale conversations into the archive
+  // on mount, then again every hour so long-running sessions don't need a
+  // reload to fall out of the active list.
+  useEffect(() => {
+    sweepAutoArchive();
+    const interval = window.setInterval(sweepAutoArchive, 60 * 60 * 1000);
+    return () => window.clearInterval(interval);
   }, []);
 
   // One-shot: on mount, if the Agents pane has no active conversation and the

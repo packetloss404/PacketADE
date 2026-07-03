@@ -267,3 +267,140 @@ describe("agentTaskStore.deleteConversation — substore cleanup", () => {
     }
   });
 });
+
+describe("sweepAutoArchive", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doUnmock("@/stores/agentTaskStore");
+    localStorage.clear();
+    listenMock.mockResolvedValue(() => {});
+    invokeMock.mockResolvedValue(undefined);
+    loadConversationsMock.mockResolvedValue([]);
+    cancelApiAgentSessionMock.mockResolvedValue(undefined);
+    closeApiAgentSessionMock.mockResolvedValue(undefined);
+    deleteConversationFileMock.mockResolvedValue(undefined);
+    killPtyMock.mockResolvedValue(undefined);
+  });
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  function seedConversation(overrides: Record<string, unknown> = {}) {
+    const now = Date.now();
+    return {
+      id: overrides.id ?? "conv-1",
+      title: "A conversation",
+      agent: "api-openai",
+      projectPath: "D:/projects/example",
+      status: "done",
+      messages: [],
+      sessionId: null,
+      rawOutput: "",
+      createdAt: now,
+      updatedAt: now,
+      mode: "api",
+      archived: false,
+      ...overrides,
+    };
+  }
+
+  it("archives a done conversation idle past the threshold", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { useAgentSettingsStore } = await import("@/stores/agentSettingsStore");
+    const { sweepAutoArchive } = await import("@/stores/agentConversationPersistence");
+
+    useAgentSettingsStore.getState().setAutoArchiveDays(14);
+    useAgentTaskStore.setState({
+      conversations: [
+        seedConversation({ id: "stale-done", updatedAt: Date.now() - 15 * DAY_MS }),
+      ],
+    } as never);
+
+    sweepAutoArchive();
+
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === "stale-done");
+    expect(conv?.archived).toBe(true);
+  });
+
+  it("leaves an active conversation untouched", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { useAgentSettingsStore } = await import("@/stores/agentSettingsStore");
+    const { sweepAutoArchive } = await import("@/stores/agentConversationPersistence");
+
+    useAgentSettingsStore.getState().setAutoArchiveDays(14);
+    useAgentTaskStore.setState({
+      conversations: [
+        seedConversation({
+          id: "active-conv",
+          status: "active",
+          updatedAt: Date.now() - 15 * DAY_MS,
+        }),
+      ],
+    } as never);
+
+    sweepAutoArchive();
+
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === "active-conv");
+    expect(conv?.archived).toBe(false);
+  });
+
+  it("leaves a done-but-recent conversation untouched", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { useAgentSettingsStore } = await import("@/stores/agentSettingsStore");
+    const { sweepAutoArchive } = await import("@/stores/agentConversationPersistence");
+
+    useAgentSettingsStore.getState().setAutoArchiveDays(14);
+    useAgentTaskStore.setState({
+      conversations: [
+        seedConversation({ id: "recent-done", updatedAt: Date.now() - DAY_MS }),
+      ],
+    } as never);
+
+    sweepAutoArchive();
+
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === "recent-done");
+    expect(conv?.archived).toBe(false);
+  });
+
+  it("leaves an already-archived conversation untouched (no re-archive loop)", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { useAgentSettingsStore } = await import("@/stores/agentSettingsStore");
+    const { sweepAutoArchive } = await import("@/stores/agentConversationPersistence");
+
+    useAgentSettingsStore.getState().setAutoArchiveDays(14);
+    const staleUpdatedAt = Date.now() - 15 * DAY_MS;
+    useAgentTaskStore.setState({
+      conversations: [
+        seedConversation({ id: "already-archived", archived: true, updatedAt: staleUpdatedAt }),
+      ],
+    } as never);
+
+    sweepAutoArchive();
+
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === "already-archived");
+    expect(conv?.archived).toBe(true);
+    // archiveConversation bumps updatedAt — an untouched conversation proves
+    // sweepAutoArchive skipped it rather than re-archiving.
+    expect(conv?.updatedAt).toBe(staleUpdatedAt);
+  });
+
+  it("leaves everything untouched when the auto-archive threshold is disabled (null)", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { useAgentSettingsStore } = await import("@/stores/agentSettingsStore");
+    const { sweepAutoArchive } = await import("@/stores/agentConversationPersistence");
+
+    useAgentSettingsStore.getState().setAutoArchiveDays(null);
+    useAgentTaskStore.setState({
+      conversations: [
+        seedConversation({ id: "stale-but-disabled", updatedAt: Date.now() - 100 * DAY_MS }),
+      ],
+    } as never);
+
+    sweepAutoArchive();
+
+    const conv = useAgentTaskStore
+      .getState()
+      .conversations.find((c) => c.id === "stale-but-disabled");
+    expect(conv?.archived).toBe(false);
+  });
+});

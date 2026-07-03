@@ -134,7 +134,19 @@ describe("tabStore", () => {
 
       const tab = useTabStore.getState().getTab("tab-1")!;
       expect(tab.status).toBe("done");
-      expect(tab.statusLabel).toMatch(/2m 5s/);
+      expect(tab.statusLabel).toBe("Done in 2m 5s");
+    });
+
+    it("assigns the identical statusLabel to two tabs with the same status (determinism)", () => {
+      useTabStore.getState().addTab(makeTab({ id: "tab-1", status: "idle" }));
+      useTabStore.getState().addTab(makeTab({ id: "tab-2", status: "idle" }));
+      useTabStore.getState().updateTabStatus("tab-1", "thinking");
+      useTabStore.getState().updateTabStatus("tab-2", "thinking");
+
+      const label1 = useTabStore.getState().getTab("tab-1")!.statusLabel;
+      const label2 = useTabStore.getState().getTab("tab-2")!.statusLabel;
+      expect(label1).toBe(label2);
+      expect(label1).toBe("Thinking…");
     });
 
     it("does not modify other tabs", () => {
