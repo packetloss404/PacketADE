@@ -104,4 +104,32 @@ describe("agentSettingsStore", () => {
       JSON.parse(localStorage.getItem(SETTINGS_KEY)!).defaultEnabledMcpServerIds,
     ).toBeNull();
   });
+
+  it("defaults transcriptViewMode to normal, cycles summary→normal→verbose→summary, and persists + hydrates", async () => {
+    const { useAgentSettingsStore } = await loadStore();
+
+    expect(useAgentSettingsStore.getState().transcriptViewMode).toBe("normal");
+
+    useAgentSettingsStore.getState().cycleTranscriptViewMode();
+    expect(useAgentSettingsStore.getState().transcriptViewMode).toBe("verbose");
+
+    useAgentSettingsStore.getState().cycleTranscriptViewMode();
+    expect(useAgentSettingsStore.getState().transcriptViewMode).toBe("summary");
+
+    useAgentSettingsStore.getState().cycleTranscriptViewMode();
+    expect(useAgentSettingsStore.getState().transcriptViewMode).toBe("normal");
+
+    expect(
+      JSON.parse(localStorage.getItem(SETTINGS_KEY)!).transcriptViewMode,
+    ).toBe("normal");
+
+    useAgentSettingsStore.getState().setTranscriptViewMode("verbose");
+    expect(useAgentSettingsStore.getState().transcriptViewMode).toBe("verbose");
+    expect(
+      JSON.parse(localStorage.getItem(SETTINGS_KEY)!).transcriptViewMode,
+    ).toBe("verbose");
+
+    const { useAgentSettingsStore: rehydrated } = await loadStore();
+    expect(rehydrated.getState().transcriptViewMode).toBe("verbose");
+  });
 });

@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   CheckSquare,
   ChevronRight,
@@ -8,10 +8,10 @@ import {
 
 import type { AgentToolCall } from "@/types/agent-conversation";
 import { Spinner } from "@/components/ui/Spinner";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 
 interface TaskListCardProps {
   toolCall: AgentToolCall;
-  verbosity?: "summary" | "normal" | "verbose";
 }
 
 type ParsedStatus = "pending" | "in_progress" | "completed";
@@ -68,8 +68,16 @@ function rowClassName(status: ParsedStatus): string {
   return "text-text-muted";
 }
 
-function TaskListCardImpl({ toolCall, verbosity = "normal" }: TaskListCardProps) {
+function TaskListCardImpl({ toolCall }: TaskListCardProps) {
+  const verbosity = useAgentSettingsStore((s) => s.transcriptViewMode);
   const [expanded, setExpanded] = useState(verbosity !== "summary");
+
+  // Keep expand state in sync when the global view mode changes after the
+  // card has mounted (live keyboard cycling must visibly affect this card,
+  // not just its initial mount state).
+  useEffect(() => {
+    setExpanded(verbosity !== "summary");
+  }, [verbosity]);
 
   const content = toolCall.fullContent ?? toolCall.summary ?? "";
   const tasks = useMemo(() => parseChecklist(content), [content]);

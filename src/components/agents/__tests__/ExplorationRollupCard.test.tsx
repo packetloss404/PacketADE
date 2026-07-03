@@ -68,4 +68,29 @@ describe("ExplorationRollupCard", () => {
     );
     expect(container.firstChild).toBeNull();
   });
+
+  it("surfaces a failed read on the collapsed row instead of vanishing into a neutral rollup", () => {
+    render(
+      <ExplorationRollupCard
+        isStreaming={false}
+        toolCalls={[
+          makeCall("tc-1", "read_file", "done", { path: "src/app.ts" }),
+          makeCall("tc-2", "read_file", "error", { path: "src/missing.ts" }),
+        ]}
+      />,
+    );
+    expect(screen.getByText("Explored 2 files")).toBeTruthy();
+    expect(screen.getByText("· 1 failed")).toBeTruthy();
+  });
+
+  it("still renders the card for a lone failed exploration call (no vanish)", () => {
+    const { container } = render(
+      <ExplorationRollupCard
+        isStreaming={false}
+        toolCalls={[makeCall("tc-1", "grep", "error")]}
+      />,
+    );
+    expect(container.firstChild).not.toBeNull();
+    expect(screen.getByText("· 1 failed")).toBeTruthy();
+  });
 });

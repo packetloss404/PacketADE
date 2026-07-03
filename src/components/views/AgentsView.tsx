@@ -166,6 +166,28 @@ export function AgentsView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleNewAgent]);
 
+  // Ctrl/Cmd+Shift+V cycles the global transcript view mode (P1-17:
+  // Summary → Normal → Verbose → Summary). Same typing guard as Ctrl+N so
+  // composer/inputs never lose the keystroke.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isShortcut =
+        (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "v";
+      if (!isShortcut) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isEditable =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        (target?.isContentEditable ?? false);
+      if (isEditable) return;
+      e.preventDefault();
+      useAgentSettingsStore.getState().cycleTranscriptViewMode();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const handleLaunch = useCallback(
     (rawText: string, attachments: ImageAttachment[]) => {
       const text = rawText.trim();

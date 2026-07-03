@@ -15,8 +15,18 @@ import {
   copyTranscriptToClipboard,
 } from "./handleExport";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import {
+  useAgentSettingsStore,
+  type TranscriptViewMode,
+} from "@/stores/agentSettingsStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import type { AgentConversation } from "@/types/agent-conversation";
+
+const VIEW_MODE_OPTIONS: { value: TranscriptViewMode; label: string }[] = [
+  { value: "summary", label: "Summary" },
+  { value: "normal", label: "Normal" },
+  { value: "verbose", label: "Verbose" },
+];
 
 interface HeaderOverflowMenuProps {
   conversation: AgentConversation;
@@ -27,12 +37,12 @@ interface HeaderOverflowMenuProps {
 
 /**
  * Chat header's overflow menu — everything that used to be a standing
- * control lives here now: transcript density (api-only, P1-17 will replace
- * the <select> with a global cycled enum — this is the named slot, not a
- * redesign), memory toggle (api-only), the preview-pane toggle, export
- * (all modes), and the Continue-in section. Owns the shared feedback flash
- * (copy/clipboard confirmations) so every action in the menu reports through
- * one place.
+ * control lives here now: view mode (P1-17 — one global Summary/Normal/
+ * Verbose transcript density, keyboard-cycled with Ctrl/Cmd+Shift+V,
+ * un-gated because it applies to PTY transcripts too), memory toggle
+ * (api-only), the preview-pane toggle, export (all modes), and the
+ * Continue-in section. Owns the shared feedback flash (copy/clipboard
+ * confirmations) so every action in the menu reports through one place.
  */
 export function HeaderOverflowMenu({
   conversation,
@@ -42,6 +52,10 @@ export function HeaderOverflowMenu({
 }: HeaderOverflowMenuProps) {
   const conversationId = conversation.id;
   const memoryGetContext = useMemoryStore((s) => s.getContextForSession);
+  const viewMode = useAgentSettingsStore((s) => s.transcriptViewMode);
+  const setTranscriptViewMode = useAgentSettingsStore(
+    (s) => s.setTranscriptViewMode,
+  );
   const [feedback, setFeedback] = useState<string | null>(null);
 
   function flashFeedback(msg: string) {
@@ -67,38 +81,32 @@ export function HeaderOverflowMenu({
         }
       >
         <div className="min-w-[240px]">
-          {isApi && (
-            <div className="px-3 py-1.5 border-b border-bg-border">
-              <Tooltip content="Transcript density: Summary collapses tool calls and hides thinking; Verbose shows raw inputs.">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-text-secondary">
-                    Transcript density
-                  </span>
-                  <select
-                    value={conversation.transcriptVerbosity ?? "normal"}
-                    onChange={(e) => {
-                      const next = e.target.value as
-                        | "summary"
-                        | "normal"
-                        | "verbose";
-                      useAgentTaskStore.setState((s) => ({
-                        conversations: s.conversations.map((c) =>
-                          c.id === conversationId
-                            ? { ...c, transcriptVerbosity: next, updatedAt: Date.now() }
-                            : c,
-                        ),
-                      }));
-                    }}
-                    className="bg-bg-secondary border border-bg-border rounded text-[10px] px-1 py-0.5 text-text-secondary"
-                  >
-                    <option value="summary">Summary</option>
-                    <option value="normal">Normal</option>
-                    <option value="verbose">Verbose</option>
-                  </select>
+          <div className="px-3 py-1.5 border-b border-bg-border">
+            <Tooltip content="Cycle with ⌘⇧V / Ctrl+Shift+V. Summary collapses tool detail; Verbose shows raw inputs.">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-text-secondary">
+                  View mode
+                </span>
+                <div className="flex items-center gap-0.5 bg-bg-secondary border border-bg-border rounded p-0.5">
+                  {VIEW_MODE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setTranscriptViewMode(opt.value)}
+                      aria-pressed={viewMode === opt.value}
+                      className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                        viewMode === opt.value
+                          ? "bg-bg-elevated text-text-primary"
+                          : "text-text-secondary hover:text-text-primary"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
-              </Tooltip>
-            </div>
-          )}
+              </div>
+            </Tooltip>
+          </div>
 
           {isApi && (
             <button
