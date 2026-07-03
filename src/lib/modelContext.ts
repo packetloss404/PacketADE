@@ -1,7 +1,7 @@
 /**
  * Single source of truth for model context-window sizing and live
  * context-occupancy math, shared by the Agents-tab status surfaces
- * (SessionHealthBar + ContextUsageRing). Previously each component carried
+ * (ContextUsageRing, SessionMetaLine). Previously each component carried
  * its own divergent heuristic, which disagreed by up to 5x for the default
  * Opus-4.8 model. Keep all context-window knowledge here.
  *
@@ -33,6 +33,14 @@ const MODEL_CONTEXT_TOKENS: Record<string, number> = {
 };
 
 const DEFAULT_CONTEXT_TOKENS = 200_000;
+
+/**
+ * Single source of truth for context-occupancy warning thresholds, shared by
+ * every gauge that renders `computeContextOccupancy`'s fraction (previously
+ * ContextUsageRing and SessionHealthBar disagreed — 70/90 vs 60/85).
+ */
+export const CONTEXT_WARN_FRACTION = 0.7;
+export const CONTEXT_CRITICAL_FRACTION = 0.9;
 
 /**
  * Resolve the total context-window size (in tokens) for a model id.

@@ -99,9 +99,9 @@ describe("Agents pane workspace decoupling", () => {
   });
 
   it("keeps continue actions for folder, CLI, and editors without an Open in workspace item", () => {
-    render(<ContinueInMenu conversation={conversation()} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /continue in/i }));
+    // ContinueInMenu is now a section component (P1-10) — no Dropdown/trigger
+    // of its own, so it renders its content bare with no click needed.
+    render(<ContinueInMenu conversation={conversation()} onFeedback={vi.fn()} />);
 
     expect(screen.getByText("Open project folder in OS")).toBeInTheDocument();
     expect(screen.getByText("Continue in CLI")).toBeInTheDocument();
@@ -113,13 +113,14 @@ describe("Agents pane workspace decoupling", () => {
   });
 
   it("copies the conversation's actual CLI command when a handoff is known", async () => {
+    const onFeedback = vi.fn();
     render(
       <ContinueInMenu
         conversation={conversation({ agent: "codex", mode: "pty", model: undefined })}
+        onFeedback={onFeedback}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /continue in/i }));
     fireEvent.click(screen.getByText("Continue in CLI (Codex)"));
 
     await waitFor(() => {
@@ -127,5 +128,8 @@ describe("Agents pane workspace decoupling", () => {
         'cd "D:\\projects\\PacketADE" && codex',
       );
     });
+    expect(onFeedback).toHaveBeenCalledWith(
+      "Command copied - paste into your terminal",
+    );
   });
 });

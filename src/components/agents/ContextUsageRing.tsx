@@ -1,5 +1,9 @@
 import { useMemo, useState, useRef, useEffect } from "react";
-import { computeContextOccupancy } from "@/lib/modelContext";
+import {
+  computeContextOccupancy,
+  CONTEXT_WARN_FRACTION,
+  CONTEXT_CRITICAL_FRACTION,
+} from "@/lib/modelContext";
 import type {
   AgentConversation,
   AgentMessage,
@@ -92,9 +96,9 @@ export function ContextUsageRing({ conversation }: ContextUsageRingProps) {
   // their compose ring. Driven by Tailwind stroke-* token utilities so it
   // tracks the theme instead of hardcoded hex fallbacks.
   const strokeClass =
-    ratio >= 0.9
+    ratio >= CONTEXT_CRITICAL_FRACTION
       ? "stroke-accent-red"
-      : ratio >= 0.7
+      : ratio >= CONTEXT_WARN_FRACTION
         ? "stroke-accent-amber"
         : "stroke-accent-green";
 

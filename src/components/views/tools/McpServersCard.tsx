@@ -1,12 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plug, Plus, Pencil, Trash2, Globe, FolderOpen, RefreshCw } from "lucide-react";
 import { useMcpStore } from "@/stores/mcpStore";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { McpServerModal } from "../McpServerModal";
+import { Checkbox } from "@/components/ui/Checkbox";
 import type { McpServerEntry } from "@/types/mcp";
 
 export function McpServersCard() {
   const { servers, loading, error, fetchServers, addServer, updateServer, removeServer } =
     useMcpStore();
+  const defaultEnabledMcpServerIds = useAgentSettingsStore(
+    (s) => s.defaultEnabledMcpServerIds,
+  );
+  const setDefaultEnabledMcpServerIds = useAgentSettingsStore(
+    (s) => s.setDefaultEnabledMcpServerIds,
+  );
   const [showModal, setShowModal] = useState(false);
   const [editEntry, setEditEntry] = useState<McpServerEntry | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -17,6 +25,33 @@ export function McpServersCard() {
 
   const globalServers = servers.filter((s) => s.scope === "global");
   const projectServers = servers.filter((s) => s.scope === "project");
+
+  // Default MCP set for newly started agent sessions. null = every
+  // non-disabled server (mirrors the old header popover's semantics).
+  const eligibleServers = useMemo(
+    () => servers.filter((s) => !s.disabled),
+    [servers],
+  );
+  const activeNames = useMemo(
+    () =>
+      defaultEnabledMcpServerIds === null
+        ? new Set(eligibleServers.map((s) => s.name))
+        : new Set(defaultEnabledMcpServerIds),
+    [defaultEnabledMcpServerIds, eligibleServers],
+  );
+
+  function toggleDefaultServer(name: string) {
+    const current =
+      defaultEnabledMcpServerIds ?? eligibleServers.map((s) => s.name);
+    const next = current.includes(name)
+      ? current.filter((n) => n !== name)
+      : [...current, name];
+    setDefaultEnabledMcpServerIds(next);
+  }
+
+  function resetDefaultToAll() {
+    setDefaultEnabledMcpServerIds(null);
+  }
 
   function handleEdit(entry: McpServerEntry) {
     setEditEntry(entry);
@@ -81,6 +116,23 @@ export function McpServersCard() {
         </div>
       )}
 
+      {eligibleServers.length > 0 && (
+        <div className="flex items-center justify-between mb-3 px-3 py-1.5 bg-bg-primary border border-bg-border rounded">
+          <span className="text-[10px] text-text-muted">
+            "On for agent sessions" sets which MCP servers new agent
+            conversations start with. Applies to newly started agent
+            conversations.
+          </span>
+          <button
+            onClick={resetDefaultToAll}
+            className="text-[10px] text-text-muted hover:text-text-primary transition-colors shrink-0 ml-2"
+            title="Reset to default — every non-disabled server is enabled"
+          >
+            Reset to all
+          </button>
+        </div>
+      )}
+
       <div className="space-y-3">
         <ServerGroup
           title="Global"
@@ -90,6 +142,8 @@ export function McpServersCard() {
           onDelete={handleDelete}
           deleteConfirm={deleteConfirm}
           setDeleteConfirm={setDeleteConfirm}
+          activeNames={activeNames}
+          onToggleDefault={toggleDefaultServer}
         />
         <ServerGroup
           title="Project"
@@ -99,6 +153,8 @@ export function McpServersCard() {
           onDelete={handleDelete}
           deleteConfirm={deleteConfirm}
           setDeleteConfirm={setDeleteConfirm}
+          activeNames={activeNames}
+          onToggleDefault={toggleDefaultServer}
         />
       </div>
 
@@ -142,6 +198,8 @@ function ServerGroup({
   onDelete,
   deleteConfirm,
   setDeleteConfirm,
+  activeNames,
+  onToggleDefault,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -150,6 +208,8 @@ function ServerGroup({
   onDelete: (name: string, scope: "global" | "project") => void;
   deleteConfirm: string | null;
   setDeleteConfirm: (key: string | null) => void;
+  activeNames: Set<string>;
+  onToggleDefault: (name: string) => void;
 }) {
   if (servers.length === 0) return null;
 
@@ -183,6 +243,14 @@ function ServerGroup({
                   {entry.config.command}
                   {entry.config.args?.length ? ` ${entry.config.args.join(" ")}` : ""}
                 </div>
+                {!entry.disabled && (
+                  <Checkbox
+                    checked={activeNames.has(entry.name)}
+                    onChange={() => onToggleDefault(entry.name)}
+                    label="On for agent sessions"
+                    className="mt-1 text-[10px]"
+                  />
+                )}
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button

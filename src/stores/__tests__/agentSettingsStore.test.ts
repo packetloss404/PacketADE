@@ -76,4 +76,32 @@ describe("agentSettingsStore", () => {
     expect(useAgentSettingsStore.getState().autoFailoverEnabled).toBe(false);
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)!).autoFailoverEnabled).toBe(false);
   });
+
+  it("defaults defaultEnabledMcpServerIds to null (all non-disabled servers), sets it, and hydrates it back", async () => {
+    const { useAgentSettingsStore } = await loadStore();
+
+    expect(useAgentSettingsStore.getState().defaultEnabledMcpServerIds).toBeNull();
+
+    useAgentSettingsStore.getState().setDefaultEnabledMcpServerIds(["filesystem", "search"]);
+
+    expect(useAgentSettingsStore.getState().defaultEnabledMcpServerIds).toEqual([
+      "filesystem",
+      "search",
+    ]);
+    expect(
+      JSON.parse(localStorage.getItem(SETTINGS_KEY)!).defaultEnabledMcpServerIds,
+    ).toEqual(["filesystem", "search"]);
+
+    const { useAgentSettingsStore: rehydrated } = await loadStore();
+    expect(rehydrated.getState().defaultEnabledMcpServerIds).toEqual([
+      "filesystem",
+      "search",
+    ]);
+
+    rehydrated.getState().setDefaultEnabledMcpServerIds(null);
+    expect(rehydrated.getState().defaultEnabledMcpServerIds).toBeNull();
+    expect(
+      JSON.parse(localStorage.getItem(SETTINGS_KEY)!).defaultEnabledMcpServerIds,
+    ).toBeNull();
+  });
 });

@@ -32,6 +32,9 @@ interface ModelSelectorProps {
   onModelChange: (model: string) => void;
   ollamaModels: OllamaModelsState;
   refreshOllamaModels: () => void;
+  /** Imperative "open now" channel threaded to the underlying Dropdown, e.g.
+   * so the `/model` slash command can open the header's picker. */
+  openSignal?: number;
 }
 
 export function ModelSelector({
@@ -40,6 +43,7 @@ export function ModelSelector({
   onModelChange,
   ollamaModels,
   refreshOllamaModels,
+  openSignal,
 }: ModelSelectorProps) {
   const provider = API_PROVIDERS.find((p) => p.agentCli === selectedAgent);
   if (!provider) return null;
@@ -81,6 +85,7 @@ export function ModelSelector({
     <Dropdown
       searchable
       searchPlaceholder="Search models…"
+      openSignal={openSignal}
       trigger={
         <span className="flex items-center gap-1.5 text-text-muted text-[10px]">
           <span>{triggerLabel}</span>

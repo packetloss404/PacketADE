@@ -34,6 +34,16 @@ interface DropdownProps {
   openSignal?: number;
 }
 
+/**
+ * Access the enclosing Dropdown's `close()` from arbitrary content rendered
+ * inside it (e.g. a menu section that needs to close its parent after an
+ * async action). Outside a Dropdown the context default `close` is a no-op —
+ * deliberate, so tests can render menu section content bare.
+ */
+export function useDropdownClose(): () => void {
+  return useContext(DropdownContext).close;
+}
+
 function stringifyChildren(node: ReactNode): string {
   if (node == null || node === false || node === true) return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
