@@ -3,6 +3,18 @@ import { storageKey } from "@/lib/brand";
 
 export type AgentComposerMode = "local" | "worktree" | "cloud";
 
+/** Global transcript render density (P1-17). Replaces the old
+ * per-conversation `AgentConversation.transcriptVerbosity` select — one
+ * enum for the whole app, keyboard-cycled and surfaced in the chat header's
+ * overflow menu. */
+export type TranscriptViewMode = "summary" | "normal" | "verbose";
+
+const TRANSCRIPT_VIEW_MODE_CYCLE: TranscriptViewMode[] = [
+  "summary",
+  "normal",
+  "verbose",
+];
+
 export const DEFAULT_AGENT_AUTO_ARCHIVE_DAYS = 14;
 
 interface AgentSettingsValues {
@@ -16,6 +28,8 @@ interface AgentSettingsValues {
    * popover's undefined-filter semantics). Explicit per-conversation values
    * (profiles, /new inheritance) always override this. */
   defaultEnabledMcpServerIds: string[] | null;
+  /** Global transcript render density. Default = "normal". */
+  transcriptViewMode: TranscriptViewMode;
 }
 
 interface AgentSettingsState extends AgentSettingsValues {
@@ -27,6 +41,8 @@ interface AgentSettingsState extends AgentSettingsValues {
   setAutoArchiveDays: (days: number | null) => void;
   setAutoFailoverEnabled: (enabled: boolean) => void;
   setDefaultEnabledMcpServerIds: (ids: string[] | null) => void;
+  setTranscriptViewMode: (mode: TranscriptViewMode) => void;
+  cycleTranscriptViewMode: () => void;
   hydrateFromStorage: () => void;
 }
 
@@ -39,6 +55,10 @@ const LEGACY_ONBOARDING_DISMISSED_KEY = storageKey("agents-onboarding-dismissed"
 
 function isComposerMode(value: unknown): value is AgentComposerMode {
   return value === "local" || value === "worktree" || value === "cloud";
+}
+
+function isTranscriptViewMode(value: unknown): value is TranscriptViewMode {
+  return value === "summary" || value === "normal" || value === "verbose";
 }
 
 function readPersistedSettings(): PersistedAgentSettings {
@@ -97,6 +117,9 @@ function loadSettings(): AgentSettingsValues {
       Array.isArray(persisted.defaultEnabledMcpServerIds)
         ? persisted.defaultEnabledMcpServerIds
         : null,
+    transcriptViewMode: isTranscriptViewMode(persisted.transcriptViewMode)
+      ? persisted.transcriptViewMode
+      : "normal",
   };
 }
 
@@ -131,6 +154,7 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => {
       autoArchiveDays: next.autoArchiveDays,
       autoFailoverEnabled: next.autoFailoverEnabled,
       defaultEnabledMcpServerIds: next.defaultEnabledMcpServerIds,
+      transcriptViewMode: next.transcriptViewMode,
     });
   }
 
@@ -149,6 +173,15 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => {
       update({ autoFailoverEnabled }),
     setDefaultEnabledMcpServerIds: (defaultEnabledMcpServerIds) =>
       update({ defaultEnabledMcpServerIds }),
+    setTranscriptViewMode: (transcriptViewMode) =>
+      update({ transcriptViewMode }),
+    cycleTranscriptViewMode: () => {
+      const current = get().transcriptViewMode;
+      const idx = TRANSCRIPT_VIEW_MODE_CYCLE.indexOf(current);
+      const next =
+        TRANSCRIPT_VIEW_MODE_CYCLE[(idx + 1) % TRANSCRIPT_VIEW_MODE_CYCLE.length];
+      update({ transcriptViewMode: next });
+    },
     hydrateFromStorage: () => set(loadSettings()),
   };
 });

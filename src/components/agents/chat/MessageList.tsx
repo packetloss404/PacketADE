@@ -12,6 +12,7 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { estimateTurnCostUsd } from "@/lib/conversationCost";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { ExplorationRollupCard } from "../ExplorationRollupCard";
 import { PlanModeApprovalMenu } from "../PlanModeApprovalMenu";
 import { ThinkingBlock } from "../ThinkingBlock";
@@ -285,6 +286,9 @@ function MessageBubble({
   // hover-click must not be destructive. Local state is safe here: rows
   // are mount-once (LazyMessageRow never unmounts them).
   const [confirmingRestore, setConfirmingRestore] = useState(false);
+  // Global transcript view mode (P1-17) — read unconditionally at the top so
+  // this hook call stays stable across the role early-returns below.
+  const verbosity = useAgentSettingsStore((s) => s.transcriptViewMode);
   if (message.role === "system") {
     return (
       <div className="flex justify-center">
@@ -428,7 +432,6 @@ function MessageBubble({
   }
 
   // assistant
-  const verbosity = conversation.transcriptVerbosity ?? "normal";
   return (
     <div className="flex justify-start">
       <div className="max-w-[90%] space-y-1.5">
@@ -453,7 +456,6 @@ function MessageBubble({
             toolCalls={message.toolCalls}
             conversationId={conversation.id}
             projectPath={conversation.projectPath}
-            verbosity={verbosity}
           />
         )}
 

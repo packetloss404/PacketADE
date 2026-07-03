@@ -4,6 +4,7 @@ import { Bot } from "lucide-react";
 import type { AgentToolCall } from "@/types/agent-conversation";
 import { parseToolInput } from "@/lib/parseToolInput";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { BaseToolCard } from "./tool-cards/BaseToolCard";
 import { StatusPill } from "./tool-cards/StatusPill";
 
@@ -15,7 +16,6 @@ interface SubagentInput {
 interface SubagentToolCallCardProps {
   toolCall: AgentToolCall;
   conversationId: string;
-  verbosity?: "summary" | "normal" | "verbose";
 }
 
 function parseSubagentInput(raw: string | undefined): SubagentInput {
@@ -35,8 +35,8 @@ function truncate(text: string, max: number): string {
 function SubagentToolCallCardImpl({
   toolCall,
   conversationId: _conversationId,
-  verbosity = "normal",
 }: SubagentToolCallCardProps) {
+  const verbosity = useAgentSettingsStore((s) => s.transcriptViewMode);
   const { task, model } = useMemo(
     () => parseSubagentInput(toolCall.input),
     [toolCall.input],
@@ -44,8 +44,8 @@ function SubagentToolCallCardImpl({
 
   const [expanded, setExpanded] = useState(verbosity === "verbose");
 
-  // Keep expand state in sync when the per-conversation verbosity control
-  // changes after the card has mounted.
+  // Keep expand state in sync when the global view mode changes after the
+  // card has mounted.
   useEffect(() => {
     setExpanded(verbosity === "verbose");
   }, [verbosity]);

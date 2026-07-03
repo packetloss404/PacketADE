@@ -130,7 +130,7 @@ describe("HeaderActions", () => {
     expect(screen.getByText("Export as Markdown")).toBeInTheDocument();
     expect(screen.getByText("Export as JSON")).toBeInTheDocument();
     expect(screen.getByText("Copy transcript")).toBeInTheDocument();
-    expect(screen.getByText("Transcript density")).toBeInTheDocument();
+    expect(screen.getByText("View mode")).toBeInTheDocument();
     expect(screen.getByText("Memory")).toBeInTheDocument();
     expect(screen.getByText("Show preview pane")).toBeInTheDocument();
     expect(screen.getByText("Open project folder in OS")).toBeInTheDocument();

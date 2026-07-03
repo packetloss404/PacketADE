@@ -88,9 +88,6 @@ export interface DiffComment {
   createdAt: number;
 }
 
-/** How much detail to show in the transcript renderer. */
-export type TranscriptVerbosity = "summary" | "normal" | "verbose";
-
 export interface AgentConversation {
   id: string;
   title: string;
@@ -134,8 +131,6 @@ export interface AgentConversation {
     user: string;
     remotePath: string;
   };
-  /** Per-conversation render density. Default = "normal". */
-  transcriptVerbosity?: TranscriptVerbosity;
   /** Whether this conversation is archived. Archived conversations are hidden from
    * the sidebar by default but accessible via the "Archived" filter. Treat
    * undefined as false. */

@@ -5,30 +5,13 @@ import { SubagentToolCallCard } from "../SubagentToolCallCard";
 import { TaskListCard } from "../TaskListCard";
 import { ToolCallCard } from "./ToolCallCard";
 import { isEditToolCall } from "@/lib/parseToolInput";
-import type {
-  AgentToolCall,
-  TranscriptVerbosity,
-} from "@/types/agent-conversation";
-
-const EXPLORED_TOOL_NAMES = new Set([
-  "read_file",
-  "Read",
-  "grep",
-  "Grep",
-  "glob",
-  "Glob",
-  "search",
-  "list_directory",
-  "list_files",
-  "LS",
-  "ls",
-]);
+import { isExplorationToolName } from "../ExplorationRollupCard";
+import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface ToolCallRendererProps {
   toolCalls: AgentToolCall[];
   conversationId: string;
   projectPath: string;
-  verbosity: TranscriptVerbosity;
 }
 
 // Memoized: a streaming turn fires many store updates per second; skipping this
@@ -38,7 +21,6 @@ export const ToolCallRenderer = memo(function ToolCallRenderer({
   toolCalls,
   conversationId,
   projectPath,
-  verbosity,
 }: ToolCallRendererProps) {
   if (!toolCalls.length) return null;
 
@@ -46,7 +28,7 @@ export const ToolCallRenderer = memo(function ToolCallRenderer({
   // is their live streaming representation AND their settled summary, so the
   // stream→settle transition doesn't swap dozens of cards for one rollup (the
   // single-frame layout snap that destroyed scroll position).
-  const visible = toolCalls.filter((tc) => !EXPLORED_TOOL_NAMES.has(tc.name));
+  const visible = toolCalls.filter((tc) => !isExplorationToolName(tc.name));
   if (visible.length === 0) return null;
 
   // Edit-bearing calls across every runtime (write_file, Claude Code's
@@ -71,13 +53,7 @@ export const ToolCallRenderer = memo(function ToolCallRenderer({
       )}
       {rendered.map((tc) => {
         if (tc.name === "bash") {
-          return (
-            <BashToolCallCard
-              key={tc.id}
-              toolCall={tc}
-              verbosity={verbosity}
-            />
-          );
+          return <BashToolCallCard key={tc.id} toolCall={tc} />;
         }
         if (tc.name === "spawn_subagent") {
           return (
@@ -85,14 +61,11 @@ export const ToolCallRenderer = memo(function ToolCallRenderer({
               key={tc.id}
               toolCall={tc}
               conversationId={conversationId}
-              verbosity={verbosity}
             />
           );
         }
         if (tc.name === "task_list") {
-          return (
-            <TaskListCard key={tc.id} toolCall={tc} verbosity={verbosity} />
-          );
+          return <TaskListCard key={tc.id} toolCall={tc} />;
         }
         return (
           <ToolCallCard
@@ -100,7 +73,6 @@ export const ToolCallRenderer = memo(function ToolCallRenderer({
             toolCall={tc}
             conversationId={conversationId}
             projectPath={projectPath}
-            verbosity={verbosity}
           />
         );
       })}

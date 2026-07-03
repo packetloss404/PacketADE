@@ -1,6 +1,8 @@
 import { memo, useEffect, useState } from "react";
-import { ChevronRight, FileEdit } from "lucide-react";
+import { FileEdit } from "lucide-react";
+import { BaseToolCard } from "../tool-cards/BaseToolCard";
 import { StatusPill } from "../tool-cards/StatusPill";
+import { toolRowMeta } from "../tool-cards/toolRowMeta";
 import {
   isEditToolName,
   materializeEdits,
@@ -9,23 +11,23 @@ import {
 import { countLineChanges } from "@/lib/diffUtils";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { useReviewStore } from "@/stores/reviewStore";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 function ToolCallCardImpl({
   toolCall,
   conversationId,
   projectPath,
-  verbosity = "normal",
 }: {
   toolCall: AgentToolCall;
   conversationId: string;
   projectPath: string;
-  verbosity?: "summary" | "normal" | "verbose";
 }) {
+  const verbosity = useAgentSettingsStore((s) => s.transcriptViewMode);
   const [expanded, setExpanded] = useState(verbosity === "verbose");
 
-  // Keep expand state in sync when the per-conversation verbosity control
-  // changes after the card has mounted.
+  // Keep expand state in sync when the global view mode changes after the
+  // card has mounted.
   useEffect(() => {
     setExpanded(verbosity === "verbose");
   }, [verbosity]);
@@ -119,65 +121,46 @@ function ToolCallCardImpl({
     );
   }
 
+  // Generic bucket (not an edit chip, not bash/subagent/task_list — those
+  // have dedicated cards): a uniform one-line verb row — icon · verb ·
+  // target · status — expandable on click, through the same BaseToolCard
+  // shell bash/subagent rows use.
   const summary = toolCall.summary ?? "";
-  const fullContent = toolCall.fullContent ?? summary;
-  const summaryPreview = summary.split("\n").slice(0, 2).join("\n");
-  const hasMore =
-    (toolCall.fullContent && toolCall.fullContent !== summary) ||
-    summary.split("\n").length > 2 ||
-    summary.length > 160;
+  const body = toolCall.fullContent ?? summary;
+  const canToggle = verbosity !== "summary" && body.trim().length > 0;
+  const meta = toolRowMeta(toolCall);
+  const Icon = meta.icon;
 
   return (
-    <div
-      className={`border rounded overflow-hidden ${
-        isError
-          ? "border-accent-red/30 bg-accent-red/5"
-          : "border-bg-border bg-bg-secondary"
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => hasMore && setExpanded((v) => !v)}
-        aria-expanded={hasMore ? expanded : undefined}
-        className={`w-full flex items-center gap-2 px-2 py-1 text-left bg-bg-tertiary ${
-          hasMore ? "hover:bg-bg-elevated cursor-pointer" : "cursor-default"
-        } ${expanded && hasMore ? "border-b border-line-soft" : ""} transition-colors`}
-      >
-        <span className="text-xs font-medium text-text-primary">
-          {toolCall.name}
+    <BaseToolCard
+      icon={<Icon size={11} className="text-text-muted shrink-0" />}
+      title={
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className="text-text-primary shrink-0">{meta.verb}</span>
+          {meta.target && (
+            <span className="font-mono text-text-muted truncate min-w-0">
+              {meta.target}
+            </span>
+          )}
         </span>
-        {toolCall.file && (
-          <span className="font-mono text-[10px] text-text-secondary truncate">
-            {toolCall.file}
-          </span>
-        )}
-        {!expanded && summaryPreview && verbosity !== "summary" && (
-          <span className="ml-1 truncate text-text-muted text-[10px] flex-1 min-w-0">
-            {summaryPreview.replace(/\n/g, " ↵ ")}
-          </span>
-        )}
-        <span className="flex-1" />
-        {statusPill}
-        {hasMore && (
-          <ChevronRight
-            size={10}
-            className={`text-text-muted shrink-0 transition-transform motion-reduce:transition-none ${
-              expanded ? "rotate-90" : ""
-            }`}
-          />
-        )}
-      </button>
-      {expanded && hasMore && (
-        <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary p-2 max-h-96 overflow-y-auto text-text-primary">
-          {fullContent}
-        </pre>
-      )}
-      {expanded && verbosity === "verbose" && toolCall.input && (
-        <pre className="text-[10px] font-mono whitespace-pre-wrap bg-bg-secondary border-t border-line-soft p-2 max-h-48 overflow-y-auto text-text-muted">
+      }
+      titleAttr={meta.target}
+      statusPill={statusPill}
+      canToggle={canToggle}
+      expanded={expanded}
+      onToggle={() => setExpanded((v) => !v)}
+      toggleLabel={{ expanded: "Collapse output", collapsed: "Expand output" }}
+      isError={isError}
+    >
+      <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
+        {body}
+      </pre>
+      {verbosity === "verbose" && toolCall.input && (
+        <pre className="text-[10px] font-mono whitespace-pre-wrap bg-bg-secondary border-t border-line-soft p-2 mx-1 mb-1 max-h-48 overflow-y-auto text-text-muted">
           input: {toolCall.input}
         </pre>
       )}
-    </div>
+    </BaseToolCard>
   );
 }
 

@@ -28,7 +28,7 @@ interface HeaderActionsProps {
  * Chat header's resting right cluster — consolidated to six controls (P1-10):
  * AgentModeChip, model picker, ContextUsageRing, the Changes chip
  * (DiffPaneTrigger), the overflow menu, and close. Everything else that used
- * to stand on its own (verbosity, memory, preview toggle, export items,
+ * to stand on its own (view mode, memory, preview toggle, export items,
  * Continue-in, the raw model Dropdown) lives inside HeaderOverflowMenu now,
  * or — for the model picker — reuses the composer's ModelSelector so
  * ctx/pricing metadata appears here too.
