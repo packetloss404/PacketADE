@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Brain,
   Copy,
@@ -22,6 +22,7 @@ import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { API_PROVIDERS } from "@/lib/api-models";
 import type { AgentConversation } from "@/types/agent-conversation";
+import { addPaneControlListener, OPEN_MODEL_DROPDOWN_EVENT } from "../paneEvents";
 
 interface HeaderActionsProps {
   conversation: AgentConversation;
@@ -61,6 +62,15 @@ export function HeaderActions({
     "Model";
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
+  );
+  // `/model` slash command → bump the signal so the model dropdown opens.
+  const [modelOpenSignal, setModelOpenSignal] = useState(0);
+  useEffect(
+    () =>
+      addPaneControlListener(OPEN_MODEL_DROPDOWN_EVENT, conversationId, () =>
+        setModelOpenSignal((n) => n + 1),
+      ),
+    [conversationId],
   );
   const handleCopyTranscript = async () => {
     const ok = await copyTranscriptToClipboard(conversation);
@@ -138,45 +148,42 @@ export function HeaderActions({
       )}
 
       {providerInfo && conversation.mode === "api" && (
-        <div data-agent-pane-model-dropdown={conversationId}>
-          <Dropdown
-            align="right"
-            trigger={
-              <span className="text-[11px] text-text-secondary">
-                {currentModelLabel}
-              </span>
-            }
-          >
-            {providerInfo.models.map((m) => (
-              <DropdownItem
-                key={m.value}
-                onClick={() => onChangeModel(m.value)}
+        <Dropdown
+          align="right"
+          openSignal={modelOpenSignal}
+          trigger={
+            <span className="text-[11px] text-text-secondary">
+              {currentModelLabel}
+            </span>
+          }
+        >
+          {providerInfo.models.map((m) => (
+            <DropdownItem
+              key={m.value}
+              onClick={() => onChangeModel(m.value)}
+            >
+              <span
+                className={
+                  m.value === currentModelValue
+                    ? "text-accent-green text-[11px]"
+                    : "text-[11px]"
+                }
               >
-                <span
-                  className={
-                    m.value === currentModelValue
-                      ? "text-accent-green text-[11px]"
-                      : "text-[11px]"
-                  }
-                >
-                  {m.label}
-                </span>
-              </DropdownItem>
-            ))}
-          </Dropdown>
-        </div>
+                {m.label}
+              </span>
+            </DropdownItem>
+          ))}
+        </Dropdown>
       )}
 
       {conversation.mode === "api" && (
         <div className="flex items-center gap-1.5">
-          <div data-agent-pane-mode-chip={conversationId}>
-            <AgentModeChip
-              conversation={conversation}
-              onCycle={onCycleMode}
-              onSelectMode={onSelectMode}
-              onSetApproveWrites={onSetApproveWrites}
-            />
-          </div>
+          <AgentModeChip
+            conversation={conversation}
+            onCycle={onCycleMode}
+            onSelectMode={onSelectMode}
+            onSetApproveWrites={onSetApproveWrites}
+          />
           {copyState !== "idle" && (
             <span
               className={`text-[10px] ${
