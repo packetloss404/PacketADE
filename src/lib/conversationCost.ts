@@ -47,6 +47,15 @@ function lookupRates(model: string | undefined): { input: number; output: number
   return null;
 }
 
+/**
+ * Public accessor for this module's rate table — the ONE pricing source.
+ * Used by api-models.ts to populate ModelSelector's price display so no
+ * second table has to be hand-mirrored.
+ */
+export function getModelRates(model: string | undefined): { input: number; output: number } | null {
+  return lookupRates(model);
+}
+
 function rateLookupKeys(model: string): string[] {
   const keys = [model];
   const strippedDate = model.replace(/-\d{8}$/, "");

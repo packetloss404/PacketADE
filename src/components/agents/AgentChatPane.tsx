@@ -3,7 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { ArrowDown, ArrowLeft, MessageSquareOff, Server, Sparkles } from "lucide-react";
 import { MemoryInjectionCard } from "./MemoryInjectionCard";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
-import { SessionHealthBar } from "./SessionHealthBar";
+import { SessionMetaLine } from "./chat/SessionMetaLine";
 import { PlanPanel } from "./PlanPanel";
 import { deriveMode, flagsForMode, nextMode } from "./agentModeChipUtils";
 import type { AgentMode } from "./AgentModeChip";
@@ -103,7 +103,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     })),
   );
   // Live queues read from the substore — drives both the per-item cards
-  // and the header status line counters.
+  // and pendingApprovalCount (Composer's cancel button, PendingApprovalsSection).
   const pendingPermissions = useAgentApprovalStore(
     (s) => s.permissions.get(conversationId) ?? EMPTY_PENDING_PERMISSIONS,
   );
@@ -218,11 +218,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   /* ----------------- render ----------------- */
 
-  // Session counts surfaced in the consolidated status bar below the header.
-  const turnCount = messages.filter((m) => m.role === "user").length;
-  const toolCallCount = messages.reduce((sum, m) => sum + (m.toolCalls?.length ?? 0), 0);
+  // Pending approvals (Composer's cancel button, PendingApprovalsSection).
   const pendingApprovalCount = pendingEdits.length + pendingPermissions.length;
-  const assistantMsgCount = messages.filter((m) => m.role === "assistant").length;
 
   // Politely announced to screen readers: status transitions + the latest
   // assistant output as it streams in.
@@ -237,8 +234,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const chatContent = (
     <div className="flex h-full flex-col">
       {/* Header bar — sparkle avatar + title + agent/status chips. Single row
-          snapped to the shared h-[33px] baseline; session counts + git/model
-          moved into the consolidated SessionHealthBar below. */}
+          snapped to the shared h-[33px] baseline; project/branch/cost moved
+          into the thin SessionMetaLine below. */}
       <div className="flex h-[33px] shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3">
         <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border border-accent-line bg-accent-soft">
           <Sparkles size={13} className="text-accent-green" />
@@ -287,15 +284,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         {status.label}. {lastAssistantText}
       </div>
 
-      <SessionHealthBar
-        conversation={conversation}
-        counts={{
-          turns: turnCount,
-          toolCalls: toolCallCount,
-          pending: pendingApprovalCount,
-          received: assistantMsgCount,
-        }}
-      />
+      <SessionMetaLine conversation={conversation} />
 
       <PlanPanel conversation={conversation} />
 

@@ -58,6 +58,7 @@ import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
 import { useEditBaselineStore } from "@/stores/editBaselineStore";
@@ -504,10 +505,6 @@ interface AgentTaskStore {
   addDiffComment: (id: string, comment: Omit<DiffComment, "id" | "createdAt">) => void;
   removeDiffComment: (id: string, commentId: string) => void;
   clearDiffComments: (id: string) => void;
-  /** F9: set the per-conversation MCP server filter. null = all enabled
-   * (back-compat). [] = explicitly none. Applies on next session start —
-   * the sidecar protocol has no mid-session MCP swap. */
-  setEnabledMcpServerIds: (id: string, ids: string[] | null) => void;
   retryLastTurn: (id: string, newModel?: string) => Promise<void>;
   /** M2.7 — Cursor-style "edit a prior user message and re-run from there."
    * Truncates the transcript to before the target user message, cancels any
@@ -647,6 +644,13 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
     const isRemoteConversation = Boolean(sshTarget);
+    // Explicit callers (profiles, /new inheritance) always win; otherwise
+    // fall back to the Settings-configured default MCP set (null = all
+    // non-disabled servers, resolved sidecar-side).
+    const resolvedMcpIds =
+      enabledMcpServerIds ??
+      useAgentSettingsStore.getState().defaultEnabledMcpServerIds ??
+      null;
 
     if (!skipBackendStart) {
       await assertCostGuardrailsAllowLaunch(provider);
@@ -739,7 +743,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         : undefined,
       allowedTools: allowedTools ?? undefined,
       memoryContextEnabled: memoryContextEnabled ?? false,
-      enabledMcpServerIds: enabledMcpServerIds ?? undefined,
+      enabledMcpServerIds: resolvedMcpIds ?? undefined,
     };
 
     set((s) => ({
@@ -804,7 +808,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           sshConfig,
           allowedTools ?? null,
           null, // resumeToken — fresh start
-          enabledMcpServerIds ?? null,
+          resolvedMcpIds,
           null,
           permissionMode ?? "auto",
           approveWrites ?? false,
@@ -1148,23 +1152,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
         const next = { ...c, approveWrites: enabled, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-  },
-
-  setEnabledMcpServerIds: (id, ids) => {
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const next: AgentConversation = {
-          ...c,
-          enabledMcpServerIds: ids ?? undefined,
-          updatedAt: Date.now(),
-        };
         updated = next;
         return next;
       }),

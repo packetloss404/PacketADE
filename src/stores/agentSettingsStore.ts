@@ -11,6 +11,11 @@ interface AgentSettingsValues {
   onboardingDismissed: boolean;
   autoArchiveDays: number | null;
   autoFailoverEnabled: boolean;
+  /** Project-level default for which MCP servers new agent sessions start
+   * with. `null` = every non-disabled server (mirrors the old header
+   * popover's undefined-filter semantics). Explicit per-conversation values
+   * (profiles, /new inheritance) always override this. */
+  defaultEnabledMcpServerIds: string[] | null;
 }
 
 interface AgentSettingsState extends AgentSettingsValues {
@@ -21,6 +26,7 @@ interface AgentSettingsState extends AgentSettingsValues {
   showOnboarding: () => void;
   setAutoArchiveDays: (days: number | null) => void;
   setAutoFailoverEnabled: (enabled: boolean) => void;
+  setDefaultEnabledMcpServerIds: (ids: string[] | null) => void;
   hydrateFromStorage: () => void;
 }
 
@@ -87,6 +93,10 @@ function loadSettings(): AgentSettingsValues {
       readLegacyFlag(LEGACY_ONBOARDING_DISMISSED_KEY, false),
     autoArchiveDays: normalizeAutoArchiveDays(persisted.autoArchiveDays),
     autoFailoverEnabled: persisted.autoFailoverEnabled ?? true,
+    defaultEnabledMcpServerIds:
+      Array.isArray(persisted.defaultEnabledMcpServerIds)
+        ? persisted.defaultEnabledMcpServerIds
+        : null,
   };
 }
 
@@ -120,6 +130,7 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => {
       onboardingDismissed: next.onboardingDismissed,
       autoArchiveDays: next.autoArchiveDays,
       autoFailoverEnabled: next.autoFailoverEnabled,
+      defaultEnabledMcpServerIds: next.defaultEnabledMcpServerIds,
     });
   }
 
@@ -136,6 +147,8 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => {
       update({ autoArchiveDays: normalizeAutoArchiveDays(autoArchiveDays) }),
     setAutoFailoverEnabled: (autoFailoverEnabled) =>
       update({ autoFailoverEnabled }),
+    setDefaultEnabledMcpServerIds: (defaultEnabledMcpServerIds) =>
+      update({ defaultEnabledMcpServerIds }),
     hydrateFromStorage: () => set(loadSettings()),
   };
 });
