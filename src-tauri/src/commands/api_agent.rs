@@ -64,7 +64,10 @@ impl PermissionMode {
 pub enum PermissionDecision {
     AllowOnce,
     AllowAlways,
-    Deny,
+    /// Deny-and-continue: `reason`, when present, is the user's steering
+    /// text — folded into the synthetic tool result so the model is
+    /// redirected instead of stalled on a bare refusal.
+    Deny { reason: Option<String> },
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +155,9 @@ fn permission_request_event(session_id: &str) -> String {
 fn pending_edit_event(session_id: &str) -> String {
     format!("api-agent:pending-edit:{}", session_id)
 }
+fn edit_baseline_event(session_id: &str) -> String {
+    format!("api-agent:edit-baseline:{}", session_id)
+}
 
 async fn mark_attempt_reviewing_for_session(session_id: &str) {
     let _ = crate::commands::flight_attempts::update_attempt_status_by_session(
@@ -191,6 +197,18 @@ struct PendingEditPayload {
     content: String,
     /// Prior file content (None for new files) so the frontend can render
     /// a real before/after diff instead of just the new content.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    before: Option<String>,
+}
+
+/// P1-7: non-blocking pre-edit baseline for auto-applied writes
+/// (approve-writes off). The frontend records it so review surfaces diff
+/// applied edits against the true "before" instead of live disk.
+#[derive(Clone, Serialize)]
+struct EditBaselinePayload {
+    id: String,
+    path: String,
+    /// Pre-edit file content (None when the file did not exist).
     #[serde(skip_serializing_if = "Option::is_none")]
     before: Option<String>,
 }
@@ -1075,11 +1093,12 @@ pub async fn respond_permission(
     session_id: String,
     tool_id: String,
     decision: String,
+    reason: Option<String>,
 ) -> Result<(), String> {
     // Phase 3 slice C: forward to sidecar if it owns this session.
     if sidecar.owns_session(&session_id) {
         return sidecar
-            .forward_permission(session_id, tool_id, decision)
+            .forward_permission(session_id, tool_id, decision, reason)
             .await;
     }
 
@@ -1087,7 +1106,7 @@ pub async fn respond_permission(
     let decision = match decision.as_str() {
         "allow_once" => PermissionDecision::AllowOnce,
         "allow_always" => PermissionDecision::AllowAlways,
-        "deny" => PermissionDecision::Deny,
+        "deny" => PermissionDecision::Deny { reason },
         _ => return Err(format!("Unknown decision: {}", decision)),
     };
     let sender = {
@@ -1199,7 +1218,7 @@ pub async fn cancel_pending_tools(
         pending.drain().collect()
     };
     for (_, tx) in perm_senders {
-        let _ = tx.send(PermissionDecision::Deny);
+        let _ = tx.send(PermissionDecision::Deny { reason: None });
     }
 
     let edit_senders: Vec<_> = {
@@ -1824,21 +1843,39 @@ async fn run_agent_loop(
                                         .unwrap_or_default(),
                                 },
                             );
-                            match tokio::time::timeout(Duration::from_secs(300), rx).await {
-                                Ok(Ok(PermissionDecision::AllowOnce)) => {
+                            // A dropped response channel counts as a plain
+                            // deny so the or-pattern below stays exhaustive.
+                            match tokio::time::timeout(Duration::from_secs(300), rx)
+                                .await
+                                .map(|r| r.unwrap_or(PermissionDecision::Deny { reason: None }))
+                            {
+                                Ok(PermissionDecision::AllowOnce) => {
                                     // proceed
                                 }
-                                Ok(Ok(PermissionDecision::AllowAlways)) => {
+                                Ok(PermissionDecision::AllowAlways) => {
                                     let mut configs = state.configs.lock().await;
                                     if let Some(cfg) = configs.get_mut(&session_id) {
                                         cfg.auto_allow_tools.insert(tc.name.clone());
                                     }
                                 }
-                                Ok(Ok(PermissionDecision::Deny)) | Ok(Err(_)) => {
+                                Ok(PermissionDecision::Deny { reason }) => {
+                                    // Deny-and-continue: the reason steers the
+                                    // model's next step instead of stalling it.
+                                    let content = match reason
+                                        .as_deref()
+                                        .map(str::trim)
+                                        .filter(|r| !r.is_empty())
+                                    {
+                                        Some(r) => format!(
+                                            "User denied permission for this tool call. User's guidance: {}",
+                                            r
+                                        ),
+                                        None => "User denied permission for this tool call."
+                                            .to_string(),
+                                    };
                                     let err = ToolResult {
                                         tool_call_id: tc.id.clone(),
-                                        content: "User denied permission for this tool call."
-                                            .to_string(),
+                                        content,
                                         is_error: true,
                                     };
                                     let _ = app_handle.emit(
@@ -2047,6 +2084,34 @@ async fn run_agent_loop(
                                     },
                                 );
                                 return (tc.id.clone(), err);
+                            }
+                        }
+                    } else if tc.name == "write_file" {
+                        // P1-7: no approval gate, but still capture the
+                        // pre-edit baseline so review surfaces can diff the
+                        // applied result against the true "before" instead
+                        // of live disk. Local targets only — a remote read
+                        // here could mislabel an existing file as new.
+                        if let Some(path) = tc.arguments.get("path").and_then(|v| v.as_str()) {
+                            if let ExecutionTarget::Local { project_path } = &execution {
+                                let before = match tool_runtime::resolve_workspace_path(
+                                    path,
+                                    project_path,
+                                    false,
+                                ) {
+                                    Ok(resolved) => {
+                                        tokio::fs::read_to_string(resolved).await.ok()
+                                    }
+                                    Err(_) => None,
+                                };
+                                let _ = app_handle.emit(
+                                    &edit_baseline_event(&session_id),
+                                    EditBaselinePayload {
+                                        id: tc.id.clone(),
+                                        path: path.to_string(),
+                                        before,
+                                    },
+                                );
                             }
                         }
                     }

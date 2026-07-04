@@ -37,6 +37,9 @@ pub(super) fn permission_request_event(session_id: &str) -> String {
 pub(super) fn pending_edit_event(session_id: &str) -> String {
     format!("api-agent:pending-edit:{}", session_id)
 }
+pub(super) fn edit_baseline_event(session_id: &str) -> String {
+    format!("api-agent:edit-baseline:{}", session_id)
+}
 pub(super) fn plan_block_event(session_id: &str) -> String {
     format!("api-agent:plan-block:{}", session_id)
 }
@@ -56,6 +59,13 @@ pub(super) fn turn_summary_event(session_id: &str) -> String {
 pub(super) struct ToolStartPayload {
     pub id: String,
     pub name: String,
+    /// P1-7: raw tool-input JSON, forwarded from the sidecar's `tool_use`
+    /// block so the frontend transcript layer can parse edit tool calls
+    /// (Write/Edit/apply_patch) — sidecar `tool_result` events don't echo
+    /// the input back. Omitted when the sidecar didn't send one (the
+    /// in-process backend delivers input on the tool_result instead).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -93,6 +103,18 @@ pub(super) struct PendingEditPayload {
     pub content: String,
     /// Prior file content (None for new files) so the frontend can render
     /// a real before/after diff instead of just the new content.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+}
+
+/// P1-7: non-blocking pre-edit baseline for auto-applied writes
+/// (approve-writes off). The frontend records it so review surfaces diff
+/// applied edits against the true "before" instead of live disk.
+#[derive(Clone, Serialize)]
+pub(super) struct EditBaselinePayload {
+    pub id: String,
+    pub path: String,
+    /// Pre-edit file content (None when the file did not exist).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
 }

@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { PendingApprovalsRollup } from "../PendingApprovalsRollup";
-import { PendingEditPrompt } from "../PendingEditPrompt";
 import { PermissionPrompt } from "../PermissionPrompt";
-import { TurnDiffSummary } from "../TurnDiffSummary";
 import { CancelPendingButton } from "./CancelPendingButton";
 import { useAppStore } from "@/stores/appStore";
 import type {
   AgentConversation,
-  PendingEdit,
   PendingPermission,
 } from "@/types/agent-conversation";
 import type { useAgentTaskStore } from "@/stores/agentTaskStore";
@@ -21,12 +18,18 @@ type ApprovalStore = ReturnType<typeof useAgentApprovalStore.getState>;
  * pending footer becomes unscrollably tall beyond ~3 stacked prompts. */
 const COLLAPSE_THRESHOLD = 3;
 
+/**
+ * Blocking permission prompts (shell / network / out-of-project tools) with
+ * the Allow/Deny verb pair. P1-8: gated file edits no longer render here —
+ * they route into the canonical review surface (ReviewBar/ReviewSurface)
+ * with Keep/Undo, so the two verb pairs are never mixed in one surface.
+ * Permission prompts outrank edits for the Y/N shortcut; the ReviewBar's
+ * edit handler stays passive while any permission is pending.
+ */
 interface PendingApprovalsSectionProps {
   conversation: AgentConversation;
   conversationId: string;
-  pendingEdits: PendingEdit[];
   pendingPermissions: PendingPermission[];
-  respondEdit: ApprovalStore["respondEdit"];
   respondPermission: ApprovalStore["respondPermission"];
   cancelPendingTools: ApprovalStore["cancelPendingTools"];
   appendAllowedToolPattern: TaskStore["appendAllowedToolPattern"];
@@ -35,14 +38,12 @@ interface PendingApprovalsSectionProps {
 export function PendingApprovalsSection({
   conversation,
   conversationId,
-  pendingEdits,
   pendingPermissions,
-  respondEdit,
   respondPermission,
   cancelPendingTools,
   appendAllowedToolPattern,
 }: PendingApprovalsSectionProps) {
-  const totalCount = pendingEdits.length + pendingPermissions.length;
+  const totalCount = pendingPermissions.length;
 
   // Default collapsed when the initial render already exceeds the threshold.
   // Re-collapses only when the user explicitly chooses to; auto-expands once
@@ -66,18 +67,19 @@ export function PendingApprovalsSection({
     }
   }, [totalCount, collapsed]);
 
-  // Y/N shortcuts target whichever queue is "next up". Permissions outrank
-  // edits because they typically gate the loop; edits are reviewable later.
+  // Y/N shortcuts target the top permission prompt.
   const topPermission = pendingPermissions[0];
-  const topEdit = topPermission ? undefined : pendingEdits[0];
 
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
+  // P1-9: Y/N stays live while the section is collapsed — the top prompt is
+  // still the target, so a stacked queue can be drained from the keyboard
+  // without expanding. The typing-context guards below keep "y"/"n" usable
+  // in the composer and any focused input.
   useEffect(() => {
     if (totalCount === 0) return;
-    if (collapsed) return;
     if (commandPaletteOpen) return;
-    if (!topPermission && !topEdit) return;
+    if (!topPermission) return;
 
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
@@ -90,18 +92,10 @@ export function PendingApprovalsSection({
       const key = e.key.toLowerCase();
       if (key !== "y" && key !== "n") return;
       e.preventDefault();
-      if (topPermission) {
-        if (key === "y") {
-          void respondPermission(conversationId, topPermission.id, "allow_once");
-        } else {
-          void respondPermission(conversationId, topPermission.id, "deny");
-        }
-      } else if (topEdit) {
-        if (key === "y") {
-          void respondEdit(conversationId, topEdit.id, "apply");
-        } else {
-          void respondEdit(conversationId, topEdit.id, "reject");
-        }
+      if (key === "y") {
+        void respondPermission(conversationId, topPermission.id, "allow_once");
+      } else {
+        void respondPermission(conversationId, topPermission.id, "deny");
       }
     };
 
@@ -109,32 +103,16 @@ export function PendingApprovalsSection({
     return () => document.removeEventListener("keydown", handler);
   }, [
     totalCount,
-    collapsed,
     commandPaletteOpen,
     topPermission,
-    topEdit,
     conversationId,
     respondPermission,
-    respondEdit,
   ]);
 
-  // `||` (not `??`) — both fields are arrays which are non-nullish even when
-  // empty, so `??` would short-circuit. `||` renders the section when EITHER
-  // has at least one item.
-  if (pendingEdits.length === 0 && pendingPermissions.length === 0) {
+  if (pendingPermissions.length === 0) {
     return null;
   }
 
-  const applyAllEdits = () => {
-    for (const item of pendingEdits) {
-      void respondEdit(conversationId, item.id, "apply");
-    }
-  };
-  const rejectAllEdits = () => {
-    for (const item of pendingEdits) {
-      void respondEdit(conversationId, item.id, "reject");
-    }
-  };
   const allowAllPermissions = () => {
     for (const item of pendingPermissions) {
       void respondPermission(conversationId, item.id, "allow_once");
@@ -158,7 +136,7 @@ export function PendingApprovalsSection({
           <button
             type="button"
             onClick={() => setCollapsed(false)}
-            className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-text-primary hover:text-accent-amber transition-colors"
+            className="flex items-center gap-1.5 flex-1 text-left text-ui text-text-primary hover:text-accent-amber transition-colors"
             title="Expand to review each prompt"
           >
             <ChevronRight size={12} className="text-text-secondary shrink-0" />
@@ -166,7 +144,7 @@ export function PendingApprovalsSection({
               {totalCount} pending approval{totalCount === 1 ? "" : "s"}
             </span>
             <span className="text-text-muted">
-              · press Y/N when expanded
+              · Y allow · N deny (top prompt: {pendingPermissions[0]?.name})
             </span>
           </button>
           <CancelPendingButton
@@ -190,7 +168,7 @@ export function PendingApprovalsSection({
           <button
             type="button"
             onClick={() => setCollapsed(true)}
-            className="flex items-center gap-1.5 flex-1 text-left text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+            className="flex items-center gap-1.5 flex-1 text-left text-ui text-text-secondary hover:text-text-primary transition-colors"
             title="Collapse approvals"
           >
             <ChevronDown size={12} className="text-text-secondary shrink-0" />
@@ -200,37 +178,12 @@ export function PendingApprovalsSection({
           </button>
         </div>
       )}
-      <TurnDiffSummary
-        conversationId={conversationId}
-        pendingEdits={pendingEdits}
-        onApplyAll={applyAllEdits}
-        onDiscardAll={rejectAllEdits}
-      />
       <PendingApprovalsRollup
-        pendingEdits={pendingEdits}
         pendingPermissions={pendingPermissions}
-        onApplyAllEdits={applyAllEdits}
-        onRejectAllEdits={rejectAllEdits}
         onAllowAllPermissions={allowAllPermissions}
         onDenyAllPermissions={denyAllPermissions}
         onCancelAllPending={() => void cancelPendingTools(conversationId)}
       />
-      {pendingEdits.map((item, idx) => (
-        <PendingEditPrompt
-          key={item.id}
-          item={item}
-          projectPath={conversation.projectPath}
-          conversationId={conversationId}
-          // Hints only on the top edit when no permission outranks it.
-          showKeyboardHints={!topPermission && idx === 0}
-          onApply={(toolId, mergedContent) =>
-            void respondEdit(conversationId, toolId, "apply", mergedContent)
-          }
-          onReject={(toolId) =>
-            void respondEdit(conversationId, toolId, "reject")
-          }
-        />
-      ))}
       {pendingPermissions.map((item, idx) => (
         <PermissionPrompt
           key={item.id}
@@ -244,8 +197,8 @@ export function PendingApprovalsSection({
           onAllowAlways={(toolId) =>
             void respondPermission(conversationId, toolId, "allow_always")
           }
-          onDeny={(toolId) =>
-            void respondPermission(conversationId, toolId, "deny")
+          onDeny={(toolId, reason) =>
+            void respondPermission(conversationId, toolId, "deny", reason)
           }
           onAllowAlwaysWithPattern={(toolId, pattern) => {
             void respondPermission(conversationId, toolId, "allow_always");

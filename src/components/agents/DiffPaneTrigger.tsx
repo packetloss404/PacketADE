@@ -1,5 +1,5 @@
 import { FileDiff } from "lucide-react";
-import { useDiffPaneStore } from "@/stores/diffPaneStore";
+import { useReviewStore } from "@/stores/reviewStore";
 
 interface DiffPaneTriggerProps {
   conversationId: string;
@@ -10,8 +10,8 @@ interface DiffPaneTriggerProps {
 
 /**
  * Compact inline chip rendered in the AgentChatPane header (or per-turn).
- * Shows aggregate `+N -M` and the affected file count; click opens the right
- * slide-out diff pane scoped to this conversation.
+ * Shows aggregate `+N -M` and the affected file count; click expands the
+ * canonical review surface scoped to this conversation.
  */
 export function DiffPaneTrigger({
   conversationId,
@@ -19,7 +19,7 @@ export function DiffPaneTrigger({
   totalDels,
   fileCount,
 }: DiffPaneTriggerProps) {
-  const openForConversation = useDiffPaneStore(
+  const openForConversation = useReviewStore(
     (s) => s.openForConversation,
   );
 
@@ -30,7 +30,7 @@ export function DiffPaneTrigger({
       type="button"
       onClick={() => openForConversation(conversationId)}
       title={`View ${fileCount} file change${fileCount === 1 ? "" : "s"}`}
-      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-bg-border bg-bg-tertiary hover:bg-bg-border hover:text-text-primary transition-colors text-[10px] font-mono"
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-bg-border bg-bg-tertiary hover:bg-bg-border hover:text-text-primary transition-colors text-ui font-mono"
     >
       <FileDiff size={10} className="text-text-secondary" />
       <span className="text-text-secondary">

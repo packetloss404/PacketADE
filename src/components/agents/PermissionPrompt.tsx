@@ -1,6 +1,14 @@
-import { useState } from "react";
-import { ShieldAlert, Check, X, Sparkles, AlertTriangle, ChevronRight } from "lucide-react";
-import { Tooltip } from "@/components/ui/Tooltip";
+import { useEffect, useRef, useState } from "react";
+import {
+  ShieldAlert,
+  Check,
+  X,
+  Sparkles,
+  AlertTriangle,
+  ChevronRight,
+  ChevronUp,
+  MessageSquare,
+} from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import {
   derivePatternHint,
@@ -12,19 +20,21 @@ interface PermissionPromptProps {
   item: { id: string; name: string; arguments: string };
   onAllowOnce: (toolId: string) => void;
   onAllowAlways: (toolId: string) => void;
-  onDeny: (toolId: string) => void;
-  /** B3: when set, render a fourth "Always allow `<pattern>`" row that
-   * resolves the prompt as allow_always AND appends the derived pattern
-   * to the conversation's allowedTools. Deferred profile-write goes via
-   * a follow-up that adds sourceProfileId to AgentConversation. */
+  /** P1-9 deny-and-continue: `reason`, when present, is steering text the
+   * provider folds into the denial the model sees — rejection redirects the
+   * agent instead of stalling the turn. */
+  onDeny: (toolId: string, reason?: string) => void;
+  /** B3: when set, the Allow split-button grows an "Always allow `<pattern>`"
+   * scope that resolves the prompt as allow_always AND appends the derived
+   * pattern to the conversation's allowedTools. */
   onAllowAlwaysWithPattern?: (toolId: string, pattern: string) => void;
   /** B3: current conversation's allowedTools snapshot. Used to (a) hide
-   * the row when allowedTools is undefined ("all tools allowed" mode —
+   * the scope when allowedTools is undefined ("all tools allowed" mode —
    * appending would NARROW access, opposite intent) and (b) show
-   * "(already in this conversation)" when the pattern is already in. */
+   * "already in this conversation" when the pattern is already in. */
   conversationAllowedTools?: string[];
   /** When true, this prompt is the current Y/N keyboard target — render
-   * inline `(Y)` / `(N)` hints on the Allow-once and Deny buttons. */
+   * inline `(Y)` / `(N)` hints on the Allow and Deny buttons. */
   showKeyboardHints?: boolean;
 }
 
@@ -54,7 +64,8 @@ export function PermissionPrompt({
     item.name === "bash" ? parseBashCommand(item.arguments) : null;
   const destructive = bashCommand !== null && isDestructiveBash(bashCommand);
   const [showRaw, setShowRaw] = useState(false);
-  // Show the smart-allow row only when:
+  // P1-9: the "Always allow rule" row folded into the Allow split-button as
+  // a third scope. Shown only when:
   //   1. a non-null pattern was derived,
   //   2. the parent wired the handler,
   //   3. the conversation actually has an allowlist (undefined = "all
@@ -65,6 +76,30 @@ export function PermissionPrompt({
     Array.isArray(conversationAllowedTools);
   const alreadyAllowed =
     canAppendRule && conversationAllowedTools!.includes(pattern!);
+
+  // Allow split-button scope menu (opens upward — the prompt sits at the
+  // bottom viewport edge).
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const scopeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!scopeOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (scopeRef.current && !scopeRef.current.contains(e.target as Node)) {
+        setScopeOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [scopeOpen]);
+
+  // Deny-and-continue reason input. While it's focused, the section's Y/N
+  // handler stands down via its typing-context guard (INPUT target).
+  const [reasonOpen, setReasonOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const submitDenyWithReason = () => {
+    const trimmed = reason.trim();
+    onDeny(item.id, trimmed.length > 0 ? trimmed : undefined);
+  };
 
   return (
     <div
@@ -78,7 +113,7 @@ export function PermissionPrompt({
         ) : (
           <ShieldAlert size={14} className="text-accent-amber shrink-0" />
         )}
-        <span className="text-xs text-text-primary">
+        <span className="text-ui text-text-primary">
           Run{" "}
           <code
             className={`font-mono ${destructive ? "text-accent-red" : "text-accent-amber"}`}
@@ -96,7 +131,7 @@ export function PermissionPrompt({
       {bashCommand !== null ? (
         <>
           <pre
-            className={`text-[11px] font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap ${
+            className={`text-ui font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto whitespace-pre-wrap ${
               destructive ? "text-accent-red" : "text-text-primary"
             }`}
           >
@@ -105,7 +140,7 @@ export function PermissionPrompt({
           <button
             type="button"
             onClick={() => setShowRaw((v) => !v)}
-            className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors self-start"
+            className="flex items-center gap-1 text-ui text-text-muted hover:text-text-secondary transition-colors self-start"
           >
             <ChevronRight
               size={10}
@@ -114,84 +149,164 @@ export function PermissionPrompt({
             Raw arguments
           </button>
           {showRaw && (
-            <pre className="text-[10px] font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto text-text-secondary whitespace-pre-wrap">
+            <pre className="text-meta font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto text-text-secondary whitespace-pre-wrap">
               {prettyJson(item.arguments)}
             </pre>
           )}
         </>
       ) : (
-        <pre className="text-[10px] font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto text-text-secondary whitespace-pre-wrap">
+        <pre className="text-meta font-mono bg-bg-primary rounded p-2 max-h-32 overflow-auto text-text-secondary whitespace-pre-wrap">
           {prettyJson(item.arguments)}
         </pre>
       )}
-      <div className="flex gap-1.5 flex-wrap">
-        <button
-          type="button"
-          onClick={() => onAllowOnce(item.id)}
-          className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
-        >
-          <Check size={12} /> Allow once
-          {showKeyboardHints && (
-            <kbd className="ml-1 text-[10px] font-mono text-accent-green/80 border border-accent-green/40 rounded px-1 leading-none py-0.5">
-              Y
-            </kbd>
-          )}
-        </button>
-        <Tooltip content="Always allow this tool for the rest of the session (no rule saved)">
+      <div className="flex gap-1.5 flex-wrap items-center">
+        {/* Allow split-button: primary click = allow once (the Y target);
+            the chevron opens a scope menu (once / session / saved rule). */}
+        <div ref={scopeRef} className="relative flex">
           <button
             type="button"
-            onClick={() => onAllowAlways(item.id)}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
+            onClick={() => onAllowOnce(item.id)}
+            className="flex items-center gap-1 text-ui px-2 py-1 rounded-l bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
           >
-            <Check size={12} /> Always allow
-            <span className="text-[10px] text-text-muted">(session)</span>
+            <Check size={12} /> Allow
+            {showKeyboardHints && (
+              <kbd className="ml-1 text-meta font-mono text-accent-green/80 border border-accent-green/40 rounded px-1 leading-none py-0.5">
+                Y
+              </kbd>
+            )}
           </button>
-        </Tooltip>
+          <button
+            type="button"
+            onClick={() => setScopeOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={scopeOpen}
+            title="Allow with a wider scope"
+            className="flex items-center px-1 py-1 rounded-r border-l border-accent-green/30 bg-accent-green/20 hover:bg-accent-green/30 text-accent-green transition-colors"
+          >
+            <ChevronUp
+              size={12}
+              className={`transition-transform motion-reduce:transition-none ${scopeOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {scopeOpen && (
+            <div
+              role="menu"
+              className="absolute bottom-full left-0 mb-1 z-30 min-w-[220px] bg-bg-elevated border border-bg-border rounded-md shadow-xl py-1"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setScopeOpen(false);
+                  onAllowOnce(item.id);
+                }}
+                className="w-full text-left px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors"
+              >
+                Allow once
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setScopeOpen(false);
+                  onAllowAlways(item.id);
+                }}
+                className="w-full text-left px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors"
+              >
+                Allow for this session
+                <span className="text-meta text-text-muted ml-1">
+                  (no rule saved)
+                </span>
+              </button>
+              {canAppendRule && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={alreadyAllowed}
+                  onClick={() => {
+                    setScopeOpen(false);
+                    onAllowAlwaysWithPattern!(item.id, pattern!);
+                  }}
+                  title={
+                    alreadyAllowed
+                      ? "Pattern already in this conversation's allowlist"
+                      : "Always allow this pattern in this conversation"
+                  }
+                  className={`w-full text-left px-3 py-1.5 text-ui transition-colors flex items-center gap-1.5 ${
+                    alreadyAllowed
+                      ? "text-text-muted opacity-60 cursor-not-allowed"
+                      : "text-accent-blue hover:bg-bg-hover"
+                  }`}
+                >
+                  <Sparkles size={11} className="shrink-0" />
+                  <span>Always allow</span>
+                  <code className="font-mono text-meta bg-accent-blue/10 text-accent-blue px-1 rounded">
+                    {pattern}
+                  </code>
+                  {alreadyAllowed && (
+                    <span className="text-meta text-text-muted ml-auto">
+                      already in
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => onDeny(item.id)}
-          className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
+          className="ml-auto flex items-center gap-1 text-ui px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
         >
           <X size={12} /> Deny
           {showKeyboardHints && (
-            <kbd className="ml-1 text-[10px] font-mono text-accent-red/80 border border-accent-red/40 rounded px-1 leading-none py-0.5">
+            <kbd className="ml-1 text-meta font-mono text-accent-red/80 border border-accent-red/40 rounded px-1 leading-none py-0.5">
               N
             </kbd>
           )}
         </button>
-      </div>
-      {/* B3 — Codex-style smart-rule proposal. One-click writes the
-          derived pattern into the conversation's allowedTools so future
-          turns of this conversation skip the prompt entirely. */}
-      {canAppendRule && (
         <button
           type="button"
-          onClick={() =>
-            onAllowAlwaysWithPattern!(item.id, pattern!)
-          }
-          disabled={alreadyAllowed}
-          title={
-            alreadyAllowed
-              ? `Pattern already in this conversation's allowlist`
-              : `Always allow this pattern in this conversation`
-          }
-          className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border w-full justify-start transition-colors ${
-            alreadyAllowed
-              ? "border-bg-border text-text-muted opacity-60 cursor-not-allowed"
-              : "border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10"
-          }`}
+          onClick={() => setReasonOpen((v) => !v)}
+          aria-expanded={reasonOpen}
+          title="Deny and tell the agent what to do instead — the turn continues"
+          className="flex items-center gap-1 text-ui px-1.5 py-1 rounded text-text-muted hover:text-accent-red transition-colors"
         >
-          <Sparkles size={12} />
-          <span>Always allow rule</span>
-          <code className="font-mono text-[10px] bg-accent-blue/10 text-accent-blue px-1 rounded">
-            {pattern}
-          </code>
-          {alreadyAllowed && (
-            <span className="text-[10px] text-text-muted ml-auto">
-              already in conversation
-            </span>
-          )}
+          <MessageSquare size={11} />
+          with reason…
         </button>
+      </div>
+      {/* Deny-and-continue: the reason steers the agent's next step instead
+          of stalling the turn on a bare refusal. */}
+      {reasonOpen && (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            autoFocus
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submitDenyWithReason();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setReasonOpen(false);
+                setReason("");
+              }
+            }}
+            placeholder="Why not / what to do instead — sent to the agent"
+            aria-label="Denial reason"
+            className="flex-1 bg-bg-primary border border-bg-border rounded px-2 py-1 text-ui text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-red/60"
+          />
+          <button
+            type="button"
+            onClick={submitDenyWithReason}
+            className="flex items-center gap-1 text-ui px-2 py-1 rounded bg-accent-red/15 hover:bg-accent-red/25 text-accent-red font-medium transition-colors"
+          >
+            <X size={12} /> Deny & steer
+          </button>
+        </div>
       )}
     </div>
   );

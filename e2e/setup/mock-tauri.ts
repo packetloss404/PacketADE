@@ -20,7 +20,7 @@ export const mockTauriInitScript = `
   ]);
 
   const ignoredEventPatterns = [
-    /^api-agent:(chunk|thinking|thinking-stop|tool-start|tool-result|permission-request|pending-edit|plan-block|tool-output-extended|turn-summary|done|error):/,
+    /^api-agent:(chunk|thinking|thinking-stop|tool-start|tool-result|permission-request|pending-edit|edit-baseline|plan-block|tool-output-extended|turn-summary|done|error):/,
     /^deploy:(output|exit):/,
     /^dictation:(waveform|status|model-progress)$/,
     /^flight-chat:(chunk|done|error):/,

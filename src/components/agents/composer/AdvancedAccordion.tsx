@@ -3,7 +3,7 @@ import { ChevronRight, Settings2 } from "lucide-react";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { storageKey } from "@/lib/brand";
 
-const OPEN_STORAGE_KEY = storageKey("composer-advanced-open");
+const DEFAULT_OPEN_STORAGE_KEY = storageKey("composer-advanced-open");
 
 export interface AdvancedAccordionSummaryItem {
   /** Short label like "Manual", "Reviewer", "Worktree". Pass `null` when
@@ -23,13 +23,17 @@ interface AdvancedAccordionProps {
    * user can see what's active. Subsequent toggles are user-controlled and
    * persisted. */
   forceOpenOnFirstMount?: boolean;
+  /** Persisted open/closed storage key. Defaults to the composer's own key
+   * so unrelated callers (e.g. the workspace creation modal) don't share
+   * open-state with the chat composer's Advanced section. */
+  persistKey?: string;
   children: ReactNode;
 }
 
-function loadOpen(forceOpen: boolean): boolean {
+function loadOpen(storageKeyToUse: string, forceOpen: boolean): boolean {
   if (typeof localStorage === "undefined") return forceOpen;
   try {
-    const raw = localStorage.getItem(OPEN_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKeyToUse);
     if (raw === null) return forceOpen;
     return raw === "1";
   } catch {
@@ -37,10 +41,10 @@ function loadOpen(forceOpen: boolean): boolean {
   }
 }
 
-function persistOpen(open: boolean): void {
+function persistOpen(storageKeyToUse: string, open: boolean): void {
   if (typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(OPEN_STORAGE_KEY, open ? "1" : "0");
+    localStorage.setItem(storageKeyToUse, open ? "1" : "0");
   } catch {
     // ignore
   }
@@ -54,30 +58,31 @@ function truncate(label: string, max: number | undefined): string {
 export function AdvancedAccordion({
   summary,
   forceOpenOnFirstMount = false,
+  persistKey = DEFAULT_OPEN_STORAGE_KEY,
   children,
 }: AdvancedAccordionProps) {
   const [open, setOpen] = useState<boolean>(
     // Force-open wins even when a stored "0" exists, so active non-default
     // settings are always revealed on first mount.
-    () => forceOpenOnFirstMount || loadOpen(forceOpenOnFirstMount),
+    () => forceOpenOnFirstMount || loadOpen(persistKey, forceOpenOnFirstMount),
   );
   // The collapse animation clips content with `overflow-hidden`, but child
   // pickers (ProfilePicker) open absolutely-positioned dropdown menus that
   // must escape that box. Re-allow overflow only once the expand transition
   // has settled so those menus aren't clipped.
   const [overflowVisible, setOverflowVisible] = useState<boolean>(
-    () => forceOpenOnFirstMount || loadOpen(forceOpenOnFirstMount),
+    () => forceOpenOnFirstMount || loadOpen(persistKey, forceOpenOnFirstMount),
   );
 
   useEffect(() => {
-    persistOpen(open);
+    persistOpen(persistKey, open);
     if (!open) {
       setOverflowVisible(false);
       return;
     }
     const id = window.setTimeout(() => setOverflowVisible(true), 220);
     return () => window.clearTimeout(id);
-  }, [open]);
+  }, [open, persistKey]);
 
   const activeBits = summary
     .filter((s) => s.label !== null)
@@ -93,7 +98,7 @@ export function AdvancedAccordion({
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors"
+            className="flex items-center gap-1 text-ui text-text-muted hover:text-text-primary transition-colors"
             aria-expanded={open}
           >
             <ChevronRight

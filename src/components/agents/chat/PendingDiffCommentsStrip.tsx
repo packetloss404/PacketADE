@@ -20,18 +20,18 @@ export function PendingDiffCommentsStrip({
   const comments = conversation.pendingDiffComments ?? [];
   return (
     <div className="shrink-0 border-t border-accent-blue/30 bg-accent-blue/5 px-3 py-1.5 flex items-center gap-2 flex-wrap">
-      <span className="text-[10px] uppercase tracking-wide text-accent-blue">
+      <span className="text-meta uppercase tracking-wide text-accent-blue">
         {comments.length} file comment
         {comments.length === 1 ? "" : "s"} queued
       </span>
-      <span className="text-[10px] text-text-muted">
+      <span className="text-meta text-text-muted">
         attached on next send
       </span>
       <div className="flex items-center gap-1 flex-wrap flex-1 min-w-0">
         {comments.map((dc) => (
           <span
             key={dc.id}
-            className="inline-flex items-center gap-1 text-[10px] bg-bg-secondary border border-bg-border rounded px-1.5 py-0.5 max-w-full"
+            className="inline-flex items-center gap-1 text-meta bg-bg-secondary rounded px-1.5 py-0.5 max-w-full"
             title={`${dc.path}:${dc.line} — ${dc.text}`}
           >
             <span className="font-mono text-text-secondary truncate max-w-[140px]">
@@ -51,7 +51,7 @@ export function PendingDiffCommentsStrip({
       <button
         type="button"
         onClick={onClear}
-        className="text-[10px] text-text-muted hover:text-text-primary ml-auto transition-colors"
+        className="text-ui text-text-muted hover:text-text-primary ml-auto transition-colors"
       >
         Clear all
       </button>

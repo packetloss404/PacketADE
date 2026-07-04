@@ -16,6 +16,15 @@ import { loadFromStorage, saveToStorage } from "@/lib/storage";
 
 const STORAGE_KEY = "packetade:agent-drafts";
 
+/**
+ * Draft key for the launch composer (the "new agent" box). It has no
+ * conversation id, but its draft lives here alongside the per-conversation
+ * ones so no composer text is ever held in a global store field — this
+ * replaced `agentTaskStore.agentInputText`. The `__` prefix can never
+ * collide with a generated conversation id (`conv_*`).
+ */
+export const LAUNCH_DRAFT_KEY = "__launch__";
+
 interface AgentDraftStore {
   /** conversationId -> in-progress composer text */
   drafts: Record<string, string>;

@@ -2,11 +2,10 @@ import type {
   AgentConversation,
   AgentPlanItem,
 } from "@/types/agent-conversation";
-import type { SpecRecord } from "@/stores/agentPlanStore";
 
 /** Soft cap on the distillation prompt — well under the smallest Codex
  * context window. Codex doesn't need the parent conversation's full
- * history; the spec + plan is the contract that matters. */
+ * history; the plan is the contract that matters. */
 const MAX_HANDOFF_BYTES = 12_000;
 
 /** Tail length for the parent's last assistant turn — a paragraph is
@@ -57,17 +56,16 @@ function planItemMarkdown(items: AgentPlanItem[]): string {
 /**
  * B8 — build the prompt that seeds a fresh Codex conversation when the
  * user clicks "Hand off to Codex →" on the parent's PlanPanel. The goal
- * is to give Codex the SPEC + APPROVED PLAN (the user's contract) plus
- * a brief discussion summary, but NOT the parent's full message history
- * — Codex's smaller context budget rewards distillation, and the spec
- * is the canonical statement of intent.
+ * is to give Codex the PLAN (the user's contract) plus a brief discussion
+ * summary, but NOT the parent's full message history — Codex's smaller
+ * context budget rewards distillation, and the plan is the canonical
+ * statement of intent.
  *
- * Spec + plan are passed in (from agentPlanStore) since they no longer
- * live on the conversation object.
+ * The plan is passed in (from agentPlanStore) since it no longer lives
+ * on the conversation object.
  */
 export function buildHandoffPrompt(
   parent: AgentConversation,
-  spec: SpecRecord | undefined,
   plan: AgentPlanItem[] | undefined,
 ): string {
   const sections: string[] = [];
@@ -77,18 +75,6 @@ export function buildHandoffPrompt(
       "The plan below was approved by the user. Execute it step by step; " +
       "do not re-plan unless blocked.",
   );
-
-  if (spec && spec.status === "approved" && spec.criteria.length > 0) {
-    const bullets = spec.criteria
-      .map((c, i) => `${i + 1}. ${c}`)
-      .join("\n");
-    sections.push(`## Spec (locked by user)\n\n${bullets}`);
-  } else if (spec && spec.criteria.length > 0) {
-    const bullets = spec.criteria.map((c) => `- ${c}`).join("\n");
-    sections.push(
-      `## Spec (draft — not yet locked, treat as guidance)\n\n${bullets}`,
-    );
-  }
 
   if (plan && plan.length > 0) {
     sections.push(`## Approved plan\n\n${planItemMarkdown(plan)}`);
@@ -116,7 +102,7 @@ export function buildHandoffPrompt(
 
   const joined = sections.join("\n\n---\n\n");
   if (joined.length <= MAX_HANDOFF_BYTES) return joined;
-  // Truncate from the end of the discussion summary — keep the spec +
-  // plan intact since those are the load-bearing parts.
+  // Truncate from the end of the discussion summary — keep the plan
+  // intact since it is the load-bearing part.
   return `${joined.slice(0, MAX_HANDOFF_BYTES)}\n\n…(truncated to fit context)`;
 }

@@ -6,7 +6,7 @@ import {
   MouseEvent as ReactMouseEvent,
 } from "react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useAgentDraftStore } from "@/stores/agentDraftStore";
+import { LAUNCH_DRAFT_KEY, useAgentDraftStore } from "@/stores/agentDraftStore";
 import { PathContextMenu } from "./PathContextMenu";
 
 /**
@@ -114,21 +114,15 @@ export function ClickablePathsRoot({
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   const handleAttach = useCallback((path: string) => {
-    const { selectedConversationId, agentInputText, setAgentInputText } =
-      useAgentTaskStore.getState();
-    // Inside a chat, append to that conversation's draft so the mention
-    // lands in the composer the user is looking at instead of bleeding
-    // into the global launch composer text.
-    if (selectedConversationId) {
-      const { drafts, setDraft } = useAgentDraftStore.getState();
-      const prev = drafts[selectedConversationId] ?? "";
-      const sep = prev.length === 0 || prev.endsWith(" ") ? "" : " ";
-      setDraft(selectedConversationId, `${prev}${sep}@${path} `);
-      return;
-    }
-    const prev = agentInputText ?? "";
+    const { selectedConversationId } = useAgentTaskStore.getState();
+    // Both composers keep their text in the draft store: inside a chat the
+    // mention lands in that conversation's draft; otherwise it goes to the
+    // launch composer's slot. Either way, no bleed across composers.
+    const { drafts, setDraft } = useAgentDraftStore.getState();
+    const key = selectedConversationId ?? LAUNCH_DRAFT_KEY;
+    const prev = drafts[key] ?? "";
     const sep = prev.length === 0 || prev.endsWith(" ") ? "" : " ";
-    setAgentInputText(`${prev}${sep}@${path} `);
+    setDraft(key, `${prev}${sep}@${path} `);
   }, []);
 
   const onContextMenu = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {

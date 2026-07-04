@@ -145,7 +145,7 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
         />
 
         {zoomedPane && (
-          <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded bg-bg-secondary/90 border border-bg-border text-[10px] text-text-muted select-none">
+          <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 px-2 py-1 rounded bg-bg-secondary/90 border border-bg-border text-meta text-text-muted select-none">
             <Minimize2 size={10} />
             <span>Press Esc to exit zoom</span>
           </div>

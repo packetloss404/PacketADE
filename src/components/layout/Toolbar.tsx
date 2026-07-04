@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, lazy, Suspense } from "react";
-import { FolderOpen, Wrench, ArrowDown, ArrowUp, GitCommit, Bell, Mic, Search, Plus, ChevronDown, Zap, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
+import { FolderOpen, Wrench, Bell, Mic, Search, Plus, ChevronDown, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
@@ -9,14 +9,10 @@ import { useAppStore, isModuleView, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { getModulesSorted } from "@/modules/registry";
-import { useGitInfo } from "@/hooks/useGitInfo";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { NewAgentModal } from "@/components/workspace/NewAgentModal";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
-import { CommitModal } from "@/components/workspace/CommitModal";
 import { Modal } from "@/components/ui/Modal";
-import { gitPull, gitPush, getGitBranch } from "@/lib/tauri";
 
 // Lazy-loaded so the markdown vendor chunk (react-markdown +
 // react-syntax-highlighter) leaves the entry chunk; only fetched when the
@@ -35,11 +31,9 @@ function basenameOfPath(p: string): string {
 export function Toolbar() {
   const setProjectPath = useLayoutStore((s) => s.setProjectPath);
   const projectPath = useLayoutStore((s) => s.projectPath);
-  const gitBranch = useGitInfo();
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [showNewFlight, setShowNewFlight] = useState(false);
-  const [showNewAgent, setShowNewAgent] = useState(false);
   const [showNewIssue, setShowNewIssue] = useState(false);
   // v0.8.8: when no workspace is active, picking a folder pops a small
   // disambiguation dialog (create-new vs. set-default-only). Holds the
@@ -101,15 +95,6 @@ export function Toolbar() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showNewMenu]);
-
-  // Global event hook: CommandPalette's "New Agent" entry dispatches
-  // `packetade:open-new-agent` so it routes through the same modal as
-  // the Toolbar's "+ New → New Agent" item without lifting modal state.
-  useEffect(() => {
-    const open = () => setShowNewAgent(true);
-    window.addEventListener("packetade:open-new-agent", open);
-    return () => window.removeEventListener("packetade:open-new-agent", open);
-  }, []);
 
   async function handleOpenFolder() {
     // v0.8.8: smart picker. With an active workspace, the title makes it
@@ -187,11 +172,6 @@ export function Toolbar() {
 
           {showNewMenu && (
             <div className="absolute top-full left-0 mt-1 w-52 bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1">
-              <DropdownItem
-                icon={<Zap size={12} className="text-accent-green" />}
-                label="New Agent"
-                onClick={() => { setShowNewAgent(true); setShowNewMenu(false); }}
-              />
               <DropdownItem
                 icon={<Target size={12} className="text-accent-green" />}
                 label="New Flight"
@@ -285,9 +265,6 @@ export function Toolbar() {
 
         <div className="w-px h-4 bg-bg-border self-center" />
 
-        {/* Git actions */}
-        {gitBranch && <GitActionButtons />}
-
         {/* Open project folder */}
         {(() => {
           const folderTooltip = activeWorkspace
@@ -345,9 +322,6 @@ export function Toolbar() {
       </div>
 
       {/* Modals */}
-      {showNewAgent && (
-        <NewAgentModal onClose={() => setShowNewAgent(false)} />
-      )}
       {showNewFlight && (
         <Suspense fallback={null}>
           <NewFlightModal onClose={() => setShowNewFlight(false)} />
@@ -441,74 +415,5 @@ function FolderPickerFollowUp({
         </div>
       </div>
     </Modal>
-  );
-}
-
-function GitActionButtons() {
-  const projectPath = useLayoutStore((s) => s.projectPath);
-  const setGitBranch = useAppStore((s) => s.setGitBranch);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [showCommitModal, setShowCommitModal] = useState(false);
-
-  async function handleGitAction(action: "pull" | "push") {
-    if (busy) return;
-    setBusy(action);
-    try {
-      if (action === "pull") {
-        await gitPull(projectPath);
-      } else if (action === "push") {
-        await gitPush(projectPath);
-      }
-    } catch (err) {
-      console.error(`Git ${action} failed:`, err);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function refreshGitBranch() {
-    try {
-      const branch = await getGitBranch(projectPath);
-      setGitBranch(branch);
-    } catch {
-      // poll-based fallback handles the next refresh
-    }
-  }
-
-  return (
-    <>
-      <div className="flex items-center bg-bg-elevated rounded">
-        <button
-          onClick={() => handleGitAction("pull")}
-          disabled={busy !== null}
-          className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-          title="Git Pull — fetch and merge the latest commits from the upstream branch."
-        >
-          <ArrowDown size={12} />
-        </button>
-        <button
-          onClick={() => handleGitAction("push")}
-          disabled={busy !== null}
-          className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-          title="Git Push — publish local commits on the current branch to the remote."
-        >
-          <ArrowUp size={12} />
-        </button>
-        <button
-          onClick={() => setShowCommitModal(true)}
-          disabled={busy !== null}
-          className="p-1 text-text-muted hover:text-accent-green transition-colors disabled:opacity-40"
-          title="Git Commit — commit any staged changes with a message you provide. Does not stage files."
-        >
-          <GitCommit size={12} />
-        </button>
-      </div>
-      <CommitModal
-        open={showCommitModal}
-        onClose={() => setShowCommitModal(false)}
-        projectPath={projectPath}
-        onCommitted={refreshGitBranch}
-      />
-    </>
   );
 }

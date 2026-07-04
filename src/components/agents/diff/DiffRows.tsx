@@ -17,11 +17,13 @@ import markdown from "react-syntax-highlighter/dist/esm/languages/prism/markdown
 import type { Hunk } from "@/lib/hunkDiff";
 
 /*
- * Shared diff rendering engine used by both HunkSelectableDiff and
- * ToolDiffView. Produces interleaved unified-diff rows (a removed line is
- * immediately followed by its added counterpart), tracks old/new line
- * numbers for the gutter, and renders each row with a background-only tint
- * (never full-line colored text) plus a colored +/- gutter marker.
+ * THE shared diff rendering engine (consensus keep-list) — every diff in
+ * the app renders through these rows; the canonical ReviewSurface and the
+ * CommentableRow comment affordance build on it. Produces interleaved
+ * unified-diff rows (a removed line is immediately followed by its added
+ * counterpart), tracks old/new line numbers for the gutter, and renders
+ * each row with a background-only tint (never full-line colored text) plus
+ * a colored +/- gutter marker.
  *
  * Syntax highlighting reuses the app's existing react-syntax-highlighter
  * (Prism) setup — the same one MarkdownRenderer registers — so no new
@@ -101,8 +103,8 @@ export interface DiffRow {
 }
 
 /** The comment anchor a row maps to: removed lines belong to the OLD file,
- * added + context lines to the NEW file (matches the prior ToolDiffView
- * semantics so queued diff comments keep the same coordinates). */
+ * added + context lines to the NEW file (stable coordinates for queued
+ * diff comments across renders and surfaces). */
 export function rowAnchor(row: DiffRow): { side: "old" | "new"; line: number } {
   if (row.kind === "del") return { side: "old", line: row.oldLine ?? 0 };
   return { side: "new", line: row.newLine ?? 0 };
@@ -308,7 +310,7 @@ export interface DiffRowViewProps {
 export function DiffRowView({ row, language, children }: DiffRowViewProps) {
   return (
     <div
-      className={`group relative flex w-max min-w-full items-start text-[11px] font-mono leading-[1.5] text-text-primary ${TINT[row.kind]}`}
+      className={`group relative flex w-max min-w-full items-start text-ui font-mono leading-[1.5] text-text-primary ${TINT[row.kind]}`}
     >
       <span className="w-10 shrink-0 select-none pr-2 text-right text-text-faint">
         {row.oldLine ?? ""}

@@ -4,6 +4,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { relativeTime } from "@/lib/time";
+import { getAgentColor } from "@/lib/agentColors";
 
 export function WelcomeScreen() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
@@ -99,8 +100,7 @@ export function WelcomeScreen() {
                             {ws.panes.slice(0, 4).map((pane) => (
                               <span
                                 key={pane.id}
-                                className="w-1.5 h-1.5 rounded-full inline-block"
-                                style={{ background: `var(--color-${pane.accentColor ?? "accent-green"})` }}
+                                className={`w-1.5 h-1.5 rounded-full inline-block ${getAgentColor(pane.agentId).text} bg-current`}
                                 title={pane.agentId}
                               />
                             ))}

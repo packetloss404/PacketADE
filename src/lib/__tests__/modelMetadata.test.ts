@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { pickFailoverModel } from "@/lib/autoFailover";
-import { aggregateConversationCost } from "@/lib/conversationCost";
+import { aggregateConversationCost, getModelRates } from "@/lib/conversationCost";
 import type { AgentConversation } from "@/types/agent-conversation";
 
 const catalogValues = new Set(
@@ -50,6 +50,15 @@ describe("model metadata", () => {
     for (const model of fixedPriceModels) {
       const { estCost } = aggregateConversationCost(conversationWithModel(model));
       expect(estCost, model).not.toBeNull();
+    }
+  });
+
+  it("sources every populated ApiModel.pricing from the single conversationCost rate table", () => {
+    for (const provider of API_PROVIDERS) {
+      for (const model of provider.models) {
+        if (model.pricing === undefined) continue;
+        expect(model.pricing, model.value).toEqual(getModelRates(model.value));
+      }
     }
   });
 });

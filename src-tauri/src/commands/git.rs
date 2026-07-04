@@ -290,6 +290,41 @@ pub async fn git_create_branch(
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// P1-15: explicit `git add -- <paths>`. GitDashboard's per-file
+/// staging control calls this before `git_commit` — `git_commit`
+/// rejects `stage_all` commits, so this is the only way changes reach
+/// the index through the in-app flow.
+#[tauri::command]
+pub async fn git_stage_files(project_path: String, paths: Vec<String>) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        for p in &paths {
+            super::validate_input_size(p, super::MAX_INPUT_SIZE, "File path")?;
+        }
+        git::stage_files(&project_path, &paths)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// P1-15: explicit `git restore --staged -- <paths>` — the unstage
+/// counterpart of `git_stage_files`.
+#[tauri::command]
+pub async fn git_unstage_files(
+    project_path: String,
+    paths: Vec<String>,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        for p in &paths {
+            super::validate_input_size(p, super::MAX_INPUT_SIZE, "File path")?;
+        }
+        git::unstage_files(&project_path, &paths)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 /// v0.8-G: push a specific branch to `origin` with upstream tracking. Used
 /// by the "Publish attempts as draft PRs" Flight option to push each
 /// attempt's branch from inside its worktree before opening the draft PR.

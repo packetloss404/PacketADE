@@ -1,45 +1,9 @@
 import * as Diff from "diff";
 import { readFileForDiff } from "@/lib/tauri";
-import { parseWriteFileInput } from "@/lib/parseToolInput";
-import type {
-  AgentConversation,
-  AgentToolCall,
-} from "@/types/agent-conversation";
-
-/* -------------------------------------------------------------------------- */
-/*                              Tool-call parsing                             */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Parse a `write_file` tool call into `{ path, content }`. Tolerant of both
- * stringified-JSON `input` and structured `{ input: {...} }` shapes.
- */
-function parseWriteFile(
-  tc: AgentToolCall,
-): { path: string; content: string } | null {
-  if (tc.name !== "write_file") return null;
-  return parseWriteFileInput(tc);
-}
-
-/**
- * Walk a conversation and reduce all `write_file` tool calls into the latest
- * proposed content per path (latest-wins, in chronological order).
- */
-function collectLatestWrites(
-  conv: AgentConversation,
-): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const msg of conv.messages) {
-    if (!msg.toolCalls?.length) continue;
-    for (const tc of msg.toolCalls) {
-      const parsed = parseWriteFile(tc);
-      if (!parsed) continue;
-      // Latest wins.
-      map.set(parsed.path, parsed.content);
-    }
-  }
-  return map;
-}
+import { materializeEdits } from "@/lib/parseToolInput";
+import { collectConversationEditGroups } from "@/lib/diffUtils";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
+import type { AgentConversation } from "@/types/agent-conversation";
 
 /* -------------------------------------------------------------------------- */
 /*                                 Line counts                                */
@@ -80,42 +44,66 @@ export interface ConversationDiffAggregate {
 }
 
 /**
- * Aggregate per-file `+adds / -dels` totals across every `write_file` tool
- * call in a conversation. For each path the latest proposed content is
- * compared against the on-disk file (via the `read_file_for_diff` Tauri
- * command). Files missing on disk are treated as new (all lines counted as
- * additions).
+ * Aggregate per-file `+adds / -dels` totals across every edit-bearing tool
+ * call in a conversation (write_file / Write / Edit / MultiEdit /
+ * NotebookEdit / apply_patch, via the shared canonical-edit collector).
  *
- * Errors reading individual files are swallowed and that file is skipped from
- * the totals (it still appears in `perFile` with zero counts so the caller
- * can render it sensibly).
+ * The "before" side is the recorded pre-edit baseline (editBaselineStore)
+ * when one exists — never live disk — so applied edits keep their real
+ * counts instead of degrading to +0/-0 once the file is written. Disk (via
+ * `read_file_for_diff`) is only a fallback: for "before" when no baseline
+ * was recorded (legacy sessions, app restarts) and for "after" when the
+ * transcript can't reproduce the final content (Codex apply_patch), in
+ * which case the applied on-disk result IS the after.
+ *
+ * Errors reading individual files are swallowed and that file is skipped
+ * from the totals (it still appears in `perFile` with zero counts so the
+ * caller can render it sensibly).
  */
 export async function aggregateConversationDiffs(
   conversation: AgentConversation,
 ): Promise<ConversationDiffAggregate> {
-  const writes = collectLatestWrites(conversation);
+  const groups = collectConversationEditGroups(conversation);
+  const getBaseline = useEditBaselineStore.getState().getBaseline;
   const perFile: PerFileDiffStat[] = [];
   let totalAdds = 0;
   let totalDels = 0;
 
   // Sequential awaits keep things simple; conversations rarely contain more
-  // than a handful of distinct write_file paths and `read_file_for_diff` is
+  // than a handful of distinct edited paths and `read_file_for_diff` is
   // already cheap on the Rust side.
-  for (const [path, newContent] of writes) {
+  for (const [path, group] of groups) {
+    const baseline = getBaseline(conversation.id, path);
     let orig: string | null = null;
     let readFailed = false;
-    try {
-      orig = await readFileForDiff(conversation.projectPath, path);
-    } catch {
-      readFailed = true;
+    if (baseline !== undefined) {
+      orig = baseline.content;
+    } else {
+      try {
+        orig = (await readFileForDiff(conversation.projectPath, path)) ?? null;
+      } catch {
+        readFailed = true;
+      }
     }
 
-    if (readFailed) {
+    let newContent = materializeEdits(group.edits, orig);
+    if (newContent === null && !readFailed) {
+      // Transcript can't reproduce the content (e.g. Codex apply_patch):
+      // the applied on-disk result is the truthful "after".
+      try {
+        newContent =
+          (await readFileForDiff(conversation.projectPath, path)) ?? null;
+      } catch {
+        readFailed = true;
+      }
+    }
+
+    if (readFailed || newContent === null) {
       perFile.push({ path, adds: 0, dels: 0, isNew: false });
       continue;
     }
 
-    if (orig === null || orig === undefined) {
+    if (orig === null) {
       // New file — every line is an addition.
       const adds = newContent.split("\n").length;
       perFile.push({ path, adds, dels: 0, isNew: true });
@@ -133,7 +121,7 @@ export async function aggregateConversationDiffs(
   perFile.sort((a, b) => a.path.localeCompare(b.path));
 
   return {
-    fileCount: writes.size,
+    fileCount: groups.size,
     totalAdds,
     totalDels,
     perFile,

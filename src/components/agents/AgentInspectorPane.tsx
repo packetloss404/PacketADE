@@ -19,12 +19,12 @@ import {
 import { aggregateConversationCost, formatCostPill } from "@/lib/conversationCost";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { AgentPreviewPane } from "./AgentPreviewPane";
-import { EmbeddedDiffPane } from "./EmbeddedDiffPane";
+import { ReviewSurface } from "./review/ReviewSurface";
 import { AgentFilePane } from "./AgentFilePane";
 import { PlanPanel } from "./PlanPanel";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { logSwallowed } from "@/lib/logSwallowed";
-import { useReviewedDiffs } from "./hooks/useReviewedDiffs";
+import { useUnviewedCount } from "./review/useUnviewedCount";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -77,7 +77,7 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
   const [tab, setTab] = useState<Tab>("inspector");
   const [width, setWidth] = useState<number>(() => readPersistedWidth());
   const [isDragging, setIsDragging] = useState(false);
-  const { unreviewedCount } = useReviewedDiffs(conversationId);
+  const unreviewedCount = useUnviewedCount(conversationId);
 
   // Auto-switch to the Preview tab when the preview store flips to open
   // (e.g. clicking a .md link in chat or detecting a plan response).
@@ -248,7 +248,7 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
               role="tab"
               aria-selected={active}
               onClick={() => setTab(t.id)}
-              className={`relative flex items-center gap-1.5 px-2.5 text-[11px] border-b-2 transition-colors ${
+              className={`relative flex items-center gap-1.5 px-2.5 text-ui border-b-2 transition-colors ${
                 active
                   ? "border-accent-green text-text-primary"
                   : "border-transparent text-text-muted hover:text-text-secondary"
@@ -292,7 +292,7 @@ export function AgentInspectorPane({ conversationId }: AgentInspectorPaneProps) 
         )}
         {tab === "diff" && (
           conversation.mode === "api" ? (
-            <EmbeddedDiffPane conversationId={conversationId} />
+            <ReviewSurface conversationId={conversationId} embedded />
           ) : (
             <div className="flex-1 flex items-center justify-center bg-bg-primary">
               <EmptyState
@@ -398,17 +398,17 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
         />
         <div className="p-2 flex flex-col gap-1.5">
           {filesLoading ? (
-            <span className="flex items-center gap-1.5 text-[10px] text-text-muted px-1 py-1">
+            <span className="flex items-center gap-1.5 text-ui text-text-muted px-1 py-1">
               <Spinner size={10} />
               Computing edits…
             </span>
           ) : filesError ? (
-            <span className="flex items-center gap-1.5 text-[10px] text-accent-red px-1 py-1">
+            <span className="flex items-center gap-1.5 text-ui text-accent-red px-1 py-1">
               <AlertCircle size={10} />
               Could not compute edits.
             </span>
           ) : files.length === 0 ? (
-            <span className="text-[10px] text-text-muted px-1 py-1">
+            <span className="text-ui text-text-muted px-1 py-1">
               No edits in this conversation yet.
             </span>
           ) : (
@@ -423,7 +423,7 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
           label="Plan progress"
           right={plan ? `${plan.done} / ${plan.items.length}` : "—"}
         />
-        <div className="px-2.5 py-2 flex flex-col gap-1.5 text-[11px]">
+        <div className="px-2.5 py-2 flex flex-col gap-1.5 text-ui">
           {plan && plan.items.length > 0 ? (
             plan.items.map((s, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -453,7 +453,7 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
               </div>
             ))
           ) : (
-            <span className="text-[10px] text-text-muted">No active plan.</span>
+            <span className="text-ui text-text-muted">No active plan.</span>
           )}
         </div>
       </div>
@@ -461,7 +461,7 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
       {/* Session info */}
       <div>
         <SectionHeader label="Session" />
-        <div className="px-2.5 py-2 text-[11px] text-text-secondary flex flex-col gap-1.5">
+        <div className="px-2.5 py-2 text-ui text-text-secondary flex flex-col gap-1.5">
           <KvRow
             k="Agent"
             v={
@@ -487,7 +487,7 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
             k="Worktree"
             v={
               <span
-                className="font-mono text-[11px] truncate"
+                className="font-mono text-ui truncate"
                 title={conversation?.projectPath ?? undefined}
               >
                 {conversation?.projectPath ?? "—"}
@@ -508,11 +508,11 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
 
 function SectionHeader({ label, right }: { label: string; right?: string }) {
   return (
-    <div className="px-2.5 py-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-faint bg-bg-tertiary border-y border-line-soft">
+    <div className="px-2.5 py-1.5 flex items-center gap-1.5 text-meta font-semibold uppercase tracking-wide text-text-faint bg-bg-tertiary border-y border-line-soft">
       <span>{label}</span>
       <span className="flex-1" />
       {right && (
-        <span className="font-mono normal-case tracking-normal text-[10px] text-text-secondary">
+        <span className="font-mono normal-case tracking-normal text-meta text-text-secondary">
           {right}
         </span>
       )}
@@ -529,11 +529,11 @@ function FileChangedRow({ stat }: { stat: PerFileDiffStat }) {
     <div className="px-2 py-1.5 rounded border border-bg-border bg-bg-tertiary">
       <div className="flex items-center gap-1.5 mb-1">
         <FileIcon size={10} className="text-text-muted" />
-        <span className="font-mono text-[11px] text-text-primary truncate flex-1" title={stat.path}>
+        <span className="font-mono text-ui text-text-primary truncate flex-1" title={stat.path}>
           {basename(stat.path)}
         </span>
-        <span className="font-mono text-[10px] text-accent-green">+{stat.adds}</span>
-        <span className="font-mono text-[10px] text-accent-red">−{stat.dels}</span>
+        <span className="font-mono text-meta text-accent-green">+{stat.adds}</span>
+        <span className="font-mono text-meta text-accent-red">−{stat.dels}</span>
       </div>
       <div className="flex gap-px h-[3px] rounded overflow-hidden">
         {Array.from({ length: cells }).map((_, j) => {
@@ -615,10 +615,11 @@ function deriveLatestPlan(messages: { role: string; content: string }[]): {
 }
 
 /**
- * Small accent-green pill rendered on the Diff tab when there are
- * unreviewed `write_file` tool calls. Caps display at "9+" so the badge
- * stays compact. `compact=true` is used in the mini-icon strip (collapsed
- * sidebar) where the host button is only 24px wide.
+ * Small accent-green pill rendered on the Diff tab when the review surface
+ * has files not yet marked Viewed (or gated edits awaiting a decision).
+ * Caps display at "9+" so the badge stays compact. `compact=true` is used
+ * in the mini-icon strip (collapsed sidebar) where the host button is only
+ * 24px wide.
  */
 function UnreviewedBadge({
   count,
@@ -631,7 +632,7 @@ function UnreviewedBadge({
   if (compact) {
     return (
       <span
-        className="absolute -top-0.5 -right-0.5 min-w-[12px] h-[12px] px-[3px] grid place-items-center rounded-full bg-accent-green text-[9px] font-mono font-semibold text-bg-primary leading-none pointer-events-none"
+        className="absolute -top-0.5 -right-0.5 min-w-[12px] h-[12px] px-[3px] grid place-items-center rounded-full bg-accent-green text-meta font-mono font-semibold text-bg-primary leading-none pointer-events-none"
         aria-label={`${count} unreviewed`}
       >
         {label}
@@ -640,7 +641,7 @@ function UnreviewedBadge({
   }
   return (
     <span
-      className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 grid place-items-center rounded-full bg-accent-green text-[9px] font-mono font-semibold text-bg-primary leading-none pointer-events-none"
+      className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 grid place-items-center rounded-full bg-accent-green text-meta font-mono font-semibold text-bg-primary leading-none pointer-events-none"
       aria-label={`${count} unreviewed`}
     >
       {label}

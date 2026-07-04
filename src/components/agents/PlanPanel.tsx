@@ -163,17 +163,14 @@ interface PlanPanelProps {
  */
 export function PlanPanel({ conversation }: PlanPanelProps) {
   const storedPlan = useAgentPlanStore((s) => s.plan.get(conversation.id));
-  const specStage = useAgentPlanStore((s) => s.specStage.get(conversation.id));
   const planApproved = useAgentPlanStore(
     (s) => s.planApproved.get(conversation.id) ?? false,
   );
-  const spec = useAgentPlanStore((s) => s.spec.get(conversation.id));
   const items = useMemo(
     () => latestPlan(conversation, storedPlan),
     [conversation, storedPlan],
   );
   const [collapsed, setCollapsed] = useState(false);
-  const approvePlan = useAgentPlanStore((s) => s.approvePlan);
   const createApiConversation = useAgentTaskStore(
     (s) => s.createApiConversation,
   );
@@ -245,15 +242,18 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
 
   if (!items) return null;
 
-  const awaitingPlanApproval = specStage === "plan" && !planApproved;
-  const handoffEligible =
-    isClaudeParent && (items.length > 0 || (spec?.criteria.length ?? 0) > 0);
+  // The plan stays a "proposal" while plan mode is on and the user hasn't
+  // approved it yet. Approval happens on the inline PlanModeApprovalMenu,
+  // which calls agentPlanStore.approvePlan — flipping planApproved here and
+  // lifting plan mode, so this derivation clears on approval.
+  const awaitingPlanApproval = (conversation.planMode ?? false) && !planApproved;
+  const handoffEligible = isClaudeParent && items.length > 0;
 
   async function handleHandoff(): Promise<void> {
     if (!conversation.model) return;
     setHandingOff(true);
     try {
-      const prompt = buildHandoffPrompt(conversation, spec, storedPlan);
+      const prompt = buildHandoffPrompt(conversation, storedPlan);
       const codexProvider = API_PROVIDERS.find(
         (p) => p.agentCli === "api-openai-codex",
       );
@@ -304,10 +304,10 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
         title="Toggle plan visibility"
       >
         <CheckSquare size={11} className="text-accent-green shrink-0" />
-        <span className="text-[10px] uppercase tracking-wide font-semibold text-text-secondary">
+        <span className="text-meta uppercase tracking-wide font-semibold text-text-secondary">
           {awaitingPlanApproval ? "Plan (proposed)" : "Plan"}
         </span>
-        <span className="text-[10px] text-text-secondary">
+        <span className="text-meta text-text-secondary">
           {completed}/{items.length} done
           {inProgress > 0 ? ` · ${inProgress} in progress` : ""}
           {pending > 0 ? ` · ${pending} pending` : ""}
@@ -324,7 +324,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
           {items.map((t, i) => (
             <li
               key={`${i}-${t.title}`}
-              className={`flex items-center gap-1.5 text-[11px] leading-snug ${
+              className={`flex items-center gap-1.5 text-ui leading-snug ${
                 awaitingPlanApproval ? "text-text-muted" : rowClass(t.status)
               }`}
             >
@@ -338,34 +338,27 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
       )}
       {awaitingPlanApproval && (
         <div className="flex items-center gap-2 px-3 py-1.5 border-t border-bg-border">
-          <span className="text-[10px] text-text-muted flex-1">
-            Plan is a proposal — approve to lift plan-mode and execute.
+          <span className="text-meta text-text-muted flex-1">
+            Plan is a proposal — approve it inline where the plan ends.
           </span>
           {handoffEligible && (
             <Tooltip
               content={
                 !codexReady
                   ? "Codex login required (run `codex login` or sign in via the provider dropdown)"
-                  : "Hand the approved plan off to a fresh Codex conversation for execution"
+                  : "Hand the plan off to a fresh Codex conversation for execution"
               }
             >
               <button
                 type="button"
                 onClick={() => void handleHandoff()}
                 disabled={!codexReady || handingOff}
-                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex items-center gap-1 text-ui px-2 py-0.5 rounded border border-accent-blue/40 text-accent-blue hover:bg-accent-blue/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to Codex"}
               </button>
             </Tooltip>
           )}
-          <button
-            type="button"
-            onClick={() => approvePlan(conversation.id)}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-accent-green/20 hover:bg-accent-green/30 text-accent-green font-medium transition-colors"
-          >
-            <Play size={11} /> Approve & execute
-          </button>
         </div>
       )}
       {/* B5 — goal binding row. Renders when this conversation has been
@@ -375,7 +368,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
       {boundGoal && (
         <div className="flex items-center gap-2 px-3 py-1.5 border-t border-accent-blue/30 bg-accent-blue/5">
           <Target size={11} className="text-accent-blue" />
-          <span className="text-[10px] text-text-secondary flex-1 truncate">
+          <span className="text-meta text-text-secondary flex-1 truncate">
             Bound goal:{" "}
             <span className="text-accent-blue font-medium">
               {boundGoal.title}
@@ -388,7 +381,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
               <button
                 type="button"
                 onClick={() => pauseGoal(boundGoal.id)}
-                className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-bg-border text-text-muted hover:text-accent-amber transition-colors"
+                className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-bg-border text-text-muted hover:text-accent-amber transition-colors"
               >
                 <Pause size={10} /> Pause
               </button>
@@ -398,7 +391,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
             <button
               type="button"
               onClick={() => resumeGoal(boundGoal.id)}
-              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
+              className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
             >
               <Play size={10} /> Resume
             </button>
@@ -408,7 +401,7 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
             <button
               type="button"
               onClick={() => completeGoal(boundGoal.id)}
-              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
+              className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
             >
               <X size={10} /> Complete
             </button>

@@ -137,7 +137,7 @@ export function ProjectPicker({
         }
       >
         {recentItems.length > 0 && (
-          <div className="px-3 py-1 text-[9px] uppercase tracking-wide text-text-muted">
+          <div className="px-3 py-1 text-meta uppercase tracking-wide text-text-muted">
             Recents
           </div>
         )}
@@ -194,7 +194,7 @@ export function ProjectPicker({
           the server config. Seeded from `ServerConfig.remotePath` on first
           pick; edits re-encode into `selectedRepo`. */}
       {selectedSshUri && selectedServer && (
-        <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+        <div className="mt-2 flex items-center gap-1.5 text-ui">
           <Server size={11} className="text-accent-green shrink-0" />
           <span className="text-text-muted shrink-0">
             {selectedServer.username}@{selectedServer.host}
@@ -206,7 +206,7 @@ export function ProjectPicker({
             value={selectedSshUri.remotePath ?? ""}
             onChange={(e) => handleRemotePathChange(e.target.value)}
             placeholder="/home/user/project"
-            className="flex-1 bg-bg-primary border border-bg-border rounded px-1.5 py-0.5 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
+            className="flex-1 bg-bg-primary border border-bg-border rounded px-1.5 py-0.5 text-ui text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
           />
         </div>
       )}

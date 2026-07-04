@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import {
   Zap,
   Trash2,
@@ -7,71 +14,27 @@ import {
   Circle,
   CheckCircle2,
   XCircle,
+  BellRing,
   Archive,
   ArchiveRestore,
-  Layers,
-  GitBranch,
-  ChevronDown,
   Search,
   X,
   Plus,
   Pin,
-  Tag,
-  ArrowUpDown,
 } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import {
-  useAgentSidebarPrefsStore,
-  type SidebarSortMode,
-} from "@/stores/agentSidebarPrefsStore";
+import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
+import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { Modal } from "@/components/ui/Modal";
 import { API_PROVIDERS } from "@/lib/api-models";
-import { aggregateConversationCost, formatCostPill } from "@/lib/conversationCost";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Popover } from "@/components/ui/Popover";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { getAgentColor, getStatusColor } from "@/lib/agentColors";
 
 type StatusFilter = "all" | "active" | "done" | "archived";
-type GroupBy = "project" | "status" | "env";
-
-const GROUP_BY_LABELS: Record<GroupBy, string> = {
-  project: "Project",
-  status: "Status",
-  env: "Environment",
-};
-
-const SORT_MODE_LABELS: Record<SidebarSortMode, string> = {
-  recent: "Recent",
-  created: "Created",
-  alpha: "A–Z",
-};
-
-const SORT_OPTIONS: { value: SidebarSortMode; label: string }[] = [
-  { value: "recent", label: "Recent" },
-  { value: "created", label: "Created" },
-  { value: "alpha", label: "A–Z" },
-];
-
-const STATUS_GROUP_LABELS: Record<AgentConversation["status"], string> = {
-  active: "Active",
-  idle: "Idle",
-  done: "Done",
-  failed: "Failed",
-};
-
-const STATUS_GROUP_ORDER: AgentConversation["status"][] = ["active", "idle", "done", "failed"];
-const ENV_GROUP_ORDER = ["Local", "SSH", "Worktree"] as const;
-
-function envGroupKey(conv: AgentConversation): "Local" | "SSH" | "Worktree" {
-  if (isWorktreePath(conv.projectPath)) return "Worktree";
-  if (conv.sshTarget) return "SSH";
-  return "Local";
-}
 
 function statusIcon(status: AgentConversation["status"]) {
   switch (status) {
@@ -86,68 +49,24 @@ function statusIcon(status: AgentConversation["status"]) {
   }
 }
 
-/** Compact model label — drops the date / build suffix when present. */
-function shortModel(model: string | undefined): string {
-  if (!model) return "";
-  // Strip trailing date stamp like "-20250414" and provider prefix.
-  let m = model.replace(/-\d{8,}$/, "");
-  m = m.replace(/^claude-/i, "").replace(/^gpt-/i, "");
-  return m;
-}
-
-/** Aggregate "turn" count = number of user messages in the conversation. */
-function turnCount(conv: AgentConversation): number {
-  return conv.messages.filter((m) => m.role === "user").length;
+function needsYouIcon() {
+  return <BellRing size={10} className="text-accent-amber shrink-0" />;
 }
 
 /**
  * Order a list of conversations: pinned rows always float to the top, then
- * the active sort mode is applied. Returns a new array (does not mutate).
+ * most-recently-updated first. Returns a new array (does not mutate).
  */
 function sortConversations(
   list: AgentConversation[],
-  sortMode: SidebarSortMode,
   prefs: Record<string, { pinned?: boolean }>,
 ): AgentConversation[] {
   return [...list].sort((a, b) => {
     const pa = prefs[a.id]?.pinned ? 1 : 0;
     const pb = prefs[b.id]?.pinned ? 1 : 0;
     if (pa !== pb) return pb - pa;
-    if (sortMode === "alpha") {
-      const cmp = (a.title || "").trim().toLowerCase().localeCompare((b.title || "").trim().toLowerCase());
-      if (cmp !== 0) return cmp;
-      return b.updatedAt - a.updatedAt;
-    }
-    if (sortMode === "created") return b.createdAt - a.createdAt;
     return b.updatedAt - a.updatedAt;
   });
-}
-
-function isWorktreePath(path: string): boolean {
-  return path.replace(/\\/g, "/").includes("/.pkt-worktrees/");
-}
-
-function envBadge(conv: AgentConversation) {
-  if (isWorktreePath(conv.projectPath)) {
-    return (
-      <Tooltip content="Worktree (Flight Deck attempt)">
-        <Badge tone="amber">WT</Badge>
-      </Tooltip>
-    );
-  }
-  if (conv.sshTarget) {
-    return (
-      <Tooltip content={`SSH: ${conv.sshTarget.user}@${conv.sshTarget.host}`}>
-        <Badge tone="purple">SSH</Badge>
-      </Tooltip>
-    );
-  }
-  return null;
-}
-
-function basenameOfPath(path: string): string {
-  const segs = path.replace(/\\/g, "/").split("/").filter(Boolean);
-  return segs[segs.length - 1] ?? path;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -175,6 +94,25 @@ function agentLabel(agent: string): string {
   return labels[agent] ?? agent;
 }
 
+/** Build a short match snippet around the first hit of `q` in `content`. */
+function buildSnippet(content: string, q: string): string | null {
+  const idx = content.toLowerCase().indexOf(q);
+  if (idx < 0) return null;
+  const half = Math.max(0, Math.floor((60 - q.length) / 2));
+  const start = Math.max(0, idx - half);
+  const end = Math.min(content.length, idx + q.length + half);
+  let snippet = content.slice(start, end).replace(/\s+/g, " ").trim();
+  if (start > 0) snippet = "..." + snippet;
+  if (end < content.length) snippet = snippet + "...";
+  return snippet;
+}
+
+function projectGroupKey(conv: AgentConversation): string {
+  return conv.sshTarget
+    ? `ssh:${conv.sshTarget.id}:${conv.projectPath}`
+    : `local:${conv.projectPath}`;
+}
+
 interface AgentSidebarProps {
   onNewAgent: () => void;
   selectedId: string | null;
@@ -189,15 +127,17 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const projectLabels = useAgentTaskStore((s) => s.projectLabels);
   const setProjectLabel = useAgentTaskStore((s) => s.setProjectLabel);
 
-  // Per-conversation pin/tags + global sort (separate persisted store).
+  // Per-conversation pin (separate persisted store).
   const prefs = useAgentSidebarPrefsStore((s) => s.prefs);
-  const sortMode = useAgentSidebarPrefsStore((s) => s.sortMode);
-  const setSortMode = useAgentSidebarPrefsStore((s) => s.setSortMode);
   const togglePinned = useAgentSidebarPrefsStore((s) => s.togglePinned);
-  const addTag = useAgentSidebarPrefsStore((s) => s.addTag);
-  const removeTag = useAgentSidebarPrefsStore((s) => s.removeTag);
 
-  /** State for inline-renaming a project group header (groupBy=project only). */
+  // "Needs you" signal — pending permission/edit prompts, keyed by conversation.
+  const pendingPerms = useAgentApprovalStore((s) => s.permissions);
+  const pendingEdits = useAgentApprovalStore((s) => s.edits);
+  const needsYou = (id: string): boolean =>
+    (pendingPerms.get(id)?.length ?? 0) + (pendingEdits.get(id)?.length ?? 0) > 0;
+
+  /** State for inline-renaming a project group header. */
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement | null>(null);
@@ -208,27 +148,15 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
 
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [pendingDelete, setPendingDelete] = useState<AgentConversation | null>(null);
-  const [groupBy, setGroupBy] = useState<GroupBy>("project");
-  const [groupMenuOpen, setGroupMenuOpen] = useState(false);
-  const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const groupBtnRef = useRef<HTMLButtonElement | null>(null);
-  const sortBtnRef = useRef<HTMLButtonElement | null>(null);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
 
-  // Inline "add tag" input — tracks which conversation row is being tagged.
-  const [taggingId, setTaggingId] = useState<string | null>(null);
-  const [tagValue, setTagValue] = useState("");
-  const tagInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (taggingId !== null) tagInputRef.current?.focus();
-  }, [taggingId]);
-
   const trimmedQuery = searchQuery.trim();
-  const isSearching = trimmedQuery.length > 0;
+  // Defer the expensive full-message scan so keystrokes never block the input.
+  const deferredQuery = useDeferredValue(trimmedQuery);
+  const isSearching = deferredQuery.length > 0;
 
   // Auto-focus search input when opened
   useEffect(() => {
@@ -254,15 +182,32 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
     setSearchQuery("");
   };
 
-  const filtered = useMemo(() => {
-    if (isSearching) {
-      const q = trimmedQuery.toLowerCase();
-      return conversations.filter((c) => {
-        if (c.archived) return false;
-        if (c.title?.toLowerCase().includes(q)) return true;
-        return c.messages?.some((m) => m.content?.toLowerCase().includes(q));
-      });
+  // Search: single pass over conversations that both filters AND builds the
+  // match snippet, instead of scanning every message twice.
+  const { list: searchList, snippets: searchSnippets } = useMemo(() => {
+    if (!isSearching) return { list: [] as AgentConversation[], snippets: new Map<string, string>() };
+    const q = deferredQuery.toLowerCase();
+    const list: AgentConversation[] = [];
+    const snippets = new Map<string, string>();
+    for (const c of conversations) {
+      if (c.archived) continue;
+      if (c.title?.toLowerCase().includes(q)) {
+        list.push(c);
+        snippets.set(c.id, c.title);
+        continue;
+      }
+      const msg = c.messages?.find((m) => m.content?.toLowerCase().includes(q));
+      if (msg) {
+        const snippet = buildSnippet(msg.content, q);
+        list.push(c);
+        if (snippet) snippets.set(c.id, snippet);
+      }
     }
+    return { list: sortConversations(list, prefs), snippets };
+  }, [conversations, isSearching, deferredQuery, prefs]);
+
+  const statusFiltered = useMemo(() => {
+    if (isSearching) return [];
     if (filter === "archived") {
       return conversations.filter((c) => c.archived);
     }
@@ -272,79 +217,39 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
       return visible.filter((c) => c.status === "active" || c.status === "idle");
     }
     return visible.filter((c) => c.status === "done" || c.status === "failed");
-  }, [conversations, filter, isSearching, trimmedQuery]);
+  }, [conversations, filter, isSearching]);
 
-  // Build a snippet around the first match for a conversation
-  const matchSnippet = (conv: AgentConversation): string | null => {
-    if (!isSearching) return null;
-    const q = trimmedQuery.toLowerCase();
-    if (conv.title?.toLowerCase().includes(q)) return conv.title;
-    const msg = conv.messages?.find((m) => m.content?.toLowerCase().includes(q));
-    if (!msg) return null;
-    const content = msg.content;
-    const idx = content.toLowerCase().indexOf(q);
-    if (idx < 0) return null;
-    const half = Math.max(0, Math.floor((60 - q.length) / 2));
-    const start = Math.max(0, idx - half);
-    const end = Math.min(content.length, idx + q.length + half);
-    let snippet = content.slice(start, end).replace(/\s+/g, " ").trim();
-    if (start > 0) snippet = "..." + snippet;
-    if (end < content.length) snippet = snippet + "...";
-    return snippet;
-  };
+  const filtered = isSearching ? searchList : statusFiltered;
 
-  const convsGrouped = useMemo(() => {
-    if (isSearching) {
-      const sorted = sortConversations(filtered, sortMode, prefs);
-      const map = new Map<string, AgentConversation[]>();
-      if (sorted.length > 0) map.set("__search__", sorted);
-      return map;
+  // "Needs you" pseudo-group — pinned to the top, pulled out of its project
+  // group while pending. Excluded entirely from the archived filter and
+  // while searching.
+  const { needsYouList, projectGrouped } = useMemo(() => {
+    if (isSearching) return { needsYouList: [] as AgentConversation[], projectGrouped: new Map<string, AgentConversation[]>() };
+    const ny: AgentConversation[] = [];
+    const rest: AgentConversation[] = [];
+    for (const c of statusFiltered) {
+      if (!c.archived && needsYou(c.id)) ny.push(c);
+      else rest.push(c);
     }
     const map = new Map<string, AgentConversation[]>();
-    for (const conv of filtered) {
-      let key: string;
-      if (groupBy === "status") {
-        key = conv.status;
-      } else if (groupBy === "env") {
-        key = envGroupKey(conv);
-      } else {
-        key = conv.sshTarget
-          ? `ssh:${conv.sshTarget.id}:${conv.projectPath}`
-          : `local:${conv.projectPath}`;
-      }
+    for (const conv of rest) {
+      const key = projectGroupKey(conv);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(conv);
     }
     for (const [key, list] of map) {
-      map.set(key, sortConversations(list, sortMode, prefs));
+      map.set(key, sortConversations(list, prefs));
     }
-    if (groupBy === "status") {
-      const ordered = new Map<string, AgentConversation[]>();
-      for (const k of STATUS_GROUP_ORDER) {
-        if (map.has(k)) ordered.set(k, map.get(k)!);
-      }
-      return ordered;
-    }
-    if (groupBy === "env") {
-      const ordered = new Map<string, AgentConversation[]>();
-      for (const k of ENV_GROUP_ORDER) {
-        if (map.has(k)) ordered.set(k, map.get(k)!);
-      }
-      return ordered;
-    }
-    return map;
-  }, [filtered, groupBy, isSearching, sortMode, prefs]);
+    return { needsYouList: sortConversations(ny, prefs), projectGrouped: map };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFiltered, isSearching, prefs, pendingPerms, pendingEdits]);
 
   // Search-result aggregate counts
   const searchStats = useMemo(() => {
     if (!isSearching) return { count: 0, projects: 0 };
     const projects = new Set<string>();
-    for (const c of filtered) {
-      const key = c.sshTarget
-        ? `ssh:${c.sshTarget.id}:${c.projectPath}`
-        : `local:${c.projectPath}`;
-      projects.add(key);
-    }
+    for (const c of filtered) projects.add(projectGroupKey(c));
     return { count: filtered.length, projects: projects.size };
   }, [filtered, isSearching]);
 
@@ -365,8 +270,87 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
     return { all, active, done, archived };
   }, [conversations]);
 
-  const hasConversations = convsGrouped.size > 0;
+  const needsYouCount = needsYouList.length;
+  const hasConversations = isSearching
+    ? searchList.length > 0
+    : needsYouList.length > 0 || projectGrouped.size > 0;
   const hasAnyConversations = conversations.length > 0;
+
+  const renderRow = (conv: AgentConversation, isNeedsYou: boolean) => {
+    const isSelected = conv.id === selectedId;
+    const snippet = isSearching ? searchSnippets.get(conv.id) : undefined;
+    const titleText = conv.title || "(untitled)";
+    const isPinned = !!prefs[conv.id]?.pinned;
+
+    return (
+      <div
+        key={conv.id}
+        className={`group relative border-l-2 transition-colors ${
+          isSelected ? "border-accent-purple bg-accent-purple/15" : "border-transparent"
+        } border-b border-line-soft`}
+      >
+        <button
+          onClick={() => onSelect(conv.id)}
+          title={conv.title}
+          className={`flex flex-col w-full px-3 py-2 text-left gap-0.5 transition-colors ${
+            isSelected ? "" : "hover:bg-bg-hover"
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            {isPinned && <Pin size={9} className="text-accent-amber fill-accent-amber shrink-0" />}
+            <span>{isNeedsYou ? needsYouIcon() : statusIcon(conv.status)}</span>
+            <span
+              className={`text-ui leading-tight truncate ${
+                isSelected ? "text-text-primary font-medium" : "text-text-secondary"
+              }`}
+            >
+              {snippet ?? titleText}
+            </span>
+            <span className="flex-1" />
+            <span className="text-meta text-text-muted shrink-0">
+              {formatRelativeTime(conv.updatedAt)}
+            </span>
+          </div>
+          <div className={`text-meta font-medium ${getAgentColor(conv.agent).text}`}>
+            {agentLabel(conv.agent)}
+          </div>
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (conv.archived) unarchiveConversation(conv.id);
+            else archiveConversation(conv.id);
+          }}
+          className="absolute right-6 top-1.5 p-0.5 text-text-muted hover:text-accent-green opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
+          title={conv.archived ? "Unarchive" : "Archive"}
+        >
+          {conv.archived ? <ArchiveRestore size={10} /> : <Archive size={10} />}
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setPendingDelete(conv);
+          }}
+          className="absolute right-1 top-1.5 p-0.5 text-text-muted hover:text-accent-red opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
+          title="Delete"
+        >
+          <Trash2 size={10} />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePinned(conv.id);
+          }}
+          className={`absolute right-11 top-1.5 p-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity ${
+            isPinned ? "text-accent-amber" : "text-text-muted hover:text-accent-amber"
+          }`}
+          title={isPinned ? "Unpin" : "Pin to top"}
+        >
+          <Pin size={10} className={isPinned ? "fill-accent-amber" : ""} />
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -377,7 +361,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
     >
       {/* Sessions list header — matches design (label + count pill + search/plus icons) */}
       <div className="px-3 py-2 flex items-center gap-1.5 border-b border-line-soft">
-        <span className="text-[11px] font-semibold text-text-primary">Sessions</span>
+        <span className="text-ui font-semibold text-text-primary">Sessions</span>
         {conversations.length > 0 && (
           <Badge>
             {isSearching
@@ -387,6 +371,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                 : counts.all}
           </Badge>
         )}
+        {needsYouCount > 0 && <Badge tone="amber">{needsYouCount}</Badge>}
         <span className="flex-1" />
         <Tooltip content="Search conversations (/)">
           <button
@@ -422,7 +407,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`flex-1 text-[10px] py-0.5 rounded transition-colors ${
+                className={`flex-1 text-ui py-0.5 rounded transition-colors ${
                   isActive
                     ? "bg-accent-green/20 text-accent-green"
                     : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
@@ -453,7 +438,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                 }
               }}
               placeholder="Search messages, titles…"
-              className="w-full pl-6 pr-6 py-1 text-[10px] bg-bg-primary border border-bg-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
+              className="w-full pl-6 pr-6 py-1 text-ui bg-bg-primary border border-bg-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
             />
             {searchQuery && (
               <button
@@ -466,7 +451,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
             )}
           </div>
           {isSearching && (
-            <div className="text-[9px] text-text-muted mt-1 px-0.5">
+            <div className="text-meta text-text-muted mt-1 px-0.5">
               {searchStats.count} {searchStats.count === 1 ? "result" : "results"} across {searchStats.projects}{" "}
               {searchStats.projects === 1 ? "project" : "projects"}
             </div>
@@ -474,89 +459,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
         </div>
       )}
 
-      {/* Group-by + sort dropdowns */}
-      {conversations.length > 0 && (
-        <div className="px-3 pb-1.5 flex items-center justify-between gap-1">
-          <div className="relative">
-            <Tooltip content={isSearching ? "Grouping disabled while searching" : "Group conversations by"}>
-              <button
-                ref={groupBtnRef}
-                onClick={() => !isSearching && setGroupMenuOpen((v) => !v)}
-                disabled={isSearching}
-                className={`flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-                  isSearching
-                    ? "text-text-faint cursor-not-allowed"
-                    : "text-text-muted hover:text-text-secondary"
-                }`}
-              >
-                <Layers size={10} />
-                <span>Group: {GROUP_BY_LABELS[groupBy]}</span>
-                <ChevronDown size={11} className="opacity-70" />
-              </button>
-            </Tooltip>
-            <Popover
-              open={groupMenuOpen}
-              onClose={() => setGroupMenuOpen(false)}
-              anchorRef={groupBtnRef}
-              placement="bottom-start"
-              role="menu"
-              className="py-0.5 min-w-[120px]"
-            >
-              {(["project", "status", "env"] as GroupBy[]).map((g) => (
-                <button
-                  key={g}
-                  role="menuitem"
-                  onClick={() => {
-                    setGroupBy(g);
-                    setGroupMenuOpen(false);
-                  }}
-                  className={`flex items-center w-full px-2 py-1 text-[10px] text-left transition-colors ${
-                    groupBy === g
-                      ? "text-accent-green bg-accent-green/10"
-                      : "text-text-secondary hover:bg-bg-hover"
-                  }`}
-                >
-                  {GROUP_BY_LABELS[g]}
-                </button>
-              ))}
-            </Popover>
-          </div>
-          <div className="relative">
-            <Tooltip content="Sort conversations by">
-              <button
-                ref={sortBtnRef}
-                onClick={() => setSortMenuOpen((v) => !v)}
-                className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors text-text-muted hover:text-text-secondary"
-              >
-                <ArrowUpDown size={10} />
-                <span>{SORT_MODE_LABELS[sortMode]}</span>
-                <ChevronDown size={11} className="opacity-70" />
-              </button>
-            </Tooltip>
-            <Popover
-              open={sortMenuOpen}
-              onClose={() => setSortMenuOpen(false)}
-              anchorRef={sortBtnRef}
-              placement="bottom-end"
-              role="menu"
-              className="p-1"
-            >
-              <SegmentedControl
-                options={SORT_OPTIONS}
-                value={sortMode}
-                onChange={(v) => {
-                  setSortMode(v);
-                  setSortMenuOpen(false);
-                }}
-                size="xs"
-                aria-label="Sort conversations by"
-              />
-            </Popover>
-          </div>
-        </div>
-      )}
-
-      {/* Conversations grouped by project / status / env */}
+      {/* Conversations: NEEDS YOU first, then grouped by project */}
       <div className="flex-1 overflow-y-auto px-1">
         {!hasConversations ? (
           isSearching ? (
@@ -567,7 +470,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
               action={
                 <button
                   onClick={closeSearch}
-                  className="text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+                  className="text-ui text-text-muted hover:text-text-secondary transition-colors"
                 >
                   Clear search
                 </button>
@@ -581,11 +484,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
               description="Start one with New Agent"
             />
           ) : filter === "archived" ? (
-            <EmptyState
-              className="py-16"
-              icon={<Archive size={24} />}
-              title="No archived sessions"
-            />
+            <EmptyState className="py-16" icon={<Archive size={24} />} title="No archived sessions" />
           ) : (
             <EmptyState
               className="py-16"
@@ -594,275 +493,107 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
               description="Try a different filter"
             />
           )
+        ) : isSearching ? (
+          <div>
+            <div className="px-3 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-y border-line-soft">
+              <Search size={10} className="text-accent-green shrink-0" />
+              <span className="text-meta font-semibold text-text-secondary truncate uppercase tracking-wide">
+                Search results ({searchList.length})
+              </span>
+            </div>
+            {searchList.map((conv) => renderRow(conv, false))}
+          </div>
         ) : (
-          Array.from(convsGrouped.entries()).map(([key, convs]) => {
-            const sshTarget = convs[0]?.sshTarget;
-            const projectPath = convs[0]?.projectPath ?? "";
-
-            let headerIcon: ReactNode;
-            let headerLabel: string;
-            let canRename = false;
-            if (isSearching) {
-              headerIcon = <Search size={10} className="text-accent-green shrink-0" />;
-              headerLabel = `Search results (${convs.length})`;
-            } else if (groupBy === "status") {
-              const statusKey = key as AgentConversation["status"];
-              headerIcon = statusIcon(statusKey);
-              headerLabel = STATUS_GROUP_LABELS[statusKey] ?? key;
-            } else if (groupBy === "env") {
-              if (key === "SSH") {
-                headerIcon = <Server size={10} className="text-accent-purple shrink-0" />;
-              } else if (key === "Worktree") {
-                headerIcon = <GitBranch size={10} className="text-accent-amber shrink-0" />;
-              } else {
-                headerIcon = <FolderOpen size={10} className="text-text-muted shrink-0" />;
-              }
-              headerLabel = key;
-            } else {
-              headerIcon = sshTarget ? (
+          <>
+            {needsYouList.length > 0 && (
+              <div>
+                <div className="px-3 py-1.5 flex items-center gap-1.5 bg-accent-amber/10 border-y border-accent-amber/30">
+                  <BellRing size={10} className="text-accent-amber shrink-0" />
+                  <span className="text-meta font-semibold text-accent-amber truncate uppercase tracking-wide">
+                    Needs you
+                  </span>
+                  <span className="text-meta text-accent-amber shrink-0 ml-auto">
+                    {needsYouList.length}
+                  </span>
+                </div>
+                {needsYouList.map((conv) => renderRow(conv, true))}
+              </div>
+            )}
+            {Array.from(projectGrouped.entries()).map(([key, convs]) => {
+              const sshTarget = convs[0]?.sshTarget;
+              const projectPath = convs[0]?.projectPath ?? "";
+              const headerIcon = sshTarget ? (
                 <Server size={10} className="text-accent-green shrink-0" />
               ) : (
                 <FolderOpen size={10} className="text-text-muted shrink-0" />
               );
               const customLabel = projectLabels[projectPath];
-              if (customLabel) {
-                headerLabel = customLabel;
-              } else if (sshTarget) {
-                headerLabel = sshTarget.name;
-              } else {
-                const segments = projectPath.replace(/\\/g, "/").split("/").filter(Boolean);
-                headerLabel = segments[segments.length - 1] ?? projectPath;
-              }
-              canRename = !sshTarget;
-            }
+              const headerLabel = customLabel
+                ? customLabel
+                : sshTarget
+                  ? sshTarget.name
+                  : (() => {
+                      const segments = projectPath.replace(/\\/g, "/").split("/").filter(Boolean);
+                      return segments[segments.length - 1] ?? projectPath;
+                    })();
+              const canRename = !sshTarget;
+              const isRenaming = canRename && renamingPath === projectPath;
+              const fullPathTitle = sshTarget
+                ? `${sshTarget.user}@${sshTarget.host}:${sshTarget.remotePath}`
+                : projectPath;
 
-            const isRenaming = canRename && renamingPath === projectPath;
-            const fullPathTitle = sshTarget
-              ? `${sshTarget.user}@${sshTarget.host}:${sshTarget.remotePath}`
-              : projectPath;
+              const commitRename = () => {
+                setProjectLabel(projectPath, renameValue);
+                setRenamingPath(null);
+                setRenameValue("");
+              };
 
-            const commitRename = () => {
-              setProjectLabel(projectPath, renameValue);
-              setRenamingPath(null);
-              setRenameValue("");
-            };
-
-            return (
-            <div key={key}>
-              {/* Group header — uppercase tracking, design-matched */}
-              <div
-                className="px-3 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-y border-line-soft"
-                title={canRename ? `${fullPathTitle} — right-click to rename` : fullPathTitle}
-                onContextMenu={(e) => {
-                  if (!canRename) return;
-                  e.preventDefault();
-                  setRenamingPath(projectPath);
-                  setRenameValue(projectLabels[projectPath] ?? headerLabel);
-                }}
-              >
-                {headerIcon}
-                {isRenaming ? (
-                  <input
-                    ref={renameInputRef}
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onBlur={commitRename}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        commitRename();
-                      } else if (e.key === "Escape") {
-                        e.preventDefault();
-                        setRenamingPath(null);
-                        setRenameValue("");
-                      }
-                    }}
-                    className="text-[10px] font-semibold bg-bg-primary border border-accent-green/50 rounded px-1 py-px text-text-primary uppercase tracking-wide focus:outline-none flex-1 min-w-0"
-                  />
-                ) : (
-                  <span className="text-[10px] font-semibold text-text-secondary truncate uppercase tracking-wide">
-                    {headerLabel}
-                  </span>
-                )}
-                <span className="text-[10px] text-text-muted shrink-0 ml-auto">
-                  {convs.length}
-                </span>
-              </div>
-
-              {/* Agent conversations under this project */}
-              {convs.map((conv) => {
-                const isSelected = conv.id === selectedId;
-                const snippet = matchSnippet(conv);
-                const { totalTokens, estCost } = aggregateConversationCost(conv);
-                const costLabel = formatCostPill(estCost, totalTokens);
-                const turns = turnCount(conv);
-                const branchLabel = conv.sshTarget?.name ?? "";
-                const titleText = conv.title || "(untitled)";
-                const isPinned = !!prefs[conv.id]?.pinned;
-                const tags = prefs[conv.id]?.tags ?? [];
-                const isTagging = taggingId === conv.id;
-
-                return (
+              return (
+                <div key={key}>
+                  {/* Group header — uppercase tracking, design-matched */}
                   <div
-                    key={conv.id}
-                    className={`group relative border-l-2 transition-colors ${
-                      isSelected
-                        ? "border-accent-purple bg-accent-purple/15"
-                        : "border-transparent"
-                    } border-b border-line-soft`}
+                    className="px-3 py-1.5 flex items-center gap-1.5 bg-bg-tertiary border-y border-line-soft"
+                    title={canRename ? `${fullPathTitle} — right-click to rename` : fullPathTitle}
+                    onContextMenu={(e) => {
+                      if (!canRename) return;
+                      e.preventDefault();
+                      setRenamingPath(projectPath);
+                      setRenameValue(projectLabels[projectPath] ?? headerLabel);
+                    }}
                   >
-                    <button
-                      onClick={() => onSelect(conv.id)}
-                      title={conv.title}
-                      className={`flex flex-col w-full px-3 py-2 text-left gap-1 transition-colors ${
-                        isSelected ? "" : "hover:bg-bg-hover"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {isPinned && (
-                          <Pin size={9} className="text-accent-amber fill-accent-amber shrink-0" />
-                        )}
-                        <span>{statusIcon(conv.status)}</span>
-                        <span
-                          className={`text-[11px] font-semibold ${getAgentColor(conv.agent).text}`}
-                        >
-                          {agentLabel(conv.agent)}
-                        </span>
-                        {conv.model && (
-                          <span className="font-mono text-[9px] text-text-muted truncate">
-                            {shortModel(conv.model)}
-                          </span>
-                        )}
-                        {envBadge(conv)}
-                        <span className="flex-1" />
-                        <span className="text-[10px] text-text-muted shrink-0">
-                          {formatRelativeTime(conv.updatedAt)}
-                        </span>
-                      </div>
-                      <div
-                        className={`text-xs leading-tight truncate ${
-                          isSelected
-                            ? "text-text-primary font-medium"
-                            : "text-text-secondary"
-                        }`}
-                      >
-                        {snippet ?? titleText}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[9px] text-text-muted">
-                        <GitBranch size={9} />
-                        <span
-                          className="font-mono text-text-secondary truncate max-w-[90px]"
-                          title={branchLabel || conv.projectPath}
-                        >
-                          {branchLabel || basenameOfPath(conv.projectPath)}
-                        </span>
-                        <span>·</span>
-                        <span>
-                          {turns} turn{turns === 1 ? "" : "s"}
-                        </span>
-                        <span className="flex-1" />
-                        {costLabel && (
-                          <Tooltip content={`${totalTokens.toLocaleString()} tokens`}>
-                            <span className="font-mono">
-                              {costLabel}
-                            </span>
-                          </Tooltip>
-                        )}
-                      </div>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (conv.archived) unarchiveConversation(conv.id);
-                        else archiveConversation(conv.id);
-                      }}
-                      className="absolute right-6 top-1.5 p-0.5 text-text-muted hover:text-accent-green opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
-                      title={conv.archived ? "Unarchive" : "Archive"}
-                    >
-                      {conv.archived ? <ArchiveRestore size={10} /> : <Archive size={10} />}
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setPendingDelete(conv); }}
-                      className="absolute right-1 top-1.5 p-0.5 text-text-muted hover:text-accent-red opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
-                      title="Delete"
-                    >
-                      <Trash2 size={10} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        togglePinned(conv.id);
-                      }}
-                      className={`absolute right-11 top-1.5 p-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity ${
-                        isPinned ? "text-accent-amber" : "text-text-muted hover:text-accent-amber"
-                      }`}
-                      title={isPinned ? "Unpin" : "Pin to top"}
-                    >
-                      <Pin size={10} className={isPinned ? "fill-accent-amber" : ""} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setTaggingId((id) => (id === conv.id ? null : conv.id));
-                        setTagValue("");
-                      }}
-                      className="absolute right-16 top-1.5 p-0.5 text-text-muted hover:text-accent-blue opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity rounded"
-                      title="Add tag"
-                    >
-                      <Tag size={10} />
-                    </button>
-                    {(tags.length > 0 || isTagging) && (
-                      <div className="flex flex-wrap items-center gap-1 px-3 pb-2 -mt-0.5">
-                        {tags.map((t) => (
-                          <Badge key={t} tone="blue" className="gap-0.5 pr-0.5">
-                            <span className="truncate max-w-[80px]">{t}</span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeTag(conv.id, t);
-                              }}
-                              className="p-px text-accent-blue/70 hover:text-accent-red rounded"
-                              title={`Remove tag “${t}”`}
-                            >
-                              <X size={8} />
-                            </button>
-                          </Badge>
-                        ))}
-                        {isTagging && (
-                          <input
-                            ref={tagInputRef}
-                            value={tagValue}
-                            onChange={(e) => setTagValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                const v = tagValue.trim();
-                                if (v) {
-                                  addTag(conv.id, v);
-                                  setTagValue("");
-                                }
-                              } else if (e.key === "Escape") {
-                                e.preventDefault();
-                                setTaggingId(null);
-                                setTagValue("");
-                              }
-                            }}
-                            onBlur={() => {
-                              setTaggingId(null);
-                              setTagValue("");
-                            }}
-                            placeholder="tag…"
-                            className="w-[70px] px-1 py-px text-[9px] bg-bg-primary border border-accent-blue/40 rounded text-text-primary placeholder:text-text-muted focus:outline-none"
-                          />
-                        )}
-                      </div>
+                    {headerIcon}
+                    {isRenaming ? (
+                      <input
+                        ref={renameInputRef}
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={commitRename}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            commitRename();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            setRenamingPath(null);
+                            setRenameValue("");
+                          }
+                        }}
+                        className="text-meta font-semibold bg-bg-primary border border-accent-green/50 rounded px-1 py-px text-text-primary uppercase tracking-wide focus:outline-none flex-1 min-w-0"
+                      />
+                    ) : (
+                      <span className="text-meta font-semibold text-text-secondary truncate uppercase tracking-wide">
+                        {headerLabel}
+                      </span>
                     )}
+                    <span className="text-meta text-text-muted shrink-0 ml-auto">{convs.length}</span>
                   </div>
-                );
-              })}
-            </div>
-            );
-          })
+
+                  {/* Agent conversations under this project */}
+                  {convs.map((conv) => renderRow(conv, false))}
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
 
@@ -879,7 +610,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
             <div className="flex items-center justify-end gap-2">
               <button
                 onClick={() => setPendingDelete(null)}
-                className="px-3 py-1.5 rounded text-[11px] text-text-secondary hover:bg-bg-hover transition-colors"
+                className="px-3 py-1.5 rounded text-ui text-text-secondary hover:bg-bg-hover transition-colors"
               >
                 Cancel
               </button>
@@ -888,7 +619,7 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
                   deleteConversation(pendingDelete.id);
                   setPendingDelete(null);
                 }}
-                className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-red/15 text-accent-red hover:bg-accent-red/25 transition-colors"
+                className="px-3 py-1.5 rounded text-ui font-medium bg-accent-red/15 text-accent-red hover:bg-accent-red/25 transition-colors"
               >
                 Delete
               </button>
@@ -896,16 +627,12 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
           }
         >
           <div className="px-5 py-4">
-            <p className="text-xs text-text-secondary">
+            <p className="text-ui text-text-secondary">
               Permanently delete{" "}
-              <span className="text-text-primary">
-                “{pendingDelete.title || "(untitled)"}”
-              </span>
+              <span className="text-text-primary">“{pendingDelete.title || "(untitled)"}”</span>
               ? This closes the session and removes its history.
             </p>
-            <p className="text-[10px] text-text-muted mt-2">
-              This can’t be undone.
-            </p>
+            <p className="text-meta text-text-muted mt-2">This can’t be undone.</p>
           </div>
         </Modal>
       )}
@@ -918,7 +645,7 @@ function SidebarFooter({ onNewAgent }: { onNewAgent: () => void }) {
     <div className="border-t border-line-strong bg-bg-tertiary px-2.5 py-2 flex items-center gap-1.5">
       <button
         onClick={onNewAgent}
-        className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 border border-accent-line rounded transition-colors"
+        className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-ui font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 border border-accent-line rounded transition-colors"
       >
         <Plus size={11} />
         New session

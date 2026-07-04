@@ -4,6 +4,7 @@ import { Bot } from "lucide-react";
 import type { AgentToolCall } from "@/types/agent-conversation";
 import { parseToolInput } from "@/lib/parseToolInput";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { BaseToolCard } from "./tool-cards/BaseToolCard";
 import { StatusPill } from "./tool-cards/StatusPill";
 
@@ -15,7 +16,6 @@ interface SubagentInput {
 interface SubagentToolCallCardProps {
   toolCall: AgentToolCall;
   conversationId: string;
-  verbosity?: "summary" | "normal" | "verbose";
 }
 
 function parseSubagentInput(raw: string | undefined): SubagentInput {
@@ -35,8 +35,8 @@ function truncate(text: string, max: number): string {
 function SubagentToolCallCardImpl({
   toolCall,
   conversationId: _conversationId,
-  verbosity = "normal",
 }: SubagentToolCallCardProps) {
+  const verbosity = useAgentSettingsStore((s) => s.transcriptViewMode);
   const { task, model } = useMemo(
     () => parseSubagentInput(toolCall.input),
     [toolCall.input],
@@ -44,8 +44,8 @@ function SubagentToolCallCardImpl({
 
   const [expanded, setExpanded] = useState(verbosity === "verbose");
 
-  // Keep expand state in sync when the per-conversation verbosity control
-  // changes after the card has mounted.
+  // Keep expand state in sync when the global view mode changes after the
+  // card has mounted.
   useEffect(() => {
     setExpanded(verbosity === "verbose");
   }, [verbosity]);
@@ -66,7 +66,7 @@ function SubagentToolCallCardImpl({
 
   const subHeader =
     verbosity === "verbose" && model ? (
-      <div className="px-2 pb-1 font-mono text-[10px] text-text-faint truncate">
+      <div className="px-2 pb-1 font-mono text-meta text-text-faint truncate">
         model: {model}
       </div>
     ) : undefined;
@@ -87,7 +87,7 @@ function SubagentToolCallCardImpl({
       }}
       isError={toolCall.status === "error"}
       footer={
-        <div className="px-2 pb-1 flex items-center gap-1 text-[9px] uppercase tracking-wide text-text-faint">
+        <div className="px-2 pb-1 flex items-center gap-1 text-meta uppercase tracking-wide text-text-faint">
           <Bot size={9} />
           <span>Sub-agent</span>
         </div>
@@ -96,10 +96,10 @@ function SubagentToolCallCardImpl({
       <div className="bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
         <MarkdownRenderer
           content={body}
-          className="text-[11px] leading-relaxed"
+          className="text-ui leading-relaxed"
         />
         {verbosity === "verbose" && toolCall.input && (
-          <pre className="mt-2 pt-2 border-t border-bg-border text-[10px] font-mono whitespace-pre-wrap text-text-muted">
+          <pre className="mt-2 pt-2 border-t border-bg-border text-meta font-mono whitespace-pre-wrap text-text-muted">
             {(() => {
               try {
                 return JSON.stringify(JSON.parse(toolCall.input), null, 2);

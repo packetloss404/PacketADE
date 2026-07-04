@@ -69,7 +69,7 @@ export function ProviderPicker({
                 // doesn't also fire.
                 e.stopPropagation();
               }}
-              className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] text-accent-amber hover:bg-accent-amber/10 transition-colors"
+              className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-ui text-accent-amber hover:bg-accent-amber/10 transition-colors"
               title={loginTooltip}
             >
               <LogIn size={10} />
@@ -95,7 +95,7 @@ export function ProviderPicker({
         return (
           <div key={group.label}>
             {gi > 0 && <div className="my-1 border-t border-bg-border" />}
-            <div className="text-[9px] uppercase tracking-wide text-text-muted px-3 py-1">
+            <div className="text-meta uppercase tracking-wide text-text-muted px-3 py-1">
               {group.label}
             </div>
             {rows.map(({ agent, info }) => {

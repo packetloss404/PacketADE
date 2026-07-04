@@ -5,13 +5,14 @@ import {
   type AgentCli,
   type AgentSshConfigInput,
 } from "@/stores/agentTaskStore";
-import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
+import { LAUNCH_DRAFT_KEY, useAgentDraftStore } from "@/stores/agentDraftStore";
+import { sweepAutoArchive } from "@/stores/agentConversationPersistence";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
-import { AgentInputArea } from "@/components/agents/AgentInputArea";
+import { Composer } from "@/components/agents/composer/Composer";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
 import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
@@ -29,7 +30,7 @@ import { isSshUri, parseSshUri } from "@/lib/ssh-uri";
 import type {
   AgentMode,
   ComposerMode,
-} from "@/components/agents/AgentInputArea";
+} from "@/components/agents/composer/utils";
 
 /**
  * Preference order for the initial auto-picked agent on a fresh Agents pane.
@@ -53,8 +54,6 @@ const DEFAULT_AGENT: AgentCli = "api-minimax";
 const DEFAULT_MODEL = "MiniMax-M3";
 
 export function AgentsView() {
-  const agentInputText = useAgentTaskStore((s) => s.agentInputText);
-  const setAgentInputText = useAgentTaskStore((s) => s.setAgentInputText);
   const selectedRepo = useAgentTaskStore((s) => s.selectedRepo);
   const selectedConversationId = useAgentTaskStore((s) => s.selectedConversationId);
   const selectConversation = useAgentTaskStore((s) => s.selectConversation);
@@ -93,6 +92,15 @@ export function AgentsView() {
   const handleProfileChange = useCallback((id: string) => {
     userPickedProfileRef.current = true;
     setSelectedProfileId(id);
+  }, []);
+
+  // Self-curating sidebar: sweep done+stale conversations into the archive
+  // on mount, then again every hour so long-running sessions don't need a
+  // reload to fall out of the active list.
+  useEffect(() => {
+    sweepAutoArchive();
+    const interval = window.setInterval(sweepAutoArchive, 60 * 60 * 1000);
+    return () => window.clearInterval(interval);
   }, []);
 
   // One-shot: on mount, if the Agents pane has no active conversation and the
@@ -168,9 +176,31 @@ export function AgentsView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleNewAgent]);
 
+  // Ctrl/Cmd+Shift+V cycles the global transcript view mode (P1-17:
+  // Summary → Normal → Verbose → Summary). Same typing guard as Ctrl+N so
+  // composer/inputs never lose the keystroke.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isShortcut =
+        (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "v";
+      if (!isShortcut) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isEditable =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        (target?.isContentEditable ?? false);
+      if (isEditable) return;
+      e.preventDefault();
+      useAgentSettingsStore.getState().cycleTranscriptViewMode();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const handleLaunch = useCallback(
-    (attachments: ImageAttachment[]) => {
-      const text = agentInputText.trim();
+    (rawText: string, attachments: ImageAttachment[]) => {
+      const text = rawText.trim();
       if (!text) return false;
       if (!selectedRepo) return false;
 
@@ -196,13 +226,10 @@ export function AgentsView() {
       const launchPermissionMode: "auto" | "ask_for_risky" =
         agentMode === "manual" ? "ask_for_risky" : "auto";
       const launchApproveWrites = false;
-      // F10: Plan mode now drives the three-stage Spec → Plan → Code FSM.
-      // Tell the agent to lead with bullet success criteria and STOP — the
-      // SpecPanel will render those criteria as editable rows for the user.
-      const initialMessage =
-        agentMode === "plan"
-          ? `Before any plan or code, propose 3-7 success-criterion bullets for this task and STOP. Wait for the user to lock the spec before producing a Plan.\n\nTask:\n${text}`
-          : text;
+      // Plan mode alone drives planning: the backend plan-mode posture keeps
+      // the agent read-only and the inline PlanModeApprovalMenu carries the
+      // approval when the plan lands.
+      const initialMessage = text;
 
       const att = attachments.length > 0 ? attachments : null;
       let sshProjectPath: string | null = null;
@@ -247,14 +274,13 @@ export function AgentsView() {
 
       setLaunchError(null);
       void (async () => {
-        let convId: string | undefined;
         try {
         if (sshTarget && sshProjectPath) {
           // Stamp lastConnectedAt so the recents ordering reflects use.
           useServerStore.getState().updateServer(sshTarget.serverId, {
             lastConnectedAt: Date.now(),
           });
-          convId = await createApiConversation({
+          await createApiConversation({
             agent: selectedAgent,
             projectPath: sshProjectPath,
             model,
@@ -298,7 +324,7 @@ export function AgentsView() {
             }
           }
 
-          convId = await createApiConversation({
+          await createApiConversation({
             agent: selectedAgent,
             projectPath: effectiveProjectPath,
             model,
@@ -315,16 +341,9 @@ export function AgentsView() {
             approveWrites: launchApproveWrites,
           });
         }
-        // F10: enter the spec stage so SpecPanel renders criteria as the
-        // model emits them. The model is instructed to bullet-and-stop.
-        if (convId && agentMode === "plan") {
-          const plans = useAgentPlanStore.getState();
-          plans.setSpec(convId, []);
-          plans.setSpecStage(convId, "spec");
-        }
         // Clear the composer only once the launch actually succeeded, so a
         // failed launch keeps the user's typed prompt intact for a retry.
-        setAgentInputText("");
+        useAgentDraftStore.getState().clearDraft(LAUNCH_DRAFT_KEY);
         } catch (e) {
           setLaunchError(
             e instanceof Error ? e.message : "Failed to launch agent.",
@@ -334,11 +353,9 @@ export function AgentsView() {
       return true;
     },
     [
-      agentInputText,
       selectedRepo,
       selectedAgent,
       selectedModel,
-      setAgentInputText,
       setLaunchError,
       createApiConversation,
       agentMode,
@@ -376,7 +393,8 @@ export function AgentsView() {
           </ErrorBoundary>
         </>
       ) : (
-        <AgentInputArea
+        <Composer
+          variant="launch"
           textareaRef={textareaRef}
           selectedAgent={selectedAgent}
           onAgentChange={setSelectedAgent}

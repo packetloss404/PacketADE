@@ -130,6 +130,11 @@ export type PermissionResponseRequest = {
   sessionId: string;
   toolUseId: string;
   decision: "approve" | "allow_once" | "allow_always" | "deny";
+  /** P1-9 deny-and-continue: optional user steering text carried with a
+   * "deny". Providers fold it into the denial message the model sees so a
+   * rejection redirects the agent instead of stalling the turn. Ignored
+   * for allow decisions. */
+  reason?: string;
 };
 
 export type EditResponseRequest = {
@@ -274,6 +279,18 @@ export type SidecarEvent =
       path: string;
       before?: string;
       after: string;
+    }
+  /** P1-7: non-blocking pre-edit baseline capture. Emitted for every
+   * edit-bearing tool call that does NOT go through the blocking
+   * `pending_edit` approval flow (approveWrites off), so the host can diff
+   * applied edits against the true pre-edit content instead of live disk.
+   * `before` is absent when the file did not exist. */
+  | {
+      type: "edit_baseline";
+      sessionId: string;
+      toolUseId?: string;
+      path: string;
+      before?: string;
     }
   | {
       type: "done";

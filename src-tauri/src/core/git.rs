@@ -250,6 +250,56 @@ pub fn commit_with_context(
     git_command_result(&["commit", "-m", &final_message], project_path)
 }
 
+/// P1-15: guard for individual file paths passed to `stage_files` /
+/// `unstage_files`. Deliberately minimal — the `--` end-of-options
+/// separator used below already prevents flag injection (a path like
+/// `-weird` is passed through fine), and git itself rejects paths
+/// outside the repo. We only reject inputs that can't possibly be a
+/// real path: empty/whitespace-only strings and embedded NUL bytes
+/// (which would truncate the arg when handed to the OS process API).
+fn validate_stage_path(p: &str) -> Result<(), String> {
+    if p.trim().is_empty() {
+        return Err("File path cannot be empty".to_string());
+    }
+    if p.contains('\0') {
+        return Err("File path contains invalid characters".to_string());
+    }
+    Ok(())
+}
+
+/// P1-15: explicit `git add -- <paths>` for the per-file staging UI.
+/// GitDashboard's commit flow always stages specific files before
+/// calling `commit_with_context` — `stage_all` commits are rejected
+/// there, so this is the only path that puts changes in the index.
+pub fn stage_files(project_path: &str, paths: &[String]) -> Result<String, String> {
+    if paths.is_empty() {
+        return Err("No files to stage".to_string());
+    }
+    for p in paths {
+        validate_stage_path(p)?;
+    }
+    let mut args: Vec<&str> = vec!["add", "--"];
+    args.extend(paths.iter().map(String::as_str));
+    git_command_result(&args, project_path)
+}
+
+/// P1-15: explicit `git restore --staged -- <paths>` — the unstage
+/// counterpart of `stage_files`. Known limitation (not solved here):
+/// `git restore --staged` fails on a repo with an unborn HEAD (no
+/// commits yet); the resulting error surfaces in the dashboard's
+/// feedback toast, which is acceptable for this slice.
+pub fn unstage_files(project_path: &str, paths: &[String]) -> Result<String, String> {
+    if paths.is_empty() {
+        return Err("No files to unstage".to_string());
+    }
+    for p in paths {
+        validate_stage_path(p)?;
+    }
+    let mut args: Vec<&str> = vec!["restore", "--staged", "--"];
+    args.extend(paths.iter().map(String::as_str));
+    git_command_result(&args, project_path)
+}
+
 pub fn push(project_path: &str) -> Result<String, String> {
     let branch = get_branch(project_path)?;
     if branch == "main" || branch == "master" {
@@ -552,5 +602,30 @@ mod tests {
             parse_github_remote("https://github.com/owner/repo/tree/main"),
             None
         );
+    }
+
+    // P1-15 — per-file staging path validation
+    #[test]
+    fn validate_stage_path_rejects_empty() {
+        assert!(validate_stage_path("").is_err());
+    }
+
+    #[test]
+    fn validate_stage_path_rejects_whitespace_only() {
+        assert!(validate_stage_path("  ").is_err());
+    }
+
+    #[test]
+    fn validate_stage_path_rejects_nul_byte() {
+        assert!(validate_stage_path("a\0b").is_err());
+    }
+
+    #[test]
+    fn validate_stage_path_accepts_normal_paths() {
+        assert!(validate_stage_path("src/main.rs").is_ok());
+        // Allowed because the `--` end-of-options separator in
+        // `stage_files`/`unstage_files` prevents this from being
+        // interpreted as a flag.
+        assert!(validate_stage_path("-weird").is_ok());
     }
 }

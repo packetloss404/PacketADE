@@ -24,7 +24,6 @@ import type { ServerConfig } from "@/types/server";
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
   Pick<
     Workspace["panes"][number],
-    | "accentColor"
     | "pinnedCommands"
     | "taskId"
     | "flightId"
@@ -577,6 +576,19 @@ export async function gitCreateBranch(
   checkout: boolean,
 ): Promise<string> {
   return invoke<string>("git_create_branch", { projectPath, branchName, checkout });
+}
+
+/** P1-15: explicit `git add -- <paths>` for the per-file staging control
+ *  in GitDashboard. `git_commit` rejects `stage_all` commits, so this is
+ *  the only path that puts changes in the index through the in-app flow. */
+export async function gitStageFiles(projectPath: string, paths: string[]): Promise<string> {
+  return invoke<string>("git_stage_files", { projectPath, paths });
+}
+
+/** P1-15: explicit `git restore --staged -- <paths>` — the unstage
+ *  counterpart of `gitStageFiles`. */
+export async function gitUnstageFiles(projectPath: string, paths: string[]): Promise<string> {
+  return invoke<string>("git_unstage_files", { projectPath, paths });
 }
 
 /**
@@ -1446,7 +1458,6 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       agentId: pane.agentId,
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition,
-      accentColor: pane.accentColor,
       pinnedCommands: pane.pinnedCommands,
       taskId: pane.taskId,
       flightId: pane.flightId,
@@ -1479,7 +1490,6 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       agentId: pane.agentId,
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition ?? { row: 0, col: index },
-      accentColor: pane.accentColor,
       pinnedCommands: pane.pinnedCommands,
       taskId: pane.taskId,
       flightId: pane.flightId,
@@ -2600,8 +2610,17 @@ export async function respondPermission(
   sessionId: string,
   toolId: string,
   decision: "allow_once" | "allow_always" | "deny",
+  /** P1-9 deny-and-continue: optional steering text carried with a "deny".
+   * The provider folds it into the synthetic tool result so the model is
+   * redirected instead of stalled. Ignored for allow decisions. */
+  reason?: string,
 ): Promise<void> {
-  return invoke("respond_permission", { sessionId, toolId, decision });
+  return invoke("respond_permission", {
+    sessionId,
+    toolId,
+    decision,
+    reason: reason ?? null,
+  });
 }
 
 export async function setApproveWrites(sessionId: string, enabled: boolean): Promise<void> {
@@ -2627,18 +2646,6 @@ export async function respondEdit(
 
 export async function retryLastTurn(sessionId: string, newModel?: string): Promise<void> {
   return invoke("retry_last_turn", { sessionId, newModel: newModel ?? null });
-}
-
-export async function saveCheckpoint(sessionId: string, data: string): Promise<string> {
-  return invoke<string>("save_checkpoint", { sessionId, data });
-}
-
-export async function listCheckpoints(sessionId: string): Promise<string[]> {
-  return invoke<string[]>("list_checkpoints", { sessionId });
-}
-
-export async function deleteCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
-  return invoke("delete_checkpoint", { sessionId, checkpointId });
 }
 
 export async function exportConversationMarkdown(

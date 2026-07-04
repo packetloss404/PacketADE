@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { useAgentDraftStore } from "../agentDraftStore";
+import { LAUNCH_DRAFT_KEY, useAgentDraftStore } from "../agentDraftStore";
 
 const STORAGE_KEY = "packetade:agent-drafts";
 
@@ -22,6 +22,20 @@ describe("agentDraftStore", () => {
     store().setDraft("conv_a", "edited A");
     expect(store().drafts.conv_a).toBe("edited A");
     expect(store().drafts.conv_b).toBe("different draft for B");
+  });
+
+  it("keeps the launch composer's draft isolated from conversation drafts", () => {
+    store().setDraft(LAUNCH_DRAFT_KEY, "launch box text");
+    store().setDraft("conv_a", "chat text");
+
+    expect(store().drafts[LAUNCH_DRAFT_KEY]).toBe("launch box text");
+    expect(store().drafts.conv_a).toBe("chat text");
+
+    // Clearing the launch slot never touches conversation drafts, and
+    // vice versa — the old global agentInputText bleed is impossible here.
+    store().clearDraft(LAUNCH_DRAFT_KEY);
+    expect(store().drafts[LAUNCH_DRAFT_KEY]).toBeUndefined();
+    expect(store().drafts.conv_a).toBe("chat text");
   });
 
   it("returns no draft for a conversation that never typed", () => {

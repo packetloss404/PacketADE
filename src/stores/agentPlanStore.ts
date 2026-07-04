@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentPlanItem } from "@/types/agent-conversation";
+import type { AgentPlanItem, PermissionMode } from "@/types/agent-conversation";
 
 /**
  * Lazy accessor for agentTaskStore to avoid a circular import at module
@@ -11,62 +11,65 @@ async function importTaskStore(): Promise<typeof import("@/stores/agentTaskStore
 }
 
 /**
- * Plan / spec FSM substore split out of agentTaskStore. Owns the
- * `spec` → `plan` → `code` stage transitions, the user-edited success
- * criteria, the latest TodoWrite snapshot, and the planApproved flag.
+ * Plan substore split out of agentTaskStore. Owns the latest TodoWrite
+ * snapshot and the planApproved flag. Plan approval is unified here:
+ * every approval surface (the inline PlanModeApprovalMenu is THE path)
+ * calls `approvePlan`, so PlanPanel's proposed/approved state can never
+ * desync from the approval action and repeat clicks can never double-send
+ * the execute turn.
  *
  * Not persisted directly here — agentTaskStore mirrors these values onto
- * the saved `AgentConversation` (spec / specStage / plan / planApproved
- * fields) and hydrates them back into this store on startup. Keeping the
- * disk format unchanged means existing persisted conversations parse
- * without migration.
+ * the saved `AgentConversation` (plan / planApproved fields) and hydrates
+ * them back into this store on startup. Keeping the disk format unchanged
+ * means existing persisted conversations parse without migration.
  */
 
-export type SpecStage = "spec" | "plan" | "code";
-export interface SpecRecord {
-  criteria: string[];
-  status: "draft" | "approved";
-  updatedAt: number;
+/** Permission posture an approval surface wants applied alongside approval.
+ * Applied by `approvePlan` AFTER it lifts plan mode: on sidecar sessions plan
+ * mode and permission mode share ONE wire dimension (set_plan_mode(false)
+ * forwards permission mode "default"), so a posture set before the lift
+ * would be silently clobbered back to "default". */
+export interface PlanApprovalPosture {
+  permissionMode?: PermissionMode;
+  approveWrites?: boolean;
 }
 
 interface AgentPlanState {
-  /** F10: success-criteria collected while specStage === "spec". */
-  spec: Map<string, SpecRecord>;
-  /** F10: which stage of the Spec → Plan → Code FSM the conversation
-   * is in. Undefined entries map to the legacy pre-FSM flow where the
-   * mode chip drives everything. */
-  specStage: Map<string, SpecStage>;
   /** v3: latest TodoWrite snapshot from the `api-agent:plan-block:*`
    * event. PlanPanel falls back to parsing tool calls if absent. */
   plan: Map<string, AgentPlanItem[]>;
-  /** F10: true once the user has approved the model's plan. */
+  /** True once the user has approved the model's plan. */
   planApproved: Map<string, boolean>;
 
-  setSpec: (conversationId: string, criteria: string[]) => void;
-  setSpecStage: (conversationId: string, stage: SpecStage) => void;
-  /** F10: lock the spec, advance the stage to "plan", and post a
-   * synthesized user turn asking the agent for a TodoWrite plan. */
-  approveSpec: (conversationId: string) => void;
   setPlan: (conversationId: string, items: AgentPlanItem[]) => void;
-  /** F10: approve the model's plan. Flips planApproved + advances stage
-   * to "code", lifts plan mode (if it was on), and posts the execute
-   * turn. Idempotent: no-op when already approved. */
-  approvePlan: (conversationId: string) => void;
+  /** Unified plan approval. Flips planApproved, lifts plan mode (if it
+   * was on), applies the requested permission `posture`, and posts the
+   * execute turn (`message` overrides the default execute prompt so
+   * approval surfaces can vary the posture wording). Strictly ordered:
+   * lift plan mode → apply posture → dispatch, so the sidecar's shared
+   * plan/permission wire dimension can't clobber the posture.
+   * Idempotent: no-op when already approved — this is what kills the
+   * repeat-click double-send. */
+  approvePlan: (
+    conversationId: string,
+    message?: string,
+    posture?: PlanApprovalPosture,
+  ) => void;
+  /** Re-arm approval for a new planning round. Called when plan mode is
+   * switched back ON so a previously-approved conversation can approve
+   * (and dispatch) a fresh plan instead of no-oping forever. */
+  resetPlanApproval: (conversationId: string) => void;
 
   /** Selector helpers for grouped reads. */
-  getSpec: (conversationId: string) => SpecRecord | undefined;
-  getSpecStage: (conversationId: string) => SpecStage | undefined;
   getPlan: (conversationId: string) => AgentPlanItem[] | undefined;
   getPlanApproved: (conversationId: string) => boolean;
 
   /** Hydrate from a persisted conversation. Called on app startup for
    * every API conversation that comes back from disk so the new store's
-   * Maps match what `AgentConversation.spec` / etc. had. */
+   * Maps match what `AgentConversation.plan` / `planApproved` had. */
   hydrateConversation: (
     conversationId: string,
     payload: {
-      spec?: SpecRecord;
-      specStage?: SpecStage;
       plan?: AgentPlanItem[];
       planApproved?: boolean;
     },
@@ -75,69 +78,12 @@ interface AgentPlanState {
   clearConversation: (conversationId: string) => void;
 }
 
+const DEFAULT_EXECUTE_MESSAGE =
+  "Plan approved. Execute step-by-step, marking TodoWrite items as you complete them.";
+
 export const useAgentPlanStore = create<AgentPlanState>((set, get) => ({
-  spec: new Map(),
-  specStage: new Map(),
   plan: new Map(),
   planApproved: new Map(),
-
-  setSpec: (conversationId, criteria) => {
-    set((s) => {
-      const nextSpec = new Map(s.spec);
-      nextSpec.set(conversationId, {
-        criteria,
-        status: "draft",
-        updatedAt: Date.now(),
-      });
-      // Seed the stage if it wasn't already set — first-time spec editing
-      // should land in the spec stage even if the conversation was created
-      // pre-FSM.
-      const nextStage = new Map(s.specStage);
-      if (!nextStage.has(conversationId)) nextStage.set(conversationId, "spec");
-      return { spec: nextSpec, specStage: nextStage };
-    });
-    void importTaskStore().then(({ requestConversationSave }) =>
-      requestConversationSave(conversationId),
-    );
-  },
-
-  setSpecStage: (conversationId, stage) => {
-    set((s) => {
-      const next = new Map(s.specStage);
-      next.set(conversationId, stage);
-      return { specStage: next };
-    });
-    void importTaskStore().then(({ requestConversationSave }) =>
-      requestConversationSave(conversationId),
-    );
-  },
-
-  approveSpec: (conversationId) => {
-    const current = get().spec.get(conversationId);
-    if (!current || current.criteria.length === 0) return;
-    const approved: SpecRecord = {
-      ...current,
-      status: "approved",
-      updatedAt: Date.now(),
-    };
-    set((s) => {
-      const nextSpec = new Map(s.spec);
-      nextSpec.set(conversationId, approved);
-      const nextStage = new Map(s.specStage);
-      nextStage.set(conversationId, "plan");
-      return { spec: nextSpec, specStage: nextStage };
-    });
-    // Synthesize a user turn requesting the structured plan.
-    const bullets = approved.criteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
-    const prompt =
-      `Spec approved. Success criteria:\n${bullets}\n\n` +
-      `Now produce a Plan via TodoWrite covering each criterion. ` +
-      `Stop after the plan — wait for user approval before executing.`;
-    void importTaskStore().then(({ requestConversationSave, useAgentTaskStore }) => {
-      requestConversationSave(conversationId);
-      useAgentTaskStore.getState().sendMessage(conversationId, prompt);
-    });
-  },
 
   setPlan: (conversationId, items) => {
     set((s) => {
@@ -152,14 +98,12 @@ export const useAgentPlanStore = create<AgentPlanState>((set, get) => ({
     );
   },
 
-  approvePlan: (conversationId) => {
+  approvePlan: (conversationId, message, posture) => {
     if (get().planApproved.get(conversationId)) return;
     set((s) => {
       const nextApproved = new Map(s.planApproved);
       nextApproved.set(conversationId, true);
-      const nextStage = new Map(s.specStage);
-      nextStage.set(conversationId, "code");
-      return { planApproved: nextApproved, specStage: nextStage };
+      return { planApproved: nextApproved };
     });
     void importTaskStore().then(async ({ requestConversationSave, useAgentTaskStore }) => {
       requestConversationSave(conversationId);
@@ -171,32 +115,40 @@ export const useAgentPlanStore = create<AgentPlanState>((set, get) => ({
       if (conv?.planMode) {
         await store.setPlanMode(conversationId, false);
       }
-      store.sendMessage(
-        conversationId,
-        "Plan approved. Execute step-by-step, marking TodoWrite items as you complete them.",
-      );
+      // Apply the approval posture only AFTER the lift: sidecar sessions
+      // map set_plan_mode(false) onto permission mode "default", so a
+      // posture applied earlier would be reset on the backend while the
+      // frontend store kept the requested mode — a permission desync.
+      if (posture?.permissionMode !== undefined) {
+        await store.setPermissionMode(conversationId, posture.permissionMode);
+      }
+      if (posture?.approveWrites !== undefined) {
+        await store.setApproveWrites(conversationId, posture.approveWrites);
+      }
+      store.sendMessage(conversationId, message ?? DEFAULT_EXECUTE_MESSAGE);
     });
   },
 
-  getSpec: (conversationId) => get().spec.get(conversationId),
-  getSpecStage: (conversationId) => get().specStage.get(conversationId),
+  resetPlanApproval: (conversationId) => {
+    set((s) => {
+      if (!s.planApproved.has(conversationId)) return s;
+      const nextApproved = new Map(s.planApproved);
+      nextApproved.delete(conversationId);
+      return { planApproved: nextApproved };
+    });
+  },
+
   getPlan: (conversationId) => get().plan.get(conversationId),
   getPlanApproved: (conversationId) => get().planApproved.get(conversationId) ?? false,
 
   hydrateConversation: (conversationId, payload) => {
     set((s) => {
-      const nextSpec = new Map(s.spec);
-      const nextStage = new Map(s.specStage);
       const nextPlan = new Map(s.plan);
       const nextApproved = new Map(s.planApproved);
-      if (payload.spec) nextSpec.set(conversationId, payload.spec);
-      if (payload.specStage) nextStage.set(conversationId, payload.specStage);
       if (payload.plan && payload.plan.length > 0)
         nextPlan.set(conversationId, payload.plan);
       if (payload.planApproved) nextApproved.set(conversationId, true);
       return {
-        spec: nextSpec,
-        specStage: nextStage,
         plan: nextPlan,
         planApproved: nextApproved,
       };
@@ -205,19 +157,13 @@ export const useAgentPlanStore = create<AgentPlanState>((set, get) => ({
 
   clearConversation: (conversationId) => {
     set((s) => {
-      const nextSpec = new Map(s.spec);
-      const nextStage = new Map(s.specStage);
       const nextPlan = new Map(s.plan);
       const nextApproved = new Map(s.planApproved);
       let touched = false;
-      if (nextSpec.delete(conversationId)) touched = true;
-      if (nextStage.delete(conversationId)) touched = true;
       if (nextPlan.delete(conversationId)) touched = true;
       if (nextApproved.delete(conversationId)) touched = true;
       if (!touched) return s;
       return {
-        spec: nextSpec,
-        specStage: nextStage,
         plan: nextPlan,
         planApproved: nextApproved,
       };

@@ -4,6 +4,7 @@ import { CheckCircle2, Copy, Terminal } from "lucide-react";
 import type { AgentToolCall } from "@/types/agent-conversation";
 import { parseToolInput } from "@/lib/parseToolInput";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { BaseToolCard } from "./tool-cards/BaseToolCard";
 import { StatusPill } from "./tool-cards/StatusPill";
 
@@ -14,7 +15,6 @@ interface BashInput {
 
 interface BashToolCallCardProps {
   toolCall: AgentToolCall;
-  verbosity?: "summary" | "normal" | "verbose";
 }
 
 function parseBashInput(raw: string | undefined): BashInput {
@@ -27,10 +27,8 @@ function parseBashInput(raw: string | undefined): BashInput {
   return { command, cwd };
 }
 
-function BashToolCallCardImpl({
-  toolCall,
-  verbosity = "normal",
-}: BashToolCallCardProps) {
+function BashToolCallCardImpl({ toolCall }: BashToolCallCardProps) {
+  const verbosity = useAgentSettingsStore((s) => s.transcriptViewMode);
   const { command, cwd } = useMemo(
     () => parseBashInput(toolCall.input),
     [toolCall.input],
@@ -39,8 +37,8 @@ function BashToolCallCardImpl({
   const [expanded, setExpanded] = useState(verbosity === "verbose");
   const [copied, setCopied] = useState(false);
 
-  // Keep expand state in sync when the per-conversation verbosity control
-  // changes after the card has mounted.
+  // Keep expand state in sync when the global view mode changes after the
+  // card has mounted.
   useEffect(() => {
     setExpanded(verbosity === "verbose");
   }, [verbosity]);
@@ -96,7 +94,7 @@ function BashToolCallCardImpl({
 
   const subHeader =
     verbosity === "verbose" && cwd ? (
-      <div className="px-2 pb-1 font-mono text-[10px] text-text-faint truncate">
+      <div className="px-2 pb-1 font-mono text-meta text-text-faint truncate">
         cwd: {cwd}
       </div>
     ) : undefined;
@@ -120,7 +118,7 @@ function BashToolCallCardImpl({
       }}
       isError={toolCall.status === "error"}
     >
-      <pre className="text-[11px] font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
+      <pre className="text-ui font-mono whitespace-pre-wrap bg-bg-primary rounded p-2 mx-1 mb-1 text-text-primary overflow-y-auto max-h-[320px]">
         {body}
       </pre>
     </BaseToolCard>

@@ -9,8 +9,8 @@ interface IssueCommentComposerProps {
 /**
  * v0.8.5: textarea + Submit for inline comments on a local Issue.
  *
- * Intentionally **no** Ctrl+Enter submit hotkey — mirrors `CommitModal`'s
- * convention to prevent accidental sends while drafting. Submit is button-only.
+ * Intentionally **no** Ctrl+Enter submit hotkey — so half-written comments
+ * aren't submitted accidentally while drafting. Submit is button-only.
  */
 export function IssueCommentComposer({ issueId }: IssueCommentComposerProps) {
   const addIssueComment = useIssueStore((s) => s.addIssueComment);

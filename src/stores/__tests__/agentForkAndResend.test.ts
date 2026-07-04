@@ -78,8 +78,6 @@ vi.mock("@/lib/tauri", () => ({
   setApproveWrites: vi.fn(),
   respondEdit: vi.fn(),
   retryLastTurn: vi.fn(),
-  saveCheckpoint: vi.fn(),
-  listCheckpoints: vi.fn(),
   exportConversationMarkdown: vi.fn(),
   saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
 }));
@@ -268,6 +266,66 @@ describe("agentTaskStore.forkAndResend — current behavior lock-down", () => {
     const updated = useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-A");
     expect(updated?.messages.map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
     expect(closeApiAgentSessionMock).not.toHaveBeenCalled();
+  });
+
+  // Regression gate for the inline per-message Restore affordance (which
+  // replaced the CheckpointPanel side rail): restoring IS forkAndResend
+  // with the message's own unchanged content. Locks down that resending
+  // identical content truncates the tail and re-dispatches the turn.
+  it("restore: resending a message's own content truncates the tail and re-runs that turn", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { useAgentPlanStore } = await import("@/stores/agentPlanStore");
+    const m1 = makeMessage({ id: "msg-1", content: "user one" });
+    const m2 = makeMessage({ id: "msg-2", role: "assistant", content: "assistant one" });
+    const m3 = makeMessage({ id: "msg-3", content: "restore me" });
+    const m4 = makeMessage({ id: "msg-4", role: "assistant", content: "assistant two" });
+    const conv: AgentConversation = {
+      id: "conv-A",
+      title: "Test",
+      agent: "api-openai",
+      projectPath: "D:/projects/example",
+      status: "idle",
+      messages: [m1, m2, m3, m4],
+      sessionId: "conv-A",
+      rawOutput: "",
+      createdAt: 1,
+      updatedAt: 1,
+      mode: "api",
+      provider: "openai",
+      model: "gpt-4o",
+    };
+    seedConversation(useAgentTaskStore, conv);
+    // Simulate a plan proposed + approved on the timeline being discarded —
+    // the rewind must clear the plan substore or PlanPanel keeps rendering a
+    // stale checklist/approved state over a transcript that no longer
+    // contains it (it re-derives any plan in the kept prefix from tool calls).
+    useAgentPlanStore.getState().setPlan("conv-A", [
+      { id: "task-1", content: "Discarded-timeline step", status: "completed" },
+    ]);
+    useAgentPlanStore.getState().hydrateConversation("conv-A", { planApproved: true });
+
+    // Restore = fork with the original content, unedited.
+    await useAgentTaskStore.getState().forkAndResend("conv-A", "msg-3", m3.content);
+
+    const updated = useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-A");
+    expect(updated).toBeDefined();
+    // Prefix before the restore point survives untouched.
+    expect(updated!.messages.slice(0, 2).map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
+    // Everything at/after the restore point is discarded (new ids replace them).
+    expect(updated!.messages.some((m) => m.id === "msg-3")).toBe(false);
+    expect(updated!.messages.some((m) => m.id === "msg-4")).toBe(false);
+    // The restored turn is re-dispatched with the identical content.
+    const resent = updated!.messages.find(
+      (m) => m.role === "user" && m.content === "restore me",
+    );
+    expect(resent).toBeDefined();
+    expect(resent!.id).not.toBe("msg-3");
+    // Session detached so the resend starts a fresh backend session.
+    expect(closeApiAgentSessionMock).toHaveBeenCalledWith("conv-A");
+    // The plan substore was cleared with the discarded timeline — no stale
+    // TodoWrite checklist or planApproved phantom survives the rewind.
+    expect(useAgentPlanStore.getState().plan.has("conv-A")).toBe(false);
+    expect(useAgentPlanStore.getState().getPlanApproved("conv-A")).toBe(false);
   });
 
   // Audit suggested forkAndResend should fork into a brand-new
