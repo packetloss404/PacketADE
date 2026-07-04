@@ -10,6 +10,10 @@ import { useFlightStore } from "@/stores/flightStore";
 import type { AgentConversation, AgentMessage } from "@/types/agent-conversation";
 import type { AgentProfile } from "@/types/profiles";
 import type { AppView } from "@/stores/appStore";
+import {
+  requestOpenModeChipPopover,
+  requestOpenModelDropdown,
+} from "../paneEvents";
 
 const HELP_CHEATSHEET =
   "**Keybinding cheatsheet**\n" +
@@ -70,12 +74,7 @@ export const slashCommandHandlers: Record<
   },
 
   model: ({ conversationId }) => {
-    setTimeout(() => {
-      const btn = document.querySelector<HTMLButtonElement>(
-        `[data-agent-pane-model-dropdown="${conversationId}"] button`,
-      );
-      btn?.click();
-    }, 0);
+    requestOpenModelDropdown(conversationId);
   },
 
   help: ({ conversationId }) => {
@@ -115,12 +114,7 @@ export const slashCommandHandlers: Record<
   },
 
   permissions: ({ conversationId }) => {
-    setTimeout(() => {
-      const btn = document.querySelector<HTMLButtonElement>(
-        `[data-agent-pane-mode-chip="${conversationId}"] button[aria-label="Permission options"]`,
-      );
-      btn?.click();
-    }, 0);
+    requestOpenModeChipPopover(conversationId);
   },
 
   compact: ({ conversationId }) => {
@@ -164,10 +158,8 @@ export const slashCommandHandlers: Record<
     }
     const plans = useAgentPlanStore.getState();
     const plan = plans.getPlan(conversationId);
-    const spec = plans.getSpec(conversationId);
     const title =
       (plan && plan[0]?.content) ||
-      spec?.criteria[0] ||
       conversation.title ||
       "Untitled goal";
     const linkedFlight = useFlightStore

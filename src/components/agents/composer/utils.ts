@@ -71,8 +71,8 @@ export const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
 
 /**
  * Slugify a template name to its slash-command form, e.g. "Code Review"
- * becomes "code-review". Matches the kebab-case slug used by the in-chat
- * popover in AgentChatPane so users see the same `/<name>` everywhere.
+ * becomes "code-review". Used by the unified composer's slash-command
+ * source so users see the same `/<name>` in both variants.
  */
 export function templateSlug(name: string): string {
   return name
@@ -80,8 +80,6 @@ export function templateSlug(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
-export const SLASH_POPOVER_LIMIT = 6;
 
 /** Hard cap to keep payloads sane — Anthropic accepts ~5MB per image. */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;

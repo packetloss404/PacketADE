@@ -1,14 +1,11 @@
-import { useState } from "react";
-import { open } from "@tauri-apps/plugin-shell";
 import {
-  Send,
   FolderOpen,
   Terminal,
   Code2,
   Code,
 } from "lucide-react";
-import { Dropdown } from "@/components/ui/Dropdown";
-import { Tooltip } from "@/components/ui/Tooltip";
+import { useDropdownClose } from "@/components/ui/Dropdown";
+import { open } from "@tauri-apps/plugin-shell";
 import type { AgentConversation } from "@/types/agent-conversation";
 import type { AgentCli } from "@/stores/agentTaskStore";
 
@@ -23,9 +20,9 @@ interface MenuItemProps {
 
 /**
  * Inline menu item — reimplemented (instead of reusing DropdownItem) so we
- * can show disabled state, an icon, and a subtitle row. Closes the dropdown
- * by dispatching a click on the document, which the parent Dropdown listens
- * for via its outside-click handler.
+ * can show disabled state, an icon, and a subtitle row. Closes the enclosing
+ * Dropdown via `useDropdownClose()` (a no-op outside a Dropdown, e.g. in
+ * bare render tests).
  *
  * Hoisted to module scope so React Fast Refresh doesn't re-create the type
  * on every render of the parent — that was triggering
@@ -39,6 +36,7 @@ function MenuItem({
   disabledReason,
   onClick,
 }: MenuItemProps) {
+  const close = useDropdownClose();
   return (
     <button
       type="button"
@@ -47,8 +45,7 @@ function MenuItem({
       onClick={() => {
         if (disabled) return;
         void onClick();
-        // Close dropdown by simulating an outside click.
-        document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        close();
       }}
       className={`w-full text-left px-3 py-1.5 flex items-start gap-2 transition-colors motion-reduce:transition-none ${
         disabled
@@ -58,8 +55,8 @@ function MenuItem({
     >
       <span className="mt-0.5 text-text-secondary shrink-0">{icon}</span>
       <span className="flex flex-col min-w-0">
-        <span className="text-[11px] text-text-primary truncate">{label}</span>
-        <span className="text-[10px] text-text-muted truncate">{subtitle}</span>
+        <span className="text-ui text-text-primary truncate">{label}</span>
+        <span className="text-meta text-text-muted truncate">{subtitle}</span>
       </span>
     </button>
   );
@@ -67,6 +64,9 @@ function MenuItem({
 
 interface ContinueInMenuProps {
   conversation: AgentConversation;
+  /** Flash a transient confirmation/error message in the caller's shared
+   * feedback slot (e.g. the overflow menu's toast). */
+  onFeedback: (msg: string) => void;
 }
 
 interface CliContinuation {
@@ -93,8 +93,10 @@ function quoteShellArg(value: string): string {
 }
 
 /**
- * "Continue in ..." menu, modeled after Claude Code Desktop's affordance for
- * jumping a conversation's context into another surface.
+ * "Continue in ..." menu section, modeled after Claude Code Desktop's
+ * affordance for jumping a conversation's context into another surface.
+ * Renders ONLY its section content — the caller (HeaderOverflowMenu) owns
+ * the enclosing Dropdown and shared feedback flash.
  *
  * Items:
  *  1. Open project folder in OS    — `open(path)` via tauri-plugin-shell
@@ -106,20 +108,13 @@ function quoteShellArg(value: string): string {
  * SSH-targeted conversations disable the local-path items since the path lives
  * on a remote host.
  */
-export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
-  const [feedback, setFeedback] = useState<string | null>(null);
-
+export function ContinueInMenu({ conversation, onFeedback }: ContinueInMenuProps) {
   const projectPath = conversation.projectPath;
   const isRemote = Boolean(conversation.sshTarget);
   const hasPath = Boolean(projectPath);
   const localOnlyDisabled = isRemote || !hasPath;
   const cliContinuation = getCliContinuation(conversation.agent);
   const cliDisabled = localOnlyDisabled || !cliContinuation;
-
-  function flashFeedback(msg: string) {
-    setFeedback(msg);
-    window.setTimeout(() => setFeedback(null), 1800);
-  }
 
   async function handleOpenFolder() {
     if (localOnlyDisabled) return;
@@ -139,10 +134,10 @@ export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
     const cmd = `cd ${quoteShellArg(projectPath)} && ${cliContinuation.command}`;
     try {
       await navigator.clipboard.writeText(cmd);
-      flashFeedback("Command copied - paste into your terminal");
+      onFeedback("Command copied - paste into your terminal");
     } catch (err) {
       console.warn("[ContinueInMenu] clipboard write failed:", err);
-      flashFeedback("Could not copy to clipboard");
+      onFeedback("Could not copy to clipboard");
     }
   }
 
@@ -160,84 +155,68 @@ export function ContinueInMenu({ conversation }: ContinueInMenuProps) {
   }
 
   return (
-    <div className="relative" data-agent-pane-continue-in>
-      <Dropdown
-        align="right"
-        trigger={
-          <Tooltip content="Continue this conversation in another surface">
-            <span className="flex items-center gap-1 text-[11px] text-text-secondary">
-              <Send size={11} />
-              Continue in
-            </span>
-          </Tooltip>
+    <div className="min-w-[240px] py-0.5" data-agent-pane-continue-in>
+      <div className="px-3 pt-1 pb-0.5 text-meta font-medium text-text-muted uppercase tracking-wide">
+        Continue in
+      </div>
+      <MenuItem
+        icon={<FolderOpen size={12} />}
+        label="Open project folder in OS"
+        subtitle="Reveal the folder in Explorer / Finder"
+        disabled={localOnlyDisabled}
+        disabledReason={
+          isRemote
+            ? "Path is on a remote SSH host"
+            : "No project path on this conversation"
         }
-      >
-        <div className="min-w-[240px] py-0.5">
-          <MenuItem
-            icon={<FolderOpen size={12} />}
-            label="Open project folder in OS"
-            subtitle="Reveal the folder in Explorer / Finder"
-            disabled={localOnlyDisabled}
-            disabledReason={
-              isRemote
-                ? "Path is on a remote SSH host"
-                : "No project path on this conversation"
-            }
-            onClick={handleOpenFolder}
-          />
-          <MenuItem
-            icon={<Terminal size={12} />}
-            label={
-              cliContinuation
-                ? `Continue in CLI (${cliContinuation.label})`
-                : "Continue in CLI"
-            }
-            subtitle={
-              cliContinuation
-                ? `Copy cd <path> && ${cliContinuation.command} to clipboard`
-                : "No local CLI handoff for this provider"
-            }
-            disabled={cliDisabled}
-            disabledReason={
-              isRemote
-                ? "Path is on a remote SSH host"
-                : !hasPath
-                  ? "No project path on this conversation"
-                  : "This API provider does not have a mapped local CLI"
-            }
-            onClick={handleContinueInCli}
-          />
-          <MenuItem
-            icon={<Code2 size={12} />}
-            label="Open in VS Code"
-            subtitle="vscode://file/<path>"
-            disabled={localOnlyDisabled}
-            disabledReason={
-              isRemote
-                ? "Path is on a remote SSH host"
-                : "No project path on this conversation"
-            }
-            onClick={() => handleOpenInEditor("vscode")}
-          />
-          <MenuItem
-            icon={<Code size={12} />}
-            label="Open in Cursor"
-            subtitle="cursor://file/<path>"
-            disabled={localOnlyDisabled}
-            disabledReason={
-              isRemote
-                ? "Path is on a remote SSH host"
-                : "No project path on this conversation"
-            }
-            onClick={() => handleOpenInEditor("cursor")}
-          />
-        </div>
-      </Dropdown>
-      {feedback && (
-        <div className="absolute top-full right-0 mt-1 z-50 px-2 py-1 text-[10px] bg-bg-elevated border border-bg-border rounded shadow text-text-secondary whitespace-nowrap">
-          {feedback}
-        </div>
-      )}
+        onClick={handleOpenFolder}
+      />
+      <MenuItem
+        icon={<Terminal size={12} />}
+        label={
+          cliContinuation
+            ? `Continue in CLI (${cliContinuation.label})`
+            : "Continue in CLI"
+        }
+        subtitle={
+          cliContinuation
+            ? `Copy cd <path> && ${cliContinuation.command} to clipboard`
+            : "No local CLI handoff for this provider"
+        }
+        disabled={cliDisabled}
+        disabledReason={
+          isRemote
+            ? "Path is on a remote SSH host"
+            : !hasPath
+              ? "No project path on this conversation"
+              : "This API provider does not have a mapped local CLI"
+        }
+        onClick={handleContinueInCli}
+      />
+      <MenuItem
+        icon={<Code2 size={12} />}
+        label="Open in VS Code"
+        subtitle="vscode://file/<path>"
+        disabled={localOnlyDisabled}
+        disabledReason={
+          isRemote
+            ? "Path is on a remote SSH host"
+            : "No project path on this conversation"
+        }
+        onClick={() => handleOpenInEditor("vscode")}
+      />
+      <MenuItem
+        icon={<Code size={12} />}
+        label="Open in Cursor"
+        subtitle="cursor://file/<path>"
+        disabled={localOnlyDisabled}
+        disabledReason={
+          isRemote
+            ? "Path is on a remote SSH host"
+            : "No project path on this conversation"
+        }
+        onClick={() => handleOpenInEditor("cursor")}
+      />
     </div>
   );
 }

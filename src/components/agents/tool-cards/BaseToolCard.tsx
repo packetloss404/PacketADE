@@ -60,7 +60,7 @@ function BaseToolCardImpl({
 
   return (
     <div
-      className={`rounded text-[10px] text-text-muted border ${
+      className={`rounded text-ui text-text-muted border ${
         isError
           ? "border-accent-red/30 bg-accent-red/5"
           : "border-bg-border bg-bg-hover"

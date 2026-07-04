@@ -20,6 +20,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import { MultiFileEditCard } from "@/components/agents/MultiFileEditCard";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
 
 function makeWriteCall(
   id: string,
@@ -154,5 +155,115 @@ describe("MultiFileEditCard", () => {
     expect(container.firstChild).toBeNull();
     // Flush the async diff resolution so no state update escapes the test.
     await waitFor(() => expect(container.firstChild).toBeNull());
+  });
+
+  it("groups Claude Code Write/Edit calls (tool-name normalization)", async () => {
+    invokeMock.mockResolvedValue(null);
+    const toolCalls: AgentToolCall[] = [
+      {
+        id: "tc-1",
+        name: "Write",
+        status: "done",
+        input: JSON.stringify({
+          file_path: "/proj/src/a.ts",
+          content: "export {};\n",
+        }),
+      },
+      {
+        id: "tc-2",
+        name: "Write",
+        status: "done",
+        input: JSON.stringify({
+          file_path: "/proj/src/b.ts",
+          content: "export {};\n",
+        }),
+      },
+    ];
+
+    render(
+      <MultiFileEditCard
+        toolCalls={toolCalls}
+        conversationId="conv-1"
+        projectPath="/proj"
+      />,
+    );
+
+    expect(await screen.findByText(/Edited 2 files/)).toBeInTheDocument();
+  });
+
+  it("counts diffs against the recorded baseline, not live disk (P1-7)", async () => {
+    const proposed = "line one\nline two changed\n";
+    // Live disk already matches the applied write — the pre-baseline
+    // pipeline would show +0/-0 here.
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValue(proposed);
+    useEditBaselineStore
+      .getState()
+      .recordBaseline("conv-base", "src/app.ts", "line one\nline two\n", "tc-1");
+
+    const toolCalls = [
+      makeWriteCall(
+        "tc-1",
+        JSON.stringify({ path: "src/app.ts", content: proposed }),
+      ),
+    ];
+
+    render(
+      <MultiFileEditCard
+        toolCalls={toolCalls}
+        conversationId="conv-base"
+        projectPath="/tmp/project"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Edited 1 file\b/ }));
+    await waitFor(() => {
+      expect(screen.getByText("+1")).toBeInTheDocument();
+    });
+    expect(screen.getByText("-1")).toBeInTheDocument();
+    // Baseline present → the "before" never touched disk.
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("prefers the per-call baseline over the conversation first-wins baseline for a file re-edited in a later turn", async () => {
+    invokeMock.mockClear();
+    invokeMock.mockResolvedValue(null);
+    const store = useEditBaselineStore.getState();
+    // Turn 1 edited the file when it was "one\n" (the conversation-level
+    // first-wins baseline). This card renders TURN 2's chain only, whose
+    // pre-edit content is "one\ntwo\n" (the per-call baseline).
+    store.recordBaseline("conv-turns", "src/app.ts", "one\n", "tc-turn1");
+    store.recordBaseline("conv-turns", "src/app.ts", "one\ntwo\n", "tc-turn2");
+
+    const turn2Calls: AgentToolCall[] = [
+      {
+        id: "tc-turn2",
+        name: "Edit",
+        status: "done",
+        input: JSON.stringify({
+          file_path: "src/app.ts",
+          old_string: "two",
+          new_string: "deux",
+        }),
+      },
+    ];
+
+    render(
+      <MultiFileEditCard
+        toolCalls={turn2Calls}
+        conversationId="conv-turns"
+        projectPath="/tmp/project"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Edited 1 file\b/ }));
+    // Replaying on the conversation baseline "one\n" would no-op the
+    // replacement (old_string absent) and show the +0/-0 degradation this
+    // item exists to kill. The per-call baseline yields the true +1/-1.
+    await waitFor(() => {
+      expect(screen.getByText("+1")).toBeInTheDocument();
+    });
+    expect(screen.getByText("-1")).toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });

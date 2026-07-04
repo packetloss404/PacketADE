@@ -17,8 +17,6 @@ import {
   setPermissionMode as tauriSetPermissionMode,
   setApproveWrites as tauriSetApproveWrites,
   retryLastTurn as tauriRetryLastTurn,
-  saveCheckpoint as tauriSaveCheckpoint,
-  listCheckpoints as tauriListCheckpoints,
   exportConversationMarkdown,
   type ImageAttachment,
   type ResumeMessage,
@@ -60,8 +58,11 @@ import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
+import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
+import { useReviewStore } from "@/stores/reviewStore";
 import { useAgentDraftStore } from "@/stores/agentDraftStore";
 import { useCliOverrideStore } from "@/stores/cliOverrideStore";
 import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
@@ -446,10 +447,11 @@ export interface CreateApiConversationOptions {
 }
 
 interface AgentTaskStore {
-  // --- Composer state (shared by the launch composer and chat input) ---
+  // --- Composer state ---
+  // (Composer draft text lives in agentDraftStore — keyed per conversation,
+  // plus a launch slot — so no draft can bleed across composers.)
   selectedRepo: string | null;
   inputMode: AgentInputMode;
-  agentInputText: string;
 
   // --- Conversation state ---
   conversations: AgentConversation[];
@@ -457,7 +459,6 @@ interface AgentTaskStore {
 
   setSelectedRepo: (repo: string | null) => void;
   setInputMode: (mode: AgentInputMode) => void;
-  setAgentInputText: (text: string) => void;
 
   // --- Conversation actions ---
   createConversation: (agent: AgentCli, projectPath: string) => Promise<string>;
@@ -504,10 +505,6 @@ interface AgentTaskStore {
   addDiffComment: (id: string, comment: Omit<DiffComment, "id" | "createdAt">) => void;
   removeDiffComment: (id: string, commentId: string) => void;
   clearDiffComments: (id: string) => void;
-  /** F9: set the per-conversation MCP server filter. null = all enabled
-   * (back-compat). [] = explicitly none. Applies on next session start —
-   * the sidecar protocol has no mid-session MCP swap. */
-  setEnabledMcpServerIds: (id: string, ids: string[] | null) => void;
   retryLastTurn: (id: string, newModel?: string) => Promise<void>;
   /** M2.7 — Cursor-style "edit a prior user message and re-run from there."
    * Truncates the transcript to before the target user message, cancels any
@@ -516,13 +513,6 @@ interface AgentTaskStore {
    * forward from that fork point. File-state rewind isn't part of this v1
    * pass — only the transcript forks. */
   forkAndResend: (id: string, messageId: string, newContent: string) => Promise<void>;
-  saveCheckpoint: (id: string) => Promise<string | null>;
-  listCheckpoints: (
-    id: string,
-  ) => Promise<
-    Array<{ id: string; createdAt: string; messageCount: number; messages: AgentMessage[] }>
-  >;
-  restoreCheckpoint: (id: string, rawJson: string) => void;
   exportConversation: (id: string) => Promise<string>;
   /** F1: re-establish a hydrated conversation that lost its live session
    * across an app restart. Re-attaches `api-agent:*` listeners and calls
@@ -553,7 +543,6 @@ async function ensureApiAgentListeners(id: string): Promise<void> {
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   selectedRepo: null,
   inputMode: "build",
-  agentInputText: "",
 
   // --- Conversation state ---
   conversations: [],
@@ -561,7 +550,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
   setSelectedRepo: (repo) => set({ selectedRepo: repo }),
   setInputMode: (mode) => set({ inputMode: mode }),
-  setAgentInputText: (text) => set({ agentInputText: text }),
 
   // ─── Conversation actions ────────────────────────────────────────────
 
@@ -656,6 +644,13 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     const id = explicitId ?? generateId("conv");
     const provider = apiAgentProvider(agent);
     const isRemoteConversation = Boolean(sshTarget);
+    // Explicit callers (profiles, /new inheritance) always win; otherwise
+    // fall back to the Settings-configured default MCP set (null = all
+    // non-disabled servers, resolved sidecar-side).
+    const resolvedMcpIds =
+      enabledMcpServerIds ??
+      useAgentSettingsStore.getState().defaultEnabledMcpServerIds ??
+      null;
 
     if (!skipBackendStart) {
       await assertCostGuardrailsAllowLaunch(provider);
@@ -748,7 +743,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         : undefined,
       allowedTools: allowedTools ?? undefined,
       memoryContextEnabled: memoryContextEnabled ?? false,
-      enabledMcpServerIds: enabledMcpServerIds ?? undefined,
+      enabledMcpServerIds: resolvedMcpIds ?? undefined,
     };
 
     set((s) => ({
@@ -813,7 +808,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
           sshConfig,
           allowedTools ?? null,
           null, // resumeToken — fresh start
-          enabledMcpServerIds ?? null,
+          resolvedMcpIds,
           null,
           permissionMode ?? "auto",
           approveWrites ?? false,
@@ -1014,6 +1009,9 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     useAgentApprovalStore.getState().clearConversation(id);
     useAgentPlanStore.getState().clearConversation(id);
     useAgentStreamingStore.getState().clearConversation(id);
+    useEditBaselineStore.getState().clearConversation(id);
+    // Drop persisted Viewed marks so the review store's map stays bounded.
+    useReviewStore.getState().clearConversation(id);
     // Drop the persisted composer draft so the localStorage map stays bounded.
     useAgentDraftStore.getState().clearDraft(id);
     // Best-effort remove persisted file (API mode only)
@@ -1116,6 +1114,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
   setPlanMode: async (id, enabled) => {
     await tauriSetPlanMode(id, enabled);
+    // Entering plan mode starts a fresh planning round — re-arm approval so
+    // approvePlan's idempotency guard (which kills repeat-click double-sends
+    // within a round) can't dead-end a conversation that approved an earlier
+    // plan.
+    if (enabled) useAgentPlanStore.getState().resetPlanApproval(id);
     let updated: AgentConversation | undefined;
     set((s) => ({
       conversations: s.conversations.map((c) => {
@@ -1149,23 +1152,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
         const next = { ...c, approveWrites: enabled, updatedAt: Date.now() };
-        updated = next;
-        return next;
-      }),
-    }));
-    if (updated) scheduleSave(updated);
-  },
-
-  setEnabledMcpServerIds: (id, ids) => {
-    let updated: AgentConversation | undefined;
-    set((s) => ({
-      conversations: s.conversations.map((c) => {
-        if (c.id !== id) return c;
-        const next: AgentConversation = {
-          ...c,
-          enabledMcpServerIds: ids ?? undefined,
-          updatedAt: Date.now(),
-        };
         updated = next;
         return next;
       }),
@@ -1326,6 +1312,12 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
     // store handles maybeResolveTaskApproval internally.
     useAgentApprovalStore.getState().clearConversation(id);
     useAgentStreamingStore.getState().clearThinking(id);
+    // The plan substore holds post-restore-point state (TodoWrite checklist,
+    // planApproved) that would otherwise survive the rewind as a stale
+    // phantom over the truncated transcript. Clear it — PlanPanel falls back
+    // to re-deriving any plan still present in the kept prefix from its
+    // tool calls.
+    useAgentPlanStore.getState().clearConversation(id);
 
     // Send the edited content as the next user turn — sendMessage handles
     // session re-establishment for api-mode conversations that lost their
@@ -1387,84 +1379,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       return;
     }
     if (updated) scheduleSave(updated);
-  },
-
-  saveCheckpoint: async (id) => {
-    const conv = get().conversations.find((c) => c.id === id);
-    if (!conv) return null;
-    const payload = JSON.stringify({
-      createdAt: new Date().toISOString(),
-      messageCount: conv.messages.length,
-      messages: conv.messages,
-    });
-    try {
-      return await tauriSaveCheckpoint(id, payload);
-    } catch (e) {
-      console.warn("Failed to save checkpoint:", e);
-      return null;
-    }
-  },
-
-  listCheckpoints: async (id) => {
-    try {
-      const raw = await tauriListCheckpoints(id);
-      const parsed: Array<{
-        id: string;
-        createdAt: string;
-        messageCount: number;
-        messages: AgentMessage[];
-      }> = [];
-      for (let i = 0; i < raw.length; i++) {
-        try {
-          const obj = JSON.parse(raw[i]);
-          parsed.push({
-            id: `chk_${i}`,
-            createdAt: obj.createdAt ?? "",
-            messageCount:
-              obj.messageCount ?? (Array.isArray(obj.messages) ? obj.messages.length : 0),
-            messages: Array.isArray(obj.messages) ? obj.messages : Array.isArray(obj) ? obj : [],
-          });
-        } catch {
-          continue;
-        }
-      }
-      return parsed;
-    } catch (e) {
-      console.warn("Failed to list checkpoints:", e);
-      return [];
-    }
-  },
-
-  restoreCheckpoint: (id, rawJson) => {
-    try {
-      const obj = JSON.parse(rawJson);
-      const messages: AgentMessage[] = Array.isArray(obj)
-        ? obj
-        : Array.isArray(obj.messages)
-          ? obj.messages
-          : [];
-      let updated: AgentConversation | undefined;
-      set((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const next = {
-            ...c,
-            messages: messages.map((m) => ({ ...m, isStreaming: false })),
-            updatedAt: Date.now(),
-          };
-          updated = next;
-          return next;
-        }),
-      }));
-      // Snapshot only restores messages; substores hold post-snapshot
-      // pending permissions / plan / thinking that would otherwise stick.
-      useAgentApprovalStore.getState().clearConversation(id);
-      useAgentPlanStore.getState().clearConversation(id);
-      useAgentStreamingStore.getState().clearConversation(id);
-      if (updated) scheduleSave(updated);
-    } catch (e) {
-      console.warn("Failed to restore checkpoint:", e);
-    }
   },
 
   exportConversation: async (id) => {

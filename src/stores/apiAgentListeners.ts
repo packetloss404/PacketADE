@@ -9,11 +9,18 @@ import {
   apiAgentThinkingStopEvent,
   apiAgentPermissionRequestEvent,
   apiAgentPendingEditEvent,
+  apiAgentEditBaselineEvent,
   apiAgentPlanBlockEvent,
   apiAgentToolOutputExtendedEvent,
   apiAgentTurnSummaryEvent,
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
+import { toProjectRelativePath } from "@/lib/parseToolInput";
+import { classifyToolTier, decideApprovalGate } from "@/lib/approvalTiers";
+// Pure util module (no React) — deriveMode is P0-4's one bijection over the
+// conversation's permission flags and stays the single source of truth for
+// what posture a session is in.
+import { deriveMode } from "@/components/agents/agentModeChipUtils";
 import { createStreamCoalescer } from "@/lib/streamCoalescer";
 import { sendApiAgentMessage } from "@/lib/tauri";
 import { estimateTurnCostUsd } from "@/lib/conversationCost";
@@ -25,6 +32,7 @@ import {
 } from "@/lib/notifications";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { useAgentStreamingStore } from "@/stores/agentStreamingStore";
 import {
@@ -150,7 +158,15 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     coalescer.pushContent(event.payload);
   });
 
-  const toolStartUnlisten = await listen<{ id: string; name: string }>(
+  // `input` (raw tool-input JSON) arrives with tool_start on the sidecar
+  // path (Claude Code / Codex forward it at tool_use time) and with
+  // tool_result on the in-process path. Stash whichever arrives so the
+  // transcript edit layer can parse Write/Edit/apply_patch calls.
+  const toolStartUnlisten = await listen<{
+    id: string;
+    name: string;
+    input?: string | null;
+  }>(
     apiAgentToolStartEvent(id),
     (event) => {
       let touched = false;
@@ -165,6 +181,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                   id: event.payload.id,
                   name: event.payload.name,
                   status: "running" as const,
+                  input: event.payload.input ?? undefined,
                 },
               ];
               return { ...m, toolCalls };
@@ -199,7 +216,9 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                     status: (event.payload.is_error ? "error" : "done") as AgentToolCall["status"],
                     summary: event.payload.content.slice(0, 200),
                     fullContent: event.payload.content,
-                    input: event.payload.input,
+                    // Sidecar results don't echo the input; keep the copy
+                    // captured at tool_start instead of clobbering it with "".
+                    input: event.payload.input || tc.input,
                   }
                 : tc,
             );
@@ -400,6 +419,23 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       // fires the orchestrator `approval_needed` flip internally.
       const conv = getState().conversations.find((c) => c.id === id);
       if (!conv) return;
+      // P1-9 tiered gating: read/search tools never prompt; in-project
+      // edits auto-apply into the post-hoc review bar (baselines from
+      // P1-7, surface from P1-8). Only shell/network/out-of-project
+      // requests fall through to a blocking prompt. The mode chip rules:
+      // tiering applies under Default/yolo, reads-only under manual, and
+      // plan / deny-risky postures keep every prompt.
+      const tier = classifyToolTier(
+        event.payload.name,
+        event.payload.arguments,
+        conv.projectPath,
+      );
+      if (decideApprovalGate(deriveMode(conv), tier) === "auto_allow") {
+        void useAgentApprovalStore
+          .getState()
+          .autoAllowPermission(id, event.payload.id);
+        return;
+      }
       useAgentApprovalStore.getState().addPendingPermission(id, event.payload);
       // Long autonomous runs pause here for approval — ping the user (pref-gated
       // + per-session debounced) so they know an unattended run needs them.
@@ -410,8 +446,51 @@ export async function installApiAgentListeners(conversationId: string): Promise<
   const pendingEditUnlisten = await listen<PendingEdit>(apiAgentPendingEditEvent(id), (event) => {
     const conv = getState().conversations.find((c) => c.id === id);
     if (!conv) return;
-    useAgentApprovalStore.getState().addPendingEdit(id, event.payload);
+    // Gated writes carry their pre-edit baseline on `before` — record it so
+    // review surfaces diff against the true "before" after the edit applies.
+    // Both the baseline key AND the stored pending edit are keyed project-
+    // relative: the runtimes emit raw tool paths (absolute for Claude Code /
+    // Codex), while the transcript edit layer keys descriptors project-
+    // relative — the review surface dedupes, deep-links and displays pending
+    // edits against those keys, so a raw absolute path would render the same
+    // file twice and double-count it.
+    const relativePath = toProjectRelativePath(
+      event.payload.path,
+      conv.projectPath,
+    );
+    useEditBaselineStore
+      .getState()
+      .recordBaseline(
+        id,
+        relativePath,
+        event.payload.before ?? null,
+        event.payload.id,
+      );
+    useAgentApprovalStore
+      .getState()
+      .addPendingEdit(id, { ...event.payload, path: relativePath });
     void notifyApprovalNeeded(id, conv.title);
+  });
+
+  // P1-7: non-blocking baseline capture for auto-applied writes (approve-
+  // writes off). Every edit-bearing tool call stores the pre-edit file
+  // content; `before` is null/absent when the file did not exist. Keys are
+  // project-relative to match the canonical edit descriptors.
+  const editBaselineUnlisten = await listen<{
+    id: string;
+    path: string;
+    before?: string | null;
+  }>(apiAgentEditBaselineEvent(id), (event) => {
+    const conv = getState().conversations.find((c) => c.id === id);
+    if (!conv) return;
+    useEditBaselineStore
+      .getState()
+      .recordBaseline(
+        id,
+        toProjectRelativePath(event.payload.path, conv.projectPath),
+        event.payload.before ?? null,
+        event.payload.id,
+      );
   });
 
   const planBlockUnlisten = await listen<{ items: AgentPlanItem[] }>(
@@ -424,7 +503,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
   );
 
   // F6: live token totals between turns. Update the streaming assistant
-  // message's tokens so SessionHealthBar / cost pills reflect mid-stream
+  // message's tokens so SessionMetaLine / cost pills reflect mid-stream
   // usage instead of waiting for the final `done` payload. A2: also
   // forward `reasoning_tokens` (Codex 0.125+) so CostDashboard accounts
   // for GPT-5.5's reasoning slice. A3: when `address` is set (Codex
@@ -532,6 +611,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     thinkingStopUnlisten();
     permissionReqUnlisten();
     pendingEditUnlisten();
+    editBaselineUnlisten();
     planBlockUnlisten();
     toolOutputExtendedUnlisten();
     turnSummaryUnlisten();

@@ -307,8 +307,15 @@ export class OpenAIAgentsProvider implements ProviderHandler {
         alwaysApprove: req.decision === "allow_always",
       });
     } else {
+      // Deny-and-continue: fold the user's steering text (when given) into
+      // the rejection message so the model is redirected, not just refused.
+      const reason =
+        typeof req.reason === "string" ? req.reason.trim() : "";
       this.interruptedState.reject(pending.item, {
-        message: "User denied permission for this tool call.",
+        message:
+          reason.length > 0
+            ? `User denied permission for this tool call. User's guidance: ${reason}`
+            : "User denied permission for this tool call.",
       });
     }
 
@@ -848,8 +855,13 @@ export class OpenAIAgentsProvider implements ProviderHandler {
     const filePath = await this.resolveInsideProject(input.path, false);
     let content = input.content;
 
+    // Pre-edit baseline: with approveWrites on it rides the blocking
+    // pending_edit round-trip; otherwise emit the non-blocking edit_baseline
+    // (P1-7) so the host can diff the applied write against the true
+    // "before" instead of live disk. null = the file did not exist.
+    const before = (await fsPromises.readFile(filePath, "utf8").catch(() => null)) ?? null;
+
     if (this.approveWrites) {
-      const before = (await fsPromises.readFile(filePath, "utf8").catch(() => null)) ?? null;
       this.emitCurrent?.({
         type: "pending_edit",
         sessionId: this.sessionId,
@@ -863,6 +875,14 @@ export class OpenAIAgentsProvider implements ProviderHandler {
       if (typeof decision.content === "string") {
         content = decision.content;
       }
+    } else {
+      this.emitCurrent?.({
+        type: "edit_baseline",
+        sessionId: this.sessionId,
+        toolUseId,
+        path: input.path,
+        before: before ?? undefined,
+      });
     }
 
     const parent = path.dirname(filePath);

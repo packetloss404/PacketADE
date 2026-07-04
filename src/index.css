@@ -42,6 +42,12 @@
     --color-accent-purple: #a89ad9;
     --color-accent-soft: rgba(111, 184, 154, 0.14);
     --color-accent-line: rgba(111, 184, 154, 0.32);
+
+    --text-ui: 11px;
+    --leading-ui: 16px;
+    --text-meta: 10px;
+    --leading-meta: 14px;
+    --space-turn: 20px;
   }
 
   /* Light theme overrides */

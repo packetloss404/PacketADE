@@ -49,6 +49,13 @@ export default {
           "monospace",
         ],
       },
+      fontSize: {
+        ui: ["var(--text-ui, 11px)", { lineHeight: "var(--leading-ui, 16px)" }],
+        meta: ["var(--text-meta, 10px)", { lineHeight: "var(--leading-meta, 14px)" }],
+      },
+      spacing: {
+        turn: "var(--space-turn, 20px)",
+      },
     },
   },
   plugins: [],

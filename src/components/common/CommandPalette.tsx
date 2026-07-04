@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Search, MessageSquare, Ticket, Clock, Wrench, Github, Brain, Rocket, Zap } from "lucide-react";
+import { Search, MessageSquare, Ticket, Clock, Wrench, Github, Brain, Rocket } from "lucide-react";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModulesSorted } from "@/modules/registry";
@@ -23,23 +23,8 @@ export function CommandPalette() {
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
   const moduleStates = useModuleStore((s) => s.states);
 
-  /** Dispatch the global event the Toolbar listens for to open the
-   *  unified New Agent modal. Lets the CommandPalette participate in the
-   *  same flow without lifting modal state. */
-  function openNewAgentModal() {
-    window.dispatchEvent(new CustomEvent("packetade:open-new-agent"));
-  }
-
   const actions = useMemo<PaletteAction[]>(() => {
     const items: PaletteAction[] = [
-      {
-        id: "new-agent",
-        label: "New Agent",
-        description: "Add an agent to a workspace (Claude, Codex, Gemini, …)",
-        icon: <Zap size={14} className="text-accent-green" />,
-        action: openNewAgentModal,
-        keywords: ["new", "session", "quick", "claude", "codex", "agent"],
-      },
       {
         id: "workspace",
         label: "Workspace",

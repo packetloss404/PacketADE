@@ -3,6 +3,7 @@ import { Ban, Bot, Check, ChevronDown, Compass, FileCheck2, Hand, Zap } from "lu
 import { Tooltip } from "@/components/ui/Tooltip";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { deriveMode, MODE_ORDER, nextMode } from "./agentModeChipUtils";
+import { addPaneControlListener, OPEN_MODE_CHIP_EVENT } from "./paneEvents";
 
 /**
  * Cursor-style five-state agent mode. Derived from the underlying
@@ -110,6 +111,15 @@ export function AgentModeChip({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
+  // `/permissions` slash command → open this chip's fine-flags popover.
+  useEffect(
+    () =>
+      addPaneControlListener(OPEN_MODE_CHIP_EVENT, conversation.id, () =>
+        setOpen(true),
+      ),
+    [conversation.id],
+  );
+
   return (
     <div ref={rootRef} className="relative flex items-stretch">
       <Tooltip
@@ -130,7 +140,7 @@ export function AgentModeChip({
         <button
           type="button"
           onClick={onCycle}
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-l border text-[10px] transition-colors motion-reduce:transition-none ${meta.color} ${meta.border} hover:brightness-110`}
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-l border text-ui transition-colors motion-reduce:transition-none ${meta.color} ${meta.border} hover:brightness-110`}
         >
           <Icon size={11} />
           {meta.label}
@@ -182,10 +192,10 @@ export function AgentModeChip({
                   className={`mt-0.5 shrink-0 ${selected ? "text-text-primary" : "text-text-muted"}`}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] text-text-primary">
+                  <span className="block text-ui text-text-primary">
                     {rowMeta.label}
                   </span>
-                  <span className="block text-[10px] text-text-muted">
+                  <span className="block text-meta text-text-muted">
                     {rowMeta.description}
                   </span>
                 </span>
@@ -208,15 +218,15 @@ export function AgentModeChip({
               className={`mt-0.5 shrink-0 ${approveWrites ? "text-accent-amber" : "text-text-muted"}`}
             />
             <span className="min-w-0 flex-1">
-              <span className="block text-[11px] text-text-primary">
+              <span className="block text-ui text-text-primary">
                 Approve writes
               </span>
-              <span className="block text-[10px] text-text-muted">
+              <span className="block text-meta text-text-muted">
                 Confirm each file write before it lands
               </span>
             </span>
             <span
-              className={`mt-0.5 shrink-0 text-[10px] ${approveWrites ? "text-accent-amber" : "text-text-muted"}`}
+              className={`mt-0.5 shrink-0 text-meta ${approveWrites ? "text-accent-amber" : "text-text-muted"}`}
             >
               {approveWrites ? "On" : "Off"}
             </span>

@@ -14,6 +14,8 @@ import { INSTALL_HINTS } from "@/lib/agent-install-hints";
 import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENCODE_MODELS, PACKETCODE_MODELS, EFFORT_LEVELS, type EffortLevel } from "@/lib/models";
 import { sshCheckRemotePath, gitGetOriginUrl, type RemotePathCheck } from "@/lib/tauri";
 import { parseGithubRemote } from "@/lib/git";
+import { storageKey } from "@/lib/brand";
+import { AdvancedAccordion } from "@/components/agents/composer/AdvancedAccordion";
 import type { WorkspaceAgentSlot } from "@/types/workspace";
 
 type LocationMode = "local" | "remote";
@@ -59,17 +61,20 @@ interface WorkspaceCreationModalProps {
   initialSelected?: Set<WorkspaceAgentSlot>;
   serverId?: string;
   remoteProjectPath?: string;
-  /** Pre-fill the workspace-level prompt textarea — used by the
-   *  `NewAgentModal` handoff so a prompt typed there survives the
-   *  transition. Absent / undefined preserves the prior empty-string
-   *  default. */
-  initialPrompt?: string;
 }
 
-export function WorkspaceCreationModal({ onClose, initialSelected, serverId: initialServerId, remoteProjectPath: initialRemoteProjectPath, initialPrompt }: WorkspaceCreationModalProps) {
+export function WorkspaceCreationModal({ onClose, initialSelected, serverId: initialServerId, remoteProjectPath: initialRemoteProjectPath }: WorkspaceCreationModalProps) {
   const [name, setName] = useState("");
-  const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(() => initialSelected ?? new Set());
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  // Templates are the front door: default-select "solo" so a bare launch is
+  // a three-field flow (name, project, template) with a sane starting point.
+  // Callers that pass an explicit `initialSelected` (OnboardingPane,
+  // ServersView) keep full control instead.
+  const [selected, setSelected] = useState<Set<WorkspaceAgentSlot>>(
+    () => initialSelected ?? new Set(["claude-code"]),
+  );
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
+    () => (initialSelected ? null : "solo"),
+  );
   const [modelOverrides, setModelOverrides] = useState<Record<string, string | null>>({});
   const [effortOverrides, setEffortOverrides] = useState<Record<string, EffortLevel | null>>({ "claude-code": "medium" });
   // v0.8: seed from the user's "default bypass for new workspaces" setting.
@@ -78,7 +83,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   const [bypassPermissions, setBypassPermissions] = useState(
     () => useWorkspaceStore.getState().defaultBypassPermissions,
   );
-  const [prompt, setPrompt] = useState(initialPrompt ?? "");
+  const [prompt, setPrompt] = useState("");
   const projectPath = useLayoutStore((s) => s.projectPath);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
@@ -272,6 +277,10 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
   // Get the AI agents that are selected (not terminal)
   const selectedAiAgents = AGENT_SLOTS.filter((s) => selected.has(s.id) && s.cliId);
 
+  // Count of non-default per-agent model overrides — feeds the Advanced
+  // section's collapsed summary so an active override stays visible.
+  const nOverrides = Object.values(modelOverrides).filter((v) => v != null).length;
+
   function applyTemplate(template: typeof WORKSPACE_TEMPLATES[number]) {
     const availableAgents = template.agents.filter((agent) => isAgentInstalled(agent));
     if (availableAgents.length === 0) return;
@@ -400,7 +409,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+            className="px-3 py-1.5 text-ui text-text-secondary hover:text-text-primary transition-colors"
           >
             Cancel
           </button>
@@ -408,7 +417,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
             onClick={handleCreate}
             disabled={saveBlockedReason !== null}
             title={saveBlockedReason ?? undefined}
-            className="px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
+            className="px-4 py-1.5 text-ui bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
           >
             Create Workspace
           </button>
@@ -416,47 +425,66 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
       }
     >
       <div className="px-5 py-4 flex flex-col gap-4 max-h-[70vh] overflow-y-auto" onKeyDown={handleKeyDown}>
-        {/* Location: Local vs Remote (SSH) */}
+        {/* Templates — the front door. Picking one seeds the agent
+            selection and (if empty) the name, so most launches never touch
+            anything below. */}
         <div>
-          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Location</label>
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={() => setLocationMode("local")}
-              className={`flex items-center gap-2 px-3 py-2 text-[11px] rounded border transition-colors ${
-                locationMode === "local"
-                  ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
-                  : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
-              }`}
-            >
-              <FolderOpen size={12} />
-              <span className="flex flex-col items-start">
-                <span>Local</span>
-                <span className="text-[10px] text-text-muted">This machine</span>
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setLocationMode("remote")}
-              className={`flex items-center gap-2 px-3 py-2 text-[11px] rounded border transition-colors ${
-                locationMode === "remote"
-                  ? "bg-accent-blue/15 border-accent-blue/40 text-accent-blue font-medium"
-                  : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
-              }`}
-            >
-              <Server size={12} />
-              <span className="flex flex-col items-start">
-                <span>Remote (SSH)</span>
-                <span className="text-[10px] text-text-muted">Saved server</span>
-              </span>
-            </button>
+          <label className="text-meta text-text-muted block mb-2 uppercase tracking-wider">
+            <Zap size={10} className="inline mr-1 -mt-px" />
+            Templates
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {WORKSPACE_TEMPLATES.map((tpl) => {
+              const isActive = selectedTemplateId === tpl.id;
+              const agentLabels = tpl.agents.map((a) => AGENT_SLOTS.find((s) => s.id === a)?.label ?? a);
+              const availableAgents = tpl.agents.filter((agent) => isAgentInstalled(agent));
+              const disabled = availableAgents.length === 0;
+              const unavailableLabels = tpl.agents
+                .filter((agent) => !isAgentInstalled(agent))
+                .map((agent) => AGENT_SLOTS.find((s) => s.id === agent)?.label ?? agent);
+              return (
+                <button
+                  key={tpl.id}
+                  onClick={() => applyTemplate(tpl)}
+                  disabled={disabled}
+                  title={unavailableLabels.length > 0 ? `Unavailable: ${unavailableLabels.join(", ")}` : tpl.description}
+                  className={`flex flex-col items-start px-3 py-2 text-ui rounded border transition-colors ${
+                    isActive
+                      ? "bg-accent-green/15 border-accent-green/40"
+                      : "bg-bg-primary border-bg-border hover:border-text-muted/30"
+                  } ${disabled ? "opacity-50 cursor-not-allowed hover:border-bg-border" : ""}`}
+                >
+                  <span className={`font-medium ${isActive ? "text-accent-green" : "text-text-primary"}`}>
+                    {tpl.label}
+                  </span>
+                  <span className="text-meta text-text-muted mt-0.5">{tpl.description}</span>
+                  <span className="text-meta text-text-muted mt-1 opacity-70">
+                    {agentLabels.join(" + ")}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Local: Project Path */}
+        {/* Name */}
+        <div>
+          <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Workspace Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My Workspace"
+            className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
+            autoFocus
+          />
+        </div>
+
+        {/* Project (local). Remote's project (server + path) lives in
+            Advanced since it's the less-common path. */}
         {locationMode === "local" && (
           <div ref={projectDropdownRef}>
-            <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Project</label>
+            <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Project</label>
             <div className="flex items-stretch gap-1.5">
               <div className="relative flex-1 min-w-0">
                 <button
@@ -473,7 +501,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                     }
                     setProjectDropdownOpen(!projectDropdownOpen);
                   }}
-                  className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
+                  className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-ui text-left hover:border-text-muted/30 transition-colors"
                 >
                   <FolderOpen size={12} className="text-accent-green flex-shrink-0" />
                   {selectedProjectPath ? (
@@ -481,7 +509,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                       <span className="flex-1 truncate text-text-primary" title={selectedProjectPath}>
                         {selectedProjectPath.split(/[\\/]/).pop()}
                       </span>
-                      <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={selectedProjectPath}>
+                      <span className="text-meta text-text-muted truncate max-w-[200px]" title={selectedProjectPath}>
                         {selectedProjectPath}
                       </span>
                     </>
@@ -509,8 +537,8 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                         }`}
                       >
                         <FolderOpen size={11} className={p === selectedProjectPath ? "text-accent-green" : "text-text-muted"} />
-                        <span className="flex-1 truncate text-[11px] text-text-primary">{p.split(/[\\/]/).pop()}</span>
-                        <span className="text-[10px] text-text-muted truncate max-w-[180px]">{p}</span>
+                        <span className="flex-1 truncate text-ui text-text-primary">{p.split(/[\\/]/).pop()}</span>
+                        <span className="text-meta text-text-muted truncate max-w-[180px]">{p}</span>
                         {p === selectedProjectPath && <Check size={10} className="text-accent-green flex-shrink-0" />}
                       </button>
                     ))}
@@ -524,7 +552,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
                 type="button"
                 onClick={handlePickProjectFolder}
                 title="Pick folder from disk"
-                className="flex items-center gap-1 px-2.5 text-[10px] text-text-muted hover:text-text-primary bg-bg-primary border border-bg-border rounded hover:border-text-muted/30 transition-colors"
+                className="flex items-center gap-1 px-2.5 text-ui text-text-muted hover:text-text-primary bg-bg-primary border border-bg-border rounded hover:border-text-muted/30 transition-colors"
               >
                 <FolderOpen size={11} />
                 Browse
@@ -533,377 +561,373 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
           </div>
         )}
 
-        {/* Remote: Server picker + remote project path */}
-        {locationMode === "remote" && (
-          <div className="flex flex-col gap-3">
-            {servers.length === 0 ? (
-              <div className="rounded border border-bg-border bg-bg-primary px-3 py-3 text-[11px] text-text-secondary">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Server size={12} className="text-text-muted" />
-                  <span className="font-medium text-text-primary">No servers configured</span>
-                </div>
-                <p className="text-text-muted text-[10px] mb-2">
-                  Add a server in the Tools view to use it as a remote workspace target.
-                </p>
+        <AdvancedAccordion
+          persistKey={storageKey("workspace-create-advanced")}
+          forceOpenOnFirstMount={!!initialServerId}
+          summary={[
+            { label: locationMode === "remote" ? "Remote" : null },
+            { label: bypassPermissions ? "Bypass perms" : null },
+            { label: nOverrides > 0 ? `${nOverrides} model override${nOverrides > 1 ? "s" : ""}` : null },
+          ]}
+        >
+          <div className="flex w-full flex-col gap-4">
+            {/* Location: Local vs Remote (SSH) */}
+            <div>
+              <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Location</label>
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
-                  onClick={handleOpenServersView}
-                  className="text-[11px] text-accent-blue hover:underline"
+                  onClick={() => setLocationMode("local")}
+                  className={`flex items-center gap-2 px-3 py-2 text-ui rounded border transition-colors ${
+                    locationMode === "local"
+                      ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
+                      : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+                  }`}
                 >
-                  Open Servers settings →
+                  <FolderOpen size={12} />
+                  <span className="flex flex-col items-start">
+                    <span>Local</span>
+                    <span className="text-meta text-text-muted">This machine</span>
+                  </span>
                 </button>
-              </div>
-            ) : (
-              <div ref={serverDropdownRef}>
-                <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Server</label>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setServerDropdownOpen(!serverDropdownOpen)}
-                    className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-left hover:border-text-muted/30 transition-colors"
-                  >
-                    <Server size={12} className="text-accent-blue flex-shrink-0" />
-                    {server ? (
-                      <>
-                        <span className="flex-1 truncate text-text-primary" title={server.name}>
-                          {server.name}
-                        </span>
-                        <span className="text-[10px] text-text-muted truncate max-w-[200px]" title={`${server.username}@${server.host}:${server.port}`}>
-                          {server.username}@{server.host}:{server.port}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="flex-1 text-text-muted italic">Choose a server…</span>
-                    )}
-                    <ChevronDown
-                      size={10}
-                      className={`text-text-muted flex-shrink-0 transition-transform ${serverDropdownOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {serverDropdownOpen && (
-                    <div className="absolute top-full left-0 mt-1 w-full bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1 max-h-[200px] overflow-y-auto">
-                      {servers.map((srv) => (
-                        <button
-                          key={srv.id}
-                          onClick={() => {
-                            setServerId(srv.id);
-                            // Reset path probe + seed path field from
-                            // the new server's default remotePath if the
-                            // user hasn't typed anything.
-                            setRemoteProjectPath((prev) => (prev.trim() ? prev : srv.remotePath ?? ""));
-                            setServerDropdownOpen(false);
-                          }}
-                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-bg-hover transition-colors ${
-                            srv.id === serverId ? "bg-accent-blue/10" : ""
-                          }`}
-                        >
-                          <Server size={11} className={srv.id === serverId ? "text-accent-blue" : "text-text-muted"} />
-                          <span className="flex-1 truncate text-[11px] text-text-primary">{srv.name}</span>
-                          <span className="text-[10px] text-text-muted truncate max-w-[180px]">
-                            {srv.username}@{srv.host}:{srv.port}
-                          </span>
-                          {srv.id === serverId && <Check size={10} className="text-accent-blue flex-shrink-0" />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Host-key warning */}
-            {server && !server.hostFingerprint && (
-              <div className="rounded border border-accent-amber/30 bg-accent-amber/5 px-3 py-2 text-[11px] text-accent-amber flex items-start gap-2">
-                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <div className="font-medium">Host key not verified.</div>
-                  <p className="text-text-secondary mt-1">
-                    Verify the host key on the Servers page before connecting. We won't probe an unpinned host.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleOpenServersView}
-                    className="mt-1 text-[11px] underline hover:text-accent-amber"
-                  >
-                    Open Servers settings →
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Remote project path input */}
-            {server && server.hostFingerprint && (
-              <div>
-                <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">
-                  Remote Project Path
-                </label>
-                <input
-                  type="text"
-                  value={remoteProjectPath}
-                  onChange={(e) => setRemoteProjectPath(e.target.value)}
-                  placeholder={server.remotePath || "/srv/projects/my-app"}
-                  className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-blue"
-                />
-                <RemotePathProbeIndicator state={pathProbe} />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Name */}
-        <div>
-          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">Workspace Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="My Workspace"
-            className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green"
-            autoFocus
-          />
-        </div>
-
-        {/* Workspace Templates */}
-        <div>
-          <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">
-            <Zap size={10} className="inline mr-1 -mt-px" />
-            Templates
-          </label>
-          <div className="flex flex-wrap gap-1.5">
-            {WORKSPACE_TEMPLATES.map((tpl) => {
-              const isActive = selectedTemplateId === tpl.id;
-              const agentLabels = tpl.agents.map((a) => AGENT_SLOTS.find((s) => s.id === a)?.label ?? a);
-              const availableAgents = tpl.agents.filter((agent) => isAgentInstalled(agent));
-              const disabled = availableAgents.length === 0;
-              const unavailableLabels = tpl.agents
-                .filter((agent) => !isAgentInstalled(agent))
-                .map((agent) => AGENT_SLOTS.find((s) => s.id === agent)?.label ?? agent);
-              return (
                 <button
-                  key={tpl.id}
-                  onClick={() => applyTemplate(tpl)}
-                  disabled={disabled}
-                  title={unavailableLabels.length > 0 ? `Unavailable: ${unavailableLabels.join(", ")}` : tpl.description}
-                  className={`flex flex-col items-start px-3 py-2 text-[11px] rounded border transition-colors ${
-                    isActive
-                      ? "bg-accent-green/15 border-accent-green/40"
-                      : "bg-bg-primary border-bg-border hover:border-text-muted/30"
-                  } ${disabled ? "opacity-50 cursor-not-allowed hover:border-bg-border" : ""}`}
+                  type="button"
+                  onClick={() => setLocationMode("remote")}
+                  className={`flex items-center gap-2 px-3 py-2 text-ui rounded border transition-colors ${
+                    locationMode === "remote"
+                      ? "bg-accent-blue/15 border-accent-blue/40 text-accent-blue font-medium"
+                      : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+                  }`}
                 >
-                  <span className={`font-medium ${isActive ? "text-accent-green" : "text-text-primary"}`}>
-                    {tpl.label}
-                  </span>
-                  <span className="text-[10px] text-text-muted mt-0.5">{tpl.description}</span>
-                  <span className="text-[10px] text-text-muted mt-1 opacity-70">
-                    {agentLabels.join(" + ")}
+                  <Server size={12} />
+                  <span className="flex flex-col items-start">
+                    <span>Remote (SSH)</span>
+                    <span className="text-meta text-text-muted">Saved server</span>
                   </span>
                 </button>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+            </div>
 
-        {/* Agent Selection — multi-toggle buttons */}
-        <div>
-          <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">Agents</label>
-          {detecting && (
-            <p className="flex items-center gap-1 text-[10px] text-text-muted italic mb-2">
-              <Loader2 size={10} className="animate-spin" />
-              Checking CLI availability…
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {AGENT_SLOTS.map((slot) => {
-              const installed = isAgentInstalled(slot.id);
-              const isSelected = selected.has(slot.id);
-              const hint = INSTALL_HINTS[slot.id];
-
-              return (
-                <div key={slot.id} className="flex items-center gap-1">
-                  <button
-                    onClick={() => toggleAgent(slot.id)}
-                    disabled={!installed}
-                    title={installed ? slot.label : `${slot.label} not found — click the install link to set it up`}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded border transition-colors ${
-                      isSelected
-                        ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
-                        : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
-                    } ${!installed ? "opacity-50 cursor-not-allowed hover:text-text-muted hover:border-bg-border" : ""}`}
-                  >
-                    <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
-                      isSelected ? "bg-accent-green border-accent-green" : "border-bg-border"
-                    }`}>
-                      {isSelected && <Check size={8} className="text-bg-primary" />}
+            {/* Remote: Server picker + remote project path */}
+            {locationMode === "remote" && (
+              <div className="flex flex-col gap-3">
+                {servers.length === 0 ? (
+                  <div className="rounded border border-bg-border bg-bg-primary px-3 py-3 text-ui text-text-secondary">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Server size={12} className="text-text-muted" />
+                      <span className="font-medium text-text-primary">No servers configured</span>
                     </div>
-                    {slot.label}
-                  </button>
-                  {!installed && hint && !detecting && (
-                    <a
-                      href={hint.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-[10px] text-accent-amber underline opacity-80 hover:opacity-100"
-                      title={hint.label}
+                    <p className="text-text-muted text-meta mb-2">
+                      Add a server in the Tools view to use it as a remote workspace target.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleOpenServersView}
+                      className="text-ui text-accent-blue hover:underline"
                     >
-                      install
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                      Open Servers settings →
+                    </button>
+                  </div>
+                ) : (
+                  <div ref={serverDropdownRef}>
+                    <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">Server</label>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setServerDropdownOpen(!serverDropdownOpen)}
+                        className="flex items-center gap-2 w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-ui text-left hover:border-text-muted/30 transition-colors"
+                      >
+                        <Server size={12} className="text-accent-blue flex-shrink-0" />
+                        {server ? (
+                          <>
+                            <span className="flex-1 truncate text-text-primary" title={server.name}>
+                              {server.name}
+                            </span>
+                            <span className="text-meta text-text-muted truncate max-w-[200px]" title={`${server.username}@${server.host}:${server.port}`}>
+                              {server.username}@{server.host}:{server.port}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="flex-1 text-text-muted italic">Choose a server…</span>
+                        )}
+                        <ChevronDown
+                          size={10}
+                          className={`text-text-muted flex-shrink-0 transition-transform ${serverDropdownOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                      {serverDropdownOpen && (
+                        <div className="absolute top-full left-0 mt-1 w-full bg-bg-secondary border border-bg-border rounded-lg shadow-xl z-50 py-1 max-h-[200px] overflow-y-auto">
+                          {servers.map((srv) => (
+                            <button
+                              key={srv.id}
+                              onClick={() => {
+                                setServerId(srv.id);
+                                // Reset path probe + seed path field from
+                                // the new server's default remotePath if the
+                                // user hasn't typed anything.
+                                setRemoteProjectPath((prev) => (prev.trim() ? prev : srv.remotePath ?? ""));
+                                setServerDropdownOpen(false);
+                              }}
+                              className={`flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-bg-hover transition-colors ${
+                                srv.id === serverId ? "bg-accent-blue/10" : ""
+                              }`}
+                            >
+                              <Server size={11} className={srv.id === serverId ? "text-accent-blue" : "text-text-muted"} />
+                              <span className="flex-1 truncate text-ui text-text-primary">{srv.name}</span>
+                              <span className="text-meta text-text-muted truncate max-w-[180px]">
+                                {srv.username}@{srv.host}:{srv.port}
+                              </span>
+                              {srv.id === serverId && <Check size={10} className="text-accent-blue flex-shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-        {/* Bypass permissions toggle */}
-        {selectedAiAgents.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={bypassPermissions}
-                onChange={(e) => setBypassPermissions(e.target.checked)}
-                className="w-3 h-3 rounded border-bg-border accent-accent-amber"
-              />
-              <ShieldOff size={11} className={bypassPermissions ? "text-accent-amber" : "text-text-muted"} />
-              <span className={`text-[11px] ${bypassPermissions ? "text-accent-amber" : "text-text-secondary"}`}>
-                Bypass permissions
-              </span>
-            </label>
-            {bypassPermissions && selected.has("opencode") && (
-              <span className="text-[10px] text-text-muted ml-5">
-                Not applied to OpenCode — no equivalent CLI flag in current release. Approve tools in the TUI or set rules in opencode.json.
-              </span>
+                {/* Host-key warning */}
+                {server && !server.hostFingerprint && (
+                  <div className="rounded border border-accent-amber/30 bg-accent-amber/5 px-3 py-2 text-ui text-accent-amber flex items-start gap-2">
+                    <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-medium">Host key not verified.</div>
+                      <p className="text-text-secondary mt-1">
+                        Verify the host key on the Servers page before connecting. We won't probe an unpinned host.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleOpenServersView}
+                        className="mt-1 text-ui underline hover:text-accent-amber"
+                      >
+                        Open Servers settings →
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Remote project path input */}
+                {server && server.hostFingerprint && (
+                  <div>
+                    <label className="text-meta text-text-muted block mb-1 uppercase tracking-wider">
+                      Remote Project Path
+                    </label>
+                    <input
+                      type="text"
+                      value={remoteProjectPath}
+                      onChange={(e) => setRemoteProjectPath(e.target.value)}
+                      placeholder={server.remotePath || "/srv/projects/my-app"}
+                      className="w-full bg-bg-primary border border-bg-border rounded px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-blue"
+                    />
+                    <RemotePathProbeIndicator state={pathProbe} />
+                  </div>
+                )}
+              </div>
             )}
-          </div>
-        )}
 
-        {/* Model selection per selected AI agent */}
-        {selectedAiAgents.map((slot) => {
-          const models = CLI_MODEL_MAP[slot.cliId!];
+            {/* Agent Selection — multi-toggle buttons */}
+            <div>
+              <label className="text-meta text-text-muted block mb-2 uppercase tracking-wider">Agents</label>
+              {detecting && (
+                <p className="flex items-center gap-1 text-meta text-text-muted italic mb-2">
+                  <Loader2 size={10} className="animate-spin" />
+                  Checking CLI availability…
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {AGENT_SLOTS.map((slot) => {
+                  const installed = isAgentInstalled(slot.id);
+                  const isSelected = selected.has(slot.id);
+                  const hint = INSTALL_HINTS[slot.id];
 
-          // OpenCode manages its own models internally
-          if (models.length === 0) {
-            return (
-              <div key={slot.id} className="opacity-50">
-                <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
-                  {slot.label} Model
+                  return (
+                    <div key={slot.id} className="flex items-center gap-1">
+                      <button
+                        onClick={() => toggleAgent(slot.id)}
+                        disabled={!installed}
+                        title={installed ? slot.label : `${slot.label} not found — click the install link to set it up`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-ui rounded border transition-colors ${
+                          isSelected
+                            ? "bg-accent-green/15 border-accent-green/40 text-accent-green font-medium"
+                            : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+                        } ${!installed ? "opacity-50 cursor-not-allowed hover:text-text-muted hover:border-bg-border" : ""}`}
+                      >
+                        <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                          isSelected ? "bg-accent-green border-accent-green" : "border-bg-border"
+                        }`}>
+                          {isSelected && <Check size={8} className="text-bg-primary" />}
+                        </div>
+                        {slot.label}
+                      </button>
+                      {!installed && hint && !detecting && (
+                        <a
+                          href={hint.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-meta text-accent-amber underline opacity-80 hover:opacity-100"
+                          title={hint.label}
+                        >
+                          install
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Bypass permissions toggle */}
+            {selectedAiAgents.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={bypassPermissions}
+                    onChange={(e) => setBypassPermissions(e.target.checked)}
+                    className="w-3 h-3 rounded border-bg-border accent-accent-amber"
+                  />
+                  <ShieldOff size={11} className={bypassPermissions ? "text-accent-amber" : "text-text-muted"} />
+                  <span className={`text-ui ${bypassPermissions ? "text-accent-amber" : "text-text-secondary"}`}>
+                    Bypass permissions
+                  </span>
                 </label>
-                <span className="text-[11px] text-text-muted italic">Configured inside {slot.label}</span>
+                {bypassPermissions && selected.has("opencode") && (
+                  <span className="text-meta text-text-muted ml-5">
+                    Not applied to OpenCode — no equivalent CLI flag in current release. Approve tools in the TUI or set rules in opencode.json.
+                  </span>
+                )}
               </div>
-            );
-          }
+            )}
 
-          const currentModel = modelOverrides[slot.id] ?? null;
-          return (
-            <div key={slot.id}>
-              <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
-                {slot.label} Model
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {models.map((m) => (
-                  <button
-                    key={m.label}
-                    onClick={() => setModelForAgent(slot.id, m.value)}
-                    className={`px-2.5 py-1 text-[11px] rounded border transition-colors ${
-                      currentModel === m.value
-                        ? "bg-accent-amber/15 border-accent-amber/40 text-accent-amber font-medium"
-                        : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+            {/* Model selection per selected AI agent */}
+            {selectedAiAgents.map((slot) => {
+              const models = CLI_MODEL_MAP[slot.cliId!];
 
-        {/* Effort level per selected AI agent */}
-        {selectedAiAgents.map((slot) => {
-          if (!EFFORT_SUPPORTED.has(slot.id)) {
-            return null;
-          }
-          const currentEffort = effortOverrides[slot.id] ?? null;
-          return (
-            <div key={`effort-${slot.id}`}>
-              <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
-                {slot.label} Effort
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {EFFORT_LEVELS.map((e) => (
-                  <button
-                    key={e.value}
-                    onClick={() => setEffortOverrides((prev) => ({ ...prev, [slot.id]: e.value }))}
-                    className={`px-2.5 py-1 text-[11px] rounded border transition-colors ${
-                      currentEffort === e.value
-                        ? "bg-accent-purple/15 border-accent-purple/40 text-accent-purple font-medium"
-                        : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
-                    }`}
-                  >
-                    {e.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Prompt Template Picker */}
-        {selectedAiAgents.length > 0 && (
-          <TemplatePicker onSelect={(content) => setPrompt(content)} />
-        )}
-
-        {/* Prompt */}
-        {selectedAiAgents.length > 0 && (
-          <div>
-            <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
-              Initial Prompt
-            </label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={3}
-              placeholder="Describe the task for all agents..."
-              className="w-full bg-bg-primary border border-bg-border rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-amber resize-none"
-            />
-            <p className="text-[10px] text-text-muted mt-1">
-              Ctrl+Enter to create
-            </p>
-          </div>
-        )}
-
-        {/* Grid Preview */}
-        {preview && (
-          <div>
-            <label className="text-[10px] text-text-muted block mb-2 uppercase tracking-wider">Layout Preview</label>
-            <div
-              className="gap-1 max-w-[200px]"
-              style={{
-                display: "grid",
-                gridTemplateColumns: `repeat(${preview.cols}, 1fr)`,
-                gridTemplateRows: `repeat(${preview.rows}, 1fr)`,
-              }}
-            >
-              {preview.cells.map((cell) => {
-                const selectedArr = AGENT_SLOTS.filter((s) => selected.has(s.id));
-                const agent = cell.agentIndex !== null ? selectedArr[cell.agentIndex] : null;
+              // OpenCode manages its own models internally
+              if (models.length === 0) {
                 return (
-                  <div
-                    key={`${cell.row}-${cell.col}`}
-                    className={`h-10 rounded flex items-center justify-center text-[9px] ${
-                      agent
-                        ? "bg-accent-green/10 text-accent-green border border-accent-green/20"
-                        : "border border-dashed border-bg-border text-text-muted"
-                    }`}
-                  >
-                    {agent?.label ?? ""}
+                  <div key={slot.id} className="opacity-50">
+                    <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
+                      {slot.label} Model
+                    </label>
+                    <span className="text-ui text-text-muted italic">Configured inside {slot.label}</span>
                   </div>
                 );
-              })}
-            </div>
+              }
+
+              const currentModel = modelOverrides[slot.id] ?? null;
+              return (
+                <div key={slot.id}>
+                  <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
+                    {slot.label} Model
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {models.map((m) => (
+                      <button
+                        key={m.label}
+                        onClick={() => setModelForAgent(slot.id, m.value)}
+                        className={`px-2.5 py-1 text-ui rounded border transition-colors ${
+                          currentModel === m.value
+                            ? "bg-accent-amber/15 border-accent-amber/40 text-accent-amber font-medium"
+                            : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Effort level per selected AI agent */}
+            {selectedAiAgents.map((slot) => {
+              if (!EFFORT_SUPPORTED.has(slot.id)) {
+                return null;
+              }
+              const currentEffort = effortOverrides[slot.id] ?? null;
+              return (
+                <div key={`effort-${slot.id}`}>
+                  <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
+                    {slot.label} Effort
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {EFFORT_LEVELS.map((e) => (
+                      <button
+                        key={e.value}
+                        onClick={() => setEffortOverrides((prev) => ({ ...prev, [slot.id]: e.value }))}
+                        className={`px-2.5 py-1 text-ui rounded border transition-colors ${
+                          currentEffort === e.value
+                            ? "bg-accent-purple/15 border-accent-purple/40 text-accent-purple font-medium"
+                            : "bg-bg-primary border-bg-border text-text-muted hover:text-text-secondary hover:border-text-muted/30"
+                        }`}
+                      >
+                        {e.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Prompt Template Picker */}
+            {selectedAiAgents.length > 0 && (
+              <TemplatePicker onSelect={(content) => setPrompt(content)} />
+            )}
+
+            {/* Prompt */}
+            {selectedAiAgents.length > 0 && (
+              <div>
+                <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
+                  Initial Prompt
+                </label>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={3}
+                  placeholder="Describe the task for all agents..."
+                  className="w-full bg-bg-primary border border-bg-border rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-amber resize-none"
+                />
+                <p className="text-meta text-text-muted mt-1">
+                  Ctrl+Enter to create
+                </p>
+              </div>
+            )}
+
+            {/* Grid Preview */}
+            {preview && (
+              <div>
+                <label className="text-meta text-text-muted block mb-2 uppercase tracking-wider">Layout Preview</label>
+                <div
+                  className="gap-1 max-w-[200px]"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: `repeat(${preview.cols}, 1fr)`,
+                    gridTemplateRows: `repeat(${preview.rows}, 1fr)`,
+                  }}
+                >
+                  {preview.cells.map((cell) => {
+                    const selectedArr = AGENT_SLOTS.filter((s) => selected.has(s.id));
+                    const agent = cell.agentIndex !== null ? selectedArr[cell.agentIndex] : null;
+                    return (
+                      <div
+                        key={`${cell.row}-${cell.col}`}
+                        className={`h-10 rounded flex items-center justify-center text-meta ${
+                          agent
+                            ? "bg-accent-green/10 text-accent-green border border-accent-green/20"
+                            : "border border-dashed border-bg-border text-text-muted"
+                        }`}
+                      >
+                        {agent?.label ?? ""}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </AdvancedAccordion>
       </div>
     </Modal>
   );
@@ -916,14 +940,14 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   if (state.kind === "idle") {
     return (
-      <p className="text-[10px] text-text-muted mt-1">
+      <p className="text-meta text-text-muted mt-1">
         Type a path to verify it exists on the host.
       </p>
     );
   }
   if (state.kind === "probing") {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-text-muted mt-1">
+      <p className="flex items-center gap-1 text-meta text-text-muted mt-1">
         <Loader2 size={10} className="animate-spin" />
         Checking remote path…
       </p>
@@ -931,7 +955,7 @@ function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   }
   if (state.kind === "error") {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-accent-red mt-1">
+      <p className="flex items-center gap-1 text-meta text-accent-red mt-1">
         <XCircle size={10} />
         {state.message}
       </p>
@@ -941,7 +965,7 @@ function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   const { exists, isDirectory, isGitRepo } = state.result;
   if (!exists) {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-accent-amber mt-1">
+      <p className="flex items-center gap-1 text-meta text-accent-amber mt-1">
         <AlertTriangle size={10} />
         Path does not exist — it will be created when the workspace starts.
       </p>
@@ -949,7 +973,7 @@ function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   }
   if (!isDirectory) {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-accent-red mt-1">
+      <p className="flex items-center gap-1 text-meta text-accent-red mt-1">
         <XCircle size={10} />
         Path is a file, not a directory.
       </p>
@@ -957,14 +981,14 @@ function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
   }
   if (isGitRepo) {
     return (
-      <p className="flex items-center gap-1 text-[10px] text-accent-green mt-1">
+      <p className="flex items-center gap-1 text-meta text-accent-green mt-1">
         <GitBranch size={10} />
         Git repository detected.
       </p>
     );
   }
   return (
-    <p className="flex items-center gap-1 text-[10px] text-accent-green mt-1">
+    <p className="flex items-center gap-1 text-meta text-accent-green mt-1">
       <CheckCircle2 size={10} />
       Directory exists.
     </p>
@@ -979,14 +1003,14 @@ function TemplatePicker({ onSelect }: { onSelect: (content: string) => void }) {
 
   return (
     <div>
-      <label className="block text-[10px] text-text-muted mb-1.5 uppercase tracking-wider">
+      <label className="block text-meta text-text-muted mb-1.5 uppercase tracking-wider">
         Prompt Template
       </label>
       <div className="relative">
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] bg-bg-primary border border-bg-border rounded w-full text-left text-text-secondary hover:border-text-muted/30 transition-colors"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-ui bg-bg-primary border border-bg-border rounded w-full text-left text-text-secondary hover:border-text-muted/30 transition-colors"
         >
           <FileText size={11} className="text-accent-amber flex-shrink-0" />
           <span className="flex-1 truncate">Select a template...</span>
@@ -1002,8 +1026,8 @@ function TemplatePicker({ onSelect }: { onSelect: (content: string) => void }) {
                 }}
                 className="flex flex-col w-full px-3 py-2 text-left hover:bg-bg-hover transition-colors"
               >
-                <span className="text-[11px] text-text-primary">{t.name}</span>
-                <span className="text-[10px] text-text-muted truncate">
+                <span className="text-ui text-text-primary">{t.name}</span>
+                <span className="text-meta text-text-muted truncate">
                   {t.content.slice(0, 80)}
                 </span>
               </button>

@@ -19,7 +19,7 @@ type StatusPillProps =
     };
 
 const PILL_BASE =
-  "inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full text-[10px] font-mono";
+  "inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full text-meta font-mono";
 
 export function StatusPill(props: StatusPillProps) {
   if (props.status === "running") {

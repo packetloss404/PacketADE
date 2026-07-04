@@ -33,9 +33,9 @@ export function NewFlightModal({ onClose, onCreated }: NewFlightModalProps) {
 
   // v0.8.8 capture-on-open: freeze the projectPath the moment the modal
   // mounts so a workspace switch mid-edit doesn't bind the new flight to
-  // the wrong project. Mirrors SpecImportModal / CommitModal. Mount-time
-  // snapshot is sufficient because the parent unmounts this modal on
-  // close; re-opening mounts a fresh instance that re-samples.
+  // the wrong project. Mirrors SpecImportModal. Mount-time snapshot is
+  // sufficient because the parent unmounts this modal on close;
+  // re-opening mounts a fresh instance that re-samples.
   const [capturedProjectPath, setCapturedProjectPath] = useState<string>(
     activeWorkspace?.projectPath || projectPath || "",
   );

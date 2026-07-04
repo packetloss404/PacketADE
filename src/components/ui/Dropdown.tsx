@@ -28,6 +28,20 @@ interface DropdownProps {
   align?: "left" | "right";
   searchable?: boolean;
   searchPlaceholder?: string;
+  /** Imperative "open now" channel: incrementing this counter opens the
+   * menu (e.g. the `/model` slash command targeting the header model
+   * dropdown). Leave undefined for purely click-driven dropdowns. */
+  openSignal?: number;
+}
+
+/**
+ * Access the enclosing Dropdown's `close()` from arbitrary content rendered
+ * inside it (e.g. a menu section that needs to close its parent after an
+ * async action). Outside a Dropdown the context default `close` is a no-op —
+ * deliberate, so tests can render menu section content bare.
+ */
+export function useDropdownClose(): () => void {
+  return useContext(DropdownContext).close;
 }
 
 function stringifyChildren(node: ReactNode): string {
@@ -51,8 +65,13 @@ export function Dropdown({
   align = "left",
   searchable = false,
   searchPlaceholder = "Search…",
+  openSignal,
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (openSignal !== undefined && openSignal > 0) setOpen(true);
+  }, [openSignal]);
   const [filter, setFilter] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -126,7 +145,7 @@ export function Dropdown({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+        className="flex items-center gap-1 px-2 py-1 text-ui text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
       >
         {trigger}
         <ChevronDown
@@ -148,13 +167,13 @@ export function Dropdown({
                   onChange={(e) => setFilter(e.target.value)}
                   onKeyDown={handleSearchKeyDown}
                   placeholder={searchPlaceholder}
-                  className="w-full bg-bg-primary border border-bg-border text-xs px-2 py-1 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green rounded"
+                  className="w-full bg-bg-primary border border-bg-border text-ui px-2 py-1 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green rounded"
                 />
               </div>
             )}
             {children}
             {searchable && normalizedFilter !== "" && visibleItemCount === 0 && (
-              <div className="text-[11px] text-text-muted px-2 py-1">
+              <div className="text-ui text-text-muted px-2 py-1">
                 No matches
               </div>
             )}
@@ -186,7 +205,7 @@ export function DropdownItem({ onClick, children }: DropdownItemProps) {
         onClick?.();
         close();
       }}
-      className="w-full text-left px-3 py-1.5 text-xs text-text-primary hover:bg-bg-hover transition-colors"
+      className="w-full text-left px-3 py-1.5 text-ui text-text-primary hover:bg-bg-hover transition-colors"
     >
       {children}
     </button>

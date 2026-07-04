@@ -18,7 +18,7 @@ export function CancelPendingButton({
   return (
     <button
       onClick={onCancel}
-      className="inline-flex items-center gap-1 px-1.5 py-1 text-[11px] text-text-secondary hover:text-text-primary hover:bg-bg-secondary rounded transition-colors shrink-0"
+      className="inline-flex items-center gap-1 px-1.5 py-1 text-ui text-text-secondary hover:text-text-primary hover:bg-bg-secondary rounded transition-colors shrink-0"
       title={`Drain ${pendingCount} parked prompt${pendingCount === 1 ? "" : "s"} as denied — agent loop continues`}
     >
       <Ban size={11} />

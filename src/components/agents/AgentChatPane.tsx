@@ -1,30 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { ArrowDown, ArrowLeft, ChevronUp, MessageSquareOff, Mic, Send, Server, Sparkles, Square } from "lucide-react";
-import { MentionSourcePicker } from "./MentionSourcePicker";
-import { SlashCommandPopover, type SlashSelection } from "./SlashCommandPopover";
-import { BUILTIN_SLASH_NAMES, TEMPLATE_SOURCE_TAG } from "./slashCommandConstants";
-import type { SlashCommandDef } from "@/lib/tauri";
+import { ArrowDown, ArrowLeft, MessageSquareOff, Server, Sparkles } from "lucide-react";
 import { MemoryInjectionCard } from "./MemoryInjectionCard";
-import { CheckpointPanel } from "./CheckpointPanel";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
-import { SessionHealthBar } from "./SessionHealthBar";
+import { SessionMetaLine } from "./chat/SessionMetaLine";
 import { PlanPanel } from "./PlanPanel";
-import { SpecPanel } from "./SpecPanel";
 import { deriveMode, flagsForMode, nextMode } from "./agentModeChipUtils";
 import type { AgentMode } from "./AgentModeChip";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useAgentDraftStore } from "@/stores/agentDraftStore";
 import {
   EMPTY_PENDING_EDITS,
   EMPTY_PENDING_PERMISSIONS,
   useAgentApprovalStore,
 } from "@/stores/agentApprovalStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
-import { usePromptStore } from "@/stores/promptStore";
-import { useAppStore } from "@/stores/appStore";
-import { useProfileStore } from "@/stores/profileStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { HeaderActions } from "./chat/HeaderActions";
 import { handleExport } from "./chat/handleExport";
@@ -32,14 +22,13 @@ import { EmptyConversationHint } from "./chat/EmptyConversationHint";
 import { PendingDiffCommentsStrip } from "./chat/PendingDiffCommentsStrip";
 import { MessageList } from "./chat/MessageList";
 import { PendingApprovalsSection } from "./chat/PendingApprovalsSection";
-import { CancelPendingButton } from "./chat/CancelPendingButton";
+import { Composer } from "./composer/Composer";
+import { ReviewBar } from "./review/ReviewBar";
+import { ReviewSurface } from "./review/ReviewSurface";
+import { useReviewStore } from "@/stores/reviewStore";
 import { useScrollState } from "./hooks/useScrollState";
-import { useVoiceTranscript } from "./hooks/useVoiceTranscript";
 import { useLatestPlanPreview } from "./hooks/useLatestPlanPreview";
-import { useProjectSlashCommands } from "./hooks/useProjectSlashCommands";
 import { useDiffTotals } from "./hooks/useDiffTotals";
-import { buildChatKeyboardHandler, type MentionState } from "./chat/buildChatKeyboardHandler";
-import { slashCommandHandlers } from "./chat/slashCommandHandlers";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { getAgentColor } from "@/lib/agentColors";
 
@@ -75,34 +64,13 @@ function BackToParentLink({ parentId }: { parentId: string }) {
       <button
         type="button"
         onClick={() => selectConversation(parentId)}
-        className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-muted transition-colors hover:text-accent-blue"
+        className="flex items-center gap-1 rounded border border-bg-border bg-bg-secondary px-1.5 py-0.5 text-ui text-text-muted transition-colors hover:text-accent-blue"
       >
         <ArrowLeft size={11} />
         back to plan
       </button>
     </Tooltip>
   );
-}
-
-// Scan backward from `cursor` for a trigger char (`@` or `/`). Valid trigger:
-// at start-of-string OR preceded by whitespace, with no whitespace between
-// trigger and cursor.
-function findTrigger(
-  text: string,
-  cursor: number,
-  triggerChar: string,
-): { triggerIndex: number; query: string } | null {
-  for (let i = cursor - 1; i >= 0; i--) {
-    const ch = text[i];
-    if (ch === triggerChar) {
-      if (i === 0 || /\s/.test(text[i - 1])) {
-        return { triggerIndex: i, query: text.slice(i + 1, cursor) };
-      }
-      return null;
-    }
-    if (/\s/.test(ch)) return null;
-  }
-  return null;
 }
 
 export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
@@ -113,11 +81,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   // Grouped store actions — keeps reference stable across renders.
   const actions = useAgentTaskStore(
     useShallow((s) => ({
-      sendMessage: s.sendMessage,
-      cancelActiveConversation: s.cancelActiveConversation,
       changeModel: s.changeModel,
-      createApiConversation: s.createApiConversation,
-      selectConversation: s.selectConversation,
       setPlanMode: s.setPlanMode,
       setPermissionMode: s.setPermissionMode,
       setApproveWrites: s.setApproveWrites,
@@ -130,7 +94,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   );
 
   // Approval actions live in their own substore now — group them so the
-  // PendingApprovalsSection / CancelPendingButton see stable references.
+  // PendingApprovalsSection / composer cancel button see stable references.
   const approvalActions = useAgentApprovalStore(
     useShallow((s) => ({
       respondPermission: s.respondPermission,
@@ -139,13 +103,19 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     })),
   );
   // Live queues read from the substore — drives both the per-item cards
-  // and the header status line counters.
+  // and pendingApprovalCount (Composer's cancel button, PendingApprovalsSection).
   const pendingPermissions = useAgentApprovalStore(
     (s) => s.permissions.get(conversationId) ?? EMPTY_PENDING_PERMISSIONS,
   );
   const pendingEdits = useAgentApprovalStore(
     (s) => s.edits.get(conversationId) ?? EMPTY_PENDING_EDITS,
   );
+  // Canonical review surface (P1-8): expanded state lives in reviewStore so
+  // transcript chips / MultiFileEditCard / the header chip can deep-link.
+  const reviewOpen = useReviewStore(
+    (s) => s.open && s.conversationId === conversationId,
+  );
+  const closeReview = useReviewStore((s) => s.close);
 
   // Preview pane + settings selectors grouped to reduce subscription count.
   const preview = usePreviewPaneStore(
@@ -156,51 +126,20 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       openPlanPreview: s.openPlan,
     })),
   );
-  const promptTemplates = usePromptStore((s) => s.templates);
-  const setActiveView = useAppStore((s) => s.setActiveView);
-  const reviewerProfile = useProfileStore((s) =>
-    s.profiles.find((p) => p.id === "builtin-reviewer"),
-  );
   const memoryEvents = useMemoryStore((s) => s.events);
   const memoryPatterns = useMemoryStore((s) => s.patterns);
   const getMemoryItemsForSession = useMemoryStore((s) => s.getContextItemsForSession);
 
-  // Composer text lives in the per-conversation draft store (keyed by
-  // conversation id), so switching conversations never bleeds or loses a
-  // half-typed draft. Cleared on send.
-  const input = useAgentDraftStore((s) => s.drafts[conversationId] ?? "");
-  const setDraft = useAgentDraftStore((s) => s.setDraft);
-  const setInput = useCallback(
-    (text: string) => setDraft(conversationId, text),
-    [conversationId, setDraft],
-  );
-  const [mentionState, setMentionState] = useState<MentionState>({ kind: "none" });
-  const [showRewind, setShowRewind] = useState(false);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const historySourceRef = useRef<"user" | "history">("user");
   // Inline edit of a prior user message. Submit forks the conversation here.
   const [editState, setEditState] = useState<{ id: string | null; text: string }>({
     id: null,
     text: "",
   });
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { messagesContainerRef, messagesContentRef, messagesEndRef, isAtBottom, unreadCount, jumpToBottom } =
     useScrollState(conversationId, conversation?.messages);
 
-  const appendToInput = useCallback(
-    (chunk: string) => {
-      const current = useAgentDraftStore.getState().drafts[conversationId] ?? "";
-      setDraft(conversationId, current + chunk);
-    },
-    [conversationId, setDraft],
-  );
-  const voice = useVoiceTranscript(appendToInput);
-
   useLatestPlanPreview(conversation, preview.openPlanPreview);
-
-  const projectPathForSlash = conversation?.projectPath ?? "";
-  const { customSlashCommands, userSkills } = useProjectSlashCommands(projectPathForSlash);
 
   const diffTotals = useDiffTotals(conversation);
   const memoryBriefStats = useMemo(() => {
@@ -231,61 +170,12 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     memoryPatterns,
   ]);
 
-  // Auto-resize textarea
-  const resizeTextarea = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
-  }, []);
-  useEffect(() => {
-    resizeTextarea();
-  }, [input, resizeTextarea]);
-
-  // Synthesize a SlashCommandDef per saved prompt template so they appear in
-  // the popover alongside file-loaded custom commands.
-  const templateSlashCommands = useMemo<SlashCommandDef[]>(
-    () =>
-      promptTemplates.map((t) => ({
-        name: t.name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, ""),
-        description: t.name,
-        body: t.content,
-        source: TEMPLATE_SOURCE_TAG,
-      })),
-    [promptTemplates],
-  );
-
-  const allCustomSlashCommands = useMemo<SlashCommandDef[]>(
-    () => [...customSlashCommands, ...templateSlashCommands],
-    [customSlashCommands, templateSlashCommands],
-  );
-
-  // Hooks must run in the same order every render — compute popover count
-  // before the early return.
-  const popoverItemCount = useMemo(() => {
-    if (mentionState.kind === "slash") {
-      const q = mentionState.query.toLowerCase();
-      const builtins = BUILTIN_SLASH_NAMES.filter((c) => c.startsWith(q)).length;
-      const custom = allCustomSlashCommands.filter((c) =>
-        c.name.toLowerCase().startsWith(q),
-      ).length;
-      const skills = userSkills.filter(
-        (s) => s.userInvocable && s.name.toLowerCase().startsWith(q),
-      ).length;
-      return builtins + custom + skills;
-    }
-    return 0;
-  }, [mentionState, allCustomSlashCommands, userSkills]);
-
   if (!conversation) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-bg-primary">
         <MessageSquareOff size={24} className="text-text-muted opacity-40" />
-        <span className="text-xs text-text-secondary">Conversation not found</span>
-        <span className="text-[10px] text-text-muted">It may have been deleted.</span>
+        <span className="text-ui text-text-secondary">Conversation not found</span>
+        <span className="text-meta text-text-muted">It may have been deleted.</span>
       </div>
     );
   }
@@ -297,111 +187,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   // isActive = actively streaming / waiting for the agent ("running" in the UI sense).
   const isActive = conversation.status === "active";
   const messages = conversation.messages;
-
-  /* ----------------- popover / input handling ----------------- */
-
-  function updateMentionStateFromInput(text: string, cursor: number) {
-    const fileHit = findTrigger(text, cursor, "@");
-    if (fileHit) {
-      setMentionState({
-        kind: "file",
-        query: fileHit.query,
-        triggerIndex: fileHit.triggerIndex,
-        highlightedIndex: 0,
-      });
-      return;
-    }
-    const slashHit = findTrigger(text, cursor, "/");
-    if (slashHit) {
-      setMentionState({
-        kind: "slash",
-        query: slashHit.query,
-        triggerIndex: slashHit.triggerIndex,
-        highlightedIndex: 0,
-      });
-      return;
-    }
-    setMentionState({ kind: "none" });
-  }
-
-  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const text = e.target.value;
-    setInput(text);
-    const cursor = e.target.selectionStart ?? text.length;
-    updateMentionStateFromInput(text, cursor);
-    if (historySourceRef.current === "history") {
-      historySourceRef.current = "user";
-    } else if (historyIndex !== -1) {
-      setHistoryIndex(-1);
-    }
-  }
-
-  function handleSelectionChange() {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const cursor = ta.selectionStart ?? ta.value.length;
-    updateMentionStateFromInput(ta.value, cursor);
-  }
-
-  function selectFileMention(insertion: string) {
-    if (mentionState.kind !== "file") return;
-    const before = input.slice(0, mentionState.triggerIndex);
-    const afterStart = mentionState.triggerIndex + 1 + mentionState.query.length;
-    const after = input.slice(afterStart);
-    const next = `${before}${insertion} ${after}`;
-    setInput(next);
-    setMentionState({ kind: "none" });
-    setTimeout(() => {
-      const ta = textareaRef.current;
-      if (ta) {
-        const pos = before.length + insertion.length + 1;
-        ta.focus();
-        ta.setSelectionRange(pos, pos);
-      }
-    }, 0);
-  }
-
-  function runSlashCommand(sel: SlashSelection) {
-    if (mentionState.kind !== "slash") return;
-    if (!conversation) return;
-    const before = input.slice(0, mentionState.triggerIndex);
-    const afterStart = mentionState.triggerIndex + 1 + mentionState.query.length;
-    const after = input.slice(afterStart);
-    const remaining = (before + after).trim();
-    setInput(remaining);
-    setMentionState({ kind: "none" });
-
-    if (sel.kind === "custom" || sel.kind === "skill") {
-      actions.sendMessage(conversationId, sel.def.body);
-      return;
-    }
-
-    const handler = slashCommandHandlers[sel.name];
-    if (handler) {
-      handler({
-        conversationId,
-        conversation,
-        setPlanMode: actions.setPlanMode,
-        createApiConversation: actions.createApiConversation,
-        selectConversation: actions.selectConversation,
-        setActiveView,
-        reviewerProfile,
-      });
-    }
-  }
-
-  function handleSend() {
-    const text = input.trim();
-    if (!text) return;
-    setInput("");
-    setMentionState({ kind: "none" });
-    setHistoryIndex(-1);
-    actions.sendMessage(conversationId, text);
-  }
-
-  function handleStop() {
-    void actions.cancelActiveConversation(conversationId);
-  }
 
   // Claude-Code-style mode set/cycle. Applies flagsForMode(next) to the
   // conversation so the chip always reflects the actual posture. The current
@@ -431,31 +216,10 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     preview.openMarkdownPreview(path);
   }
 
-  const handleKeyDown = buildChatKeyboardHandler({
-    textareaRef,
-    input,
-    setInput,
-    messages,
-    mentionState,
-    setMentionState,
-    historyIndex,
-    setHistoryIndex,
-    historySourceRef,
-    popoverItemCount,
-    allCustomSlashCommands,
-    userSkills,
-    cycleMode,
-    runSlashCommand,
-    handleSend,
-  });
-
   /* ----------------- render ----------------- */
 
-  // Session counts surfaced in the consolidated status bar below the header.
-  const turnCount = messages.filter((m) => m.role === "user").length;
-  const toolCallCount = messages.reduce((sum, m) => sum + (m.toolCalls?.length ?? 0), 0);
+  // Pending approvals (Composer's cancel button, PendingApprovalsSection).
   const pendingApprovalCount = pendingEdits.length + pendingPermissions.length;
-  const assistantMsgCount = messages.filter((m) => m.role === "assistant").length;
 
   // Politely announced to screen readers: status transitions + the latest
   // assistant output as it streams in.
@@ -470,26 +234,26 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   const chatContent = (
     <div className="flex h-full flex-col">
       {/* Header bar — sparkle avatar + title + agent/status chips. Single row
-          snapped to the shared h-[33px] baseline; session counts + git/model
-          moved into the consolidated SessionHealthBar below. */}
+          snapped to the shared h-[33px] baseline; project/branch/cost moved
+          into the thin SessionMetaLine below. */}
       <div className="flex h-[33px] shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3">
         <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border border-accent-line bg-accent-soft">
           <Sparkles size={13} className="text-accent-green" />
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="truncate text-sm font-semibold text-text-primary">
+          <span className="truncate text-ui font-semibold text-text-primary">
             {conversation.title || agentLabel}
           </span>
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${agentColor.text} bg-current ${isActive ? "animate-pulse motion-reduce:animate-none" : ""}`}
           />
-          <span className={`text-[10px] font-medium ${status.className}`}>{status.label}</span>
+          <span className={`text-meta font-medium ${status.className}`}>{status.label}</span>
           {conversation.sshTarget && (
             <Tooltip
               content={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
               side="bottom"
             >
-              <span className="flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent-green">
+              <span className="flex items-center gap-1 rounded bg-accent-soft px-1.5 py-0.5 text-meta text-accent-green">
                 <Server size={10} />
                 {conversation.sshTarget.host}
               </span>
@@ -507,8 +271,6 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           diffTotals={diffTotals}
           previewOpen={preview.previewOpen}
           togglePreview={preview.togglePreview}
-          showRewind={showRewind}
-          setShowRewind={setShowRewind}
           onClose={onClose}
           onCycleMode={cycleMode}
           onSelectMode={applyMode}
@@ -522,18 +284,8 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         {status.label}. {lastAssistantText}
       </div>
 
-      <SessionHealthBar
-        conversation={conversation}
-        counts={{
-          turns: turnCount,
-          toolCalls: toolCallCount,
-          pending: pendingApprovalCount,
-          received: assistantMsgCount,
-        }}
-      />
+      <SessionMetaLine conversation={conversation} />
 
-      {/* F10: Spec → Plan → Code FSM. SpecPanel renders only during specStage="spec". */}
-      <SpecPanel conversation={conversation} />
       <PlanPanel conversation={conversation} />
 
       <ClickablePathsRoot
@@ -545,7 +297,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
             {/* Inner content wrapper carries the row spacing and is measured by
                 the ResizeObserver in useScrollState so "stick to bottom" stays
                 pinned as virtualized rows lazily mount and grow. */}
-            <div ref={messagesContentRef} className="space-y-2.5">
+            <div ref={messagesContentRef} className="space-y-turn">
               {conversation.mode === "api" && conversation.memoryContextEnabled && (
                 <MemoryInjectionCard {...memoryBriefStats} />
               )}
@@ -565,6 +317,9 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
                   void actions.forkAndResend(conversationId, msgId, text);
                 }}
                 onCancelEdit={() => setEditState({ id: null, text: "" })}
+                onRestoreFrom={(msgId, content) =>
+                  void actions.forkAndResend(conversationId, msgId, content)
+                }
                 onRetryLastTurn={() => void actions.retryLastTurn(conversationId)}
                 isActive={isActive}
                 scrollContainerRef={messagesContainerRef}
@@ -578,12 +333,22 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
               <button
                 type="button"
                 onClick={jumpToBottom}
-                className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-bg-border bg-bg-primary px-3 py-1 text-xs text-text-secondary shadow-md transition-colors hover:border-accent-green/60 hover:text-text-primary"
+                className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-bg-border bg-bg-primary px-3 py-1 text-ui text-text-secondary shadow-md transition-colors hover:border-accent-green/60 hover:text-text-primary"
               >
                 <ArrowDown size={12} />
                 <span>{unreadCount > 0 ? `${unreadCount} new` : "Latest"}</span>
               </button>
             </Tooltip>
+          )}
+          {/* Expanded canonical review surface — takes over the transcript
+              area (header/composer stay visible) until collapsed. */}
+          {reviewOpen && (
+            <div className="absolute inset-0 z-20 bg-bg-primary">
+              <ReviewSurface
+                conversationId={conversationId}
+                onClose={closeReview}
+              />
+            </div>
           )}
         </div>
       </ClickablePathsRoot>
@@ -591,9 +356,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
       <PendingApprovalsSection
         conversation={conversation}
         conversationId={conversationId}
-        pendingEdits={pendingEdits}
         pendingPermissions={pendingPermissions}
-        respondEdit={approvalActions.respondEdit}
         respondPermission={approvalActions.respondPermission}
         cancelPendingTools={approvalActions.cancelPendingTools}
         appendAllowedToolPattern={actions.appendAllowedToolPattern}
@@ -607,101 +370,30 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         />
       )}
 
-      <div className="relative shrink-0 border-t border-bg-border bg-bg-primary px-3 py-2">
-        {historyIndex >= 0 && (
-          <div className="pointer-events-none absolute right-3 top-1 inline-flex select-none items-center gap-0.5 font-mono text-[10px] text-text-faint">
-            <ChevronUp size={10} />
-            {historyIndex + 1}/{turnCount}
-          </div>
-        )}
-        <div className="absolute bottom-full left-3 right-3" data-agent-pane-mention-popover>
-          <MentionSourcePicker
-            visible={mentionState.kind === "file"}
-            projectPath={conversation.projectPath}
-            query={mentionState.kind === "file" ? mentionState.query : ""}
-            highlightedIndex={mentionState.kind === "file" ? mentionState.highlightedIndex : 0}
-            onSelect={selectFileMention}
-          />
-          <SlashCommandPopover
-            customCommands={allCustomSlashCommands}
-            userSkills={userSkills}
-            visible={mentionState.kind === "slash"}
-            query={mentionState.kind === "slash" ? mentionState.query : ""}
-            highlightedIndex={mentionState.kind === "slash" ? mentionState.highlightedIndex : 0}
-            onSelect={runSlashCommand}
-          />
-        </div>
+      {conversation.mode === "api" && (
+        <ReviewBar
+          conversationId={conversationId}
+          diffTotals={diffTotals}
+          pendingEdits={pendingEdits}
+          pendingPermissionCount={pendingPermissions.length}
+          respondEdit={approvalActions.respondEdit}
+        />
+      )}
 
-        <div className="flex items-end gap-2 rounded border border-bg-border bg-bg-primary px-2 py-1.5 transition-colors focus-within:border-accent-green/50">
-          <textarea
-            ref={textareaRef}
-            data-agent-pane-input
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            onKeyUp={handleSelectionChange}
-            onClick={handleSelectionChange}
-            placeholder="Send a message..."
-            rows={1}
-            className="flex-1 resize-none bg-transparent text-xs leading-relaxed text-text-primary placeholder:text-text-muted focus:outline-none"
-          />
-
-          {voice.isSupported && (
-            <Tooltip content={voice.isListening ? "Stop recording" : "Voice input"}>
-              <button
-                type="button"
-                onClick={voice.isListening ? voice.stopListening : voice.startListening}
-                className={`shrink-0 rounded p-1 transition-colors ${
-                  voice.isListening
-                    ? "bg-accent-green/20 animate-pulse motion-reduce:animate-none text-accent-green"
-                    : "text-text-muted hover:bg-bg-hover hover:text-text-primary"
-                }`}
-              >
-                <Mic size={12} />
-              </button>
-            </Tooltip>
-          )}
-
-          <CancelPendingButton
-            pendingCount={pendingApprovalCount}
-            onCancel={() => void approvalActions.cancelPendingTools(conversationId)}
-          />
-
-          {isActive ? (
-            <Tooltip content="Stop turn">
-              <button
-                type="button"
-                onClick={handleStop}
-                className="shrink-0 rounded bg-accent-red/15 p-1.5 text-accent-red transition-colors hover:bg-accent-red/25"
-              >
-                <Square size={12} />
-              </button>
-            </Tooltip>
-          ) : (
-            <Tooltip content="Send (Enter)">
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={!input.trim()}
-                className="shrink-0 rounded bg-accent-green/20 p-1.5 text-accent-green transition-colors hover:bg-accent-green/30 disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                <Send size={12} />
-              </button>
-            </Tooltip>
-          )}
-        </div>
-      </div>
+      <Composer
+        variant="chat"
+        conversationId={conversationId}
+        conversation={conversation}
+        pendingApprovalCount={pendingApprovalCount}
+        onCancelPending={() => void approvalActions.cancelPendingTools(conversationId)}
+        onCycleMode={cycleMode}
+      />
     </div>
   );
 
   return (
     <div className="flex h-full bg-bg-primary">
       <div className="min-w-0 flex-1">{chatContent}</div>
-      {showRewind && (
-        <div className="w-72 shrink-0 border-l border-bg-border">
-          <CheckpointPanel conversationId={conversationId} onClose={() => setShowRewind(false)} />
-        </div>
-      )}
     </div>
   );
 }

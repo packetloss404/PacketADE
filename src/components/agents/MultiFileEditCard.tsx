@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import * as Diff from "diff";
 import {
   ChevronRight,
   FileEdit,
@@ -8,10 +7,16 @@ import {
   FilePlus2,
   Folder,
 } from "lucide-react";
-import { useDiffPaneStore } from "../../stores/diffPaneStore";
+import { useReviewStore } from "@/stores/reviewStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
+import { useEditBaselineStore } from "@/stores/editBaselineStore";
 import { Spinner } from "@/components/ui/Spinner";
-import { parseWriteFileInput } from "@/lib/parseToolInput";
+import { materializeEdits } from "@/lib/parseToolInput";
+import {
+  collectEditGroups,
+  countLineChanges,
+  type FileEditGroup,
+} from "@/lib/diffUtils";
 import type { AgentToolCall } from "@/types/agent-conversation";
 
 interface MultiFileEditCardProps {
@@ -24,7 +29,7 @@ type FileKind = "new" | "modified" | "deleted";
 
 interface FileEntry {
   path: string;
-  newContent: string;
+  group: FileEditGroup;
   kind: FileKind;
   added: number;
   removed: number;
@@ -32,44 +37,24 @@ interface FileEntry {
 }
 
 /**
- * Build one seed entry per unique file path. If the agent writes the same
- * file twice in a turn (e.g. scaffold then patch), the last write wins so we
- * render one row per file (no duplicate React keys) and count files, not
- * writes.
+ * Build one seed entry per unique file path via the shared canonical-edit
+ * collector (fires for write_file, Claude Code's Write/Edit/MultiEdit/
+ * NotebookEdit, and Codex apply_patch alike). If the agent edits the same
+ * file twice in a turn, the chain collapses into one row per file (no
+ * duplicate React keys) and we count files, not writes.
  */
-function buildSeeds(toolCalls: AgentToolCall[]): FileEntry[] {
-  const byPath = new Map<string, FileEntry>();
-  for (const call of toolCalls) {
-    const parsed = parseWriteFileInput(call);
-    if (!parsed) continue;
-    byPath.set(parsed.path, {
-      path: parsed.path,
-      newContent: parsed.content,
-      kind: "modified",
-      added: 0,
-      removed: 0,
-      loading: true,
-    });
-  }
-  return [...byPath.values()];
-}
-
-function countDiffLines(orig: string, next: string): {
-  added: number;
-  removed: number;
-} {
-  const parts = Diff.diffLines(orig, next);
-  let added = 0;
-  let removed = 0;
-  for (const part of parts) {
-    const trimmed = part.value.endsWith("\n")
-      ? part.value.slice(0, -1)
-      : part.value;
-    const lines = trimmed.length === 0 ? 0 : trimmed.split("\n").length;
-    if (part.added) added += lines;
-    else if (part.removed) removed += lines;
-  }
-  return { added, removed };
+function buildSeeds(
+  toolCalls: AgentToolCall[],
+  projectPath: string,
+): FileEntry[] {
+  return [...collectEditGroups(toolCalls, projectPath).values()].map((group) => ({
+    path: group.path,
+    group,
+    kind: "modified" as FileKind,
+    added: 0,
+    removed: 0,
+    loading: true,
+  }));
 }
 
 const KIND_ORDER: FileKind[] = ["new", "modified", "deleted"];
@@ -95,27 +80,53 @@ function MultiFileEditCardImpl({
 }: MultiFileEditCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [entries, setEntries] = useState<FileEntry[]>(() =>
-    buildSeeds(toolCalls),
+    buildSeeds(toolCalls, projectPath),
   );
 
   useEffect(() => {
     let cancelled = false;
-    const seeds = buildSeeds(toolCalls);
+    const seeds = buildSeeds(toolCalls, projectPath);
     setEntries(seeds);
 
     (async () => {
+      const { getBaseline, getToolCallBaseline } =
+        useEditBaselineStore.getState();
       const resolved: FileEntry[] = await Promise.all(
         seeds.map(async (entry) => {
           try {
-            const original = await invoke<string | null>("read_file_for_diff", {
-              projectPath,
-              relPath: entry.path,
-            });
-            const hasOriginal =
-              original !== null &&
-              original !== undefined &&
-              original.length > 0;
-            const isEmptyNew = entry.newContent.length === 0;
+            // "Before" = the recorded pre-edit baseline when one exists —
+            // never live disk — so counts stay truthful after the edit
+            // applies. This card renders ONE MESSAGE's edit chain, so
+            // prefer the per-call baseline of this run's first edit of the
+            // path (content immediately before the turn) over the
+            // conversation-level first-wins baseline — a file re-edited in
+            // a later turn must not replay a partial chain on pre-turn-1
+            // content. Disk is only the fallback for legacy sessions with
+            // no recorded baseline.
+            const callBaseline = getToolCallBaseline(entry.group.firstToolCallId);
+            const baseline =
+              callBaseline && callBaseline.path === entry.path
+                ? { content: callBaseline.content }
+                : getBaseline(conversationId, entry.path);
+            const original =
+              baseline !== undefined
+                ? baseline.content
+                : ((await invoke<string | null>("read_file_for_diff", {
+                    projectPath,
+                    relPath: entry.path,
+                  })) ?? null);
+            // "After" = the transcript's edit chain replayed on the
+            // baseline; when it can't be reproduced (Codex apply_patch),
+            // the applied on-disk result is the truthful after.
+            const newContent =
+              materializeEdits(entry.group.edits, original) ??
+              (await invoke<string | null>("read_file_for_diff", {
+                projectPath,
+                relPath: entry.path,
+              })) ??
+              "";
+            const hasOriginal = original !== null && original.length > 0;
+            const isEmptyNew = newContent.length === 0;
             let kind: FileKind;
             if (!hasOriginal) {
               kind = "new";
@@ -124,9 +135,9 @@ function MultiFileEditCardImpl({
             } else {
               kind = "modified";
             }
-            const { added, removed } = countDiffLines(
-              hasOriginal ? (original as string) : "",
-              entry.newContent,
+            const { added, removed } = countLineChanges(
+              hasOriginal ? original : "",
+              newContent,
             );
             return { ...entry, kind, added, removed, loading: false };
           } catch {
@@ -170,7 +181,7 @@ function MultiFileEditCardImpl({
     summaryParts.length > 0 ? `: ${summaryParts.join(", ")}` : "";
 
   const handleOpenAll = () => {
-    useDiffPaneStore.getState().openForConversation(conversationId);
+    useReviewStore.getState().openForConversation(conversationId);
   };
 
   const handleOpenFile = (path: string) => {
@@ -178,7 +189,7 @@ function MultiFileEditCardImpl({
       usePreviewPaneStore.getState().openMarkdown(path);
       return;
     }
-    useDiffPaneStore.getState().openForConversation(conversationId, path);
+    useReviewStore.getState().openForConversation(conversationId, path);
   };
 
   return (
@@ -196,7 +207,7 @@ function MultiFileEditCardImpl({
           }`}
         />
         <Folder size={12} className="text-accent-blue shrink-0" />
-        <span className="text-[11px] text-text-primary flex-1 truncate">
+        <span className="text-ui text-text-primary flex-1 truncate">
           Edited {totalCount} {totalCount === 1 ? "file" : "files"}
           {summarySuffix}
         </span>
@@ -211,7 +222,7 @@ function MultiFileEditCardImpl({
             return (
               <div key={kind}>
                 <div className="px-2 py-1 bg-bg-primary border-b border-bg-border">
-                  <span className="text-[10px] uppercase tracking-wide text-text-secondary">
+                  <span className="text-meta uppercase tracking-wide text-text-secondary">
                     {KIND_LABEL[kind]} ({list.length})
                   </span>
                 </div>
@@ -223,7 +234,7 @@ function MultiFileEditCardImpl({
                     className="w-full flex items-center gap-2 px-2 py-1 hover:bg-bg-tertiary transition-colors text-left border-b border-bg-border/40 last:border-b-0"
                   >
                     <KindIcon kind={entry.kind} />
-                    <span className="text-[11px] font-mono text-text-primary truncate flex-1">
+                    <span className="text-ui font-mono text-text-primary truncate flex-1">
                       {entry.path}
                     </span>
                     {entry.loading ? (
@@ -234,10 +245,10 @@ function MultiFileEditCardImpl({
                       />
                     ) : (
                       <span className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[11px] font-mono text-accent-green">
+                        <span className="text-ui font-mono text-accent-green">
                           +{entry.added}
                         </span>
-                        <span className="text-[11px] font-mono text-accent-red">
+                        <span className="text-ui font-mono text-accent-red">
                           -{entry.removed}
                         </span>
                       </span>
@@ -252,9 +263,9 @@ function MultiFileEditCardImpl({
             <button
               type="button"
               onClick={handleOpenAll}
-              className="text-[11px] text-text-muted hover:text-text-primary transition-colors"
+              className="text-ui text-text-muted hover:text-text-primary transition-colors"
             >
-              Open all in diff pane
+              Review all
             </button>
           </div>
         </div>

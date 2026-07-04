@@ -65,7 +65,7 @@ export function AgentsOnboarding() {
             type="button"
             onClick={dismiss}
             autoFocus
-            className="px-3 py-1.5 rounded border border-accent-green/30 text-[11px] font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 transition-colors"
+            className="px-3 py-1.5 rounded border border-accent-green/30 text-ui font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 transition-colors"
           >
             Got it
           </button>
@@ -73,7 +73,7 @@ export function AgentsOnboarding() {
       }
     >
       <div className="p-5">
-        <p className="text-[11px] text-text-muted mb-3">
+        <p className="text-ui text-text-muted mb-3">
           A unified chat for every coding agent.
         </p>
         <div className="grid grid-cols-2 gap-3">
@@ -90,10 +90,10 @@ export function AgentsOnboarding() {
                   <Icon size={14} />
                 </div>
                 <div className="flex flex-col gap-1 min-w-0">
-                  <span className="text-xs font-semibold text-text-primary">
+                  <span className="text-ui font-semibold text-text-primary">
                     {card.title}
                   </span>
-                  <span className="text-[11px] leading-relaxed text-text-secondary">
+                  <span className="text-ui leading-relaxed text-text-secondary">
                     {card.body}
                   </span>
                 </div>

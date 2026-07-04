@@ -25,7 +25,7 @@ export function ThinkingBlock({ text, streaming = false }: ThinkingBlockProps) {
           }`}
         />
         <Brain size={12} className="text-accent-purple" />
-        <span className="text-[11px] italic text-text-secondary">Thinking</span>
+        <span className="text-ui italic text-text-secondary">Thinking</span>
         {streaming && (
           <span
             role="status"
@@ -33,12 +33,12 @@ export function ThinkingBlock({ text, streaming = false }: ThinkingBlockProps) {
             className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-accent-purple animate-pulse motion-reduce:animate-none"
           />
         )}
-        <span className="ml-auto text-[10px] text-text-muted font-mono">
+        <span className="ml-auto text-meta text-text-muted font-mono">
           {charCount.toLocaleString()} chars
         </span>
       </button>
       {expanded && (
-        <div className="text-[11px] leading-relaxed text-text-secondary px-2 pb-2 pt-1 max-h-48 overflow-y-auto whitespace-pre-wrap">
+        <div className="text-ui leading-relaxed text-text-secondary px-2 pb-2 pt-1 max-h-48 overflow-y-auto whitespace-pre-wrap">
           {text}
         </div>
       )}

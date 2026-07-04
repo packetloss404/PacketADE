@@ -151,7 +151,6 @@ describe("Tauri persistence DTO mapping", () => {
           agentId: "codex",
           sessionId: "session-1",
           gridPosition: { row: 0, col: 0 },
-          accentColor: "accent-green",
           pinnedCommands: ["pnpm test"],
           taskId: "task-1",
           flightId: "flight-1",
@@ -176,7 +175,6 @@ describe("Tauri persistence DTO mapping", () => {
           githubRepo: { owner: "openai", repo: "packetade" },
           panes: [
             expect.objectContaining({
-              accentColor: "accent-green",
               pinnedCommands: ["pnpm test"],
               taskId: "task-1",
               flightId: "flight-1",
@@ -203,7 +201,6 @@ describe("Tauri persistence DTO mapping", () => {
                 agentId: "codex",
                 sessionId: "session-1",
                 gridPosition: { row: 0, col: 0 },
-                accentColor: "accent-green",
                 pinnedCommands: ["pnpm test"],
                 taskId: "task-1",
                 flightId: "flight-1",
@@ -227,7 +224,6 @@ describe("Tauri persistence DTO mapping", () => {
     expect(state.workspaces[0].githubRepo).toEqual({ owner: "openai", repo: "packetade" });
     expect(state.workspaces[0].panes[0]).toEqual(
       expect.objectContaining({
-        accentColor: "accent-green",
         pinnedCommands: ["pnpm test"],
         taskId: "task-1",
         flightId: "flight-1",

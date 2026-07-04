@@ -17,8 +17,12 @@ export interface UseProviderAuthStatusResult {
 
 /** Polls + subscribes to provider auth status for every agent in
  * `PROVIDER_GROUPS`. The Rust side watches the claude/codex credential dirs
- * and emits `provider-auth:changed` so badges auto-update after login. */
-export function useProviderAuthStatus(): UseProviderAuthStatusResult {
+ * and emits `provider-auth:changed` so badges auto-update after login.
+ *
+ * Pass `enabled: false` to skip all probing/subscribing (the unified
+ * composer's chat variant has no provider picker, so probing ~9 providers
+ * per conversation mount would be wasted IPC). */
+export function useProviderAuthStatus(enabled = true): UseProviderAuthStatusResult {
   const [authStatus, setAuthStatus] = useState<Record<string, AuthEntry>>({});
 
   const groupAgents = useMemo<AgentCli[]>(
@@ -33,6 +37,7 @@ export function useProviderAuthStatus(): UseProviderAuthStatusResult {
   const refreshEpochRef = useRef(0);
 
   const refreshAuthStatuses = useCallback(() => {
+    if (!enabled) return;
     const epoch = ++refreshEpochRef.current;
     setAuthStatus((prev) => {
       const next: Record<string, AuthEntry> = { ...prev };
@@ -57,7 +62,7 @@ export function useProviderAuthStatus(): UseProviderAuthStatusResult {
           }));
         });
     }
-  }, [groupAgents]);
+  }, [groupAgents, enabled]);
 
   useEffect(() => {
     return () => {
@@ -72,6 +77,7 @@ export function useProviderAuthStatus(): UseProviderAuthStatusResult {
   }, [refreshAuthStatuses]);
 
   useEffect(() => {
+    if (!enabled) return;
     let unlisten: UnlistenFn | undefined;
     let cancelled = false;
     listen<{ provider: string; status: ProviderAuthStatus }>(
@@ -103,7 +109,7 @@ export function useProviderAuthStatus(): UseProviderAuthStatusResult {
       cancelled = true;
       if (unlisten) unlisten();
     };
-  }, [groupAgents]);
+  }, [groupAgents, enabled]);
 
   return { authStatus, refreshAuthStatuses };
 }

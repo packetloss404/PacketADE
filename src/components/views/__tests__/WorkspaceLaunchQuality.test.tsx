@@ -178,6 +178,10 @@ vi.mock("@/components/workspace/GitDashboard", () => ({
 describe("workspace launch installed-agent checks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // AdvancedAccordion persists its open/closed state to localStorage;
+    // clear it so the remote-launch test's forceOpenOnFirstMount doesn't
+    // leak into the local three-field test's "collapsed by default" check.
+    localStorage.clear();
   });
 
   it("filters remote workspace templates through server installedAgents", async () => {
@@ -205,6 +209,36 @@ describe("workspace launch installed-agent checks", () => {
         serverId: "srv-1",
         remoteProjectPath: "/srv/app",
       }),
+    );
+  });
+
+  it("collapses to a three-field flow (name, project, template) with Advanced hidden by default", () => {
+    render(<WorkspaceCreationModal onClose={vi.fn()} />);
+
+    // Bypass permissions — like the rest of the location/agent/model tuning
+    // — lives behind Advanced, which stays collapsed on a bare launch.
+    const advancedToggle = screen.getByRole("button", { name: /advanced/i });
+    expect(advancedToggle).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(advancedToggle);
+    expect(screen.getByText("Bypass permissions")).toBeInTheDocument();
+    fireEvent.click(advancedToggle);
+
+    // Solo is the default-selected template (front door), so naming the
+    // workspace is the only field a bare launch needs to touch.
+    fireEvent.change(screen.getByPlaceholderText("My Workspace"), {
+      target: { value: "My New Workspace" },
+    });
+
+    const saveBtn = screen.getByRole("button", { name: "Create Workspace" });
+    expect(saveBtn).not.toBeDisabled();
+    fireEvent.click(saveBtn);
+
+    expect(mocks.workspaceState.createWorkspace).toHaveBeenCalledWith(
+      "My New Workspace",
+      ["claude-code"],
+      mocks.layoutState.projectPath,
+      expect.anything(),
     );
   });
 

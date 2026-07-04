@@ -11,12 +11,12 @@ use tauri::{Emitter, Manager};
 use tracing::{info, warn};
 
 use super::events::{
-    chunk_event, done_event, error_event, pending_edit_event, permission_request_event,
-    plan_block_event, thinking_event, thinking_stop_event, tool_output_extended_event,
-    tool_result_event, tool_start_event, turn_summary_event, DonePayload, ErrorPayload,
-    PendingEditPayload, PermissionRequestPayload, PlanBlockPayload, PlanItemPayload,
-    ThinkingPayload, ToolOutputExtendedPayload, ToolResultPayload, ToolStartPayload,
-    TurnSummaryPayload,
+    chunk_event, done_event, edit_baseline_event, error_event, pending_edit_event,
+    permission_request_event, plan_block_event, thinking_event, thinking_stop_event,
+    tool_output_extended_event, tool_result_event, tool_start_event, turn_summary_event,
+    DonePayload, EditBaselinePayload, ErrorPayload, PendingEditPayload,
+    PermissionRequestPayload, PlanBlockPayload, PlanItemPayload, ThinkingPayload,
+    ToolOutputExtendedPayload, ToolResultPayload, ToolStartPayload, TurnSummaryPayload,
 };
 use super::status::SidecarState;
 use super::supervisor::SidecarManager;
@@ -161,9 +161,16 @@ impl SidecarManager {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+                // P1-7: forward the raw tool input (as a JSON string) so the
+                // transcript edit layer can parse Write/Edit/apply_patch
+                // calls — sidecar tool_result events don't echo it back.
+                let input = value.get("input").map(|v| match v {
+                    Value::String(s) => s.clone(),
+                    other => serde_json::to_string(other).unwrap_or_default(),
+                });
                 let _ = self.app_handle.emit(
                     &tool_start_event(&session_id),
-                    ToolStartPayload { id, name },
+                    ToolStartPayload { id, name, input },
                 );
             }
             "tool_result" => {
@@ -271,6 +278,28 @@ impl SidecarManager {
                         content,
                         before,
                     },
+                );
+            }
+            "edit_baseline" => {
+                // P1-7: non-blocking pre-edit baseline for auto-applied
+                // writes. `before` absent = the file did not exist.
+                let id = value
+                    .get("toolUseId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let path = value
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let before = value
+                    .get("before")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let _ = self.app_handle.emit(
+                    &edit_baseline_event(&session_id),
+                    EditBaselinePayload { id, path, before },
                 );
             }
             "done" => {

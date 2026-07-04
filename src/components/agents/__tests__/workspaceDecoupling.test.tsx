@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { ContinueInMenu } from "@/components/agents/ContinueInMenu";
+import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
+import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
 import type { AgentConversation } from "@/types/agent-conversation";
 
 const agentStore = vi.hoisted(() => ({
@@ -60,6 +62,8 @@ describe("Agents pane workspace decoupling", () => {
         writeText: vi.fn().mockResolvedValue(undefined),
       },
     });
+    useAgentApprovalStore.setState({ permissions: new Map(), edits: new Map() });
+    useAgentSidebarPrefsStore.setState({ prefs: {} });
     agentStore.state.conversations = [
       conversation(),
       conversation({
@@ -87,21 +91,23 @@ describe("Agents pane workspace decoupling", () => {
     agentStore.state.setProjectLabel = vi.fn();
   });
 
-  it("shows Project, Status, and Environment group choices without Workspace", () => {
+  it("groups sessions by project header with no group/sort configurator and no Workspace grouping", () => {
     render(<AgentSidebar onNewAgent={vi.fn()} selectedId="conv-1" onSelect={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /group:\s*project/i }));
-
-    expect(screen.getByRole("menuitem", { name: "Project" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Status" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Environment" })).toBeInTheDocument();
+    // Group-by is hard-coded to project — the configurator buttons are gone.
+    expect(screen.queryByRole("button", { name: /group:/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /sort/i })).not.toBeInTheDocument();
     expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
+
+    // Project headers still render, keyed by project path / SSH target.
+    expect(screen.getByText("PacketADE")).toBeInTheDocument();
+    expect(screen.getByText("Staging")).toBeInTheDocument();
   });
 
   it("keeps continue actions for folder, CLI, and editors without an Open in workspace item", () => {
-    render(<ContinueInMenu conversation={conversation()} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /continue in/i }));
+    // ContinueInMenu is now a section component (P1-10) — no Dropdown/trigger
+    // of its own, so it renders its content bare with no click needed.
+    render(<ContinueInMenu conversation={conversation()} onFeedback={vi.fn()} />);
 
     expect(screen.getByText("Open project folder in OS")).toBeInTheDocument();
     expect(screen.getByText("Continue in CLI")).toBeInTheDocument();
@@ -113,13 +119,14 @@ describe("Agents pane workspace decoupling", () => {
   });
 
   it("copies the conversation's actual CLI command when a handoff is known", async () => {
+    const onFeedback = vi.fn();
     render(
       <ContinueInMenu
         conversation={conversation({ agent: "codex", mode: "pty", model: undefined })}
+        onFeedback={onFeedback}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /continue in/i }));
     fireEvent.click(screen.getByText("Continue in CLI (Codex)"));
 
     await waitFor(() => {
@@ -127,5 +134,8 @@ describe("Agents pane workspace decoupling", () => {
         'cd "D:\\projects\\PacketADE" && codex',
       );
     });
+    expect(onFeedback).toHaveBeenCalledWith(
+      "Command copied - paste into your terminal",
+    );
   });
 });

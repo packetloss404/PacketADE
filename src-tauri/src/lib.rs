@@ -249,6 +249,9 @@ pub fn run() {
             commands::git::git_push,
             commands::git::git_pull,
             commands::git::git_create_branch,
+            // P1-15: per-file staging for the GitDashboard commit flow
+            commands::git::git_stage_files,
+            commands::git::git_unstage_files,
             // v0.8-G pr modal upgrades — push a specific branch for
             // "Publish attempts as draft PRs"
             commands::git::git_push_branch,
