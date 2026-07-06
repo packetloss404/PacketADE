@@ -13,7 +13,6 @@ import type { AuthStatus } from "@/components/ui/AuthBadge";
 import { isSshUri } from "@/lib/ssh-uri";
 import { FileMentionPopover } from "../FileMentionPopover";
 import { InputPopover } from "../InputPopover";
-import { ContextPreviewChevron } from "../ContextPreviewChevron";
 import { CancelPendingButton } from "../chat/CancelPendingButton";
 import { usePrefixMatcher } from "../hooks/usePrefixMatcher";
 import { useAttachmentStaging } from "../hooks/useAttachmentStaging";
@@ -702,15 +701,6 @@ export function Composer(props: ComposerProps) {
           selectedRepo={selectedRepo}
           setSelectedRepo={setSelectedRepo}
         />
-
-        {/* v0.8-H — preview of memory snippets injected into the next user
-            turn. Hidden for SSH targets since memory is project-path-keyed
-            and remote paths aren't a stable key here. */}
-        {selectedRepo && !isSshUri(selectedRepo) && (
-          <div className="mb-2">
-            <ContextPreviewChevron projectPath={selectedRepo} />
-          </div>
-        )}
 
         <div
           className={`relative border rounded bg-bg-primary transition-colors ${
