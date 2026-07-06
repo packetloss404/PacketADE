@@ -72,7 +72,6 @@ function resetPreviewStore() {
     markdownPath: null,
     planTitle: "Agent plan",
     planContent: "",
-    browserUrl: "",
   });
 }
 
