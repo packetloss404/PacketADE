@@ -46,7 +46,6 @@ const AGENT_AUTO_PICK_ORDER: AgentCli[] = [
   "api-openrouter",
   "api-ollama",
   "api-minimax",
-  "api-minimax-api",
 ];
 
 /** Hardcoded fallback defaults — also used as the "no user intent" sentinel. */

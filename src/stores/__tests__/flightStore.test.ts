@@ -224,20 +224,6 @@ describe("flightStore", () => {
     expect(task?.status).toBe("running");
   });
 
-  it("linkSessionToFlight adds session ID", () => {
-    const flight = useFlightStore.getState().addFlight({
-      title: "Session Link",
-      objective: "Link test",
-      priority: "medium",
-      projectPath: ".",
-    });
-
-    useFlightStore.getState().linkSessionToFlight(flight.id, "sess-1");
-
-    const updated = useFlightStore.getState().flights.find((f) => f.id === flight.id);
-    expect(updated?.linkedSessionIds).toContain("sess-1");
-  });
-
   it("unlinkSessionFromFlight removes session ID", () => {
     const flight = useFlightStore.getState().addFlight({
       title: "Session Unlink",
@@ -246,7 +232,7 @@ describe("flightStore", () => {
       projectPath: ".",
     });
 
-    useFlightStore.getState().linkSessionToFlight(flight.id, "sess-1");
+    useFlightStore.getState().updateFlight(flight.id, { linkedSessionIds: ["sess-1"] });
     useFlightStore.getState().unlinkSessionFromFlight(flight.id, "sess-1");
 
     const updated = useFlightStore.getState().flights.find((f) => f.id === flight.id);

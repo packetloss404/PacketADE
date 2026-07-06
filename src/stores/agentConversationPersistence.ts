@@ -1,15 +1,36 @@
 import { saveConversation, loadConversations } from "@/lib/tauri";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
 import { getAgentAutoArchiveIdleMs } from "@/stores/agentSettingsStore";
-import type { AgentConversation } from "@/types/agent-conversation";
-import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import type { AgentConversation, AgentPlanItem } from "@/types/agent-conversation";
+import { canonicalizeAgentCli, useAgentTaskStore } from "@/stores/agentTaskStore";
+
+/**
+ * On-disk shape of a persisted conversation. Wider than the runtime
+ * `AgentConversation` type: `plan`/`planApproved` are the plan substore's
+ * ONE persistence mechanism (P1-11 — the saved record IS the store, so
+ * this shape must keep round-tripping), and the remaining keys are
+ * legacy/ephemeral fields that older builds wrote onto the record itself.
+ * Hydration strips all of them onto a clean `AgentConversation` after
+ * feeding `plan`/`planApproved` into `agentPlanStore`.
+ */
+type PersistedAgentConversation = AgentConversation & {
+  plan?: AgentPlanItem[];
+  planApproved?: boolean;
+  pendingPermissions?: unknown;
+  pendingEdits?: unknown;
+  thinkingStream?: unknown;
+  subAgentTokens?: unknown;
+  workspaceId?: string;
+  spec?: unknown;
+  specStage?: unknown;
+};
 
 /** Build a serializable snapshot of a conversation for `saveConversation`.
  * Pulls plan state out of `agentPlanStore` so the persisted record
  * keeps its on-disk shape even though those fields no longer live on the
  * in-memory conversation object. Ephemeral substores (approval,
  * streaming) are intentionally omitted — they reset on hydration. */
-function snapshotForPersist(conv: AgentConversation): AgentConversation {
+function snapshotForPersist(conv: AgentConversation): PersistedAgentConversation {
   const plans = useAgentPlanStore.getState();
   return {
     ...conv,
@@ -99,34 +120,44 @@ export function hydrateConversations(): void {
       const parsed: AgentConversation[] = [];
       for (const raw of rawList) {
         try {
-          const conv = JSON.parse(raw) as AgentConversation;
-          if (conv.mode !== "api") continue; // PTY sessions died with the app
-          // Auto-archive long-idle done conversations BEFORE we coerce status to
-          // "idle" below. Persist the change so the archive flag survives the
-          // next cold start.
-          if (maybeAutoArchive(conv)) {
-            saveConversation(conv.id, JSON.stringify(conv)).catch((e) => {
-              console.warn("Failed to persist auto-archive:", conv.id, e);
+          const persisted = JSON.parse(raw) as PersistedAgentConversation;
+          if (persisted.mode !== "api") continue; // PTY sessions died with the app
+          // Auto-archive long-idle done conversations BEFORE we coerce status
+          // to "idle" below. Persist the change so the archive flag survives
+          // the next cold start.
+          if (maybeAutoArchive(persisted)) {
+            saveConversation(persisted.id, JSON.stringify(persisted)).catch((e) => {
+              console.warn("Failed to persist auto-archive:", persisted.id, e);
             });
           }
+          // Push persisted plan state into the plan substore — it is the
+          // ONE runtime source of truth (P1-11). Legacy spec/specStage
+          // fields from the retired Spec FSM are simply ignored.
+          useAgentPlanStore.getState().hydrateConversation(persisted.id, {
+            plan: persisted.plan,
+            planApproved: persisted.planApproved,
+          });
+          // Strip every legacy/ephemeral/mirror key so the in-memory record
+          // matches the current `AgentConversation` shape exactly, then
+          // apply the cold-start resets and provider alias migration.
+          /* eslint-disable @typescript-eslint/no-unused-vars */
+          const {
+            plan: _plan,
+            planApproved: _planApproved,
+            pendingPermissions: _pendingPermissions,
+            pendingEdits: _pendingEdits,
+            thinkingStream: _thinkingStream,
+            subAgentTokens: _subAgentTokens,
+            workspaceId: _workspaceId,
+            spec: _spec,
+            specStage: _specStage,
+            ...conv
+          } = persisted;
+          /* eslint-enable @typescript-eslint/no-unused-vars */
+          conv.agent = canonicalizeAgentCli(conv.agent);
           conv.status = "idle";
           conv.messages = (conv.messages ?? []).map((m) => ({ ...m, isStreaming: false }));
           conv.queuedMessages = [];
-          // Push persisted plan state into the plan substore — it is the
-          // runtime source of truth. The conversation's own copies are kept
-          // for back-compat with code that hasn't migrated yet but the live
-          // UI reads from the store. (Legacy spec/specStage fields from the
-          // retired Spec FSM are simply ignored on parse.)
-          useAgentPlanStore.getState().hydrateConversation(conv.id, {
-            plan: conv.plan,
-            planApproved: conv.planApproved,
-          });
-          // Drop ephemeral fields so the in-memory record matches the new
-          // substore-driven shape. These were already cleared pre-split.
-          delete conv.pendingPermissions;
-          delete conv.pendingEdits;
-          delete conv.thinkingStream;
-          delete conv.subAgentTokens;
           parsed.push(conv);
         } catch (e) {
           console.warn("Skipping malformed conversation:", e);

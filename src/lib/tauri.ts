@@ -1,11 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AgentConfigDto,
-  FlightApprovalRequestDto,
-  OrchestratorSnapshotDto,
   PersistedStateDto,
   PersistedUiStateDto,
-  TaskSpawnRequestDto,
   WorkspaceDto,
 } from "@/generated/tauri-schema";
 import type { AgentConfig } from "@/types/agent";
@@ -22,16 +19,7 @@ import type { MemoryEvent, LearnedPattern } from "@/types/memory";
 import type { ServerConfig } from "@/types/server";
 
 type WorkspacePaneDtoWithFrontendMetadata = WorkspaceDto["panes"][number] &
-  Pick<
-    Workspace["panes"][number],
-    | "pinnedCommands"
-    | "taskId"
-    | "flightId"
-    | "agentConfigId"
-    | "initialPrompt"
-    | "overrideCommand"
-    | "overrideArgs"
-  >;
+  Pick<Workspace["panes"][number], "pinnedCommands">;
 
 type WorkspaceDtoWithFrontendMetadata = Omit<WorkspaceDto, "panes"> & {
   panes: WorkspacePaneDtoWithFrontendMetadata[];
@@ -999,33 +987,6 @@ export type PersistedState = {
   servers: ServerConfig[];
 };
 
-export type OrchestrationSpawnRequest = {
-  flightId: string;
-  milestoneId: string;
-  taskId: string;
-  agentConfigId: string;
-  command: string;
-  args: string[];
-  prompt: string;
-  projectPath: string;
-};
-
-export type RunningTaskSnapshot = {
-  taskId: string;
-  milestoneId: string;
-  flightId: string;
-  sessionId: string;
-  agentConfigId: string;
-  startedAt: number;
-};
-
-export type OrchestratorSnapshot = {
-  runningTaskIds: string[];
-  runningTasks: RunningTaskSnapshot[];
-  activeFlightIds: string[];
-  pausedAtMilestone: [string, string][];
-};
-
 function normalizeOptionalRecord(record?: {
   [key: string]: string | null | undefined;
 }): Record<string, string | null> | undefined {
@@ -1459,12 +1420,6 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition,
       pinnedCommands: pane.pinnedCommands,
-      taskId: pane.taskId,
-      flightId: pane.flightId,
-      agentConfigId: pane.agentConfigId,
-      initialPrompt: pane.initialPrompt,
-      overrideCommand: pane.overrideCommand,
-      overrideArgs: pane.overrideArgs,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1491,12 +1446,6 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition ?? { row: 0, col: index },
       pinnedCommands: pane.pinnedCommands,
-      taskId: pane.taskId,
-      flightId: pane.flightId,
-      agentConfigId: pane.agentConfigId,
-      initialPrompt: pane.initialPrompt,
-      overrideCommand: pane.overrideCommand,
-      overrideArgs: pane.overrideArgs,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1652,104 +1601,6 @@ export async function saveUiSlice(ui: PersistedState["ui"]): Promise<void> {
   return invoke("save_ui_slice", { ui: payload });
 }
 
-// === Flight orchestration ===
-
-export async function launchFlightInBackend(flightId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStateDto>("launch_flight", { flightId });
-  return fromDtoPersistedState(payload);
-}
-
-export async function pauseFlightInBackend(flightId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStateDto>("pause_flight", { flightId });
-  return fromDtoPersistedState(payload);
-}
-
-export async function resumeFlightInBackend(flightId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStateDto>("resume_flight", { flightId });
-  return fromDtoPersistedState(payload);
-}
-
-export async function cancelFlightInBackend(flightId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStateDto>("cancel_flight", { flightId });
-  return fromDtoPersistedState(payload);
-}
-
-export async function orchestrationTick(): Promise<OrchestrationSpawnRequest[]> {
-  const payload = await invoke<TaskSpawnRequestDto[]>("orchestration_tick");
-  return payload.map((request) => ({
-    flightId: request.flightId,
-    milestoneId: request.milestoneId,
-    taskId: request.taskId,
-    agentConfigId: request.agentConfigId,
-    command: request.command,
-    args: request.args,
-    prompt: request.prompt,
-    projectPath: request.projectPath,
-  }));
-}
-
-export async function getOrchestrationState(): Promise<OrchestratorSnapshot> {
-  const payload = await invoke<OrchestratorSnapshotDto>("get_orchestration_state");
-  return {
-    runningTaskIds: payload.runningTaskIds,
-    runningTasks: payload.runningTasks.map((task) => ({
-      taskId: task.taskId,
-      milestoneId: task.milestoneId,
-      flightId: task.flightId,
-      sessionId: task.sessionId,
-      agentConfigId: task.agentConfigId,
-      startedAt: task.startedAt,
-    })),
-    activeFlightIds: payload.activeFlightIds,
-    pausedAtMilestone: payload.pausedAtMilestone,
-  };
-}
-
-export async function recordTaskSpawn(params: {
-  sessionId: string;
-  flightId: string;
-  milestoneId: string;
-  taskId: string;
-  agentConfigId: string;
-  command: string;
-  args: string[];
-  prompt: string;
-  projectPath: string;
-}): Promise<void> {
-  return invoke("record_task_spawn", {
-    sessionId: params.sessionId,
-    flightId: params.flightId,
-    milestoneId: params.milestoneId,
-    taskId: params.taskId,
-    agentConfigId: params.agentConfigId,
-    command: params.command,
-    args: params.args,
-    prompt: params.prompt,
-    projectPath: params.projectPath,
-  });
-}
-
-export async function notifyApprovalNeeded(taskId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStateDto>("notify_approval_needed", { taskId });
-  return fromDtoPersistedState(payload);
-}
-
-export async function notifyApprovalResolved(taskId: string): Promise<PersistedState> {
-  const payload = await invoke<PersistedStateDto>("notify_approval_resolved", { taskId });
-  return fromDtoPersistedState(payload);
-}
-
-export async function notifyTaskComplete(
-  taskId: string,
-  success: boolean,
-): Promise<PersistedState> {
-  const payload = await invoke<PersistedStateDto>("notify_task_complete", {
-    taskId,
-    success,
-  });
-  return fromDtoPersistedState(payload);
-}
-
 export async function parseSpecToFlight(specText: string): Promise<string> {
   return invoke<string>("parse_spec_to_flight", { specText });
 }
@@ -1793,36 +1644,6 @@ export async function askAgentChatStream(
     sessionContext: sessionContext || null,
     requestId: requestId || null,
   });
-}
-
-export async function askFlightChatStream(
-  projectPath: string,
-  messages: { role: string; content: string }[],
-  flightState: {
-    title: string;
-    objective: string;
-    priority: string;
-    milestones?: Array<{ title: string; tasks: Array<{ title: string; type: string }> }>;
-  },
-  retrospectives?: string,
-  requestId?: string,
-): Promise<void> {
-  return invoke("ask_flight_chat_stream", {
-    projectPath,
-    messages,
-    flightState,
-    retrospectives: retrospectives || null,
-    requestId: requestId || null,
-  });
-}
-
-export async function generateIdeas(
-  projectPath: string,
-  ideaTypes: string[],
-  provider: string,
-  model: string,
-): Promise<string> {
-  return invoke<string>("generate_ideas", { projectPath, ideaTypes, provider, model });
 }
 
 // GitHub integration
@@ -2334,40 +2155,9 @@ export async function deleteMcpServer(
   return invoke("delete_mcp_server", { projectPath, name, scope });
 }
 
-// Deploy pipeline
-import type { DeployConfig } from "@/types/deploy";
-
-interface DeployConfigFile {
-  configs: DeployConfig[];
-  source: string;
-}
-
-export async function readDeployConfig(projectPath: string): Promise<DeployConfigFile> {
-  return invoke<DeployConfigFile>("read_deploy_config", { projectPath });
-}
-
 // Usage analytics
 export async function readUsageAnalytics(): Promise<string> {
   return invoke<string>("read_usage_analytics");
-}
-
-export async function createDeployConfig(
-  projectPath: string,
-  configs: DeployConfig[],
-): Promise<void> {
-  return invoke("create_deploy_config", { projectPath, configs });
-}
-
-export async function validateDeploy(projectPath: string, command: string): Promise<string> {
-  return invoke<string>("validate_deploy", { projectPath, command });
-}
-
-export async function runDeploy(
-  projectPath: string,
-  command: string,
-  runId: string,
-): Promise<string> {
-  return invoke<string>("run_deploy", { projectPath, command, runId });
 }
 
 // Dictation (VibeToText)
@@ -2778,108 +2568,6 @@ export type ProviderLaunchStats = {
 
 export async function getProviderLaunchStats(): Promise<ProviderLaunchStats> {
   return invoke<ProviderLaunchStats>("get_provider_launch_stats");
-}
-
-// === Flight Planner (E1) =================================================
-//
-// Autonomous planner sessions bound to a Flight. The planner is a long-lived
-// `api-claude-oauth` sidecar session — it emits the standard
-// `api-agent:*:<sessionId>` event stream, so consumers attach to those events
-// via `apiAgent*Event` helpers using the returned plannerSessionId.
-
-export async function startFlightPlanner(
-  flightId: string,
-  projectPath: string,
-  provisionalSessionId?: string,
-): Promise<string> {
-  return invoke<string>("start_flight_planner", {
-    flightId,
-    projectPath,
-    provisionalSessionId,
-  });
-}
-
-export async function stopFlightPlanner(flightId: string): Promise<void> {
-  return invoke("stop_flight_planner", { flightId });
-}
-
-export async function pauseFlightPlanner(flightId: string): Promise<void> {
-  return invoke("pause_flight_planner", { flightId });
-}
-
-export async function resumeFlightPlanner(flightId: string): Promise<void> {
-  return invoke("resume_flight_planner", { flightId });
-}
-
-export async function injectPlannerTurn(
-  flightId: string,
-  content: string,
-  source: "user" | "wake_trigger",
-): Promise<void> {
-  return invoke("inject_planner_turn", { flightId, content, source });
-}
-
-// E4-LAUNCH — fire a `WakeTrigger::Decomposition` event onto the planner's
-// wake bus. This is the architecturally-correct path for the "user clicked
-// Launch" transition: the wake consumer formats the body via the planner's
-// own `render_decomposition` and injects with `kind="launch"`, which is the
-// kind the planner's system prompt is trained to recognize as the kickoff
-// trigger. Replaces the prior `injectPlannerTurn(..., "wake_trigger")` path
-// which mis-tagged the kind as `"user_message_in_journal"`.
-export async function triggerPlannerDecomposition(flightId: string): Promise<void> {
-  return invoke("trigger_planner_decomposition", { flightId });
-}
-
-// E2 — async-return approval gate. The planner's `request_user_approval`
-// tool files an approval and keeps working; the frontend surfaces it via the
-// `flight-planner:approval-request:<flightId>` event and resolves it back
-// to the planner with this binding. `choice` is one of the option labels the
-// planner offered, the user's free-text answer, `"acknowledged"`, or
-// `"dismissed"`.
-export async function resolveFlightApproval(approvalId: string, choice: string): Promise<void> {
-  return invoke("resolve_flight_approval", { approvalId, choice });
-}
-
-// Cold-start hydration for `flightPlannerStore.pendingApprovals`. Event
-// listeners installed in `startPlanner` only see approvals filed AFTER they
-// attach; this binding backfills any unresolved approvals already on disk
-// (paused flight resume, page reload, cold app start). Returns only
-// unresolved entries — resolved approvals are historical.
-export async function getFlightApprovals(flightId: string): Promise<FlightApprovalRequestDto[]> {
-  return invoke<FlightApprovalRequestDto[]>("get_flight_approvals", { flightId });
-}
-
-export interface FlightJournalRead {
-  markdown: string;
-  totalBytes: number;
-  returnedBytes: number;
-  truncated: boolean;
-}
-
-// E7 — flight journal read access. `getFlightJournal` returns the raw
-// markdown source for compatibility with older consumers. `getFlightJournalTail`
-// is the JournalTab path: it returns a bounded latest slice plus byte metadata
-// so append events do not reload/render unbounded full files. `getFlightJournalPath`
-// returns the absolute path of the journal file on disk — used by the
-// JournalTab's Export button so the user can locate the file in any
-// markdown viewer.
-//
-// The JournalTab re-fetches on `flight-planner:journal-appended:<flightId>`
-// events from the E7-HOOKS slice; this binding doesn't subscribe — the
-// component owns its own listener.
-export async function getFlightJournal(flightId: string): Promise<string> {
-  return invoke<string>("get_flight_journal", { flightId });
-}
-
-export async function getFlightJournalTail(
-  flightId: string,
-  maxBytes?: number,
-): Promise<FlightJournalRead> {
-  return invoke<FlightJournalRead>("get_flight_journal_tail", { flightId, maxBytes });
-}
-
-export async function getFlightJournalPath(flightId: string): Promise<string> {
-  return invoke<string>("get_flight_journal_path", { flightId });
 }
 
 // === v0.8.8 quality ai =====================================================

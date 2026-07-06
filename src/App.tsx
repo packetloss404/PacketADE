@@ -29,8 +29,6 @@ const HistoryView = lazy(() => import("@/components/views/HistoryView").then((m)
 const ToolsView = lazy(() => import("@/components/views/ToolsView").then((m) => ({ default: m.ToolsView })));
 const GitHubView = lazy(() => import("@/components/views/GitHubView").then((m) => ({ default: m.GitHubView })));
 const MemoryView = lazy(() => import("@/components/views/MemoryView").then((m) => ({ default: m.MemoryView })));
-const DeployView = lazy(() => import("@/components/views/DeployView").then((m) => ({ default: m.DeployView })));
-const ReviewQueueView = lazy(() => import("@/components/views/ReviewQueueView").then((m) => ({ default: m.ReviewQueueView })));
 const WorkspaceView = lazy(() => import("@/components/views/WorkspaceView").then((m) => ({ default: m.WorkspaceView })));
 const FlightsView = lazy(() => import("@/components/views/FlightsView").then((m) => ({ default: m.FlightsView })));
 
@@ -325,10 +323,6 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <GitHubView />;
     case "memory":
       return <MemoryView />;
-    case "deploy":
-      return <DeployView />;
-    case "review_queue":
-      return <ReviewQueueView />;
     case "agents":
       return <AgentsView />;
     case "cost_dashboard":

@@ -132,41 +132,6 @@ export async function notifyConversationDone(convTitle: string): Promise<void> {
   });
 }
 
-/**
- * E6-CEILING-RATELIMIT — Flight Planner rate-limit notification.
- *
- * Fires when the Rust supervisor's `FlightPlannerRegistry::on_rate_limited`
- * flips the planner into `QuotaPaused` and emits the per-flight
- * `flight-planner:rate-limited:<flightId>` event. We surface a desktop
- * notification with the wait window so the user knows the planner isn't
- * frozen — it'll auto-resume when the quota window resets.
- *
- * Uses the `onSessionError` preference because the user already opted into
- * "tell me when sessions break"; rate-limit is a transient form of that.
- */
-export async function notifyFlightPlannerRateLimited(
-  flightId: string,
-  flightTitle: string,
-  waitSeconds: number,
-): Promise<void> {
-  if (!useNotificationStore.getState().onSessionError) return;
-  if (!shouldNotify(`rate-limited-${flightId}`)) return;
-  if (!(await ensurePermission())) return;
-
-  const wait = Math.max(1, Math.round(waitSeconds));
-  const minutes = Math.floor(wait / 60);
-  const seconds = wait % 60;
-  const pretty =
-    minutes > 0
-      ? seconds > 0
-        ? `${minutes}m ${seconds}s`
-        : `${minutes}m`
-      : `${seconds}s`;
-  new Notification("Flight paused", {
-    body: `${flightTitle}: Anthropic quota window — resuming in ~${pretty}`,
-    tag: `rate-limited-${flightId}`,
-  });
-}
 
 export async function requestNotificationPermission(): Promise<boolean> {
   return ensurePermission();

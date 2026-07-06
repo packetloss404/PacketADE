@@ -15,8 +15,6 @@ const VIEW_LABELS: Partial<Record<AppView, string>> = {
   memory: "Memory",
   history: "History",
   tools: "Tools",
-  deploy: "Deploy",
-  review_queue: "Review",
   cost_dashboard: "Costs",
   dictation: "Dictation",
   welcome: "Welcome",
