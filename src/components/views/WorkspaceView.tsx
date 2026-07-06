@@ -88,7 +88,7 @@ export function WorkspaceView() {
     <div className="flex flex-1 overflow-hidden">
       <div className="relative flex flex-1 flex-col overflow-hidden">
         {/* Merged header: workspace tabs · agent badges · + Add Agent · git
-            toggle · pane-layout presets · bypass perms · memory indicator.
+            toggle · pane-layout presets · bypass perms.
             Replaces the previous two-row layout (workspace context header
             stacked above WorkspaceSubTabs). The active tab's tooltip now
             carries the project-path info the old folder chip used to show. */}

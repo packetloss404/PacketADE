@@ -118,10 +118,6 @@ vi.mock("@/components/agents/FileMentionPopover", () => ({
   FileMentionPopover: () => null,
 }));
 
-vi.mock("@/components/agents/ContextPreviewChevron", () => ({
-  ContextPreviewChevron: () => null,
-}));
-
 vi.mock("@/lib/tauri", () => ({
   getProviderAuthStatus: vi.fn(() => Promise.resolve({ status: "ready", hint: "" })),
   listOllamaModels: vi.fn(() => Promise.resolve([])),
