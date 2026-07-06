@@ -1,12 +1,8 @@
 import { create } from "zustand";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  createPtySession,
   writePty,
   killPty,
-  listPtySessions,
-  readPtyTranscript,
   startApiAgentSession,
   sendApiAgentMessage,
   cancelApiAgentSession,
@@ -52,11 +48,9 @@ export interface AgentSshConfigInput {
    *  host-key checking applies. */
   hostFingerprint?: string | null;
 }
-import { ptyOutputEvent, ptyExitEvent } from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import { useMemoryStore } from "@/stores/memoryStore";
-import { useAgentStore } from "@/stores/agentStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
@@ -126,75 +120,6 @@ export function failTurn(
   if (failed) scheduleSave(failed);
 }
 
-function nonOverlappingSuffix(base: string, tail: string): string {
-  if (!base || !tail) return tail;
-  const max = Math.min(base.length, tail.length);
-  for (let len = max; len > 0; len--) {
-    if (base.endsWith(tail.slice(0, len))) return tail.slice(len);
-  }
-  return tail;
-}
-
-async function installPtyListenersWithReplay(
-  sessionId: string,
-  onOutput: (chunk: string) => void,
-  onExit: () => void,
-): Promise<UnlistenFn[]> {
-  let buffering = true;
-  let buffered = "";
-  let exitWhileBuffering = false;
-  let finished = false;
-  const unlisteners: UnlistenFn[] = [];
-
-  const finish = () => {
-    if (finished) return;
-    if (buffering) {
-      exitWhileBuffering = true;
-      return;
-    }
-    finished = true;
-    for (const unlisten of unlisteners) {
-      try {
-        unlisten();
-      } catch {
-        // listener already gone
-      }
-    }
-    onExit();
-  };
-
-  const [outputUnlisten, exitUnlisten] = await Promise.all([
-    listen<string>(ptyOutputEvent(sessionId), (event) => {
-      if (buffering) {
-        buffered += event.payload;
-      } else {
-        onOutput(event.payload);
-      }
-    }),
-    listen<string>(ptyExitEvent(sessionId), finish),
-  ]);
-  unlisteners.push(outputUnlisten, exitUnlisten);
-  if (finished) {
-    outputUnlisten();
-    exitUnlisten();
-  }
-
-  const transcript = await readPtyTranscript(sessionId).catch(() => null);
-  const replayed = transcript?.data ?? "";
-  if (replayed) onOutput(replayed);
-  const bufferedRemainder = nonOverlappingSuffix(replayed, buffered);
-  if (bufferedRemainder) onOutput(bufferedRemainder);
-  buffering = false;
-  if (exitWhileBuffering) finish();
-
-  const sessions = await listPtySessions().catch(() => null);
-  const liveSession = sessions?.find((s) => s.id === sessionId);
-  if (sessions && (!liveSession || !liveSession.alive)) finish();
-
-  return unlisteners;
-}
-
-export type BuiltinCliAgent = "claude-code" | "codex" | "gemini" | "opencode" | "packetcode";
 export type ApiAgentCli =
   | "api-claude-oauth"
   | "api-claude"
@@ -202,7 +127,6 @@ export type ApiAgentCli =
   | "api-openai-agents"
   | "api-openai"
   | "api-minimax"
-  | "api-minimax-api"
   | "api-openrouter"
   | "api-ollama";
 
@@ -218,10 +142,25 @@ export type AgentCli =
   | "api-openai-agents"
   | "api-openai"
   | "api-minimax"
-  | "api-minimax-api"
   | "api-openrouter"
   | "api-ollama"
   | (string & {});
+
+/** Retired provider-identity duplicates, mapped onto their canonical id.
+ * `api-minimax-api` was a pure identity duplicate of `api-minimax` (same
+ * Rust MiniMaxProvider, differing only in which keychain slot the provider
+ * string selected) — collapsed here so stored conversations/guardrails
+ * keep resolving after the consolidation. */
+export const LEGACY_AGENT_ALIASES: Record<string, AgentCli> = {
+  "api-minimax-api": "api-minimax",
+};
+
+/** Resolve a possibly-legacy agent id to its canonical `AgentCli`. Pass-
+ * through for anything not in the alias table (including unknown ids —
+ * those are surfaced by `apiAgentProvider`'s own fallback, not here). */
+export function canonicalizeAgentCli(agent: string): AgentCli {
+  return LEGACY_AGENT_ALIASES[agent] ?? agent;
+}
 
 /** Check if an agent type uses API mode (vs PTY/CLI mode). */
 export function isApiAgent(agent: AgentCli): boolean {
@@ -237,7 +176,6 @@ export function apiAgentProvider(agent: AgentCli): string {
     "api-openai-agents": "openai-agents",
     "api-openai": "openai",
     "api-minimax": "minimax",
-    "api-minimax-api": "minimax-api",
     "api-openrouter": "openrouter",
     "api-ollama": "ollama",
   };
@@ -260,54 +198,6 @@ function apiAgentCommandPath(agent: AgentCli): string | null {
   const manualPath = useCliOverrideStore.getState().overrides.codex?.manualPath.trim();
   return manualPath || null;
 }
-/** Fallback command names for PTY-based agents if the agent store has not hydrated yet. */
-const CLI_COMMANDS: Record<BuiltinCliAgent, string> = {
-  "claude-code": "claude",
-  codex: "codex",
-  gemini: "gemini",
-  opencode: "opencode",
-  packetcode: "packetcode",
-};
-
-/** Bypass-permissions flags for autonomous execution.
- * OpenCode is intentionally omitted — it has no equivalent launch flag and
- * passing one makes it print `--help` and exit. PacketCode uses `--trust`. */
-const BYPASS_FLAGS: Partial<Record<BuiltinCliAgent, string>> = {
-  "claude-code": "--dangerously-skip-permissions",
-  // codex >= 0.x dropped `--full-auto`; the full-bypass equivalent is this.
-  codex: "--dangerously-bypass-approvals-and-sandbox",
-  gemini: "--yolo",
-  packetcode: "--trust",
-};
-
-function isBuiltinCliAgent(agent: AgentCli): agent is BuiltinCliAgent {
-  return Object.prototype.hasOwnProperty.call(CLI_COMMANDS, agent);
-}
-
-function resolveCliLaunch(
-  agent: AgentCli,
-  options: { includeAutonomyFlag?: boolean } = {},
-): { command: string; args: string[]; displayName: string } | null {
-  if (isApiAgent(agent)) return null;
-
-  const config = useAgentStore.getState().getAgent(agent);
-  if (config && config.id !== "terminal") {
-    const args = [...config.defaultArgs];
-    if (options.includeAutonomyFlag && isBuiltinCliAgent(agent)) {
-      const flag = BYPASS_FLAGS[agent];
-      if (flag && !args.includes(flag)) args.unshift(flag);
-    }
-    return { command: config.command, args, displayName: config.name };
-  }
-
-  if (!isBuiltinCliAgent(agent)) return null;
-  const args: string[] = [];
-  const flag = options.includeAutonomyFlag ? BYPASS_FLAGS[agent] : undefined;
-  if (flag) args.push(flag);
-  return { command: CLI_COMMANDS[agent], args, displayName: agent };
-}
-
-export type AgentInputMode = "build" | "plan";
 
 /** Cleanup functions for API conversation event listeners. */
 const apiConversationCleanup = new Map<string, () => void>();
@@ -451,17 +341,14 @@ interface AgentTaskStore {
   // (Composer draft text lives in agentDraftStore — keyed per conversation,
   // plus a launch slot — so no draft can bleed across composers.)
   selectedRepo: string | null;
-  inputMode: AgentInputMode;
 
   // --- Conversation state ---
   conversations: AgentConversation[];
   selectedConversationId: string | null;
 
   setSelectedRepo: (repo: string | null) => void;
-  setInputMode: (mode: AgentInputMode) => void;
 
   // --- Conversation actions ---
-  createConversation: (agent: AgentCli, projectPath: string) => Promise<string>;
   createApiConversation: (options: CreateApiConversationOptions) => Promise<string>;
   sendMessage: (
     conversationId: string,
@@ -542,86 +429,14 @@ async function ensureApiAgentListeners(id: string): Promise<void> {
 
 export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   selectedRepo: null,
-  inputMode: "build",
 
   // --- Conversation state ---
   conversations: [],
   selectedConversationId: null,
 
   setSelectedRepo: (repo) => set({ selectedRepo: repo }),
-  setInputMode: (mode) => set({ inputMode: mode }),
 
   // ─── Conversation actions ────────────────────────────────────────────
-
-  createConversation: async (agent, projectPath) => {
-    const id = generateId("conv");
-    const launch = resolveCliLaunch(agent);
-    if (!launch) return id; // API agents should use createApiConversation
-
-    const now = Date.now();
-    const segments = projectPath.replace(/\\/g, "/").split("/").filter(Boolean);
-    const folderName = segments[segments.length - 1] ?? projectPath;
-
-    const conversation: AgentConversation = {
-      id,
-      title: `${folderName} — ${agent}`,
-      agent,
-      projectPath,
-      status: "active",
-      messages: [],
-      sessionId: null,
-      rawOutput: "",
-      createdAt: now,
-      updatedAt: now,
-      mode: "pty",
-    };
-
-    set((s) => ({
-      conversations: [conversation, ...s.conversations],
-      selectedConversationId: id,
-    }));
-
-    try {
-      const sessionId = await createPtySession(
-        projectPath,
-        120,
-        40,
-        launch.command,
-        launch.args.length > 0 ? launch.args : null,
-      );
-
-      set((s) => ({
-        conversations: s.conversations.map((c) => (c.id === id ? { ...c, sessionId } : c)),
-      }));
-
-      await installPtyListenersWithReplay(
-        sessionId,
-        (chunk) => get().appendRawOutput(id, chunk),
-        () => {
-          set((s) => ({
-            conversations: s.conversations.map((c) =>
-              c.id === id ? { ...c, status: "done", updatedAt: Date.now() } : c,
-            ),
-          }));
-        },
-      );
-    } catch (err) {
-      set((s) => ({
-        conversations: s.conversations.map((c) =>
-          c.id === id
-            ? {
-                ...c,
-                status: "failed",
-                updatedAt: Date.now(),
-                rawOutput: c.rawOutput + `\nFailed to start: ${err}`,
-              }
-            : c,
-        ),
-      }));
-    }
-
-    return id;
-  },
 
   createApiConversation: async ({
     agent,

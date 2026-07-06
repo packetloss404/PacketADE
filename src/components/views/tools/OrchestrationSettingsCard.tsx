@@ -1,11 +1,8 @@
-import { GitBranch, Layers3, Tag } from "lucide-react";
+import { GitBranch, Tag } from "lucide-react";
 import {
   DEFAULT_AUTO_COMMIT_TRAILER_FORMAT,
-  useOrchestrationStateStore,
-} from "@/stores/orchestrationStateStore";
-
-const MIN_PARALLEL_SESSIONS = 1;
-const MAX_PARALLEL_SESSIONS = 12;
+  useOrchestrationSettingsStore,
+} from "@/stores/orchestrationSettingsStore";
 
 /** v0.8: render the auto-trailer preview using fixed sample values so
  * the user always sees a concrete substitution rather than the raw
@@ -23,20 +20,16 @@ function renderTrailerPreview(format: string): string {
 }
 
 export function OrchestrationSettingsCard() {
-  const maxParallelSessions = useOrchestrationStateStore((s) => s.maxParallelSessions);
-  const milestoneGating = useOrchestrationStateStore((s) => s.milestoneGating);
-  const autoCommitTrailerEnabled = useOrchestrationStateStore(
+  const autoCommitTrailerEnabled = useOrchestrationSettingsStore(
     (s) => s.autoCommitTrailerEnabled,
   );
-  const autoCommitTrailerFormat = useOrchestrationStateStore(
+  const autoCommitTrailerFormat = useOrchestrationSettingsStore(
     (s) => s.autoCommitTrailerFormat,
   );
-  const setMaxParallelSessions = useOrchestrationStateStore((s) => s.setMaxParallelSessions);
-  const setMilestoneGating = useOrchestrationStateStore((s) => s.setMilestoneGating);
-  const setAutoCommitTrailerEnabled = useOrchestrationStateStore(
+  const setAutoCommitTrailerEnabled = useOrchestrationSettingsStore(
     (s) => s.setAutoCommitTrailerEnabled,
   );
-  const setAutoCommitTrailerFormat = useOrchestrationStateStore(
+  const setAutoCommitTrailerFormat = useOrchestrationSettingsStore(
     (s) => s.setAutoCommitTrailerFormat,
   );
 
@@ -47,109 +40,61 @@ export function OrchestrationSettingsCard() {
         Flights
       </h3>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[11px] text-text-secondary">Max parallel sessions</div>
-            <div className="text-[10px] text-text-muted">
-              Active flight tasks allowed to launch at once.
-            </div>
-          </div>
-          <input
-            type="number"
-            min={MIN_PARALLEL_SESSIONS}
-            max={MAX_PARALLEL_SESSIONS}
-            value={maxParallelSessions}
-            onChange={(e) => setMaxParallelSessions(Number(e.target.value))}
-            className="w-16 bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent-green"
-          />
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-[10px] text-text-muted uppercase tracking-wider">
+          <Tag size={10} className="text-accent-blue" />
+          Auto-trailer on agent commits
         </div>
 
         <label className="flex items-center justify-between gap-3 cursor-pointer group">
           <div className="min-w-0">
             <div className="text-[11px] text-text-secondary group-hover:text-text-primary transition-colors">
-              Milestone gating
+              Append a trailer to every agent commit
             </div>
-            <div className="text-[10px] text-text-muted">
-              Pause between milestones for review before the next batch starts.
+            <div className="text-[10px] text-text-muted leading-snug">
+              Installs a `prepare-commit-msg` hook inside each flight worktree so
+              commits identify the originating flight and attempt.
             </div>
           </div>
           <button
             type="button"
-            onClick={() => setMilestoneGating(!milestoneGating)}
+            onClick={() => setAutoCommitTrailerEnabled(!autoCommitTrailerEnabled)}
             className={`relative w-8 h-[18px] rounded-full transition-colors flex-shrink-0 ${
-              milestoneGating ? "bg-accent-green" : "bg-bg-elevated"
+              autoCommitTrailerEnabled ? "bg-accent-green" : "bg-bg-elevated"
             }`}
+            aria-pressed={autoCommitTrailerEnabled}
           >
             <span
               className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
-                milestoneGating ? "left-[16px]" : "left-[2px]"
+                autoCommitTrailerEnabled ? "left-[16px]" : "left-[2px]"
               }`}
             />
           </button>
         </label>
 
-        <div className="flex items-center gap-2 text-[10px] text-text-muted bg-bg-primary border border-bg-border rounded px-3 py-2">
-          <Layers3 size={11} className="text-accent-amber flex-shrink-0" />
-          <span>Range is clamped to {MIN_PARALLEL_SESSIONS}-{MAX_PARALLEL_SESSIONS} sessions.</span>
-        </div>
-
-        <div className="pt-3 mt-1 border-t border-bg-border space-y-2">
-          <div className="flex items-center gap-2 text-[10px] text-text-muted uppercase tracking-wider">
-            <Tag size={10} className="text-accent-blue" />
-            Auto-trailer on agent commits
-          </div>
-
-          <label className="flex items-center justify-between gap-3 cursor-pointer group">
-            <div className="min-w-0">
-              <div className="text-[11px] text-text-secondary group-hover:text-text-primary transition-colors">
-                Append a trailer to every agent commit
-              </div>
-              <div className="text-[10px] text-text-muted leading-snug">
-                Installs a `prepare-commit-msg` hook inside each flight worktree so
-                commits identify the originating flight and attempt.
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setAutoCommitTrailerEnabled(!autoCommitTrailerEnabled)}
-              className={`relative w-8 h-[18px] rounded-full transition-colors flex-shrink-0 ${
-                autoCommitTrailerEnabled ? "bg-accent-green" : "bg-bg-elevated"
-              }`}
-              aria-pressed={autoCommitTrailerEnabled}
-            >
-              <span
-                className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
-                  autoCommitTrailerEnabled ? "left-[16px]" : "left-[2px]"
-                }`}
-              />
-            </button>
+        <div className={autoCommitTrailerEnabled ? "" : "opacity-50 pointer-events-none"}>
+          <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">
+            Trailer format
           </label>
-
-          <div className={autoCommitTrailerEnabled ? "" : "opacity-50 pointer-events-none"}>
-            <label className="text-[10px] text-text-muted block mb-1 uppercase tracking-wider">
-              Trailer format
-            </label>
-            <input
-              type="text"
-              value={autoCommitTrailerFormat}
-              onChange={(e) => setAutoCommitTrailerFormat(e.target.value)}
-              spellCheck={false}
-              className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] font-mono text-text-primary focus:outline-none focus:border-accent-green"
-            />
-            <p className="text-[10px] text-text-muted mt-1 leading-snug">
-              Available placeholders: <code>{`{flightId}`}</code>,{" "}
-              <code>{`{attemptId}`}</code>, <code>{`{flightTitle}`}</code>. Leave
-              default unless you have a specific format requirement.
-            </p>
-            <div className="mt-2 bg-bg-primary border border-bg-border rounded px-2 py-1.5">
-              <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">
-                Preview
-              </div>
-              <code className="text-[11px] text-accent-green break-all">
-                {renderTrailerPreview(autoCommitTrailerFormat || DEFAULT_AUTO_COMMIT_TRAILER_FORMAT)}
-              </code>
+          <input
+            type="text"
+            value={autoCommitTrailerFormat}
+            onChange={(e) => setAutoCommitTrailerFormat(e.target.value)}
+            spellCheck={false}
+            className="w-full bg-bg-primary border border-bg-border rounded px-2 py-1 text-[11px] font-mono text-text-primary focus:outline-none focus:border-accent-green"
+          />
+          <p className="text-[10px] text-text-muted mt-1 leading-snug">
+            Available placeholders: <code>{`{flightId}`}</code>,{" "}
+            <code>{`{attemptId}`}</code>, <code>{`{flightTitle}`}</code>. Leave
+            default unless you have a specific format requirement.
+          </p>
+          <div className="mt-2 bg-bg-primary border border-bg-border rounded px-2 py-1.5">
+            <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">
+              Preview
             </div>
+            <code className="text-[11px] text-accent-green break-all">
+              {renderTrailerPreview(autoCommitTrailerFormat || DEFAULT_AUTO_COMMIT_TRAILER_FORMAT)}
+            </code>
           </div>
         </div>
       </div>

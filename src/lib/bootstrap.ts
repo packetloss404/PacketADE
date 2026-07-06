@@ -5,7 +5,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useAgentStore } from "@/stores/agentStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
+import { useOrchestrationSettingsStore } from "@/stores/orchestrationSettingsStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useIssueStore } from "@/stores/issueStore";
@@ -124,7 +124,7 @@ export async function initializeApp(): Promise<void> {
       .getState()
       .hydrateFromBackend(state)
       .catch(() => undefined);
-    void useOrchestrationStateStore
+    void useOrchestrationSettingsStore
       .getState()
       .hydrateFromBackend(state)
       .catch(() => undefined);

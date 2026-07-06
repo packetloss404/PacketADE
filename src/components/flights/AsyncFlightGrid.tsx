@@ -1,16 +1,31 @@
+import { Rocket } from "lucide-react";
 import { AttemptTile } from "./AttemptTile";
 import type { Flight } from "@/types/flight";
 
 interface AsyncFlightGridProps {
   flight: Flight;
+  // When provided, the empty state renders a "Launch attempt" affordance
+  // that opens the launch modal targeting this flight (rather than leaving
+  // an attempt-less flight with no way to ever get attempts).
+  onLaunch?: () => void;
 }
 
-export function AsyncFlightGrid({ flight }: AsyncFlightGridProps) {
+export function AsyncFlightGrid({ flight, onLaunch }: AsyncFlightGridProps) {
   const attempts = flight.attempts ?? [];
   if (attempts.length === 0) {
     return (
-      <div className="flex items-center justify-center text-[11px] text-text-muted py-8">
-        No attempts yet.
+      <div className="flex flex-col items-center justify-center gap-2 text-[11px] text-text-muted py-8">
+        <span>No attempts yet.</span>
+        {onLaunch && (
+          <button
+            type="button"
+            onClick={onLaunch}
+            className="hover:bg-accent-green/15 flex items-center gap-1.5 rounded border border-accent-line bg-accent-soft px-3 py-1.5 text-[11px] font-medium text-accent-green transition-colors"
+          >
+            <Rocket size={11} />
+            Launch attempt
+          </button>
+        )}
       </div>
     );
   }

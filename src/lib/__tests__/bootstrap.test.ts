@@ -14,7 +14,7 @@ const mockFlightHydrate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const mockAgentHydrate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockDetectInstalled = vi.hoisted(() => vi.fn());
 const mockLayoutSetProjectPath = vi.hoisted(() => vi.fn());
-const mockOrchestrationHydrate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const mockOrchestrationSettingsHydrate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockSetInitialized = vi.hoisted(() => vi.fn());
 const mockSetTheme = vi.hoisted(() => vi.fn());
 const mockSetActiveView = vi.hoisted(() => vi.fn());
@@ -61,9 +61,9 @@ vi.mock("@/stores/flightStore", () => ({
 vi.mock("@/stores/layoutStore", () => ({
   useLayoutStore: { getState: () => ({ setProjectPath: mockLayoutSetProjectPath }) },
 }));
-vi.mock("@/stores/orchestrationStateStore", () => ({
-  useOrchestrationStateStore: {
-    getState: () => ({ hydrateFromBackend: mockOrchestrationHydrate }),
+vi.mock("@/stores/orchestrationSettingsStore", () => ({
+  useOrchestrationSettingsStore: {
+    getState: () => ({ hydrateFromBackend: mockOrchestrationSettingsHydrate }),
   },
 }));
 vi.mock("@/stores/memoryStore", () => ({
@@ -153,6 +153,9 @@ describe("initializeApp", () => {
 
     expect(mockSetInitialized).toHaveBeenCalledWith(true);
     expect(mockFlightHydrate).toHaveBeenCalledWith(
+      expect.objectContaining({ issues: [{ id: "issue-1", ticketId: "PKT-001" }] }),
+    );
+    expect(mockOrchestrationSettingsHydrate).toHaveBeenCalledWith(
       expect.objectContaining({ issues: [{ id: "issue-1", ticketId: "PKT-001" }] }),
     );
   });

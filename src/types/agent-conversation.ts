@@ -115,14 +115,8 @@ export interface AgentConversation {
   permissionMode?: PermissionMode;
   /** Require user approval before each write_file. */
   approveWrites?: boolean;
-  /** Pending permission prompts awaiting user decision. */
-  pendingPermissions?: PendingPermission[];
-  /** Pending write-file edits awaiting user decision. */
-  pendingEdits?: PendingEdit[];
   /** Extended-thinking (Anthropic) enabled for this session. */
   thinkingEnabled?: boolean;
-  /** Accumulating thinking text during the current streaming turn. */
-  thinkingStream?: string;
   /** Set when this conversation's tool calls execute on a remote host via SSH. */
   sshTarget?: {
     id: string;
@@ -142,14 +136,6 @@ export interface AgentConversation {
    * Default true for conversations opened with read-only profiles (e.g. Scout),
    * false otherwise. Toggleable from the chat header. */
   memoryContextEnabled?: boolean;
-  /** Legacy field from older builds that soft-bound conversations to the
-   * separate Workspace pane. Kept so persisted conversations still parse;
-   * new conversations should leave it unset and runtime UI ignores it. */
-  workspaceId?: string;
-  /** v3: most recent structured plan from the provider's `plan_block` event
-   * (Anthropic's TodoWrite, etc.). PlanPanel reads from here when present
-   * and falls back to parsing tool calls otherwise. */
-  plan?: AgentPlanItem[];
   /** v3: opaque resume token captured from the provider's `done` event.
    * When set on a hydrated conversation, the next launch reuses it via
    * `start_api_agent_session.resume`. */
@@ -159,10 +145,6 @@ export interface AgentConversation {
    * `McpServerEntry.name` from `useMcpStore`. Sidecar protocol has no
    * mid-session MCP swap, so flips here apply on the NEXT session start. */
   enabledMcpServerIds?: string[];
-  /** True once the user has approved the model's plan (unified path:
-   * PlanModeApprovalMenu → agentPlanStore.approvePlan). Approval lifts
-   * plan mode and dispatches the "execute" turn. */
-  planApproved?: boolean;
   /** B1: hover-`+` diff comments queued by the user on pending edits.
    * Folded into the next user turn as a "File comments:" preamble and
    * cleared on send (or via the chip-strip "Clear" action). */
@@ -172,19 +154,4 @@ export interface AgentConversation {
    * "← back to plan" link in the chat header. Undefined for normal
    * standalone conversations. */
   parentConversationId?: string;
-  /** A3: Codex MultiAgentV2 sub-agent token totals, keyed by path
-   * (`/root/agent_a` etc.). Updated on every turn_summary event whose
-   * address is non-empty; empty/absent address still mutates the root
-   * via the streaming message's tokens. CostDashboard sums these into
-   * the conversation total so multi-agent flights don't under- or
-   * over-count. */
-  subAgentTokens?: Record<
-    string,
-    {
-      inputTokens: number;
-      outputTokens: number;
-      reasoningTokens: number;
-      cacheReadTokens: number;
-    }
-  >;
 }

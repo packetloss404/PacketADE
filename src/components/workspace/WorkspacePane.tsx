@@ -107,17 +107,13 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const mosaicWindowActions = mosaicCtx?.mosaicWindowActions ?? null;
 
   const agentName = agentConfig?.name ?? pane.agentId;
-  // Track B: orchestrated panes carry an explicit `overrideCommand` so they
-  // can use a CLI other than the WorkspaceAgentSlot's default (e.g. a flight
-  // task launched as `gemini` inside a `claude-code` slot).
-  const command = pane.overrideCommand ?? agentConfig?.command ?? pane.agentId;
+  const command = agentConfig?.command ?? pane.agentId;
 
   // Keep CLI args stable so terminal startup is only driven by real config changes.
   const bypassPermissions = workspace?.bypassPermissions ?? false;
   const model = workspace?.modelOverrides?.[pane.agentId] ?? null;
   const effort = workspace?.effortOverrides?.[pane.agentId] ?? null;
-  const initialPrompt =
-    pane.initialPrompt ?? (pane.agentId !== "terminal" ? workspace?.prompt : undefined);
+  const initialPrompt = pane.agentId !== "terminal" ? workspace?.prompt : undefined;
 
   // Model selection
   const availableModels = useMemo(() => getModelsForAgent(pane.agentId), [pane.agentId]);
@@ -127,14 +123,6 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     : "Default";
 
   const cliArgs: string[] | undefined = useMemo(() => {
-    // Track B: orchestrated panes pass the full arg vector through
-    // `overrideArgs` (set by `orchestrationStore.tick()` from the task's
-    // configured command + agentArgs), so we skip the workspace's
-    // bypass/model/effort augmentation in that case.
-    if (pane.overrideArgs) {
-      return pane.overrideArgs.length > 0 ? pane.overrideArgs : undefined;
-    }
-
     const args: string[] = [];
 
     // Include agent-specific default args (e.g., opencode needs "." to start TUI)
@@ -156,7 +144,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     }
 
     return args.length > 0 ? args : undefined;
-  }, [agentConfig?.defaultArgs, bypassPermissions, effort, model, pane.agentId, pane.overrideArgs]);
+  }, [agentConfig?.defaultArgs, bypassPermissions, effort, model, pane.agentId]);
 
   // SSH override for remote workspaces
   const server = workspace?.serverId
@@ -548,7 +536,6 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
         cliArgs={effectiveArgs}
         projectPath={workspace?.projectPath}
         initialPrompt={initialPrompt}
-        taskId={pane.taskId}
         renderHeader={renderHeader}
         onSessionCreated={(sessionId) =>
           useWorkspaceStore.getState().setPaneSession(workspaceId, pane.id, sessionId)

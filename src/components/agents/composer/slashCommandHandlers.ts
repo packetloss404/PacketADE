@@ -4,9 +4,6 @@ import {
   requestConversationSave,
   useAgentTaskStore,
 } from "@/stores/agentTaskStore";
-import { useAgentPlanStore } from "@/stores/agentPlanStore";
-import { useGoalStore } from "@/stores/goalStore";
-import { useFlightStore } from "@/stores/flightStore";
 import type { AgentConversation, AgentMessage } from "@/types/agent-conversation";
 import type { AgentProfile } from "@/types/profiles";
 import type { AppView } from "@/stores/appStore";
@@ -143,41 +140,6 @@ export const slashCommandHandlers: Record<
 
   history: ({ setActiveView }) => {
     setActiveView("history");
-  },
-
-  goal: ({ conversationId, conversation }) => {
-    const existing = useGoalStore
-      .getState()
-      .getGoalForConversation(conversationId);
-    if (existing) {
-      appendMessage(
-        conversationId,
-        sysMessage(`(/goal — already bound to goal "${existing.title}")`),
-      );
-      return;
-    }
-    const plans = useAgentPlanStore.getState();
-    const plan = plans.getPlan(conversationId);
-    const title =
-      (plan && plan[0]?.content) ||
-      conversation.title ||
-      "Untitled goal";
-    const linkedFlight = useFlightStore
-      .getState()
-      .flights.find((f) => f.linkedSessionIds.includes(conversationId));
-    useGoalStore.getState().addGoal({
-      title,
-      conversationId,
-      flightId: linkedFlight?.id,
-      checklist: plan ?? [],
-      status: "active",
-    });
-    appendMessage(
-      conversationId,
-      sysMessage(
-        `(/goal — created persistent goal "${title}"${linkedFlight ? ` bound to flight "${linkedFlight.title}"` : ""})`,
-      ),
-    );
   },
 
   review: ({

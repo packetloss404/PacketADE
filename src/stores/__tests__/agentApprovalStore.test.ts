@@ -11,23 +11,6 @@ vi.mock("@/lib/tauri", () => ({
   cancelPendingTools: (...args: unknown[]) => cancelPendingToolsMock(...args),
 }));
 
-vi.mock("@/stores/flightStore", () => ({
-  useFlightStore: {
-    getState: vi.fn(() => ({
-      findTaskBySessionId: vi.fn(() => null),
-    })),
-  },
-}));
-
-vi.mock("@/stores/orchestrationStateStore", () => ({
-  useOrchestrationStateStore: {
-    getState: vi.fn(() => ({
-      onTaskApprovalNeeded: vi.fn().mockResolvedValue(undefined),
-      onTaskApprovalResolved: vi.fn().mockResolvedValue(undefined),
-    })),
-  },
-}));
-
 function makePermission(overrides: Partial<PendingPermission> = {}): PendingPermission {
   return {
     id: "perm-1",
