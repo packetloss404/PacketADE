@@ -780,12 +780,7 @@ export function Composer(props: ComposerProps) {
                   maxChars: 12,
                 },
                 {
-                  label:
-                    composerMode === "local"
-                      ? null
-                      : composerMode === "worktree"
-                        ? "Worktree"
-                        : "Cloud",
+                  label: composerMode === "local" ? null : "Worktree",
                 },
               ]}
               forceOpenOnFirstMount={
