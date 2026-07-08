@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckSquare,
   ChevronRight,
   File as FileIcon,
   Eye,
   PanelLeft,
-  Check,
   FileDiff,
   FolderTree,
   AlertCircle,
@@ -372,10 +371,6 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
     return () => window.clearInterval(id);
   }, []);
 
-  // Plan progress derived from the latest assistant plan message containing
-  // a checkbox list. Best-effort and graceful when none is present.
-  const plan = useMemo(() => deriveLatestPlan(conversation?.messages ?? []), [conversation?.messages]);
-
   // Session metadata
   const provider = API_PROVIDERS.find((p) => p.agentCli === conversation?.agent);
   const modelLabel =
@@ -413,47 +408,6 @@ function InspectorContent({ conversationId }: { conversationId: string }) {
             </span>
           ) : (
             files.map((f, i) => <FileChangedRow key={i} stat={f} />)
-          )}
-        </div>
-      </div>
-
-      {/* Plan progress */}
-      <div>
-        <SectionHeader
-          label="Plan progress"
-          right={plan ? `${plan.done} / ${plan.items.length}` : "—"}
-        />
-        <div className="px-2.5 py-2 flex flex-col gap-1.5 text-ui">
-          {plan && plan.items.length > 0 ? (
-            plan.items.map((s, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span
-                  className={`w-3 h-3 rounded shrink-0 grid place-items-center border ${
-                    s.done
-                      ? "bg-accent-green border-accent-green"
-                      : s.run
-                        ? "border-accent-green"
-                        : "border-line-strong"
-                  }`}
-                >
-                  {s.done && <Check size={10} className="text-bg-primary" strokeWidth={3} />}
-                  {s.run && (
-                    <span className="w-1 h-1 rounded-full bg-accent-amber animate-pulse motion-reduce:animate-none" />
-                  )}
-                </span>
-                <span
-                  className={
-                    s.done
-                      ? "text-text-muted line-through"
-                      : "text-text-secondary"
-                  }
-                >
-                  {s.label}
-                </span>
-              </div>
-            ))
-          ) : (
-            <span className="text-ui text-text-muted">No active plan.</span>
           )}
         </div>
       </div>
@@ -590,30 +544,6 @@ function agentDisplayName(agent: string): string {
   return labels[agent] ?? agent;
 }
 
-interface PlanItem {
-  done: boolean;
-  run: boolean;
-  label: string;
-}
-
-function deriveLatestPlan(messages: { role: string; content: string }[]): {
-  items: PlanItem[];
-  done: number;
-} | null {
-  // Walk backward looking for a recent assistant message that contains
-  // markdown checkbox items. Returns null if none found.
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.role !== "assistant") continue;
-    const items = parseChecklistFromMarkdown(m.content);
-    if (items.length > 0) {
-      const done = items.filter((it) => it.done).length;
-      return { items, done };
-    }
-  }
-  return null;
-}
-
 /**
  * Small accent-green pill rendered on the Diff tab when the review surface
  * has files not yet marked Viewed (or gated edits awaiting a decision).
@@ -647,18 +577,4 @@ function UnreviewedBadge({
       {label}
     </span>
   );
-}
-
-function parseChecklistFromMarkdown(md: string): PlanItem[] {
-  const out: PlanItem[] = [];
-  for (const raw of md.split(/\r?\n/)) {
-    const m = raw.match(/^\s*[-*]\s*\[([ xX~-])\]\s+(.+?)\s*$/);
-    if (!m) continue;
-    const ch = m[1];
-    const label = m[2];
-    const done = ch.toLowerCase() === "x";
-    const run = ch === "~" || ch === "-";
-    out.push({ done, run: !done && run, label });
-  }
-  return out;
 }

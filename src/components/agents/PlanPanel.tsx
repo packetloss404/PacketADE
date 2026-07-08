@@ -2,18 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CheckSquare,
   ChevronDown,
-  Pause,
-  Play,
   Send,
   Square,
-  Target,
-  X,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAgentPlanStore } from "@/stores/agentPlanStore";
-import { useGoalStore } from "@/stores/goalStore";
 import { API_PROVIDERS } from "@/lib/api-models";
 import { buildHandoffPrompt } from "@/lib/conversationHandoff";
 import { parseToolInput } from "@/lib/parseToolInput";
@@ -222,24 +217,6 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
     };
   }, [isClaudeParent]);
 
-  // B5: bound goal (when this conversation has been promoted via /goal).
-  // Snapshot the conversation's plan into the goal whenever it changes
-  // so the persisted goal stays current for cross-conversation
-  // continuation.
-  const boundGoal = useGoalStore((s) =>
-    s.getGoalForConversation(conversation.id),
-  );
-  const syncChecklistFromConversation = useGoalStore(
-    (s) => s.syncChecklistFromConversation,
-  );
-  const pauseGoal = useGoalStore((s) => s.pauseGoal);
-  const resumeGoal = useGoalStore((s) => s.resumeGoal);
-  const completeGoal = useGoalStore((s) => s.completeGoal);
-  useEffect(() => {
-    if (!boundGoal || !storedPlan) return;
-    syncChecklistFromConversation(boundGoal.id, storedPlan);
-  }, [boundGoal, storedPlan, syncChecklistFromConversation]);
-
   if (!items) return null;
 
   // The plan stays a "proposal" while plan mode is on and the user hasn't
@@ -358,53 +335,6 @@ export function PlanPanel({ conversation }: PlanPanelProps) {
                 <Send size={11} /> {handingOff ? "Handing off…" : "Hand off to Codex"}
               </button>
             </Tooltip>
-          )}
-        </div>
-      )}
-      {/* B5 — goal binding row. Renders when this conversation has been
-          promoted via /goal. Pause = surface as paused in FlightsView
-          but keep the conversation running. Complete = mark done.
-          Cancel/delete left to a separate confirm flow in FlightsView. */}
-      {boundGoal && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-t border-accent-blue/30 bg-accent-blue/5">
-          <Target size={11} className="text-accent-blue" />
-          <span className="text-meta text-text-secondary flex-1 truncate">
-            Bound goal:{" "}
-            <span className="text-accent-blue font-medium">
-              {boundGoal.title}
-            </span>{" "}
-            · status{" "}
-            <span className="font-mono">{boundGoal.status}</span>
-          </span>
-          {boundGoal.status === "active" && (
-            <Tooltip content="Mark goal paused (conversation keeps running; FlightsView shows it as paused)">
-              <button
-                type="button"
-                onClick={() => pauseGoal(boundGoal.id)}
-                className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-bg-border text-text-muted hover:text-accent-amber transition-colors"
-              >
-                <Pause size={10} /> Pause
-              </button>
-            </Tooltip>
-          )}
-          {boundGoal.status === "paused" && (
-            <button
-              type="button"
-              onClick={() => resumeGoal(boundGoal.id)}
-              className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
-            >
-              <Play size={10} /> Resume
-            </button>
-          )}
-          {(boundGoal.status === "active" ||
-            boundGoal.status === "paused") && (
-            <button
-              type="button"
-              onClick={() => completeGoal(boundGoal.id)}
-              className="flex items-center gap-1 text-ui px-1.5 py-0.5 rounded border border-accent-green/40 text-accent-green hover:bg-accent-green/10 transition-colors"
-            >
-              <X size={10} /> Complete
-            </button>
           )}
         </div>
       )}

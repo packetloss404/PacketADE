@@ -11,7 +11,6 @@ import {
   Scissors,
   Shield,
   ShieldCheck,
-  Target,
   Trash,
 } from "lucide-react";
 import type { SkillDef, SlashCommandDef } from "@/lib/tauri";
@@ -39,8 +38,7 @@ export type BuiltinSlashCommand =
   | "compact"
   | "usage"
   | "history"
-  | "review"
-  | "goal";
+  | "review";
 
 export type SlashSelection =
   | { kind: "builtin"; name: BuiltinSlashCommand }
@@ -96,12 +94,6 @@ const BUILTINS: BuiltinDef[] = [
     label: "/review",
     description: "Spawn a Reviewer subagent on the current staged diff",
     icon: <ShieldCheck size={12} />,
-  },
-  {
-    cmd: "goal",
-    label: "/goal",
-    description: "Persist this conversation's plan as a resumable goal",
-    icon: <Target size={12} />,
   },
   {
     cmd: "usage",

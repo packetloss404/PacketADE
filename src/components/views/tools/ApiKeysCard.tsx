@@ -14,7 +14,6 @@ const PROVIDERS: ProviderEntry[] = [
   { id: "anthropic", name: "Anthropic", description: "Claude Opus, Sonnet, Haiku", needsKey: true },
   { id: "openai", name: "OpenAI", description: "GPT-5.5, GPT-4o, o3", needsKey: true },
   { id: "minimax", name: "MiniMax (Token Plan)", description: "Coding/Token Plan key · M3, M2.5, M2", needsKey: true },
-  { id: "minimax-api", name: "MiniMax (API)", description: "Pay-as-you-go API key · M3, M2.5, M2", needsKey: true },
   { id: "openrouter", name: "OpenRouter", description: "100+ models, one key", needsKey: true },
   {
     id: "gemini",

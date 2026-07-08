@@ -15,7 +15,7 @@ import {
   useAgentApprovalStore,
 } from "@/stores/agentApprovalStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
-import { useMemoryStore } from "@/stores/memoryStore";
+import { useMemoryStore, type MemoryBrief } from "@/stores/memoryStore";
 import { HeaderActions } from "./chat/HeaderActions";
 import { handleExport } from "./chat/handleExport";
 import { EmptyConversationHint } from "./chat/EmptyConversationHint";
@@ -128,7 +128,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   );
   const memoryEvents = useMemoryStore((s) => s.events);
   const memoryPatterns = useMemoryStore((s) => s.patterns);
-  const getMemoryItemsForSession = useMemoryStore((s) => s.getContextItemsForSession);
+  const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
 
   // Inline edit of a prior user message. Submit forks the conversation here.
   const [editState, setEditState] = useState<{ id: string | null; text: string }>({
@@ -142,30 +142,27 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   useLatestPlanPreview(conversation, preview.openPlanPreview);
 
   const diffTotals = useDiffTotals(conversation);
-  const memoryBriefStats = useMemo(() => {
+  const memoryBrief = useMemo<MemoryBrief>(() => {
     if (!conversation?.projectPath) {
-      return { patterns: 0, summaries: 0, lessons: 0, approxTokens: 0 };
+      return { text: "", items: [], charBudget: 0, truncated: false, scopeKey: "" };
     }
-    const items = getMemoryItemsForSession({
-      sessionId: conversation.sessionId ?? conversation.id,
-      projectPath: conversation.projectPath,
-    });
-    const patterns = items.filter((item) => item.kind === "pattern").length;
-    const lessons = items.filter((item) => item.kind === "lesson").length;
-    const summaries = items.filter((item) => item.kind === "session").length;
-    const approxTokens = Math.max(
-      0,
-      Math.round(items.reduce((sum, item) => sum + item.title.length + item.reason.length, 0) / 4),
-    );
-    return { patterns, summaries, lessons, approxTokens };
-    // getContextItemsForSession reads memory state through get(); include
+    const scope = conversation.sshTarget
+      ? {
+          kind: "ssh" as const,
+          projectPath: conversation.projectPath,
+          serverId: conversation.sshTarget.id,
+          remotePath: conversation.sshTarget.remotePath,
+        }
+      : { kind: "local" as const, projectPath: conversation.projectPath };
+    return composeMemoryBrief(scope);
+    // composeMemoryBrief reads memory state through get(); include
     // events/patterns so counts update live while the conversation is open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     conversation?.id,
     conversation?.projectPath,
-    conversation?.sessionId,
-    getMemoryItemsForSession,
+    conversation?.sshTarget,
+    composeMemoryBrief,
     memoryEvents,
     memoryPatterns,
   ]);
@@ -299,7 +296,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
                 pinned as virtualized rows lazily mount and grow. */}
             <div ref={messagesContentRef} className="space-y-turn">
               {conversation.mode === "api" && conversation.memoryContextEnabled && (
-                <MemoryInjectionCard {...memoryBriefStats} />
+                <MemoryInjectionCard brief={memoryBrief} />
               )}
 
               {messages.length === 0 && <EmptyConversationHint />}

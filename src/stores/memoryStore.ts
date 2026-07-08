@@ -54,6 +54,31 @@ export interface MemoryBrief {
   scopeKey: string;
 }
 
+/**
+ * P2-18: pure stats summary for the single surviving ambient memory
+ * surface (HeaderOverflowMenu's flyout + MemoryInjectionCard's collapsed
+ * row). Derives counts from the SAME brief the launch pipeline injects
+ * (composeMemoryBrief) so previews never overstate what will actually
+ * be sent.
+ */
+export function memoryBriefStats(brief: MemoryBrief): {
+  patterns: number;
+  lessons: number;
+  summaries: number;
+  approxTokens: number;
+} {
+  let patterns = 0;
+  let lessons = 0;
+  let summaries = 0;
+  for (const item of brief.items) {
+    if (item.kind === "pattern") patterns += 1;
+    else if (item.kind === "lesson") lessons += 1;
+    else if (item.kind === "session") summaries += 1;
+  }
+  const approxTokens = Math.max(0, Math.round(brief.text.length / 4));
+  return { patterns, lessons, summaries, approxTokens };
+}
+
 const DEFAULT_MEMORY_BRIEF_MAX_CHARS = 1800;
 const MAX_MEMORY_BRIEF_MAX_CHARS = 4000;
 

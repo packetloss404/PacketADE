@@ -11,8 +11,6 @@ import type {
 } from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
 import { useRoutingStore } from "@/stores/routingStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { claimedPathsOverlap } from "@/lib/pathCollisions";
 
 type FlightState = {
   flights: Flight[];
@@ -195,30 +193,14 @@ interface FlightStore {
     taskId: string,
     handoff: TaskHandoff,
   ) => void;
-  setTaskBlocked: (flightId: string, milestoneId: string, taskId: string, reason: string) => void;
 
   // Session linking
-  linkSessionToFlight: (flightId: string, sessionId: string) => void;
   unlinkSessionFromFlight: (flightId: string, sessionId: string) => void;
-
-  /**
-   * Track B: return the workspace id bound to this flight, creating one
-   * lazily if absent. Each flight gets one workspace named
-   * `"Flight: {flight.title}"` whose `projectPath` mirrors the flight's,
-   * and whose agent slots are derived from the flight's task agent
-   * configs. Idempotent — repeated calls for the same flight return the
-   * same id and never recreate the workspace. Returns `null` if the
-   * flight doesn't exist.
-   */
-  ensureFlightWorkspace: (flightId: string) => string | null;
 
   // Issue linking
   addIssueToFlight: (flightId: string, issueId: string) => void;
   removeIssueFromFlight: (flightId: string, issueId: string) => void;
   getFlightForIssue: (issueId: string) => Flight | null;
-
-  // File ownership collision detection
-  checkFileCollisions: (flightId: string, milestoneId: string, taskId: string) => string[];
 
   // Coordination log
   addCoordinationEvent: (
@@ -231,17 +213,6 @@ interface FlightStore {
   computeFlightStatus: (flightId: string) => FlightStatus;
   getFlightProgress: (flightId: string) => { done: number; total: number };
   getAttentionFlights: () => Flight[];
-  /**
-   * Reverse-lookup a Task by its bound session id. Used by the Review-queue
-   * wiring to map api-agent permission-request events (keyed by sessionId,
-   * which for API conversations equals the AgentConversation id) back to the
-   * orchestrator Task they belong to — so the Toolbar Bell / ReviewQueueView
-   * pick up approval prompts from API agents, not just PTY-orchestrated ones.
-   * Returns null for free-standing chats (no bound task).
-   */
-  findTaskBySessionId: (
-    sessionId: string,
-  ) => { flight: Flight; milestone: Milestone; task: Task } | null;
   // `issueIds` is a legacy frontend cache; Rust flights do not round-trip it.
   reconcileIssueLinks: (options?: { persist?: boolean; touchUpdatedAt?: boolean }) => void;
   hydrateFromBackend: (persisted?: Awaited<ReturnType<typeof loadPersistedState>>) => Promise<void>;
@@ -517,74 +488,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     });
   },
 
-  setTaskBlocked: (flightId, milestoneId, taskId, reason) => {
-    set((s) => {
-      const flights = s.flights.map((f) => {
-        if (f.id !== flightId) return f;
-        const milestones = f.milestones.map((m) => {
-          if (m.id !== milestoneId) return m;
-          const tasks = m.tasks.map((t) =>
-            t.id === taskId ? { ...t, status: "blocked" as const, blockedReason: reason } : t,
-          );
-          const updatedMilestone = { ...m, tasks, status: computeMilestoneStatus({ ...m, tasks }) };
-          return updatedMilestone;
-        });
-        return { ...f, milestones, updatedAt: Date.now() };
-      });
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-  },
-
-  // === Workspace binding (Track B) ===
-
-  ensureFlightWorkspace: (flightId) => {
-    const flight = get().flights.find((f) => f.id === flightId);
-    if (!flight) return null;
-
-    // Already bound — verify the workspace still exists. If the user
-    // manually deleted the workspace, fall through to recreate one.
-    if (flight.workspaceId) {
-      const existing = useWorkspaceStore
-        .getState()
-        .workspaces.find((w) => w.id === flight.workspaceId);
-      if (existing) return existing.id;
-    }
-
-    // The orchestrator owns pane lifecycle for this workspace — each
-    // running task spawns one pane via `workspaceStore.addPane`. We start
-    // with an empty `agents` list and let the agentConfigId on each spawn
-    // determine its slot (see `orchestrationStore.tick`). This mirrors
-    // the legacy `layoutStore.addPane` behavior, which spawned mosaic
-    // panes on demand with no preconfigured slots.
-    const workspaceId = useWorkspaceStore
-      .getState()
-      .createWorkspace(`Flight: ${flight.title}`, [], flight.projectPath);
-
-    set((s) => {
-      const flights = s.flights.map((f) =>
-        f.id === flightId ? { ...f, workspaceId, updatedAt: Date.now() } : f,
-      );
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-
-    return workspaceId;
-  },
-
   // === Session linking ===
-
-  linkSessionToFlight: (flightId, sessionId) => {
-    set((s) => {
-      const flights = s.flights.map((f) =>
-        f.id === flightId && !f.linkedSessionIds.includes(sessionId)
-          ? { ...f, linkedSessionIds: [...f.linkedSessionIds, sessionId], updatedAt: Date.now() }
-          : f,
-      );
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-  },
 
   unlinkSessionFromFlight: (flightId, sessionId) => {
     set((s) => {
@@ -630,33 +534,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
 
   getFlightForIssue: (issueId) => {
     return get().flights.find((f) => f.issueIds.includes(issueId)) ?? null;
-  },
-
-  // === File ownership collision detection ===
-
-  checkFileCollisions: (flightId, _milestoneId, taskId) => {
-    const flight = get().flights.find((f) => f.id === flightId);
-    if (!flight) return [];
-    const allTasks = getAllTasks(flight);
-    const thisTask = allTasks.find((t) => t.id === taskId);
-    if (!thisTask?.ownedPaths?.length) return [];
-
-    const activeTasks = allTasks.filter(
-      (t) =>
-        t.id !== taskId &&
-        (t.status === "running" || t.status === "queued") &&
-        t.ownedPaths?.length,
-    );
-
-    const conflicts: string[] = [];
-    for (const other of activeTasks) {
-      for (const path of thisTask.ownedPaths) {
-        if (other.ownedPaths!.some((op) => claimedPathsOverlap(op, path))) {
-          conflicts.push(`${path} (owned by "${other.title}")`);
-        }
-      }
-    }
-    return conflicts;
   },
 
   // === Coordination log ===
@@ -709,20 +586,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       const tasks = getAllTasks(f);
       return tasks.some((t) => t.status === "approval_needed" || t.status === "failed");
     });
-  },
-
-  findTaskBySessionId: (sessionId) => {
-    if (!sessionId) return null;
-    for (const flight of get().flights) {
-      for (const milestone of flight.milestones) {
-        for (const task of milestone.tasks) {
-          if (task.sessionId === sessionId) {
-            return { flight, milestone, task };
-          }
-        }
-      }
-    }
-    return null;
   },
 
   reconcileIssueLinks: (options = {}) => {

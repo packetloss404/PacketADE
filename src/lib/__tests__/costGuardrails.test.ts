@@ -3,6 +3,7 @@ import {
   computeCostGuardrailStatus,
   isUnknownPricedUsage,
   normalizeCostGuardrailSettings,
+  providerSourceForAgentProvider,
 } from "@/lib/costGuardrails";
 
 describe("cost guardrails", () => {
@@ -75,5 +76,15 @@ describe("cost guardrails", () => {
         costUsd: 0,
       }),
     ).toBe(false);
+  });
+
+  it("collapses the retired minimax-api provider identity onto the canonical api-minimax source (P2-20)", () => {
+    // `api-minimax-api` was a pure identity duplicate of `api-minimax` —
+    // guardrail budgets persisted against the old id must keep resolving
+    // to the same cost bucket after the consolidation.
+    expect(providerSourceForAgentProvider("api-minimax")).toBe("api-minimax");
+    expect(providerSourceForAgentProvider("minimax")).toBe("api-minimax");
+    expect(providerSourceForAgentProvider("api-minimax-api")).toBe("api-minimax");
+    expect(providerSourceForAgentProvider("minimax-api")).toBe("api-minimax");
   });
 });

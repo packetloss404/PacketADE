@@ -35,22 +35,6 @@ vi.mock("@/lib/tauri", async () => {
   };
 });
 
-const attachSessionToTask = vi.fn();
-const onTaskApprovalNeeded = vi.fn();
-const onTaskApprovalResolved = vi.fn();
-const onTaskComplete = vi.fn();
-
-vi.mock("@/stores/orchestrationStateStore", () => ({
-  useOrchestrationStateStore: {
-    getState: vi.fn(() => ({
-      attachSessionToTask,
-      onTaskApprovalNeeded,
-      onTaskApprovalResolved,
-      onTaskComplete,
-    })),
-  },
-}));
-
 vi.mock("@/hooks/usePtyStateDetector", () => ({
   usePtyStateDetector: vi.fn(() => ({
     clearApproval: vi.fn(),
@@ -114,7 +98,6 @@ async function startHook() {
       projectPath: "/project-a",
       initialPrompt: "hello world",
       issueId: "issue-1",
-      taskId: "task-1",
       xtermRef,
       fitAddonRef,
       sessionIdRef,
@@ -155,10 +138,6 @@ describe("useTerminalSession", () => {
       { id: "sess-1", project_path: "/project-a", pid: 1234, alive: true },
     ]);
     mockWritePty.mockResolvedValue(undefined);
-    attachSessionToTask.mockReset();
-    onTaskApprovalNeeded.mockReset();
-    onTaskApprovalResolved.mockReset();
-    onTaskComplete.mockReset();
   });
 
   afterEach(() => {
@@ -187,11 +166,10 @@ describe("useTerminalSession", () => {
     unmount();
   });
 
-  it("writes the initial prompt and links the spawned task session", async () => {
+  it("writes the initial prompt and tags the tab with the issue id", async () => {
     const { unmount } = await startHook();
 
     expect(mockWritePty).toHaveBeenCalledWith("sess-1", "hello world\n");
-    expect(attachSessionToTask).toHaveBeenCalledWith("task-1", "sess-1");
     expect(useTabStore.getState().tabs[0]?.ticketId).toBe("issue-1");
 
     unmount();
@@ -210,8 +188,9 @@ describe("useTerminalSession", () => {
     });
   });
 
-  it("marks an exited task as complete when the session exits naturally", async () => {
-    const { unmount } = await startHook();
+  it("marks the session as no longer alive when the PTY exits naturally", async () => {
+    const { result, unmount } = await startHook();
+    expect(result.current.alive).toBe(true);
 
     await act(async () => {
       listeners[ptyExitEvent("sess-1")]?.({
@@ -219,51 +198,23 @@ describe("useTerminalSession", () => {
       });
     });
 
-    expect(onTaskComplete).toHaveBeenCalledWith("task-1", true);
+    expect(result.current.alive).toBe(false);
 
     unmount();
   });
 
-  it("marks a non-zero PTY exit code as unsuccessful task completion", async () => {
-    const { unmount } = await startHook();
-
-    await act(async () => {
-      listeners[ptyExitEvent("sess-1")]?.({
-        payload: { sessionId: "sess-1", exitCode: 2, terminated: false },
-      });
-    });
-
-    expect(onTaskComplete).toHaveBeenCalledWith("task-1", false);
-
-    unmount();
-  });
-
-  it("marks an orchestrator-terminated PTY exit as unsuccessful task completion", async () => {
-    const { unmount } = await startHook();
-
-    await act(async () => {
-      listeners[ptyExitEvent("sess-1")]?.({
-        payload: { sessionId: "sess-1", exitCode: null, terminated: true },
-      });
-    });
-
-    expect(onTaskComplete).toHaveBeenCalledWith("task-1", false);
-
-    unmount();
-  });
-
-  it("fails task completion when the session disappears before a PTY exit payload arrives", async () => {
+  it("finishes the session immediately when it has already disappeared before the transcript replay resolves", async () => {
     mockListPtySessions.mockResolvedValueOnce([]);
 
-    const { unmount } = await startHook();
+    const { result, unmount } = await startHook();
 
-    expect(onTaskComplete).toHaveBeenCalledWith("task-1", false);
+    expect(result.current.alive).toBe(false);
     expect(mockWritePty).not.toHaveBeenCalled();
 
     unmount();
   });
 
-  it("treats a manually killed session as unsuccessful task completion", async () => {
+  it("marks the session as not alive after a manual kill followed by the exit event", async () => {
     const { result, unmount } = await startHook();
 
     await act(async () => {
@@ -274,7 +225,7 @@ describe("useTerminalSession", () => {
       listeners[ptyExitEvent("sess-1")]?.({ payload: "sess-1" });
     });
 
-    expect(onTaskComplete).toHaveBeenCalledWith("task-1", false);
+    expect(result.current.alive).toBe(false);
 
     unmount();
   });

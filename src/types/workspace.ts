@@ -6,21 +6,6 @@ export interface WorkspacePane {
   sessionId: string | null;
   gridPosition?: { row: number; col: number };
   pinnedCommands?: string[]; // max 5 saved commands
-
-  // === Orchestration metadata (Track B migration from layoutStore) ===
-  // Set when this pane was spawned by `orchestrationStore.tick()` for a
-  // flight task. The fields mirror the legacy `PaneConfig` shape so that
-  // `useTerminalSession` can wire `attachSessionToTask` and command/args
-  // overrides the same way it did off the mosaic.
-  taskId?: string;
-  flightId?: string;
-  agentConfigId?: string;
-  /** Initial prompt to write to the PTY once it spawns; takes precedence over `workspace.prompt`. */
-  initialPrompt?: string;
-  /** Overrides `agentConfig.command` (and the workspace's CLI resolution) when set. */
-  overrideCommand?: string;
-  /** Overrides the computed cliArgs (workspace bypass/model/effort flags) when set. */
-  overrideArgs?: string[];
 }
 
 export interface Workspace {

@@ -20,7 +20,6 @@ import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useFlightStore } from "@/stores/flightStore";
-import { useFlightPlannerStore } from "@/stores/flightPlannerStore";
 import { gitCreateBranch } from "@/lib/tauri";
 import { PRModal } from "@/components/views/PRModal";
 import { DiffViewer } from "@/components/views/DiffViewer";
@@ -704,10 +703,7 @@ function IssueDetail({
   // `!issue` early-return below.
   const setActiveView = useAppStore((s) => s.setActiveView);
   const addFlight = useFlightStore((s) => s.addFlight);
-  const updateFlight = useFlightStore((s) => s.updateFlight);
   const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
-  const startPlanner = useFlightPlannerStore((s) => s.startPlanner);
-  const injectTurn = useFlightPlannerStore((s) => s.injectTurn);
   const projectPathFromLayout = useLayoutStore((s) => s.projectPath);
   const activeWorkspace = useWorkspaceStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
@@ -740,36 +736,27 @@ function IssueDetail({
     setActionBusy("plan");
     setFeedback(null);
     try {
-      // Stage the flight: title from issue, spec-mode entry. Mirrors
-      // FlightsView::handleStartFlight's add/update/setActive/start
-      // sequence so the planner runtime is alive before the view switch.
+      // Stage the flight from the issue, seeding the objective with the
+      // issue body so it's a useful prefill when the user hits "Launch
+      // attempt" in the Flights view (asyncFlightStore worktree-attempt
+      // path — see AsyncFlightGrid's empty state).
+      const body = issue.body?.trim();
+      const objective = body
+        ? `GitHub issue #${issue.number}: ${issue.title}\n\n${body}`
+        : `Linked to GitHub issue #${issue.number}: ${issue.title}`;
       const flight = addFlight({
         title: issue.title,
-        objective: `Linked to GitHub issue #${issue.number}: ${issue.title}`,
+        objective,
         priority: "medium",
         projectPath: resolvedProjectPath,
         workspaceId: activeWorkspace?.id ?? null,
         issueIds: [],
       });
-      updateFlight(flight.id, { status: "spec" });
       setActiveFlight(flight.id);
-
-      // Start the planner BEFORE switching view — otherwise the
-      // FlightSpecPane mounts before the runtime exists. `startPlanner`
-      // installs api-agent listeners then spawns the sidecar.
-      await startPlanner(flight.id, resolvedProjectPath);
-
-      // Seed the planner with the issue context so the user lands on a
-      // spec-mode chat that already knows what to build.
-      const opener =
-        `From GitHub issue #${issue.number}: ${issue.title}\n\n` +
-        (issue.body?.trim() || "(no description)");
-      await injectTurn(flight.id, opener, "user");
-
       setActiveView("flights");
       setFeedback({
         tone: "success",
-        message: `Staged flight for #${issue.number}`,
+        message: `Staged flight for #${issue.number} — click "Launch attempt" in the Flights view to run it`,
         linkLabel: "Open",
         onLinkClick: () => setActiveView("flights"),
       });
@@ -888,8 +875,9 @@ function IssueDetail({
           )}
           Investigate with AI
         </button>
-        {/* v0.8-D — Plan flight: stage a flight in spec mode and seed the
-            planner with the issue body. */}
+        {/* v0.8-D — Plan flight: stage a flight seeded with the issue body;
+            attempts are launched from the Flights view's "Launch attempt"
+            affordance (asyncFlightStore worktree-attempt path). */}
         <button
           type="button"
           onClick={() => void handlePlanFlight()}

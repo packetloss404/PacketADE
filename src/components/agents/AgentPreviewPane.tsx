@@ -1,13 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  AlertCircle,
-  BookOpen,
-  ClipboardList,
-  ExternalLink,
-  Globe2,
-  PanelRightClose,
-  RefreshCw,
-} from "lucide-react";
+import { AlertCircle, BookOpen, ClipboardList, PanelRightClose } from "lucide-react";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { readFileContents } from "@/lib/tauri";
 import {
@@ -46,16 +38,8 @@ function fileLabel(path: string | null): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
-function normalizeUrl(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-}
-
 const TAB_META: Record<PreviewPaneTab, { label: string; icon: typeof BookOpen }> = {
   markdown: { label: "Markdown", icon: BookOpen },
-  browser: { label: "Browser", icon: Globe2 },
   plan: { label: "Plan", icon: ClipboardList },
 };
 
@@ -64,16 +48,8 @@ export function AgentPreviewPane({
   embedded = false,
   onRequestClose,
 }: AgentPreviewPaneProps) {
-  const {
-    activeTab,
-    markdownPath,
-    planTitle,
-    planContent,
-    browserUrl,
-    close,
-    setActiveTab,
-    setBrowserUrl,
-  } = usePreviewPaneStore();
+  const { activeTab, markdownPath, planTitle, planContent, close, setActiveTab } =
+    usePreviewPaneStore();
 
   const handleClose = () => {
     if (embedded) {
@@ -86,16 +62,11 @@ export function AgentPreviewPane({
   const [markdownContent, setMarkdownContent] = useState("");
   const [markdownLoading, setMarkdownLoading] = useState(false);
   const [markdownError, setMarkdownError] = useState<string | null>(null);
-  const [browserDraft, setBrowserDraft] = useState(browserUrl);
 
   const absoluteMarkdownPath = useMemo(
     () => (markdownPath ? resolveProjectPath(projectPath, markdownPath) : null),
     [markdownPath, projectPath],
   );
-
-  useEffect(() => {
-    setBrowserDraft(browserUrl);
-  }, [browserUrl]);
 
   useEffect(() => {
     if (!absoluteMarkdownPath) {
@@ -127,12 +98,6 @@ export function AgentPreviewPane({
     };
   }, [absoluteMarkdownPath, projectPath]);
 
-  const loadBrowser = () => {
-    setBrowserUrl(normalizeUrl(browserDraft));
-  };
-
-  const activeBrowserUrl = normalizeUrl(browserUrl);
-
   // In embedded mode we drop the standalone aside chrome (fixed width,
   // bordered left edge) because the InspectorPane already supplies them.
   const containerClass = embedded
@@ -149,11 +114,7 @@ export function AgentPreviewPane({
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
             <BookOpen size={14} className="text-text-secondary shrink-0" />
             <span className="text-ui font-medium text-text-primary truncate">
-              {activeTab === "markdown"
-                ? fileLabel(markdownPath)
-                : activeTab === "plan"
-                  ? planTitle
-                  : "Browser"}
+              {activeTab === "markdown" ? fileLabel(markdownPath) : planTitle}
             </span>
           </div>
           <Tooltip content="Collapse preview">
@@ -198,43 +159,6 @@ export function AgentPreviewPane({
         })}
       </div>
 
-      {activeTab === "browser" && (
-        <form
-          className="flex items-center gap-1.5 px-2 py-2 border-b border-bg-border bg-bg-secondary/50 shrink-0"
-          onSubmit={(event) => {
-            event.preventDefault();
-            loadBrowser();
-          }}
-        >
-          <input
-            value={browserDraft}
-            onChange={(event) => setBrowserDraft(event.target.value)}
-            placeholder="https://example.com"
-            className="flex-1 min-w-0 bg-bg-primary border border-bg-border rounded px-2 py-1 text-ui text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-green/50"
-          />
-          <Tooltip content="Load">
-            <button
-              type="submit"
-              className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
-            >
-              <RefreshCw size={12} />
-            </button>
-          </Tooltip>
-          {activeBrowserUrl && (
-            <Tooltip content="Open externally">
-              <a
-                href={activeBrowserUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
-              >
-                <ExternalLink size={12} />
-              </a>
-            </Tooltip>
-          )}
-        </form>
-      )}
-
       <div className="flex-1 min-h-0 overflow-hidden">
         {activeTab === "markdown" && (
           <div className="h-full overflow-y-auto px-5 py-4">
@@ -278,26 +202,6 @@ export function AgentPreviewPane({
                 className="h-full"
                 icon={<ClipboardList size={24} />}
                 title="Plan-mode responses will appear here for review."
-              />
-            )}
-          </div>
-        )}
-
-        {activeTab === "browser" && (
-          <div className="h-full bg-bg-secondary/40">
-            {activeBrowserUrl ? (
-              <iframe
-                key={activeBrowserUrl}
-                src={activeBrowserUrl}
-                title="Preview browser"
-                className="w-full h-full bg-bg-primary"
-                sandbox="allow-forms allow-modals allow-popups allow-scripts"
-              />
-            ) : (
-              <EmptyState
-                className="h-full"
-                icon={<Globe2 size={24} />}
-                title="Enter a URL above to browse inside the preview pane."
               />
             )}
           </div>

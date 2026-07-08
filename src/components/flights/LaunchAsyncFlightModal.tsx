@@ -18,6 +18,11 @@ import type { FlightPriority } from "@/types/flight";
 interface LaunchAsyncFlightModalProps {
   onClose: () => void;
   onLaunched?: (flightId: string) => void;
+  // When set, launch attempts into this existing flight instead of minting a
+  // new one (e.g. "Launch attempt" from an already-staged flight's detail
+  // pane, or GitHub's "Plan flight" hand-off). The prompt/title fields are
+  // pre-filled from the flight's objective/title but remain editable.
+  flightId?: string;
 }
 
 function pickedToSpec(p: PickedTarget): AttemptTargetSpec {
@@ -51,7 +56,11 @@ function pickedToSpec(p: PickedTarget): AttemptTargetSpec {
   };
 }
 
-export function LaunchAsyncFlightModal({ onClose, onLaunched }: LaunchAsyncFlightModalProps) {
+export function LaunchAsyncFlightModal({
+  onClose,
+  onLaunched,
+  flightId,
+}: LaunchAsyncFlightModalProps) {
   const addFlight = useFlightStore((s) => s.addFlight);
   const flights = useFlightStore((s) => s.flights);
   const launchAsync = useAsyncFlightStore((s) => s.launchAsync);
@@ -64,8 +73,16 @@ export function LaunchAsyncFlightModal({ onClose, onLaunched }: LaunchAsyncFligh
   // via Settings → GitHub.
   const defaultPublishAttemptsAsPrs = useGitHubStore((s) => s.defaultPublishAttemptsAsPrs);
 
-  const [prompt, setPrompt] = useState("");
-  const [title, setTitle] = useState("");
+  const existingFlight = useMemo(
+    () => (flightId ? flights.find((f) => f.id === flightId) ?? null : null),
+    // flights is a fresh array each render but we only need the lookup to
+    // re-run when the target id or flight count changes; the modal is
+    // short-lived so staleness here is not a concern.
+    [flightId, flights],
+  );
+
+  const [prompt, setPrompt] = useState(() => existingFlight?.objective ?? "");
+  const [title, setTitle] = useState(() => existingFlight?.title ?? "");
   const [picked, setPicked] = useState<PickedTarget[]>([]);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,8 +98,8 @@ export function LaunchAsyncFlightModal({ onClose, onLaunched }: LaunchAsyncFligh
 
   const targetSpecs = useMemo(() => picked.map(pickedToSpec), [picked]);
   const launchCollisions = useMemo(
-    () => findAsyncLaunchPathCollisions(null, targetSpecs, flights),
-    [flights, targetSpecs],
+    () => findAsyncLaunchPathCollisions(existingFlight?.id ?? null, targetSpecs, flights),
+    [existingFlight, flights, targetSpecs],
   );
   const collisionMessage = useMemo(
     () =>
@@ -130,15 +147,20 @@ export function LaunchAsyncFlightModal({ onClose, onLaunched }: LaunchAsyncFligh
         setError(collisionMessage);
         return;
       }
-      const flight = addFlight({
-        title: title.trim() || promptShort || "Untitled flight",
-        objective: prompt.trim(),
-        priority: "medium" as FlightPriority,
-        projectPath: activeWorkspace?.projectPath || projectPath || "",
-        workspaceId: activeWorkspace?.id ?? null,
-        issueIds: [],
-        publishAttemptsAsPrs: publishAsPrs,
-      });
+      // When launching into an already-staged flight (e.g. from GitHub's
+      // "Plan flight" hand-off or the Flights detail pane's empty-attempts
+      // state), reuse it instead of minting a disconnected duplicate.
+      const flight =
+        existingFlight ??
+        addFlight({
+          title: title.trim() || promptShort || "Untitled flight",
+          objective: prompt.trim(),
+          priority: "medium" as FlightPriority,
+          projectPath: activeWorkspace?.projectPath || projectPath || "",
+          workspaceId: activeWorkspace?.id ?? null,
+          issueIds: [],
+          publishAttemptsAsPrs: publishAsPrs,
+        });
 
       // v0.8 race-fix: `addFlight` already carries `publishAttemptsAsPrs`
       // through to backend persistence via `saveFlightsSlice`, so a
@@ -194,7 +216,7 @@ export function LaunchAsyncFlightModal({ onClose, onLaunched }: LaunchAsyncFligh
   return (
     <Modal
       onClose={launching ? () => {} : onClose}
-      title="Launch parallel agents"
+      title={existingFlight ? `Launch attempt — ${existingFlight.title || "Untitled flight"}` : "Launch parallel agents"}
       icon={<Sparkles size={14} className="text-accent-green" />}
       width="w-[820px] max-w-[92vw]"
       footer={footer}

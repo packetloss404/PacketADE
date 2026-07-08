@@ -6,7 +6,6 @@ import {
   createPtySession,
   killPty,
   listPtySessions,
-  parsePtyExitPayload,
   readPtyTranscript,
   writePty,
 } from "@/lib/tauri";
@@ -15,7 +14,6 @@ import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useActivityStore } from "@/stores/activityStore";
-import { useOrchestrationStateStore } from "@/stores/orchestrationStateStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { usePtyStateDetector, type PtyDetectorState } from "@/hooks/usePtyStateDetector";
 import {
@@ -47,7 +45,6 @@ interface UseTerminalSessionOptions {
   projectPath?: string;
   initialPrompt?: string;
   issueId?: string;
-  taskId?: string;
   xtermRef: RefObject<Terminal | null>;
   fitAddonRef: RefObject<FitAddon | null>;
   sessionIdRef: RefObject<string | null>;
@@ -78,7 +75,6 @@ export function useTerminalSession({
   projectPath: paneProjectPath,
   initialPrompt,
   issueId,
-  taskId,
   xtermRef,
   fitAddonRef,
   sessionIdRef,
@@ -138,18 +134,12 @@ export function useTerminalSession({
           if (sessionId && tab) {
             notifyApprovalNeeded(sessionId, tab.name);
           }
-          if (taskId) {
-            void useOrchestrationStateStore.getState().onTaskApprovalNeeded(taskId);
-          }
         } else if (!next.needsApproval && prev.needsApproval) {
           useTabStore.getState().updateTabStatus(tabId, "running");
-          if (taskId) {
-            void useOrchestrationStateStore.getState().onTaskApprovalResolved(taskId);
-          }
         }
       }
     },
-    [sessionIdRef, taskId],
+    [sessionIdRef],
   );
 
   const detectorResult = usePtyStateDetector({
@@ -250,9 +240,6 @@ export function useTerminalSession({
 
       useLayoutStore.getState().setPaneSession(paneId, sessionId);
       onSessionCreatedRef.current?.(sessionId);
-      if (taskId) {
-        useOrchestrationStateStore.getState().attachSessionToTask(taskId, sessionId);
-      }
 
       useTabStore.getState().updateTabStatus(tabId, "running");
       useTabStore.setState((s) => ({
@@ -265,12 +252,6 @@ export function useTerminalSession({
       let buffered = "";
       let exitWhileBuffering = false;
       let sessionFinished = false;
-      // Real exit outcome carried by the pty:exit event. If the session
-      // disappears before we see that event, task sessions fail closed rather
-      // than silently recording a crashed/killed process as successful.
-      let sawExitPayload = false;
-      let exitCode: number | null = null;
-      let exitTerminated = false;
       const finishSession = () => {
         if (sessionFinished) return;
         if (buffering) {
@@ -305,22 +286,11 @@ export function useTerminalSession({
 
         useActivityStore.getState().clearActivity(tabId);
 
-        // Auto-learn from completed sessions (skip task sessions — those are captured via orchestration)
-        if (!taskId && tab && projectPath && tab.durationMs > 30_000 && !wasRequested) {
+        // Auto-learn from completed sessions.
+        if (tab && projectPath && tab.durationMs > 30_000 && !wasRequested) {
           void useMemoryStore
             .getState()
             .learnFromSession(sessionId, cliCommand, projectPath, tab.durationMs);
-        }
-
-        if (taskId) {
-          // A task succeeds only when nobody asked it to stop AND we observed
-          // a terminal event whose outcome was clean: not an orchestrator kill
-          // (flight pause/cancel) and a zero / legacy-unknown exit code. If the
-          // session merely vanished from listPtySessions before the exit event,
-          // fail closed.
-          const cleanExit = sawExitPayload && (exitCode === null || exitCode === 0);
-          const success = !wasRequested && !exitTerminated && cleanExit;
-          void useOrchestrationStateStore.getState().onTaskComplete(taskId, success);
         }
       };
 
@@ -332,11 +302,7 @@ export function useTerminalSession({
         }
       });
 
-      const exitUnlisten = await listen<unknown>(ptyExitEvent(sessionId), (event) => {
-        const parsed = parsePtyExitPayload(event.payload);
-        sawExitPayload = true;
-        exitCode = parsed.exitCode;
-        exitTerminated = parsed.terminated;
+      const exitUnlisten = await listen<unknown>(ptyExitEvent(sessionId), () => {
         finishSession();
       });
 
@@ -404,7 +370,6 @@ export function useTerminalSession({
     initialPrompt,
     xtermRef,
     fitAddonRef,
-    taskId,
     sessionIdRef,
     onSessionCreatedRef,
     emitSessionEnded,

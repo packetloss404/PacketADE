@@ -91,15 +91,3 @@ export function apiAgentToolOutputExtendedEvent(sessionId: string): string {
 export function apiAgentTurnSummaryEvent(sessionId: string): string {
   return `api-agent:turn-summary:${sessionId}`;
 }
-
-// Flight planner — async approval gate (E2). Fired by the Rust dispatcher
-// when the planner's `request_user_approval` tool files a question, and
-// again (resolved variant) when the Rust side processes a
-// `resolve_flight_approval` invocation.
-export function flightPlannerApprovalRequestEvent(flightId: string): string {
-  return `flight-planner:approval-request:${flightId}`;
-}
-
-export function flightPlannerApprovalResolvedEvent(flightId: string): string {
-  return `flight-planner:approval-resolved:${flightId}`;
-}

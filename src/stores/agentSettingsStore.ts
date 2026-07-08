@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { storageKey } from "@/lib/brand";
 
-export type AgentComposerMode = "local" | "worktree" | "cloud";
+export type AgentComposerMode = "local" | "worktree";
 
 /** Global transcript render density (P1-17). Replaces the old
  * per-conversation `AgentConversation.transcriptVerbosity` select — one
@@ -54,7 +54,7 @@ const LEGACY_RAIL_COLLAPSED_KEY = storageKey("agent-tabbed-rail-collapsed");
 const LEGACY_ONBOARDING_DISMISSED_KEY = storageKey("agents-onboarding-dismissed");
 
 function isComposerMode(value: unknown): value is AgentComposerMode {
-  return value === "local" || value === "worktree" || value === "cloud";
+  return value === "local" || value === "worktree";
 }
 
 function isTranscriptViewMode(value: unknown): value is TranscriptViewMode {

@@ -140,7 +140,7 @@ describe("Tauri persistence DTO mapping", () => {
     expect(state.servers[0].hostFingerprint).toBe("SHA256:test");
   });
 
-  it("passes through workspace pane metadata and githubRepo when present", async () => {
+  it("passes through workspace pane pinnedCommands and githubRepo when present", async () => {
     const workspace: Workspace = {
       id: "workspace-1",
       name: "Workspace",
@@ -152,12 +152,6 @@ describe("Tauri persistence DTO mapping", () => {
           sessionId: "session-1",
           gridPosition: { row: 0, col: 0 },
           pinnedCommands: ["pnpm test"],
-          taskId: "task-1",
-          flightId: "flight-1",
-          agentConfigId: "codex",
-          initialPrompt: "Start here",
-          overrideCommand: "codex",
-          overrideArgs: ["--ask-for-approval", "never"],
         },
       ],
       projectPath: "/repo",
@@ -176,18 +170,17 @@ describe("Tauri persistence DTO mapping", () => {
           panes: [
             expect.objectContaining({
               pinnedCommands: ["pnpm test"],
-              taskId: "task-1",
-              flightId: "flight-1",
-              agentConfigId: "codex",
-              initialPrompt: "Start here",
-              overrideCommand: "codex",
-              overrideArgs: ["--ask-for-approval", "never"],
             }),
           ],
         }),
       ],
     });
 
+    // Legacy/backend-owned pane metadata (taskId, flightId, agentConfigId,
+    // initialPrompt, overrideCommand, overrideArgs) from the retired
+    // tick-loop scheduler may still be echoed back by an unmigrated
+    // backend this wave — hydration must silently ignore it rather than
+    // crash or resurrect it onto the frontend Workspace type.
     mockInvoke.mockResolvedValue(
       makePersistedStateDto({
         workspaces: [
@@ -225,14 +218,13 @@ describe("Tauri persistence DTO mapping", () => {
     expect(state.workspaces[0].panes[0]).toEqual(
       expect.objectContaining({
         pinnedCommands: ["pnpm test"],
-        taskId: "task-1",
-        flightId: "flight-1",
-        agentConfigId: "codex",
-        initialPrompt: "Start here",
-        overrideCommand: "codex",
-        overrideArgs: ["--ask-for-approval", "never"],
       }),
     );
+    expect(state.workspaces[0].panes[0]).not.toHaveProperty("taskId");
+    expect(state.workspaces[0].panes[0]).not.toHaveProperty("flightId");
+    expect(state.workspaces[0].panes[0]).not.toHaveProperty("initialPrompt");
+    expect(state.workspaces[0].panes[0]).not.toHaveProperty("overrideCommand");
+    expect(state.workspaces[0].panes[0]).not.toHaveProperty("overrideArgs");
   });
 
   it("omits undefined ui fields for partial ui slice saves", async () => {
