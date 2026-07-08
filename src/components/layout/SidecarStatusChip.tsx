@@ -1,4 +1,3 @@
-import { Zap } from "lucide-react";
 import { useSidecarStatus } from "@/hooks/useSidecarStatus";
 
 /**
@@ -10,17 +9,18 @@ import { useSidecarStatus } from "@/hooks/useSidecarStatus";
  *   3. Unsubscribe on unmount.
  *
  * Rendering:
- *   - `ready`       → green dot + "sidecar ready"
  *   - `restarting`  → yellow dot + "sidecar restarting (N/3)"
  *   - `down`        → red dot + "sidecar down" (tooltip = last_error)
- *   - `not_started` → nothing (chip is omitted until the supervisor has
- *                     actually done something)
+ *   - `ready` / `not_started` → nothing. A permanently green chip trains the
+ *     eye to ignore the slot, so the chip only appears when the sidecar is
+ *     degraded; full health detail (version/pid/lifetime) remains available
+ *     while it is visible via the tooltip.
  */
 export function SidecarStatusChip() {
   const status = useSidecarStatus();
 
-  if (!status || status.state === "not_started") {
-    // Don't clutter the bar before the supervisor has emitted anything.
+  if (!status || status.state === "not_started" || status.state === "ready") {
+    // Quiet when healthy: surface only degraded states.
     return null;
   }
 
@@ -41,18 +41,7 @@ export function SidecarStatusChip() {
     .filter(Boolean)
     .join(" · ");
 
-  if (status.state === "ready") {
-    dotClass = "text-accent-green";
-    label = "sidecar ready";
-    const head =
-      [
-        status.version ? `version ${status.version}` : null,
-        status.pid != null ? `pid ${status.pid}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ") || "sidecar ready";
-    tooltip = `${head}\n${lifetimeLine}`;
-  } else if (status.state === "restarting") {
+  if (status.state === "restarting") {
     dotClass = "text-accent-amber";
     label = `sidecar restarting (${status.restart_count}/3)`;
     tooltip = `${status.last_error ?? label}\n${lifetimeLine}`;
@@ -67,13 +56,9 @@ export function SidecarStatusChip() {
       className="flex items-center gap-1 px-1.5 text-text-muted text-[10px] select-none"
       title={tooltip}
     >
-      {status.state === "ready" ? (
-        <Zap size={10} className={`${dotClass} fill-current`} aria-hidden />
-      ) : (
-        <span className={`${dotClass} leading-none`} aria-hidden>
-          ●
-        </span>
-      )}
+      <span className={`${dotClass} leading-none`} aria-hidden>
+        ●
+      </span>
       <span>{label}</span>
     </div>
   );
