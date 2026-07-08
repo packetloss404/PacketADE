@@ -1,18 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle,
   Plane,
   Search,
   Plus,
   Users,
-  Pause,
-  Play,
-  Square,
   Check,
-  CheckCircle2,
   Sparkles,
-  Target,
-  RefreshCw,
   Brain,
   Trash2,
   X,
@@ -20,22 +13,12 @@ import {
   GitCommit,
   ShieldCheck,
 } from "lucide-react";
-import { listen } from "@tauri-apps/api/event";
 import { useShallow } from "zustand/react/shallow";
 import { useFlightStore } from "@/stores/flightStore";
-import { useGoalStore } from "@/stores/goalStore";
-import { useOrchestrationSchedulerStore } from "@/stores/orchestrationSchedulerStore";
-import { useOrchestrationStateStore as useOrchestrationStore } from "@/stores/orchestrationStateStore";
-import { useFlightPlannerStore } from "@/stores/flightPlannerStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useLayoutStore } from "@/stores/layoutStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useAppStore } from "@/stores/appStore";
-import { NewFlightModal } from "@/components/flights/NewFlightModal";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
-import { FlightSpecPane } from "@/components/flights/FlightSpecPane";
-import { JournalTab } from "@/components/flights/JournalTab";
-import { PlannerApprovalGate } from "@/components/flights/PlannerApprovalGate";
+import { AsyncFlightGrid } from "@/components/flights/AsyncFlightGrid";
 import { relativeTime } from "@/lib/time";
 import { summarizeFlightReview } from "@/lib/flightReview";
 import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
@@ -47,7 +30,9 @@ import type {
   CoordinationEventType,
 } from "@/types/flight";
 
-type ModalKind = null | "async" | "multitask";
+type ModalKind = null | "async";
+// When set alongside modal === "async", the launch modal targets this
+// existing flight instead of minting a new one.
 type GroupKey = "drafting" | "attention" | "active" | "recent";
 
 type DesignDot = "green" | "blue" | "amber" | "red" | "muted" | "accent" | "purple";
@@ -197,48 +182,28 @@ function eventTimeShort(ts: number): string {
 }
 
 export function FlightsView() {
-  const { flights, activeFlightId, setActiveFlight, addFlight, updateFlight, computeFlightStatus } =
+  const { flights, activeFlightId, setActiveFlight, computeFlightStatus } =
     useFlightStore(
       useShallow((s) => ({
         flights: s.flights,
         activeFlightId: s.activeFlightId,
         setActiveFlight: s.setActiveFlight,
-        addFlight: s.addFlight,
-        updateFlight: s.updateFlight,
         computeFlightStatus: s.computeFlightStatus,
       })),
     );
-  const pauseFlight = useOrchestrationStore((s) => s.pauseFlight);
-  const resumeFlight = useOrchestrationStore((s) => s.resumeFlight);
-  const schedulerLastError = useOrchestrationSchedulerStore((s) => s.lastError);
-  const restartSchedulerLoop = useOrchestrationSchedulerStore((s) => s.startLoop);
-  const startPlanner = useFlightPlannerStore((s) => s.startPlanner);
-  const activeWorkspace = useWorkspaceStore((s) =>
-    s.workspaces.find((w) => w.id === s.activeWorkspaceId),
-  );
-  const projectPath = useLayoutStore((s) => s.projectPath);
-
   const [modal, setModal] = useState<ModalKind>(null);
+  const [launchTargetFlightId, setLaunchTargetFlightId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
   function handleStartFlight() {
-    const resolvedPath = activeWorkspace?.projectPath || projectPath || "";
-    const flight = addFlight({
-      title: "Untitled flight",
-      objective: "",
-      priority: "medium",
-      projectPath: resolvedPath,
-      workspaceId: activeWorkspace?.id ?? null,
-      issueIds: [],
-    });
-    // `addFlight` hardcodes status: "draft"; flip it to spec mode so the
-    // detail pane mounts the FlightSpecPane and the sidebar groups this
-    // flight under "Drafting".
-    updateFlight(flight.id, { status: "spec" });
-    setActiveFlight(flight.id);
-    // Fire-and-forget — FlightSpecPane handles streaming state once mounted.
-    void startPlanner(flight.id, resolvedPath);
+    setLaunchTargetFlightId(null);
+    setModal("async");
+  }
+
+  function handleLaunchIntoFlight(flightId: string) {
+    setLaunchTargetFlightId(flightId);
+    setModal("async");
   }
 
   const selectedId = useMemo(() => {
@@ -278,7 +243,10 @@ export function FlightsView() {
     return buckets;
   }, [flights, query, computeFlightStatus]);
 
-  const closeModal = () => setModal(null);
+  const closeModal = () => {
+    setModal(null);
+    setLaunchTargetFlightId(null);
+  };
 
   if (flights.length === 0) {
     return (
@@ -287,8 +255,8 @@ export function FlightsView() {
           <Plane size={32} />
           <span className="text-sm font-medium text-text-primary">No flights yet</span>
           <span className="max-w-md text-center text-xs">
-            Start a conversation with the planner. Describe what you want to build, and the planner
-            will help scope it, decompose it into milestones, and run it in parallel.
+            Launch a worktree attempt against a target agent and branch — track
+            progress, review the diff, and accept or reject the result.
           </span>
           <div className="mt-2 flex flex-col items-center gap-2">
             <button
@@ -296,21 +264,16 @@ export function FlightsView() {
               className="hover:bg-accent-green/15 flex items-center gap-2 rounded border border-accent-line bg-accent-soft px-4 py-2 text-sm font-medium text-accent-green transition-colors"
             >
               <Sparkles size={14} />
-              Start a flight
-            </button>
-            <button
-              onClick={() => setModal("async")}
-              className="mt-1 text-[11px] text-text-muted transition-colors hover:text-text-secondary"
-            >
-              Or &rarr; Quick async launch (existing flow)
+              New flight
             </button>
           </div>
         </div>
         {modal === "async" && (
-          <LaunchAsyncFlightModal onLaunched={(id) => setActiveFlight(id)} onClose={closeModal} />
-        )}
-        {modal === "multitask" && (
-          <NewFlightModal onCreated={(id) => setActiveFlight(id)} onClose={closeModal} />
+          <LaunchAsyncFlightModal
+            flightId={launchTargetFlightId ?? undefined}
+            onLaunched={(id) => setActiveFlight(id)}
+            onClose={closeModal}
+          />
         )}
       </>
     );
@@ -328,33 +291,15 @@ export function FlightsView() {
           onQueryChange={setQuery}
           searchOpen={searchOpen}
           onToggleSearch={() => setSearchOpen((v) => !v)}
-          onCreate={() => setModal("async")}
+          onCreate={handleStartFlight}
           computeStatus={computeFlightStatus}
         />
         <div className="flex min-w-0 flex-1 flex-col">
-          {schedulerLastError && (
-            <div
-              role="alert"
-              className="border-accent-amber/25 bg-accent-amber/10 mx-3.5 mt-3 flex items-center gap-2 rounded border px-2.5 py-2 text-[11px] text-accent-amber"
-            >
-              <AlertTriangle size={12} className="shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{schedulerLastError}</span>
-              <button
-                onClick={restartSchedulerLoop}
-                className="border-accent-amber/30 hover:bg-accent-amber/10 inline-flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium transition-colors"
-                title="Resume flight scheduler"
-              >
-                <RefreshCw size={10} />
-                Retry
-              </button>
-            </div>
-          )}
           {selectedFlight ? (
             <FlightDetailPane
               flight={selectedFlight}
               status={computeFlightStatus(selectedFlight.id)}
-              onPause={() => void pauseFlight(selectedFlight.id)}
-              onResume={() => void resumeFlight(selectedFlight.id)}
+              onLaunchAttempt={() => handleLaunchIntoFlight(selectedFlight.id)}
             />
           ) : (
             <EmptyDetail />
@@ -362,10 +307,11 @@ export function FlightsView() {
         </div>
       </div>
       {modal === "async" && (
-        <LaunchAsyncFlightModal onLaunched={(id) => setActiveFlight(id)} onClose={closeModal} />
-      )}
-      {modal === "multitask" && (
-        <NewFlightModal onCreated={(id) => setActiveFlight(id)} onClose={closeModal} />
+        <LaunchAsyncFlightModal
+          flightId={launchTargetFlightId ?? undefined}
+          onLaunched={(id) => setActiveFlight(id)}
+          onClose={closeModal}
+        />
       )}
     </>
   );
@@ -508,7 +454,7 @@ function FlightRow({
   // Inline two-step confirm: first trash click flips this to true and we
   // show a small Confirm? row with check / cancel buttons. Auto-reverts
   // after 3s if the user does nothing — matches the destructive-action
-  // pattern used elsewhere in this codebase (NewFlightModal, GitDashboard).
+  // pattern used elsewhere in this codebase (e.g. GitDashboard).
   const [confirming, setConfirming] = useState(false);
   useEffect(() => {
     if (!confirming) return;
@@ -537,10 +483,6 @@ function FlightRow({
     }
     return false;
   }, [flight.attempts, flight.milestones]);
-  // B5 — show how many persistent goals are bound to this flight so
-  // users see at a glance whether long-running work is parked here.
-  const goalCount = useGoalStore((s) => s.getGoalsForFlight(flight.id).length);
-
   // v0.8-H — "N patterns extracted" chip on completed flights. We
   // count every `flight_completed` / `task_completed` event tied to
   // this flight (by flightId) and the lessonsLearned bullets they
@@ -661,15 +603,6 @@ function FlightRow({
           <Users size={9} />
           <span>{agents}</span>
         </span>
-        {goalCount > 0 && (
-          <span
-            className="inline-flex items-center gap-1 text-accent-blue"
-            title={`${goalCount} persistent goal${goalCount === 1 ? "" : "s"} bound to this flight`}
-          >
-            <Target size={9} />
-            <span>{goalCount}</span>
-          </span>
-        )}
         {memoryHits > 0 && (
           <span
             role="button"
@@ -703,92 +636,14 @@ function FlightRow({
 interface DetailProps {
   flight: Flight;
   status: FlightStatus;
-  onPause: () => void;
-  onResume: () => void;
+  onLaunchAttempt: () => void;
 }
 
-function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
+function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
   const cfg = FLIGHT_STATUS_CONFIG[status];
   const dot = STATUS_DOT[status];
   const tasks = flightTasks(flight);
   const sessions = flight.linkedSessionIds.length;
-  const isSpec = status === "spec";
-  // E7-INTEGRATE — tab strip state. "overview" renders the existing
-  // detail body (or FlightSpecPane in spec status); "journal" renders
-  // the markdown journal for this flight.
-  const [activeTab, setActiveTab] = useState<"overview" | "journal">("overview");
-  const [unreadJournal, setUnreadJournal] = useState(false);
-
-  // Reset tab + unread dot when switching between flights so a new
-  // flight doesn't inherit stale UI state.
-  useEffect(() => {
-    setActiveTab("overview");
-    setUnreadJournal(false);
-  }, [flight.id]);
-
-  // FIX 3 (E7 polish) — keep the latest `activeTab` reachable from inside
-  // the journal-listener effect without naming it as a dep. Listing
-  // `activeTab` as a dependency below tore down + re-subscribed the Tauri
-  // listener on every tab flip (cheap but a real source of churn during
-  // rapid Overview/Journal toggles). A ref reads the freshest value at
-  // event time and the effect only runs when the flight identity changes.
-  const activeTabRef = useRef<"overview" | "journal">("overview");
-  useEffect(() => {
-    activeTabRef.current = activeTab;
-  }, [activeTab]);
-
-  // Subscribe to journal-append events for this flight. If the user is
-  // already viewing the Journal tab, we don't need to flag anything; the
-  // JournalTab itself will refresh. Otherwise show a small dot.
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    let cancelled = false;
-    listen(`flight-planner:journal-appended:${flight.id}`, () => {
-      if (cancelled) return;
-      // Read `activeTab` off the ref so this effect doesn't need to
-      // resubscribe when the tab changes.
-      if (activeTabRef.current !== "journal") {
-        setUnreadJournal(true);
-      }
-    }).then((fn) => {
-      if (cancelled) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
-    return () => {
-      cancelled = true;
-      if (unlisten) unlisten();
-    };
-  }, [flight.id]);
-  const canPause = !isSpec && status === "active";
-  const canResume = !isSpec && (status === "paused" || status === "review");
-  const showApprove = !isSpec && (status === "review" || tasks.approvals > 0);
-  // E6-KILL-AWAKE: subscribe to planner runtime so the Stop button reactively
-  // appears/disappears when the planner starts/stops. We watch the runtime
-  // status itself (not just `isPlannerRunning(...)`) so Zustand's referential
-  // selector triggers a re-render when status flips.
-  const plannerStatus = useFlightPlannerStore((s) => s.runtimes.get(flight.id)?.status);
-  // E10 — surface context-compaction state next to the status pill so
-  // the user understands why the planner is briefly unresponsive while
-  // the conversation gets summarized + the session is swapped.
-  const isCompacting = useFlightPlannerStore(
-    (s) => s.runtimes.get(flight.id)?.isCompacting === true,
-  );
-  // FIX 4 — include `quota_paused` so the user can manually stop a planner
-  // stuck on auto-resume backoff without waiting for the timer to fire.
-  // (The runtime status itself is preserved across the stop; the planner's
-  // session is the thing that gets torn down.)
-  const plannerRunning =
-    plannerStatus === "awake" || plannerStatus === "idle" || plannerStatus === "quota_paused";
-  const showStopPlanner =
-    plannerRunning &&
-    (status === "spec" ||
-      status === "planning" ||
-      status === "active" ||
-      status === "review" ||
-      status === "paused");
 
   return (
     <div className="flex-1 overflow-y-auto bg-bg-primary">
@@ -808,15 +663,6 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
               >
                 {PRIORITY_LABEL[flight.priority]}
               </span>
-              {isCompacting && (
-                <span
-                  className="bg-accent-amber/10 border-accent-amber/30 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] text-accent-amber"
-                  title="Planner context compaction in progress — summarizing the conversation and restarting the session to stay under the 200K context limit."
-                >
-                  <RefreshCw size={9} className="animate-spin" />
-                  Compacting
-                </span>
-              )}
             </div>
             <h2 className="text-[18px] font-semibold leading-tight tracking-tight text-text-primary">
               {flight.title || "Untitled flight"}
@@ -827,107 +673,18 @@ function FlightDetailPane({ flight, status, onPause, onResume }: DetailProps) {
               </p>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {canPause && (
-              <button
-                onClick={onPause}
-                className="inline-flex items-center gap-1 rounded border border-bg-border px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-              >
-                <Pause size={11} />
-                Pause
-              </button>
-            )}
-            {showStopPlanner && (
-              <button
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Stop the autonomous planner for this flight? The flight stays alive — milestones, tasks, and in-flight executor work continue. You can restart the planner manually later.",
-                    )
-                  ) {
-                    void useFlightPlannerStore.getState().stopPlanner(flight.id);
-                  }
-                }}
-                className="border-accent-red/30 hover:bg-accent-red/10 inline-flex items-center gap-1 rounded border bg-bg-secondary px-2 py-1 text-[11px] text-accent-red transition-colors"
-              >
-                <Square size={11} />
-                Stop planner
-              </button>
-            )}
-            {canResume && (
-              <button
-                onClick={onResume}
-                className="inline-flex items-center gap-1 rounded border border-bg-border px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-              >
-                <Play size={11} />
-                Resume
-              </button>
-            )}
-            {showApprove && (
-              <button
-                onClick={onResume}
-                className="hover:bg-accent-green/20 inline-flex items-center gap-1 rounded border border-accent-line bg-accent-soft px-2.5 py-1 text-[11px] font-medium text-accent-green transition-colors"
-              >
-                <CheckCircle2 size={11} />
-                Approve &amp; merge
-              </button>
-            )}
-          </div>
         </div>
 
-        <PlannerApprovalGate flightId={flight.id} />
+        <StatGrid flight={flight} tasks={tasks} sessions={sessions} dot={dot} />
 
-        {/* E7-INTEGRATE — tab strip: Overview / Journal */}
-        <div className="-mx-3.5 flex items-center gap-0 border-b border-line-soft px-3.5">
-          <button
-            onClick={() => setActiveTab("overview")}
-            className={`border-b-2 px-3 py-2 text-[11px] transition-colors ${
-              activeTab === "overview"
-                ? "border-accent-green text-text-primary"
-                : "border-transparent text-text-muted hover:text-text-secondary"
-            }`}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab("journal");
-              setUnreadJournal(false);
-            }}
-            className={`inline-flex items-center gap-1 border-b-2 px-3 py-2 text-[11px] transition-colors ${
-              activeTab === "journal"
-                ? "border-accent-green text-text-primary"
-                : "border-transparent text-text-muted hover:text-text-secondary"
-            }`}
-          >
-            Journal
-            {unreadJournal && (
-              <span
-                className="ml-0.5 inline-block h-1.5 w-1.5 rounded-full bg-accent-green"
-                aria-label="New journal entry"
-              />
-            )}
-          </button>
+        <AsyncFlightGrid flight={flight} onLaunch={onLaunchAttempt} />
+
+        <OutputReviewCard flight={flight} />
+
+        <div className="grid min-h-[260px] flex-1 grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr]">
+          <MilestonesCard flight={flight} tasks={tasks} />
+          <TimelineCard flight={flight} />
         </div>
-
-        {activeTab === "overview" ? (
-          isSpec ? (
-            <FlightSpecPane flightId={flight.id} />
-          ) : (
-            <>
-              <StatGrid flight={flight} tasks={tasks} sessions={sessions} dot={dot} />
-
-              <OutputReviewCard flight={flight} />
-
-              <div className="grid min-h-[260px] flex-1 grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr]">
-                <MilestonesCard flight={flight} tasks={tasks} />
-                <TimelineCard flight={flight} />
-              </div>
-            </>
-          )
-        ) : (
-          <JournalTab flightId={flight.id} />
-        )}
       </div>
     </div>
   );
@@ -1042,26 +799,6 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
   const tasksValueClass = tasks.hasInProgress ? "text-accent-green" : "text-text-primary";
   const approvalsValueClass = tasks.approvals > 0 ? "text-accent-amber" : "text-text-primary";
 
-  // E8-UI — split the single "Cost" cell into Planner + Exec. The executor
-  // cost is derived as `totalCost - plannerCost` so we don't need a new
-  // backend field. The Planner cell carries a sub-line: on OAuth
-  // subscriptions the dollar value is best-effort (no public quota
-  // endpoint), so we surface the cumulative token count as the
-  // authoritative measure; on API providers we just note "(API)".
-  //
-  // `plannerProvider` is now a first-class optional field on the Flight
-  // interface (added alongside E8-ACCUM in `src/types/flight.ts`), so we
-  // can read it directly without a narrowing cast.
-  const plannerCost = flight.plannerCost ?? 0;
-  const plannerTokens = flight.plannerTokens ?? 0;
-  const executorCost = Math.max(0, (flight.totalCost ?? 0) - plannerCost);
-  const plannerProvider = flight.plannerProvider;
-  const isOAuth = plannerProvider === "claude-oauth";
-  const plannerTitle =
-    "Cumulative tokens spent by the planner session. On OAuth " +
-    "subscriptions the dollar cost is best-effort (no public quota " +
-    "endpoint); use the token count as the authoritative measure.";
-
   const cells: {
     label: string;
     value: string;
@@ -1069,22 +806,7 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
     valueClass?: string;
     title?: string;
   }[] = [
-    {
-      label: "Planner",
-      value: formatCost(plannerCost),
-      // On OAuth the dollar amount is best-effort, so the sub-line surfaces
-      // the cumulative token count as the authoritative measure. When the
-      // counter is still 0 (e.g. immediately after `start_flight_planner`
-      // before any turn has settled) "≈0 tokens" reads weirdly, so fall
-      // back to a plain provider label instead.
-      sub: isOAuth
-        ? plannerTokens > 0
-          ? `≈${formatTokens(plannerTokens)} tokens`
-          : "(OAuth)"
-        : "(API)",
-      title: plannerTitle,
-    },
-    { label: "Exec", value: formatCost(executorCost) },
+    { label: "Cost", value: formatCost(flight.totalCost ?? 0) },
     { label: "Tokens", value: formatTokens(flight.totalTokens) },
     {
       label: "Tasks",

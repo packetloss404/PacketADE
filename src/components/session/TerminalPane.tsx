@@ -27,7 +27,6 @@ interface TerminalPaneProps {
   initialPrompt?: string;
   projectPath?: string;
   issueId?: string;
-  taskId?: string;
   onSessionCreated?: (sessionId: string) => void;
   onSessionEnded?: () => void;
   /** When provided, replaces the default TerminalHeader bar entirely. */
@@ -43,7 +42,6 @@ export function TerminalPane({
   initialPrompt,
   projectPath: paneProjectPath,
   issueId,
-  taskId,
   onSessionCreated,
   onSessionEnded,
   renderHeader,
@@ -78,7 +76,6 @@ export function TerminalPane({
     projectPath: paneProjectPath,
     initialPrompt,
     issueId,
-    taskId,
     xtermRef,
     fitAddonRef,
     sessionIdRef,

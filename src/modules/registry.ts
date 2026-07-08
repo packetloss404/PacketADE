@@ -1,11 +1,9 @@
 import type { ModuleManifest } from "@/types/modules";
 import { qualityModule } from "./quality";
-import { ideationModule } from "./ideation";
 import { dictationModule } from "./dictation";
 
 export const moduleRegistry: ModuleManifest[] = [
   qualityModule,
-  ideationModule,
   dictationModule,
 ];
 

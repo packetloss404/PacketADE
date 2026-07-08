@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type PreviewPaneTab = "markdown" | "browser" | "plan";
+export type PreviewPaneTab = "markdown" | "plan";
 
 interface PreviewPaneState {
   open: boolean;
@@ -8,12 +8,9 @@ interface PreviewPaneState {
   markdownPath: string | null;
   planTitle: string;
   planContent: string;
-  browserUrl: string;
   openMarkdown: (path: string) => void;
   openPlan: (content: string, title?: string) => void;
-  openBrowser: (url?: string) => void;
   setActiveTab: (tab: PreviewPaneTab) => void;
-  setBrowserUrl: (url: string) => void;
   toggle: () => void;
   close: () => void;
 }
@@ -24,7 +21,6 @@ export const usePreviewPaneStore = create<PreviewPaneState>((set) => ({
   markdownPath: null,
   planTitle: "Agent plan",
   planContent: "",
-  browserUrl: "",
   openMarkdown: (path) =>
     set({
       open: true,
@@ -38,14 +34,7 @@ export const usePreviewPaneStore = create<PreviewPaneState>((set) => ({
       planTitle: title,
       planContent: content,
     }),
-  openBrowser: (url) =>
-    set((state) => ({
-      open: true,
-      activeTab: "browser",
-      browserUrl: url ?? state.browserUrl,
-    })),
   setActiveTab: (tab) => set({ activeTab: tab, open: true }),
-  setBrowserUrl: (url) => set({ browserUrl: url }),
   toggle: () => set((state) => ({ open: !state.open })),
   close: () => set({ open: false }),
 }));

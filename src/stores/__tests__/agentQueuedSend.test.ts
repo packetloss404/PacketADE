@@ -37,23 +37,6 @@ vi.mock("@/stores/layoutStore", () => ({
   },
 }));
 
-vi.mock("@/stores/flightStore", () => ({
-  useFlightStore: {
-    getState: vi.fn(() => ({
-      findTaskBySessionId: vi.fn(() => null),
-    })),
-  },
-}));
-
-vi.mock("@/stores/orchestrationStateStore", () => ({
-  useOrchestrationStateStore: {
-    getState: vi.fn(() => ({
-      onTaskApprovalNeeded: vi.fn().mockResolvedValue(undefined),
-      onTaskApprovalResolved: vi.fn().mockResolvedValue(undefined),
-    })),
-  },
-}));
-
 vi.mock("@/lib/tauri", () => ({
   createPtySession: vi.fn(),
   writePty: vi.fn(),

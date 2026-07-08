@@ -29,23 +29,6 @@ vi.mock("@/lib/tauri", () => ({
   readFileForDiff: (...args: unknown[]) => readFileForDiffMock(...args),
 }));
 
-vi.mock("@/stores/flightStore", () => ({
-  useFlightStore: {
-    getState: vi.fn(() => ({
-      findTaskBySessionId: vi.fn(() => null),
-    })),
-  },
-}));
-
-vi.mock("@/stores/orchestrationStateStore", () => ({
-  useOrchestrationStateStore: {
-    getState: vi.fn(() => ({
-      onTaskApprovalNeeded: vi.fn().mockResolvedValue(undefined),
-      onTaskApprovalResolved: vi.fn().mockResolvedValue(undefined),
-    })),
-  },
-}));
-
 // Selector-style stub for the task store (the full store drags tauri IPC
 // wiring into the test). CommentableRow and the surface only read.
 const taskStore = vi.hoisted(() => ({

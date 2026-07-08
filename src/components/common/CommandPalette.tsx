@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Search, MessageSquare, Ticket, Clock, Wrench, Github, Brain, Rocket } from "lucide-react";
+import { Search, MessageSquare, Ticket, Clock, Wrench, Github, Brain } from "lucide-react";
 import { useAppStore, moduleViewId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
 import { getModulesSorted } from "@/modules/registry";
@@ -64,14 +64,6 @@ export function CommandPalette() {
         icon: <Brain size={14} className="text-accent-purple" />,
         action: () => setActiveView("memory"),
         keywords: ["context", "knowledge", "files"],
-      },
-      {
-        id: "deploy",
-        label: "Deploy Pipeline",
-        description: "Deployment configuration",
-        icon: <Rocket size={14} className="text-accent-amber" />,
-        action: () => setActiveView("deploy"),
-        keywords: ["ship", "release", "ci", "cd"],
       },
       {
         id: "settings",

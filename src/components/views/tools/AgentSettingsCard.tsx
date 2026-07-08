@@ -10,7 +10,6 @@ const COMPOSER_OPTIONS: Array<{
   mode: AgentComposerMode;
   label: string;
   title: string;
-  disabled?: boolean;
 }> = [
   {
     mode: "local",
@@ -21,12 +20,6 @@ const COMPOSER_OPTIONS: Array<{
     mode: "worktree",
     label: "Worktree",
     title: "Start new conversations in a fresh project worktree",
-  },
-  {
-    mode: "cloud",
-    label: "Cloud",
-    title: "Cloud delegation is not wired yet",
-    disabled: true,
   },
 ];
 
@@ -77,15 +70,12 @@ export function AgentSettingsCard() {
                 <button
                   key={option.mode}
                   type="button"
-                  disabled={option.disabled}
                   onClick={() => setComposerMode(option.mode)}
                   title={option.title}
                   className={`px-2.5 py-1 text-[11px] transition-colors ${
-                    option.disabled
-                      ? "text-text-faint opacity-50 cursor-not-allowed"
-                      : isActive
-                        ? "bg-accent-purple/15 text-accent-purple"
-                        : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                    isActive
+                      ? "bg-accent-purple/15 text-accent-purple"
+                      : "text-text-secondary hover:text-text-primary hover:bg-bg-hover"
                   }`}
                 >
                   {option.label}

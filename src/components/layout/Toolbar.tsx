@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, lazy, Suspense } from "react";
-import { FolderOpen, Wrench, Bell, Mic, Search, Plus, ChevronDown, Target, Ticket, Rocket, LayoutGrid, Bookmark } from "lucide-react";
+import { FolderOpen, Wrench, Mic, Search, Plus, ChevronDown, Target, Ticket, LayoutGrid, Bookmark } from "lucide-react";
 import { DropdownItem } from "./DropdownItem";
 import { SidecarStatusChip } from "./SidecarStatusChip";
 import { RunningAgentsChip } from "./RunningAgentsChip";
@@ -14,11 +14,12 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { NewIssueForm } from "@/components/issues/NewIssueForm";
 import { Modal } from "@/components/ui/Modal";
 
-// Lazy-loaded so the markdown vendor chunk (react-markdown +
-// react-syntax-highlighter) leaves the entry chunk; only fetched when the
-// New Flight modal opens.
-const NewFlightModal = lazy(() =>
-  import("@/components/flights/NewFlightModal").then((m) => ({ default: m.NewFlightModal }))
+// Lazy-loaded so the markdown vendor chunk leaves the entry chunk; only
+// fetched when the New Flight modal opens.
+const LaunchAsyncFlightModal = lazy(() =>
+  import("@/components/flights/LaunchAsyncFlightModal").then((m) => ({
+    default: m.LaunchAsyncFlightModal,
+  }))
 );
 
 /** Last path segment, OS-agnostic. Used to seed the new workspace name. */
@@ -55,22 +56,7 @@ export function Toolbar() {
   const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
 
   const enabledModules = getModulesSorted().filter((mod) => moduleStates[mod.id]?.enabled ?? false);
-
-  // Count of pending approvals — mirrors ReviewQueueView's filter so the
-  // badge matches what the user sees when they click through. We only count
-  // tasks (not flight-planner approvals) because those surface inline on
-  // the flight view, not in the Review Queue.
-  const pendingApprovalCount = useFlightStore((s) => {
-    let n = 0;
-    for (const flight of s.flights) {
-      for (const milestone of flight.milestones) {
-        for (const task of milestone.tasks) {
-          if (task.status === "approval_needed") n++;
-        }
-      }
-    }
-    return n;
-  });
+  const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
 
   // Close tools menu when clicking outside
   useEffect(() => {
@@ -182,11 +168,6 @@ export function Toolbar() {
                 label="New Issue"
                 onClick={() => { setShowNewIssue(true); setShowNewMenu(false); }}
               />
-              <DropdownItem
-                icon={<Rocket size={12} className="text-accent-purple" />}
-                label="New deploy run"
-                onClick={() => { setActiveView("deploy"); setShowNewMenu(false); }}
-              />
             </div>
           )}
         </div>
@@ -284,47 +265,18 @@ export function Toolbar() {
           );
         })()}
 
-        <div className="w-px h-4 bg-bg-border self-center" />
-
-        {/* Review Queue — far-right slot. Dull when empty; flips to urgent
-            red with a count badge when approvals are pending. The canonical
-            Theme toggle lives in Settings > General > Theme. */}
-        <button
-          onClick={() => setActiveView("review_queue")}
-          className={`relative flex items-center p-1 rounded transition-colors ${
-            activeView === "review_queue"
-              ? "text-accent-amber"
-              : pendingApprovalCount > 0
-                ? "text-accent-red hover:text-accent-amber"
-                : "text-text-muted hover:text-text-primary"
-          }`}
-          title={
-            pendingApprovalCount === 0
-              ? "Review queue — no pending approvals"
-              : `Review queue — ${pendingApprovalCount} pending approval${pendingApprovalCount === 1 ? "" : "s"}`
-          }
-          aria-label={
-            pendingApprovalCount === 0
-              ? "Review queue — no pending approvals"
-              : `Review queue — ${pendingApprovalCount} pending approval${pendingApprovalCount === 1 ? "" : "s"}`
-          }
-        >
-          <Bell size={12} />
-          {pendingApprovalCount > 0 && (
-            <span
-              className="absolute -top-0.5 -right-0.5 bg-accent-red text-white text-[9px] font-bold px-1 rounded-full min-w-[14px] h-[14px] flex items-center justify-center leading-none"
-              aria-hidden="true"
-            >
-              {pendingApprovalCount > 99 ? "99+" : String(pendingApprovalCount)}
-            </span>
-          )}
-        </button>
       </div>
 
       {/* Modals */}
       {showNewFlight && (
         <Suspense fallback={null}>
-          <NewFlightModal onClose={() => setShowNewFlight(false)} />
+          <LaunchAsyncFlightModal
+            onClose={() => setShowNewFlight(false)}
+            onLaunched={(id) => {
+              setActiveFlight(id);
+              setActiveView("flights");
+            }}
+          />
         </Suspense>
       )}
       {showNewIssue && (

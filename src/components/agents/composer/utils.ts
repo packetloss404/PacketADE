@@ -11,12 +11,11 @@ import type { ImageAttachment } from "@/lib/tauri";
 /** Cursor-style launch modes. */
 export type AgentMode = "agent" | "ask" | "manual" | "plan";
 
-/** B2: Codex-App-style 3-way "where does the agent run" picker. `local`
+/** B2: Codex-App-style 2-way "where does the agent run" picker. `local`
  * is the default — no worktree, edits land in the project tree. `worktree`
  * provisions `.pkt-worktrees/<convId>` on a fresh `pkt/<convId>` branch
- * (T3.F). `cloud` is reserved for future cloud delegation; greyed-out
- * for now. The choice persists in localStorage so users don't re-pick. */
-export type ComposerMode = "local" | "worktree" | "cloud";
+ * (T3.F). The choice persists in localStorage so users don't re-pick. */
+export type ComposerMode = "local" | "worktree";
 
 export const MODE_META: Record<
   AgentMode,
@@ -66,7 +65,7 @@ export const PROVIDER_GROUPS: { label: string; agents: AgentCli[] }[] = [
       "api-openai-agents",
     ],
   },
-  { label: "Other", agents: ["api-openrouter", "api-minimax", "api-minimax-api", "api-ollama"] },
+  { label: "Other", agents: ["api-openrouter", "api-minimax", "api-ollama"] },
 ];
 
 /**

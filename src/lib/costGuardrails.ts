@@ -340,8 +340,11 @@ export function providerSourceForAgentProvider(provider: string): string {
     "openai-agents": "openai-agents",
     "api-minimax": "api-minimax",
     minimax: "api-minimax",
-    "api-minimax-api": "api-minimax-api",
-    "minimax-api": "api-minimax-api",
+    // Legacy identity-duplicate provider id — collapsed onto the
+    // canonical `api-minimax` so guardrail budgets persisted under the
+    // old id keep applying (P2-20).
+    "api-minimax-api": "api-minimax",
+    "minimax-api": "api-minimax",
     "api-openrouter": "api-openrouter",
     openrouter: "api-openrouter",
     "api-ollama": "api-ollama",
