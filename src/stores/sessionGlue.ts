@@ -21,6 +21,7 @@
  */
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useWorkspaceStore, conversationWrapperId } from "@/stores/workspaceStore";
+import { useAppStore } from "@/stores/appStore";
 import {
   killPty,
   getGitStatus,
@@ -135,6 +136,42 @@ export function openSession(ref: OpenSessionRef): string {
   });
   useWorkspaceStore.getState().setActiveWorkspace(workspaceId);
   return workspaceId;
+}
+
+/**
+ * Deep-link into a conversation from a producer surface (P5-S1). Replaces the
+ * retired `selectConversation(id) + setActiveView("agents")` pair used by the
+ * notification/deep-link producers (RunningAgentsChip, PinnedApprovalBanner,
+ * the Scout template send) and by the one-release `"agents"` redirect shim.
+ *
+ * Semantics:
+ *   1. Materialize the conversation's wrapper workspace via {@link openSession}
+ *      (idempotent `ws-wrap-<convId>`) and focus+flash its conversation tile
+ *      through the EXISTING `requestPaneFocus` mechanism — so a notification
+ *      deep link lands on the offending tile with its pending approval visible.
+ *   2. Switch the shell to the Workspace surface.
+ *
+ * If the conversation vanished between index and click, NO wrapper is
+ * materialized for the dead ref (features.md edge case) — the shell still lands
+ * on the Workspace surface (never blank, never a crash).
+ */
+export function focusConversationDeepLink(conversationId: string): void {
+  const exists = useAgentTaskStore
+    .getState()
+    .conversations.some((c) => c.id === conversationId);
+  if (exists) {
+    const workspaceId = openSession({ conversationId });
+    const ws = useWorkspaceStore
+      .getState()
+      .workspaces.find((w) => w.id === workspaceId);
+    const pane = ws?.panes.find(
+      (p) => p.kind === "conversation" && p.conversationId === conversationId,
+    );
+    if (pane) {
+      useWorkspaceStore.getState().requestPaneFocus(workspaceId, pane.id);
+    }
+  }
+  useAppStore.getState().setActiveView("workspace");
 }
 
 /** Re-export so consumers/tests can assert the deterministic wrapper id without
