@@ -5,14 +5,8 @@ import { MemoryInjectionCard } from "./MemoryInjectionCard";
 import { AgentHeaderBadges } from "./AgentHeaderBadges";
 import { SessionMetaLine } from "./chat/SessionMetaLine";
 import { PlanPanel } from "./PlanPanel";
-import {
-  deriveMode,
-  flagsForMode,
-  modesForApprovals,
-  nextModeIn,
-} from "./agentModeChipUtils";
+import { deriveMode, flagsForMode, nextMode } from "./agentModeChipUtils";
 import type { AgentMode } from "./AgentModeChip";
-import { providerSupportsApprovals } from "@/lib/api-models";
 import { ClickablePathsRoot } from "@/components/common/wrapClickablePaths";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import {
@@ -211,11 +205,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
 
   function cycleMode() {
     if (!conversation || conversation.mode !== "api") return;
-    // P1-S4 (Codex honesty): cycle only through the postures this provider's
-    // adapter can honor — Shift+Tab must never land a Codex session on an
-    // approval-implying mode the sandbox would silently coerce.
-    const order = modesForApprovals(providerSupportsApprovals(conversation.agent));
-    applyMode(nextModeIn(deriveMode(conversation), order));
+    applyMode(nextMode(deriveMode(conversation)));
   }
 
   function handleOpenMarkdown(path: string) {
@@ -266,11 +256,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
               </span>
             </Tooltip>
           )}
-          <AgentHeaderBadges
-            conversationId={conversationId}
-            agent={conversation.agent}
-            conversation={conversation}
-          />
+          <AgentHeaderBadges conversationId={conversationId} agent={conversation.agent} />
           {conversation.parentConversationId && (
             <BackToParentLink parentId={conversation.parentConversationId} />
           )}

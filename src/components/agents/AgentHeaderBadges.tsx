@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plane, ShieldCheck } from "lucide-react";
+import { Plane } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AuthBadge, type AuthStatus } from "@/components/ui/AuthBadge";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -10,26 +10,12 @@ import {
   getProviderAuthStatus,
   type ProviderAuthStatus,
 } from "@/lib/tauri";
-import type { AgentConversation } from "@/types/agent-conversation";
-import { providerSupportsApprovals } from "@/lib/api-models";
-import {
-  deriveMode,
-  SANDBOX_POSTURE_LABEL,
-  SANDBOX_POSTURE_TOOLTIP,
-} from "./agentModeChipUtils";
 
 type AuthEntry = ProviderAuthStatus | "loading";
 
 interface AgentHeaderBadgesProps {
   conversationId: string;
   agent: AgentCli;
-  /**
-   * P1-S4 (Codex honesty): when provided AND the provider's adapter can't
-   * honor approval round-trips, render a read-only sandbox posture chip
-   * stating the true safety boundary. Optional so PTY/legacy callers are
-   * unaffected.
-   */
-  conversation?: AgentConversation;
 }
 
 /**
@@ -50,7 +36,6 @@ interface AgentHeaderBadgesProps {
 export function AgentHeaderBadges({
   conversationId,
   agent,
-  conversation,
 }: AgentHeaderBadgesProps) {
   const flights = useFlightStore((s) => s.flights);
   const setActiveFlight = useFlightStore((s) => s.setActiveFlight);
@@ -63,13 +48,6 @@ export function AgentHeaderBadges({
 
   const isApi = agent.startsWith("api-");
   const provider = isApi ? apiAgentProvider(agent) : null;
-
-  // P1-S4 (Codex honesty): the true sandbox posture, shown only when the
-  // provider's adapter can't honor approvals (the sandbox IS the boundary).
-  const sandboxPosture =
-    conversation && !providerSupportsApprovals(agent)
-      ? SANDBOX_POSTURE_LABEL[deriveMode(conversation)]
-      : null;
 
   const [auth, setAuth] = useState<AuthEntry>("loading");
 
@@ -129,15 +107,6 @@ export function AgentHeaderBadges({
           <span className="flex items-center gap-1 text-meta bg-bg-secondary rounded px-1.5 py-0.5">
             <AuthBadge status={authStatus} />
             <span className="text-text-muted leading-none">{provider}</span>
-          </span>
-        </Tooltip>
-      )}
-
-      {sandboxPosture && (
-        <Tooltip content={SANDBOX_POSTURE_TOOLTIP}>
-          <span className="flex items-center gap-1 text-meta text-accent-blue bg-accent-blue/10 border border-accent-blue/30 rounded px-1.5 py-0.5">
-            <ShieldCheck size={10} />
-            <span className="leading-none">Sandbox: {sandboxPosture}</span>
           </span>
         </Tooltip>
       )}
