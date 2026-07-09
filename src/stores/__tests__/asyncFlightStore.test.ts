@@ -549,6 +549,50 @@ describe("asyncFlightStore flight-completion memory capture", () => {
 
     expect(mocks.captureFlightCompleted).not.toHaveBeenCalled();
   });
+
+  it("captures a flight_completed event when cancelling the last outstanding attempt tips the flight to done", async () => {
+    // One attempt already completed, one still running. Cancelling the
+    // running attempt (the "pick a winner" flow) rolls the flight up to
+    // "done" via the mixed-terminal fallback in computeStatusFromAttempts —
+    // this must fire capture even though cancelAttempt never calls
+    // setAttemptStatus.
+    useFlightStore.setState({
+      flights: [
+        flight({
+          attempts: [
+            attempt({ id: "att-a", sessionId: "s-a", status: "completed" }),
+            attempt({ id: "att-b", sessionId: "s-b", status: "running" }),
+          ],
+        }),
+      ],
+      activeFlightId: null,
+    });
+
+    await useAsyncFlightStore.getState().cancelAttempt("flight-1", "att-b");
+
+    expect(mocks.captureFlightCompleted).toHaveBeenCalledTimes(1);
+    const [payload, projectPath] = mocks.captureFlightCompleted.mock.calls[0];
+    expect(projectPath).toBe("D:/repo");
+    expect(payload).toMatchObject({ flightId: "flight-1", flightTitle: "Flight" });
+  });
+
+  it("does not capture when cancelling an attempt leaves the flight active", async () => {
+    useFlightStore.setState({
+      flights: [
+        flight({
+          attempts: [
+            attempt({ id: "att-run", sessionId: "s-run", status: "running" }),
+            attempt({ id: "att-rev", sessionId: "s-rev", status: "reviewing" }),
+          ],
+        }),
+      ],
+      activeFlightId: null,
+    });
+
+    await useAsyncFlightStore.getState().cancelAttempt("flight-1", "att-run");
+
+    expect(mocks.captureFlightCompleted).not.toHaveBeenCalled();
+  });
 });
 
 describe("asyncFlightStore flight-prompt injection gate", () => {
