@@ -56,6 +56,7 @@ import {
   flightReviewKey,
   type FlightReviewTaskRef,
 } from "@/lib/flightReview";
+import { WorktreeLifecycleBar } from "@/components/workspace/WorktreeLifecycleBar";
 
 function statusIcon(status: string) {
   switch (status) {
@@ -98,6 +99,12 @@ interface GitDashboardProps {
    *  saved server via SSH instead of the local filesystem. `projectPath`
    *  is then treated as the *remote* working tree on the host. */
   serverId?: string;
+  /** P2-S3: when set, mount the {@link WorktreeLifecycleBar} for this
+   *  conversation's `pkt/<convId>` worktree (Merge back / Create PR / Discard /
+   *  Keep). This is the ONE endings surface — GitDashboard, never a per-tile
+   *  git panel or a separate commit modal. Absent on the plain workspace git
+   *  view. */
+  conversationId?: string;
 }
 
 /** Phase 3.3: structured failure modes for git state loads. The dashboard
@@ -175,7 +182,12 @@ function StageCheckbox({
   );
 }
 
-export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboardProps) {
+export function GitDashboard({
+  projectPath,
+  workspaceId,
+  serverId,
+  conversationId,
+}: GitDashboardProps) {
   const [branch, setBranch] = useState<string>("");
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -570,6 +582,17 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
           {feedback.type === "ok" ? <Check size={10} /> : <AlertCircle size={10} />}
           <span className="truncate">{feedback.msg}</span>
         </div>
+      )}
+
+      {/* P2-S3: the four-action worktree endings bar — only when this
+          dashboard was opened for a specific conversation's worktree. */}
+      {conversationId && (
+        <WorktreeLifecycleBar
+          conversationId={conversationId}
+          isRemote={isRemote}
+          onFeedback={setFeedback}
+          onLanded={refresh}
+        />
       )}
 
       {!loadError && reviewContext.linkedFileCount > 0 && (
