@@ -52,6 +52,17 @@ interface WorkspaceStore {
   setModelOverride: (workspaceId: string, agentId: string, model: string | null) => void;
   removePinnedCommand: (workspaceId: string, paneId: string, index: number) => void;
   addPane: (workspaceId: string, agentId: WorkspaceAgentSlot) => string | null;
+  /**
+   * Tile program (P3-S2): insert a conversation pane into `workspaceId`.
+   * Ordering law (spec): the conversation MUST already exist in `agentTaskStore`
+   * (created via `launchConversation`) BEFORE this call — no half-born tile. The
+   * pane carries the inert carrier `agentId: "terminal"` and `kind:
+   * "conversation"`, and is NEVER pushed into `agents` (P1-S1 ruling; the store
+   * isolation rule forbids reaching into agentTaskStore to validate, so the
+   * caller owns the ordering guarantee). Returns the new pane id, or `null` when
+   * the workspace does not exist.
+   */
+  addConversationPane: (workspaceId: string, conversationId: string) => string | null;
   removePane: (workspaceId: string, paneId: string) => void;
   /**
    * Tile program (P1-S2): prune every conversation pane referencing
@@ -446,6 +457,35 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return { workspaces };
     }));
     return newPaneId;
+  },
+
+  addConversationPane: (workspaceId, conversationId) => {
+    const newPaneId = `ws-pane-${++wsCounter}`;
+    let inserted = false;
+    set(commitWorkspaces((s) => {
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== workspaceId) return w;
+        inserted = true;
+        const newPane: WorkspacePane = {
+          id: newPaneId,
+          // Inert carrier — conversation panes persist agentId "terminal" so a
+          // downgraded binary renders a harmless terminal pane; `kind` is the
+          // sole discriminant (P1-S1 ruling).
+          agentId: "terminal",
+          sessionId: null,
+          kind: "conversation",
+          conversationId,
+        };
+        return {
+          ...w,
+          // Conversation panes are never pushed into `agents` (P1-S1 ruling).
+          panes: [...w.panes, newPane],
+          updatedAt: Date.now(),
+        };
+      });
+      return { workspaces };
+    }));
+    return inserted ? newPaneId : null;
   },
 
   removePane: (workspaceId, paneId) => {

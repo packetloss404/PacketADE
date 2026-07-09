@@ -3,6 +3,7 @@ import { Mosaic, MosaicWindow } from "react-mosaic-component";
 import { Minimize2 } from "lucide-react";
 import type { MosaicNode, MosaicPath } from "@/types/mosaic";
 import { WorkspacePane } from "./WorkspacePane";
+import { ConversationTile } from "./ConversationTile";
 import type { Workspace } from "@/types/workspace";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useReviewStore } from "@/stores/reviewStore";
@@ -123,7 +124,14 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
           renderToolbar={null}
           draggable
         >
-          <WorkspacePane pane={pane} workspaceId={workspace.id} />
+          {/* One branch on pane.kind (P3-S2): conversation panes mount the
+              ConversationTile (unforked AgentChatPane); everything else is a
+              terminal pane. `kind` is the sole discriminant. */}
+          {pane.kind === "conversation" ? (
+            <ConversationTile pane={pane} workspaceId={workspace.id} />
+          ) : (
+            <WorkspacePane pane={pane} workspaceId={workspace.id} />
+          )}
         </MosaicWindow>
       );
     },
