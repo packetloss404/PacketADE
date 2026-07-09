@@ -13,6 +13,7 @@ import { Composer } from "@/components/agents/composer/Composer";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
 import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
+import { WorktreeCommitHost } from "@/components/views/WorktreeCommitHost";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { X } from "lucide-react";
 import { API_PROVIDERS } from "@/lib/api-models";
@@ -273,6 +274,10 @@ export function AgentsView() {
       )}
 
       <AgentsOnboarding />
+
+      {/* P2-S3 DISPOSABLE modal host (deleted in P5-S2): makes the endings
+          loop reachable from the Agents tab. Opened by the ReviewBar CTA. */}
+      <WorktreeCommitHost />
     </div>
   );
 }

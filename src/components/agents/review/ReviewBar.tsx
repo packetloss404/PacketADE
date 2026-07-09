@@ -1,7 +1,9 @@
 import { useEffect } from "react";
-import { ChevronUp, FileDiff } from "lucide-react";
+import { ChevronUp, FileDiff, GitMerge } from "lucide-react";
 import { useReviewStore } from "@/stores/reviewStore";
 import { useAppStore } from "@/stores/appStore";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useFinishCommitHost } from "@/stores/finishCommitHostStore";
 import {
   countReviewFiles,
   type DiffTotals,
@@ -46,6 +48,16 @@ export function ReviewBar({
 
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
+  // P2-S3: the additive "Finish → Commit…" CTA. Shown when the session has
+  // settled (done/idle) with reviewed changes (files present, nothing still
+  // awaiting a Y/N). Opens the disposable Agents-tab commit host, which mounts
+  // GitDashboard + the WorktreeLifecycleBar for this conversation. Reads status
+  // itself (AgentChatPane is a protected, unmodified surface this phase).
+  const conversationStatus = useAgentTaskStore(
+    (s) => s.conversations.find((c) => c.id === conversationId)?.status,
+  );
+  const openFinishCommit = useFinishCommitHost((s) => s.openFinishCommit);
+
   const topEdit = pendingEdits[0];
   const ynActive = !!topEdit && pendingPermissionCount === 0;
 
@@ -79,6 +91,9 @@ export function ReviewBar({
   if (fileCount === 0) return null;
 
   const hasPending = pendingEdits.length > 0;
+  // Reviewed changes on a settled session ⇒ offer the endings loop.
+  const settled = conversationStatus === "done" || conversationStatus === "idle";
+  const showFinish = settled && !hasPending;
 
   return (
     <div
@@ -129,6 +144,18 @@ export function ReviewBar({
           />
         </span>
       </button>
+
+      {showFinish && (
+        <button
+          type="button"
+          onClick={() => openFinishCommit(conversationId)}
+          className="hover:bg-accent-green/10 mt-1 flex w-full items-center justify-center gap-1.5 rounded px-1 py-1 text-ui font-medium text-accent-green transition-colors"
+          title="Commit and land this conversation's changes"
+        >
+          <GitMerge size={12} />
+          Finish → Commit…
+        </button>
+      )}
     </div>
   );
 }
