@@ -179,5 +179,10 @@ export interface AgentConversation {
     createdAt: number;
     /** Lifecycle: "active" until landed (squash-merged) or discarded. */
     state: "active" | "landed" | "discarded";
+    /** P2-S2: the PR number opened for this branch via
+     * `gitPublish.publishBranchAsPr` (Attempt.draftPrNumber-isomorphic).
+     * Recorded so the worktree safe-cleanup predicate can ask GitHub whether
+     * that PR reports merged. Undefined until a PR is published. */
+    prNumber?: number;
   };
 }

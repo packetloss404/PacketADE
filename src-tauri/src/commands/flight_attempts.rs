@@ -346,7 +346,7 @@ async fn cleanup_unpersisted_attempt(
 ) {
     match target {
         AttemptTarget::Local { base_path, .. } => {
-            if let Err(e) = worktree::remove_local_worktree(base_path, attempt_id).await {
+            if let Err(e) = worktree::remove_local_worktree(base_path, attempt_id, false).await {
                 warn!(
                     attempt = %attempt_id,
                     error = %e,
@@ -817,7 +817,7 @@ pub async fn cancel_flight_attempt(
     // 4. Remove the worktree.
     match &attempt.target {
         AttemptTarget::Local { base_path, .. } => {
-            if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id).await {
+            if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id, false).await {
                 warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
             }
         }
@@ -971,7 +971,7 @@ pub async fn mark_attempt_status(
         // deferred to the frontend because we don't have host/user/key here.
         match &attempt.target {
             AttemptTarget::Local { base_path, .. } => {
-                if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id).await {
+                if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id, false).await {
                     warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
                 }
             }
