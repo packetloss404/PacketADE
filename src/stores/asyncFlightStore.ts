@@ -573,6 +573,13 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
     const attempt = flight?.attempts?.find((a) => a.id === attemptId);
 
+    // Sample the flight's rolled-up status BEFORE the patch — same
+    // non-`done` → `done` transition guard as `setAttemptStatus` (see
+    // captureFlightCompletionOnTransition). Cancelling the last outstanding
+    // attempt while a sibling has already completed is a real terminal
+    // "done" transition and must capture too.
+    const statusBefore = useFlightStore.getState().computeFlightStatus(flightId);
+
     await cancelFlightAttempt(flightId, attemptId);
     patchAttempt(flightId, attemptId, {
       status: "cancelled",
@@ -581,6 +588,8 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     if (attempt) {
       detachAttemptTerminalListeners(attempt.sessionId);
     }
+
+    captureFlightCompletionOnTransition(flightId, statusBefore);
 
     // SSH worktree cleanup is deferred from the backend cancel because it
     // doesn't have full ServerConfig info — issue it from here using the
