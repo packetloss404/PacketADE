@@ -16,8 +16,9 @@ import {
 import { generateId } from "@/lib/storage";
 import { isSshUri, parseSshUri } from "@/lib/ssh-uri";
 import type { AgentMode, ComposerMode } from "@/components/agents/composer/utils";
+import type { ModeFlags } from "@/components/agents/agentModeChipUtils";
 import type { AgentProfile } from "@/types/profiles";
-import type { AgentConversation } from "@/types/agent-conversation";
+import type { AgentConversation, PermissionMode } from "@/types/agent-conversation";
 
 /** Inputs the AgentsView launcher captures and hands to `launchConversation`.
  * Extracted verbatim from `AgentsView.handleLaunch` so the launch flow —
@@ -37,6 +38,23 @@ export interface LaunchConversationParams {
   /** The launcher profile AgentsView resolved via `profileStore.getProfile`. */
   profile: AgentProfile | undefined;
   setLaunchError: (message: string | null) => void;
+  /**
+   * Tile program (P3-S4): explicit launch posture. When supplied (the draft
+   * tile's capability-filtered mode chip resolves it via `flagsForMode`) it
+   * REPLACES the coarse `agentMode`→posture derivation below, so the full
+   * PermissionMode range (incl. deny_all / allow_all, which the four launcher
+   * buttons can't express) survives to `createApiConversation`. Omitted by the
+   * AgentsView launcher → behavior byte-identical.
+   */
+  postureOverride?: ModeFlags;
+  /**
+   * Tile program (P3-S4): invoked with the new conversation id the moment
+   * `createApiConversation` resolves — i.e. after the conversation exists in
+   * agentTaskStore but as the async backend start settles. The draft tile uses
+   * it to materialize the real conversation pane (created-before-insert) and
+   * retire the draft. Omitted by the AgentsView launcher.
+   */
+  onLaunched?: (conversationId: string) => void;
 }
 
 /**
@@ -61,6 +79,8 @@ export function launchConversation({
   composerMode,
   profile,
   setLaunchError,
+  postureOverride,
+  onLaunched,
 }: LaunchConversationParams): boolean {
   const text = rawText.trim();
   if (!text) return false;
@@ -85,10 +105,16 @@ export function launchConversation({
     getDefaultModel(selectedAgent);
 
   // Mode -> planMode + launch-time permission posture (mode overrides profile).
-  const planMode = agentMode === "ask" || agentMode === "plan";
-  const launchPermissionMode: "auto" | "ask_for_risky" =
-    agentMode === "manual" ? "ask_for_risky" : "auto";
-  const launchApproveWrites = false;
+  // When the caller supplies an explicit `postureOverride` (draft tile), it
+  // wins over the coarse agentMode mapping and can express the full
+  // PermissionMode range.
+  const planMode = postureOverride ? postureOverride.planMode : agentMode === "ask" || agentMode === "plan";
+  const launchPermissionMode: PermissionMode = postureOverride
+    ? postureOverride.permissionMode
+    : agentMode === "manual"
+      ? "ask_for_risky"
+      : "auto";
+  const launchApproveWrites = postureOverride ? postureOverride.approveWrites : false;
   // Plan mode alone drives planning: the backend plan-mode posture keeps
   // the agent read-only and the inline PlanModeApprovalMenu carries the
   // approval when the plan lands.
@@ -143,7 +169,7 @@ export function launchConversation({
         useServerStore.getState().updateServer(sshTarget.serverId, {
           lastConnectedAt: Date.now(),
         });
-        await createApiConversation({
+        const convId = await createApiConversation({
           agent: selectedAgent,
           projectPath: sshProjectPath,
           model,
@@ -158,6 +184,8 @@ export function launchConversation({
           permissionMode: launchPermissionMode,
           approveWrites: launchApproveWrites,
         });
+        // P3-S4: materialize the draft's pane now that the conversation exists.
+        onLaunched?.(convId);
       } else {
         useProjectHistoryStore.getState().recordOpen(selectedRepo);
 
@@ -230,6 +258,8 @@ export function launchConversation({
           }));
           requestConversationSave(convId);
         }
+        // P3-S4: materialize the draft's pane now that the conversation exists.
+        onLaunched?.(convId);
       }
       // Clear the composer only once the launch actually succeeded, so a
       // failed launch keeps the user's typed prompt intact for a retry.
