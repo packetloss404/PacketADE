@@ -28,7 +28,10 @@ const BUILTINS: AgentProfile[] = [
       "Full toolset with the autonomous agent harness — plans, uses tools, and drives the task to completion.",
     systemPrompt: DEFAULT_AGENT_HARNESS,
     allowedTools: null,
-    memoryContextEnabled: false,
+    // Memory is ON by default (product ruling 2026-07-09): the memory brief
+    // injects at launch unless the user turns it off per conversation or
+    // launches with a profile that disables it.
+    memoryContextEnabled: true,
     permissionMode: "auto",
     planMode: false,
     isBuiltin: true,

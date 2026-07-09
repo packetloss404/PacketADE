@@ -94,7 +94,9 @@ export function launchConversation({
   const systemPrompt: string | null =
     profile && profile.systemPrompt.length > 0 ? profile.systemPrompt : null;
   const allowedTools: string[] | null = profile?.allowedTools ?? null;
-  const memoryContextEnabled = profile?.memoryContextEnabled ?? false;
+  // Memory is on by default for user-initiated launches; a profile can still
+  // disable it, and the per-conversation toggle can turn it off after launch.
+  const memoryContextEnabled = profile?.memoryContextEnabled ?? true;
 
   // B9: profile.pinnedModel overrides the launcher selection so the
   // launcher's auto-pick or default doesn't silently switch a known-
