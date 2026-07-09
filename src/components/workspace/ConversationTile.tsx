@@ -59,6 +59,15 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
   const setZoomedPane = useWorkspaceStore((s) => s.setZoomedPane);
   const isFocused = activePaneId === pane.id;
   const isZoomed = zoomedPaneId === pane.id;
+  // Tile program (P4-S1): a needs-you click / deep link publishes a transient
+  // focusPaneRequest; while it targets this tile we render a brief flash. Purely
+  // derived from the store request (which auto-clears) — no local timer, no
+  // zoom, no rearrange.
+  const isFlashing = useWorkspaceStore(
+    (s) =>
+      s.focusPaneRequest?.paneId === pane.id &&
+      s.focusPaneRequest?.workspaceId === workspaceId,
+  );
 
   const [showOverflow, setShowOverflow] = useState(false);
   const overflowRef = useRef<HTMLDivElement>(null);
@@ -224,6 +233,11 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
   const connectedChrome = mosaicWindowActions?.connectDragSource(chrome) ?? chrome;
 
   const wrapperBorderClass = isFocused ? "border border-accent-line" : "border border-bg-border";
+  // Focus-flash highlight (P4-S1): an amber ring pulse layered over the border
+  // while a focusPaneRequest targets this tile.
+  const flashClass = isFlashing
+    ? "ring-2 ring-accent-amber animate-pulse motion-reduce:animate-none"
+    : "";
 
   return (
     // data-pane-zoomed lets mosaic-overrides.css maximize this tile's
@@ -237,7 +251,7 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
       onPointerDown={() => {
         if (!isFocused) setActivePaneId(pane.id);
       }}
-      className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass}`}
+      className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
     >
       {connectedChrome}
       {isFailed && (
