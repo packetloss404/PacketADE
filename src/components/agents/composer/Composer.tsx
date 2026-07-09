@@ -11,7 +11,6 @@ import type { AgentConversation } from "@/types/agent-conversation";
 import type { ImageAttachment } from "@/lib/tauri";
 import type { AuthStatus } from "@/components/ui/AuthBadge";
 import { isSshUri } from "@/lib/ssh-uri";
-import { providerSupportsApprovals } from "@/lib/api-models";
 import { FileMentionPopover } from "../FileMentionPopover";
 import { InputPopover } from "../InputPopover";
 import { CancelPendingButton } from "../chat/CancelPendingButton";
@@ -790,11 +789,7 @@ export function Composer(props: ComposerProps) {
                 composerMode !== "local"
               }
             >
-              <ModeSelector
-                value={agentMode}
-                onChange={launch.onAgentModeChange}
-                supportsApprovals={providerSupportsApprovals(launch.selectedAgent)}
-              />
+              <ModeSelector value={agentMode} onChange={launch.onAgentModeChange} />
               <ProfilePicker
                 profiles={profiles}
                 selectedProfileId={launch.selectedProfileId}
