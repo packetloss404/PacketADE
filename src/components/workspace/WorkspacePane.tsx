@@ -45,6 +45,13 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const activePaneId = useLayoutStore((s) => s.activePaneId);
   const isZoomed = zoomedPaneId === pane.id;
   const isFocused = activePaneId === pane.id;
+  // Tile program (P4-S1): transient focus-flash when a focusPaneRequest targets
+  // this pane. Purely derived from the auto-clearing store request.
+  const isFlashing = useWorkspaceStore(
+    (s) =>
+      s.focusPaneRequest?.paneId === pane.id &&
+      s.focusPaneRequest?.workspaceId === workspaceId,
+  );
   const agentConfig = agents.find((a) => a.id === pane.agentId);
   // Single overflow menu replaces the standalone model/prompt/pin popovers —
   // "root" is the menu list, the other views are drilled-into sub-panels.
@@ -521,6 +528,11 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
   const wrapperBorderClass = isFocused
     ? "border border-accent-line"
     : "border border-bg-border";
+  // Focus-flash highlight (P4-S1): amber ring pulse while a focusPaneRequest
+  // targets this pane.
+  const flashClass = isFlashing
+    ? "ring-2 ring-accent-amber animate-pulse motion-reduce:animate-none"
+    : "";
 
   return (
     // data-pane-zoomed lets mosaic-overrides.css maximize this pane's
@@ -528,7 +540,7 @@ export function WorkspacePane({ pane, workspaceId }: WorkspacePaneProps) {
     // of mounting a duplicate WorkspacePane (which would spawn a second PTY).
     <div
       data-pane-zoomed={isZoomed || undefined}
-      className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass}`}
+      className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass} ${flashClass}`}
     >
       <TerminalPane
         paneId={pane.id}

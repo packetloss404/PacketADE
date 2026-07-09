@@ -4,9 +4,10 @@ vi.mock("@/lib/tauri", () => ({
   saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useWorkspaceStore, normalizePanes } from "@/stores/workspaceStore";
 import { useServerStore } from "@/stores/serverStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import type { Workspace, WorkspacePane } from "@/types/workspace";
 
 describe("workspaceStore.createWorkspace", () => {
   beforeEach(() => {
@@ -157,5 +158,125 @@ describe("workspaceStore.createWorkspace", () => {
     useWorkspaceStore.getState().setActiveWorkspace(id);
 
     expect(useLayoutStore.getState().projectPath).toBe("C:\\new\\proj");
+  });
+});
+
+// Tile program (P1-S1): pane schema normalization + kind-keyed store sites.
+function makeWorkspace(panes: WorkspacePane[], agents: Workspace["agents"] = []): Workspace {
+  return {
+    id: "ws-1",
+    name: "WS",
+    agents,
+    panes,
+    projectPath: "/repo",
+    createdAt: 1,
+    updatedAt: 2,
+    status: "active",
+  };
+}
+
+describe("normalizePanes (P1-S1)", () => {
+  it("defaults a pane with no kind to terminal", () => {
+    const [ws] = normalizePanes([
+      makeWorkspace([{ id: "p1", agentId: "codex", sessionId: null }]),
+    ]);
+    expect(ws.panes[0].kind).toBe("terminal");
+    expect(ws.panes[0]).not.toHaveProperty("conversationId");
+  });
+
+  it("keeps a conversation pane with a conversationId", () => {
+    const [ws] = normalizePanes([
+      makeWorkspace([
+        { id: "p1", agentId: "terminal", sessionId: null, kind: "conversation", conversationId: "conv-1" },
+      ]),
+    ]);
+    expect(ws.panes[0].kind).toBe("conversation");
+    expect(ws.panes[0].conversationId).toBe("conv-1");
+  });
+
+  it("self-heals a conversation pane missing its conversationId to a terminal", () => {
+    // The inert-carrier arm: a stripped conversationId downgrades to terminal
+    // (the sweep half of self-heal lands in P1-S2).
+    const [ws] = normalizePanes([
+      makeWorkspace([
+        { id: "p1", agentId: "terminal", sessionId: null, kind: "conversation" },
+      ]),
+    ]);
+    expect(ws.panes[0].kind).toBe("terminal");
+    expect(ws.panes[0]).not.toHaveProperty("conversationId");
+  });
+
+  it("drops a stray conversationId from a terminal pane", () => {
+    const [ws] = normalizePanes([
+      makeWorkspace([
+        { id: "p1", agentId: "codex", sessionId: null, conversationId: "conv-x" } as WorkspacePane,
+      ]),
+    ]);
+    expect(ws.panes[0].kind).toBe("terminal");
+    expect(ws.panes[0]).not.toHaveProperty("conversationId");
+  });
+
+  it("drops malformed panes (not an object / missing string id) and preserves unknown fields", () => {
+    const [ws] = normalizePanes([
+      makeWorkspace([
+        null as unknown as WorkspacePane,
+        { agentId: "codex", sessionId: null } as unknown as WorkspacePane, // no id
+        { id: "p3", agentId: "codex", sessionId: null, futureField: 42 } as unknown as WorkspacePane,
+      ]),
+    ]);
+    expect(ws.panes).toHaveLength(1);
+    expect(ws.panes[0].id).toBe("p3");
+    expect((ws.panes[0] as unknown as { futureField?: number }).futureField).toBe(42);
+  });
+});
+
+describe("workspaceStore kind-keyed sites (P1-S1)", () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null, zoomedPaneId: null });
+  });
+
+  it("removePane on a conversation pane leaves agents[] untouched", () => {
+    useWorkspaceStore.setState({
+      workspaces: [
+        makeWorkspace(
+          [
+            { id: "p-term", agentId: "codex", sessionId: null, kind: "terminal" },
+            {
+              id: "p-conv",
+              agentId: "terminal",
+              sessionId: null,
+              kind: "conversation",
+              conversationId: "conv-1",
+            },
+          ],
+          ["codex"],
+        ),
+      ],
+    });
+
+    useWorkspaceStore.getState().removePane("ws-1", "p-conv");
+
+    const ws = useWorkspaceStore.getState().workspaces[0];
+    // The conversation pane was never in agents[]; removing it must not splice
+    // the real "codex" terminal out.
+    expect(ws.agents).toEqual(["codex"]);
+    expect(ws.panes.map((p) => p.id)).toEqual(["p-term"]);
+  });
+
+  it("removePane on a terminal pane still removes it from agents[]", () => {
+    useWorkspaceStore.setState({
+      workspaces: [
+        makeWorkspace(
+          [{ id: "p-term", agentId: "codex", sessionId: null, kind: "terminal" }],
+          ["codex"],
+        ),
+      ],
+    });
+
+    useWorkspaceStore.getState().removePane("ws-1", "p-term");
+
+    const ws = useWorkspaceStore.getState().workspaces[0];
+    expect(ws.agents).toEqual([]);
+    expect(ws.panes).toHaveLength(0);
   });
 });

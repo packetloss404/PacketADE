@@ -8,11 +8,27 @@ export type ThemeDto = "dark" | "light";
 
 export type GridPositionDto = { row: number, col: number, };
 
-export type WorkspacePaneDto = { id: string, agentId: WorkspaceAgentSlotDto, sessionId: string | null, gridPosition: GridPositionDto, accentColor?: string, pinnedCommands?: Array<string>, taskId?: string, flightId?: string, agentConfigId?: string, initialPrompt?: string, overrideCommand?: string, overrideArgs?: Array<string>, };
+export type WorkspacePaneDto = { id: string, agentId: WorkspaceAgentSlotDto, sessionId: string | null, gridPosition: GridPositionDto, accentColor?: string, pinnedCommands?: Array<string>, taskId?: string, flightId?: string, agentConfigId?: string, initialPrompt?: string, overrideCommand?: string, overrideArgs?: Array<string>, 
+/**
+ * Pane kind discriminant (tile program, P1-S1). Absent ⇒ terminal. `kind`
+ * is the SOLE discriminant; `agent_id` is never overloaded — conversation
+ * panes carry the inert carrier `agentId: "terminal"`.
+ */
+kind?: string, 
+/**
+ * Set iff `kind == Some("conversation")`.
+ */
+conversationId?: string, };
 
 export type GithubRepoDto = { owner: string, repo: string, };
 
-export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, serverId?: string, remoteProjectPath?: string, githubRepo?: GithubRepoDto, };
+export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, serverId?: string, remoteProjectPath?: string, githubRepo?: GithubRepoDto, 
+/**
+ * Tile program (P1-S2): `"conversation"` for auto-materialized
+ * conversation wrappers, else absent. Inert `#[ts(optional)]` mirror of
+ * core `Workspace.origin`.
+ */
+origin?: string, };
 
 export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath: string | null, remotePath: string | null, lastConnectedAt: bigint | null, installedAgents: Array<string>, hostFingerprint: string | null, };
 

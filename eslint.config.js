@@ -36,4 +36,54 @@ export default tseslint.config(
       "react-hooks/purity": "off",
     },
   },
+  // Tile program (P1-S2): store-isolation. The derived-projection session model
+  // requires that the two engines never import each other — `agentTaskStore`
+  // (headless conversations) and `workspaceStore` (placement) stay decoupled so
+  // a conversation without a tile is a first-class citizen. `sessionGlue` is the
+  // ONLY bridge; `sessionIndex` is a read-only projection. Enforced here so a
+  // regression turns CI red rather than quietly re-coupling the stores.
+  {
+    files: ["src/stores/agentTaskStore.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/stores/workspaceStore",
+              message:
+                "Store isolation (tile program): agentTaskStore must not import workspaceStore. Bridge through sessionGlue.",
+            },
+            {
+              name: "./workspaceStore",
+              message:
+                "Store isolation (tile program): agentTaskStore must not import workspaceStore. Bridge through sessionGlue.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/stores/workspaceStore.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/stores/agentTaskStore",
+              message:
+                "Store isolation (tile program): workspaceStore must not import agentTaskStore. Bridge through sessionGlue.",
+            },
+            {
+              name: "./agentTaskStore",
+              message:
+                "Store isolation (tile program): workspaceStore must not import agentTaskStore. Bridge through sessionGlue.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

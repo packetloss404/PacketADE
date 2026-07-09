@@ -9,6 +9,29 @@ export type AgentComposerMode = "local" | "worktree";
  * overflow menu. */
 export type TranscriptViewMode = "summary" | "normal" | "verbose";
 
+/**
+ * Tile program (P4-S3): the worktree cleanup-on-archive policy (ruled Bravo).
+ * - `never` — archiving never removes a worktree; every unlanded tree is Kept
+ *   with the "worktree pending" chip.
+ * - `only-when-safe` [default] — remove a worktree only when the ruled
+ *   safe-cleanup predicate (`worktreeLifecycle.isWorktreeSafeToCleanup`) proves
+ *   it safe (clean AND ancestry/PR-merged or zero commits ahead). Anything not
+ *   provably safe is conservatively Kept.
+ * - `always` — remove a CLEAN worktree unconditionally; a DIRTY tree is still
+ *   never removed (no non-Discard path removes uncommitted work — Phase 2 gate).
+ *
+ * Auto-archive (the hourly sweep) ALWAYS Keeps regardless of this setting — it
+ * structurally cannot prompt, so it can never clean.
+ */
+export type WorktreeCleanupPolicy = "never" | "only-when-safe" | "always";
+
+export const DEFAULT_WORKTREE_CLEANUP_POLICY: WorktreeCleanupPolicy =
+  "only-when-safe";
+
+function isWorktreeCleanupPolicy(value: unknown): value is WorktreeCleanupPolicy {
+  return value === "never" || value === "only-when-safe" || value === "always";
+}
+
 const TRANSCRIPT_VIEW_MODE_CYCLE: TranscriptViewMode[] = [
   "summary",
   "normal",
@@ -30,6 +53,9 @@ interface AgentSettingsValues {
   defaultEnabledMcpServerIds: string[] | null;
   /** Global transcript render density. Default = "normal". */
   transcriptViewMode: TranscriptViewMode;
+  /** Tile program (P4-S3): worktree cleanup-on-archive policy. Default =
+   * "only-when-safe". */
+  worktreeCleanupPolicy: WorktreeCleanupPolicy;
 }
 
 interface AgentSettingsState extends AgentSettingsValues {
@@ -43,6 +69,7 @@ interface AgentSettingsState extends AgentSettingsValues {
   setDefaultEnabledMcpServerIds: (ids: string[] | null) => void;
   setTranscriptViewMode: (mode: TranscriptViewMode) => void;
   cycleTranscriptViewMode: () => void;
+  setWorktreeCleanupPolicy: (policy: WorktreeCleanupPolicy) => void;
   hydrateFromStorage: () => void;
 }
 
@@ -120,6 +147,9 @@ function loadSettings(): AgentSettingsValues {
     transcriptViewMode: isTranscriptViewMode(persisted.transcriptViewMode)
       ? persisted.transcriptViewMode
       : "normal",
+    worktreeCleanupPolicy: isWorktreeCleanupPolicy(persisted.worktreeCleanupPolicy)
+      ? persisted.worktreeCleanupPolicy
+      : DEFAULT_WORKTREE_CLEANUP_POLICY,
   };
 }
 
@@ -155,6 +185,7 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => {
       autoFailoverEnabled: next.autoFailoverEnabled,
       defaultEnabledMcpServerIds: next.defaultEnabledMcpServerIds,
       transcriptViewMode: next.transcriptViewMode,
+      worktreeCleanupPolicy: next.worktreeCleanupPolicy,
     });
   }
 
@@ -182,6 +213,8 @@ export const useAgentSettingsStore = create<AgentSettingsState>((set, get) => {
         TRANSCRIPT_VIEW_MODE_CYCLE[(idx + 1) % TRANSCRIPT_VIEW_MODE_CYCLE.length];
       update({ transcriptViewMode: next });
     },
+    setWorktreeCleanupPolicy: (worktreeCleanupPolicy) =>
+      update({ worktreeCleanupPolicy }),
     hydrateFromStorage: () => set(loadSettings()),
   };
 });
@@ -190,4 +223,10 @@ export function getAgentAutoArchiveIdleMs(): number | null {
   const days = useAgentSettingsStore.getState().autoArchiveDays;
   if (days === null) return null;
   return days * 24 * 60 * 60 * 1000;
+}
+
+/** Tile program (P4-S3): imperative read of the current worktree cleanup
+ * policy for the archive fan-out (which runs outside React). */
+export function getWorktreeCleanupPolicy(): WorktreeCleanupPolicy {
+  return useAgentSettingsStore.getState().worktreeCleanupPolicy;
 }

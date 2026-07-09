@@ -175,6 +175,13 @@ vi.mock("@/components/workspace/GitDashboard", () => ({
   GitDashboard: () => <div />,
 }));
 
+// P3-S4: the AddAgentPicker's Chat section probes ~9 providers via Tauri IPC on
+// mount. Stub the hook so this WorkspaceView test needs no Tauri backend (the
+// terminal-gating assertion doesn't depend on auth state).
+vi.mock("@/components/agents/hooks/useProviderAuthStatus", () => ({
+  useProviderAuthStatus: () => ({ authStatus: {}, refreshAuthStatuses: vi.fn() }),
+}));
+
 describe("workspace launch installed-agent checks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -242,13 +249,15 @@ describe("workspace launch installed-agent checks", () => {
     );
   });
 
-  it("disables Add Agent rows that are unavailable on the active remote server", () => {
+  it("disables Terminal rows that are unavailable on the active remote server", () => {
     render(<WorkspaceView />);
 
     fireEvent.click(screen.getByRole("button", { name: /add agent/i }));
 
-    expect(screen.getByRole("button", { name: "Codex" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Claude" }));
+    // The remote server only reports claude-code installed, so the Codex CLI
+    // Terminal row is gated off while Claude Code adds instantly.
+    expect(screen.getByRole("button", { name: "Codex CLI" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Claude Code" }));
 
     expect(mocks.workspaceState.addPane).toHaveBeenCalledWith("ws-remote", "claude-code");
     expect(mocks.workspaceState.addPane).not.toHaveBeenCalledWith("ws-remote", "codex");

@@ -20,9 +20,35 @@ export interface WorkspaceSessionConfig {
   githubRepo?: { owner: string; repo: string };
 }
 
+/**
+ * Tile program (P4-S1): a transient focus+flash request. `requestPaneFocus`
+ * publishes one; the target tile (ConversationTile / WorkspacePane) reads it to
+ * render a brief flash. `token` makes each request distinct so re-focusing the
+ * SAME pane re-triggers the flash, and the auto-clear only nulls the request it
+ * itself scheduled (never a newer one). Never carries zoom — focus+flash only.
+ */
+export interface PaneFocusRequest {
+  workspaceId: string;
+  paneId: string;
+  token: number;
+}
+
+/**
+ * Tile program (P4-S1): how long a focus flash lingers before the store clears
+ * the request. The tile derives its flash purely from the live request, so this
+ * governs the flash duration everywhere.
+ */
+export const PANE_FLASH_MS = 1200;
+
 interface WorkspaceStore {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
+  /**
+   * Tile program (P4-S1): the current focus+flash request, or null. Set by
+   * {@link WorkspaceStore.requestPaneFocus} (needs-you clicks, P5 deep links);
+   * auto-cleared after {@link PANE_FLASH_MS}. NEVER touches zoom.
+   */
+  focusPaneRequest: PaneFocusRequest | null;
   /**
    * v0.8 setting: when true, the New Workspace modal pre-checks the
    * "Bypass permission prompts" toggle. Per-workspace state is still
@@ -52,10 +78,58 @@ interface WorkspaceStore {
   setModelOverride: (workspaceId: string, agentId: string, model: string | null) => void;
   removePinnedCommand: (workspaceId: string, paneId: string, index: number) => void;
   addPane: (workspaceId: string, agentId: WorkspaceAgentSlot) => string | null;
+  /**
+   * Tile program (P3-S2): insert a conversation pane into `workspaceId`.
+   * Ordering law (spec): the conversation MUST already exist in `agentTaskStore`
+   * (created via `launchConversation`) BEFORE this call — no half-born tile. The
+   * pane carries the inert carrier `agentId: "terminal"` and `kind:
+   * "conversation"`, and is NEVER pushed into `agents` (P1-S1 ruling; the store
+   * isolation rule forbids reaching into agentTaskStore to validate, so the
+   * caller owns the ordering guarantee). Returns the new pane id, or `null` when
+   * the workspace does not exist.
+   */
+  addConversationPane: (workspaceId: string, conversationId: string) => string | null;
   removePane: (workspaceId: string, paneId: string) => void;
+  /**
+   * Tile program (P1-S2): prune every conversation pane referencing
+   * `conversationId` across all workspaces. Drives the one-directional GC in
+   * `sessionGlue`: deleting a conversation removes its tiles, but closing a
+   * tile (`removePane`) NEVER deletes the conversation. Reference direction is
+   * pane→conversationId only.
+   */
+  removeConversationPanes: (conversationId: string) => void;
+  /**
+   * Tile program (P1-S2): idempotently materialize the conversation wrapper
+   * workspace for `conversationId`. Uses the deterministic id
+   * `ws-wrap-<convId>` and stamps `origin: "conversation"`, so calling twice
+   * yields exactly one workspace. Returns the wrapper id. Does NOT activate the
+   * workspace — `sessionGlue.openSession` orchestrates activation. Conversation
+   * panes carry the inert carrier `agentId: "terminal"` and are never pushed
+   * into `agents`.
+   */
+  ensureConversationWorkspace: (opts: {
+    conversationId: string;
+    name: string;
+    projectPath: string;
+  }) => string;
   setDefaultBypassPermissions: (value: boolean) => void;
   setAutoBindGithubRepo: (value: boolean) => void;
   setZoomedPane: (paneId: string | null) => void;
+  /**
+   * Tile program (P4-S1): NET-NEW focus+flash plumbing (no such symbol existed
+   * before). Activates `workspaceId`, sets `layoutStore.activePaneId` to
+   * `paneId`, and publishes a transient {@link PaneFocusRequest} that the target
+   * tile flashes. NEVER auto-zooms, NEVER rearranges. The request auto-clears
+   * after {@link PANE_FLASH_MS}. Drives needs-you clicks (P4-S2) and notification
+   * deep links (P5).
+   */
+  requestPaneFocus: (workspaceId: string, paneId: string) => void;
+  /**
+   * Tile program (P4-S1): clear the focus request. Pass the `token` of the
+   * request you intend to clear so a stale auto-clear can't null a newer
+   * request; omit to clear unconditionally.
+   */
+  clearPaneFocusRequest: (token?: number) => void;
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
 
@@ -80,6 +154,13 @@ function writeBooleanFlag(key: string, value: boolean) {
 
 let wsCounter = 0;
 
+/**
+ * Tile program (P4-S1): monotonic token source for {@link PaneFocusRequest}.
+ * Module-scoped so tokens stay unique across the store's lifetime (a fresh
+ * token every request re-triggers the flash even for the same pane).
+ */
+let focusToken = 0;
+
 function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
   return agents.map((agent) => ({
     id: `ws-pane-${++wsCounter}`,
@@ -89,6 +170,72 @@ function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
 }
 
 const WORKSPACES_CACHE_KEY = "packetade:workspaces-cache";
+
+/**
+ * Tile program (P1-S2): deterministic wrapper-workspace id for a conversation.
+ * The `openSession` materialization and the reconciliation sweep both key off
+ * this exact shape (`ws-wrap-<convId>`) so a conversation maps to at most one
+ * wrapper and repeated opens are idempotent.
+ */
+export function conversationWrapperId(conversationId: string): string {
+  return `ws-wrap-${conversationId}`;
+}
+
+/**
+ * Tile program (P1-S1): defensive normalization of a single pane read from an
+ * untrusted source (the blindly-`JSON.parse`d localStorage cache, or backend
+ * hydration).
+ *
+ * - Missing/blank `kind` ⇒ terminal (absent kind means terminal — an old cache
+ *   or an old binary that never wrote the field degrades cleanly).
+ * - `kind` is the SOLE discriminant; `agentId` is never overloaded. Conversation
+ *   panes carry the inert carrier `agentId: "terminal"`.
+ * - Invariant `conversationId set iff kind === "conversation"` is enforced: a
+ *   pane tagged conversation but missing a string `conversationId` self-heals to
+ *   a plain terminal pane (the inert-carrier arm — the sweep half of self-heal
+ *   lands in P1-S2). A terminal pane never keeps a stray `conversationId`.
+ * - Malformed panes (not an object, or no string `id`) are dropped.
+ * - Unknown fields are preserved (forward-compat with a newer build's cache).
+ *
+ * Returns `null` for a pane that should be dropped.
+ */
+function normalizePane(raw: unknown): WorkspacePane | null {
+  if (!raw || typeof raw !== "object") return null;
+  const pane = raw as Record<string, unknown>;
+  if (typeof pane.id !== "string") return null;
+
+  const isConversation =
+    pane.kind === "conversation" && typeof pane.conversationId === "string";
+
+  // Preserve unknown fields, then override the discriminant pair so the
+  // invariant always holds regardless of what was on disk.
+  const normalized = { ...pane } as Record<string, unknown>;
+  if (isConversation) {
+    normalized.kind = "conversation";
+    normalized.conversationId = pane.conversationId;
+  } else {
+    normalized.kind = "terminal";
+    delete normalized.conversationId;
+  }
+  return normalized as unknown as WorkspacePane;
+}
+
+/**
+ * Tile program (P1-S1): apply {@link normalizePane} across every workspace's
+ * panes, dropping any pane that fails to normalize. Applied to BOTH the
+ * localStorage cache and backend hydration so a conversation pane round-trips
+ * and a stripped-carrier pane self-heals to a terminal.
+ */
+export function normalizePanes(workspaces: Workspace[]): Workspace[] {
+  return workspaces.map((w) => ({
+    ...w,
+    panes: Array.isArray(w.panes)
+      ? w.panes
+          .map((pane) => normalizePane(pane))
+          .filter((pane): pane is WorkspacePane => pane !== null)
+      : [],
+  }));
+}
 
 /**
  * Read the cached workspace list from localStorage. Lets the welcome screen
@@ -101,7 +248,7 @@ function loadCachedWorkspaces(): Workspace[] {
     const cached = localStorage.getItem(WORKSPACES_CACHE_KEY);
     if (!cached) return [];
     const parsed = JSON.parse(cached);
-    return Array.isArray(parsed) ? (parsed as Workspace[]) : [];
+    return Array.isArray(parsed) ? normalizePanes(parsed as Workspace[]) : [];
   } catch {
     return [];
   }
@@ -136,6 +283,7 @@ function commitWorkspaces(
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaces: loadCachedWorkspaces(),
   activeWorkspaceId: null,
+  focusPaneRequest: null,
   defaultBypassPermissions: readBooleanFlag(DEFAULT_BYPASS_KEY, false),
   autoBindGithubRepo: readBooleanFlag(AUTO_BIND_GITHUB_KEY, true),
   zoomedPaneId: null,
@@ -360,6 +508,35 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     return newPaneId;
   },
 
+  addConversationPane: (workspaceId, conversationId) => {
+    const newPaneId = `ws-pane-${++wsCounter}`;
+    let inserted = false;
+    set(commitWorkspaces((s) => {
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== workspaceId) return w;
+        inserted = true;
+        const newPane: WorkspacePane = {
+          id: newPaneId,
+          // Inert carrier — conversation panes persist agentId "terminal" so a
+          // downgraded binary renders a harmless terminal pane; `kind` is the
+          // sole discriminant (P1-S1 ruling).
+          agentId: "terminal",
+          sessionId: null,
+          kind: "conversation",
+          conversationId,
+        };
+        return {
+          ...w,
+          // Conversation panes are never pushed into `agents` (P1-S1 ruling).
+          panes: [...w.panes, newPane],
+          updatedAt: Date.now(),
+        };
+      });
+      return { workspaces };
+    }));
+    return inserted ? newPaneId : null;
+  },
+
   removePane: (workspaceId, paneId) => {
     set(commitWorkspaces((s) => {
       const workspaces = s.workspaces.map((w) => {
@@ -370,6 +547,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           ...w,
           panes: w.panes.filter((p) => p.id !== paneId),
           agents: (() => {
+            // Tile program (P1-S1): `agents` is keyed on `kind`, not agentId.
+            // Conversation panes were never pushed into `agents` (they carry the
+            // inert carrier agentId "terminal"), so removing one must NOT splice
+            // a real terminal out of the agents list. Skip the mutation.
+            if (pane.kind === "conversation") return w.agents;
             // Remove one occurrence of this agent from the agents list
             const idx = w.agents.indexOf(pane.agentId);
             if (idx === -1) return w.agents;
@@ -388,14 +570,121 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
   },
 
+  removeConversationPanes: (conversationId) => {
+    const removedPaneIds: string[] = [];
+    set(commitWorkspaces((s) => {
+      let changed = false;
+      const workspaces = s.workspaces.map((w) => {
+        const kept = w.panes.filter((p) => {
+          const match = p.kind === "conversation" && p.conversationId === conversationId;
+          if (match) removedPaneIds.push(p.id);
+          return !match;
+        });
+        if (kept.length === w.panes.length) return w;
+        changed = true;
+        return { ...w, panes: kept, updatedAt: Date.now() };
+      });
+      // No referencing pane anywhere — skip the backend write entirely.
+      if (!changed) return {};
+      return { workspaces };
+    }));
+    // Clear zoom if the zoomed pane was one of the pruned conversation panes.
+    if (get().zoomedPaneId && removedPaneIds.includes(get().zoomedPaneId as string)) {
+      set({ zoomedPaneId: null });
+    }
+  },
+
+  ensureConversationWorkspace: ({ conversationId, name, projectPath }) => {
+    // Single-instance placement (the "exactly ONE render path per session"
+    // invariant, fleetRows.ts): if this conversation ALREADY has a tile in any
+    // workspace — a prior wrapper OR a normal workspace it was drafted into via
+    // addConversationPane (DraftTile) — reuse that placement instead of minting
+    // a duplicate wrapper. Without this, an openSession / deep-link on an
+    // already-placed conversation would fork a SECOND tile in a fresh wrapper
+    // and land the user on the wrong (empty) workspace.
+    const placed = get().workspaces.find((w) =>
+      w.panes.some(
+        (p) => p.kind === "conversation" && p.conversationId === conversationId,
+      ),
+    );
+    if (placed) return placed.id;
+    const id = conversationWrapperId(conversationId);
+    // Idempotent on the deterministic wrapper id too — guards the rare case of
+    // an orphaned wrapper whose conversation pane was stripped by an old-binary
+    // re-save (the reconciliation sweep hasn't repaired it yet): never create a
+    // second workspace with the same id. Never overwrite the existing name (the
+    // user may have renamed it — live-follow freezes on first manual rename, a
+    // Phase 4 concern) or duplicate the workspace.
+    if (get().workspaces.some((w) => w.id === id)) return id;
+    const now = Date.now();
+    const pane: WorkspacePane = {
+      id: `ws-pane-${++wsCounter}`,
+      // Inert carrier — conversation panes persist agentId "terminal" so a
+      // downgraded binary renders a harmless terminal pane; `kind` is the sole
+      // discriminant.
+      agentId: "terminal",
+      sessionId: null,
+      kind: "conversation",
+      conversationId,
+    };
+    const workspace: Workspace = {
+      id,
+      name,
+      // Conversation panes are never pushed into `agents` (P1-S1 ruling) — a
+      // pure conversation wrapper starts with an empty agents list.
+      agents: [],
+      panes: [pane],
+      projectPath,
+      createdAt: now,
+      updatedAt: now,
+      status: "active",
+      origin: "conversation",
+    };
+    set(commitWorkspaces((s) => ({ workspaces: [...s.workspaces, workspace] })));
+    return id;
+  },
+
   setZoomedPane: (paneId) => {
     set({ zoomedPaneId: paneId });
   },
 
+  requestPaneFocus: (workspaceId, paneId) => {
+    // Activate the workspace and set mosaic focus through the EXISTING
+    // mechanisms — no new focus machinery (setActiveWorkspace syncs projectPath;
+    // layoutStore.activePaneId is the real mosaic focus). Zoom is deliberately
+    // untouched: focus+flash only, never auto-zoom, never rearrange.
+    get().setActiveWorkspace(workspaceId);
+    useLayoutStore.getState().setActivePaneId(paneId);
+    const token = ++focusToken;
+    set({ focusPaneRequest: { workspaceId, paneId, token } });
+    // Transient: the flash clears itself so a stale highlight never lingers.
+    // The token guard means a newer request supersedes rather than being
+    // cancelled by this timer.
+    if (typeof setTimeout === "function") {
+      setTimeout(() => {
+        get().clearPaneFocusRequest(token);
+      }, PANE_FLASH_MS);
+    }
+  },
+
+  clearPaneFocusRequest: (token) => {
+    set((s) => {
+      if (!s.focusPaneRequest) return {};
+      // Only clear the matching request when a token is supplied, so a
+      // late-firing auto-clear can't wipe a fresher focus.
+      if (token !== undefined && s.focusPaneRequest.token !== token) return {};
+      return { focusPaneRequest: null };
+    });
+  },
+
   hydrateFromBackend: (workspaces) => {
     if (workspaces) {
-      set({ workspaces });
-      syncToLocalStorage(workspaces);
+      // Tile program (P1-S1): normalize on the way in from the backend too, so
+      // a stripped-carrier conversation pane self-heals and missing kinds
+      // default to terminal before anything renders.
+      const normalized = normalizePanes(workspaces);
+      set({ workspaces: normalized });
+      syncToLocalStorage(normalized);
     }
   },
 }));

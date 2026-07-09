@@ -37,6 +37,18 @@ interface AppStore {
   /** v0.8-H: optional filter applied the next time MemoryView mounts.
    * Consumed by `MemoryView` on mount and cleared after read. */
   memoryViewFilter: MemoryViewFilter | null;
+  /**
+   * Tile program: WorkspaceView's GitDashboard slide-out open-state, lifted out
+   * of local component state so the ReviewBar "Finish → Commit…" CTA (deep in
+   * the tile tree) can open the ONE endings surface for a conversation.
+   */
+  gitPanelOpen: boolean;
+  /**
+   * When set, the open GitDashboard mounts the WorktreeLifecycleBar scoped to
+   * this conversation's worktree (Merge back / Create PR / Discard / Keep).
+   * `null` ⇒ the plain workspace git view (opened via the header toggle).
+   */
+  gitPanelConversationId: string | null;
   setInitialized: (initialized: boolean) => void;
   setActiveView: (view: AppView) => void;
   setGitBranch: (branch: string | null) => void;
@@ -44,6 +56,12 @@ interface AppStore {
   setIsMaximized: (maximized: boolean) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setTheme: (theme: "dark" | "light") => void;
+  /** Header git toggle: open the plain workspace git view (no lifecycle bar) or
+   *  close the panel. Always clears any conversation scope. */
+  setGitPanelOpen: (open: boolean) => void;
+  /** ReviewBar "Finish → Commit…": open the git panel scoped to a conversation
+   *  so its WorktreeLifecycleBar (the endings loop) is directly visible. */
+  openGitPanelForConversation: (conversationId: string) => void;
   /** v0.8-H: switch to MemoryView with an optional filter. The filter
    * lives in store state so the receiving view can react to it without
    * a separate routing layer. */
@@ -60,6 +78,8 @@ export const useAppStore = create<AppStore>((set) => ({
   commandPaletteOpen: false,
   theme: "dark",
   memoryViewFilter: null,
+  gitPanelOpen: false,
+  gitPanelConversationId: null,
   setInitialized: (initialized) => set({ initialized }),
   setActiveView: (view) => set({ activeView: view }),
   setGitBranch: (branch) => set({ gitBranch: branch }),
@@ -67,6 +87,10 @@ export const useAppStore = create<AppStore>((set) => ({
   setIsMaximized: (maximized) => set({ isMaximized: maximized }),
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   setTheme: (theme) => set({ theme }),
+  setGitPanelOpen: (open) =>
+    set({ gitPanelOpen: open, gitPanelConversationId: null }),
+  openGitPanelForConversation: (conversationId) =>
+    set({ gitPanelOpen: true, gitPanelConversationId: conversationId }),
   openMemoryView: (filter) =>
     set({ activeView: "memory", memoryViewFilter: filter ?? null }),
   clearMemoryViewFilter: () => set({ memoryViewFilter: null }),

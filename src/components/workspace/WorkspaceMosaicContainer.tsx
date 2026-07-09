@@ -3,8 +3,12 @@ import { Mosaic, MosaicWindow } from "react-mosaic-component";
 import { Minimize2 } from "lucide-react";
 import type { MosaicNode, MosaicPath } from "@/types/mosaic";
 import { WorkspacePane } from "./WorkspacePane";
+import { ConversationTile } from "./ConversationTile";
+import { DraftTile } from "./DraftTile";
 import type { Workspace } from "@/types/workspace";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useDraftTileStore } from "@/stores/draftTileStore";
+import { useReviewStore } from "@/stores/reviewStore";
 import { buildPresetTree, presetForCount, addToTree, removeFromTree, getLeafOrder } from "@/lib/mosaicPresets";
 
 interface WorkspaceMosaicContainerProps {
@@ -21,28 +25,49 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
   const zoomedPaneId = useWorkspaceStore((s) => s.zoomedPaneId);
   const setZoomedPane = useWorkspaceStore((s) => s.setZoomedPane);
 
+  // P3-S4: draft conversation tiles are synthetic, non-persisted mosaic leaves
+  // that live in draftTileStore (never in workspace.panes). Fold their ids into
+  // the same tree-sync so a picked chat agent gets a first-run tile beside the
+  // real ones, and materializing it on send swaps the draft leaf for the real
+  // conversation pane. Subscribed as a stable comma string to avoid re-render
+  // churn.
+  const draftIdKey = useDraftTileStore((s) =>
+    s.drafts
+      .filter((d) => d.workspaceId === workspace.id)
+      .map((d) => d.id)
+      .join(","),
+  );
+
   // Clear zoom when workspace changes
   useEffect(() => {
     setZoomedPane(null);
   }, [workspace.id, setZoomedPane]);
 
-  // Escape key exits zoom
+  // Escape key exits zoom — condition-based Escape layering (P3-S1, Alpha's
+  // ruled version). Explicit condition check, NOT defaultPrevented ordering:
+  // while the canonical review surface is open the zoom-exit no-ops so a
+  // single Escape closes review first (ReviewSurface owns that Escape) and
+  // leaves the auto-zoom intact. Review and zoom-exit therefore never
+  // double-fire off one keypress. A later Escape (review closed) exits zoom.
   useEffect(() => {
     if (!zoomedPaneId) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        setZoomedPane(null);
-      }
+      if (e.key !== "Escape") return;
+      // No-op while review is open — the review layer consumes this Escape.
+      if (useReviewStore.getState().open) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setZoomedPane(null);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [zoomedPaneId, setZoomedPane]);
 
-  // Sync the mosaic tree with workspace panes.
+  // Sync the mosaic tree with workspace panes + draft tiles.
   // Uses a stable paneKey string to detect actual changes and avoid double-fires.
-  const paneKey = workspace.panes.map((p) => p.id).join(",");
+  const paneKey = [workspace.panes.map((p) => p.id).join(","), draftIdKey]
+    .filter(Boolean)
+    .join(",");
   useEffect(() => {
     // Skip if the set of pane IDs hasn't actually changed
     if (paneKey === prevPaneKeyRef.current) return;
@@ -106,21 +131,50 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
   const renderTile = useCallback(
     (id: string, path: MosaicPath) => {
       const pane = workspace.panes.find((p) => p.id === id);
-      if (!pane) return <div />;
+      if (pane) {
+        return (
+          <MosaicWindow<string>
+            path={path}
+            title={pane.agentId}
+            toolbarControls={<></>}
+            renderToolbar={null}
+            draggable
+          >
+            {/* One branch on pane.kind (P3-S2): conversation panes mount the
+                ConversationTile (unforked AgentChatPane); everything else is a
+                terminal pane. `kind` is the sole discriminant. */}
+            {pane.kind === "conversation" ? (
+              <ConversationTile pane={pane} workspaceId={workspace.id} />
+            ) : (
+              <WorkspacePane pane={pane} workspaceId={workspace.id} />
+            )}
+          </MosaicWindow>
+        );
+      }
 
-      return (
-        <MosaicWindow<string>
-          path={path}
-          title={pane.agentId}
-          toolbarControls={<></>}
-          renderToolbar={null}
-          draggable
-        >
-          <WorkspacePane pane={pane} workspaceId={workspace.id} />
-        </MosaicWindow>
-      );
+      // P3-S4: a draft tile id (read live from draftTileStore — it isn't a
+      // persisted pane). No conversation exists yet; DraftTile owns the
+      // first-run face and materializes a real pane on first send.
+      const draft = useDraftTileStore.getState().drafts.find((d) => d.id === id);
+      if (draft) {
+        return (
+          <MosaicWindow<string>
+            path={path}
+            title="Draft"
+            toolbarControls={<></>}
+            renderToolbar={null}
+            draggable
+          >
+            <DraftTile draftId={id} workspace={workspace} />
+          </MosaicWindow>
+        );
+      }
+
+      return <div />;
     },
-    [workspace.panes, workspace.id],
+    // Drafts are read live from draftTileStore.getState(); the tree value change
+    // (paneKey includes draftIdKey) is what re-invokes renderTile per leaf.
+    [workspace],
   );
 
   // Find the zoomed pane (if it belongs to this workspace)

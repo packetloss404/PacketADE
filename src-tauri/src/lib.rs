@@ -243,6 +243,7 @@ pub fn run() {
             // Git
             commands::git::get_git_branch,
             commands::git::get_git_status,
+            commands::git::get_file_head_content,
             commands::git::get_git_branch_remote,
             commands::git::get_git_status_remote,
             commands::git::git_commit,
@@ -260,6 +261,8 @@ pub fn run() {
             commands::git::git_safety_check,
             commands::git::create_conversation_worktree,
             commands::git::remove_conversation_worktree,
+            // P2-S1: local squash-merge with ruled safety semantics
+            commands::git::merge_conversation_branch,
             // v0.8.5 fix: issue worktree wiring
             commands::git::create_issue_worktree,
             commands::agents_md::resolve_agents_md,

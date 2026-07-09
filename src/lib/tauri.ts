@@ -608,11 +608,57 @@ export async function createConversationWorktree(
   });
 }
 
+/**
+ * P2-S2: tear down a conversation worktree. `deleteBranch` (default false)
+ * additionally force-deletes the `pkt/<convId>` branch after the worktree dir is
+ * removed — the Discard path passes true so a discarded conversation leaves no
+ * dangling branch (the plain `git worktree remove --force` on the Rust side
+ * otherwise leaks it). Idempotent — a missing worktree succeeds.
+ */
 export async function removeConversationWorktree(
   projectPath: string,
   convId: string,
+  deleteBranch = false,
 ): Promise<void> {
-  return invoke("remove_conversation_worktree", { projectPath, convId });
+  return invoke("remove_conversation_worktree", { projectPath, convId, deleteBranch });
+}
+
+/**
+ * P2-S1: outcome of a successful {@link mergeConversationBranch}. Mirrors the
+ * Rust `MergeBranchOutcome`. The two cleanup flags are non-fatal — the merge
+ * already landed; a `false` only means post-merge cleanup was incomplete.
+ */
+export interface MergeBranchOutcome {
+  /** SHA after the squash commit (unchanged prior HEAD if already merged). */
+  commitSha: string;
+  /** The `pkt/<convId>` branch was force-deleted (`-D`). */
+  branchDeleted: boolean;
+  /** The conversation worktree directory was removed. */
+  worktreeRemoved: boolean;
+  /** The squash produced no commit — the branch had no changes vs. the root.
+   * When true NOTHING was landed: the caller must NOT flip `state → "landed"`
+   * (no commit, worktree + branch left in place for an explicit Discard). */
+  nothingToLand: boolean;
+}
+
+/**
+ * P2-S1: land a conversation's `pkt/<convId>` branch into the root checkout
+ * by squash-merging (default). Ruled safety semantics: refuses on a dirty
+ * root; on conflict leaves both the root checkout and the worktree
+ * byte-intact and rejects; on success force-deletes the branch and removes
+ * the worktree dir. The returned outcome lets the caller flip
+ * `worktree.state -> "landed"`.
+ */
+export async function mergeConversationBranch(
+  projectPath: string,
+  branch: string,
+  squash = true,
+): Promise<MergeBranchOutcome> {
+  return invoke<MergeBranchOutcome>("merge_conversation_branch", {
+    projectPath,
+    branch,
+    squash,
+  });
 }
 
 /**
@@ -1420,6 +1466,13 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition,
       pinnedCommands: pane.pinnedCommands,
+      // Tile program (P1-S1): thread the kind discriminant + conversationId
+      // through hydration or they silently drop on the next save. The invariant
+      // (conversationId set iff kind==="conversation", absent kind ⇒ terminal)
+      // is enforced by normalizePanes in workspaceStore, which runs over this
+      // hydrated result.
+      kind: pane.kind === "conversation" ? "conversation" : undefined,
+      conversationId: pane.conversationId,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1432,6 +1485,10 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
     serverId: workspace.serverId,
     remoteProjectPath: workspace.remoteProjectPath,
     githubRepo: workspaceWithMetadata.githubRepo,
+    // Tile program (P1-S2): thread the workspace `origin` marker through
+    // hydration so conversation wrappers survive a load/save round-trip; an
+    // unknown value degrades to undefined (a normal workspace).
+    origin: workspace.origin === "conversation" ? "conversation" : undefined,
   };
 }
 
@@ -1446,6 +1503,14 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition ?? { row: 0, col: index },
       pinnedCommands: pane.pinnedCommands,
+      // Tile program (P1-S1): only conversation panes carry kind/conversationId
+      // in the persisted shape — terminal panes stay byte-identical so old
+      // binaries and the five-field-era round-trip are unaffected. The inert
+      // carrier `agentId: "terminal"` is set at pane construction, so a
+      // downgraded binary that ignores `kind` renders a harmless terminal pane.
+      ...(pane.kind === "conversation"
+        ? { kind: "conversation" as const, conversationId: pane.conversationId }
+        : {}),
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1458,6 +1523,9 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
     serverId: workspace.serverId,
     remoteProjectPath: workspace.remoteProjectPath,
     githubRepo: workspace.githubRepo,
+    // Tile program (P1-S2): persist the `origin` marker only when set — a
+    // normal workspace stays byte-identical to the pre-tile shape.
+    ...(workspace.origin === "conversation" ? { origin: "conversation" as const } : {}),
   } satisfies WorkspaceDtoWithFrontendMetadata;
 }
 
@@ -2515,6 +2583,16 @@ export async function readFileForDiff(
   relPath: string,
 ): Promise<string | null> {
   return invoke<string | null>("read_file_for_diff", { projectPath, relPath });
+}
+
+/** P1-S4: a file's committed content at `HEAD` for the clickable
+ *  GitDashboard diff view. `null` for untracked/new files or an empty repo
+ *  (nothing to diff against → the whole working file reads as added). */
+export async function getFileHeadContent(
+  projectPath: string,
+  relPath: string,
+): Promise<string | null> {
+  return invoke<string | null>("get_file_head_content", { projectPath, relPath });
 }
 
 // Side chat — fire-and-forget. Listen for `side-chat:done` / `side-chat:error`

@@ -1,4 +1,4 @@
-import { Sparkles, Terminal, Plane, KanbanSquare, Brain, Github, Settings } from "lucide-react";
+import { Terminal, Plane, KanbanSquare, Brain, Github, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAppStore, type AppView } from "@/stores/appStore";
 
@@ -9,8 +9,10 @@ type RailItem = {
   matches?: AppView[];
 };
 
+// Tile program (P5-S1): the "Agents" rail item was removed — the Agents tab is
+// retired and reachable only through the one-release redirect shim, never a
+// visible entry point. Workspace is now the primary surface.
 const ITEMS: RailItem[] = [
-  { id: "agents", icon: Sparkles, label: "Agents" },
   { id: "workspace", icon: Terminal, label: "Workspace" },
   { id: "flights", icon: Plane, label: "Flight Deck" },
   { id: "issues", icon: KanbanSquare, label: "Issues" },

@@ -2,7 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { Ban, Bot, Check, ChevronDown, Compass, FileCheck2, Hand, Zap } from "lucide-react";
 import { Tooltip } from "@/components/ui/Tooltip";
 import type { AgentConversation } from "@/types/agent-conversation";
-import { deriveMode, MODE_ORDER, nextMode } from "./agentModeChipUtils";
+import {
+  deriveMode,
+  modesForApprovals,
+  nextModeIn,
+  SANDBOX_POSTURE_DESCRIPTION,
+  SANDBOX_POSTURE_LABEL,
+  SANDBOX_POSTURE_TOOLTIP,
+} from "./agentModeChipUtils";
+import { providerSupportsApprovals } from "@/lib/api-models";
 import { addPaneControlListener, OPEN_MODE_CHIP_EVENT } from "./paneEvents";
 
 /**
@@ -96,8 +104,19 @@ export function AgentModeChip({
   const mode = deriveMode(conversation);
   const meta = MODE_META[mode];
   const Icon = meta.icon;
-  const next = nextMode(mode);
-  const nextMeta = MODE_META[next];
+
+  // P1-S4 (Codex honesty): providers whose adapter can't honor approval
+  // round-trips (Codex `exec`) expose ONLY the honorable sandbox postures,
+  // relabeled in sandbox vocabulary. Approval-capable providers keep the
+  // full five-mode set with its native labels.
+  const supportsApprovals = providerSupportsApprovals(conversation.agent);
+  const order = modesForApprovals(supportsApprovals);
+  const displayLabel = (m: AgentMode): string =>
+    supportsApprovals ? MODE_META[m].label : SANDBOX_POSTURE_LABEL[m];
+  const displayDescription = (m: AgentMode): string =>
+    supportsApprovals ? MODE_META[m].description : SANDBOX_POSTURE_DESCRIPTION[m];
+
+  const next = nextModeIn(mode, order);
   const approveWrites = conversation.approveWrites ?? false;
 
   useEffect(() => {
@@ -125,7 +144,13 @@ export function AgentModeChip({
       <Tooltip
         content={
           <span>
-            {meta.label}: {meta.description}
+            {displayLabel(mode)}: {displayDescription(mode)}
+            {!supportsApprovals && (
+              <>
+                <br />
+                {SANDBOX_POSTURE_TOOLTIP}
+              </>
+            )}
             {approveWrites && (
               <>
                 <br />
@@ -133,7 +158,7 @@ export function AgentModeChip({
               </>
             )}
             <br />
-            Shift+Tab → {nextMeta.label}
+            Shift+Tab → {displayLabel(next)}
           </span>
         }
       >
@@ -143,7 +168,7 @@ export function AgentModeChip({
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded-l border text-ui transition-colors motion-reduce:transition-none ${meta.color} ${meta.border} hover:brightness-110`}
         >
           <Icon size={11} />
-          {meta.label}
+          {displayLabel(mode)}
           {approveWrites && (
             <span
               className="h-1 w-1 rounded-full bg-accent-amber"
@@ -171,7 +196,7 @@ export function AgentModeChip({
           role="menu"
           className="absolute right-0 top-full z-50 mt-1 w-60 rounded-md border border-bg-border bg-bg-elevated py-1 shadow-xl"
         >
-          {MODE_ORDER.map((m) => {
+          {order.map((m) => {
             const rowMeta = MODE_META[m];
             const RowIcon = rowMeta.icon;
             const selected = m === mode;
@@ -193,10 +218,10 @@ export function AgentModeChip({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block text-ui text-text-primary">
-                    {rowMeta.label}
+                    {displayLabel(m)}
                   </span>
                   <span className="block text-meta text-text-muted">
-                    {rowMeta.description}
+                    {displayDescription(m)}
                   </span>
                 </span>
                 {selected && (

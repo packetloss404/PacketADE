@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { ChevronUp, FileDiff } from "lucide-react";
+import { ChevronUp, FileDiff, GitMerge } from "lucide-react";
 import { useReviewStore } from "@/stores/reviewStore";
 import { useAppStore } from "@/stores/appStore";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import {
   countReviewFiles,
   type DiffTotals,
@@ -21,6 +22,13 @@ export interface ReviewBarProps {
    * passive. */
   pendingPermissionCount: number;
   respondEdit: ApprovalStore["respondEdit"];
+  /**
+   * Y/N focus gate (P3-S1). Undefined → no pane context (standalone
+   * AgentsView), armed exactly as today. Defined → armed iff true, so only
+   * the focused conversation tile's bar answers a keypress. Extends the
+   * existing arming condition; never alters the standalone path.
+   */
+  keyboardScopeActive?: boolean;
 }
 
 /**
@@ -37,6 +45,7 @@ export function ReviewBar({
   pendingEdits,
   pendingPermissionCount,
   respondEdit,
+  keyboardScopeActive,
 }: ReviewBarProps) {
   const open = useReviewStore(
     (s) => s.open && s.conversationId === conversationId,
@@ -46,8 +55,24 @@ export function ReviewBar({
 
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
+  // The additive "Finish → Commit…" CTA. Shown when the session has settled
+  // (done/idle) with reviewed changes (files present, nothing still awaiting a
+  // Y/N). Opens the ONE endings surface — GitDashboard's WorktreeLifecycleBar,
+  // scoped to this conversation's worktree — inside the mosaic workspace (the
+  // P5 replacement for the deleted disposable Agents-tab commit host). Reads
+  // status itself (AgentChatPane is a protected, unmodified surface).
+  const conversationStatus = useAgentTaskStore(
+    (s) => s.conversations.find((c) => c.id === conversationId)?.status,
+  );
+  const openGitPanelForConversation = useAppStore(
+    (s) => s.openGitPanelForConversation,
+  );
+
   const topEdit = pendingEdits[0];
-  const ynActive = !!topEdit && pendingPermissionCount === 0;
+  // Dual-mode focus gate (P3-S1): no pane context (undefined) → armed as
+  // today; pane context → armed iff this instance holds keyboard scope.
+  const scopeArmed = keyboardScopeActive === undefined || keyboardScopeActive;
+  const ynActive = !!topEdit && pendingPermissionCount === 0 && scopeArmed;
 
   useEffect(() => {
     if (!ynActive || commandPaletteOpen) return;
@@ -79,6 +104,9 @@ export function ReviewBar({
   if (fileCount === 0) return null;
 
   const hasPending = pendingEdits.length > 0;
+  // Reviewed changes on a settled session ⇒ offer the endings loop.
+  const settled = conversationStatus === "done" || conversationStatus === "idle";
+  const showFinish = settled && !hasPending;
 
   return (
     <div
@@ -129,6 +157,18 @@ export function ReviewBar({
           />
         </span>
       </button>
+
+      {showFinish && (
+        <button
+          type="button"
+          onClick={() => openGitPanelForConversation(conversationId)}
+          className="hover:bg-accent-green/10 mt-1 flex w-full items-center justify-center gap-1.5 rounded px-1 py-1 text-ui font-medium text-accent-green transition-colors"
+          title="Commit and land this conversation's changes"
+        >
+          <GitMerge size={12} />
+          Finish → Commit…
+        </button>
+      )}
     </div>
   );
 }

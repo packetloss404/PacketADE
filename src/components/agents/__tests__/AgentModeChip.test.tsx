@@ -13,7 +13,9 @@ function conversation(overrides: Partial<AgentConversation>): AgentConversation 
   return {
     id: "conv-1",
     title: "Conversation",
-    agent: "api-openai-codex",
+    // Default to an approval-CAPABLE provider so the full five-mode set is
+    // asserted here; Codex-specific filtering is covered separately below.
+    agent: "api-claude",
     projectPath: "/repo",
     status: "idle",
     messages: [],
@@ -110,5 +112,57 @@ describe("AgentModeChip", () => {
         .getByRole("menuitemcheckbox", { name: /Approve writes/ })
         .getAttribute("aria-checked"),
     ).toBe("true");
+  });
+
+  // P1-S4 (Codex honesty): the exec adapter can't service ANY approval
+  // round-trip, so the picker must offer ONLY the honorable sandbox
+  // postures, relabeled in sandbox vocabulary — never Manual/Deny.
+  describe("Codex capability filtering", () => {
+    it("shows only the three honorable sandbox postures for api-openai-codex", () => {
+      renderChip({ agent: "api-openai-codex", permissionMode: "auto" });
+      fireEvent.click(screen.getByLabelText("Permission options"));
+      const radios = screen.getAllByRole("menuitemradio");
+      expect(radios.map((r) => r.textContent)).toEqual([
+        expect.stringContaining("Read-only"),
+        expect.stringContaining("Workspace-write"),
+        expect.stringContaining("Full access"),
+      ]);
+    });
+
+    it("never offers the approval-implying Manual or Deny postures for Codex", () => {
+      renderChip({ agent: "api-openai-codex", permissionMode: "auto" });
+      fireEvent.click(screen.getByLabelText("Permission options"));
+      const text = screen
+        .getAllByRole("menuitemradio")
+        .map((r) => r.textContent)
+        .join(" ");
+      expect(text).not.toMatch(/Manual/);
+      expect(text).not.toMatch(/Deny/);
+    });
+
+    it("relabels the resting pill in sandbox vocabulary for Codex", () => {
+      renderChip({ agent: "api-openai-codex", permissionMode: "auto" });
+      // permissionMode:auto derives 'default' → 'Workspace-write' for Codex.
+      expect(screen.getByText("Workspace-write")).toBeTruthy();
+      expect(screen.queryByText("Default")).toBeNull();
+    });
+
+    it("still selects the underlying mode value from the relabeled row", () => {
+      const onSelectMode = vi.fn();
+      render(
+        <AgentModeChip
+          conversation={conversation({
+            agent: "api-openai-codex",
+            permissionMode: "auto",
+          })}
+          onCycle={vi.fn()}
+          onSelectMode={onSelectMode}
+          onSetApproveWrites={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Permission options"));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: /Full access/ }));
+      expect(onSelectMode).toHaveBeenCalledWith("yolo");
+    });
   });
 });

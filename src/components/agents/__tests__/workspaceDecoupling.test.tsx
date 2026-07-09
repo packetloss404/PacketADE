@@ -1,6 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { ContinueInMenu } from "@/components/agents/ContinueInMenu";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
@@ -91,19 +90,9 @@ describe("Agents pane workspace decoupling", () => {
     agentStore.state.setProjectLabel = vi.fn();
   });
 
-  it("groups sessions by project header with no group/sort configurator and no Workspace grouping", () => {
-    render(<AgentSidebar onNewAgent={vi.fn()} selectedId="conv-1" onSelect={vi.fn()} />);
-
-    // Group-by is hard-coded to project — the configurator buttons are gone.
-    expect(screen.queryByRole("button", { name: /group:/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /sort/i })).not.toBeInTheDocument();
-    expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
-
-    // Project headers still render, keyed by project path / SSH target.
-    expect(screen.getByText("PacketADE")).toBeInTheDocument();
-    expect(screen.getByText("Staging")).toBeInTheDocument();
-  });
-
+  // The AgentSidebar project-grouping assertions moved to FleetSidebar coverage
+  // (FleetSidebar.test.tsx + dualRunParity.test.ts) when AgentSidebar was
+  // retired in P5-S2; the surviving ContinueInMenu decoupling checks remain.
   it("keeps continue actions for folder, CLI, and editors without an Open in workspace item", () => {
     // ContinueInMenu is now a section component (P1-10) — no Dropdown/trigger
     // of its own, so it renders its content bare with no click needed.
