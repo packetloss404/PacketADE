@@ -3,6 +3,7 @@ import { Bot, Loader2, Square } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAppStore } from "@/stores/appStore";
 import { aggregateConversationCost } from "@/lib/conversationCost";
+import { useConversationAttention } from "@/lib/sessionStatus";
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -29,15 +30,16 @@ export function RunningAgentsChip() {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // Tile program (P4-S1): "running" is derived from the SINGLE status truth
+  // (sessionStatus attention === "working"), not a bespoke streaming scan, so
+  // the chip, the tab-strip dot, and the sidebar can never disagree.
+  const attention = useConversationAttention();
   const running = useMemo(
     () =>
       conversations.filter(
-        (c) =>
-          c.mode === "api" &&
-          c.status === "active" &&
-          c.messages.some((m) => m.isStreaming),
+        (c) => c.mode === "api" && attention.get(c.id) === "working",
       ),
-    [conversations],
+    [conversations, attention],
   );
 
   // Close on outside click.

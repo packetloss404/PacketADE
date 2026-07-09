@@ -13,7 +13,8 @@ import { useState } from "react";
 import { LayoutGrid, GitBranch, FileText, Plus, Zap } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
 import { getAgentColor } from "@/lib/agentColors";
-import type { WorkspaceAgentSlot, Workspace } from "@/types/workspace";
+import { useWorkspaceStatuses, attentionDot } from "@/lib/sessionStatus";
+import type { WorkspaceAgentSlot } from "@/types/workspace";
 
 const agentLabel: Record<WorkspaceAgentSlot, string> = {
   terminal: "Terminal",
@@ -35,6 +36,10 @@ export function WorkspaceView() {
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const drafts = useDraftTileStore((s) => s.drafts);
+  // Tile program (P4-S1): the tab-strip dot reads the SINGLE status truth
+  // (sessionStatus rollup — max severity across member tiles), not a local
+  // liveness heuristic.
+  const workspaceStatuses = useWorkspaceStatuses();
 
   const openFiles = useEditorStore((s) => s.openFiles);
   const activeFileId = useEditorStore((s) => s.activeFileId);
@@ -76,7 +81,7 @@ export function WorkspaceView() {
             <div className="flex items-stretch gap-0 overflow-x-auto">
               {activeNonArchived.map((ws) => {
                 const isActive = ws.id === activeWorkspaceId;
-                const dot = workspaceStatusDot(ws);
+                const dot = attentionDot(workspaceStatuses.get(ws.id) ?? "idle");
                 return (
                   <button
                     key={ws.id}
@@ -281,15 +286,4 @@ export function WorkspaceView() {
       </div>
     </div>
   );
-}
-
-function workspaceStatusDot(ws: Workspace): { className: string; pulse: boolean } {
-  const live = ws.panes.some((p) => p.sessionId);
-  if (live) {
-    return { className: "bg-accent-green", pulse: true };
-  }
-  if (ws.panes.length > 0) {
-    return { className: "bg-accent-amber", pulse: false };
-  }
-  return { className: "bg-text-faint", pulse: false };
 }

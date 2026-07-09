@@ -20,9 +20,35 @@ export interface WorkspaceSessionConfig {
   githubRepo?: { owner: string; repo: string };
 }
 
+/**
+ * Tile program (P4-S1): a transient focus+flash request. `requestPaneFocus`
+ * publishes one; the target tile (ConversationTile / WorkspacePane) reads it to
+ * render a brief flash. `token` makes each request distinct so re-focusing the
+ * SAME pane re-triggers the flash, and the auto-clear only nulls the request it
+ * itself scheduled (never a newer one). Never carries zoom — focus+flash only.
+ */
+export interface PaneFocusRequest {
+  workspaceId: string;
+  paneId: string;
+  token: number;
+}
+
+/**
+ * Tile program (P4-S1): how long a focus flash lingers before the store clears
+ * the request. The tile derives its flash purely from the live request, so this
+ * governs the flash duration everywhere.
+ */
+export const PANE_FLASH_MS = 1200;
+
 interface WorkspaceStore {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
+  /**
+   * Tile program (P4-S1): the current focus+flash request, or null. Set by
+   * {@link WorkspaceStore.requestPaneFocus} (needs-you clicks, P5 deep links);
+   * auto-cleared after {@link PANE_FLASH_MS}. NEVER touches zoom.
+   */
+  focusPaneRequest: PaneFocusRequest | null;
   /**
    * v0.8 setting: when true, the New Workspace modal pre-checks the
    * "Bypass permission prompts" toggle. Per-workspace state is still
@@ -89,6 +115,21 @@ interface WorkspaceStore {
   setDefaultBypassPermissions: (value: boolean) => void;
   setAutoBindGithubRepo: (value: boolean) => void;
   setZoomedPane: (paneId: string | null) => void;
+  /**
+   * Tile program (P4-S1): NET-NEW focus+flash plumbing (no such symbol existed
+   * before). Activates `workspaceId`, sets `layoutStore.activePaneId` to
+   * `paneId`, and publishes a transient {@link PaneFocusRequest} that the target
+   * tile flashes. NEVER auto-zooms, NEVER rearranges. The request auto-clears
+   * after {@link PANE_FLASH_MS}. Drives needs-you clicks (P4-S2) and notification
+   * deep links (P5).
+   */
+  requestPaneFocus: (workspaceId: string, paneId: string) => void;
+  /**
+   * Tile program (P4-S1): clear the focus request. Pass the `token` of the
+   * request you intend to clear so a stale auto-clear can't null a newer
+   * request; omit to clear unconditionally.
+   */
+  clearPaneFocusRequest: (token?: number) => void;
   hydrateFromBackend: (workspaces?: Workspace[]) => void;
 }
 
@@ -112,6 +153,13 @@ function writeBooleanFlag(key: string, value: boolean) {
 }
 
 let wsCounter = 0;
+
+/**
+ * Tile program (P4-S1): monotonic token source for {@link PaneFocusRequest}.
+ * Module-scoped so tokens stay unique across the store's lifetime (a fresh
+ * token every request re-triggers the flash even for the same pane).
+ */
+let focusToken = 0;
 
 function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
   return agents.map((agent) => ({
@@ -235,6 +283,7 @@ function commitWorkspaces(
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaces: loadCachedWorkspaces(),
   activeWorkspaceId: null,
+  focusPaneRequest: null,
   defaultBypassPermissions: readBooleanFlag(DEFAULT_BYPASS_KEY, false),
   autoBindGithubRepo: readBooleanFlag(AUTO_BIND_GITHUB_KEY, true),
   zoomedPaneId: null,
@@ -581,6 +630,35 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setZoomedPane: (paneId) => {
     set({ zoomedPaneId: paneId });
+  },
+
+  requestPaneFocus: (workspaceId, paneId) => {
+    // Activate the workspace and set mosaic focus through the EXISTING
+    // mechanisms — no new focus machinery (setActiveWorkspace syncs projectPath;
+    // layoutStore.activePaneId is the real mosaic focus). Zoom is deliberately
+    // untouched: focus+flash only, never auto-zoom, never rearrange.
+    get().setActiveWorkspace(workspaceId);
+    useLayoutStore.getState().setActivePaneId(paneId);
+    const token = ++focusToken;
+    set({ focusPaneRequest: { workspaceId, paneId, token } });
+    // Transient: the flash clears itself so a stale highlight never lingers.
+    // The token guard means a newer request supersedes rather than being
+    // cancelled by this timer.
+    if (typeof setTimeout === "function") {
+      setTimeout(() => {
+        get().clearPaneFocusRequest(token);
+      }, PANE_FLASH_MS);
+    }
+  },
+
+  clearPaneFocusRequest: (token) => {
+    set((s) => {
+      if (!s.focusPaneRequest) return {};
+      // Only clear the matching request when a token is supplied, so a
+      // late-firing auto-clear can't wipe a fresher focus.
+      if (token !== undefined && s.focusPaneRequest.token !== token) return {};
+      return { focusPaneRequest: null };
+    });
   },
 
   hydrateFromBackend: (workspaces) => {
