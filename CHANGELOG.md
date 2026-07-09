@@ -811,7 +811,7 @@ work from the v0.7 backlog.
 
 ### Architecture
 - 29 new files, 27 modified. ~10.9K LOC delta.
-- Design + scope locked in [`dev/v0.8-github-and-memory.md`](./dev/v0.8-github-and-memory.md).
+- Design + scope locked in [`dev/archive/v0.8-github-and-memory.md`](./dev/archive/v0.8-github-and-memory.md).
 - Built by 8 parallel implementation agents → 2-agent peer-review pass
   (spec/UX + correctness/race) → 5 fix-up agents addressing P0s
   (PR actions and CI check-runs had to be re-shipped after silent revert
@@ -872,7 +872,7 @@ context compaction.
   `maxOutputTokens`).
 - In-process MCP server inside the agent-sidecar exposes 7 planner
   tools to Claude (validated by spike — see
-  `dev/flight-planner-spike-retro.md`).
+  `dev/archive/flight-planner-spike-retro.md`).
 - 9 commits, ~70 new tests (Rust unit + vitest + sidecar smokes).
 
 #### Deferred to v1.1
@@ -886,9 +886,9 @@ See [`backlog.md`](./backlog.md) for the full list. Headlines:
 - Crash-resilient planner sessions across app restarts.
 
 #### Documentation
-- `dev/flight-planner-plan.md` — locked design spec.
-- `dev/flight-planner-spike-retro.md` — spike findings.
-- `dev/flight-planner-v1-acceptance-runbook.md` — manual
+- `dev/archive/flight-planner-plan.md` — locked design spec.
+- `dev/archive/flight-planner-spike-retro.md` — spike findings.
+- `dev/archive/flight-planner-v1-acceptance-runbook.md` — manual
   validation procedure.
 
 ---
