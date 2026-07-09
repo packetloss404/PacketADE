@@ -353,6 +353,33 @@ describe("launchConversation — real memory-injection seam", () => {
     expect(conv?.systemPromptOverride ?? "").not.toContain(MEMORY_MARKER);
   });
 
+  it("P0: memory is ON by default — a profile-less launch injects the brief (product ruling 2026-07-09)", async () => {
+    const { useMemoryStore } = await import("@/stores/memoryStore");
+    const { launchConversation } = await import("@/lib/launchConversation");
+
+    useMemoryStore.setState({
+      patterns: [
+        {
+          id: "p-default",
+          pattern: "Default-on memory ruling pin.",
+          category: "convention",
+          confidence: 0.9,
+          extractedAt: Date.now(),
+          projectPath: SELECTED_REPO,
+        },
+      ],
+    });
+
+    launchConversation(baseParams({ profile: undefined }));
+
+    await vi.waitFor(() => {
+      expect(startApiAgentSessionMock).toHaveBeenCalled();
+    });
+
+    expect(outgoingSystemPrompt() ?? "").toContain(MEMORY_MARKER);
+    expect(outgoingSystemPrompt() ?? "").toContain("Default-on memory ruling pin.");
+  });
+
   it("P2: an enabled profile prepends the brief (with seeded pattern) ahead of the profile prompt", async () => {
     const { useMemoryStore } = await import("@/stores/memoryStore");
     const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
