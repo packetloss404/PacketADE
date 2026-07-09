@@ -616,6 +616,40 @@ export async function removeConversationWorktree(
 }
 
 /**
+ * P2-S1: outcome of a successful {@link mergeConversationBranch}. Mirrors the
+ * Rust `MergeBranchOutcome`. The two cleanup flags are non-fatal — the merge
+ * already landed; a `false` only means post-merge cleanup was incomplete.
+ */
+export interface MergeBranchOutcome {
+  /** SHA after the squash commit (unchanged prior HEAD if already merged). */
+  commitSha: string;
+  /** The `pkt/<convId>` branch was force-deleted (`-D`). */
+  branchDeleted: boolean;
+  /** The conversation worktree directory was removed. */
+  worktreeRemoved: boolean;
+}
+
+/**
+ * P2-S1: land a conversation's `pkt/<convId>` branch into the root checkout
+ * by squash-merging (default). Ruled safety semantics: refuses on a dirty
+ * root; on conflict leaves both the root checkout and the worktree
+ * byte-intact and rejects; on success force-deletes the branch and removes
+ * the worktree dir. The returned outcome lets the caller flip
+ * `worktree.state -> "landed"`.
+ */
+export async function mergeConversationBranch(
+  projectPath: string,
+  branch: string,
+  squash = true,
+): Promise<MergeBranchOutcome> {
+  return invoke<MergeBranchOutcome>("merge_conversation_branch", {
+    projectPath,
+    branch,
+    squash,
+  });
+}
+
+/**
  * v0.8.5 fix: provision a git worktree bound to a specific Issue. The
  * Rust side installs a `prepare-commit-msg` hook that appends
  * `Fixes #{issueNumber}` and `Run-By: PacketADE issue I-{issueId}` to

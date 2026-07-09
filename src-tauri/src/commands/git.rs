@@ -413,6 +413,34 @@ pub async fn remove_conversation_worktree(
     worktree::remove_local_worktree(&project_path, &conv_id).await
 }
 
+/// P2-S1: land a conversation's `pkt/<convId>` branch into the root
+/// checkout by squash-merging (the default), with ruled safety semantics.
+/// Gated on the same clean-root guard as `git_safety_check`: refuses on a
+/// dirty root; on conflict it recovers so BOTH the root checkout and the
+/// conversation worktree are left byte-identical; on success it creates the
+/// squash commit, removes the worktree dir, and force-deletes the branch
+/// (`-D` — a squash leaves no ancestry for `-d`). The returned outcome lets
+/// the caller flip `worktree.state -> "landed"`. `squash` defaults to
+/// `true` when omitted.
+///
+/// The dirty-root check deliberately excludes the `.pkt-worktrees/`
+/// directory: an active conversation worktree always registers it as
+/// untracked in the root, so a literal `git_safety_check` would refuse every
+/// merge (see `core::git::merge_conversation_branch`).
+#[tauri::command]
+pub async fn merge_conversation_branch(
+    project_path: String,
+    branch: String,
+    squash: Option<bool>,
+) -> Result<git::MergeBranchOutcome, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        git::merge_conversation_branch(&project_path, &branch, squash.unwrap_or(true))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 /// v0.8.5 fix: provision a git worktree bound to a specific Issue and
 /// install the `prepare-commit-msg` hook that appends `Fixes #N` plus a
 /// `Run-By: PacketADE issue I-<id>` trailer to every commit made inside

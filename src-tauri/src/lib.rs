@@ -261,6 +261,8 @@ pub fn run() {
             commands::git::git_safety_check,
             commands::git::create_conversation_worktree,
             commands::git::remove_conversation_worktree,
+            // P2-S1: local squash-merge with ruled safety semantics
+            commands::git::merge_conversation_branch,
             // v0.8.5 fix: issue worktree wiring
             commands::git::create_issue_worktree,
             commands::agents_md::resolve_agents_md,
