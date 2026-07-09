@@ -635,6 +635,10 @@ export interface MergeBranchOutcome {
   branchDeleted: boolean;
   /** The conversation worktree directory was removed. */
   worktreeRemoved: boolean;
+  /** The squash produced no commit — the branch had no changes vs. the root.
+   * When true NOTHING was landed: the caller must NOT flip `state → "landed"`
+   * (no commit, worktree + branch left in place for an explicit Discard). */
+  nothingToLand: boolean;
 }
 
 /**

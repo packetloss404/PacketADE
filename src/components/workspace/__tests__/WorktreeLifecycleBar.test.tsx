@@ -78,6 +78,7 @@ describe("WorktreeLifecycleBar", () => {
       commitSha: "abcdef1234567",
       branchDeleted: true,
       worktreeRemoved: true,
+      nothingToLand: false,
     });
     useAgentTaskStore.setState({ conversations: [seed()] } as never);
   });
@@ -106,6 +107,28 @@ describe("WorktreeLifecycleBar", () => {
     expect(screen.queryByText("worktree pending")).not.toBeInTheDocument();
     expect(screen.getByText(/landed/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /merge back/i })).not.toBeInTheDocument();
+  });
+
+  it("nothing-to-land keeps the chip and does NOT flip state → landed", async () => {
+    mocks.mergeConversationBranch.mockResolvedValue({
+      commitSha: "abcdef1234567",
+      branchDeleted: false,
+      worktreeRemoved: false,
+      nothingToLand: true,
+    });
+    const onFeedback = vi.fn();
+    render(<WorktreeLifecycleBar conversationId={CONV_ID} onFeedback={onFeedback} />);
+    fireEvent.click(screen.getByRole("button", { name: /merge back/i }));
+
+    await waitFor(() => {
+      expect(onFeedback).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "err", msg: expect.stringMatching(/nothing to land/i) }),
+      );
+    });
+    // State stays active, pending chip stays, worktree preserved.
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === CONV_ID);
+    expect(conv?.worktree?.state).toBe("active");
+    expect(screen.getByText("worktree pending")).toBeInTheDocument();
   });
 
   it("Merge back is disabled for remote (SSH) conversations", () => {
