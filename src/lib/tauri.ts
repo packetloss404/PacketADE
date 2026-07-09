@@ -608,11 +608,19 @@ export async function createConversationWorktree(
   });
 }
 
+/**
+ * P2-S2: tear down a conversation worktree. `deleteBranch` (default false)
+ * additionally force-deletes the `pkt/<convId>` branch after the worktree dir is
+ * removed — the Discard path passes true so a discarded conversation leaves no
+ * dangling branch (the plain `git worktree remove --force` on the Rust side
+ * otherwise leaks it). Idempotent — a missing worktree succeeds.
+ */
 export async function removeConversationWorktree(
   projectPath: string,
   convId: string,
+  deleteBranch = false,
 ): Promise<void> {
-  return invoke("remove_conversation_worktree", { projectPath, convId });
+  return invoke("remove_conversation_worktree", { projectPath, convId, deleteBranch });
 }
 
 /**

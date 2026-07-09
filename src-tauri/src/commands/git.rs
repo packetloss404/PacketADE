@@ -404,13 +404,18 @@ pub async fn create_conversation_worktree(
 
 /// T3.F: tear down a worktree previously created by
 /// `create_conversation_worktree`. Idempotent — missing worktrees succeed.
+///
+/// P2-S2: `delete_branch` (default false) additionally force-deletes the
+/// `pkt/<conv_id>` branch after the worktree dir is removed. The Discard flow
+/// passes true so a discarded conversation leaves no dangling branch behind.
 #[tauri::command]
 pub async fn remove_conversation_worktree(
     project_path: String,
     conv_id: String,
+    delete_branch: Option<bool>,
 ) -> Result<(), String> {
     super::validate_project_path(&project_path)?;
-    worktree::remove_local_worktree(&project_path, &conv_id).await
+    worktree::remove_local_worktree(&project_path, &conv_id, delete_branch.unwrap_or(false)).await
 }
 
 /// P2-S1: land a conversation's `pkt/<convId>` branch into the root
