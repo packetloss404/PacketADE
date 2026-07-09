@@ -124,12 +124,12 @@ export function AgentSidebar({ onNewAgent, selectedId, onSelect }: AgentSidebarP
   const deleteConversation = useAgentTaskStore((s) => s.deleteConversation);
   const archiveConversation = useAgentTaskStore((s) => s.archiveConversation);
   const unarchiveConversation = useAgentTaskStore((s) => s.unarchiveConversation);
-  const projectLabels = useAgentTaskStore((s) => s.projectLabels);
-  const setProjectLabel = useAgentTaskStore((s) => s.setProjectLabel);
 
-  // Per-conversation pin (separate persisted store).
+  // Per-conversation pin + shared project labels (separate persisted store).
   const prefs = useAgentSidebarPrefsStore((s) => s.prefs);
   const togglePinned = useAgentSidebarPrefsStore((s) => s.togglePinned);
+  const projectLabels = useAgentSidebarPrefsStore((s) => s.projectLabels);
+  const setProjectLabel = useAgentSidebarPrefsStore((s) => s.setProjectLabel);
 
   // "Needs you" signal — pending permission/edit prompts, keyed by conversation.
   const pendingPerms = useAgentApprovalStore((s) => s.permissions);

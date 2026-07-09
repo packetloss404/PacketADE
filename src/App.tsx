@@ -11,7 +11,8 @@ import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
 import { useDictationTarget } from "@/hooks/useDictationTarget";
 import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
-import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
+import { FleetSidebar } from "@/components/workspace/FleetSidebar";
+import { initSessionGlue } from "@/stores/sessionGlue";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, getModuleId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
@@ -83,6 +84,17 @@ export default function App() {
       window.removeEventListener("keydown", requestOnFirstGesture);
     };
   }, []);
+
+  // Tile program (P4-S2): wire the sessionGlue lifecycle into the app shell
+  // once bootstrap has hydrated workspaces. Installs the one-directional
+  // conversation→pane GC subscription (idempotent) and runs the reconciliation
+  // sweep that self-heals orphaned conversation wrappers so their conversations
+  // resurface as unplaced fleet rows. Safe to run once on init.
+  const initialized = useAppStore((s) => s.initialized);
+  useEffect(() => {
+    if (!initialized) return;
+    initSessionGlue();
+  }, [initialized]);
 
   // Apply theme class to document
   useEffect(() => {
@@ -281,8 +293,10 @@ export default function App() {
             </ErrorBoundary>
           </div>
 
-          {/* Workspace sidebar — persistent across core views */}
-          {showWorkspaceSidebar && <WorkspaceSidebar />}
+          {/* Fleet sidebar — persistent across core views. Tile program
+              (P4-S2): replaces WorkspaceSidebar with the unified fleet list
+              (workspaces + virtual rows for unplaced legacy conversations). */}
+          {showWorkspaceSidebar && <FleetSidebar />}
         </div>
         <StatusStrip />
         {commandPaletteOpen && <CommandPalette />}
