@@ -42,9 +42,9 @@ interface TileHeaderActionsProps {
  *
  * Always-visible narrow set = three cheap per-slice subscribers: `AgentModeChip`
  * (safety posture), the Changes diffstat chip (`DiffPaneTrigger`, review entry),
- * and the amber approval badge. Close (X) is always present. The standalone
- * AgentsView header is untouched — it renders the original `HeaderActions` body
- * byte-for-byte and never mounts this component.
+ * and the amber approval badge. Close (X) is always present. This is now the
+ * only chat-header right cluster — AgentChatPane mounts it directly (the retired
+ * standalone AgentsView header and its `HeaderActions` router are deleted).
  */
 export function TileHeaderActions({
   conversation,

@@ -101,9 +101,9 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
       allowedTools: SCOUT_ALLOWED_TOOLS,
       memoryContextEnabled: SCOUT_MEMORY_CONTEXT_DEFAULT,
     });
-    // Tile program (P5-S1): retargeted from setActiveView("agents") to the
-    // materializing deep-link path — the Scout conversation lands on a real,
-    // focused workspace tile instead of the retired Agents tab.
+    // Tile program (P5-S1): routes the Scout conversation through the
+    // materializing deep-link path — it lands on a real, focused workspace tile
+    // instead of the retired Agents tab.
     useAgentTaskStore.getState().selectConversation(id);
     focusConversationDeepLink(id);
   },

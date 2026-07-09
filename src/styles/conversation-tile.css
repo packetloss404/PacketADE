@@ -2,9 +2,9 @@
    no ResizeObserver, no width JS (ruled hybrid model: CSS handles visual
    collapse, existing JS state handles mount economy in TileHeaderActions).
 
-   Every rule is scoped to `[data-frame="tile"]`, so the standalone AgentsView
-   header (frame="standalone") is byte-for-byte unaffected: the `.tile-*` class
-   hooks match no rule there and the header is not even a query container. */
+   Every rule is scoped to `[data-frame="tile"]`. AgentChatPane now always
+   renders inside a conversation tile and hardcodes `data-frame="tile"` on its
+   root, so these `.tile-*` hooks always apply. */
 
 [data-frame="tile"] .agent-chat-header {
   container-type: inline-size;
