@@ -89,6 +89,16 @@ export function WorktreeLifecycleBar({
     setBusy("merge");
     try {
       const outcome = await mergeConversationBranch(worktree.basePath, worktree.branch, true);
+      if (outcome.nothingToLand) {
+        // The Rust command creates no commit and removes nothing when the
+        // branch has no changes vs. the root — do NOT flip to "landed" or
+        // clear the pending chip. Steer the user to Discard instead.
+        onFeedback({
+          type: "err",
+          msg: `Nothing to land: ${worktree.branch} has no changes to merge. Discard it if you're done.`,
+        });
+        return;
+      }
       setConversationWorktreeState(conversationId, "landed");
       onFeedback({
         type: "ok",
