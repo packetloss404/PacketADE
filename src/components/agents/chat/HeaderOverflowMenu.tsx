@@ -39,7 +39,7 @@ interface HeaderOverflowMenuProps {
 /**
  * Chat header's overflow menu — everything that used to be a standing
  * control lives here now: view mode (P1-17 — one global Summary/Normal/
- * Verbose transcript density, keyboard-cycled with Ctrl/Cmd+Shift+V,
+ * Verbose transcript density, keyboard-cycled with Ctrl/Cmd+Shift+O,
  * un-gated because it applies to PTY transcripts too), memory toggle
  * (api-only), the preview-pane toggle, export (all modes), and the
  * Continue-in section. Owns the shared feedback flash (copy/clipboard
@@ -108,7 +108,7 @@ export function HeaderOverflowMenu({
       >
         <div className="min-w-[240px]">
           <div className="px-3 py-1.5 border-b border-bg-border">
-            <Tooltip content="Cycle with ⌘⇧V / Ctrl+Shift+V. Summary collapses tool detail; Verbose shows raw inputs.">
+            <Tooltip content="Cycle with ⌘⇧O / Ctrl+Shift+O. Summary collapses tool detail; Verbose shows raw inputs.">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-ui text-text-secondary">
                   View mode

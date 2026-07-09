@@ -73,18 +73,24 @@ describe("useAgentTabHoists", () => {
     expect(createWorkspace).not.toHaveBeenCalled();
   });
 
-  it("Ctrl+Shift+V cycles the transcript view mode", () => {
+  it("Ctrl+Shift+O cycles the transcript view mode", () => {
     renderHook(() => useAgentTabHoists());
-    const e = fireKey({ ctrlKey: true, shiftKey: true, key: "V" });
+    const e = fireKey({ ctrlKey: true, shiftKey: true, key: "O" });
     expect(cycleTranscriptViewMode).toHaveBeenCalledTimes(1);
     expect(e.defaultPrevented).toBe(true);
   });
 
-  it("Ctrl+Shift+V yields to typing when focus is in a textarea (guard)", () => {
+  it("Ctrl+Shift+V does NOT cycle the view mode (that chord is push-to-talk)", () => {
+    renderHook(() => useAgentTabHoists());
+    fireKey({ ctrlKey: true, shiftKey: true, key: "V" });
+    expect(cycleTranscriptViewMode).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+Shift+O yields to typing when focus is in a textarea (guard)", () => {
     renderHook(() => useAgentTabHoists());
     const ta = document.createElement("textarea");
     document.body.appendChild(ta);
-    fireKey({ ctrlKey: true, shiftKey: true, key: "V" }, ta);
+    fireKey({ ctrlKey: true, shiftKey: true, key: "O" }, ta);
     expect(cycleTranscriptViewMode).not.toHaveBeenCalled();
     ta.remove();
   });
