@@ -243,6 +243,7 @@ pub fn run() {
             // Git
             commands::git::get_git_branch,
             commands::git::get_git_status,
+            commands::git::get_file_head_content,
             commands::git::get_git_branch_remote,
             commands::git::get_git_status_remote,
             commands::git::git_commit,

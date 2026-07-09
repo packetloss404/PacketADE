@@ -214,6 +214,22 @@ fn emit_fixes_events(app_handle: &AppHandle, project_path: &str, commit_msg: &st
     }
 }
 
+/// P1-S4: read a file's committed `HEAD` content for the clickable
+/// GitDashboard diff view. `Ok(None)` for untracked/new files or an
+/// empty repo. See `git::get_file_head_content`.
+#[tauri::command]
+pub async fn get_file_head_content(
+    project_path: String,
+    rel_path: String,
+) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        git::get_file_head_content(&project_path, &rel_path)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 #[tauri::command]
 pub async fn git_commit(
     app_handle: AppHandle,
