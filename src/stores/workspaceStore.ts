@@ -595,10 +595,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   ensureConversationWorkspace: ({ conversationId, name, projectPath }) => {
+    // Single-instance placement (the "exactly ONE render path per session"
+    // invariant, fleetRows.ts): if this conversation ALREADY has a tile in any
+    // workspace — a prior wrapper OR a normal workspace it was drafted into via
+    // addConversationPane (DraftTile) — reuse that placement instead of minting
+    // a duplicate wrapper. Without this, an openSession / deep-link on an
+    // already-placed conversation would fork a SECOND tile in a fresh wrapper
+    // and land the user on the wrong (empty) workspace.
+    const placed = get().workspaces.find((w) =>
+      w.panes.some(
+        (p) => p.kind === "conversation" && p.conversationId === conversationId,
+      ),
+    );
+    if (placed) return placed.id;
     const id = conversationWrapperId(conversationId);
-    // Idempotent: a wrapper already exists ⇒ reuse it. Never overwrite the
-    // existing name (the user may have renamed it — live-follow freezes on
-    // first manual rename, a Phase 4 concern) or duplicate the workspace.
+    // Idempotent on the deterministic wrapper id too — guards the rare case of
+    // an orphaned wrapper whose conversation pane was stripped by an old-binary
+    // re-save (the reconciliation sweep hasn't repaired it yet): never create a
+    // second workspace with the same id. Never overwrite the existing name (the
+    // user may have renamed it — live-follow freezes on first manual rename, a
+    // Phase 4 concern) or duplicate the workspace.
     if (get().workspaces.some((w) => w.id === id)) return id;
     const now = Date.now();
     const pane: WorkspacePane = {

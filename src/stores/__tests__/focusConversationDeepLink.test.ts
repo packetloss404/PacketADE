@@ -104,6 +104,61 @@ describe("focusConversationDeepLink", () => {
     expect(useAppStore.getState().activeView).toBe("workspace");
   });
 
+  it("reuses an existing NON-wrapper placement instead of forking a duplicate wrapper", () => {
+    // Regression (final-gate MUST-FIX): a conversation drafted directly into a
+    // normal workspace (AddAgentPicker → DraftTile → addConversationPane) has a
+    // tile whose workspace id is NOT ws-wrap-<convId>. A subsequent deep link
+    // must land on THAT placement, never mint a second wrapper with a duplicate
+    // tile ("exactly ONE render path per session", fleetRows.ts).
+    useAgentTaskStore.setState({ conversations: [conv({ id: "conv-1" })] });
+    useWorkspaceStore.setState({
+      workspaces: [
+        {
+          id: "ws-normal",
+          name: "My workspace",
+          agents: [],
+          panes: [
+            {
+              id: "ws-pane-1",
+              agentId: "terminal",
+              sessionId: null,
+              kind: "conversation",
+              conversationId: "conv-1",
+            },
+          ],
+          projectPath: "/proj",
+          createdAt: 1,
+          updatedAt: 1,
+          status: "active",
+        },
+      ],
+      activeWorkspaceId: null,
+      zoomedPaneId: null,
+      focusPaneRequest: null,
+    });
+
+    focusConversationDeepLink("conv-1");
+
+    const wrapId = conversationWrapperId("conv-1");
+    const workspaces = useWorkspaceStore.getState().workspaces;
+    // No duplicate wrapper minted.
+    expect(workspaces.find((w) => w.id === wrapId)).toBeUndefined();
+    // Still exactly one placement holding exactly one conversation pane.
+    const placements = workspaces.filter((w) =>
+      w.panes.some(
+        (p) => p.kind === "conversation" && p.conversationId === "conv-1",
+      ),
+    );
+    expect(placements).toHaveLength(1);
+    expect(placements[0].panes).toHaveLength(1);
+    // Landed on the EXISTING workspace and flashed its existing pane.
+    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("ws-normal");
+    expect(useWorkspaceStore.getState().focusPaneRequest).toMatchObject({
+      workspaceId: "ws-normal",
+      paneId: "ws-pane-1",
+    });
+  });
+
   it("is idempotent — a second deep link reuses the one wrapper", () => {
     useAgentTaskStore.setState({ conversations: [conv({ id: "conv-1" })] });
     focusConversationDeepLink("conv-1");
