@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Loader2, Square } from "lucide-react";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useAppStore } from "@/stores/appStore";
+import { focusConversationDeepLink } from "@/stores/sessionGlue";
 import { aggregateConversationCost } from "@/lib/conversationCost";
 import { useConversationAttention } from "@/lib/sessionStatus";
 
@@ -21,11 +21,9 @@ function fmtTokens(n: number): string {
  */
 export function RunningAgentsChip() {
   const conversations = useAgentTaskStore((s) => s.conversations);
-  const selectConversation = useAgentTaskStore((s) => s.selectConversation);
   const cancelActiveConversation = useAgentTaskStore(
     (s) => s.cancelActiveConversation,
   );
-  const setActiveView = useAppStore((s) => s.setActiveView);
 
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -86,12 +84,14 @@ export function RunningAgentsChip() {
                 <button
                   type="button"
                   onClick={() => {
-                    selectConversation(conv.id);
-                    setActiveView("agents");
+                    // Tile program (P5-S1): retargeted to the materializing
+                    // deep-link path — lands on the focused+flashed workspace
+                    // tile instead of the retired Agents tab.
+                    focusConversationDeepLink(conv.id);
                     setOpen(false);
                   }}
                   className="flex flex-col flex-1 min-w-0 text-left"
-                  title={`Open "${conv.title}" in the Agents pane`}
+                  title={`Open "${conv.title}" in its workspace`}
                 >
                   <span className="text-[11px] text-text-primary truncate">
                     {conv.title}

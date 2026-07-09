@@ -3,6 +3,7 @@ import { ShieldAlert } from "lucide-react";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAppStore } from "@/stores/appStore";
+import { focusConversationDeepLink } from "@/stores/sessionGlue";
 
 /**
  * P1-9: pin approvals that scroll out of view. A blocking permission prompt
@@ -24,9 +25,7 @@ export function PinnedApprovalBanner() {
   const selectedConversationId = useAgentTaskStore(
     (s) => s.selectedConversationId,
   );
-  const selectConversation = useAgentTaskStore((s) => s.selectConversation);
   const activeView = useAppStore((s) => s.activeView);
-  const setActiveView = useAppStore((s) => s.setActiveView);
 
   const outOfView = useMemo(() => {
     // Both blocking queues count: permission prompts AND gated pending
@@ -66,9 +65,11 @@ export function PinnedApprovalBanner() {
   const totalCount = outOfView.reduce((sum, e) => sum + e.count, 0);
   const moreConversations = outOfView.length - 1;
 
+  // Tile program (P5-S1): retargeted from setActiveView("agents") to the
+  // materializing deep-link path — the blocked conversation lands on its
+  // focused+flashed workspace tile with the pending approval visible.
   const jump = () => {
-    selectConversation(first.conversationId);
-    setActiveView("agents");
+    focusConversationDeepLink(first.conversationId);
   };
 
   return (

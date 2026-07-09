@@ -6,6 +6,7 @@ import { useDraftTileStore } from "@/stores/draftTileStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
 import { AddAgentPicker } from "@/components/workspace/AddAgentPicker";
+import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
 import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
 import { EditorPane } from "@/components/editor/EditorPane";
 import { isOnboardingComplete } from "@/lib/onboarding";
@@ -283,6 +284,12 @@ export function WorkspaceView() {
               <p className="text-xs">Select a workspace from the sidebar or create a new one</p>
             </div>
           ))}
+
+        {/* Tile program (P5-S1): AgentsOnboarding re-homed from the retired
+            AgentsView to the workspace empty-fleet state. Self-gates on
+            onboardingDismissed (renders null once dismissed); shown here so the
+            first-run welcome survives the Agents tab's retirement. */}
+        {initialized && !activeWorkspace && <AgentsOnboarding />}
       </div>
     </div>
   );
