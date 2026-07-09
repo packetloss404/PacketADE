@@ -13,7 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useMemoryStore } from "@/stores/memoryStore";
+import { useMemoryStore, memoryBriefStats } from "@/stores/memoryStore";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
@@ -83,9 +83,8 @@ export function MemoryView() {
   const togglePinPattern = useMemoryStore((s) => s.togglePinPattern);
   const refreshPatterns = useMemoryStore((s) => s.refreshPatterns);
   const clearMemory = useMemoryStore((s) => s.clearMemory);
-  const getContextForSession = useMemoryStore((s) => s.getContextForSession);
+  const composeMemoryBrief = useMemoryStore((s) => s.composeMemoryBrief);
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
-  const captureTasks = useMemorySettingsStore((s) => s.captureTasks);
   const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
 
   // v0.8-H — deep-link filter (e.g. from FlightsView's "N patterns
@@ -159,16 +158,23 @@ export function MemoryView() {
     return groups;
   }, [patterns]);
 
-  // patterns/events are read inside getContextForSession; keep them in deps
-  // so the preview rebuilds when memory changes.
-  const injectedPreview = useMemo(
-    () => (projectPath ? getContextForSession(projectPath) : ""),
+  // P2-18 preview-truth: render the SAME budgeted brief the launch pipeline
+  // injects (composeMemoryBrief) and derive the token estimate from
+  // memoryBriefStats — the exact pair the header flyout uses. The legacy
+  // getContextForSession preview + its `patterns.length * 32` token fallback
+  // could show a nonzero "tok brief" for a scope whose brief is actually
+  // empty; this keeps the preview from ever overstating what gets sent.
+  // patterns/events are read inside composeMemoryBrief via the store's
+  // get(); keep them in deps so the preview rebuilds when memory changes.
+  const memoryBrief = useMemo(
+    () => (projectPath ? composeMemoryBrief({ kind: "local", projectPath }) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectPath, getContextForSession, patterns, events],
+    [projectPath, composeMemoryBrief, patterns, events],
   );
 
-  const tokenEstimate = Math.round((injectedPreview.length || patterns.length * 32) / 4);
-  const captureEnabled = captureSessions || captureTasks || captureFlights;
+  const injectedPreview = memoryBrief?.text ?? "";
+  const tokenEstimate = memoryBrief ? memoryBriefStats(memoryBrief).approxTokens : 0;
+  const captureEnabled = captureSessions || captureFlights;
 
   function handleRefreshPatterns() {
     if (projectPath) void refreshPatterns(projectPath);

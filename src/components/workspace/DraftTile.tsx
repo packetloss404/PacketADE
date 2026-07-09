@@ -16,6 +16,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAgentDraftStore } from "@/stores/agentDraftStore";
 import { useDraftTileStore } from "@/stores/draftTileStore";
+import { useProfileStore } from "@/stores/profileStore";
 import type { Workspace } from "@/types/workspace";
 
 interface DraftTileProps {
@@ -78,6 +79,15 @@ export function DraftTile({ draftId, workspace }: DraftTileProps) {
       ? makeSshUri(workspace.serverId, workspace.remoteProjectPath ?? workspace.projectPath)
       : workspace.projectPath;
 
+    // M1(a): resolve the launch profile the way the deleted AgentsView did —
+    // its launcher synced the selected profile to profileStore's default, so a
+    // tile launch (which has no profile picker) uses that same default. This is
+    // the memory-injection artery: the default profile's `memoryContextEnabled`
+    // is what flows to createApiConversation, so the Agent Profiles memory
+    // checkbox actually governs whether a brief is injected. Passing `undefined`
+    // (the old code) hardcoded the flag off and severed injection entirely.
+    const profile = useProfileStore.getState().getDefaultProfile();
+
     launchConversation({
       rawText: trimmed,
       attachments: [],
@@ -87,7 +97,7 @@ export function DraftTile({ draftId, workspace }: DraftTileProps) {
       // Posture comes from `postureOverride`; agentMode is inert here.
       agentMode: "agent",
       composerMode: draft.composerMode,
-      profile: undefined,
+      profile,
       setLaunchError: setError,
       postureOverride: flagsForMode(draft.mode),
       onLaunched: (conversationId) => {

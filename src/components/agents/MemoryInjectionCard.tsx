@@ -61,6 +61,13 @@ export function MemoryInjectionCard({ brief }: MemoryInjectionCardProps) {
               (truncated to fit {brief.charBudget}-char budget)
             </div>
           )}
+          {/* M1(c): honesty copy — the brief is frozen into the system prompt
+              once, at session start, and never recomposed mid-session (resends
+              replay that same frozen prompt). Mirror HeaderOverflowMenu's
+              wording so the card doesn't imply live per-message injection. */}
+          <div className="text-meta text-text-muted">
+            Injected into the system prompt at session start.
+          </div>
         </div>
       )}
     </div>

@@ -1365,6 +1365,13 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         conv.model,
         conv.projectPath,
         content,
+        // M1(c): resends replay the FROZEN system prompt captured at session
+        // creation — the memory brief + AGENTS.md that were composed once in
+        // createApiConversation and baked into `systemPromptOverride`. This is
+        // intentional: memory is injected at session start only and is NOT
+        // recomposed per resume, so a mid-session memory edit won't retro-apply.
+        // The MemoryInjectionCard / HeaderOverflowMenu "injected at session
+        // start" disclosure reflects exactly this behavior.
         conv.systemPromptOverride ?? null,
         conv.thinkingEnabled ?? false,
         attachments ?? undefined,
