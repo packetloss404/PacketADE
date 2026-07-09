@@ -227,6 +227,116 @@ describe("Tauri persistence DTO mapping", () => {
     expect(state.workspaces[0].panes[0]).not.toHaveProperty("overrideArgs");
   });
 
+  it("round-trips a conversation pane's kind + conversationId through toDto/fromDto", async () => {
+    // Tile program (P1-S1): a conversation pane carries the inert carrier
+    // agentId "terminal" plus kind:"conversation" + conversationId. The
+    // five-field pane whitelist would silently drop the new fields on the next
+    // save unless they are threaded through BOTH toDtoWorkspace and fromDto.
+    const workspace: Workspace = {
+      id: "workspace-conv",
+      name: "Workspace",
+      agents: [],
+      panes: [
+        {
+          id: "pane-conv",
+          agentId: "terminal",
+          sessionId: null,
+          gridPosition: { row: 0, col: 1 },
+          kind: "conversation",
+          conversationId: "conv-123",
+        },
+      ],
+      projectPath: "/repo",
+      createdAt: 1,
+      updatedAt: 2,
+      status: "active",
+    };
+
+    await saveWorkspacesSlice([workspace]);
+
+    // toDto must emit kind + conversationId (not drop them at the whitelist).
+    expect(mockInvoke).toHaveBeenCalledWith("save_workspaces_slice", {
+      workspaces: [
+        expect.objectContaining({
+          panes: [
+            expect.objectContaining({
+              agentId: "terminal",
+              kind: "conversation",
+              conversationId: "conv-123",
+            }),
+          ],
+        }),
+      ],
+    });
+
+    // fromDto must hydrate them back onto the frontend Workspace pane.
+    mockInvoke.mockResolvedValue(
+      makePersistedStateDto({
+        workspaces: [
+          {
+            id: "workspace-conv",
+            name: "Workspace",
+            agents: [],
+            panes: [
+              {
+                id: "pane-conv",
+                agentId: "terminal",
+                sessionId: null,
+                gridPosition: { row: 0, col: 1 },
+                kind: "conversation",
+                conversationId: "conv-123",
+              },
+            ],
+            projectPath: "/repo",
+            createdAt: 1,
+            updatedAt: 2,
+            status: "active",
+          } as unknown as PersistedStateDto["workspaces"][number],
+        ],
+      }),
+    );
+
+    const state = await loadPersistedState();
+    expect(state.workspaces[0].panes[0]).toEqual(
+      expect.objectContaining({
+        agentId: "terminal",
+        kind: "conversation",
+        conversationId: "conv-123",
+      }),
+    );
+  });
+
+  it("does not emit kind/conversationId for a plain terminal pane (byte-identical save)", async () => {
+    // Terminal panes must stay on the pre-P1-S1 shape so old binaries and the
+    // five-field-era round-trip are unaffected.
+    const workspace: Workspace = {
+      id: "workspace-term",
+      name: "Workspace",
+      agents: ["terminal"],
+      panes: [
+        {
+          id: "pane-term",
+          agentId: "terminal",
+          sessionId: null,
+          gridPosition: { row: 0, col: 0 },
+        },
+      ],
+      projectPath: "/repo",
+      createdAt: 1,
+      updatedAt: 2,
+      status: "active",
+    };
+
+    await saveWorkspacesSlice([workspace]);
+
+    const call = mockInvoke.mock.calls.find((c) => c[0] === "save_workspaces_slice");
+    expect(call).toBeDefined();
+    const pane = (call![1] as { workspaces: { panes: Record<string, unknown>[] }[] }).workspaces[0]
+      .panes[0];
+    expect(pane).not.toHaveProperty("kind");
+    expect(pane).not.toHaveProperty("conversationId");
+  });
+
   it("omits undefined ui fields for partial ui slice saves", async () => {
     await saveUiSlice({ selectedView: "flights", theme: "dark" });
 

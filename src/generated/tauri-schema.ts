@@ -8,7 +8,17 @@ export type ThemeDto = "dark" | "light";
 
 export type GridPositionDto = { row: number, col: number, };
 
-export type WorkspacePaneDto = { id: string, agentId: WorkspaceAgentSlotDto, sessionId: string | null, gridPosition: GridPositionDto, accentColor?: string, pinnedCommands?: Array<string>, taskId?: string, flightId?: string, agentConfigId?: string, initialPrompt?: string, overrideCommand?: string, overrideArgs?: Array<string>, };
+export type WorkspacePaneDto = { id: string, agentId: WorkspaceAgentSlotDto, sessionId: string | null, gridPosition: GridPositionDto, accentColor?: string, pinnedCommands?: Array<string>, taskId?: string, flightId?: string, agentConfigId?: string, initialPrompt?: string, overrideCommand?: string, overrideArgs?: Array<string>, 
+/**
+ * Pane kind discriminant (tile program, P1-S1). Absent ⇒ terminal. `kind`
+ * is the SOLE discriminant; `agent_id` is never overloaded — conversation
+ * panes carry the inert carrier `agentId: "terminal"`.
+ */
+kind?: string, 
+/**
+ * Set iff `kind == Some("conversation")`.
+ */
+conversationId?: string, };
 
 export type GithubRepoDto = { owner: string, repo: string, };
 

@@ -6,6 +6,22 @@ export interface WorkspacePane {
   sessionId: string | null;
   gridPosition?: { row: number; col: number };
   pinnedCommands?: string[]; // max 5 saved commands
+  /**
+   * Pane kind discriminant (tile program, P1-S1). Absent ⇒ terminal — an old
+   * cache or an old binary that never wrote this field degrades to a plain
+   * terminal pane. `kind` is the SOLE discriminant; `agentId` is never
+   * overloaded with "conversation". Conversation panes persist the inert
+   * carrier `agentId: "terminal"` so a downgraded binary renders a harmless
+   * terminal pane (its `From<String>` catch-all never sees "conversation").
+   */
+  kind?: "terminal" | "conversation";
+  /**
+   * Set iff `kind === "conversation"`. Points at the owning AgentConversation
+   * (reference direction is pane→conversationId only). Enforced by
+   * `normalizePanes`: a conversation pane whose id was stripped self-heals to a
+   * terminal pane.
+   */
+  conversationId?: string;
 }
 
 export interface Workspace {

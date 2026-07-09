@@ -76,10 +76,13 @@ export function WorkspaceView() {
     return () => document.removeEventListener("mousedown", handler);
   }, [addAgentOpen]);
 
-  // Count agents per type for the active workspace
+  // Count agents per type for the active workspace. Tile program (P1-S1): the
+  // header badges are keyed on `kind` — conversation panes carry the inert
+  // carrier agentId "terminal" and must NOT be counted as terminals here.
   const agentCounts: Partial<Record<WorkspaceAgentSlot, number>> = {};
   if (activeWorkspace) {
     for (const pane of activeWorkspace.panes) {
+      if (pane.kind === "conversation") continue;
       agentCounts[pane.agentId] = (agentCounts[pane.agentId] || 0) + 1;
     }
   }
