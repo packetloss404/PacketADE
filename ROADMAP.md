@@ -1,6 +1,6 @@
 # PacketADE Roadmap
 
-Last updated: 2026-06-15 (reflects the post Mission→Flight rename / v0.9.4 state)
+Last updated: 2026-07-09 (reflects the 0.10.0 single-surface consolidation state)
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
@@ -45,7 +45,7 @@ canonical plan docs.
 
 | ID  | Track                            | Priority | Status      | Notes                                                                                                                                                                                   |
 | --- | -------------------------------- | -------: | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| N1  | Sidecar-over-SSH                 |       P1 | Open        | Biggest remaining remote-workspace gap for subscription providers. Tracked in [`backlog.md`](./backlog.md).                                                                             |
+| N1  | Sidecar-over-SSH                 |       P1 | Shipped     | `forward_start_ssh` landed — subscription providers now run over SSH remote workspaces through the sidecar. See [`CHANGELOG.md`](./CHANGELOG.md).                                        |
 | N2  | Swarm orchestration escalation   |       P2 | Partial     | Auto-reassignment remains deferred. See [`dev/bridgemind/swarm-orchestration-plan.md`](./dev/bridgemind/swarm-orchestration-plan.md).                                                   |
 | N3  | PacketADE MCP provider transport |       P2 | Deferred    | Frontend provider config exists; Rust transport is deferred. See [`dev/mcp-provider-transport.md`](./dev/mcp-provider-transport.md).                                                    |
 | N4  | Git review packet integration    |       P2 | Partial     | Workspace GitDashboard exists; review packet and flight approval ties need wiring. See [`dev/zen-workspace/features-git-workspace.md`](./dev/zen-workspace/features-git-workspace.md). |
@@ -70,8 +70,10 @@ canonical plan docs.
 Sprints 0-4, Flight Planner v1, workspace panes, Issues, GitHub + Memory,
 dictation, cost analytics, cost guardrails / budget thresholds, API-agent
 conversations, sidecar protocol v6, local
-quality gates, and the Agents-pane "match Claude Code & Codex" initiative are
-shipped. The full release narrative lives in [`CHANGELOG.md`](./CHANGELOG.md).
+quality gates, and the conversation-as-tile single-surface consolidation (the
+"match Claude Code & Codex" initiative, now folded into the Workspace tile
+surface) are shipped. The full release narrative lives in
+[`CHANGELOG.md`](./CHANGELOG.md).
 
 Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`,
 `pnpm e2e`, `cargo check --manifest-path src-tauri/Cargo.toml`, and
@@ -82,8 +84,10 @@ Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`,
 - Rust backend test coverage is much stronger after the v0.9.2 / v0.9.3 audit
   waves, but several command/core follow-ups remain in `backlog.md`.
 - Store consolidation should be product-led. `historyStore`,
-  `projectHistoryStore`, and `promptStore` may overlap; `flightStore` and
-  `orchestrationStore` currently have a clean CRUD/runtime boundary.
+  `projectHistoryStore`, and `promptStore` may overlap; `flightStore` (CRUD)
+  and `asyncFlightStore` (runtime) now hold the flight state after
+  `orchestrationStore` was pruned and its runtime responsibilities converged
+  onto `asyncFlightStore`.
 - Mid-session MCP hot-swap is not supported; `enabledMcpServerIds` changes
   apply on the next session start.
 - Remote Agents must stay narrow: no generic remote Tauri bridge, no cloud-side
