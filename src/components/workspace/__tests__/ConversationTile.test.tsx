@@ -100,7 +100,6 @@ vi.mock("@/components/agents/AgentChatPane", async () => {
     AgentChatPane: (props: {
       conversationId: string;
       onClose: () => void;
-      frame?: string;
       keyboardScopeActive?: boolean;
     }) => {
       lastProps.set(props.conversationId, props);
@@ -113,7 +112,6 @@ vi.mock("@/components/agents/AgentChatPane", async () => {
       return (
         <div
           data-testid={`chat-${props.conversationId}`}
-          data-frame={props.frame}
           data-scope={String(props.keyboardScopeActive)}
         />
       );
@@ -218,11 +216,10 @@ describe("ConversationTile chrome + wiring", () => {
     return workspace.panes[0];
   }
 
-  it("threads frame=tile and keyboardScopeActive=focused", () => {
+  it("threads keyboardScopeActive=focused to the mounted AgentChatPane", () => {
     const pane = seedSingle();
     useLayoutStore.setState({ activePaneId: "pane-conv" });
     render(<ConversationTile pane={pane} workspaceId="ws-1" />);
-    expect(lastProps.get("conv-1")?.frame).toBe("tile");
     expect(lastProps.get("conv-1")?.keyboardScopeActive).toBe(true);
   });
 

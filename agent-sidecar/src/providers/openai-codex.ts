@@ -11,7 +11,10 @@
 //   - Prompt delivery: positional arg (stdin also supported if `-` is used)
 //   - Auth file: ~/.codex/auth.json (OAuth token from `codex login`)
 //   - Sandbox flags: -s read-only|workspace-write|danger-full-access
-//   - Approval flags: -a untrusted|on-request|never
+//   - Approval flags: -a untrusted|on-request|never (NOTE: `on-request` needs an
+//     open stdin channel to answer prompts, which `codex exec` does not have —
+//     this surface only ever passes `-a never` or the bypass flag; see
+//     modeToCodexFlags)
 //   - Model flag: -m / --model
 //   - Resume: `codex exec resume <SESSION_ID> [PROMPT]` with --json
 //
@@ -20,9 +23,10 @@
 //     own MCP config via `codex mcp`, and wiring PacketADE's shape through
 //     `-c mcp_servers.*` is out of scope. A one-time stderr warning is logged
 //     if the supervisor passes any.
-//   * planMode is translated to `-a on-request --sandbox read-only` as a
-//     best-effort proxy (Codex has no literal "plan mode"). Write tools will
-//     still block; the user has to explicitly approve them.
+//   * planMode is translated to `--sandbox read-only -a never` as a best-effort
+//     proxy (Codex has no literal "plan mode"). The read-only sandbox is the
+//     boundary — write/exec tools are blocked outright rather than prompted
+//     (per-command approval can't work under exec; see modeToCodexFlags).
 //   * allowedTools is LOGGED-ONLY and not enforced. Codex has no equivalent
 //     CLI flag; fine-grained tool gating is handled via its sandbox policy.
 //   * Thinking tokens: Codex's `--json` stream may or may not expose chain-
@@ -34,12 +38,12 @@
 //     the event's `id` / `call_id` / `sub_id` (whichever is present) or a
 //     UUID when none is provided. Input/output payloads are passed through
 //     as-is when structured, or stringified when not.
-//   * Permission approvals: Codex surfaces approval requests in-band as
-//     JSONL events when `-a on-request` is active. We emit those as
-//     `permission_request`; the `respondPermission` handler writes a
-//     response line to the child's stdin (format documented inline below).
-//     If Codex is spawned with `--full-auto` or `-a never`, no approval
-//     events fire and respondPermission is a no-op.
+//   * Permission approvals: `codex exec` runs with stdin closed (the prompt is
+//     a positional arg), so Codex's interactive `-a on-request` flow can't work
+//     here. modeToCodexFlags always resolves to `-a never` or the bypass flag,
+//     so no approval events fire in practice. The `permission_request` /
+//     `respondPermission` plumbing below is retained as defensive dead code for
+//     a future non-exec surface that could reopen the stdin approval channel.
 //   * Pending edit diffs: Codex does NOT emit a pre-apply diff event in
 //     `--json` mode today (patches are applied inside the sandbox). We rely
 //     on the sandbox + approval policy instead; `respondEdit` is routed
@@ -75,10 +79,11 @@ import type { ProviderHandler } from "./base.js";
 interface CodexSandboxFlags {
   args: string[];
   /**
-   * When true the `-a on-request` approval flag was passed, so approvals flow
-   * through our `permission_request` pipeline. Informational — not inspected
-   * today, but kept for future visibility into what the child was launched
-   * with (e.g. for status-line hover tooltips).
+   * Whether the child was launched with an interactive approval flag
+   * (`-a on-request`). Always false in this surface: `codex exec` closes stdin,
+   * so on-request can't answer prompts (see modeToCodexFlags) and every branch
+   * resolves to `-a never` or the bypass flag. Kept as a field for future
+   * visibility if a non-exec surface ever reintroduces interactive approvals.
    */
   hasApprovals: boolean;
 }
@@ -87,8 +92,10 @@ interface CodexSandboxFlags {
  * Translate an SDK-style `PermissionMode` (set via the protocol v2
  * `set_permission_mode` request) onto Codex's sandbox + approval flags.
  *
- * Mapping (codex-cli 0.121.0):
- *   - plan                → `--sandbox read-only -a on-request`
+ * Mapping (codex-cli 0.121.0). The sandbox mode is the safety boundary in every
+ * case; approvals are never interactive here — `-a never` throughout, because
+ * `codex exec` can't answer on-request prompts (see the NOTE below):
+ *   - plan                → `--sandbox read-only -a never`
  *   - bypassPermissions   → `--dangerously-bypass-approvals-and-sandbox`
  *   - acceptEdits         → `--sandbox workspace-write -a never`
  *                           (writes allowed, no per-call prompt)
@@ -97,7 +104,7 @@ interface CodexSandboxFlags {
  *   - ask_for_risky       → same as default
  *   - dontAsk / auto      → same as bypassPermissions (closest Codex equivalent;
  *                           those SDK modes don't prompt the user)
- *   - default / <unset>   → `--sandbox workspace-write -a on-request`
+ *   - default / <unset>   → `--sandbox workspace-write -a never`
  */
 // NOTE: `codex exec` runs non-interactively — we deliver the prompt as a
 // positional arg and CLOSE stdin (otherwise codex 0.135+ blocks reading stdin).

@@ -50,7 +50,7 @@ PacketADE intentionally has no GitHub CI workflows. Release confidence is built 
   - These scripts validate the Node sidecar protocol and basic provider registry behavior without requiring the full desktop app.
 
 - **Flight Planner reliability**
-  - Use [`flight-planner-reliability-continuity-pack.md`](./flight-planner-reliability-continuity-pack.md) for the focused continuity sprint.
+  - Use [`archive/flight-planner-reliability-continuity-pack.md`](./archive/flight-planner-reliability-continuity-pack.md) for the focused continuity sprint (archived; Flight Planner backend fate pending in `/backlog.md`).
   - Run the targeted Flight Planner gates when touching planner runtime, approvals, wake replay, journal, compaction, or async launch safety:
     - `pnpm exec vitest run src/stores/__tests__/flightPlannerStore.compaction.test.ts src/components/missions/__tests__/JournalTab.test.tsx --testTimeout=15000`
     - `pnpm run sidecar:integration-smoke`

@@ -13,7 +13,6 @@ import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { FleetSidebar } from "@/components/workspace/FleetSidebar";
-import { AgentsRedirect } from "@/components/views/AgentsRedirect";
 import { useAgentTabHoists } from "@/hooks/useAgentTabHoists";
 import { VIEW_HOTKEY_MAP } from "@/lib/viewHotkeys";
 import { initSessionGlue } from "@/stores/sessionGlue";
@@ -67,7 +66,7 @@ export default function App() {
   useGeminiStatusLinePoller();
   useOpenCodeStatusLinePoller();
   // Tile program (P5-S1): survivors hoisted out of the retiring AgentsView —
-  // Ctrl+N (new session), Ctrl+Shift+V (transcript view-mode cycler), and the
+  // Ctrl+N (new session), Ctrl+Shift+O (transcript view-mode cycler), and the
   // hourly sweepAutoArchive interval — now live at the App shell.
   useAgentTabHoists();
 
@@ -346,12 +345,6 @@ function OtherViewContent({ activeView }: { activeView: AppView }) {
       return <GitHubView />;
     case "memory":
       return <MemoryView />;
-    case "agents":
-      // Tile program (P5-S1): the one-release redirect shim. Every user-reachable
-      // entry point into the Agents tab was retargeted; this catches persisted
-      // activeView='agents' cold starts and stale deep links and lands them on a
-      // real workspace. Deleted (with the CoreView literal) a release from now.
-      return <AgentsRedirect />;
     case "cost_dashboard":
       return <CostDashboardView />;
     case "dictation":

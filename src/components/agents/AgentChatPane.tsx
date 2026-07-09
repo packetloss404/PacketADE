@@ -16,7 +16,7 @@ import {
 } from "@/stores/agentApprovalStore";
 import { usePreviewPaneStore } from "@/stores/previewPaneStore";
 import { useMemoryStore, type MemoryBrief } from "@/stores/memoryStore";
-import { HeaderActions } from "./chat/HeaderActions";
+import { TileHeaderActions } from "./chat/TileHeaderActions";
 import { handleExport } from "./chat/handleExport";
 import { EmptyConversationHint } from "./chat/EmptyConversationHint";
 import { PendingDiffCommentsStrip } from "./chat/PendingDiffCommentsStrip";
@@ -51,20 +51,10 @@ interface AgentChatPaneProps {
   conversationId: string;
   onClose: () => void;
   /**
-   * Where this pane is mounted. "standalone" is the AgentsView single-pane
-   * host (default — byte-identical to pre-tile behavior); "tile" is the
-   * mosaic ConversationTile (P3-S2). Strictly additive: no fork, no
-   * extraction. Threaded to the root wrapper as a data attribute so tile
-   * chrome and later frame-conditional behavior have a hook without altering
-   * standalone rendering.
-   */
-  frame?: "standalone" | "tile";
-  /**
    * Y/N keyboard focus gate for the protected approval shortcuts. Undefined
-   * (no pane context, e.g. standalone AgentsView) → armed exactly as today.
-   * Defined (tile context) → the document-level Y/N handlers arm iff true, so
-   * only the focused tile responds to a keypress. The tile passes
-   * `activePaneId === pane.id` in P3-S2.
+   * → armed exactly as today. Defined (tile context) → the document-level Y/N
+   * handlers arm iff true, so only the focused tile responds to a keypress.
+   * The tile passes `activePaneId === pane.id` in P3-S2.
    */
   keyboardScopeActive?: boolean;
 }
@@ -93,7 +83,6 @@ function BackToParentLink({ parentId }: { parentId: string }) {
 export function AgentChatPane({
   conversationId,
   onClose,
-  frame = "standalone",
   keyboardScopeActive,
 }: AgentChatPaneProps) {
   const conversation = useAgentTaskStore((s) =>
@@ -260,10 +249,9 @@ export function AgentChatPane({
     <div className="flex h-full flex-col">
       {/* Header bar — sparkle avatar + title + agent/status chips. Single row
           snapped to the shared h-[33px] baseline; project/branch/cost moved
-          into the thin SessionMetaLine below. The `agent-chat-header` hook is
-          inert in standalone (all @container rules are scoped to
-          [data-frame="tile"] in conversation-tile.css) and turns the row into a
-          query container only inside a tile. */}
+          into the thin SessionMetaLine below. The `agent-chat-header` hook
+          turns the row into a query container (all @container rules are scoped
+          to [data-frame="tile"] in conversation-tile.css). */}
       <div className="agent-chat-header flex h-[33px] shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3">
         <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border border-accent-line bg-accent-soft">
           <Sparkles size={13} className="text-accent-green" />
@@ -295,7 +283,7 @@ export function AgentChatPane({
           )}
         </div>
 
-        <HeaderActions
+        <TileHeaderActions
           conversation={conversation}
           conversationId={conversationId}
           diffTotals={diffTotals}
@@ -307,7 +295,6 @@ export function AgentChatPane({
           onSetApproveWrites={(on) => void actions.setApproveWrites(conversationId, on)}
           onChangeModel={(model) => void actions.changeModel(conversationId, model)}
           onExport={() => void handleExport(conversation)}
-          frame={frame}
           pendingApprovalCount={pendingApprovalCount}
         />
       </div>
@@ -426,7 +413,7 @@ export function AgentChatPane({
   );
 
   return (
-    <div className="flex h-full bg-bg-primary" data-frame={frame}>
+    <div className="flex h-full bg-bg-primary" data-frame="tile">
       <div className="min-w-0 flex-1">{chatContent}</div>
     </div>
   );

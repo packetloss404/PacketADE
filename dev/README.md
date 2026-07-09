@@ -47,11 +47,17 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 
 - `mcp-provider-transport.md` — Phases 2-3 deferred (local MCP server transport)
 
-### Flight Planner
+### Flight Planner (archived — backend fate pending)
 
-- `flight-planner-v1-acceptance-runbook.md` — live manual sign-off for Flight Planner v1
-- `flight-planner-reliability-continuity-pack.md` — reliability + continuity test/verification contract for Flight Planner journals
-- `flight-planner-plan.md` and `flight-planner-spike-retro.md` — locked v1 design/reference; remaining work should be tracked in `/backlog.md`
+The Flight Planner planning docs are now in [`archive/`](./archive/). The Rust
+flight-planner backend has had zero frontend callers since the single-surface
+refactor; its fate (delete vs re-expose) is a single **DECISION PENDING** item in
+[`../backlog.md`](../backlog.md) (Flight Planner backend). Do not resume this work
+from the archived docs until that decision lands.
+
+- `archive/flight-planner-v1-acceptance-runbook.md` — manual sign-off runbook (v1)
+- `archive/flight-planner-reliability-continuity-pack.md` — reliability + continuity contract for Flight Planner journals
+- `archive/flight-planner-plan.md` and `archive/flight-planner-spike-retro.md` — locked v1 design/reference
 
 ### Workspace UX
 
@@ -69,13 +75,17 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 ### Superseded / Research
 
 - `mobile/README.md` — prior mobile companion investigation, superseded for implementation by `remoteagents/README.md`
-- `v0.8-github-and-memory.md` — historical v0.8 plan; current open items belong in `/backlog.md`
+- `archive/v0.8-github-and-memory.md` — historical v0.8 plan (archived); current open items belong in `/backlog.md`
 
 ## Archive
 
 `dev/archive/` contains completed planning docs preserved for historical reference. Many archived files intentionally keep the former PacketCode name because they describe research and decisions made before the rename:
 
 - `archive/backlog.md`, `archive/cross-competitor-map.md`, `archive/positioning-notes.md`, `archive/priority-resolution.md`
+- `archive/agents-tab-modernization-plan.md` — 314-finding review that seeded the Agents-tab Waves 1–4 (surface since folded into the tile composer)
+- `archive/flight-planner-plan.md`, `archive/flight-planner-spike-retro.md`, `archive/flight-planner-v1-acceptance-runbook.md`, `archive/flight-planner-reliability-continuity-pack.md` — Flight Planner v1 design/reference/runbooks (backend fate pending in `/backlog.md`)
+- `archive/v0.8-github-and-memory.md` — locked v0.8 GitHub + Memory design/scope
+- `archive/sprints-2026-06-15.md` — post-rename sprint plan; residual open items folded into `/backlog.md`
 - `archive/moat/` — memory layer, insights, deploy, scaffold, analytics, cost unification specs
 - `archive/bridgemind/` — gap analysis, workspace editor scale, positioning notes
 - `archive/quadcode/` — gap analysis, terminal features, AI platform features

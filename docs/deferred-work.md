@@ -1,9 +1,11 @@
-# Deferred work — Agents tab
+# Deferred work — tile composer / conversation tiles
 
 Backlog of things intentionally **not** done during the Waves 1–4 modernization +
-the Codex/PTY/harness fixes, with enough detail to resume each cold. Ordered
-roughly by value. The full 314-finding review that seeded the waves lives in
-[`agents-tab-modernization-plan.md`](./agents-tab-modernization-plan.md).
+the Codex/PTY/harness fixes, with enough detail to resume each cold. The work
+now lives on the single-surface tile composer (conversations are workspace
+tiles; the standalone Agents tab was removed). Ordered roughly by value. The
+full 314-finding review that seeded the waves is archived in
+[`agents-tab-modernization-plan.md`](../dev/archive/agents-tab-modernization-plan.md).
 
 ---
 
@@ -35,11 +37,13 @@ options object after Wave 4).
 the `createApiConversation` options object, and confirm the Rust/sidecar honor it
 at `start_api_agent_session`.
 
-## 3. Per-run cost cap
-**Status:** Cost is read-only; nothing stops a runaway autonomous run.
+## 3. Per-run cost cap — mid-run cancel
+**Status:** **Partial.** Cost guardrails shipped (per-run cost is tracked and
+surfaced), but there is still no mid-run cancel: nothing halts a runaway
+autonomous run once it crosses a threshold.
 
-**Why deferred:** needs a live cost-tracking hook in the agent loop that cancels
-on threshold.
+**Why deferred:** the remaining piece needs a live cost-tracking hook in the
+agent loop that *cancels* on threshold, not just displays.
 
 **Resume:** add a `costCapUsd` field to the launch options; in
 `src-tauri/src/commands/api_agent.rs` (`run_agent_loop`) or the `turn_summary`

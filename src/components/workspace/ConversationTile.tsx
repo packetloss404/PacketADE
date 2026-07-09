@@ -35,8 +35,8 @@ const STATUS_PILL: Record<string, { label: string; className: string }> = {
  * AgentChatPane inside the workspace mosaic. It owns only tile-layer concerns —
  * mosaic drag/zoom chrome, the pointer-down focus arm that drives the Y/N
  * keyboard gate, and the review auto-zoom — while the conversation experience
- * itself is AgentChatPane verbatim (two additive props: `frame`,
- * `keyboardScopeActive`; no fork, no extraction).
+ * itself is AgentChatPane verbatim (the additive `keyboardScopeActive` prop;
+ * no fork, no extraction).
  *
  * Interim visual parity with terminal tiles (grip, color dot, title, status
  * pill, zoom in the same positions) is provided by the chrome bar below; the
@@ -274,7 +274,6 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
         <AgentChatPane
           conversationId={conversationId}
           onClose={removeTile}
-          frame="tile"
           keyboardScopeActive={isFocused}
         />
       </div>
