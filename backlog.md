@@ -7,52 +7,6 @@ it from here.
 Priority: **P1** = real bug or major user-facing gap · **P2** = correctness/UX
 · **P3** = cleanup.
 
-## Mission → Flight rename (2026-06-15 audit)
-
-The repo-wide *Mission* → *Flight* rename is **verified complete and clean**
-(uncommitted working tree as of 2026-06-15): "Mission Planner" → "Flight
-Planner", `MissionsView` → `FlightsView`, "Mission Control" → "Flight Control",
-data-model `mission_id`/`missionId` → `flight_id`/`flightId`, type
-`MissionApprovalRequest` → `FlightApprovalRequest`, `components/missions/*`
-merged into `components/flights/` (`MissionSpecPane` → `FlightSpecPane`), MCP
-tool `complete_mission` → `complete_flight`, and the file moves
-`core/mission_journal.rs` → `flight_journal.rs`, `lib/missionReview.ts` →
-`flightReview.ts`, sidecar `mission-planner-server.ts` →
-`flight-planner-server.ts`, and `commands/mission_planner*.rs` →
-`flight_planner*.rs` (+ `flight_planner_tools/`). Spot-confirmed on disk:
-`resolve_flight_approval` (`flight_planner.rs:2433`), `get_flight_approvals`
-(`lib.rs:412`), `complete_flight` `summary: String`, `components/flights/`,
-`flight_journal.rs`. Gates: `cargo check` = 0, `tsc --noEmit` = 0, sidecar
-`tsc` build = 0, schema regen identical, eslint 0 errors,
-flight-planner-wiring-smoke 13/13. The rename closed **no** open work items —
-renames are cosmetic to outstanding tasks — and the flight-planner entries
-below are already re-pointed to the new file names/paths. Remaining one-offs
-from this rename:
-
-- **P2 — Run the full test gate on the Windows host.** This WSL2 environment
-  cannot run Vitest (rollup native binary absent) or the live sidecar smokes
-  (Claude Agent SDK / `codex` Linux CLIs absent) — `node_modules` were
-  installed on Windows, so Linux-native binaries are missing. This is
-  environmental, not a code defect. Re-run `pnpm lint`, `pnpm build`, the full
-  Vitest suite, and the live sidecar smokes on the Windows host before
-  committing the rename.
-- **P3 — Commit the rename.** The Mission → Flight rename lives only in the
-  uncommitted working tree; land it once the Windows gate above passes.
-- **P3 — Optional serde-alias back-compat test.** Add a focused test that
-  round-trips a persisted struct serialized with the legacy `missionId` key
-  and asserts it deserializes via `#[serde(alias = "missionId")]` into
-  `flight_id`, so a future cleanup can't silently drop the alias. The 7
-  retained read-side surfaces and their removal criteria are documented under
-  **Intentional Mission→Flight back-compat surfaces** in the Flight Planner
-  section below.
-- **P3 — `backlog.md` filename-casing standardization.** All 42 in-repo
-  references and both physical files (`./backlog.md`,
-  `./dev/archive/backlog.md`) already use lowercase `backlog.md`; there is no
-  `BACKLOG.md` anywhere today. Add a CI/link guard (or contributor note) that
-  rejects an uppercase `BACKLOG.md`, so a case-insensitive filesystem
-  (Windows / default macOS) can't reintroduce a variant that breaks links under
-  case-sensitive CI. Preventive — nothing is broken now.
-
 ## Remote Agents (current flagship)
 
 Canonical plan: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md).
@@ -60,16 +14,12 @@ This is the next major product bet: PWA first, Packet account sign-in, Packet
 Cloud relay, desktop-owned providers/secrets/tools, and no generic remote Tauri
 bridge.
 
-**Sequencing vs Flight Planner.** Remote Agents (ROADMAP R0, P0) is the headline
-direction, but it sequences *after* the in-flight Flight Planner v1 hardening
-settles — the planner emits the same `api-agent:*` event contract that Remote
-Agents will relay, so a churning planner surface is a moving target for the
-relay protocol. Land the P3 Flight Planner correctness items below (cold-start
-approval hydration, rate-limit re-fire, status-event emission gaps, journal
-incremental-fetch) and pass the Windows test gate before committing the relay
-to a frozen remote command envelope. The Flight Planner v1.1 deferrals can run
-in parallel; the relay's "stream `api-agent:*` / respond to prompts / cancel"
-envelope should treat the planner event shape as a stable input.
+**Sequencing note.** Remote Agents (ROADMAP R0, P0) is the headline direction.
+Its relay reuses the same `api-agent:*` event contract that tile conversations
+already emit, so the "stream `api-agent:*` / respond to prompts / cancel"
+envelope should treat that event shape as a stable input. The orphaned Rust
+flight-planner backend (see the single decision item under **Flight Planner
+backend** below) is a pending user decision and does not gate this work.
 
 - **P1 — Packet Cloud relay MVP.** Implement the Worker/Durable Object relay,
   desktop connector, host/session routing, reconnect semantics, and relay
@@ -102,18 +52,21 @@ envelope should treat the planner event shape as a stable input.
   `IdeationView` gating. Either type the union properly
   (`projectPath` vs `remoteProjectPath`) or guard every consumer with
   `if (!workspace.serverId)`.
-- **P1 — Sidecar-over-SSH (Phase 4.1).** Biggest remaining user-facing gap.
-  The stdio JSON protocol in `agent-sidecar/src/protocol.ts` is
-  transport-agnostic by design; in
-  `src-tauri/src/commands/agent_sidecar.rs::forward_start`, swap local
-  `node` for `ssh <host> /path/to/bundled-node
-  /path/to/bundled-sidecar/index.js`. Payoff: Anthropic (Subscription) and
-  OpenAI (ChatGPT) providers work against remote codebases. Currently
-  hard-blocked by the Phase 1.1 error gate.
+- **SHIPPED — Sidecar-over-SSH (Phase 4.1).** The transport-agnostic stdio JSON
+  protocol now runs the sidecar over SSH, so Anthropic (Subscription) and OpenAI
+  (ChatGPT) providers work against remote codebases. Verification contract:
+  [`dev/sidecar-over-ssh-verification.md`](./dev/sidecar-over-ssh-verification.md).
+  Follow-up: Codex-over-SSH (see below) is not yet covered.
+- **P2 — Codex-over-SSH sidecar support.** The sidecar-over-SSH transport ships
+  for Anthropic and OpenAI Agents, but the Codex provider still runs local-only.
+  `codex exec` closes stdin and does its own process management, so routing it
+  over `ssh <host>` needs a remote-aware spawn path in the sidecar Codex
+  provider plus remote process-group teardown. Extend the sidecar-over-SSH
+  forward path to cover `api-openai-codex`.
 - **P2 — Misleading "Path will be created" copy.** `WorkspaceCreationModal`
   promises the path will be created on workspace start; nothing actually
   `mkdir -p`s it. Either add the mkdir over SSH on first launch, or revise
-  the copy.
+  the copy. **(being fixed by H4 this wave.)**
 - **P2 — `ssh_check_remote_path` doesn't use saved keychain password.** For
   password-auth servers the probe fails unless the FE retrieves the password
   first. Fix: pull from keyring by `target_id` when auth method is
@@ -127,41 +80,45 @@ envelope should treat the planner event shape as a stable input.
   kill (`agent-sidecar/src/providers/openai-agents.ts::killTree`); the Rust
   paths should reach parity (POSIX process-group kill, Windows `taskkill /T`,
   and `ssh -tt`/`RequestTTY` so the remote command gets SIGHUP on disconnect).
-- **P2 — Password-auth migration silently downgrades to "agent".**
-  `src/lib/sshTargetMigration.ts:67-70` forces
-  `authMethod: keyPath ? "key" : "agent"`. Legacy users with
-  keyring-stored SSH passwords lose that method. Fix: also call
-  `getSshPasswordExists(id)` during migration.
+- **FIXED — Password-auth migration silently downgrades to "agent".**
+  `src/lib/sshTargetMigration.ts` now calls `getSshPasswordExists(t.id)` and
+  keeps `authMethod: "password"` for legacy keyring-stored SSH passwords (was
+  forcing `keyPath ? "key" : "agent"`). Covered by
+  `src/lib/__tests__/sshTargetMigration.test.ts`.
 - **P2 — Read-only remote git dashboard.** Phase 3.3 disabled commit / push /
   pull / branch. Add `git_commit_remote`, `git_push_remote`,
   `git_pull_remote`, `git_create_branch_remote`. The `validate_branch_name`
   helper in `src-tauri/src/core/git.rs` is reusable.
 - **P2 — MCP servers over SSH (Phase 4.2).** `build_mcp_config_for_sidecar`
   hardcodes local paths.
-- **P3 — Consolidate duplicate `CloneServerConfigDto` and
-  `GitServerConfigDto`** (byte-identical;
-  `src-tauri/src/commands/scaffold.rs:23-32` vs
-  `src-tauri/src/commands/git.rs:120-129`).
-- **P3 — `clone_repo_remote` has no frontend caller.** Surface a "Clone to
-  remote workspace" action in `WorkspaceCreationModal` / ServersView, or
+- **DONE — Consolidate duplicate `CloneServerConfigDto` and
+  `GitServerConfigDto`.** The duplicate `CloneServerConfigDto` in
+  `commands/scaffold.rs` was removed; `commands/git.rs::GitServerConfigDto` is
+  the single shared shape.
+- **P3 — `clone_repo_remote` has no frontend caller.** The `cloneRepoRemote`
+  wrapper (`src/lib/tauri.ts`) exists but nothing invokes it. Surface a "Clone
+  to remote workspace" action in `WorkspaceCreationModal` / ServersView, or
   remove the binding.
 - **P3 — Sidecar-providers list drift.** Frontend `SIDECAR_AGENTS`
   (`src/components/agents/AgentInputArea.tsx:116`) is hand-mirrored from
   backend `SIDECAR_PROVIDERS`
   (`src-tauri/src/commands/agent_sidecar.rs:36`). Codegen or expose via a
   `list_sidecar_providers` Tauri command.
-- **P3 — Dead Tauri commands.** `set_ssh_password`, `delete_ssh_password`,
-  `get_ssh_password_exists`, `ssh_test_connection` have no remaining TS
-  callers. Either remove or repurpose for the password-auth probe above.
+- **P3 — Dead Tauri commands.** `get_ssh_password_exists` now has a live
+  caller (`sshTargetMigration.ts` uses it to preserve password auth). The
+  remaining three — `set_ssh_password`, `delete_ssh_password`,
+  `ssh_test_connection` — still have no callers beyond their `tauri.ts`
+  wrappers. Either remove them or repurpose for the `ssh_check_remote_path`
+  keyring-password probe above.
 - **P3 — Rename `target_id` → `server_id` across the wire.** Field name
   kept for in-flight back-compat (see `src/lib/tauri.ts:1331-1336`).
 - **P3 — `resumeApiConversation` partial live-config lookup.** Resolves
   `port` / `keyPath` / `hostFingerprint` from live `ServerConfig` but uses
   persisted `host` / `user` / `remotePath`. If a user renames or repoints
   the server, resume hits the old host.
-- **P3 — Sentinel rename.** `src-tauri/src/commands/pty.rs:498`
-  `PACKETCODE_SSH_OK` and `src-tauri/src/core/tool_runtime_ssh.rs:132`
-  `PACKETCODE_EOF_*` still use the old brand.
+- **P3 — Sentinel rename.** `src-tauri/src/commands/pty.rs`
+  `PACKETCODE_SSH_OK` and `src-tauri/src/core/tool_runtime_ssh.rs`
+  `PACKETCODE_EOF_*` still use the old brand. **(being fixed by H4 this wave.)**
 - **P3 — `cancel_flight_attempt` fingerprint asymmetry**
   (`src-tauri/src/commands/flight_attempts.rs:330-342`) — cleanup deferred
   to FE, which carries fingerprint correctly.
@@ -185,17 +142,17 @@ envelope should treat the planner event shape as a stable input.
   Windows-OpenSSH-aware remote tool layer. Pairs with the Windows-OpenSSH
   item above. `bash` is intentionally left unconfined on both transports.
 
-## Agents pane
+## Tile composer / conversation tiles
 
-- **P3 — AgentModeChip "Default" label is now inaccurate for OpenAI Agents.**
-  The shared chip (`src/components/agents/AgentModeChip.tsx`,
-  `agentModeChipUtils.ts` `deriveMode`) labels `permissionMode: "auto"` (no
-  approveWrites) as "Default — full tools, no per-tool prompts". After the
-  approval-gating fix, an `api-openai-agents` session in `auto` now DOES
-  prompt before `bash`/`write_file`. The chip is shared across all API
-  providers and only OpenAI Agents changed, so the fix needs provider-aware
-  labeling (or a tooltip note) rather than a blanket relabel. Make the chip
-  truthful per provider.
+Conversations are now workspace tiles on the single surface (the standalone
+Agents tab was removed). No open items here today — the previous
+`AgentModeChip` provider-aware-labeling complaint has shipped.
+
+- ~~**P3 — Ctrl+Shift+V shortcut collision.**~~ — **RESOLVED (this wave, H4).**
+  The transcript view-mode cycler was moved off `Ctrl+Shift+V` (push-to-talk
+  dictation) to the otherwise-unbound `Ctrl+Shift+O`, ending the
+  two-handlers-one-chord collision (`src/hooks/useAgentTabHoists.ts`; guard test
+  in `src/hooks/__tests__/useAgentTabHoists.test.tsx`).
 
 ## Platform & distribution (from `dev/`)
 
@@ -219,267 +176,24 @@ Deferred items called out in `dev/multi-platform-build.md` and
   Not supported by the current setup — use native runners. Track as a
   "won't-fix until release matrix demands it" item.
 
-## Flight Planner v1.1 (deferred from `dev/flight-planner-plan.md`)
+## Flight Planner backend
 
-- **P2 — Helper planner escalation.** Primary planner can call
-  `spawn_helper_planner(scope, reason)` to delegate heavy decomposition
-  to a one-shot Opus 4.7 session. Cap: 1 successful spawn per flight;
-  failed-to-start doesn't count. Helper output ingested back into the
-  primary's next turn as `<helper_output>…</helper_output>`. Stub in v1
-  returns `"deferred to v1.1"`; full implementation belongs to v1.1
-  alongside any "scope too big" flights that surface the need.
-- **P3 — Back-port milestone-gating + file-collision detection to the
-  async-attempts path.** v1 routes planner-emitted tasks through
-  `asyncFlightStore.launchAsync` (worktrees + `claude-oauth` API-agent
-  sessions). The PTY orchestrator's pause-between-milestones and
-  collision-block features in `src-tauri/src/core/orchestrator.rs`
-  don't exist on the async path; bring them across so planner-owned
-  flights get the same coordination safety.
-- **P3 — Predictive quota awareness.** v1 quota safety is reactive:
-  catches `RateLimitError` and pauses. If `@anthropic-ai/claude-agent-sdk`
-  ever exposes the `anthropic-ratelimit-*` response headers, switch to
-  predictive — pause _before_ the cap.
-- **P3 — Subscription-% display for OAuth planner cost.** Currently no
-  public Anthropic endpoint surfaces Claude.ai subscription usage. E8
-  partially addresses this by surfacing the cumulative planner token
-  count on the StatGrid Planner cell (sub-line `≈Nk tokens` when
-  `plannerProvider === "claude-oauth"`), but there is still no
-  percentage-of-quota readout. Revisit if/when Anthropic exposes an
-  endpoint.
-- **P3 — Crash-resilient planner sessions.** v1 planner sessions are
-  ephemeral; on app restart, `active` flights flip to `paused` and
-  require a user click to resume. Persist `lastResumeToken` and
-  rehydrate on cold start.
-- **P3 — Rollback optimistic transcript on `injectTurn` failure.**
-  `flightPlannerStore.injectTurn` optimistically appends a user
-  transcript entry before the backend call. If the invoke errors, the
-  phantom message stays on screen. Add a rollback on rejection.
-- **P3 — Replace `try_sidecar_session_for` async lock.** Currently
-  uses `try_lock` and returns `None` silently on contention. Cheap
-  E2 footgun. Switch to the async lock or remove until needed.
-- **P3 — Cap wake-debounce total drain time.** `WAKE_DEBOUNCE_MS` is
-  a per-burst window; a steady drip can keep the window open
-  indefinitely. E6 should add a hard ceiling on total drain time so
-  the planner can't be starved by adversarial event cadence.
-- **P3 — Escape `</wake_trigger>` literal in content body.** Sidecar
-  sanitizes the `kind` attribute but not the wrapped content; a user
-  typing literal `</wake_trigger>` in a journal message could break
-  the envelope. Non-exploitable today (frontend path uses
-  `source="user"` which doesn't wrap), but harden when the path
-  exists.
-- **P3 — `now_millis()` duplicated across 6 tool files.** Hoist to a shared
-  helper in `commands::flight_planner_tools::mod.rs` or reuse the one in
-  `flight_planner.rs`.
-- **P3 (deferred nit) — Rename leftover `*_MISSION_JOURNAL_TAIL_BYTES`
-  constants.** `DEFAULT`/`MAX`/`MIN_MISSION_JOURNAL_TAIL_BYTES`
-  (`flight_planner.rs:2628-2646`) → `*_FLIGHT_JOURNAL_TAIL_BYTES`. Cosmetic
-  only: these are file-private constants, never serialized or referenced
-  across the wire, so the stale "MISSION" token has no behavioral or
-  compat impact. Safe to fold into any future touch of that file.
-- **P3 — `PersistedStateDto → core::PersistedState` round-trip drops
-  `flight_approvals`.** Fine today (settings-only path), but a debug_assert
-  or stronger guard would prevent future silent loss if a different code
-  path uses the round-trip.
-- **P3 — Milestone DTO bump.** E2-MILE stashes the tool's `goal` field in
-  `Milestone.description` and `dependencies` in `Milestone.validation_criteria`
-  because no proper fields exist. Add `goal: String` and `dependencies: Vec<String>`
-  to `Milestone` and migrate.
-- **P3 — Persist Task-level `target_spec`.** Batch B made
-  `update_task(target_spec)` truthful by reporting the key in
-  `deferred_fields` instead of `updated_fields`, but the Task model still has
-  no durable target override. Add a Task field + DTO migration if planners
-  need post-create retargeting.
-- **P3 — `update_task` re-queue doesn't re-launch attempt.** A planner that
-  flips a task back to Queued has no way to actually re-run it. Either
-  reject the Queued transition or wire it to spawn a new attempt.
-- **P3 — `complete_flight` schema strictness mismatch.** Sidecar zod
-  requires `summary.min(1)` (`agent-sidecar/src/mcp/flight-planner-server.ts:142`),
-  while Rust accepts an empty string — `CompleteFlightArgs.summary` carries
-  `#[serde(default)]` (`flight_planner_tools/complete_flight.rs:34-35`), so a
-  missing/empty summary deserializes to `""`. Product call: tighten Rust to
-  reject empty (and over-2000) at the trust boundary, matching zod — Rust is
-  the real boundary and should revalidate — OR relax zod. The empty-summary
-  test (`complete_flight.rs:193-197`) currently asserts the permissive behavior
-  and would flip if Rust hardens.
-- **P3 — Verify cold-start approval hydration uses `get_flight_approvals`.**
-  The `get_flight_approvals(flightId)` command now ships
-  (`flight_planner.rs:2564`, registered at `lib.rs:412`, bound at
-  `tauri.ts:2834`), so the original E3 prereq ("add this command before
-  mounting `FlightSpecPane`") is closed. Residual check: confirm the frontend
-  actually calls it on `FlightSpecPane` mount / paused-flight resume / page
-  reload so approvals raised before the event listener attaches are visible.
-  If the call site exists, close this; if not, wire the cold-start fetch.
-- **P3 — `read_conversation_tail` whole-file load.** Currently
-  `core::flight_planner_prompts::read_conversation_tail` reads the entire
-  conversation file into memory before slicing the last N lines. For
-  long-running sessions accumulating megabytes of JSONL chunks this is
-  wasteful. Stream-and-tail via `Seek::seek` from end + back-scan for
-  newlines would be safer.
-- **P3 — Planner `replanCount` data source mismatch.**
-  `core::flight_planner_prompts::render_task_failed` displays "Replan
-  budget: X/3 used" by reading `replanCount` off the Task DTO. The
-  authoritative counter lives in `FlightPlannerSession.replans_per_task`
-  on the registry, NOT on the DTO. E5 must either mirror the count onto
-  the Task DTO before firing the TaskFailed wake, or change the renderer
-  to take the count as an explicit argument from `build_wake_payload`.
-  Currently the readout always shows `0/3`, defeating cap awareness.
-- **P3 — Tighten `session_id` path-escape guard.** Today's regex allows
-  Windows drive-relative paths like `C:foo`. Tighten to UUID-only:
-  `session_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')`.
-- **P3 — Focus textarea on starter-prompt click.** `FlightSpecPane`
-  pills populate the input but don't focus the textarea. One-line fix.
-- **P3 — Tighten async-approval prompt-content test.** The current test
-  accepts "continue" as a "don't-block" token; "continue" appears often
-  in any 2000+ char prompt and is false-positive-prone. Require
-  `"pending_approval"` AND ("don't block" OR "do not block" OR
-  "immediately") for a more reliable assertion.
-- **P3 — Surface `replan_count` in wake payload directly.** Today the
-  wake builder reads from the snapshot. Plumbing the count explicitly
-  through `PlannerWakeEvent.payload` would decouple the renderer from
-  DTO mirroring assumptions.
-- **P3 — Rate-limit auto-resume doesn't re-fire the dropped wake.**
-  When a `rate_limited` event arrives mid-wake, the wake content is
-  dropped on the floor and the auto-resume timer only flips status to
-  Idle. The planner sits Idle until another orchestration event fires.
-  For "rate-limited mid-decomposition" the flight stays half-planned.
-  Re-emit the most recent dropped wake on resume.
-- **P3 — 529 Overloaded not detected as rate-limit.**
-  `isLikelyRateLimitError` matches 429 / `rate_limit_error` / name=
-  `RateLimitError`. Anthropic's 529 Overloaded passes through as a
-  generic error — planner sees error + no QuotaPaused. Worth handling
-  in v1.1; acceptable v1.
-- **P3 — `on_planner_done` + `on_rate_limited` auto-resume don't emit
-  `flight-planner:status-changed` events.** E6 Fix 3 added
-  `set_status_and_emit` helper but only opted-in `pause_flight_planner`,
-  `resume_flight_planner`, and `inject_planner_turn`. The Awake→Idle
-  transition (watchdog) and Idle-after-quota-resume mutate
-  `session.status` directly inside the sessions mutex without firing
-  the Tauri event, so the frontend `runtime.status` lags those flips
-  until another emission triggers a refresh. Swap those two call sites
-  to also emit. (Note: the watchdog mutation runs INSIDE the mutex —
-  factor the emit so it fires AFTER the lock is released.)
-- **P3 — Tool-call cap counter message ergonomics.**
-  After breaching, every subsequent rejected call increments the
-  counter, so the planner sees `count={n}` growing. Either clamp to
-  `count=cap+1` in the rejection message or stop bumping on rejection.
-- **P3 — Journal entry incremental fetch.** Today every `journal-appended`
-  event causes `JournalTab` to refetch the whole file. On a chatty planner
-  turn (~5-20 events), that's 5-20 full reads. Add a `read_journal_after(
-  flight_id, last_entry_id) -> Vec<JournalEntry>` Tauri command that
-  parses the HTML-comment headers to find the cut point. Use it in
-  JournalTab to append-only the new content.
-- **P3 — Journal file size cap.** `read_journal` loads the whole file
-  into memory each fetch. Pair with the incremental-fetch follow-up to
-  add a max-bytes safeguard or pagination so very long flights don't
-  pin megabytes in RAM.
-- **P3 — Journal path-convention drift.** `flight_journal::journal_path`
-  produces `F-<shortId>_<flight_id>.md`; locked spec says `<shortId>.md`.
-  The drift was for collision-resistance (4-char shortId has 65k slots).
-  Confirm with owner whether to trim to spec or amend the spec doc.
-- **P3 — `format_timestamp` could format in Rust.** Today journal headers
-  emit raw unix-millis and JournalTab post-processes via JS Date(). If
-  another consumer (CLI viewer, external markdown processor) opens the
-  file directly, they see raw millis. Adding `chrono` (~10 lines) or
-  hand-rolling YYYY-MM-DD HH:MM:SS in Rust would make the file readable
-  in any markdown viewer.
-- **P3 — Markdown injection from tool args.** Tool-call entries serialize
-  `args` as JSON inside markdown blocks. If a tool arg contains
-  `<!-- entry id:fake -->`, a future structured parser of the journal file
-  could be confused. `MarkdownRenderer` doesn't enable raw HTML so the
-  UI is safe, but the on-disk parser invariant is fragile. Escape
-  HTML-comment-looking content inside body strings.
-- **P3 — Approval-resolution journal entry.** `resolve_flight_approval`
-  (`flight_planner.rs:2433`) currently emits a `SystemNote`. Could be `ApprovalRequest` updated
-  in-place, or a dedicated `ApprovalResolution` kind. For v1 the
-  SystemNote is fine; for v1.1 consider promoting.
-- **P3 — Cost-split implicit invariant (`totalCost ≥ plannerCost`).**
-  After E8 the StatGrid derives `executorCost = totalCost - plannerCost`
-  and clamps to zero via `Math.max(0, …)`. The clamp protects the UI
-  but hides a backend bug if the invariant ever inverts. Two options:
-  (a) explicitly store `executorCost` on the Flight DTO so subtraction
-  isn't load-bearing, or (b) add a debug-assert / log when the
-  invariant breaks. Today neither side enforces it.
-- **P3 — Cost dashboard planner/executor split.** The `CostDashboardView`
-  aggregates cost across flights but does not distinguish planner spend
-  vs executor spend. Post-E8 the data is present on every Flight
-  (`plannerCost` + derived `executorCost`); surface the split in the
-  dashboard so a user can see how much of the bill is the planner.
-- **P3 — Export `StatGrid` from `FlightsView` for direct unit tests.**
-  E8-TESTS currently mounts `FlightsView` end-to-end (mocking six
-  stores and five child components) to assert the cost-split cells.
-  Exporting `StatGrid` would let those tests drop most of the mock
-  surface and render the helper directly. Same applies to
-  `FlightDetailPane` if more cell-level tests appear.
-- **P3 — Executor cost accumulator error-spam.** E8 fix #1 lands an
-  executor turn_summary hook that calls `accumulate_executor_cost`.
-  Like the planner accumulator, it errors on missing flight, and the
-  caller downgrades to warn-log. After a flight delete while
-  executor sessions are still running, every turn produces a warn —
-  potentially many per minute. Either silently no-op like
-  `persist_planner_state_on_flight` does, OR ensure flight-delete
-  reliably kills associated sessions first.
-- **P3 — Cost-update event verbosity.** Both planner and executor
-  `turn_summary` events trigger `flight-planner:cost-updated:<id>`,
-  which fires `flightStore.hydrateFromBackend()` in the frontend.
-  During decomposition with 10-20 turns/min, that's 10-20 full
-  hydrations/min. Patch just the affected flight (read its persisted
-  state, replace the entry in the in-memory store) instead of full
-  re-read.
-- **P3 — Token-vs-cost drift on planner-session race.** If
-  `stop_flight_planner` removes the registry entry between
-  `flight_id_for_sidecar_session` (step 2) and `get_by_flight`
-  (step 3) in the sidecar `turn_summary` async-spawn, `model` falls
-  back to `""` and `calculate_cost` returns 0. The handler still
-  bumps `planner_tokens` but not `planner_cost`. Mild drift; bounded
-  by how often a planner is mid-turn at stop time.
-- **P3 — Compaction summarization burns OAuth quota.** Each compaction
-  fires a one-shot Sonnet call (~80K input chars truncated, ~2K output)
-  against the user's Claude subscription. On long-running flights this
-  could happen multiple times per day. Consider caching previous
-  summaries and only re-summarizing the delta since the last
-  compaction. Also consider exposing a user-configurable threshold
-  (today hardcoded at 150K tokens).
-- **P3 — Compaction does not preserve in-flight tool calls.** If the
-  planner is mid-turn (awaiting a tool result) when the threshold
-  crosses, the session swap drops the in-flight tool. v1 acceptable
-  — the planner re-decides on next wake. Worth a code comment.
-- **P3 — Compaction summary not surfaced in the journal-as-context
-  feedback loop.** After compaction, the new planner session has the
-  summary as priming context, but subsequent wake messages don't
-  reference it. If the planner needs to recall something pre-
-  compaction (e.g., "did I already create milestone X?"), it has to
-  rely entirely on the priming summary's completeness. Mitigation:
-  the wake-message builder could include the latest summary verbatim
-  in every wake until the next compaction. Worth considering for
-  v1.1 quality.
-- **P3 — Compaction event UX is minimal.** Today the indicator is a
-  small "Compacting" pill. A more informative inline message in the
-  Journal tab ("Session compacted at <timestamp>; <N> entries
-  summarized into <M> chars") would help users understand the
-  intervention.
-- **P3 — App-shutdown mid-compaction edge case.** If the user quits
-  between `swap_sidecar_session_after_compaction` (registry swap)
-  and `persist_planner_state_on_flight` (DTO write), the registry
-  has the new id but the DTO has the old. Cold-start enforce flips
-  active flights to Paused on reboot, so the user resumes manually
-  — but they'll see "Paused" instead of the live planner state.
-  Acceptable v1; consider write-DTO-first in v1.1.
-- **P3 — `OneshotWaiter` GC for hung sessions.** If a sidecar session
-  emits chunks then goes silent, the `OneshotWaiter` entry stays in
-  `SidecarManager::oneshot_waiters` forever. Crash fan-out covers
-  the hard-crash case; `done`/`error` covers the normal completion
-  case. The "hang" case needs a periodic sweep — every minute, drop
-  entries where the receiver was already dropped by the caller's
-  timeout.
-- **P3 — `wait_for_oneshot` HashMap insert silently drops prior
-  sender.** Defensive: replace `HashMap::insert` with `entry().or_insert_with(...)`
-  + log warning if a duplicate session_id is registered.
-- **P3 — Move src/agents/* cleanup out of E10 commit.** The
-  pre-existing modifications to `src/agents/claude-code.ts` and
-  `src/agents/index.ts` (removing `createClaudeCodeAdapter`) are
-  unrelated to flight planner work and have been excluded from
-  every flight-planner commit. Land them in their own
-  chore/cleanup commit when convenient.
+- **DECISION PENDING — Orphaned Rust flight-planner backend.** 13 flight-planner
+  commands in `src-tauri/src/lib.rs` plus the sidecar MCP server
+  (`agent-sidecar/src/mcp/flight-planner-server.ts`) have had zero frontend
+  callers since P2-20. **DELETE the backend or RE-EXPOSE it — user decision
+  pending.** The ~45 Flight Planner v1.1 reliability/quality deferrals that used
+  to sit here (helper-planner escalation, milestone-gating back-port, predictive
+  quota, crash-resilient sessions, compaction UX, cost-split plumbing, journal
+  incremental-fetch, etc.) are all conditional on this decision and are not worth
+  itemizing while the surface may be removed. If the decision is RE-EXPOSE, mine
+  the pre-collapse history of this file (and `dev/archive/flight-planner-plan.md`)
+  for the full deferral list. Two concrete residues carried forward from the
+  retired Sprint-3 plan, both conditional on RE-EXPOSE:
+  - `read_journal_after(flight_id, last_entry_id)` incremental journal fetch —
+    today every `journal-appended` event refetches the whole file.
+  - `now_millis()` is duplicated across the 6 `flight_planner_tools` files —
+    hoist to one shared helper.
 
 ### Intentional Mission→Flight back-compat surfaces (do NOT flag as leftover)
 
@@ -562,10 +276,10 @@ compatibility outlives API/config deprecation.
   keyword/recency-based. An embedding layer (sqlite-vss or LanceDB)
   would enable semantic context injection for the Flight Planner
   decomposition phase and the executor brief.
-- **P2 — Pre-execution memory brief for executor sessions.** When an
-  attempt launches, compose a short "what we know about this codebase"
-  brief from project-scoped patterns and inject it into the first
-  user turn.
+- **SHIPPED — Pre-execution memory brief for executor sessions.** Memory is on
+  by default and the pre-execution brief injects project-scoped patterns into
+  flight/attempt prompts, gated by `memorySettings.injectIntoFlightPrompts`
+  (default `true`; see `asyncFlightStore.ts` `getMemorySettings().injectIntoFlightPrompts`).
 - **P3 — Recurring-error detector.** Pattern-extraction pipeline could
   watch for repeated failure modes and surface a "this looks familiar"
   hint at the next agent launch.
@@ -579,9 +293,10 @@ compatibility outlives API/config deprecation.
   beyond the GitHub investigation. Anywhere the user encounters
   insight (flight journal, agent transcript, code review thread)
   should have a single-click capture affordance.
-- **P3 — Project-scoped filter chips in TimelineTab.**
-- **P3 — Provenance linking on event cards** (clickable
-  `sessionId`/`taskId`/`flightId` jumps to the originating surface).
+- **P3 — Project-scoped filter chips in the Timeline.** (The `TimelineTab` now
+  lives inside `src/components/views/MemoryView.tsx`.)
+- **P3 — Provenance linking on event cards** in `MemoryView`'s Timeline
+  (clickable `sessionId`/`taskId`/`flightId` jumps to the originating surface).
 - **P3 — Export / import memory** as JSON+Markdown.
 - **P3 — Date-range scope chips.**
 - **P3 — 30-day memory digest.**
@@ -739,74 +454,84 @@ medium→P2, low→P3. Two duplicate pairs merged: **F26≡G04**, **F36≡G32**.
 moves to `CHANGELOG.md`. Some items overlap pre-existing backlog entries above (e.g. F21,
 F34, G17, G19) — dedupe on fix.
 
-**Batch B worktree status (2026-06-08, not yet shipped):** Current code now has implementations
-for the "It silently failed" batch: F13, G23, G24, G25, F33, F34, and G02. F34 is closed as a
-truthfulness fix (`target_spec` is returned in `deferred_fields`, not `updated_fields`); actual
-Task-level `target_spec` persistence remains future work. Keep these in the review ledger until
-the Batch B branch is validated and moved to `CHANGELOG.md`.
+**Batch A + Batch B — SHIPPED (moved to `CHANGELOG.md` by H1).** Both remediation
+batches have landed and are recorded in the changelog:
+- **Batch B** ("it silently failed"): F13, G23, G24, G25, F33, F34, G02. F34
+  shipped as a truthfulness fix (`target_spec` returned in `deferred_fields`);
+  durable Task-level `target_spec` persistence remains future work.
+- **Batch A** (data-loss / corruption): F19, F20, F09, F10, F44, F48, F52, F56,
+  G18, plus atomic MCP writes (F21). F52's caveat stands: `flight.issueIds` is a
+  derived frontend cache, so a backend-authoritative Flight↔issue link is a
+  deliberate later effort.
 
-**Batch A worktree status (2026-06-09, not yet shipped):** Current code now has implementations
-for F19, F20, F09, F10, F44, F48, F52, F56, and G18. Covered scope: MCP writes/deletes reject
-malformed JSON instead of clobbering it, preserve existing server fields, and forward preserved
-non-stdio server shapes to sidecar sessions; key/Gemini/SSH migrations keep legacy data until the
-replacement save succeeds; legacy localStorage prefix migration snapshots keys before mutation; SSH
-target migration merges both legacy namespaces; FlightDetail unlink updates both issue and flight
-stores; backend `PersistedState.issues` now hydrates `issueStore` before Flight reconciliation;
-empty assistant text-only turns are skipped while tool-use turns remain valid. F52's remaining caveat:
-`flight.issueIds` is still treated as a derived frontend cache, so a durable Rust-side independent
-Flight issue-link model remains future work (the frontend cache is the source of truth for now; a
-backend-authoritative Flight↔issue link is a deliberate later effort). F19's remaining caveat —
-atomic MCP file writes (F21) — is now **RESOLVED (2026-06-15)**: `write_pretty_json` writes via temp
-file + `sync_all` + atomic rename. Keep the remaining items in the review ledger until the Batch A branch is
-validated and moved to `CHANGELOG.md`.
+**Obsoleted by the single-surface refactor (nothing to fix):**
+F49 (`FlightList.tsx` deleted; `FlightsView.tsx` no longer derives flight status
+from issues), F48 (`flights/FlightDetail.tsx` —
+already Batch A), F33 (`orchestrationSchedulerStore.ts` — already Batch B), and
+G31 (`orchestrationSchedulerStore.ts`). The referenced files no longer exist in
+the tile-program single surface.
+
+**Still verified-open** (audit-confirmed against current code): **F40** (SSRF —
+promoted to the dedicated P1 security item below), **F02**, **F24**, **G16**,
+**F50**, **F38**. F50 and F38 are being fixed by H4 this wave. Other findings
+below that are not annotated as shipped/obsolete predate the single-surface
+refactor and await per-finding re-verification against current code.
 
 ### P1 — confirmed high
 
-- **F02 — one invalid UTF-8 byte freezes a terminal forever** (unbounded `pending`) — `core/pty.rs:55-76`. Use `Utf8Error::error_len()`.
-- **F13 — deploy run stuck "running" forever on EIO** — `commands/deploy.rs:288-325`. Dedicated wait thread; break loop on EIO.
-- **F19 — MCP write clobbers shared `~/.claude/settings.json` on parse failure** — `commands/mcp.rs:42-55,139,167`. Bail Err on parse; atomic write.
-- **F20 — MCP server edit drops `disabled`/`type`/`url`/`headers` (corrupts SSE/HTTP)** — `commands/mcp.rs:148-160`. Read-modify-merge.
-- **F40 — `web_fetch` is an unrestricted SSRF primitive** — `core/tool_web.rs:38-98`. Block private/link-local IPs; re-validate after redirects.
-- **F50 — duplicate pane IDs collide after hydration** — `stores/workspaceStore.ts`. `crypto.randomUUID()` or reconcile `wsCounter`.
+> **P1 SECURITY (out of scope this wave — do not fix here).** **F40 — `web_fetch`
+> is an unrestricted SSRF primitive** — `core/tool_web.rs`. It fetches
+> attacker-supplied URLs with no guard against private/link-local/metadata
+> targets and does not re-validate after redirects. Fix: block private/link-local
+> IP ranges and re-resolve+re-check after every redirect hop; pair with the
+> `tool_web.rs` body-size cap and untrusted-content envelope items under **Rust
+> audit follow-ups → Tool runtime**. Deliberately deferred as a tracked security
+> item; not touched by the housekeeping wave.
+
+- **F02 — one invalid UTF-8 byte freezes a terminal forever** (unbounded `pending`) — `core/pty.rs:55-76`. Use `Utf8Error::error_len()`. _(verified open)_
+- ~~**F13 — deploy run stuck "running" forever on EIO**~~ — **SHIPPED (Batch B → CHANGELOG).**
+- ~~**F19 — MCP write clobbers shared `~/.claude/settings.json` on parse failure**~~ — **SHIPPED (Batch A → CHANGELOG).**
+- ~~**F20 — MCP server edit drops `disabled`/`type`/`url`/`headers`**~~ — **SHIPPED (Batch A → CHANGELOG).**
+- **F50 — duplicate pane IDs collide after hydration** — `stores/workspaceStore.ts`. `crypto.randomUUID()` or reconcile `wsCounter`. **(being fixed by H4 this wave.)**
 - **F53 — cross-arch build bundles the wrong native sidecar binary** — `scripts/prune-sidecar.js:171-193`. Target-aware prune + release-gate assert.
-- **G01 — sidecar + grandchildren orphaned on app exit** (no `kill_on_drop`/shutdown) — `agent_sidecar/supervisor.rs:559-573`, `lib.rs:418`.
-- **G02 — sidecar restart silently bricks live sessions** (no error fan-out, stale ownership) — `agent_sidecar/supervisor.rs:419-512`.
+- **G01 — sidecar + grandchildren orphaned on app exit** (no `kill_on_drop`/shutdown) — `agent_sidecar/supervisor.rs`, `lib.rs`.
+- ~~**G02 — sidecar restart silently bricks live sessions**~~ — **SHIPPED (Batch B → CHANGELOG).**
 - **G09 — Codex `respondPermission` writes to a stdin `codex exec` ignores → turn hangs** — `providers/openai-codex.ts:895-929`.
-- **G16 — OpenAI-compat parallel tool calls collapse/cross-contaminate (`index` ignored)** — `core/llm_openai_compat.rs:226-343`. _(panel severity split)_
-- **G23 — orchestrated PTY task success uses exit reason, not exit code → failures = Done** — `useTerminalSession.ts:290-293`, `pty.rs:334`.
-- **G25 — async attempt has no terminal transition on done/error → stuck running** — `flights/AttemptTile.tsx:59-92`.
-- **G33 — Stop with a queued message re-sends it (cancel emits `done` → drain)** — `agentTaskStore.ts:1227-1249`, `apiAgentListeners.ts:216-261`.
+- **G16 — OpenAI-compat parallel tool calls collapse/cross-contaminate (`index` ignored)** — `core/llm_openai_compat.rs:226-343`. _(verified open; panel severity split)_
+- ~~**G23 — orchestrated PTY task success uses exit reason, not exit code**~~ — **SHIPPED (Batch B → CHANGELOG).**
+- ~~**G25 — async attempt has no terminal transition on done/error**~~ — **SHIPPED (Batch B → CHANGELOG).**
+- **G33 — Stop with a queued message re-sends it (cancel emits `done` → drain)** — `agentTaskStore.ts`, `apiAgentListeners.ts`.
 
 ### P2 — confirmed medium
 
 - **F01 — `kill_pty`/`kill_sessions` leak zombie children on Unix** — `commands/pty.rs:393-410,117-128,329-331`.
 - **F06 — keyring password forwarded to remote stdin on ControlMaster-reused SSH** — `core/tool_runtime_ssh.rs:106-138`.
-- **F09 — keyring migration deletes legacy cred even when new write fails** — `api_keys.rs:55-61`, `ssh_keys.rs:38-44`.
-- **F10 — Gemini key migration deletes localStorage in `finally` even when keyring throws** — `tools/GeminiApiKeyCard.tsx:24-33`.
+- ~~**F09 — keyring migration deletes legacy cred even when new write fails**~~ — **SHIPPED (Batch A → CHANGELOG).**
+- ~~**F10 — Gemini key migration deletes localStorage in `finally` even when keyring throws**~~ — **SHIPPED (Batch A → CHANGELOG).**
 - **F11 — password auth writes to ssh stdin OpenSSH doesn't read** — `core/tool_runtime_ssh.rs:128-138`.
 - **F16 — leading-edge auth-watcher debounce drops the authoritative cred write** — `auth_watcher.rs:201-211`.
 - **F23 — `DeployConfig.env` typed end-to-end but never applied to the command** — `deploy.rs:9-15,220-264`.
-- **F24 — deploy runs cannot be cancelled (no kill handle / `kill_deploy`)** — `deploy.rs:266-327`.
+- **F24 — deploy runs cannot be cancelled (no kill handle / `kill_deploy`)** — `deploy.rs:266-327`. _(verified open.)_
 - **F28 — `send`/`retry` overwrite the in-process cancel sender, cancelling a running turn** — `api_agent.rs:701-724,1015-1037`.
 - **F32 — failed API `sendMessage` leaves the bubble spinning forever** — `agentTaskStore.ts:1072-1098`.
-- **F33 — orchestration scheduler silently swallows backend tick failures** — `orchestrationSchedulerStore.ts:47`.
-- **F34 — `update_task` `target_spec` reported landed but silently dropped** — `flight_planner_tools/update_task.rs:135-144`. _(see existing P3 entry)_
-- **F38 — `useVoiceInput` never stops recognition/native recording on unmount** — `hooks/useVoiceInput.ts:63-153`.
-- **F44 — `migrateLegacyStorage` mutates localStorage while iterating by index → loses keys** — `lib/storage-migration.ts:19-31`.
+- ~~**F33 — orchestration scheduler silently swallows backend tick failures**~~ — **OBSOLETE — `orchestrationSchedulerStore.ts` deleted (was also Batch B).**
+- ~~**F34 — `update_task` `target_spec` reported landed but silently dropped**~~ — **SHIPPED (Batch B → CHANGELOG).**
+- **F38 — `useVoiceInput` never stops recognition/native recording on unmount** — `hooks/useVoiceInput.ts:63-153`. _(verified open; being fixed by H4 this wave.)_
+- ~~**F44 — `migrateLegacyStorage` mutates localStorage while iterating by index → loses keys**~~ — **SHIPPED (Batch A → CHANGELOG).**
 - **F46 — streamed UTF-8 multibyte corrupted when split across chunks (both streamers)** — `llm_anthropic.rs:213`, `llm_openai_compat.rs:234`.
-- **F48 — FlightDetail unlink clears `issue.flightId` but not `flight.issueIds`** — `flights/FlightDetail.tsx:173`.
-- **F49 — flight status never recomputes when an issue changes** — `FlightList.tsx`, `FlightsView.tsx`.
+- ~~**F48 — FlightDetail unlink clears `issue.flightId` but not `flight.issueIds`**~~ — **SHIPPED (Batch A → CHANGELOG); `flights/FlightDetail.tsx` since deleted.**
+- ~~**F49 — flight status never recomputes when an issue changes**~~ — **OBSOLETE — `FlightList.tsx` deleted; `FlightsView.tsx` no longer derives flight status from issues.**
 - **F51 — `flightStore.hydrateFromBackend()` clobbers in-flight optimistic mutations** — `flightStore.ts:688-698`.
-- **F52 — `issueStore` localStorage-authoritative, never hydrated, lossy backend mirror** — `issueStore.ts:203-237`. Minimal fix: reconcile `flightStore.issueIds` on hydrate.
+- ~~**F52 — `issueStore` localStorage-authoritative, never hydrated, lossy backend mirror**~~ — **SHIPPED (Batch A → CHANGELOG).**
 - **F55 — `FlightStatus` contract test asserts a hand-kept length, missing `spec`** — `__tests__/contract.test.ts:167-180`.
-- **F56 — SSH-target→serverStore migration untested, deletes legacy keys before save lands** — `lib/sshTargetMigration.ts:80-106`.
+- ~~**F56 — SSH-target→serverStore migration untested, deletes legacy keys before save lands**~~ — **SHIPPED (Batch A → CHANGELOG).**
 - **G03 — `truncate()` panics on a multibyte UTF-8 boundary, killing the reader loop** — `agent_sidecar/handler.rs:933-939`.
 - **G08 — Codex cancel surfaces a spurious `error` banner instead of clean cancellation** — `providers/openai-codex.ts:458-483`. _(panel: high→medium)_
 - **G10 — Codex `agent_message_delta` + `agent_message` duplicate assistant text** — `providers/openai-codex.ts:543-560`.
 - **G11 — Anthropic `respondEdit` resolves ALL pending edits on one response** — `providers/anthropic.ts:1029-1071`.
 - **G17 — token/cost always zero for MiniMax & Ollama (`include_usage` gated)** — `llm_openai_compat.rs:178-180`. _(see existing P3 entry)_
-- **G18 — empty assistant message persisted → Anthropic 400s the next turn** — `api_agent.rs:1429-1460`.
-- **G24 — backend-initiated PTY kill reported to frontend as successful completion** — `orchestration.rs:131-136,190-195`.
+- ~~**G18 — empty assistant message persisted → Anthropic 400s the next turn**~~ — **SHIPPED (Batch A → CHANGELOG).**
+- ~~**G24 — backend-initiated PTY kill reported to frontend as successful completion**~~ — **SHIPPED (Batch B → CHANGELOG).**
 - **G26 — worktree leak when API session fails to start after attempt persisted** — `flight_attempts.rs:646-685`.
 - **F36/G32 — `deleteConversation` leaks all 12 api-agent listeners for done/failed convs** — `agentTaskStore.ts:1142-1182`. _(panel: high→medium)_
 
@@ -845,7 +570,7 @@ validated and moved to `CHANGELOG.md`.
 - **G21** Anthropic non-stream HTTP error double-surfaces — `api_agent.rs:1408-1426`.
 - **G29** scheduler ignores flight priority → starvation — `orchestrator.rs:384-450`.
 - **G30** attempt user-message display diverges from prompt sent — `asyncFlightStore.ts:411-454`.
-- **G31** orphaned running task permanently consumes a parallel slot — `orchestrationSchedulerStore.ts:142-160`.
+- ~~**G31** orphaned running task permanently consumes a parallel slot~~ — **OBSOLETE — `orchestrationSchedulerStore.ts` deleted in the single-surface refactor.**
 - **G34** auto-failover system notice deleted by `retryLastTurn` truncation — `apiAgentListeners.ts:281-298`. _(panel: med→low)_
 - **G35** late tool-result after turn end silently dropped — `apiAgentListeners.ts:156-189`.
 - **G36** done notification + queue drain fire even on user cancel — `apiAgentListeners.ts:251-265`.

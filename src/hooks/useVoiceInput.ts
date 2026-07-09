@@ -79,6 +79,37 @@ export function useVoiceInput(explicitMode?: VoiceMode): UseVoiceInputReturn {
   // Native mode is always considered supported; web mode depends on browser API
   const isSupported = mode === "native" ? true : webSpeechSupported;
 
+  // Mirror the latest mode/listening into refs so the unmount cleanup can stop
+  // the right backend without re-subscribing on every state change.
+  const modeRef = useRef(mode);
+  const isListeningRef = useRef(isListening);
+  modeRef.current = mode;
+  isListeningRef.current = isListening;
+
+  // F38: stop any in-flight recording/recognition when the hook unmounts so a
+  // dangling Web Speech listener or native Whisper capture can't outlive the
+  // component — leaking the microphone and firing setState after unmount.
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        // Detach handlers first so onend/onerror can't setState post-unmount.
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // already stopped / not started — nothing to release
+        }
+        recognitionRef.current = null;
+      }
+      if (modeRef.current === "native" && isListeningRef.current) {
+        // Fire-and-forget: release the native capture; ignore failures on teardown.
+        void stopRecordingCmd().catch(() => {});
+      }
+    };
+  }, []);
+
   const startListening = useCallback(() => {
     if (mode === "native") {
       setIsListening(true);

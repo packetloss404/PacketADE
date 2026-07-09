@@ -139,10 +139,10 @@ export function openSession(ref: OpenSessionRef): string {
 }
 
 /**
- * Deep-link into a conversation from a producer surface (P5-S1). Replaces the
- * retired `selectConversation(id) + setActiveView("agents")` pair used by the
- * notification/deep-link producers (RunningAgentsChip, PinnedApprovalBanner,
- * the Scout template send) and by the one-release `"agents"` redirect shim.
+ * Deep-link into a conversation from a producer surface (P5-S1). The single
+ * navigation path for the notification/deep-link producers (RunningAgentsChip,
+ * PinnedApprovalBanner, the Scout template send), replacing the Agents-tab
+ * navigation those producers used before the single-surface cutover.
  *
  * Semantics:
  *   1. Materialize the conversation's wrapper workspace via {@link openSession}
