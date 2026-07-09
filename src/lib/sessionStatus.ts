@@ -9,7 +9,10 @@
  *
  * Rulings honored:
  * - Single truth: every status surface reads from here, never re-derives.
- * - Severity order (ruled): needs_you > working > idle > done > failed.
+ * - Severity order (ruled, features.md): needs_you > failed > working > done
+ *   > idle. `failed` outranks `working`/`done`/`idle` so a workspace with an
+ *   errored tile always surfaces red beside a live/idle sibling — the honest-UI
+ *   mandate: a rollup never hides a failure.
  * - PTY tiles ONLY ever contribute working/idle — no fake PTY done/failed
  *   states (a live PTY reads working, a dead one idle; a real pattern-parser
  *   signal can be threaded in via the optional `ptyAttention` map without
@@ -34,16 +37,18 @@ import {
 export type { Attention } from "@/lib/sessionIndex";
 
 /**
- * Severity ranks — the ONE ordering (ruled): needs_you > working > idle > done
- * > failed. Higher wins the rollup. Kept private; consumers compare through
- * {@link rollupAttention}, never by reaching for the numbers.
+ * Severity ranks — the ONE ordering (ruled, features.md): needs_you > failed >
+ * working > done > idle. Higher wins the rollup. `failed` sits second so an
+ * errored tile is never masked by a working/done/idle sibling (honest UI). Kept
+ * private; consumers compare through {@link rollupAttention}, never by reaching
+ * for the numbers.
  */
 const SEVERITY: Record<Attention, number> = {
   needs_you: 5,
-  working: 4,
-  idle: 3,
+  failed: 4,
+  working: 3,
   done: 2,
-  failed: 1,
+  idle: 1,
 };
 
 /**

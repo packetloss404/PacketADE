@@ -110,17 +110,17 @@ describe("rollupAttention — max severity across member tiles", () => {
     expect(rollupAttention(["failed", "done", "idle", "working", "needs_you"])).toBe("needs_you");
   });
 
-  it("working outranks idle/done/failed", () => {
-    expect(rollupAttention(["failed", "done", "idle", "working"])).toBe("working");
+  it("failed outranks working/done/idle (honest UI: never hide a failure)", () => {
+    expect(rollupAttention(["done", "idle", "working", "failed"])).toBe("failed");
   });
 
-  it("idle outranks done/failed (ruled order: idle > done > failed)", () => {
-    expect(rollupAttention(["failed", "done", "idle"])).toBe("idle");
+  it("working outranks done/idle", () => {
+    expect(rollupAttention(["done", "idle", "working"])).toBe("working");
   });
 
-  it("done outranks failed", () => {
-    expect(rollupAttention(["failed", "done"])).toBe("done");
-    expect(rollupAttention(["failed", "failed"])).toBe("failed");
+  it("done outranks idle (ruled order: done > idle)", () => {
+    expect(rollupAttention(["idle", "done"])).toBe("done");
+    expect(rollupAttention(["idle", "idle"])).toBe("idle");
   });
 
   it("single member rolls up to itself", () => {
@@ -151,10 +151,10 @@ describe("paneAttention — PTY tiles only ever contribute working/idle", () => 
 });
 
 describe("computeWorkspaceStatus — mixed conversation + PTY", () => {
-  it("a failed conversation beside a live PTY rolls up to working (working > failed)", () => {
+  it("a failed conversation beside a live PTY rolls up to failed (failed > working — honest UI)", () => {
     const convAttn = new Map<string, Attention>([["c1", "failed"]]);
     const w = ws("w", [convPane("p1", "c1"), termPane("p2", "sess")]);
-    expect(computeWorkspaceStatus(w, convAttn)).toBe("working");
+    expect(computeWorkspaceStatus(w, convAttn)).toBe("failed");
   });
 
   it("a needs_you conversation dominates a live PTY", () => {
