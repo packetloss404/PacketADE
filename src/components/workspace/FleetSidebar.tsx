@@ -55,7 +55,7 @@ import {
   type FleetFilter,
   type FleetRow,
 } from "@/lib/fleetRows";
-import { WorkspaceCreationModal } from "./WorkspaceCreationModal";
+import { useLayoutStore } from "@/stores/layoutStore";
 import { Modal } from "@/components/ui/Modal";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Badge } from "@/components/ui/Badge";
@@ -106,10 +106,17 @@ export function FleetSidebar() {
   const [filter, setFilter] = useState<FleetFilter>("all");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  // New session = the same ruled flow as Ctrl+N: a fresh workspace whose
+  // zero-state hosts the inline AddAgentPicker (templates stay one click away
+  // via the picker's "Workspace templates…" footer row).
+  const handleNewSession = () => {
+    const projectPath = useLayoutStore.getState().projectPath ?? "";
+    useWorkspaceStore.getState().createWorkspace("New Session", [], projectPath);
+  };
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
@@ -401,7 +408,7 @@ export function FleetSidebar() {
         </Tooltip>
         <Tooltip content="New session">
           <button
-            onClick={() => setShowCreate(true)}
+            onClick={handleNewSession}
             className="p-1 rounded text-text-muted hover:text-accent-green hover:bg-bg-hover transition-colors"
           >
             <Plus size={11} />
@@ -602,15 +609,13 @@ export function FleetSidebar() {
       {/* Footer CTA */}
       <div className="border-t border-line-strong bg-bg-tertiary px-2.5 py-2 flex items-center gap-1.5">
         <button
-          onClick={() => setShowCreate(true)}
+          onClick={handleNewSession}
           className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-ui font-medium bg-accent-green/15 text-accent-green hover:bg-accent-green/25 border border-accent-line rounded transition-colors"
         >
           <Plus size={11} />
           New session
         </button>
       </div>
-
-      {showCreate && <WorkspaceCreationModal onClose={() => setShowCreate(false)} />}
 
       {pendingDelete && (
         <Modal
