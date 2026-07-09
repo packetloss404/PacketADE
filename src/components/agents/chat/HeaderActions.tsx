@@ -7,6 +7,7 @@ import { DiffPaneTrigger } from "../DiffPaneTrigger";
 import { ModelSelector } from "../composer/ModelSelector";
 import { useOllamaModels } from "../hooks/useOllamaModels";
 import { HeaderOverflowMenu } from "./HeaderOverflowMenu";
+import { TileHeaderActions } from "./TileHeaderActions";
 import type { AgentConversation } from "@/types/agent-conversation";
 import { addPaneControlListener, OPEN_MODEL_DROPDOWN_EVENT } from "../paneEvents";
 
@@ -22,6 +23,15 @@ interface HeaderActionsProps {
   onSetApproveWrites: (on: boolean) => void;
   onChangeModel: (model: string) => void;
   onExport: () => void;
+  /**
+   * Mount frame (P3-S3). Default "standalone" renders the AgentsView header
+   * byte-for-byte (below). "tile" delegates to {@link TileHeaderActions} for
+   * the responsive + lazy-mount economy the N-tile mosaic needs. Strictly
+   * additive — no fork, defaults preserve standalone.
+   */
+  frame?: "standalone" | "tile";
+  /** Pending edits + permissions (amber approval badge in tile frame). */
+  pendingApprovalCount?: number;
 }
 
 /**
@@ -45,6 +55,8 @@ export function HeaderActions({
   onSetApproveWrites,
   onChangeModel,
   onExport,
+  frame = "standalone",
+  pendingApprovalCount = 0,
 }: HeaderActionsProps) {
   const { ollamaModels, refresh: refreshOllamaModels } = useOllamaModels(
     conversation.agent,
@@ -58,6 +70,27 @@ export function HeaderActions({
       ),
     [conversationId],
   );
+
+  // Tile frame gets the responsive + lazy-mount cluster. Standalone (default)
+  // falls through to the original body unchanged.
+  if (frame === "tile") {
+    return (
+      <TileHeaderActions
+        conversation={conversation}
+        conversationId={conversationId}
+        diffTotals={diffTotals}
+        previewOpen={previewOpen}
+        togglePreview={togglePreview}
+        onClose={onClose}
+        onCycleMode={onCycleMode}
+        onSelectMode={onSelectMode}
+        onSetApproveWrites={onSetApproveWrites}
+        onChangeModel={onChangeModel}
+        onExport={onExport}
+        pendingApprovalCount={pendingApprovalCount}
+      />
+    );
+  }
 
   return (
     <div className="flex items-center gap-1 shrink-0">

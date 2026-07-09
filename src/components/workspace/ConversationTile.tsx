@@ -3,8 +3,11 @@ import {
   Archive,
   GripHorizontal,
   Maximize2,
+  MessageSquareOff,
   Minimize2,
   MoreVertical,
+  RotateCcw,
+  Trash2,
 } from "lucide-react";
 import { MosaicWindowContext } from "react-mosaic-component";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
@@ -119,10 +122,45 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
     removeTile();
   };
 
-  const color = getAgentColor(conversation?.agent ?? "");
-  const title = conversation?.title || "Conversation";
-  const isActive = conversation?.status === "active";
-  const pill = STATUS_PILL[conversation?.status ?? "idle"] ?? STATUS_PILL.idle;
+  // Failed-turn recovery (P3-S3): the tile face offers retryLastTurn; the
+  // status pill already goes red. No toast storm — the notification layer
+  // already covers session errors.
+  const retryLastTurn = () => {
+    if (conversationId) {
+      void useAgentTaskStore.getState().retryLastTurn(conversationId);
+    }
+  };
+
+  // Missing-conversation lifecycle state (P3-S3): the id is dangling (file
+  // deleted, or the conversation was pruned out from under the pane). Render a
+  // fallback with a Remove-tile action — removing deletes the PANE only (the
+  // one-directional GC never runs the other way). All hooks above have already
+  // executed, so this early return is order-safe.
+  if (!conversation) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 rounded-md border border-bg-border bg-bg-primary p-6 text-center">
+        <MessageSquareOff size={26} className="text-text-muted opacity-40" />
+        <div className="text-ui text-text-secondary">This conversation is no longer available.</div>
+        <div className="max-w-[240px] text-meta text-text-muted">
+          It may have been deleted. The transcript is gone; this tile can be removed.
+        </div>
+        <button
+          type="button"
+          onClick={removeTile}
+          className="inline-flex items-center gap-1.5 rounded-md border border-bg-border bg-bg-secondary px-3 py-1.5 text-ui text-text-primary transition-colors hover:bg-bg-hover"
+        >
+          <Trash2 size={13} />
+          Remove tile
+        </button>
+      </div>
+    );
+  }
+
+  const color = getAgentColor(conversation.agent);
+  const title = conversation.title || "Conversation";
+  const isActive = conversation.status === "active";
+  const isFailed = conversation.status === "failed";
+  const pill = STATUS_PILL[conversation.status ?? "idle"] ?? STATUS_PILL.idle;
 
   const chrome = (
     <div
@@ -202,6 +240,22 @@ export function ConversationTile({ pane, workspaceId }: ConversationTileProps) {
       className={`flex h-full flex-col overflow-hidden rounded-md ${wrapperBorderClass}`}
     >
       {connectedChrome}
+      {isFailed && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-accent-red/30 bg-accent-red/10 px-2 py-1">
+          <span className="flex-1 truncate text-meta text-accent-red">
+            Last turn failed.
+          </span>
+          <button
+            type="button"
+            onClick={retryLastTurn}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="inline-flex shrink-0 items-center gap-1 rounded border border-accent-red/40 px-1.5 py-0.5 text-meta text-accent-red transition-colors hover:bg-accent-red/20"
+          >
+            <RotateCcw size={11} />
+            Retry
+          </button>
+        </div>
+      )}
       <div className="min-h-0 flex-1">
         <AgentChatPane
           conversationId={conversationId}

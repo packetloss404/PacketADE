@@ -426,3 +426,71 @@ describe("Two tiles mounted — protected stack stays isolated (P3-S2)", () => {
     expect(lastProps.get("conv-B")?.keyboardScopeActive).toBe(false);
   });
 });
+
+describe("ConversationTile lifecycle states (P3-S3)", () => {
+  function seedWith(conversations: AgentConversation[], conversationId: string) {
+    useAgentTaskStore.setState({ conversations });
+    const workspace = makeWorkspace([
+      {
+        id: "pane-conv",
+        agentId: "terminal",
+        sessionId: null,
+        kind: "conversation",
+        conversationId,
+      },
+    ]);
+    useWorkspaceStore.setState({
+      workspaces: [workspace],
+      activeWorkspaceId: "ws-1",
+      zoomedPaneId: null,
+    });
+    return workspace.panes[0];
+  }
+
+  it("LOADING: renders the header (title + status) immediately from the session record", () => {
+    const pane = seedWith(
+      [makeConversation("conv-1", { title: "My task", status: "idle" })],
+      "conv-1",
+    );
+    const { getByText } = render(<ConversationTile pane={pane} workspaceId="ws-1" />);
+    // Header title + status pill render synchronously from the record — no
+    // dependence on the (mocked) AgentChatPane body, so no blank-header flash.
+    expect(getByText("My task")).toBeInTheDocument();
+    expect(getByText("idle")).toBeInTheDocument();
+  });
+
+  it("MISSING: a dangling conversationId shows the fallback + Remove-tile (removes the pane only)", () => {
+    const pane = seedWith([], "ghost-conv");
+    const { getByText, queryByTestId } = render(
+      <ConversationTile pane={pane} workspaceId="ws-1" />,
+    );
+    // Fallback face — the heavy AgentChatPane never mounts for a missing conv.
+    expect(getByText("This conversation is no longer available.")).toBeInTheDocument();
+    expect(queryByTestId("chat-ghost-conv")).toBeNull();
+
+    fireEvent.click(getByText("Remove tile"));
+    const ws = useWorkspaceStore.getState().workspaces[0];
+    expect(ws.panes.find((p) => p.id === "pane-conv")).toBeUndefined();
+  });
+
+  it("FAILED: shows the red pill and a Retry that calls retryLastTurn", () => {
+    const pane = seedWith(
+      [makeConversation("conv-1", { status: "failed" })],
+      "conv-1",
+    );
+    const retrySpy = vi
+      .spyOn(useAgentTaskStore.getState(), "retryLastTurn")
+      .mockResolvedValue(undefined);
+
+    const { getByText, getAllByText } = render(
+      <ConversationTile pane={pane} workspaceId="ws-1" />,
+    );
+
+    // Red status pill (chrome) + the failed banner both surface the failure.
+    expect(getAllByText("failed").length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.click(getByText("Retry"));
+    expect(retrySpy).toHaveBeenCalledWith("conv-1");
+    retrySpy.mockRestore();
+  });
+});
