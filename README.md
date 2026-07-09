@@ -2,7 +2,7 @@
 
 **A local-first desktop ADE (Agent Development Environment) for orchestrating AI software work.**
 
-PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, deployment tooling, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
+PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issue tracking, memory, and workspace management into a single native environment. It is built for running real development workflows across multiple agent CLIs without leaving the app.
 
 ## Documentation Map
 
@@ -15,13 +15,13 @@ PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issu
 
 ## What It Does
 
-- Chat with eight coding-agent providers from a **single Agents pane** that normalizes Claude Code subscription, Codex subscription, OpenAI Agents SDK, four API-key providers, and local Ollama into one event contract
-- Run multiple agent sessions side-by-side in PTY-backed panes inside a **Workspace** (your terminal-CLI command center)
+- Chat with eight coding-agent providers as **conversation tiles in the Workspace** — Claude Code subscription, Codex subscription, OpenAI Agents SDK, four API-key providers, and local Ollama all normalize into one event contract
+- Run agent chat tiles and PTY-backed terminal sessions side-by-side in one draggable mosaic — the **Workspace** is the single surface
 - Plan and supervise larger units of work from the **Flight Deck** — a single-screen master-detail flight control surface
 - Track issues on a kanban board and send them directly to workspace sessions
 - Connect to remote servers via SSH and run agent sessions over the wire
 - Keep project context close with auto-learning memory, history, and GitHub integration
-- Manage MCP servers, inspect crashes, run code-quality scans, and run deploy workflows from the same UI
+- Manage MCP servers, inspect crashes, and run code-quality scans from the same UI
 
 ## Supported Agents
 
@@ -34,7 +34,7 @@ PacketADE runs two kinds of agents side-by-side.
 - Gemini CLI
 - OpenCode
 
-**API agents in the Agents pane** — structured conversations with streaming, tool calls, and permission gating, picked from a grouped dropdown:
+**API agents as conversation tiles** — structured conversations with streaming, tool calls, and permission gating, added from the Workspace's grouped Add-agent picker:
 
 | Row | Internal id | Auth |
 |---|---|---|
@@ -51,22 +51,22 @@ Auth status is probed live and shown as a badge next to each row (`ready` / `log
 
 ## Main Features
 
-### Agents Pane — Unified Chat for Every Provider
+### Conversation Tiles — Unified Chat for Every Provider
 
-The Agents pane is the front door. One composer, two backends (in-process Rust + Node sidecar), one event contract — pick any of the eight providers from a grouped dropdown and the chat UI is identical.
+The **Workspace is the single surface**: every agent — chat or terminal — is a tile in a draggable mosaic, and the **FleetSidebar** on the left is the one session list (running and idle rows, with a *needs-you* group pinned to the top for conversations waiting on an approval or answer). Add a session from the **AddAgentPicker** (`+`), which splits into a **Chat agents** section (the eight API providers) and a **Terminals** section (the PTY CLIs); a chat provider opens as a **ConversationTile** sitting beside the terminal tiles. Every tile shares one composer, two backends (in-process Rust + Node sidecar), and one event contract, so the chat UI is identical across all eight providers. When a conversation stacks up pending writes, the tile's **ReviewBar** opens the canonical **ReviewSurface** (one hunk engine, one apply pipeline); when the work is done, the **GitDashboard** is the single git home and its **WorktreeLifecycleBar** carries the conversation's branch to merge, PR, or discard.
 
-- **Live SessionHealthBar** in the chat header: model · context % gauge · cumulative tokens · session $ · git branch
+- **Live status in the tile header**: model · context % gauge · cumulative tokens · session $ · git branch
 - **Drag-drop and clipboard-paste images** into the launcher (5 MB cap, removable thumbnail chips); image blocks land in the SDK content array on send
-- **Mid-turn steering**: `Tab` queues a follow-up that delivers after the current turn; `Alt+.` / `Alt+,` nudge the model toward thorough / fast within the same provider; `Shift+Tab` cycles a single mode chip (`default | plan | manual | yolo`)
-- **Slash commands**: `/plan /permissions /model /compact /review /goal /usage /history /clear /new /help` plus saved prompt templates as native `/<slug>` commands and project skills
+- **Keyboard**: `Shift+Tab` cycles a single mode chip (`default | plan | manual | yolo`); `Ctrl/Cmd+N` starts a new session; `Ctrl+Shift+1` jumps to the Workspace. Bare `Tab` is unbound in the composer (it only picks a highlighted popover row when one is open)
+- **Slash commands**: `/plan /permissions /model /compact /review /usage /history /clear /new /help` plus saved prompt templates as native `/<slug>` commands and project skills
 - **`@`-mention files and sources** in the composer via a file-mention popover, so you can pull specific files into a turn without pasting paths
-- **Header context badges**: provider auth (live `provider-auth:changed`), linked Flight with click-to-jump, and an MCP `N/M` server toggle dropdown. A separate **memory toggle** in the header actions carries a tooltip previewing the actual injected memory context
+- **Header context badges**: provider auth (live `provider-auth:changed`), linked Flight with click-to-jump, and an MCP `N/M` server toggle dropdown. A separate **memory toggle** in the header overflow menu carries a tooltip previewing the actual injected memory context
 - **Persistent Plan / Todo panel** docked above the chat scroll, parsing Anthropic SDK `TodoWrite` (structured `plan_block` events) plus the markdown `task_list` tool with a fallback parser
 - **Per-hunk diff acceptance** in `PendingEditPrompt`: pick which hunks to accept, the merged content lands via `edit_response.mergedContent` (sidecar Anthropic + every in-process provider)
 - **Batch approvals**: when 2+ writes or permissions stack up, "Apply all / Reject all / Cancel pending" rollups appear; "Cancel pending" drains parked prompts as denied without killing the agent loop
 - **Reviewer subagent**: `/review` spawns a fresh read-only conversation seeded with a unified diff of pending writes; returns 🛑 Blockers / ⚠️ Concerns / 💡 Nits with file:line citations
-- **Plan-first mode**: launching with the Plan posture seeds a Spec → Plan → Code FSM — the model proposes 3-7 success-criterion bullets and stops, the SpecPanel renders them as editable rows, "Lock & request plan" asks for a structured TodoWrite, "Approve & execute" lifts plan-mode and runs
-- **Checkpoint / rewind panel**: snapshots conversation state so you can rewind the thread to an earlier checkpoint (Claude-Code-style rewind)
+- **Plan-first mode**: launching with the Plan posture keeps the model read-only until it proposes a plan; the plan is approved inline in the transcript (structured `TodoWrite`) and approving lifts plan-mode so execution runs
+- **Inline Restore**: rewind the thread to an earlier point directly from the transcript (Claude-Code-style rewind), with no separate checkpoint panel
 - **Side Chat overlay**: a floating ask-a-side-question panel that streams an answer without disturbing the main thread
 - **Continue-in menu**: hand a conversation off to an external editor or terminal
 - **Durable agent profiles** (Default, Scout, Reviewer built-ins, plus user-created): bundle system prompt + allowed tools + memory + permission posture; pick from the launcher dropdown or edit in `Settings → Agent Profiles`
@@ -76,11 +76,10 @@ The Agents pane is the front door. One composer, two backends (in-process Rust +
 - **Backgroundable agent tray** in the toolbar showing a live count of streaming agents with click-to-jump and stop
 - **Live spend HUD chip** in the toolbar combining today's persisted total + in-memory session $ across every open API conversation; click jumps to the Cost Dashboard
 - **Hover-`+` Codex-App-style diff comments**: per-line `+` button in the diff view opens an inline composer; queued comments fold into the next user turn as a `File comments:` preamble
-- **Composer-mode segmented control** (Local / Worktree / Cloud) at "send" time picks where the conversation runs; local + worktree wired today, cloud reserved for future delegation
+- **Composer-mode segmented control** (Local / Worktree) at "send" time picks where the conversation runs — Local edits the project tree, Worktree runs on a fresh branch in `.pkt-worktrees/`; the choice also sets the global default
 - **Right-rail tabbed mode** with Inspector / Plan / Preview / Diff / Files tabs in a single 340 px column — lighter alternative to the full mosaic split for smaller screens; persisted toggle
 - **Smart-approval prefix proposals**: permission prompts compute a sensible allowlist rule (e.g. `Bash(git push:*)`) and let you accept it with one click — closes the "approval fatigue" footgun
 - **Cross-tool unified Project Rules editor** in `Settings → Project Rules` reads + writes both `AGENTS.md` and `CLAUDE.md` on save so a single rule set works for both Claude Code and Codex
-- **Persistent goals bridged to the Flight Deck** via `/goal` — promote a conversation's checklist into a goal that survives the conversation closing; Pause / Resume / Complete from the PlanPanel; goal count surfaces in the Flight Deck
 - **Plan-with-Claude → Execute-with-Codex** one-click handoff: PlanPanel "Hand off to Codex" button spawns a fresh Codex conversation seeded with the distilled spec + plan; "← back to plan" link in the child's chat header
 - **Old-model pinning** per profile via the `pinnedModel` field — locks a known-good model so future provider auto-upgrades don't silently switch away
 - **Auto-resume across restarts**: hydrated conversations capture the provider's resume token and lazily re-establish the session on next send
@@ -108,7 +107,6 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 - Live tiles for the selected flight: stat strip (cost, tokens, tasks, approvals, sessions, last update), milestones, live agents, approvals queue, and timeline
 - Inline edit of title and objective; status and priority dropdowns; pause/resume/cancel lifecycle controls
 - Kanban issue tracking with priorities, labels, acceptance criteria, and flight linkage
-- Standalone Review Queue view for triaging approvals across all flights
 
 ### SSH Remote Workspaces
 
@@ -142,15 +140,9 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 - **Clipboard fallback** when dictation was triggered from another app and no PacketADE input was tracked
 - Live `REC` indicator in the status strip, 32-bar waveform, history search, and an analytics dashboard (WPM, sentiment trend, top words, daily streak, time saved estimate)
 
-### Ideation Scanner
-
-- AI-powered codebase analysis that generates improvement ideas across categories (code quality, security, performance, documentation, UI/UX, code improvements)
-- Per-workspace scoping — each workspace gets its own scan results
-- Convert ideas directly to issues on the kanban board
-
 ### Code Quality
 
-- A dedicated quality module surface for running code-quality scans alongside the Ideation Scanner and Dictation modules
+- A dedicated quality module surface for running code-quality scans alongside the Dictation module
 
 ### GitHub Integration
 
@@ -168,7 +160,6 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 ### Project Operations
 
 - MCP client config management plus the local MCP-provider settings surface in Tools
-- Deploy configuration and terminal-backed deploy runs
 - Local crash report browsing and cleanup
 - Agent profile management and AI routing configuration
 - Prompt template library
@@ -311,14 +302,15 @@ PacketADE/
       session/                 # Terminal panes, session modals, status bars, inspect UI
       issues/                  # Kanban issue board and issue detail UI
       flights/                 # Flight Deck tiles (FlightList, FlightDetail, FlightHeaderTile, etc.)
-      views/                   # First-class application views (FlightsView, WorkspaceView, AgentsView, …)
+      views/                   # First-class application views (FlightsView, WorkspaceView, GitHubView, …)
       editor/                  # Lightweight editor/diff support
-      workspace/               # Workspace creation, sidebar, and pane container UI
+      workspace/               # Single-surface Workspace: ConversationTile, FleetSidebar, AddAgentPicker, GitDashboard, WorktreeLifecycleBar, pane container
+      agents/                  # Conversation chat internals (composer, chat header, review/ — ReviewBar + ReviewSurface)
       servers/                 # SSH server form modal
       common/                  # Shared presentation components
       ui/                      # Shared UI primitives
     stores/                    # Zustand stores for app, layout, flights, issues, workspaces, etc.
-    modules/                   # Module registration: quality, ideation, dictation
+    modules/                   # Module registration: quality, dictation
     lib/                       # Tauri bindings, shared utilities, model lists, event helpers
     generated/                 # Generated TypeScript types (Rust ↔ TS DTO contract)
     hooks/                     # UI and agent interaction hooks
@@ -344,7 +336,7 @@ PacketADE/
 
 - Core views are declared in `src/stores/appStore.ts`
 - Tauri commands live in `src-tauri/src/commands/` and are bound in `src/lib/tauri.ts`
-- App modules are registered through `src/modules/registry.ts`; current modules are Code Quality, Ideation Scanner, and Dictation
+- App modules are registered through `src/modules/registry.ts`; current modules are Code Quality and Dictation
 - Session management is PTY-based rather than JSONL-session based
 - GitHub PAT is stored in the OS keyring via the `keyring` crate
 - SSH passwords may be stored in the OS keyring (under `ssh-<server-id>`) or prompted at connect time and held in memory only

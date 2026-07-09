@@ -7,18 +7,119 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
-## [Unreleased] - 2026-06-15
+## [0.10.0] - 2026-07-09
 
-### Changed — Mission → Flight rename + README refresh
+Single-surface consolidation. The Agents tab is retired and every agent —
+chat or terminal — now lives as a tile in one Workspace. Delivered across
+three programs (the two-team UX consensus waves, the conversation-as-tile
+build, and the memory rewire), plus the Agents-tab Wave 4 refactor and the
+shipped data-loss / orchestration-trust review fixes.
 
-A staged, no-behavior-change rename completed the long-running Mission → Flight terminology unification across the frontend, Rust backend, IPC surface, and generated schema, paired with a full README pass against the code. Every stage was verified before landing.
+### Added
 
-- **README refreshed/verified against code** — public overview and setup re-checked against the current source so the docs match what ships.
-- **UI / IPC / generated-schema rename** — `Mission Planner` → `Flight Planner`, `MissionsView` → `FlightsView`, `Mission Control` → `Flight Control` across the React surface, Tauri command/event names, and the generated TS schema (schema regeneration is byte-identical).
-- **Data-model identifiers** — `mission_id` → `flight_id` (Rust) and `missionId` → `flightId` (TS) on the in-memory/serialized models.
-- **Full Mission eradication** — `MissionApprovalRequest` → `FlightApprovalRequest`; `components/missions/*` merged into `components/flights/` with `MissionSpecPane` → `FlightSpecPane`; MCP tool `complete_mission` → `complete_flight`; file renames `core/mission_journal.rs` → `core/flight_journal.rs`, `lib/missionReview.ts` → `lib/flightReview.ts`, agent-sidecar `mission-planner-server.ts` → `flight-planner-server.ts`, `commands/mission_planner*.rs` → `commands/flight_planner*.rs` plus the `flight_planner_tools/` directory.
-- **Intentionally preserved back-compat** (read-time fallbacks, not stale leftovers) — 5 `#[serde(alias = "missionId")]` attributes across 4 files (`api/mod.rs`, `commands/flight_planner.rs` ×2, `core/flight.rs`, `core/flight_journal.rs`); the `issueStore.ts` and `goalStore.ts` legacy `missionId` read shims; and the on-disk `~/.packetade/missions/` journal directory literal (`join("missions")`), which is the live canonical path and is deliberately kept. These are lazy read-fallbacks with no eager migration pass; removal is gated on shipping a one-shot rewrite migration (tracked in [`backlog.md`](./backlog.md)), not a calendar date.
-- **Verification** — `cargo check` 0, `tsc --noEmit` 0, sidecar `tsc` build 0, schema regen byte-identical, `eslint` 0 errors, `flight-planner-wiring-smoke` 13/13.
+- **Conversation tiles — single-surface Workspace.** Chat agents now open as
+  `ConversationTile`s in the same draggable mosaic as PTY terminal tiles; the
+  Workspace is the one home surface. Tiles get a responsive `@container`
+  header, lazy overflow, lifecycle states, auto-zoom-on-review, and a
+  multi-stream perf gate.
+- **FleetSidebar** — one unified session list replacing the old workspace and
+  agent sidebars: running + idle rows, virtualized long lists, a *needs-you*
+  group pinned to the top for conversations awaiting an approval or answer,
+  self-cleaning on close, and a fixed status vocabulary. `sessionStatus` is a
+  single-truth rollup, with a net-new `focusPaneRequest` mechanism.
+- **AddAgentPicker** — a single add-a-session flow split into **Chat agents**
+  and **Terminals** sections over a capability catalog, opening a draft tile.
+- **Worktree lifecycle in GitDashboard.** `WorktreeLifecycleBar` carries a
+  conversation's branch to **merge / PR / discard** from the single git home,
+  backed by a new Rust `merge_conversation_branch` command with ruled safety
+  semantics (`gitPublish` extraction, `worktreeLifecycle` lib, dirty-check
+  hardening, Discard wiring). A conversation carries a `worktree` field.
+- **Agents-tab Wave 4** — transcript virtualization for long conversations, a
+  rewritten diff engine, model-metadata surfacing, conversation export, and a
+  sidebar-organization / options-object refactor.
+- **Sidecar-over-SSH** — `forward_start_ssh` lets subscription providers run
+  over SSH remote workspaces through the sidecar.
+
+### Changed
+
+- **Two-team consensus consolidation (P0 / P1 / P2).**
+  - **P0** — purged dead / fake UI; fixed the workspace-zoom duplicate-agent
+    spawn; fixed disappearing edit cards via a shared `parseToolInput`
+    decoder; redesigned the mode-flag bijection and collapsed permission
+    controls into a single `AgentModeChip`; removed keyboard landmines and
+    per-message chrome filler; smoothed streaming + scroll.
+  - **P1** — one canonical **ReviewSurface** with a single hunk engine and one
+    apply pipeline (on repaired diff-pipeline foundations); the two composers
+    merged into one; tiered approval gating with out-of-view approvals pinned;
+    plan approval unified inline (Spec FSM cut, inline Restore); **GitDashboard**
+    as the single git home with a per-file staging engine and clickable diff
+    rows; chat-header consolidation (9 controls → 6); sidebar diet + fixed
+    status vocabulary; workspace chrome diet (templates-first creation, one
+    agent-color source); one global transcript view mode with uniform one-line
+    tool rows; a typography / spacing **design-tokens** pass.
+  - **P2** — memory affordances collapsed to a single surface; a small-cuts
+    batch (disabled Cloud segment, removed Preview Browser sub-tab, inspector
+    regex plan parser); state-layer pruning with the orchestration runtime
+    converged onto `asyncFlightStore`.
+- **Memory ON by default, injection artery restored.** The severed
+  memory-injection path for tile launches was reconnected, flight lessons are
+  wired in (flight injection gated), dead paths cut, `flight_completed` is
+  captured on the cancel-tips-it-done transition, and context previews are
+  truthful. Memory now defaults to **on**.
+- **Quiet sidecar chip.** The toolbar sidecar chip is silent when healthy and
+  surfaces only degraded states.
+- **Mission → Flight rename + README refresh.** A staged, no-behavior-change
+  rename unified Mission → Flight across the frontend, Rust backend, IPC
+  surface, and generated schema (`Mission Planner` → `Flight Planner`,
+  `MissionsView` → `FlightsView`, `mission_id`/`missionId` →
+  `flight_id`/`flightId`, `core/mission_journal.rs` → `core/flight_journal.rs`,
+  and the full sibling rename set), with a README pass against the code.
+  Read-time `missionId` aliases and the on-disk `~/.packetade/missions/`
+  journal path are deliberately preserved as back-compat; removal is gated on a
+  one-shot migration tracked in [`backlog.md`](./backlog.md).
+
+### Fixed
+
+Shipped from the 2026-06-07 triple-review (3-vote panel) after final
+validation and moved out of the review ledger:
+
+- **Batch A — data-loss & corruption.** MCP config writes / deletes reject
+  malformed JSON instead of clobbering it, preserve existing server fields, and
+  forward non-stdio server shapes to sidecar sessions (F19 / F20), with atomic
+  MCP file writes via temp-file + `sync_all` + rename (F21). Key / Gemini / SSH
+  migrations keep legacy data until the replacement save succeeds, the legacy
+  localStorage prefix migration snapshots keys before mutation, and SSH target
+  migration merges both legacy namespaces (F09 / F10 / F44 / F56). `FlightDetail`
+  unlink updates both issue and flight stores, and backend
+  `PersistedState.issues` hydrates `issueStore` before Flight reconciliation
+  (F48 / F52). Poisoned Anthropic history no longer breaks turns — empty
+  text-only turns are skipped while tool-use turns stay valid (G18).
+- **Batch B — "it silently failed" (orchestration trust).** `pty:exit` now
+  carries `exitCode` + `terminated`, and non-zero / terminated exits map to
+  unsuccessful task completion (G23 / G24); attempts subscribe to
+  `api-agent:done` / `:error` so completion no longer relies solely on the
+  sentinel (G25); deploy runs get a dedicated wait thread with bounded /
+  EIO-aware reads (F13); scheduler-tick failures are logged, counted, notified,
+  and pause the loop past a threshold (F33); `update_task` reports unsupported
+  `target_spec` patches as `deferred_fields` rather than fake landed updates
+  (F34); a sidecar child exit fans out a recoverable `api-agent:error` and
+  clears local ownership before restart (G02).
+
+### Removed
+
+- **Persistent goals** — the `/goal` command, `goalStore`, and the PlanPanel →
+  Flight Deck goal bridge.
+- **Ideation Scanner** — module and view.
+- **Deploy** — the Deploy view / UI surface.
+- **Standalone Review Queue** view — approvals now surface through the tile
+  ReviewBar / ReviewSurface and the toolbar bell.
+- **SpecPanel** (Spec → Plan → Code FSM) and **CheckpointPanel** — plan approval
+  is inline and rewind is inline **Restore**.
+- **Cloud** composer-mode segment — Local / Worktree only.
+- **AgentsView / AgentSidebar** — the Agents tab is retired; a one-release
+  redirect shim maps the old `agents` view (and `Ctrl+Shift+1`) to the
+  Workspace before removal.
+- **SessionHealthBar** — folded into the consolidated tile header.
 
 ## [0.9.4] - 2026-06-01
 
