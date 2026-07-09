@@ -2539,6 +2539,16 @@ export async function readFileForDiff(
   return invoke<string | null>("read_file_for_diff", { projectPath, relPath });
 }
 
+/** P1-S4: a file's committed content at `HEAD` for the clickable
+ *  GitDashboard diff view. `null` for untracked/new files or an empty repo
+ *  (nothing to diff against → the whole working file reads as added). */
+export async function getFileHeadContent(
+  projectPath: string,
+  relPath: string,
+): Promise<string | null> {
+  return invoke<string | null>("get_file_head_content", { projectPath, relPath });
+}
+
 // Side chat — fire-and-forget. Listen for `side-chat:done` / `side-chat:error`
 // for the result; see src/lib/events.ts for the event names.
 export async function askSideChatStream(question: string, context: string): Promise<void> {

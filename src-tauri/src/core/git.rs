@@ -157,6 +157,39 @@ pub fn get_status(project_path: &str) -> Result<String, String> {
     }
 }
 
+/// P1-S4 (clickable git rows): read a file's committed content at `HEAD`
+/// so the frontend can diff it against the working-tree copy through the
+/// shared DiffRows engine. Returns:
+/// - `Ok(Some(content))` — the file exists in `HEAD` (content returned
+///   verbatim, NO trimming, so the diff is byte-faithful);
+/// - `Ok(None)` — the path is untracked / newly added, or the repo has no
+///   commit yet (nothing to diff against → treat the whole file as added);
+/// - `Err(..)` — any other git failure.
+///
+/// `rel_path` is repo-root-relative with forward slashes (as produced by
+/// `git status --short`). Callers pass the NEW-side path for renames.
+pub fn get_file_head_content(project_path: &str, rel_path: &str) -> Result<Option<String>, String> {
+    let spec = format!("HEAD:{}", rel_path);
+    let output = git_command(&["show", &spec], project_path)?;
+    if output.status.success() {
+        return Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()));
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
+    // Path not present in HEAD (untracked / newly added), or no HEAD yet
+    // (fresh repo) — both mean "no prior content", i.e. a fully-added file.
+    let no_prior = stderr.contains("does not exist")
+        || stderr.contains("exists on disk, but not in")
+        || stderr.contains("bad revision")
+        || stderr.contains("unknown revision")
+        || stderr.contains("invalid object name")
+        || stderr.contains("ambiguous argument");
+    if no_prior {
+        Ok(None)
+    } else {
+        Err(stderr.trim().to_string())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct GitCommitContext {
     pub flight_id: Option<String>,
@@ -486,6 +519,57 @@ pub fn safety_check(project_path: &str) -> GitSafetyReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Init a throwaway git repo in a unique temp dir with one committed
+    /// file. Mirrors the tempdir convention used elsewhere (no extra
+    /// dev-dependency). Returns the repo path.
+    fn fixture_repo(tag: &str, rel: &str, committed: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("packetade-githead-{}-{}", tag, nanos));
+        std::fs::create_dir_all(&dir).expect("create temp repo dir");
+        let run = |args: &[&str]| {
+            let ok = Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git run")
+                .status
+                .success();
+            assert!(ok, "git {:?} failed", args);
+        };
+        run(&["init", "-q"]);
+        run(&["config", "user.email", "test@packetade.test"]);
+        run(&["config", "user.name", "PacketADE Test"]);
+        std::fs::write(dir.join(rel), committed).expect("write file");
+        run(&["add", rel]);
+        run(&["commit", "-q", "-m", "init"]);
+        dir
+    }
+
+    #[test]
+    fn get_file_head_content_returns_committed_version_not_working_copy() {
+        let repo = fixture_repo("committed", "foo.txt", "line1\n");
+        let path = repo.to_string_lossy().to_string();
+        // Dirty the working copy — HEAD content must still be the committed one.
+        std::fs::write(repo.join("foo.txt"), "line1\nline2\n").unwrap();
+        let head = get_file_head_content(&path, "foo.txt").expect("ok");
+        assert_eq!(head, Some("line1\n".to_string()));
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn get_file_head_content_is_none_for_untracked_file() {
+        let repo = fixture_repo("untracked", "foo.txt", "hi\n");
+        let path = repo.to_string_lossy().to_string();
+        std::fs::write(repo.join("new.txt"), "brand new\n").unwrap();
+        let head = get_file_head_content(&path, "new.txt").expect("ok");
+        assert_eq!(head, None);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
 
     #[test]
     fn validate_branch_name_rejects_flag_injection() {

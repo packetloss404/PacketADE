@@ -16,6 +16,7 @@ import {
   FileCheck2,
   ShieldCheck,
   Link2,
+  X,
 } from "lucide-react";
 import {
   getGitBranch,
@@ -25,6 +26,8 @@ import {
   gitPush,
   gitPull,
   gitCreateBranch,
+  getFileHeadContent,
+  readFileForDiff,
   toGitServerConfigInput,
 } from "@/lib/tauri";
 import {
@@ -36,7 +39,14 @@ import {
   unstageAllFiles,
   commitStaged,
   findLinkedIssue,
+  pathsForStagingOp,
 } from "@/lib/gitCommitFlow";
+import {
+  buildDiffRows,
+  DiffRowView,
+  languageForPath,
+  type DiffRow,
+} from "@/components/agents/diff/DiffRows";
 import { useServerStore } from "@/stores/serverStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAppStore } from "@/stores/appStore";
@@ -177,6 +187,15 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
   const [showBranchInput, setShowBranchInput] = useState(false);
   const [loadError, setLoadError] = useState<LoadError | null>(null);
 
+  // P1-S4: clickable file rows open a read-only diff (HEAD vs working tree)
+  // rendered through the shared DiffRows engine — no more blind commits.
+  const [diff, setDiff] = useState<{
+    path: string;
+    status: "loading" | "ready" | "error";
+    rows: DiffRow[];
+    error?: string;
+  } | null>(null);
+
   const server = useServerStore((s) =>
     serverId ? s.servers.find((srv) => srv.id === serverId) : undefined,
   );
@@ -222,6 +241,8 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
   // open Issue, so the server-side close-loop can flip it to `done`.
   const linkedIssue = useMemo(() => findLinkedIssue(issues, workspaceId ?? null), [issues, workspaceId]);
   const seededRef = useRef(false);
+  // Monotonic token so a stale diff fetch can't clobber a newer selection.
+  const diffReqRef = useRef(0);
 
   const openReviewFlight = useCallback(() => {
     const [flightId] = reviewContext.flightIds;
@@ -277,6 +298,19 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
     return () => clearTimeout(t);
   }, [feedback]);
 
+  // Escape closes the diff overlay.
+  useEffect(() => {
+    if (!diff) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        diffReqRef.current++;
+        setDiff(null);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [diff]);
+
   // P1-15: a workspace switch must not carry a half-typed message (or a
   // stale `Fixes #N` seed) into another repo — this replaces
   // CommitModal's snapshotted-path guard now that GitDashboard stays
@@ -284,6 +318,9 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
   useEffect(() => {
     seededRef.current = false;
     setCommitMsg("");
+    // Don't carry an open diff across a workspace/repo switch.
+    diffReqRef.current++;
+    setDiff(null);
   }, [projectPath, workspaceId]);
 
   useEffect(() => {
@@ -395,6 +432,35 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
     }
   }
 
+  // P1-S4: open the HEAD-vs-working diff for a file. Reuses the shared
+  // DiffRows engine (`buildDiffRows`) over a plain git fetch — HEAD content
+  // via `getFileHeadContent`, working content via `readFileForDiff`. Renames
+  // arrive as "old -> new": diff the new-side working copy against the
+  // old-side HEAD blob. A monotonic request token discards stale responses
+  // when a second row is clicked mid-load.
+  const openDiff = useCallback(
+    async (file: ChangedFile) => {
+      const paths = pathsForStagingOp(file);
+      const oldPath = paths[0];
+      const newPath = paths[paths.length - 1];
+      const reqId = ++diffReqRef.current;
+      setDiff({ path: newPath, status: "loading", rows: [] });
+      try {
+        const [head, work] = await Promise.all([
+          getFileHeadContent(projectPath, oldPath),
+          readFileForDiff(projectPath, newPath),
+        ]);
+        if (diffReqRef.current !== reqId) return;
+        const rows = buildDiffRows(head ?? "", work ?? "");
+        setDiff({ path: newPath, status: "ready", rows });
+      } catch (e: unknown) {
+        if (diffReqRef.current !== reqId) return;
+        setDiff({ path: newPath, status: "error", rows: [], error: String(e) });
+      }
+    },
+    [projectPath],
+  );
+
   // Phase 3.3: remote workspaces are read-only in this slice — commit /
   // push / pull / create-branch over SSH lands in a later phase. Disable
   // the action buttons but still expose status + refresh.
@@ -402,7 +468,7 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
   const hasUnstaged = files.some((f) => f.unstaged);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden text-ui">
+    <div className="relative flex h-full flex-col overflow-hidden text-ui">
       {/* Header: branch + actions */}
       <div className="flex shrink-0 items-center justify-between border-b border-bg-border bg-bg-secondary px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -619,10 +685,28 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
           files.map((f, i) => {
             const match = reviewContext.matchesByPath.get(flightReviewKey(f.path));
             const primaryRef = match?.refs[0];
+            const rowInteractive = !isRemote;
             return (
               <div
                 key={`${f.path}-${i}`}
-                className="group flex items-center gap-1.5 rounded px-2 py-[3px] transition-colors hover:bg-bg-secondary"
+                onClick={rowInteractive ? () => openDiff(f) : undefined}
+                role={rowInteractive ? "button" : undefined}
+                tabIndex={rowInteractive ? 0 : undefined}
+                onKeyDown={
+                  rowInteractive
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openDiff(f);
+                        }
+                      }
+                    : undefined
+                }
+                aria-current={diff?.path === f.path ? true : undefined}
+                title={rowInteractive ? `${f.path} — click to view diff` : f.path}
+                className={`group flex items-center gap-1.5 rounded px-2 py-[3px] transition-colors hover:bg-bg-secondary ${
+                  rowInteractive ? "cursor-pointer" : ""
+                } ${diff?.path === f.path ? "bg-bg-secondary" : ""}`}
               >
                 {!isRemote && (
                   <StageCheckbox
@@ -635,13 +719,16 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
                 <span className={`w-5 shrink-0 font-mono text-meta ${statusColor(f.status)}`}>
                   {f.status}
                 </span>
-                <span className="truncate text-ui text-text-secondary" title={f.path}>
+                <span className="truncate text-ui text-text-secondary">
                   {f.path}
                 </span>
                 {primaryRef && (
                   <button
                     type="button"
-                    onClick={openReviewFlight}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openReviewFlight();
+                    }}
                     title={reviewTitle(match.refs)}
                     className="border-accent-amber/25 bg-accent-amber/10 hover:bg-accent-amber/15 ml-auto inline-flex min-w-0 max-w-[112px] shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-meta text-accent-amber transition-colors"
                   >
@@ -718,6 +805,64 @@ export function GitDashboard({ projectPath, workspaceId, serverId }: GitDashboar
             )}
             {reviewContext.linkedFileCount > 0 ? "Commit after review" : "Commit staged"}
           </button>
+        </div>
+      )}
+
+      {/* P1-S4: diff overlay — HEAD vs working tree for the clicked file,
+          rendered through the shared DiffRows engine. */}
+      {diff && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-bg-primary">
+          <div className="flex shrink-0 items-center gap-2 border-b border-bg-border bg-bg-secondary px-3 py-2">
+            <FileEdit size={12} className="shrink-0 text-text-muted" />
+            <span className="truncate font-mono text-ui text-text-primary" title={diff.path}>
+              {diff.path}
+            </span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => {
+                diffReqRef.current++;
+                setDiff(null);
+              }}
+              className="p-0.5 text-text-muted transition-colors hover:text-text-primary"
+              aria-label="Close diff"
+              title="Close diff (Esc)"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto">
+            {diff.status === "loading" && (
+              <div className="flex items-center justify-center gap-1.5 py-6 text-ui text-text-muted">
+                <Loader2 size={11} className="animate-spin" />
+                Loading diff...
+              </div>
+            )}
+            {diff.status === "error" && (
+              <div className="flex flex-col items-center gap-2 px-3 py-6 text-ui">
+                <AlertCircle size={18} className="text-accent-amber" />
+                <div className="break-words text-center text-meta text-text-muted">
+                  {diff.error || "Failed to load diff"}
+                </div>
+              </div>
+            )}
+            {diff.status === "ready" &&
+              (diff.rows.length === 0 ? (
+                <div className="flex items-center justify-center py-6 text-ui text-text-muted">
+                  No changes against HEAD
+                </div>
+              ) : (
+                <div className="min-w-max py-1">
+                  {diff.rows.map((row) => (
+                    <DiffRowView
+                      key={row.key}
+                      row={row}
+                      language={languageForPath(diff.path)}
+                    />
+                  ))}
+                </div>
+              ))}
+          </div>
         </div>
       )}
     </div>
