@@ -3,14 +3,11 @@ import {
   useAgentTaskStore,
   apiAgentProvider,
   type AgentCli,
-  type AgentSshConfigInput,
 } from "@/stores/agentTaskStore";
-import { useProjectHistoryStore } from "@/stores/projectHistoryStore";
-import { useServerStore } from "@/stores/serverStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
-import { LAUNCH_DRAFT_KEY, useAgentDraftStore } from "@/stores/agentDraftStore";
 import { sweepAutoArchive } from "@/stores/agentConversationPersistence";
+import { launchConversation } from "@/lib/launchConversation";
 import { AgentSidebar } from "@/components/agents/AgentSidebar";
 import { Composer } from "@/components/agents/composer/Composer";
 import { AgentChatPane } from "@/components/agents/AgentChatPane";
@@ -18,15 +15,11 @@ import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { X } from "lucide-react";
-import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
+import { API_PROVIDERS } from "@/lib/api-models";
 import {
   getProviderAuthStatus,
-  createConversationWorktree,
-  getGitBranch,
   type ImageAttachment,
 } from "@/lib/tauri";
-import { generateId } from "@/lib/storage";
-import { isSshUri, parseSshUri } from "@/lib/ssh-uri";
 import type {
   AgentMode,
   ComposerMode,
@@ -56,7 +49,6 @@ export function AgentsView() {
   const selectedRepo = useAgentTaskStore((s) => s.selectedRepo);
   const selectedConversationId = useAgentTaskStore((s) => s.selectedConversationId);
   const selectConversation = useAgentTaskStore((s) => s.selectConversation);
-  const createApiConversation = useAgentTaskStore((s) => s.createApiConversation);
 
   const [selectedAgent, setSelectedAgent] = useState<AgentCli>(DEFAULT_AGENT);
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
@@ -198,165 +190,23 @@ export function AgentsView() {
   }, []);
 
   const handleLaunch = useCallback(
-    (rawText: string, attachments: ImageAttachment[]) => {
-      const text = rawText.trim();
-      if (!text) return false;
-      if (!selectedRepo) return false;
-
-      // Profile contributes the system prompt + tool whitelist + memory flag.
-      // Mode (the four launcher buttons) wins for plan/permission posture so
-      // users can override a profile's defaults per-launch.
-      const profile = getProfile(selectedProfileId);
-      const systemPrompt: string | null =
-        profile && profile.systemPrompt.length > 0 ? profile.systemPrompt : null;
-      const allowedTools: string[] | null = profile?.allowedTools ?? null;
-      const memoryContextEnabled = profile?.memoryContextEnabled ?? false;
-
-      // B9: profile.pinnedModel overrides the launcher selection so the
-      // launcher's auto-pick or default doesn't silently switch a known-
-      // good model out from under a Reviewer / Scout / pinned profile.
-      const model =
-        profile?.pinnedModel ||
-        selectedModel ||
-        getDefaultModel(selectedAgent);
-
-      // Mode -> planMode + launch-time permission posture (mode overrides profile).
-      const planMode = agentMode === "ask" || agentMode === "plan";
-      const launchPermissionMode: "auto" | "ask_for_risky" =
-        agentMode === "manual" ? "ask_for_risky" : "auto";
-      const launchApproveWrites = false;
-      // Plan mode alone drives planning: the backend plan-mode posture keeps
-      // the agent read-only and the inline PlanModeApprovalMenu carries the
-      // approval when the plan lands.
-      const initialMessage = text;
-
-      const att = attachments.length > 0 ? attachments : null;
-      let sshProjectPath: string | null = null;
-      let sshTarget: AgentSshConfigInput | null = null;
-
-      if (isSshUri(selectedRepo)) {
-        const parsed = parseSshUri(selectedRepo);
-        const server = parsed
-          ? useServerStore.getState().getServer(parsed.serverId)
-          : undefined;
-        if (!parsed || !server) {
-          setLaunchError(
-            "SSH server no longer exists. Pick another from the project dropdown.",
-          );
-          return false;
-        }
-        // Per-session remote path comes from the URI (edited inline in
-        // AgentInputArea), falling back to the server-level default.
-        const remotePath =
-          (parsed.remotePath && parsed.remotePath.trim().length > 0
-            ? parsed.remotePath.trim()
-            : server.remotePath?.trim()) ?? "";
-        if (!remotePath) {
-          setLaunchError(
-            "Enter a remote project path for this SSH server before launching.",
-          );
-          return false;
-        }
-        sshProjectPath = remotePath;
-        sshTarget = {
-          serverId: server.id,
-          name: server.name,
-          host: server.host,
-          port: server.port,
-          user: server.username,
-          remotePath,
-          keyPath: server.keyPath ?? null,
-          authMethod: server.authMethod,
-          hostFingerprint: server.hostFingerprint ?? null,
-        };
-      }
-
-      setLaunchError(null);
-      void (async () => {
-        try {
-        if (sshTarget && sshProjectPath) {
-          // Stamp lastConnectedAt so the recents ordering reflects use.
-          useServerStore.getState().updateServer(sshTarget.serverId, {
-            lastConnectedAt: Date.now(),
-          });
-          await createApiConversation({
-            agent: selectedAgent,
-            projectPath: sshProjectPath,
-            model,
-            initialMessage,
-            systemPromptOverride: systemPrompt,
-            planMode,
-            sshTarget,
-            skipBackendStart: false,
-            allowedTools,
-            memoryContextEnabled,
-            attachments: att,
-            permissionMode: launchPermissionMode,
-            approveWrites: launchApproveWrites,
-          });
-        } else {
-          useProjectHistoryStore.getState().recordOpen(selectedRepo);
-
-          // T3.F: when worktree mode is on, provision a fresh worktree at
-          // <projectPath>/.pkt-worktrees/<convId> on a new pkt/<convId>
-          // branch off the current HEAD. The conversation then runs inside
-          // the worktree so its tool calls don't touch the main checkout.
-          let effectiveProjectPath = selectedRepo;
-          let explicitConvId: string | undefined;
-          if (composerMode === "worktree") {
-            const provisionalConvId = generateId("conv");
-            try {
-              const branch = await getGitBranch(selectedRepo).catch(() => "");
-              const baseBranch = branch && branch.length > 0 ? branch : "HEAD";
-              const wtPath = await createConversationWorktree(
-                selectedRepo,
-                provisionalConvId,
-                baseBranch,
-              );
-              effectiveProjectPath = wtPath;
-              explicitConvId = provisionalConvId;
-            } catch (e) {
-              console.warn(
-                "Worktree provisioning failed; falling back to project root:",
-                e,
-              );
-            }
-          }
-
-          await createApiConversation({
-            agent: selectedAgent,
-            projectPath: effectiveProjectPath,
-            model,
-            initialMessage,
-            systemPromptOverride: systemPrompt,
-            planMode,
-            sshTarget: null,
-            explicitId: explicitConvId,
-            skipBackendStart: false,
-            allowedTools,
-            memoryContextEnabled,
-            attachments: att,
-            permissionMode: launchPermissionMode,
-            approveWrites: launchApproveWrites,
-          });
-        }
-        // Clear the composer only once the launch actually succeeded, so a
-        // failed launch keeps the user's typed prompt intact for a retry.
-        useAgentDraftStore.getState().clearDraft(LAUNCH_DRAFT_KEY);
-        } catch (e) {
-          setLaunchError(
-            e instanceof Error ? e.message : "Failed to launch agent.",
-          );
-        }
-      })();
-      return true;
-    },
+    (rawText: string, attachments: ImageAttachment[]) =>
+      launchConversation({
+        rawText,
+        attachments,
+        selectedRepo,
+        selectedAgent,
+        selectedModel,
+        agentMode,
+        composerMode,
+        profile: getProfile(selectedProfileId),
+        setLaunchError,
+      }),
     [
       selectedRepo,
       selectedAgent,
       selectedModel,
       setLaunchError,
-      createApiConversation,
       agentMode,
       selectedProfileId,
       getProfile,
