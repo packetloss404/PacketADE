@@ -32,14 +32,24 @@ function renderBar({
   pendingPermissionCount = 0,
   fileCount = 0,
   paths = new Set<string>(),
+  keyboardScopeActive,
+  conversationId = "conv-1",
+}: {
+  pendingEdits?: PendingEdit[];
+  pendingPermissionCount?: number;
+  fileCount?: number;
+  paths?: Set<string>;
+  keyboardScopeActive?: boolean;
+  conversationId?: string;
 } = {}) {
   return render(
     <ReviewBar
-      conversationId="conv-1"
+      conversationId={conversationId}
       diffTotals={{ fileCount, totalAdds: 3, totalDels: 1, paths }}
       pendingEdits={pendingEdits}
       pendingPermissionCount={pendingPermissionCount}
       respondEdit={respondEdit}
+      keyboardScopeActive={keyboardScopeActive}
     />,
   );
 }
@@ -122,5 +132,64 @@ describe("ReviewBar", () => {
     });
     fireEvent.keyDown(document.body, { key: "y" });
     expect(respondEdit).not.toHaveBeenCalled();
+  });
+
+  // ---- P3-S1 dual-mode focus gate -------------------------------------
+
+  describe("keyboardScopeActive focus gate (P3-S1)", () => {
+    it("no pane context (prop undefined) is armed exactly as today", () => {
+      // Byte-identical standalone path: undefined ⇒ armed.
+      renderBar({ pendingEdits: [makeEdit("edit-1")] });
+      fireEvent.keyDown(document.body, { key: "y" });
+      expect(respondEdit).toHaveBeenCalledWith("conv-1", "edit-1", "apply");
+    });
+
+    it("pane context armed (prop true) responds to Y/N", () => {
+      renderBar({
+        pendingEdits: [makeEdit("edit-1")],
+        keyboardScopeActive: true,
+      });
+      fireEvent.keyDown(document.body, { key: "n" });
+      expect(respondEdit).toHaveBeenCalledWith("conv-1", "edit-1", "reject");
+    });
+
+    it("pane context un-armed (prop false) ignores Y/N entirely", () => {
+      renderBar({
+        pendingEdits: [makeEdit("edit-1")],
+        keyboardScopeActive: false,
+      });
+      fireEvent.keyDown(document.body, { key: "y" });
+      fireEvent.keyDown(document.body, { key: "n" });
+      expect(respondEdit).not.toHaveBeenCalled();
+    });
+
+    it("two mounted bars with distinct scope: one keypress applies ONLY to the armed instance", () => {
+      // Both register a document-level Y/N handler; only the armed one may
+      // answer the keypress (the tile world guarantees exactly one focused
+      // pane holds keyboard scope at a time).
+      render(
+        <>
+          <ReviewBar
+            conversationId="conv-armed"
+            diffTotals={{ fileCount: 0, totalAdds: 3, totalDels: 1, paths: new Set() }}
+            pendingEdits={[makeEdit("edit-armed")]}
+            pendingPermissionCount={0}
+            respondEdit={respondEdit}
+            keyboardScopeActive={true}
+          />
+          <ReviewBar
+            conversationId="conv-inactive"
+            diffTotals={{ fileCount: 0, totalAdds: 3, totalDels: 1, paths: new Set() }}
+            pendingEdits={[makeEdit("edit-inactive")]}
+            pendingPermissionCount={0}
+            respondEdit={respondEdit}
+            keyboardScopeActive={false}
+          />
+        </>,
+      );
+      fireEvent.keyDown(document.body, { key: "y" });
+      expect(respondEdit).toHaveBeenCalledTimes(1);
+      expect(respondEdit).toHaveBeenCalledWith("conv-armed", "edit-armed", "apply");
+    });
   });
 });

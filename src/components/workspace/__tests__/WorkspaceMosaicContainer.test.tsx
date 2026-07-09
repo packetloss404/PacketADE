@@ -2,6 +2,7 @@ import { act, fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useReviewStore } from "@/stores/reviewStore";
 import type { Workspace } from "@/types/workspace";
 
 // Track PTY-owner mounts. TerminalPane owns the agent PTY (useTerminalSession
@@ -54,6 +55,7 @@ describe("WorkspaceMosaicContainer zoom", () => {
       activeWorkspaceId: "ws-1",
       zoomedPaneId: null,
     });
+    useReviewStore.setState({ open: false, conversationId: null, focusPath: null });
   });
 
   it("mounts exactly one PTY-owning pane per tile while zoomed (no duplicate agent spawn)", () => {
@@ -124,5 +126,33 @@ describe("WorkspaceMosaicContainer zoom", () => {
 
     expect(mosaicEl!.classList.contains("mosaic-zoom-active")).toBe(false);
     expect(container.querySelector('[data-pane-zoomed="true"]')).toBeNull();
+  });
+
+  // ---- P3-S1 condition-based Escape layering --------------------------
+
+  it("zoom-exit no-ops while the review surface is open (Escape closes review first, not zoom)", () => {
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    render(<WorkspaceMosaicContainer workspace={workspace} />);
+
+    act(() => {
+      useWorkspaceStore.getState().setZoomedPane("pane-a");
+    });
+    // Review is open (the tile auto-zoomed for it). Its own Escape handler
+    // owns this keypress; the mosaic zoom-exit must stand down so the two
+    // never double-fire off one Escape.
+    act(() => {
+      useReviewStore.setState({ open: true, conversationId: "conv-1" });
+    });
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    // Zoom survives — review would have consumed this Escape.
+    expect(useWorkspaceStore.getState().zoomedPaneId).toBe("pane-a");
+
+    // Once review is closed, the next Escape exits zoom as usual.
+    act(() => {
+      useReviewStore.setState({ open: false, conversationId: null });
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(useWorkspaceStore.getState().zoomedPaneId).toBeNull();
   });
 });
