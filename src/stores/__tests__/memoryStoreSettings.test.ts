@@ -59,19 +59,20 @@ describe("memoryStore settings integration", () => {
     vi.useRealTimers();
   });
 
-  it("does not capture session events when session capture is disabled", async () => {
+  it("does not capture flight events when flight capture is disabled", async () => {
     const { useMemorySettingsStore, useMemoryStore } = await loadStores();
-    useMemorySettingsStore.getState().setCaptureSessions(false);
+    useMemorySettingsStore.getState().setCaptureFlights(false);
 
-    useMemoryStore.getState().captureSessionCompleted(
+    useMemoryStore.getState().captureFlightCompleted(
       {
-        sessionId: "session-1",
-        agentId: "codex",
-        durationMs: 100,
-        status: "done",
+        flightId: "flight-1",
+        flightTitle: "Flight",
         summary: "Done",
-        filesModified: [],
-        keyDecisions: [],
+        whatWorked: [],
+        whatFailed: [],
+        lessonsLearned: [],
+        suggestedImprovements: [],
+        tags: [],
       },
       "D:/projects/example",
     );
@@ -80,37 +81,48 @@ describe("memoryStore settings integration", () => {
     expect(mocks.saveMemorySlice).not.toHaveBeenCalled();
   });
 
+  it("captures a flight event when flight capture is enabled", async () => {
+    const { useMemoryStore } = await loadStores();
+
+    useMemoryStore.getState().captureFlightCompleted(
+      {
+        flightId: "flight-1",
+        flightTitle: "Flight",
+        summary: "Done",
+        whatWorked: ["a"],
+        whatFailed: [],
+        lessonsLearned: ["lesson"],
+        suggestedImprovements: [],
+        tags: ["flight"],
+      },
+      "D:/projects/example",
+    );
+
+    const events = useMemoryStore.getState().events;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("flight_completed");
+  });
+
   it("caps stored events using the configured max", async () => {
     const { useMemorySettingsStore, useMemoryStore } = await loadStores();
     useMemorySettingsStore.getState().setMaxEvents(20);
 
     for (let i = 1; i <= 21; i += 1) {
-      const id = `task-${i}`;
-      useMemoryStore.getState().captureTaskCompleted(
-        {
-          taskId: id,
-          taskTitle: id,
-          flightId: "flight-1",
-          flightTitle: "Flight",
-          milestoneId: "milestone-1",
-          success: true,
-          exitCode: 0,
-          summary: "Done",
-          filesChanged: [],
-          errors: [],
-          durationMs: 100,
-        },
-        "D:/projects/example",
-      );
+      useMemoryStore.getState().captureManually({
+        projectPath: "D:/projects/example",
+        source: "test",
+        summary: `note-${i}`,
+        body: "",
+      });
     }
 
     expect(
       useMemoryStore
         .getState()
         .events.map((event) =>
-          event.type === "task_completed" ? event.payload.taskId : null,
+          event.type === "manual_note" ? event.payload.summary : null,
         ),
-    ).toEqual(Array.from({ length: 20 }, (_, index) => `task-${index + 2}`));
+    ).toEqual(Array.from({ length: 20 }, (_, index) => `note-${index + 2}`));
   });
 
   it("prunes events older than the configured retention window", async () => {
@@ -169,7 +181,7 @@ describe("memoryStore settings integration", () => {
   // === v0.8-H: pin / project-scope / context-items ===
 
   it("filters patterns by projectPath, treating legacy patterns as global", async () => {
-    const { useMemoryStore } = await loadStores();
+    const { useMemoryStore, computeContextItems } = await loadStores();
     useMemoryStore.setState({
       events: [],
       patterns: [
@@ -200,9 +212,8 @@ describe("memoryStore settings integration", () => {
       ],
     });
 
-    const items = useMemoryStore
-      .getState()
-      .getContextItemsForSession({ projectPath: "D:/projects/A" });
+    const s = useMemoryStore.getState();
+    const items = computeContextItems(s.events, s.patterns, { projectPath: "D:/projects/A" });
     const ids = items.map((i) => i.id);
     expect(ids).toContain("p-legacy"); // global matches every project
     expect(ids).toContain("p-this"); // exact match
@@ -210,7 +221,7 @@ describe("memoryStore settings integration", () => {
   });
 
   it("sorts pinned patterns first and exempts them from confidence cutoff", async () => {
-    const { useMemoryStore } = await loadStores();
+    const { useMemoryStore, computeContextItems } = await loadStores();
     useMemoryStore.setState({
       events: [],
       patterns: [
@@ -234,9 +245,8 @@ describe("memoryStore settings integration", () => {
       ],
     });
 
-    const items = useMemoryStore
-      .getState()
-      .getContextItemsForSession({ projectPath: "D:/projects/A" });
+    const s = useMemoryStore.getState();
+    const items = computeContextItems(s.events, s.patterns, { projectPath: "D:/projects/A" });
     expect(items.map((i) => i.id)).toEqual(["p-low-pinned", "p-high"]);
   });
 

@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   loadPersistedState: vi.fn(),
   markAttemptStatus: vi.fn(),
   notifyAttemptCompleted: vi.fn(),
+  composeMemoryBrief: vi.fn(),
+  captureFlightCompleted: vi.fn(),
   conversations: [] as Array<{
     id: string;
     messages: Array<{ role: string; content: string; isStreaming?: boolean }>;
@@ -73,7 +75,8 @@ vi.mock("@/stores/githubStore", () => ({
 vi.mock("@/stores/memoryStore", () => ({
   useMemoryStore: {
     getState: () => ({
-      composeMemoryBrief: vi.fn().mockReturnValue({ text: "" }),
+      composeMemoryBrief: mocks.composeMemoryBrief,
+      captureFlightCompleted: mocks.captureFlightCompleted,
     }),
   },
 }));
@@ -106,6 +109,7 @@ vi.mock("@/stores/workspaceStore", () => ({
 
 import { findAsyncLaunchPathCollisions, useAsyncFlightStore } from "@/stores/asyncFlightStore";
 import { useFlightStore } from "@/stores/flightStore";
+import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 
 function localTarget(basePath: string, baseBranch = "main"): AttemptTargetSpec {
   return {
@@ -198,6 +202,9 @@ describe("asyncFlightStore collision gate", () => {
     }));
     mocks.markAttemptStatus.mockResolvedValue(undefined);
     mocks.notifyAttemptCompleted.mockResolvedValue(undefined);
+    mocks.composeMemoryBrief.mockReturnValue({ text: "" });
+    mocks.captureFlightCompleted.mockReset();
+    useMemorySettingsStore.getState().setInjectIntoFlightPrompts(true);
     mocks.listen.mockImplementation((eventName: string, callback: TauriListener) => {
       mocks.listeners.set(eventName, callback);
       return Promise.resolve(() => {
@@ -468,5 +475,125 @@ describe("asyncFlightStore collision gate", () => {
       expect(mocks.markAttemptStatus).toHaveBeenCalledWith("flight-1", "att-sentinel", "reviewing");
     });
     expect(mocks.notifyAttemptCompleted).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("asyncFlightStore flight-completion memory capture", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.markAttemptStatus.mockResolvedValue(undefined);
+    mocks.captureFlightCompleted.mockReset();
+    useFlightStore.setState({ flights: [], activeFlightId: null });
+  });
+
+  it("captures a flight_completed event on the transition to done", async () => {
+    // Flight rolls up to "review" (one completed, one reviewing). Accepting
+    // the reviewing attempt flips the whole flight to "done".
+    useFlightStore.setState({
+      flights: [
+        flight({
+          attempts: [
+            attempt({ id: "att-a", sessionId: "s-a", status: "completed" }),
+            attempt({ id: "att-b", sessionId: "s-b", status: "reviewing" }),
+          ],
+        }),
+      ],
+      activeFlightId: null,
+    });
+
+    await useAsyncFlightStore.getState().setAttemptStatus("flight-1", "att-b", "completed");
+
+    expect(mocks.captureFlightCompleted).toHaveBeenCalledTimes(1);
+    const [payload, projectPath] = mocks.captureFlightCompleted.mock.calls[0];
+    expect(projectPath).toBe("D:/repo");
+    expect(payload).toMatchObject({
+      flightId: "flight-1",
+      flightTitle: "Flight",
+      whatWorked: expect.arrayContaining([expect.stringContaining("att-")]),
+    });
+    expect(payload.whatWorked).toHaveLength(2);
+  });
+
+  it("does not capture when the flight has not reached done", async () => {
+    // One attempt still running: accepting a reviewing sibling leaves the
+    // flight "active", so no flight_completed event should fire.
+    useFlightStore.setState({
+      flights: [
+        flight({
+          attempts: [
+            attempt({ id: "att-run", sessionId: "s-run", status: "running" }),
+            attempt({ id: "att-rev", sessionId: "s-rev", status: "reviewing" }),
+          ],
+        }),
+      ],
+      activeFlightId: null,
+    });
+
+    await useAsyncFlightStore.getState().setAttemptStatus("flight-1", "att-rev", "completed");
+
+    expect(mocks.captureFlightCompleted).not.toHaveBeenCalled();
+  });
+
+  it("does not re-capture on a no-op status write to an already-done flight", async () => {
+    useFlightStore.setState({
+      flights: [
+        flight({
+          attempts: [attempt({ id: "att-a", sessionId: "s-a", status: "completed" })],
+        }),
+      ],
+      activeFlightId: null,
+    });
+
+    // Flight is already "done"; re-writing completed must not fire capture.
+    await useAsyncFlightStore.getState().setAttemptStatus("flight-1", "att-a", "completed");
+
+    expect(mocks.captureFlightCompleted).not.toHaveBeenCalled();
+  });
+});
+
+describe("asyncFlightStore flight-prompt injection gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.launchFlightAsync.mockResolvedValue([]);
+    mocks.assertCostGuardrailsAllowLaunch.mockResolvedValue(undefined);
+    mocks.createApiConversation.mockResolvedValue(undefined);
+    mocks.loadPersistedState.mockImplementation(async () => ({
+      version: 1,
+      flights: useFlightStore.getState().flights,
+      agents: [],
+      settings: { maxParallelSessions: 3, milestoneGating: true, projectPath: "." },
+      ui: {},
+    }));
+    mocks.listen.mockImplementation((eventName: string, callback: TauriListener) => {
+      mocks.listeners.set(eventName, callback);
+      return Promise.resolve(() => mocks.listeners.delete(eventName));
+    });
+    mocks.composeMemoryBrief.mockReturnValue({ text: "MEMORY BRIEF" });
+    useFlightStore.setState({ flights: [flight()], activeFlightId: null });
+  });
+
+  it("prepends the memory brief when injectIntoFlightPrompts is on", async () => {
+    useMemorySettingsStore.getState().setInjectIntoFlightPrompts(true);
+
+    await useAsyncFlightStore
+      .getState()
+      .launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
+
+    expect(mocks.composeMemoryBrief).toHaveBeenCalled();
+    const promptArg = mocks.launchFlightAsync.mock.calls[0][1] as string;
+    expect(promptArg).toContain("MEMORY BRIEF");
+    expect(promptArg).toContain("Do it");
+  });
+
+  it("sends the raw prompt when injectIntoFlightPrompts is off", async () => {
+    useMemorySettingsStore.getState().setInjectIntoFlightPrompts(false);
+
+    await useAsyncFlightStore
+      .getState()
+      .launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
+
+    expect(mocks.composeMemoryBrief).not.toHaveBeenCalled();
+    const promptArg = mocks.launchFlightAsync.mock.calls[0][1] as string;
+    expect(promptArg).toBe("Do it");
   });
 });
