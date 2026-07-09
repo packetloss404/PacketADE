@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LaunchConversationParams } from "@/lib/launchConversation";
+import { makeSshUri } from "@/lib/ssh-uri";
+import { flagsForMode } from "@/components/agents/agentModeChipUtils";
+import type { ServerConfig } from "@/types/server";
 
 /**
  * Unit coverage for the launch extraction (tile-program P1-S3, D). Exercises
@@ -71,6 +74,7 @@ vi.mock("@/lib/tauri", () => ({
   retryLastTurn: vi.fn(),
   exportConversationMarkdown: vi.fn(),
   saveWorkspacesSlice: vi.fn().mockResolvedValue(undefined),
+  saveServersSlice: vi.fn().mockResolvedValue(undefined),
   getGitBranch: (...args: unknown[]) => getGitBranchMock(...args),
   createConversationWorktree: (...args: unknown[]) => createConversationWorktreeMock(...args),
 }));
@@ -189,6 +193,74 @@ describe("launchConversation — fallback to project root on provisioning failur
     expect(createConversationWorktreeMock).not.toHaveBeenCalled();
     expect(conv?.projectPath).toBe(SELECTED_REPO);
     expect(conv?.worktree).toBeUndefined();
+  });
+});
+
+describe("launchConversation — P3-S4 draft-tile additions", () => {
+  it("fires onLaunched with the new conversation id (draft-tile pane materialization)", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { launchConversation } = await import("@/lib/launchConversation");
+
+    const onLaunched = vi.fn();
+    launchConversation(baseParams({ onLaunched }));
+
+    await vi.waitFor(() => {
+      expect(useAgentTaskStore.getState().conversations[0]).toBeDefined();
+    });
+    const conv = useAgentTaskStore.getState().conversations[0];
+    await vi.waitFor(() => {
+      expect(onLaunched).toHaveBeenCalledWith(conv?.id);
+    });
+  });
+
+  it("postureOverride expresses the full PermissionMode range (deny_all) the four buttons can't", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { launchConversation } = await import("@/lib/launchConversation");
+
+    // agentMode "agent" would map to permissionMode "auto"; the override wins.
+    launchConversation(baseParams({ agentMode: "agent", postureOverride: flagsForMode("deny") }));
+
+    await vi.waitFor(() => {
+      expect(useAgentTaskStore.getState().conversations[0]).toBeDefined();
+    });
+    const conv = useAgentTaskStore.getState().conversations[0];
+    expect(conv?.permissionMode).toBe("deny_all");
+    expect(conv?.planMode).toBe(false);
+  });
+
+  it("inherits the workspace SSH server as conversation.sshTarget for a remote launch", async () => {
+    const { useServerStore } = await import("@/stores/serverStore");
+    const server: ServerConfig = {
+      id: "srv-1",
+      name: "Box",
+      host: "example.com",
+      port: 22,
+      username: "ian",
+      authMethod: "agent",
+      remotePath: "/srv/app",
+      installedAgents: [],
+      hostFingerprint: "SHA256:fp",
+    };
+    useServerStore.setState({ servers: [server] });
+
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { launchConversation } = await import("@/lib/launchConversation");
+
+    const ok = launchConversation(
+      baseParams({
+        selectedAgent: "api-claude",
+        selectedRepo: makeSshUri("srv-1", "/srv/app"),
+      }),
+    );
+    expect(ok).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(useAgentTaskStore.getState().conversations[0]).toBeDefined();
+    });
+    const conv = useAgentTaskStore.getState().conversations[0];
+    expect(conv?.sshTarget?.id).toBe("srv-1");
+    expect(conv?.sshTarget?.host).toBe("example.com");
+    expect(conv?.projectPath).toBe("/srv/app");
   });
 });
 

@@ -64,6 +64,36 @@ export const SANDBOX_POSTURE_TOOLTIP =
   "Codex (exec) can't pause for approvals — the sandbox is the safety boundary";
 
 /**
+ * Plain labels for the full approval-capable mode set (mirrors AgentModeChip's
+ * private MODE_META labels — kept here so the draft-tile mode chip can label
+ * postures without importing the chip component).
+ */
+export const MODE_LABEL: Record<AgentMode, string> = {
+  default: "Default",
+  plan: "Plan",
+  manual: "Manual",
+  deny: "Deny",
+  yolo: "Yolo",
+};
+
+/**
+ * Label for a posture given whether the provider can honor approvals. Approval-
+ * capable providers keep the plain labels; approval-incapable ones (Codex) get
+ * the honest sandbox-vocabulary relabels — the same P1-S4 filter the header
+ * chip uses, reused so the draft picker and the tile header never disagree.
+ */
+export function modeLabel(mode: AgentMode, supportsApprovals: boolean): string {
+  return supportsApprovals ? MODE_LABEL[mode] : SANDBOX_POSTURE_LABEL[mode];
+}
+
+/** Posture description given approval capability (plan labels vs sandbox). */
+export function modeDescription(mode: AgentMode, supportsApprovals: boolean): string {
+  return supportsApprovals
+    ? MODE_LABEL[mode]
+    : SANDBOX_POSTURE_DESCRIPTION[mode];
+}
+
+/**
  * Translate the conversation's flag fields into a single mode label.
  *
  * The mode is a bijection over (planMode, permissionMode) ONLY — every
