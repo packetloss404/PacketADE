@@ -80,6 +80,48 @@ describe("memory briefs", () => {
     expect(brief.items.map((item) => item.id)).toContain("s-1");
   });
 
+  it("marks the brief truncated and honours the char budget for an oversized corpus", async () => {
+    const { useMemoryStore } = await loadStores();
+    // 10 verbose patterns (the default contextMaxPatterns) each well over the
+    // per-line budget so the assembled brief overflows a 600-char cap.
+    useMemoryStore.setState({
+      patterns: Array.from({ length: 10 }, (_, i) => ({
+        id: `p-${i}`,
+        pattern:
+          `Pattern ${i}: prefer the shared design tokens and lucide icons over raw hex ` +
+          `colors, keep the compact toolbar spacing intact, and never reformat src with prettier.`,
+        category: "convention" as const,
+        confidence: 0.9,
+        extractedAt: Date.now() - i,
+        projectPath: "D:/projects/example",
+      })),
+    });
+
+    const brief = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: "D:/projects/example" }, { maxChars: 600 });
+
+    expect(brief.truncated).toBe(true);
+    expect(brief.text.length).toBeLessThanOrEqual(600);
+    // At least one (but not all ten) patterns survived the budget.
+    expect(brief.items.length).toBeGreaterThan(0);
+    expect(brief.items.length).toBeLessThan(10);
+  });
+
+  it("clamps maxChars to the 400 floor and 4000 ceiling", async () => {
+    const { useMemoryStore } = await loadStores();
+
+    const floored = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: "D:/projects/example" }, { maxChars: 1 });
+    expect(floored.charBudget).toBe(400);
+
+    const ceilinged = useMemoryStore
+      .getState()
+      .composeMemoryBrief({ projectPath: "D:/projects/example" }, { maxChars: 999999 });
+    expect(ceilinged.charBudget).toBe(4000);
+  });
+
   it("does not leak local or legacy memory into SSH briefs", async () => {
     const { remoteMemoryProjectKey, useMemoryStore } = await loadStores();
     useMemoryStore.setState({
