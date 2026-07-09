@@ -214,6 +214,22 @@ fn emit_fixes_events(app_handle: &AppHandle, project_path: &str, commit_msg: &st
     }
 }
 
+/// P1-S4: read a file's committed `HEAD` content for the clickable
+/// GitDashboard diff view. `Ok(None)` for untracked/new files or an
+/// empty repo. See `git::get_file_head_content`.
+#[tauri::command]
+pub async fn get_file_head_content(
+    project_path: String,
+    rel_path: String,
+) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        git::get_file_head_content(&project_path, &rel_path)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 #[tauri::command]
 pub async fn git_commit(
     app_handle: AppHandle,
@@ -388,13 +404,46 @@ pub async fn create_conversation_worktree(
 
 /// T3.F: tear down a worktree previously created by
 /// `create_conversation_worktree`. Idempotent — missing worktrees succeed.
+///
+/// P2-S2: `delete_branch` (default false) additionally force-deletes the
+/// `pkt/<conv_id>` branch after the worktree dir is removed. The Discard flow
+/// passes true so a discarded conversation leaves no dangling branch behind.
 #[tauri::command]
 pub async fn remove_conversation_worktree(
     project_path: String,
     conv_id: String,
+    delete_branch: Option<bool>,
 ) -> Result<(), String> {
     super::validate_project_path(&project_path)?;
-    worktree::remove_local_worktree(&project_path, &conv_id).await
+    worktree::remove_local_worktree(&project_path, &conv_id, delete_branch.unwrap_or(false)).await
+}
+
+/// P2-S1: land a conversation's `pkt/<convId>` branch into the root
+/// checkout by squash-merging (the default), with ruled safety semantics.
+/// Gated on the same clean-root guard as `git_safety_check`: refuses on a
+/// dirty root; on conflict it recovers so BOTH the root checkout and the
+/// conversation worktree are left byte-identical; on success it creates the
+/// squash commit, removes the worktree dir, and force-deletes the branch
+/// (`-D` — a squash leaves no ancestry for `-d`). The returned outcome lets
+/// the caller flip `worktree.state -> "landed"`. `squash` defaults to
+/// `true` when omitted.
+///
+/// The dirty-root check deliberately excludes the `.pkt-worktrees/`
+/// directory: an active conversation worktree always registers it as
+/// untracked in the root, so a literal `git_safety_check` would refuse every
+/// merge (see `core::git::merge_conversation_branch`).
+#[tauri::command]
+pub async fn merge_conversation_branch(
+    project_path: String,
+    branch: String,
+    squash: Option<bool>,
+) -> Result<git::MergeBranchOutcome, String> {
+    tokio::task::spawn_blocking(move || {
+        super::validate_project_path(&project_path)?;
+        git::merge_conversation_branch(&project_path, &branch, squash.unwrap_or(true))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// v0.8.5 fix: provision a git worktree bound to a specific Issue and

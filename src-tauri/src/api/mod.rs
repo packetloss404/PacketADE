@@ -69,6 +69,16 @@ pub struct WorkspacePaneDto {
     pub override_command: Option<String>,
     #[ts(optional)]
     pub override_args: Option<Vec<String>>,
+    /// Pane kind discriminant (tile program, P1-S1). Absent ⇒ terminal. `kind`
+    /// is the SOLE discriminant; `agent_id` is never overloaded — conversation
+    /// panes carry the inert carrier `agentId: "terminal"`.
+    #[serde(default)]
+    #[ts(optional)]
+    pub kind: Option<String>,
+    /// Set iff `kind == Some("conversation")`.
+    #[serde(default)]
+    #[ts(optional)]
+    pub conversation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -105,6 +115,11 @@ pub struct WorkspaceDto {
     pub remote_project_path: Option<String>,
     #[ts(optional)]
     pub github_repo: Option<GithubRepoDto>,
+    /// Tile program (P1-S2): `"conversation"` for auto-materialized
+    /// conversation wrappers, else absent. Inert `#[ts(optional)]` mirror of
+    /// core `Workspace.origin`.
+    #[ts(optional)]
+    pub origin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -789,6 +804,8 @@ impl From<core_workspace::WorkspacePane> for WorkspacePaneDto {
             initial_prompt: value.initial_prompt,
             override_command: value.override_command,
             override_args: value.override_args,
+            kind: value.kind,
+            conversation_id: value.conversation_id,
         }
     }
 }
@@ -808,6 +825,8 @@ impl From<WorkspacePaneDto> for core_workspace::WorkspacePane {
             initial_prompt: value.initial_prompt,
             override_command: value.override_command,
             override_args: value.override_args,
+            kind: value.kind,
+            conversation_id: value.conversation_id,
         }
     }
 }
@@ -848,6 +867,7 @@ impl From<core_workspace::Workspace> for WorkspaceDto {
             server_id: value.server_id,
             remote_project_path: value.remote_project_path,
             github_repo: value.github_repo.map(Into::into),
+            origin: value.origin,
         }
     }
 }
@@ -870,6 +890,7 @@ impl From<WorkspaceDto> for core_workspace::Workspace {
             server_id: value.server_id,
             remote_project_path: value.remote_project_path,
             github_repo: value.github_repo.map(Into::into),
+            origin: value.origin,
         }
     }
 }
@@ -1895,6 +1916,48 @@ mod tests {
         assert_eq!(value["panes"][0]["overrideCommand"], "codex");
         assert_eq!(value["panes"][0]["overrideArgs"][0], "--ask-for-approval");
         assert_eq!(value["panes"][0]["overrideArgs"][1], "never");
+    }
+
+    #[test]
+    fn conversation_pane_round_trips_kind_and_conversation_id_through_core() {
+        // Tile program (P1-S1): a conversation pane carries the inert carrier
+        // agentId "terminal" plus the kind discriminant + conversationId; all
+        // three must survive DTO → core → DTO with camelCase transport keys.
+        let json = r#"{
+            "id": "workspace-1",
+            "name": "Workspace",
+            "agents": [],
+            "panes": [
+                {
+                    "id": "pane-conv",
+                    "agentId": "terminal",
+                    "sessionId": null,
+                    "gridPosition": { "row": 0, "col": 1 },
+                    "kind": "conversation",
+                    "conversationId": "conv-123"
+                }
+            ],
+            "projectPath": "/repo",
+            "prompt": null,
+            "createdAt": 1,
+            "updatedAt": 2,
+            "status": "active"
+        }"#;
+
+        let dto: WorkspaceDto = serde_json::from_str(json).expect("workspace dto should parse");
+        let core: core_workspace::Workspace = dto.into();
+
+        let pane = &core.panes[0];
+        assert_eq!(pane.agent_id, "terminal");
+        assert_eq!(pane.kind.as_deref(), Some("conversation"));
+        assert_eq!(pane.conversation_id.as_deref(), Some("conv-123"));
+
+        let back: WorkspaceDto = core.into();
+        let value = serde_json::to_value(back).unwrap();
+        // Inert carrier: never serialized as agentId "conversation".
+        assert_eq!(value["panes"][0]["agentId"], "terminal");
+        assert_eq!(value["panes"][0]["kind"], "conversation");
+        assert_eq!(value["panes"][0]["conversationId"], "conv-123");
     }
 
     #[test]

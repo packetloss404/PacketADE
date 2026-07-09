@@ -39,6 +39,52 @@ function snapshotForPersist(conv: AgentConversation): PersistedAgentConversation
   };
 }
 
+/** Directory (relative to the base checkout) under which conversation
+ * worktrees live. Mirrors the Rust constant (`src-tauri/src/core/worktree.rs`
+ * `WORKTREES_DIR`); kept in sync by convention, not import (client can't read
+ * Rust consts). */
+const WORKTREES_DIR = ".pkt-worktrees";
+
+/**
+ * tile-program D — READ-LAYER derivation of worktree provenance for LEGACY
+ * conversations that predate the persisted `worktree` field. A legacy worktree
+ * launch stored the worktree path directly as the conversation's `projectPath`
+ * (`<base>/.pkt-worktrees/<convId>`) and DISCARDED its base branch — the
+ * unlandable-work root cause. This reconstructs the derivable parts from the
+ * projectPath shape alone, WITHOUT mutating or persisting anything:
+ *
+ *   - Returns null when the conversation already carries an explicit
+ *     `worktree` (nothing to derive), for SSH conversations (remote worktrees
+ *     live under the remote path, not reconstructable client-side), or when
+ *     `projectPath` doesn't end in `.pkt-worktrees/<id>` (it ran in the root).
+ *   - `baseBranch` is intentionally left undefined — the base was thrown away
+ *     at launch, and Phase 2's land UI requires an explicit base pick for
+ *     these. `state` is "active" (legacy worktrees were never landed by an
+ *     endings flow, which didn't exist yet).
+ *
+ * Consumers call this on demand (e.g. the land/discard UI); the derived value
+ * is NEVER written back through `scheduleSave`, so legacy conversation files
+ * stay byte-identical.
+ */
+export function deriveLegacyWorktree(
+  conv: AgentConversation,
+): NonNullable<AgentConversation["worktree"]> | null {
+  if (conv.worktree) return null;
+  if (conv.sshTarget) return null;
+  const marker = `/${WORKTREES_DIR}/${conv.id}`;
+  const normalized = conv.projectPath.replace(/\\/g, "/");
+  if (!normalized.endsWith(marker)) return null;
+  const basePath = conv.projectPath.slice(0, conv.projectPath.length - marker.length);
+  if (basePath.length === 0) return null;
+  return {
+    basePath,
+    worktreePath: conv.projectPath,
+    branch: `pkt/${conv.id}`,
+    createdAt: conv.createdAt,
+    state: "active",
+  };
+}
+
 /** Debounced save: per-conversation timers so rapid streaming events coalesce. */
 const SAVE_DEBOUNCE_MS = 500;
 const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();

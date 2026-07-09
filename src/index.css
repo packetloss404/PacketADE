@@ -4,6 +4,7 @@
 @import "@fontsource/inter/700.css";
 @import "react-mosaic-component/react-mosaic-component.css";
 @import "./styles/mosaic-overrides.css";
+@import "./styles/conversation-tile.css";
 
 @tailwind base;
 @tailwind components;

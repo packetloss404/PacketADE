@@ -519,7 +519,19 @@ async fn install_prepare_commit_msg_hook_for_issue(
 }
 
 /// Remove a local git worktree. Idempotent — missing worktree is not an error.
-pub async fn remove_local_worktree(base: &str, attempt_id: &str) -> Result<(), String> {
+///
+/// When `delete_branch` is true, the `pkt/<attempt_id>` branch is additionally
+/// force-deleted (`git branch -D`) AFTER the worktree dir is gone — git refuses
+/// to delete a branch that is still checked out in a linked worktree, so order
+/// matters. Branch deletion is best-effort (a missing/absent branch is not an
+/// error): the caller — currently only the conversation Discard path — treats
+/// the dir removal as the operation that must succeed. Flight cleanup passes
+/// false to preserve its prior behavior (worktree removed, branch retained).
+pub async fn remove_local_worktree(
+    base: &str,
+    attempt_id: &str,
+    delete_branch: bool,
+) -> Result<(), String> {
     let path = worktree_path(base, attempt_id)?;
     if !std::path::Path::new(&path).exists() {
         return Ok(());
@@ -532,6 +544,20 @@ pub async fn remove_local_worktree(base: &str, attempt_id: &str) -> Result<(), S
             code,
             stderr.trim()
         ));
+    }
+    if delete_branch {
+        let branch = branch_name(attempt_id);
+        match run_local_git(base, &["branch", "-D", &branch]).await {
+            Ok((_, stderr, code)) if code != 0 => {
+                // Non-fatal: the worktree is already gone; a leftover branch is
+                // a cleanup miss, not a failure of the discard itself.
+                warn!(branch = %branch, stderr = %stderr.trim(), "git branch -D failed after worktree remove (non-fatal)");
+            }
+            Ok(_) => {}
+            Err(e) => {
+                warn!(branch = %branch, error = %e, "git branch -D errored after worktree remove (non-fatal)");
+            }
+        }
     }
     Ok(())
 }
@@ -1071,5 +1097,118 @@ mod tests {
             "carriage return leaked: {:?}",
             cleaned
         );
+    }
+
+    // --- P2-S2: remove_local_worktree delete_branch flag ---
+
+    /// Build a fixture repo with a conversation worktree at
+    /// `.pkt-worktrees/<conv_id>` on branch `pkt/<conv_id>`, mirroring how
+    /// `create_local_worktree` provisions them. Uses the std (sync) git binary
+    /// for setup so the async removal under test is the only tokio call.
+    fn fixture_repo_with_worktree(tag: &str, conv_id: &str) -> std::path::PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!("packetade-wtdel-{}-{}", tag, nanos));
+        std::fs::create_dir_all(&root).expect("create temp repo dir");
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .output()
+                .expect("git run")
+                .status
+                .success();
+            assert!(ok, "git {:?} failed", args);
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "test@packetade.test"]);
+        git(&["config", "user.name", "PacketADE Test"]);
+        git(&["checkout", "-q", "-b", "main"]);
+        std::fs::write(root.join("f.txt"), "base\n").expect("write f.txt");
+        git(&["add", "f.txt"]);
+        git(&["commit", "-q", "-m", "init"]);
+        let wt = format!(".pkt-worktrees/{}", conv_id);
+        let branch = format!("pkt/{}", conv_id);
+        git(&["worktree", "add", "-q", "-b", &branch, &wt, "main"]);
+        root
+    }
+
+    fn branch_exists(root: &std::path::Path, branch: &str) -> bool {
+        let out = std::process::Command::new("git")
+            .args(["branch", "--list", branch])
+            .current_dir(root)
+            .output()
+            .expect("git branch --list");
+        !String::from_utf8_lossy(&out.stdout).trim().is_empty()
+    }
+
+    #[tokio::test]
+    async fn remove_local_worktree_without_flag_leaks_the_branch() {
+        let conv = "conv-keep";
+        let root = fixture_repo_with_worktree("keep", conv);
+        let base = root.to_string_lossy().to_string();
+        let wt = root.join(".pkt-worktrees").join(conv);
+
+        remove_local_worktree(&base, conv, false)
+            .await
+            .expect("worktree removal succeeds");
+
+        assert!(!wt.exists(), "worktree dir should be gone");
+        // Prior behavior preserved: the branch is retained (flight cleanup).
+        assert!(
+            branch_exists(&root, &format!("pkt/{}", conv)),
+            "branch must survive when delete_branch is false"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn remove_local_worktree_with_flag_deletes_dir_and_branch() {
+        let conv = "conv-discard";
+        let root = fixture_repo_with_worktree("discard", conv);
+        let base = root.to_string_lossy().to_string();
+        let wt = root.join(".pkt-worktrees").join(conv);
+        // Commit work on the branch so it is NOT reachable from main — a plain
+        // `-d` would refuse; the Discard path uses `-D` (force).
+        std::fs::write(wt.join("f.txt"), "base\nfrom-conv\n").unwrap();
+        let git_wt = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&wt)
+                .output()
+                .expect("git run")
+                .status
+                .success();
+            assert!(ok, "git {:?} failed in worktree", args);
+        };
+        git_wt(&["add", "-A"]);
+        git_wt(&["commit", "-q", "-m", "conv work"]);
+
+        remove_local_worktree(&base, conv, true)
+            .await
+            .expect("worktree removal succeeds");
+
+        assert!(!wt.exists(), "worktree dir should be gone");
+        assert!(
+            !branch_exists(&root, &format!("pkt/{}", conv)),
+            "branch must be force-deleted when delete_branch is true"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn remove_local_worktree_missing_is_ok() {
+        let conv = "conv-missing";
+        let root = fixture_repo_with_worktree("missing", conv);
+        let base = root.to_string_lossy().to_string();
+        // Remove once (with flag) then again — the second call is a no-op.
+        remove_local_worktree(&base, conv, true).await.expect("first removal");
+        remove_local_worktree(&base, conv, true)
+            .await
+            .expect("idempotent second removal");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

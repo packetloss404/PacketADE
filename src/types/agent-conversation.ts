@@ -154,4 +154,35 @@ export interface AgentConversation {
    * "← back to plan" link in the chat header. Undefined for normal
    * standalone conversations. */
   parentConversationId?: string;
+  /** T3.F / tile-program D: worktree provenance for conversations launched in
+   * worktree mode. Stamped at provisioning in `launchConversation` (the
+   * `baseBranch` that was historically computed then discarded — the
+   * unlandable-work root cause — is now retained here). Field names are
+   * AttemptTarget/Attempt-isomorphic (see `src/types/flight.ts`). Absent for
+   * conversations that ran directly in the project root. Legacy worktree
+   * conversations (predating this field) derive `basePath`/`worktreePath`/
+   * `branch` at the READ layer via `deriveLegacyWorktree` — those derived
+   * values are NEVER persisted, and `baseBranch` stays undefined because the
+   * base was discarded at their launch (Phase 2's land UI requires an
+   * explicit base pick for them). */
+  worktree?: {
+    /** The parent repository checkout the worktree branches off of. */
+    basePath: string;
+    /** Absolute path of the worktree itself (`<basePath>/.pkt-worktrees/<id>`). */
+    worktreePath: string;
+    /** The dedicated branch the worktree runs on (`pkt/<id>`). */
+    branch: string;
+    /** The branch the worktree was cut from. Undefined for legacy worktrees
+     * whose base was discarded at provisioning. */
+    baseBranch?: string;
+    /** Provisioning timestamp (ms since epoch). */
+    createdAt: number;
+    /** Lifecycle: "active" until landed (squash-merged) or discarded. */
+    state: "active" | "landed" | "discarded";
+    /** P2-S2: the PR number opened for this branch via
+     * `gitPublish.publishBranchAsPr` (Attempt.draftPrNumber-isomorphic).
+     * Recorded so the worktree safe-cleanup predicate can ask GitHub whether
+     * that PR reports merged. Undefined until a PR is published. */
+    prNumber?: number;
+  };
 }

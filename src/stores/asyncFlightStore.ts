@@ -4,11 +4,10 @@ import {
   cancelFlightAttempt,
   cleanupAttemptWorktreeSsh,
   markAttemptStatus,
-  gitPushBranch,
-  githubCreatePr,
   setAttemptDraftPr,
   type AttemptTargetSpec,
 } from "@/lib/tauri";
+import { publishBranchAsPr } from "@/lib/gitPublish";
 import { useFlightStore } from "@/stores/flightStore";
 import {
   useAgentTaskStore,
@@ -145,48 +144,45 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
   const branchName = attempt.branch;
   const baseBranch = attempt.baseBranch || "main";
 
-  // 1. Push the attempt branch to origin (sets upstream on first push).
-  try {
-    await gitPushBranch(worktreePath, branchName, false);
-  } catch (err) {
-    const msg = typeof err === "string" ? err : ((err as Error)?.message ?? "push failed");
-    console.warn("publishAttemptAsDraftPr: push failed for", attempt.id, msg);
-    patchAttempt(flight.id, attempt.id, {
-      errorMessage: `Draft-PR publish: branch push failed — ${msg}`,
-    });
-    return;
-  }
-
-  // 2. Build the PR body from the flight objective / prompt. Cap at the
-  //    PR-body size GitHub accepts (~65 KiB) so we never trip a 422.
+  // 1–3. Build the PR body from the flight objective / prompt (capped at the
+  //   PR-body size GitHub accepts, ~65 KiB, so we never trip a 422), then push
+  //   the branch + open the draft PR through the shared publish path
+  //   (`gitPublish.publishBranchAsPr`). Errors are classified by stage and
+  //   surfaced onto the attempt with the same copy as before (behavior-
+  //   preserving extraction — flights and sessions call the same path now).
   let body = flight.objective || flight.prompt || "";
   body = body.slice(0, 60_000);
   body = `Auto-generated from PacketADE Flight \`${flight.id}\` attempt \`${attempt.id}\`.\n\n${body}`;
 
   const title = `[Flight ${flight.title}] Attempt ${attempt.id}`.slice(0, 256);
 
-  // 3. Open the draft PR.
-  let prNumber: number | null = null;
-  try {
-    const json = await githubCreatePr(
-      selectedRepo.owner,
-      selectedRepo.repo,
-      title,
-      body,
-      branchName,
-      baseBranch,
-      true, // draft
-    );
-    const pr = JSON.parse(json) as { number?: number };
-    if (typeof pr.number === "number") prNumber = pr.number;
-  } catch (err) {
-    const msg = typeof err === "string" ? err : ((err as Error)?.message ?? "create_pr failed");
-    console.warn("publishAttemptAsDraftPr: create_pr failed for", attempt.id, msg);
-    patchAttempt(flight.id, attempt.id, {
-      errorMessage: `Draft-PR publish: GitHub create_pr failed — ${msg}`,
-    });
+  const result = await publishBranchAsPr({
+    worktreePath,
+    branch: branchName,
+    baseBranch,
+    owner: selectedRepo.owner,
+    repo: selectedRepo.repo,
+    title,
+    body,
+    draft: true,
+  });
+
+  if (!result.ok) {
+    if (result.stage === "push") {
+      console.warn("publishAttemptAsDraftPr: push failed for", attempt.id, result.message);
+      patchAttempt(flight.id, attempt.id, {
+        errorMessage: `Draft-PR publish: branch push failed — ${result.message}`,
+      });
+    } else {
+      console.warn("publishAttemptAsDraftPr: create_pr failed for", attempt.id, result.message);
+      patchAttempt(flight.id, attempt.id, {
+        errorMessage: `Draft-PR publish: GitHub create_pr failed — ${result.message}`,
+      });
+    }
     return;
   }
+
+  const prNumber = result.prNumber;
 
   if (prNumber == null) {
     console.warn(

@@ -3,7 +3,7 @@ import { loadFromStorage, saveToStorage, generateId } from "@/lib/storage";
 import { writePty } from "@/lib/tauri";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useAppStore } from "@/stores/appStore";
+import { focusConversationDeepLink } from "@/stores/sessionGlue";
 import { API_PROVIDERS, getDefaultModel } from "@/lib/api-models";
 import { SCOUT_SYSTEM_PROMPT, SCOUT_ALLOWED_TOOLS, SCOUT_MEMORY_CONTEXT_DEFAULT } from "@/lib/scout-config";
 import type { PromptTemplate } from "@/types/prompt";
@@ -101,7 +101,10 @@ export const usePromptStore = create<PromptStore>((set, get) => ({
       allowedTools: SCOUT_ALLOWED_TOOLS,
       memoryContextEnabled: SCOUT_MEMORY_CONTEXT_DEFAULT,
     });
+    // Tile program (P5-S1): retargeted from setActiveView("agents") to the
+    // materializing deep-link path — the Scout conversation lands on a real,
+    // focused workspace tile instead of the retired Agents tab.
     useAgentTaskStore.getState().selectConversation(id);
-    useAppStore.getState().setActiveView("agents");
+    focusConversationDeepLink(id);
   },
 }));

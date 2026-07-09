@@ -25,6 +25,18 @@ export interface ApiProviderInfo {
   name: string;
   models: ApiModel[];
   needsKey: boolean;
+  /**
+   * P1-S4 (Codex honesty): whether this provider's adapter can honor a
+   * per-tool approval round-trip. The OpenAI Codex `exec` adapter maps
+   * EVERY PermissionMode to a sandbox+`never` tuple — its stdin is closed,
+   * so the `-a on-request` interactive-approval flow "can't work here" (the
+   * stdin route was tried and reverted in commit baa8be1;
+   * `agent-sidecar/src/providers/openai-codex.ts`). Undefined is treated as
+   * `true` (approval-capable) for every other provider. When `false`, the
+   * mode pickers filter to only the postures the sandbox can actually
+   * enforce (see `agentModeChipUtils.modesForApprovals`).
+   */
+  supportsApprovals?: boolean;
 }
 
 export const API_PROVIDERS: ApiProviderInfo[] = [
@@ -58,6 +70,10 @@ export const API_PROVIDERS: ApiProviderInfo[] = [
     agentCli: "api-openai-codex",
     name: "OpenAI (ChatGPT Plus/Pro)",
     needsKey: false,
+    // Codex `exec` cannot service ANY approval round-trip — every mode maps
+    // to sandbox + `-a never`; the sandbox IS the safety boundary. Drives
+    // the capability-filtered mode set (P1-S4).
+    supportsApprovals: false,
     // NOTE: gpt-5-codex is NOT available on a ChatGPT (Plus/Pro) account —
     // Codex returns 400 "model is not supported when using Codex with a
     // ChatGPT account". It's API-key-only, so it must not appear here. The
@@ -159,6 +175,16 @@ export function getProviderForAgent(agent: AgentCli): ApiProviderInfo | undefine
 export function getDefaultModel(agent: AgentCli): string {
   const provider = getProviderForAgent(agent);
   return provider?.models[0]?.value ?? "";
+}
+
+/**
+ * P1-S4 (Codex honesty): whether the given agent's adapter can honor a
+ * per-tool approval round-trip. Providers with no catalog entry (e.g. PTY
+ * CLI agents) and providers that omit the flag are treated as
+ * approval-capable — only `api-openai-codex` is explicitly `false`.
+ */
+export function providerSupportsApprovals(agent: AgentCli): boolean {
+  return getProviderForAgent(agent)?.supportsApprovals ?? true;
 }
 
 export type ModelSpeed = "fast" | "balanced" | "thorough";

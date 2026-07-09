@@ -157,6 +157,39 @@ pub fn get_status(project_path: &str) -> Result<String, String> {
     }
 }
 
+/// P1-S4 (clickable git rows): read a file's committed content at `HEAD`
+/// so the frontend can diff it against the working-tree copy through the
+/// shared DiffRows engine. Returns:
+/// - `Ok(Some(content))` — the file exists in `HEAD` (content returned
+///   verbatim, NO trimming, so the diff is byte-faithful);
+/// - `Ok(None)` — the path is untracked / newly added, or the repo has no
+///   commit yet (nothing to diff against → treat the whole file as added);
+/// - `Err(..)` — any other git failure.
+///
+/// `rel_path` is repo-root-relative with forward slashes (as produced by
+/// `git status --short`). Callers pass the NEW-side path for renames.
+pub fn get_file_head_content(project_path: &str, rel_path: &str) -> Result<Option<String>, String> {
+    let spec = format!("HEAD:{}", rel_path);
+    let output = git_command(&["show", &spec], project_path)?;
+    if output.status.success() {
+        return Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()));
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
+    // Path not present in HEAD (untracked / newly added), or no HEAD yet
+    // (fresh repo) — both mean "no prior content", i.e. a fully-added file.
+    let no_prior = stderr.contains("does not exist")
+        || stderr.contains("exists on disk, but not in")
+        || stderr.contains("bad revision")
+        || stderr.contains("unknown revision")
+        || stderr.contains("invalid object name")
+        || stderr.contains("ambiguous argument");
+    if no_prior {
+        Ok(None)
+    } else {
+        Err(stderr.trim().to_string())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct GitCommitContext {
     pub flight_id: Option<String>,
@@ -483,9 +516,292 @@ pub fn safety_check(project_path: &str) -> GitSafetyReport {
     }
 }
 
+/// P2-S1: outcome of a successful `merge_conversation_branch`. Carries the
+/// squash-commit SHA plus the two cleanup flags the caller needs to flip
+/// `worktree.state -> "landed"`. A `false` cleanup flag is non-fatal — the
+/// merge itself already landed; it only means post-merge cleanup was
+/// incomplete (e.g. the worktree was already gone).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeBranchOutcome {
+    /// SHA (`rev-parse HEAD`) after the squash commit. When the branch was
+    /// already fully merged this is the unchanged prior HEAD.
+    pub commit_sha: String,
+    /// The `pkt/<convId>` branch was force-deleted (`-D`).
+    pub branch_deleted: bool,
+    /// The conversation worktree directory was removed.
+    pub worktree_removed: bool,
+    /// The squash produced no commit — the branch had no changes vs. the root
+    /// (already merged / empty). When true NOTHING was landed and the caller
+    /// MUST NOT report "landed": no commit was created, the branch and the
+    /// (verified-clean) worktree are left in place so the user can Discard
+    /// explicitly. Guards against a dishonest "Landed" on an empty branch.
+    pub nothing_to_land: bool,
+}
+
+/// P2-S1: land a conversation's work by squash-merging its `pkt/<convId>`
+/// branch into the root checkout's current branch, then cleaning up.
+///
+/// Ruled safety semantics:
+/// - **Dirty-root refusal.** Refuses (Err, nothing touched) when the root
+///   checkout has any uncommitted change. NOTE: an active conversation
+///   worktree always registers `.pkt-worktrees/` as untracked in the root,
+///   so the clean check deliberately excludes that path — a literal
+///   `safety_check`/`git_safety_check` (which counts it) would refuse every
+///   merge. Real user dirt (tracked-file edits, other untracked files)
+///   still refuses.
+/// - **Conflict recovery.** `git merge --squash` records no `MERGE_HEAD`,
+///   so `git merge --abort` does not apply; on any merge failure we
+///   `git reset --hard HEAD` (safe precisely because the root was verified
+///   clean) leaving BOTH the root checkout AND the conversation worktree
+///   byte-identical to their pre-merge state. Returns Err.
+/// - **Success.** Creates the squash commit, removes the worktree dir, then
+///   force-deletes the branch (`-D`; a squash leaves no ancestry for `-d`).
+pub fn merge_conversation_branch(
+    project_path: &str,
+    branch: &str,
+    squash: bool,
+) -> Result<MergeBranchOutcome, String> {
+    validate_branch_name(branch)?;
+
+    // --- Dirty-root guard (git_safety_check semantics; see doc note) -----
+    if get_branch(project_path).is_err() {
+        return Err("Not a git repository".to_string());
+    }
+    let dirt = root_dirt_ignoring_worktrees(project_path)?;
+    if !dirt.is_empty() {
+        return Err(format!(
+            "Cannot land: the root checkout has {} uncommitted change(s). Commit or stash them first.",
+            dirt.len()
+        ));
+    }
+
+    // --- Dirty-worktree guard (ruled: "every non-Discard removal path
+    // dirty-checks first" / "Discard is the only path allowed to remove a
+    // dirty tree"). The cleanup below runs `git worktree remove --force`,
+    // which would silently blow away uncommitted work (tracked edits OR
+    // untracked agent output) that a squash of only the *committed* branch
+    // tip never lands. Refuse first, touching nothing. -------------------
+    let wt_dirt = conversation_worktree_dirt(project_path, branch)?;
+    if !wt_dirt.is_empty() {
+        return Err(format!(
+            "Cannot land: the conversation worktree has {} uncommitted change(s). Commit them in the worktree first (Finish → Commit), then land.",
+            wt_dirt.len()
+        ));
+    }
+
+    // --- Merge (+ explicit conflict recovery) ----------------------------
+    let head_before = git_command_result(&["rev-parse", "HEAD"], project_path)?;
+    let commit_sha = squash_merge_into_head(project_path, branch, squash)?;
+
+    // Nothing was landed: the squash staged no changes (branch already merged
+    // / empty), so HEAD did not move. Do NOT clean up and do NOT report as a
+    // landing — leave the (verified-clean) worktree + branch so the user can
+    // Discard explicitly rather than get a dishonest "Landed" on empty work.
+    if commit_sha == head_before {
+        return Ok(MergeBranchOutcome {
+            commit_sha,
+            branch_deleted: false,
+            worktree_removed: false,
+            nothing_to_land: true,
+        });
+    }
+
+    // --- Cleanup (best-effort; the merge already landed) -----------------
+    // Remove the worktree BEFORE deleting the branch: git refuses to delete
+    // a branch that is checked out in a linked worktree.
+    let worktree_removed = remove_conversation_worktree_dir(project_path, branch);
+    let branch_deleted = git_command(&["branch", "-D", branch], project_path)
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    Ok(MergeBranchOutcome {
+        commit_sha,
+        branch_deleted,
+        worktree_removed,
+        nothing_to_land: false,
+    })
+}
+
+/// Non-empty `git status --short` lines for the conversation worktree that
+/// `branch` (`pkt/<convId>`) is checked out in. Empty when the worktree dir is
+/// absent or `branch` is not a `pkt/` branch (nothing to force-remove). Any
+/// uncommitted change here — a tracked edit OR an untracked file — counts as
+/// dirty, matching `isWorktreeDirty` on the TS side, so Merge back refuses
+/// rather than `git worktree remove --force` over unsaved work.
+fn conversation_worktree_dirt(project_path: &str, branch: &str) -> Result<Vec<String>, String> {
+    let conv_id = match branch.strip_prefix("pkt/") {
+        Some(id) if !id.is_empty() => id,
+        _ => return Ok(Vec::new()),
+    };
+    let path = match crate::core::worktree::worktree_path(project_path, conv_id) {
+        Ok(p) => p,
+        Err(_) => return Ok(Vec::new()),
+    };
+    if !std::path::Path::new(&path).exists() {
+        return Ok(Vec::new());
+    }
+    let out = git_command_result(&["status", "--short"], &path)?;
+    Ok(out
+        .lines()
+        .map(|l| l.trim_end().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
+}
+
+/// Non-empty lines from `git status --short` with the `.pkt-worktrees/`
+/// worktree parent excluded — an active conversation worktree always shows
+/// up there as untracked and must not count as user dirt.
+fn root_dirt_ignoring_worktrees(project_path: &str) -> Result<Vec<String>, String> {
+    let out = git_command_result(
+        &["status", "--short", "--", ".", ":(exclude).pkt-worktrees"],
+        project_path,
+    )?;
+    Ok(out
+        .lines()
+        .map(|l| l.trim_end().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
+}
+
+/// Squash-merge `branch` into HEAD and create the commit. On any merge
+/// failure, recover the root to its pre-merge clean state and return Err.
+fn squash_merge_into_head(
+    project_path: &str,
+    branch: &str,
+    squash: bool,
+) -> Result<String, String> {
+    let mut args: Vec<&str> = vec!["merge"];
+    if squash {
+        args.push("--squash");
+    } else {
+        args.push("--no-ff");
+        args.push("--no-edit");
+    }
+    args.push(branch);
+
+    let output = git_command(&args, project_path)?;
+    if !output.status.success() {
+        // Recover. `--abort` handles the `--no-ff` case (has MERGE_HEAD); it
+        // is a harmless no-op for squash (no MERGE_HEAD). The unconditional
+        // hard reset restores index + working tree to the pre-merge HEAD —
+        // safe because the caller verified the root was clean, so nothing of
+        // the user's is discarded.
+        let _ = git_command(&["merge", "--abort"], project_path);
+        let _ = git_command(&["reset", "--hard", "HEAD"], project_path);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let conflicted = stdout.contains("CONFLICT") || stderr.contains("CONFLICT");
+        let detail = {
+            let s = stderr.trim();
+            if s.is_empty() {
+                stdout.trim().to_string()
+            } else {
+                s.to_string()
+            }
+        };
+        return Err(if conflicted {
+            format!(
+                "Merge conflict — nothing was landed; your checkout and the worktree are unchanged. {}",
+                detail
+            )
+        } else {
+            format!("Merge failed — nothing was landed. {}", detail)
+        });
+    }
+
+    if squash {
+        // `git merge --squash` stages without committing. If nothing was
+        // staged the branch was already merged / empty — return HEAD.
+        if !has_staged_changes(project_path)? {
+            return git_command_result(&["rev-parse", "HEAD"], project_path);
+        }
+        let msg = format!("Merge branch '{}' (squash)", branch);
+        let commit = git_command(&["commit", "-m", &msg], project_path)?;
+        if !commit.status.success() {
+            let _ = git_command(&["reset", "--hard", "HEAD"], project_path);
+            let stderr = String::from_utf8_lossy(&commit.stderr).trim().to_string();
+            return Err(format!("Squash commit failed — nothing landed. {}", stderr));
+        }
+    }
+    git_command_result(&["rev-parse", "HEAD"], project_path)
+}
+
+/// Remove the worktree dir for `pkt/<convId>` via `git worktree remove
+/// --force` (which also prunes the admin metadata). Returns true when the
+/// dir is gone afterwards. Best-effort: derives the conv id from the `pkt/`
+/// branch prefix and reuses `worktree::worktree_path`.
+fn remove_conversation_worktree_dir(project_path: &str, branch: &str) -> bool {
+    let conv_id = match branch.strip_prefix("pkt/") {
+        Some(id) if !id.is_empty() => id,
+        _ => return false,
+    };
+    let path = match crate::core::worktree::worktree_path(project_path, conv_id) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    if !std::path::Path::new(&path).exists() {
+        return true;
+    }
+    git_command(&["worktree", "remove", "--force", &path], project_path)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Init a throwaway git repo in a unique temp dir with one committed
+    /// file. Mirrors the tempdir convention used elsewhere (no extra
+    /// dev-dependency). Returns the repo path.
+    fn fixture_repo(tag: &str, rel: &str, committed: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("packetade-githead-{}-{}", tag, nanos));
+        std::fs::create_dir_all(&dir).expect("create temp repo dir");
+        let run = |args: &[&str]| {
+            let ok = Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git run")
+                .status
+                .success();
+            assert!(ok, "git {:?} failed", args);
+        };
+        run(&["init", "-q"]);
+        run(&["config", "user.email", "test@packetade.test"]);
+        run(&["config", "user.name", "PacketADE Test"]);
+        std::fs::write(dir.join(rel), committed).expect("write file");
+        run(&["add", rel]);
+        run(&["commit", "-q", "-m", "init"]);
+        dir
+    }
+
+    #[test]
+    fn get_file_head_content_returns_committed_version_not_working_copy() {
+        let repo = fixture_repo("committed", "foo.txt", "line1\n");
+        let path = repo.to_string_lossy().to_string();
+        // Dirty the working copy — HEAD content must still be the committed one.
+        std::fs::write(repo.join("foo.txt"), "line1\nline2\n").unwrap();
+        let head = get_file_head_content(&path, "foo.txt").expect("ok");
+        assert_eq!(head, Some("line1\n".to_string()));
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn get_file_head_content_is_none_for_untracked_file() {
+        let repo = fixture_repo("untracked", "foo.txt", "hi\n");
+        let path = repo.to_string_lossy().to_string();
+        std::fs::write(repo.join("new.txt"), "brand new\n").unwrap();
+        let head = get_file_head_content(&path, "new.txt").expect("ok");
+        assert_eq!(head, None);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
 
     #[test]
     fn validate_branch_name_rejects_flag_injection() {
@@ -627,5 +943,224 @@ mod tests {
         // `stage_files`/`unstage_files` prevents this from being
         // interpreted as a flag.
         assert!(validate_stage_path("-weird").is_ok());
+    }
+
+    // ----------------------------------------------------------------
+    // P2-S1 — merge_conversation_branch fixture tests
+    // ----------------------------------------------------------------
+
+    /// Run git in `dir`, asserting success.
+    fn git_ok(dir: &std::path::Path, args: &[&str]) {
+        let ok = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("git run")
+            .status
+            .success();
+        assert!(ok, "git {:?} failed in {:?}", args, dir);
+    }
+
+    /// Build a fixture repo with one committed file plus a conversation
+    /// worktree at `.pkt-worktrees/<conv_id>` on branch `pkt/<conv_id>`,
+    /// mirroring how `create_local_worktree` provisions them. Returns the
+    /// root repo path.
+    fn fixture_repo_with_worktree(tag: &str, conv_id: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!("packetade-merge-{}-{}", tag, nanos));
+        std::fs::create_dir_all(&root).expect("create temp repo dir");
+        git_ok(&root, &["init", "-q"]);
+        git_ok(&root, &["config", "user.email", "test@packetade.test"]);
+        git_ok(&root, &["config", "user.name", "PacketADE Test"]);
+        // Deterministic base-branch name across git versions/hosts.
+        git_ok(&root, &["checkout", "-q", "-b", "main"]);
+        std::fs::write(root.join("f.txt"), "base\n").expect("write f.txt");
+        git_ok(&root, &["add", "f.txt"]);
+        git_ok(&root, &["commit", "-q", "-m", "init"]);
+        // Provision the conversation worktree the way the app does.
+        let wt = format!(".pkt-worktrees/{}", conv_id);
+        let branch = format!("pkt/{}", conv_id);
+        git_ok(&root, &["worktree", "add", "-q", "-b", &branch, &wt, "main"]);
+        root
+    }
+
+    #[test]
+    fn merge_conversation_branch_squash_lands_and_cleans_up() {
+        let conv = "conv1";
+        let root = fixture_repo_with_worktree("happy", conv);
+        let wt = root.join(".pkt-worktrees").join(conv);
+        // Do work + commit inside the worktree.
+        std::fs::write(wt.join("f.txt"), "base\nfrom-conv\n").unwrap();
+        std::fs::write(wt.join("added.txt"), "new\n").unwrap();
+        git_ok(&wt, &["add", "-A"]);
+        git_ok(&wt, &["commit", "-q", "-m", "conv work"]);
+
+        let base = root.to_string_lossy().to_string();
+        let out = merge_conversation_branch(&base, &format!("pkt/{}", conv), true)
+            .expect("merge should succeed");
+
+        // Squash commit landed on the base branch.
+        let log = git_command_result(&["log", "--oneline", "-1"], &base).unwrap();
+        assert!(log.contains("squash"), "expected squash commit, got: {}", log);
+        assert_eq!(out.commit_sha, git_command_result(&["rev-parse", "HEAD"], &base).unwrap());
+        // Changes are present in the root checkout.
+        assert_eq!(std::fs::read_to_string(root.join("f.txt")).unwrap(), "base\nfrom-conv\n");
+        assert!(root.join("added.txt").exists());
+        // Branch deleted, worktree dir removed.
+        assert!(out.branch_deleted);
+        assert!(out.worktree_removed);
+        assert!(!wt.exists(), "worktree dir should be gone");
+        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(branches.trim().is_empty(), "branch should be deleted, got: {}", branches);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn merge_conversation_branch_refuses_dirty_root() {
+        let conv = "conv2";
+        let root = fixture_repo_with_worktree("dirty", conv);
+        let wt = root.join(".pkt-worktrees").join(conv);
+        std::fs::write(wt.join("f.txt"), "base\nfrom-conv\n").unwrap();
+        git_ok(&wt, &["add", "-A"]);
+        git_ok(&wt, &["commit", "-q", "-m", "conv work"]);
+        // Dirty the ROOT (a real, tracked-file edit — not the worktree dir).
+        std::fs::write(root.join("f.txt"), "base\nlocal-uncommitted\n").unwrap();
+
+        let base = root.to_string_lossy().to_string();
+        let err = merge_conversation_branch(&base, &format!("pkt/{}", conv), true)
+            .expect_err("dirty root must refuse");
+        assert!(err.contains("uncommitted"), "unexpected error: {}", err);
+        // Nothing landed: branch + worktree still present, root edit intact.
+        assert!(wt.exists());
+        assert_eq!(
+            std::fs::read_to_string(root.join("f.txt")).unwrap(),
+            "base\nlocal-uncommitted\n"
+        );
+        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(!branches.trim().is_empty(), "branch must survive a refused merge");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn merge_conversation_branch_conflict_leaves_both_intact() {
+        let conv = "conv3";
+        let root = fixture_repo_with_worktree("conflict", conv);
+        let wt = root.join(".pkt-worktrees").join(conv);
+        // Worktree changes the shared line + adds a file, then commits.
+        std::fs::write(wt.join("f.txt"), "from-conv\n").unwrap();
+        std::fs::write(wt.join("wt-only.txt"), "wt\n").unwrap();
+        git_ok(&wt, &["add", "-A"]);
+        git_ok(&wt, &["commit", "-q", "-m", "conv work"]);
+        // Root diverges on the SAME line and commits (root stays clean).
+        std::fs::write(root.join("f.txt"), "from-root\n").unwrap();
+        git_ok(&root, &["add", "f.txt"]);
+        git_ok(&root, &["commit", "-q", "-m", "root diverge"]);
+
+        let base = root.to_string_lossy().to_string();
+        // Capture byte-level pre-state of both checkouts.
+        let root_head_before = git_command_result(&["rev-parse", "HEAD"], &base).unwrap();
+        let root_f_before = std::fs::read(root.join("f.txt")).unwrap();
+        let wt_f_before = std::fs::read(wt.join("f.txt")).unwrap();
+        let wt_only_before = std::fs::read(wt.join("wt-only.txt")).unwrap();
+
+        let err = merge_conversation_branch(&base, &format!("pkt/{}", conv), true)
+            .expect_err("conflict must be refused");
+        assert!(err.contains("conflict"), "unexpected error: {}", err);
+
+        // Root checkout is byte-identical (HEAD + working file) and clean.
+        assert_eq!(git_command_result(&["rev-parse", "HEAD"], &base).unwrap(), root_head_before);
+        assert_eq!(std::fs::read(root.join("f.txt")).unwrap(), root_f_before);
+        assert!(
+            root_dirt_ignoring_worktrees(&base).unwrap().is_empty(),
+            "root must be clean after conflict recovery"
+        );
+        // Worktree untouched (branch + files intact, byte-identical).
+        assert!(wt.exists());
+        assert_eq!(std::fs::read(wt.join("f.txt")).unwrap(), wt_f_before);
+        assert_eq!(std::fs::read(wt.join("wt-only.txt")).unwrap(), wt_only_before);
+        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(!branches.trim().is_empty(), "branch must survive a conflict");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn merge_conversation_branch_rejects_flag_injection_branch() {
+        let root = fixture_repo_with_worktree("inject", "conv4");
+        let base = root.to_string_lossy().to_string();
+        assert!(merge_conversation_branch(&base, "--delete", true).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn merge_conversation_branch_refuses_dirty_worktree() {
+        // Ruled invariant: no non-Discard path removes a dirty tree. An
+        // uncommitted change in the conversation worktree (here: a brand-new
+        // untracked file that a squash of the committed tip would never land)
+        // must make Merge back refuse, leaving the worktree + branch intact.
+        let conv = "conv5";
+        let root = fixture_repo_with_worktree("dirtywt", conv);
+        let wt = root.join(".pkt-worktrees").join(conv);
+        // Commit one thing so the branch IS ahead of base...
+        std::fs::write(wt.join("f.txt"), "base\nfrom-conv\n").unwrap();
+        git_ok(&wt, &["add", "-A"]);
+        git_ok(&wt, &["commit", "-q", "-m", "conv work"]);
+        // ...but leave an uncommitted tail in the worktree (tracked edit +
+        // untracked agent output) that force-removal would silently destroy.
+        std::fs::write(wt.join("f.txt"), "base\nfrom-conv\nuncommitted-tail\n").unwrap();
+        std::fs::write(wt.join("agent-output.txt"), "unsaved\n").unwrap();
+
+        let base = root.to_string_lossy().to_string();
+        let root_head_before = git_command_result(&["rev-parse", "HEAD"], &base).unwrap();
+        let err = merge_conversation_branch(&base, &format!("pkt/{}", conv), true)
+            .expect_err("dirty worktree must refuse");
+        assert!(err.contains("uncommitted"), "unexpected error: {}", err);
+
+        // Nothing removed: worktree dir + its unsaved files survive, branch
+        // survives, root HEAD unchanged (no squash commit landed).
+        assert!(wt.exists(), "dirty worktree must not be force-removed");
+        assert_eq!(
+            std::fs::read_to_string(wt.join("f.txt")).unwrap(),
+            "base\nfrom-conv\nuncommitted-tail\n"
+        );
+        assert!(wt.join("agent-output.txt").exists(), "untracked work must survive");
+        assert_eq!(git_command_result(&["rev-parse", "HEAD"], &base).unwrap(), root_head_before);
+        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(!branches.trim().is_empty(), "branch must survive a refused merge");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn merge_conversation_branch_nothing_to_land_keeps_worktree() {
+        // Clean worktree with ZERO commits ahead of base: there is nothing to
+        // land. The command must NOT report a landing, NOT create a commit,
+        // and NOT remove the (clean) worktree/branch — the caller keeps it so
+        // the user can Discard explicitly instead of seeing a false "Landed".
+        let conv = "conv6";
+        let root = fixture_repo_with_worktree("empty", conv);
+        let wt = root.join(".pkt-worktrees").join(conv);
+
+        let base = root.to_string_lossy().to_string();
+        let head_before = git_command_result(&["rev-parse", "HEAD"], &base).unwrap();
+        let out = merge_conversation_branch(&base, &format!("pkt/{}", conv), true)
+            .expect("empty branch is a no-op success, not an error");
+
+        assert!(out.nothing_to_land, "empty branch must flag nothing_to_land");
+        assert!(!out.branch_deleted);
+        assert!(!out.worktree_removed);
+        // HEAD unchanged (no squash commit), worktree + branch preserved.
+        assert_eq!(out.commit_sha, head_before);
+        assert_eq!(git_command_result(&["rev-parse", "HEAD"], &base).unwrap(), head_before);
+        assert!(wt.exists(), "clean-but-empty worktree must be kept");
+        let branches = git_command_result(&["branch", "--list", &format!("pkt/{}", conv)], &base).unwrap();
+        assert!(!branches.trim().is_empty(), "branch must survive when nothing landed");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

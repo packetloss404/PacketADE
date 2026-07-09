@@ -2,18 +2,20 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useEditorStore } from "@/stores/editorStore";
-import { useAgentStore } from "@/stores/agentStore";
-import { useServerStore } from "@/stores/serverStore";
+import { useDraftTileStore } from "@/stores/draftTileStore";
 import { WorkspaceMosaicContainer } from "@/components/workspace/WorkspaceMosaicContainer";
 import { WorkspaceCreationModal } from "@/components/workspace/WorkspaceCreationModal";
+import { AddAgentPicker } from "@/components/workspace/AddAgentPicker";
+import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
 import { OnboardingPane } from "@/components/onboarding/OnboardingPane";
 import { EditorPane } from "@/components/editor/EditorPane";
 import { isOnboardingComplete } from "@/lib/onboarding";
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { LayoutGrid, GitBranch, FileText, Plus, Zap } from "lucide-react";
 import { GitDashboard } from "@/components/workspace/GitDashboard";
 import { getAgentColor } from "@/lib/agentColors";
-import type { WorkspaceAgentSlot, Workspace } from "@/types/workspace";
+import { useWorkspaceStatuses, attentionDot } from "@/lib/sessionStatus";
+import type { WorkspaceAgentSlot } from "@/types/workspace";
 
 const agentLabel: Record<WorkspaceAgentSlot, string> = {
   terminal: "Terminal",
@@ -32,13 +34,17 @@ export function WorkspaceView() {
   const initialized = useAppStore((s) => s.initialized);
   const projectPath = useLayoutStore((s) => s.projectPath);
   const [onboardingDone, setOnboardingDone] = useState<boolean>(() => isOnboardingComplete());
-  const [gitPanelOpen, setGitPanelOpen] = useState(false);
-  const [addAgentOpen, setAddAgentOpen] = useState(false);
+  // Git panel open-state lives in appStore so the in-tile ReviewBar "Finish →
+  // Commit…" CTA can open the endings surface (openGitPanelForConversation).
+  const gitPanelOpen = useAppStore((s) => s.gitPanelOpen);
+  const setGitPanelOpen = useAppStore((s) => s.setGitPanelOpen);
+  const gitPanelConversationId = useAppStore((s) => s.gitPanelConversationId);
   const [showCreate, setShowCreate] = useState(false);
-  const addAgentRef = useRef<HTMLDivElement>(null);
-  const addPane = useWorkspaceStore((s) => s.addPane);
-  const agents = useAgentStore((s) => s.agents);
-  const servers = useServerStore((s) => s.servers);
+  const drafts = useDraftTileStore((s) => s.drafts);
+  // Tile program (P4-S1): the tab-strip dot reads the SINGLE status truth
+  // (sessionStatus rollup — max severity across member tiles), not a local
+  // liveness heuristic.
+  const workspaceStatuses = useWorkspaceStatuses();
 
   const openFiles = useEditorStore((s) => s.openFiles);
   const activeFileId = useEditorStore((s) => s.activeFileId);
@@ -50,36 +56,31 @@ export function WorkspaceView() {
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const activeNonArchived = workspaces.filter((w) => w.status === "active");
-  const isAgentInstalledForWorkspace = (agent: WorkspaceAgentSlot, workspace: Workspace) => {
-    if (agent === "terminal") return true;
-    if (workspace.serverId) {
-      const server = servers.find((srv) => srv.id === workspace.serverId);
-      return !!server?.installedAgents.includes(agent);
-    }
-    return !!agents.find((cfg) => cfg.id === agent)?.installed;
-  };
+
+  // Scope the GitDashboard's WorktreeLifecycleBar to the conversation the
+  // "Finish → Commit…" CTA opened it for — but only while that conversation
+  // actually has a tile in the workspace on screen (else fall back to the plain
+  // git view). Guards against a stale scope after a workspace switch.
+  const scopedGitConversationId =
+    gitPanelConversationId &&
+    activeWorkspace?.panes.some(
+      (p) => p.kind === "conversation" && p.conversationId === gitPanelConversationId,
+    )
+      ? gitPanelConversationId
+      : undefined;
 
   const showOnboarding =
     initialized && !onboardingDone && activeNonArchived.length === 0 && !projectPath;
 
   const bypassOn = activeWorkspace?.bypassPermissions ?? false;
 
-  // Close add-agent popover on outside click
-  useEffect(() => {
-    if (!addAgentOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (addAgentRef.current && !addAgentRef.current.contains(e.target as Node)) {
-        setAddAgentOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [addAgentOpen]);
-
-  // Count agents per type for the active workspace
+  // Count agents per type for the active workspace. Tile program (P1-S1): the
+  // header badges are keyed on `kind` — conversation panes carry the inert
+  // carrier agentId "terminal" and must NOT be counted as terminals here.
   const agentCounts: Partial<Record<WorkspaceAgentSlot, number>> = {};
   if (activeWorkspace) {
     for (const pane of activeWorkspace.panes) {
+      if (pane.kind === "conversation") continue;
       agentCounts[pane.agentId] = (agentCounts[pane.agentId] || 0) + 1;
     }
   }
@@ -97,7 +98,7 @@ export function WorkspaceView() {
             <div className="flex items-stretch gap-0 overflow-x-auto">
               {activeNonArchived.map((ws) => {
                 const isActive = ws.id === activeWorkspaceId;
-                const dot = workspaceStatusDot(ws);
+                const dot = attentionDot(workspaceStatuses.get(ws.id) ?? "idle");
                 return (
                   <button
                     key={ws.id}
@@ -141,66 +142,15 @@ export function WorkspaceView() {
                   );
                 })}
               {activeWorkspace && (
-                <div className="relative" ref={addAgentRef}>
-                  <button
-                    onClick={() => setAddAgentOpen((v) => !v)}
-                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-                      addAgentOpen
-                        ? "bg-accent-green/20 text-accent-green"
-                        : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary"
-                    }`}
-                    title="Add agent to workspace"
-                  >
-                    <Plus size={11} />
-                    Add Agent
-                  </button>
-                  {addAgentOpen && (
-                    <div className="absolute right-0 top-full z-50 mt-1 min-w-[150px] rounded border border-bg-border bg-bg-tertiary py-1 shadow-lg">
-                      {(
-                        [
-                          "claude-code",
-                          "codex",
-                          "gemini",
-                          "opencode",
-                          "packetcode",
-                          "terminal",
-                        ] as WorkspaceAgentSlot[]
-                      ).map((agent) => {
-                        const installed = isAgentInstalledForWorkspace(agent, activeWorkspace);
-                        return (
-                          <button
-                            key={agent}
-                            onClick={() => {
-                              if (!installed) return;
-                              addPane(activeWorkspace.id, agent);
-                              setAddAgentOpen(false);
-                            }}
-                            disabled={!installed}
-                            title={
-                              installed
-                                ? `Add ${agentLabel[agent]}`
-                                : `${agentLabel[agent]} is not installed for this workspace`
-                            }
-                            className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors ${
-                              installed
-                                ? "text-text-secondary hover:bg-bg-secondary hover:text-text-primary"
-                                : "cursor-not-allowed text-text-muted opacity-50"
-                            }`}
-                          >
-                            <span
-                              className={`h-2 w-2 rounded-full ${getAgentColor(agent).text} bg-current`}
-                            />
-                            {agentLabel[agent]}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <AddAgentPicker
+                  workspace={activeWorkspace}
+                  variant="popover"
+                  onOpenTemplates={() => setShowCreate(true)}
+                />
               )}
               {activeWorkspace && (
                 <button
-                  onClick={() => setGitPanelOpen((v) => !v)}
+                  onClick={() => setGitPanelOpen(!gitPanelOpen)}
                   className={`rounded p-1 transition-colors ${
                     gitPanelOpen
                       ? "bg-accent-green/20 text-accent-green"
@@ -237,15 +187,36 @@ export function WorkspaceView() {
           <div className="flex flex-1 flex-col overflow-hidden">
             {/* All active workspaces stay mounted so PTY sessions persist */}
             {initialized &&
-              activeNonArchived.map((ws) => (
-                <div
-                  key={ws.id}
-                  className="flex flex-1 flex-col overflow-hidden"
-                  style={{ display: ws.id === activeWorkspaceId ? "flex" : "none" }}
-                >
-                  <WorkspaceMosaicContainer workspace={ws} />
-                </div>
-              ))}
+              activeNonArchived.map((ws) => {
+                // Workspace zero-state: an empty workspace (no panes, no draft
+                // tiles) hosts the inline AddAgentPicker centered — first agent
+                // and Nth agent are one flow. A draft tile counts as non-empty
+                // so the mosaic (which renders it) mounts instead.
+                const draftCount = drafts.filter((d) => d.workspaceId === ws.id).length;
+                const empty = ws.panes.length === 0 && draftCount === 0;
+                return (
+                  <div
+                    key={ws.id}
+                    className="flex flex-1 flex-col overflow-hidden"
+                    style={{ display: ws.id === activeWorkspaceId ? "flex" : "none" }}
+                  >
+                    {empty ? (
+                      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
+                        <div className="text-center text-xs text-text-muted">
+                          Add your first agent to this workspace
+                        </div>
+                        <AddAgentPicker
+                          workspace={ws}
+                          variant="inline"
+                          onOpenTemplates={() => setShowCreate(true)}
+                        />
+                      </div>
+                    ) : (
+                      <WorkspaceMosaicContainer workspace={ws} />
+                    )}
+                  </div>
+                );
+              })}
           </div>
 
           {/* Editor panel.
@@ -313,6 +284,7 @@ export function WorkspaceView() {
                 }
                 workspaceId={activeWorkspace.id}
                 serverId={activeWorkspace.serverId}
+                conversationId={scopedGitConversationId}
               />
             </div>
           )}
@@ -329,18 +301,13 @@ export function WorkspaceView() {
               <p className="text-xs">Select a workspace from the sidebar or create a new one</p>
             </div>
           ))}
+
+        {/* Tile program (P5-S1): AgentsOnboarding re-homed from the retired
+            AgentsView to the workspace empty-fleet state. Self-gates on
+            onboardingDismissed (renders null once dismissed); shown here so the
+            first-run welcome survives the Agents tab's retirement. */}
+        {initialized && !activeWorkspace && <AgentsOnboarding />}
       </div>
     </div>
   );
-}
-
-function workspaceStatusDot(ws: Workspace): { className: string; pulse: boolean } {
-  const live = ws.panes.some((p) => p.sessionId);
-  if (live) {
-    return { className: "bg-accent-green", pulse: true };
-  }
-  if (ws.panes.length > 0) {
-    return { className: "bg-accent-amber", pulse: false };
-  }
-  return { className: "bg-text-faint", pulse: false };
 }

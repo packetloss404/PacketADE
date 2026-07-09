@@ -12,10 +12,19 @@ import { X } from "lucide-react";
 
 type ToastVariant = "default" | "error" | "success";
 
+/** An optional inline action button on a toast (e.g. "Review worktree").
+ *  Additive — existing callers pass no action and render exactly as before. */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastOptions {
   variant?: ToastVariant;
   /** Auto-dismiss delay in ms. Pass 0 to disable auto-dismiss. Defaults to 5000. */
   duration?: number;
+  /** Optional single action button rendered before the dismiss control. */
+  action?: ToastAction;
 }
 
 interface Toast {
@@ -23,6 +32,7 @@ interface Toast {
   message: string;
   variant: ToastVariant;
   duration: number;
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
@@ -54,7 +64,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const duration = opts?.duration ?? DEFAULT_DURATION;
     setToasts((prev) => [
       ...prev,
-      { id, message, variant: opts?.variant ?? "default", duration },
+      { id, message, variant: opts?.variant ?? "default", duration, action: opts?.action },
     ]);
   }, []);
 
@@ -106,6 +116,17 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
       } ${variants[toast.variant]}`}
     >
       <span className="flex-1 min-w-0 break-words leading-snug">{toast.message}</span>
+      {toast.action && (
+        <button
+          onClick={() => {
+            toast.action?.onClick();
+            onDismiss(toast.id);
+          }}
+          className="flex-shrink-0 self-center rounded border border-current/30 px-1.5 py-0.5 text-[11px] font-medium hover:bg-current/10 transition-colors"
+        >
+          {toast.action.label}
+        </button>
+      )}
       <button
         onClick={() => onDismiss(toast.id)}
         aria-label="Dismiss"

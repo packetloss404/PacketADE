@@ -6,6 +6,22 @@ export interface WorkspacePane {
   sessionId: string | null;
   gridPosition?: { row: number; col: number };
   pinnedCommands?: string[]; // max 5 saved commands
+  /**
+   * Pane kind discriminant (tile program, P1-S1). Absent ⇒ terminal — an old
+   * cache or an old binary that never wrote this field degrades to a plain
+   * terminal pane. `kind` is the SOLE discriminant; `agentId` is never
+   * overloaded with "conversation". Conversation panes persist the inert
+   * carrier `agentId: "terminal"` so a downgraded binary renders a harmless
+   * terminal pane (its `From<String>` catch-all never sees "conversation").
+   */
+  kind?: "terminal" | "conversation";
+  /**
+   * Set iff `kind === "conversation"`. Points at the owning AgentConversation
+   * (reference direction is pane→conversationId only). Enforced by
+   * `normalizePanes`: a conversation pane whose id was stripped self-heals to a
+   * terminal pane.
+   */
+  conversationId?: string;
 }
 
 export interface Workspace {
@@ -31,4 +47,15 @@ export interface Workspace {
    * repo-context picker.
    */
   githubRepo?: { owner: string; repo: string };
+  /**
+   * Tile program (P1-S2): origin marker for auto-materialized conversation
+   * wrappers. `"conversation"` tags a workspace created by
+   * `sessionGlue.openSession` (deterministic id `ws-wrap-<convId>`) to wrap a
+   * standalone conversation; absent for normal user-created workspaces. Round-
+   * trips through the DTO via the same `#[serde(default)]` inert pattern as the
+   * pane-level `kind`/`conversationId`, so an old binary that drops it degrades
+   * cleanly. The reconciliation sweep uses it to identify orphaned wrappers
+   * whose conversation pane was stripped by an old-binary re-save.
+   */
+  origin?: "conversation";
 }

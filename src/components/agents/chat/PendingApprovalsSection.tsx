@@ -33,6 +33,14 @@ interface PendingApprovalsSectionProps {
   respondPermission: ApprovalStore["respondPermission"];
   cancelPendingTools: ApprovalStore["cancelPendingTools"];
   appendAllowedToolPattern: TaskStore["appendAllowedToolPattern"];
+  /**
+   * Y/N focus gate (P3-S1). Undefined → no pane context (standalone
+   * AgentsView), armed exactly as today. Defined → the document-level
+   * Allow/Deny handler arms iff true, so only the focused conversation tile
+   * answers a keypress. Extends the existing arming condition; the visible
+   * prompts still render regardless.
+   */
+  keyboardScopeActive?: boolean;
 }
 
 export function PendingApprovalsSection({
@@ -42,6 +50,7 @@ export function PendingApprovalsSection({
   respondPermission,
   cancelPendingTools,
   appendAllowedToolPattern,
+  keyboardScopeActive,
 }: PendingApprovalsSectionProps) {
   const totalCount = pendingPermissions.length;
 
@@ -76,10 +85,15 @@ export function PendingApprovalsSection({
   // still the target, so a stacked queue can be drained from the keyboard
   // without expanding. The typing-context guards below keep "y"/"n" usable
   // in the composer and any focused input.
+  // Dual-mode focus gate (P3-S1): no pane context (undefined) → armed as
+  // today; pane context → armed iff this instance holds keyboard scope.
+  const scopeArmed = keyboardScopeActive === undefined || keyboardScopeActive;
+
   useEffect(() => {
     if (totalCount === 0) return;
     if (commandPaletteOpen) return;
     if (!topPermission) return;
+    if (!scopeArmed) return;
 
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
@@ -107,6 +121,7 @@ export function PendingApprovalsSection({
     topPermission,
     conversationId,
     respondPermission,
+    scopeArmed,
   ]);
 
   if (pendingPermissions.length === 0) {

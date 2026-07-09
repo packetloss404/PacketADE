@@ -50,6 +50,23 @@ const STATUS_DISPLAY: Record<string, { label: string; className: string }> = {
 interface AgentChatPaneProps {
   conversationId: string;
   onClose: () => void;
+  /**
+   * Where this pane is mounted. "standalone" is the AgentsView single-pane
+   * host (default — byte-identical to pre-tile behavior); "tile" is the
+   * mosaic ConversationTile (P3-S2). Strictly additive: no fork, no
+   * extraction. Threaded to the root wrapper as a data attribute so tile
+   * chrome and later frame-conditional behavior have a hook without altering
+   * standalone rendering.
+   */
+  frame?: "standalone" | "tile";
+  /**
+   * Y/N keyboard focus gate for the protected approval shortcuts. Undefined
+   * (no pane context, e.g. standalone AgentsView) → armed exactly as today.
+   * Defined (tile context) → the document-level Y/N handlers arm iff true, so
+   * only the focused tile responds to a keypress. The tile passes
+   * `activePaneId === pane.id` in P3-S2.
+   */
+  keyboardScopeActive?: boolean;
 }
 
 // "← back to plan" link shown when this conversation was spawned by a
@@ -73,7 +90,12 @@ function BackToParentLink({ parentId }: { parentId: string }) {
   );
 }
 
-export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
+export function AgentChatPane({
+  conversationId,
+  onClose,
+  frame = "standalone",
+  keyboardScopeActive,
+}: AgentChatPaneProps) {
   const conversation = useAgentTaskStore((s) =>
     s.conversations.find((c) => c.id === conversationId),
   );
@@ -228,12 +250,21 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
     }
   }
 
+  // aria-live is gated to the focused tile (P3-S3): with N tiles all live at
+  // once, every tile announcing its stream would be a screen-reader screech.
+  // `keyboardScopeActive` is undefined in standalone (announce, byte-identical
+  // to today) and the isFocused boolean in tile frame (announce iff focused).
+  const announce = keyboardScopeActive !== false;
+
   const chatContent = (
     <div className="flex h-full flex-col">
       {/* Header bar — sparkle avatar + title + agent/status chips. Single row
           snapped to the shared h-[33px] baseline; project/branch/cost moved
-          into the thin SessionMetaLine below. */}
-      <div className="flex h-[33px] shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3">
+          into the thin SessionMetaLine below. The `agent-chat-header` hook is
+          inert in standalone (all @container rules are scoped to
+          [data-frame="tile"] in conversation-tile.css) and turns the row into a
+          query container only inside a tile. */}
+      <div className="agent-chat-header flex h-[33px] shrink-0 items-center gap-2.5 border-b border-bg-border bg-bg-secondary px-3">
         <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border border-accent-line bg-accent-soft">
           <Sparkles size={13} className="text-accent-green" />
         </div>
@@ -244,13 +275,15 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${agentColor.text} bg-current ${isActive ? "animate-pulse motion-reduce:animate-none" : ""}`}
           />
-          <span className={`text-meta font-medium ${status.className}`}>{status.label}</span>
+          <span className={`tile-hide-narrow text-meta font-medium ${status.className}`}>
+            {status.label}
+          </span>
           {conversation.sshTarget && (
             <Tooltip
               content={`Tools run on ${conversation.sshTarget.user}@${conversation.sshTarget.host}:${conversation.sshTarget.remotePath}`}
               side="bottom"
             >
-              <span className="flex items-center gap-1 rounded bg-accent-soft px-1.5 py-0.5 text-meta text-accent-green">
+              <span className="tile-hide-narrow flex items-center gap-1 rounded bg-accent-soft px-1.5 py-0.5 text-meta text-accent-green">
                 <Server size={10} />
                 {conversation.sshTarget.host}
               </span>
@@ -274,11 +307,13 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           onSetApproveWrites={(on) => void actions.setApproveWrites(conversationId, on)}
           onChangeModel={(model) => void actions.changeModel(conversationId, model)}
           onExport={() => void handleExport(conversation)}
+          frame={frame}
+          pendingApprovalCount={pendingApprovalCount}
         />
       </div>
 
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {status.label}. {lastAssistantText}
+      <div aria-live={announce ? "polite" : "off"} aria-atomic="true" className="sr-only">
+        {announce ? `${status.label}. ${lastAssistantText}` : ""}
       </div>
 
       <SessionMetaLine conversation={conversation} />
@@ -357,6 +392,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         respondPermission={approvalActions.respondPermission}
         cancelPendingTools={approvalActions.cancelPendingTools}
         appendAllowedToolPattern={actions.appendAllowedToolPattern}
+        keyboardScopeActive={keyboardScopeActive}
       />
 
       {(conversation.pendingDiffComments?.length ?? 0) > 0 && (
@@ -374,6 +410,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           pendingEdits={pendingEdits}
           pendingPermissionCount={pendingPermissions.length}
           respondEdit={approvalActions.respondEdit}
+          keyboardScopeActive={keyboardScopeActive}
         />
       )}
 
@@ -389,7 +426,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   );
 
   return (
-    <div className="flex h-full bg-bg-primary">
+    <div className="flex h-full bg-bg-primary" data-frame={frame}>
       <div className="min-w-0 flex-1">{chatContent}</div>
     </div>
   );
