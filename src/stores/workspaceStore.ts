@@ -91,6 +91,62 @@ function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
 const WORKSPACES_CACHE_KEY = "packetade:workspaces-cache";
 
 /**
+ * Tile program (P1-S1): defensive normalization of a single pane read from an
+ * untrusted source (the blindly-`JSON.parse`d localStorage cache, or backend
+ * hydration).
+ *
+ * - Missing/blank `kind` ⇒ terminal (absent kind means terminal — an old cache
+ *   or an old binary that never wrote the field degrades cleanly).
+ * - `kind` is the SOLE discriminant; `agentId` is never overloaded. Conversation
+ *   panes carry the inert carrier `agentId: "terminal"`.
+ * - Invariant `conversationId set iff kind === "conversation"` is enforced: a
+ *   pane tagged conversation but missing a string `conversationId` self-heals to
+ *   a plain terminal pane (the inert-carrier arm — the sweep half of self-heal
+ *   lands in P1-S2). A terminal pane never keeps a stray `conversationId`.
+ * - Malformed panes (not an object, or no string `id`) are dropped.
+ * - Unknown fields are preserved (forward-compat with a newer build's cache).
+ *
+ * Returns `null` for a pane that should be dropped.
+ */
+function normalizePane(raw: unknown): WorkspacePane | null {
+  if (!raw || typeof raw !== "object") return null;
+  const pane = raw as Record<string, unknown>;
+  if (typeof pane.id !== "string") return null;
+
+  const isConversation =
+    pane.kind === "conversation" && typeof pane.conversationId === "string";
+
+  // Preserve unknown fields, then override the discriminant pair so the
+  // invariant always holds regardless of what was on disk.
+  const normalized = { ...pane } as Record<string, unknown>;
+  if (isConversation) {
+    normalized.kind = "conversation";
+    normalized.conversationId = pane.conversationId;
+  } else {
+    normalized.kind = "terminal";
+    delete normalized.conversationId;
+  }
+  return normalized as unknown as WorkspacePane;
+}
+
+/**
+ * Tile program (P1-S1): apply {@link normalizePane} across every workspace's
+ * panes, dropping any pane that fails to normalize. Applied to BOTH the
+ * localStorage cache and backend hydration so a conversation pane round-trips
+ * and a stripped-carrier pane self-heals to a terminal.
+ */
+export function normalizePanes(workspaces: Workspace[]): Workspace[] {
+  return workspaces.map((w) => ({
+    ...w,
+    panes: Array.isArray(w.panes)
+      ? w.panes
+          .map((pane) => normalizePane(pane))
+          .filter((pane): pane is WorkspacePane => pane !== null)
+      : [],
+  }));
+}
+
+/**
  * Read the cached workspace list from localStorage. Lets the welcome screen
  * render with workspaces on day-2+ launches before the backend round-trip
  * completes — avoids the brief empty → populated flicker.
@@ -101,7 +157,7 @@ function loadCachedWorkspaces(): Workspace[] {
     const cached = localStorage.getItem(WORKSPACES_CACHE_KEY);
     if (!cached) return [];
     const parsed = JSON.parse(cached);
-    return Array.isArray(parsed) ? (parsed as Workspace[]) : [];
+    return Array.isArray(parsed) ? normalizePanes(parsed as Workspace[]) : [];
   } catch {
     return [];
   }
@@ -370,6 +426,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           ...w,
           panes: w.panes.filter((p) => p.id !== paneId),
           agents: (() => {
+            // Tile program (P1-S1): `agents` is keyed on `kind`, not agentId.
+            // Conversation panes were never pushed into `agents` (they carry the
+            // inert carrier agentId "terminal"), so removing one must NOT splice
+            // a real terminal out of the agents list. Skip the mutation.
+            if (pane.kind === "conversation") return w.agents;
             // Remove one occurrence of this agent from the agents list
             const idx = w.agents.indexOf(pane.agentId);
             if (idx === -1) return w.agents;
@@ -394,8 +455,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   hydrateFromBackend: (workspaces) => {
     if (workspaces) {
-      set({ workspaces });
-      syncToLocalStorage(workspaces);
+      // Tile program (P1-S1): normalize on the way in from the backend too, so
+      // a stripped-carrier conversation pane self-heals and missing kinds
+      // default to terminal before anything renders.
+      const normalized = normalizePanes(workspaces);
+      set({ workspaces: normalized });
+      syncToLocalStorage(normalized);
     }
   },
 }));

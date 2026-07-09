@@ -1420,6 +1420,13 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition,
       pinnedCommands: pane.pinnedCommands,
+      // Tile program (P1-S1): thread the kind discriminant + conversationId
+      // through hydration or they silently drop on the next save. The invariant
+      // (conversationId set iff kind==="conversation", absent kind ⇒ terminal)
+      // is enforced by normalizePanes in workspaceStore, which runs over this
+      // hydrated result.
+      kind: pane.kind === "conversation" ? "conversation" : undefined,
+      conversationId: pane.conversationId,
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
@@ -1446,6 +1453,14 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
       sessionId: pane.sessionId,
       gridPosition: pane.gridPosition ?? { row: 0, col: index },
       pinnedCommands: pane.pinnedCommands,
+      // Tile program (P1-S1): only conversation panes carry kind/conversationId
+      // in the persisted shape — terminal panes stay byte-identical so old
+      // binaries and the five-field-era round-trip are unaffected. The inert
+      // carrier `agentId: "terminal"` is set at pane construction, so a
+      // downgraded binary that ignores `kind` renders a harmless terminal pane.
+      ...(pane.kind === "conversation"
+        ? { kind: "conversation" as const, conversationId: pane.conversationId }
+        : {}),
     })),
     projectPath: workspace.projectPath,
     prompt: workspace.prompt,
