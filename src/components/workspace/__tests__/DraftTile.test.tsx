@@ -18,6 +18,26 @@ import type { Workspace } from "@/types/workspace";
 const launchMock = vi.fn();
 const addConversationPane = vi.fn(() => "ws-pane-mat");
 
+// M1(a): the default profile the tile resolves at send time. Tests mutate this
+// to prove the profile's memory flag reaches launchConversation.
+let defaultProfile: {
+  id: string;
+  memoryContextEnabled: boolean;
+  systemPrompt: string;
+  allowedTools: string[] | null;
+} = {
+  id: "builtin-default",
+  memoryContextEnabled: false,
+  systemPrompt: "",
+  allowedTools: null,
+};
+
+vi.mock("@/stores/profileStore", () => ({
+  useProfileStore: Object.assign(vi.fn(), {
+    getState: () => ({ getDefaultProfile: () => defaultProfile }),
+  }),
+}));
+
 vi.mock("@/lib/launchConversation", () => ({
   launchConversation: (params: LaunchConversationParams) => launchMock(params),
 }));
@@ -58,6 +78,12 @@ describe("DraftTile", () => {
     vi.clearAllMocks();
     useDraftTileStore.setState({ drafts: [] });
     useAgentDraftStore.setState({ drafts: {} });
+    defaultProfile = {
+      id: "builtin-default",
+      memoryContextEnabled: false,
+      systemPrompt: "",
+      allowedTools: null,
+    };
   });
 
   it("renders the sparkle first-run face", () => {
@@ -125,5 +151,31 @@ describe("DraftTile", () => {
     // ...and the draft (its footer chips) is gone — folded into the tile header.
     expect(useDraftTileStore.getState().drafts).toHaveLength(0);
     expect(useAgentDraftStore.getState().drafts[id]).toBeUndefined();
+  });
+
+  it("M1(a): passes the resolved default profile through so a memory-enabled profile reaches the launcher", () => {
+    // The Agent Profiles memory checkbox flips this flag on the default
+    // profile; the tile launch must carry that profile (not a hardcoded
+    // `undefined`) so createApiConversation actually composes a brief.
+    defaultProfile = {
+      id: "builtin-default",
+      memoryContextEnabled: true,
+      systemPrompt: "harness prompt",
+      allowedTools: null,
+    };
+
+    const id = seedDraft("api-claude", "claude-opus-4-8");
+    render(<DraftTile draftId={id} workspace={workspace} />);
+    fireEvent.change(screen.getByPlaceholderText("Describe the task…"), {
+      target: { value: "do it" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /send/i }));
+    });
+
+    const params = launchMock.mock.calls[0][0] as LaunchConversationParams;
+    expect(params.profile).toBeDefined();
+    expect(params.profile?.memoryContextEnabled).toBe(true);
+    expect(params.profile?.id).toBe("builtin-default");
   });
 });
