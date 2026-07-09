@@ -148,10 +148,11 @@ Conversations are now workspace tiles on the single surface (the standalone
 Agents tab was removed). No open items here today — the previous
 `AgentModeChip` provider-aware-labeling complaint has shipped.
 
-- **P3 — Ctrl+Shift+V shortcut collision.** `Ctrl/Cmd+Shift+V` is bound to two
-  actions at once in `src/App.tsx`: the transcript view-mode cycler and
-  push-to-talk dictation (`DEFAULT_PUSH_TO_TALK_SHORTCUT`). Pressing it fires
-  both. Disambiguate the binding. **(being fixed by H4 this wave.)**
+- ~~**P3 — Ctrl+Shift+V shortcut collision.**~~ — **RESOLVED (this wave, H4).**
+  The transcript view-mode cycler was moved off `Ctrl+Shift+V` (push-to-talk
+  dictation) to the otherwise-unbound `Ctrl+Shift+O`, ending the
+  two-handlers-one-chord collision (`src/hooks/useAgentTabHoists.ts`; guard test
+  in `src/hooks/__tests__/useAgentTabHoists.test.tsx`).
 
 ## Platform & distribution (from `dev/`)
 
@@ -463,8 +464,9 @@ batches have landed and are recorded in the changelog:
   derived frontend cache, so a backend-authoritative Flight↔issue link is a
   deliberate later effort.
 
-**Obsoleted by the single-surface refactor (files deleted — nothing to fix):**
-F49 (`FlightList.tsx`/`FlightsView.tsx`), F48 (`flights/FlightDetail.tsx` —
+**Obsoleted by the single-surface refactor (nothing to fix):**
+F49 (`FlightList.tsx` deleted; `FlightsView.tsx` no longer derives flight status
+from issues), F48 (`flights/FlightDetail.tsx` —
 already Batch A), F33 (`orchestrationSchedulerStore.ts` — already Batch B), and
 G31 (`orchestrationSchedulerStore.ts`). The referenced files no longer exist in
 the tile-program single surface.
@@ -518,7 +520,7 @@ refactor and await per-finding re-verification against current code.
 - ~~**F44 — `migrateLegacyStorage` mutates localStorage while iterating by index → loses keys**~~ — **SHIPPED (Batch A → CHANGELOG).**
 - **F46 — streamed UTF-8 multibyte corrupted when split across chunks (both streamers)** — `llm_anthropic.rs:213`, `llm_openai_compat.rs:234`.
 - ~~**F48 — FlightDetail unlink clears `issue.flightId` but not `flight.issueIds`**~~ — **SHIPPED (Batch A → CHANGELOG); `flights/FlightDetail.tsx` since deleted.**
-- ~~**F49 — flight status never recomputes when an issue changes**~~ — **OBSOLETE — `FlightList.tsx`/`FlightsView.tsx` deleted in the single-surface refactor.**
+- ~~**F49 — flight status never recomputes when an issue changes**~~ — **OBSOLETE — `FlightList.tsx` deleted; `FlightsView.tsx` no longer derives flight status from issues.**
 - **F51 — `flightStore.hydrateFromBackend()` clobbers in-flight optimistic mutations** — `flightStore.ts:688-698`.
 - ~~**F52 — `issueStore` localStorage-authoritative, never hydrated, lossy backend mirror**~~ — **SHIPPED (Batch A → CHANGELOG).**
 - **F55 — `FlightStatus` contract test asserts a hand-kept length, missing `spec`** — `__tests__/contract.test.ts:167-180`.
