@@ -967,7 +967,7 @@ function RemotePathProbeIndicator({ state }: { state: PathProbeState }) {
     return (
       <p className="flex items-center gap-1 text-meta text-accent-amber mt-1">
         <AlertTriangle size={10} />
-        Path does not exist — it will be created when the workspace starts.
+        Path does not exist on the host — create it before starting; it is not created automatically.
       </p>
     );
   }

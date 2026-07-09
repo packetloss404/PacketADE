@@ -152,7 +152,19 @@ function writeBooleanFlag(key: string, value: boolean) {
   }
 }
 
-let wsCounter = 0;
+/**
+ * F50: mint a collision-safe pane id. The prior `ws-pane-${++counter}` scheme
+ * restarted from 0 on every reload, so a freshly-minted pane could collide with
+ * a persisted pane that had claimed the same low number in an earlier session
+ * (duplicate keys → React reconciliation clobbering the wrong pane). Minting
+ * from `crypto.randomUUID()` — the same source the workspace id uses — makes the
+ * id unique across reloads. The `ws-pane-` prefix is retained so
+ * `draftTileStore`'s "never collides with `ws-pane-*`" invariant still holds and
+ * old persisted ids (opaque strings) keep working untouched.
+ */
+function mintPaneId(): string {
+  return `ws-pane-${crypto.randomUUID()}`;
+}
 
 /**
  * Tile program (P4-S1): monotonic token source for {@link PaneFocusRequest}.
@@ -163,7 +175,7 @@ let focusToken = 0;
 
 function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
   return agents.map((agent) => ({
-    id: `ws-pane-${++wsCounter}`,
+    id: mintPaneId(),
     agentId: agent,
     sessionId: null,
   }));
@@ -487,7 +499,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   addPane: (workspaceId, agentId) => {
-    const newPaneId = `ws-pane-${++wsCounter}`;
+    const newPaneId = mintPaneId();
     set(commitWorkspaces((s) => {
       const workspaces = s.workspaces.map((w) => {
         if (w.id !== workspaceId) return w;
@@ -509,7 +521,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   addConversationPane: (workspaceId, conversationId) => {
-    const newPaneId = `ws-pane-${++wsCounter}`;
+    const newPaneId = mintPaneId();
     let inserted = false;
     set(commitWorkspaces((s) => {
       const workspaces = s.workspaces.map((w) => {
@@ -618,7 +630,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (get().workspaces.some((w) => w.id === id)) return id;
     const now = Date.now();
     const pane: WorkspacePane = {
-      id: `ws-pane-${++wsCounter}`,
+      id: mintPaneId(),
       // Inert carrier — conversation panes persist agentId "terminal" so a
       // downgraded binary renders a harmless terminal pane; `kind` is the sole
       // discriminant.

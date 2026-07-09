@@ -8,7 +8,7 @@ import { sweepAutoArchive } from "@/stores/agentConversationPersistence";
 /**
  * Returns true when a keydown originated inside an editable element, so a
  * global shortcut can yield the keystroke to typing. Mirrors the guard the
- * retiring AgentsView used for Ctrl+N / Ctrl+Shift+V.
+ * retiring AgentsView used for Ctrl+N / the transcript view-mode cycler.
  */
 function isEditableTarget(e: KeyboardEvent): boolean {
   const target = e.target as HTMLElement | null;
@@ -28,12 +28,12 @@ function isEditableTarget(e: KeyboardEvent): boolean {
  *     a fresh empty workspace whose zero-state renders the inline
  *     `AddAgentPicker`; we switch to the Workspace surface so it is visible.
  *     Same typing guard as before, so the literal "n" still reaches inputs.
- *   - **Ctrl/Cmd+Shift+V** — cycle the global transcript view mode
- *     (Summary → Normal → Verbose). This is a SEPARATE listener from App's
- *     push-to-talk Ctrl+Shift+V handler; both fire on the chord exactly as they
- *     did while AgentsView was mounted (the push-to-talk handler lives in App's
- *     handleKeyDown and starts recording; this one cycles the transcript mode).
- *     The typing guard keeps the cycler from firing inside a composer.
+ *   - **Ctrl/Cmd+Shift+O** — cycle the global transcript view mode
+ *     (Summary → Normal → Verbose). Moved off Ctrl+Shift+V: that chord is
+ *     push-to-talk dictation (App's handleKeyDown), and both firing on one chord
+ *     meant the transcript view mode flipped every time dictation started.
+ *     Ctrl+Shift+O is otherwise unbound. The typing guard keeps the cycler from
+ *     firing inside a composer.
  *   - **sweepAutoArchive** — runs on mount and hourly thereafter, moved from
  *     AgentsView's mount effect to the App shell so the self-curating archive
  *     keeps sweeping without the Agents tab ever being opened.
@@ -57,11 +57,12 @@ export function useAgentTabHoists(): void {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Ctrl/Cmd+Shift+V → cycle transcript view mode (coexists with push-to-talk).
+  // Ctrl/Cmd+Shift+O → cycle transcript view mode (moved off Shift+V, which is
+  // push-to-talk dictation, to end the two-handlers-one-chord collision).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const isShortcut =
-        (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "v";
+        (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "o";
       if (!isShortcut) return;
       if (isEditableTarget(e)) return;
       e.preventDefault();

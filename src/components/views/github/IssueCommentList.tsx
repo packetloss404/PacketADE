@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { Loader2, MessageSquare } from "lucide-react";
 import { useGitHubStore } from "@/stores/githubStore";
 import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
+import { timeAgo } from "./shared";
 import type { GitHubIssue } from "@/types/github";
 
 interface IssueCommentListProps {
@@ -94,25 +95,4 @@ export function IssueCommentList({ issue }: IssueCommentListProps) {
       ))}
     </div>
   );
-}
-
-// Local copy of GitHubView's timeAgo — kept colocated so this component is
-// drop-in usable without dragging it back into the parent.
-function timeAgo(iso: string | undefined | null): string {
-  if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "";
-  const seconds = Math.max(1, Math.floor((Date.now() - t) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo`;
-  return `${Math.floor(days / 365)}y`;
 }

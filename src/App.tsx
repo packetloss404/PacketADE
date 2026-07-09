@@ -66,7 +66,7 @@ export default function App() {
   useGeminiStatusLinePoller();
   useOpenCodeStatusLinePoller();
   // Tile program (P5-S1): survivors hoisted out of the retiring AgentsView —
-  // Ctrl+N (new session), Ctrl+Shift+V (transcript view-mode cycler), and the
+  // Ctrl+N (new session), Ctrl+Shift+O (transcript view-mode cycler), and the
   // hourly sweepAutoArchive interval — now live at the App shell.
   useAgentTabHoists();
 
