@@ -88,7 +88,18 @@ export const slashCommandHandlers: Record<
           projectPath: conversation.projectPath,
           model,
           initialMessage: "",
-          systemPromptOverride: conversation.systemPromptOverride ?? null,
+          // M1(b): DO NOT inherit the old conversation's baked
+          // `systemPromptOverride`. That field stores the fully assembled
+          // prompt — memory brief + AGENTS.md already prepended at the old
+          // session's creation (see agentTaskStore.createApiConversation). If we
+          // passed it back in while also inheriting `memoryContextEnabled`,
+          // createApiConversation would prepend a SECOND brief, and it prepends
+          // AGENTS.md unconditionally (not gated on the flag), so a second
+          // AGENTS.md block too. Passing null lets createApiConversation rebuild
+          // exactly ONE brief (from the inherited flag) and ONE AGENTS.md for
+          // the fresh session. The profile's own prompt is not separately
+          // retained on the conversation, so it isn't re-applied here.
+          systemPromptOverride: null,
           planMode: conversation.planMode ?? false,
           sshTarget: null,
           skipBackendStart: false,
