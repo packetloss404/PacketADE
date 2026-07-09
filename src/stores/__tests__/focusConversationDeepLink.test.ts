@@ -57,7 +57,7 @@ function conv(overrides: Partial<AgentConversation> = {}): AgentConversation {
     title: "Fix bug",
     agent: "api-claude",
     projectPath: "/proj",
-    status: "working",
+    status: "active",
     messages: [],
     sessionId: "conv-1",
     rawOutput: "",
