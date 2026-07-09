@@ -47,4 +47,15 @@ export interface Workspace {
    * repo-context picker.
    */
   githubRepo?: { owner: string; repo: string };
+  /**
+   * Tile program (P1-S2): origin marker for auto-materialized conversation
+   * wrappers. `"conversation"` tags a workspace created by
+   * `sessionGlue.openSession` (deterministic id `ws-wrap-<convId>`) to wrap a
+   * standalone conversation; absent for normal user-created workspaces. Round-
+   * trips through the DTO via the same `#[serde(default)]` inert pattern as the
+   * pane-level `kind`/`conversationId`, so an old binary that drops it degrades
+   * cleanly. The reconciliation sweep uses it to identify orphaned wrappers
+   * whose conversation pane was stripped by an old-binary re-save.
+   */
+  origin?: "conversation";
 }
