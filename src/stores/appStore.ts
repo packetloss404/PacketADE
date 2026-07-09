@@ -1,7 +1,20 @@
 import { create } from "zustand";
 
-export type CoreView = "welcome" | "issues" | "flights" | "history" | "tools" | "github" | "memory" | "workspace" | "agents" | "cost_dashboard" | "dictation";
+export type CoreView = "welcome" | "issues" | "flights" | "history" | "tools" | "github" | "memory" | "workspace" | "cost_dashboard" | "dictation";
 export type AppView = CoreView | `mod:${string}`;
+
+/**
+ * Tile program (H3): the `"agents"` CoreView was retired with the Agents tab
+ * and its one-release redirect shim is now deleted. A legacy persisted
+ * `selectedView='agents'` string, or a stale pre-cutover deep link, must
+ * resolve to the workspace surface — never a value the render switch no longer
+ * handles (which would fall through to a blank screen). `setActiveView` runs
+ * every write to `activeView` through here, so this is the single normalization
+ * chokepoint for any straggler `"agents"` value that survives from disk.
+ */
+export function normalizeView(view: AppView): AppView {
+  return (view as string) === "agents" ? "workspace" : view;
+}
 
 export function isModuleView(view: AppView): boolean {
   return view.startsWith("mod:");
@@ -81,7 +94,7 @@ export const useAppStore = create<AppStore>((set) => ({
   gitPanelOpen: false,
   gitPanelConversationId: null,
   setInitialized: (initialized) => set({ initialized }),
-  setActiveView: (view) => set({ activeView: view }),
+  setActiveView: (view) => set({ activeView: normalizeView(view) }),
   setGitBranch: (branch) => set({ gitBranch: branch }),
   setClaudeVersion: (version) => set({ claudeVersion: version }),
   setIsMaximized: (maximized) => set({ isMaximized: maximized }),

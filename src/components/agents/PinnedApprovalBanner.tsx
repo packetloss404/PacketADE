@@ -2,30 +2,21 @@ import { useMemo } from "react";
 import { ShieldAlert } from "lucide-react";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
-import { useAppStore } from "@/stores/appStore";
 import { focusConversationDeepLink } from "@/stores/sessionGlue";
 
 /**
  * P1-9: pin approvals that scroll out of view. A blocking permission prompt
- * is only visible while its conversation is the selected one in the Agents
- * view — navigate anywhere else (another conversation, another tab) and the
- * prompt vanishes while the agent sits blocked. The OS-notification layer
- * pings once (pref-gated, debounced, often focus-suppressed); this banner is
- * the in-app half of that story: it stays pinned at the viewport edge until
- * every out-of-view prompt is answered, and jumps straight to the blocked
- * conversation.
- *
- * Prompts for the conversation currently on screen are excluded — those are
- * already pinned above the composer by PendingApprovalsSection.
+ * is only visible while its conversation's tile is on screen and scrolled to —
+ * scroll away or focus another tile and the prompt vanishes while the agent
+ * sits blocked. The OS-notification layer pings once (pref-gated, debounced,
+ * often focus-suppressed); this banner is the in-app half of that story: it
+ * stays pinned at the viewport edge until every waiting prompt is answered, and
+ * jumps straight to the blocked conversation's tile.
  */
 export function PinnedApprovalBanner() {
   const permissions = useAgentApprovalStore((s) => s.permissions);
   const edits = useAgentApprovalStore((s) => s.edits);
   const conversations = useAgentTaskStore((s) => s.conversations);
-  const selectedConversationId = useAgentTaskStore(
-    (s) => s.selectedConversationId,
-  );
-  const activeView = useAppStore((s) => s.activeView);
 
   const outOfView = useMemo(() => {
     // Both blocking queues count: permission prompts AND gated pending
@@ -43,12 +34,6 @@ export function PinnedApprovalBanner() {
     const entries: { conversationId: string; title: string; count: number }[] =
       [];
     for (const [conversationId, count] of waiting) {
-      // The selected Agents-view conversation renders its own pinned
-      // surfaces (PendingApprovalsSection footer + ReviewBar) — no second
-      // banner for it.
-      const onScreen =
-        activeView === "agents" && selectedConversationId === conversationId;
-      if (onScreen) continue;
       const conv = conversations.find((c) => c.id === conversationId);
       entries.push({
         conversationId,
@@ -57,7 +42,7 @@ export function PinnedApprovalBanner() {
       });
     }
     return entries;
-  }, [permissions, edits, conversations, activeView, selectedConversationId]);
+  }, [permissions, edits, conversations]);
 
   if (outOfView.length === 0) return null;
 
@@ -65,9 +50,9 @@ export function PinnedApprovalBanner() {
   const totalCount = outOfView.reduce((sum, e) => sum + e.count, 0);
   const moreConversations = outOfView.length - 1;
 
-  // Tile program (P5-S1): retargeted from setActiveView("agents") to the
-  // materializing deep-link path — the blocked conversation lands on its
-  // focused+flashed workspace tile with the pending approval visible.
+  // Tile program (P5-S1): routes through the materializing deep-link path — the
+  // blocked conversation lands on its focused+flashed workspace tile with the
+  // pending approval visible (replacing the retired Agents-tab navigation).
   const jump = () => {
     focusConversationDeepLink(first.conversationId);
   };

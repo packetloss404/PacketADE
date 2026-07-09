@@ -7,7 +7,6 @@ import { useSidecarStatus } from "@/hooks/useSidecarStatus";
 import type { SidecarStatus } from "@/lib/tauri";
 
 const VIEW_LABELS: Partial<Record<AppView, string>> = {
-  agents: "Agents",
   workspace: "Workspace",
   flights: "Flight Deck",
   issues: "Issues",
