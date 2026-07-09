@@ -1,0 +1,32 @@
+/* Conversation tile (P3-S3): responsive header via CSS `@container` ONLY —
+   no ResizeObserver, no width JS (ruled hybrid model: CSS handles visual
+   collapse, existing JS state handles mount economy in TileHeaderActions).
+
+   Every rule is scoped to `[data-frame="tile"]`, so the standalone AgentsView
+   header (frame="standalone") is byte-for-byte unaffected: the `.tile-*` class
+   hooks match no rule there and the header is not even a query container. */
+
+[data-frame="tile"] .agent-chat-header {
+  container-type: inline-size;
+  container-name: tilehdr;
+}
+
+/* Comfortable width and up: everything visible. Below it, drop the secondary
+   read-only chips from the title row (status label + SSH indicator) so the
+   conversation title and the three always-visible action chips keep priority.
+   The genuinely heavy controls (model picker, context ring, overflow) are
+   already unmounted in JS until the overflow toggle opens or the tile zooms. */
+@container tilehdr (max-width: 340px) {
+  [data-frame="tile"] .tile-hide-narrow {
+    display: none;
+  }
+}
+
+/* Ultra-narrow (a tile squeezed toward ~200px): tighten the action-cluster gap
+   so the mode chip, Changes chip, approval badge, and controls toggle stay on
+   one row without wrapping or clipping the close button. */
+@container tilehdr (max-width: 240px) {
+  [data-frame="tile"] .tile-header-actions {
+    gap: 0.125rem;
+  }
+}
