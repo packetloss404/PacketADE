@@ -18,6 +18,8 @@ import { useServerStore } from "@/stores/serverStore";
 import { useGitHubStore } from "@/stores/githubStore";
 import { assertCostGuardrailsAllowLaunch } from "@/stores/costGuardrailStore";
 import { useMemoryStore } from "@/stores/memoryStore";
+import { getMemorySettings } from "@/stores/memorySettingsStore";
+import type { FlightCompletedPayload } from "@/types/memory";
 import type { Attempt, AttemptStatus, Flight } from "@/types/flight";
 import { claimedPathsOverlap, normalizeClaimedPath } from "@/lib/pathCollisions";
 import {
@@ -400,6 +402,9 @@ function composeAsyncLaunchPrompt(
   flight: Flight | undefined,
   targets: AttemptTargetSpec[],
 ): string {
+  // Flight-prompt injection is opt-out via memory settings. When disabled,
+  // launches carry the raw user prompt with no ambient project memory.
+  if (!getMemorySettings().injectIntoFlightPrompts) return prompt;
   if (targets.length === 0 || targets.some((target) => target.kind !== "local")) {
     return prompt;
   }
@@ -414,6 +419,71 @@ function composeAsyncLaunchPrompt(
   const brief = useMemoryStore.getState().composeMemoryBrief({ kind: "local", projectPath });
   if (!brief.text.trim()) return prompt;
   return `${brief.text}\n\n---\n\n${prompt}`;
+}
+
+/**
+ * Wave-M2: derive a `flight_completed` memory event from the terminal
+ * state of an async Flight's attempts. Called once, at the moment the
+ * Flight transitions into its terminal `done` state (all attempts
+ * settled, at least one completed). The payload is assembled from the
+ * data available on the Flight + its Attempts — there is no separate LLM
+ * retrospective — so `lessonsLearned` is derived from failing attempts'
+ * error messages rather than model-authored insight.
+ */
+function buildFlightCompletedPayload(flight: Flight): FlightCompletedPayload {
+  const attempts = flight.attempts ?? [];
+  const completed = attempts.filter((a) => a.status === "completed");
+  const failed = attempts.filter((a) => a.status === "failed");
+  const cancelled = attempts.filter((a) => a.status === "cancelled");
+
+  const describe = (a: Attempt) => `Attempt on \`${a.branch}\` (${a.model})`;
+
+  const whatWorked = completed.map(describe);
+  const whatFailed = failed.map(
+    (a) => `${describe(a)}${a.errorMessage ? `: ${a.errorMessage}` : ""}`,
+  );
+  const lessonsLearned = failed
+    .filter((a) => Boolean(a.errorMessage))
+    .map((a) => `On \`${a.branch}\`, avoid what caused: ${a.errorMessage}`);
+
+  const parts = [`${completed.length}/${attempts.length} attempt(s) completed`];
+  if (failed.length) parts.push(`${failed.length} failed`);
+  if (cancelled.length) parts.push(`${cancelled.length} cancelled`);
+  const summary =
+    `Flight "${flight.title}" finished: ${parts.join(", ")}.` +
+    (flight.objective ? ` Objective: ${flight.objective}` : "");
+
+  return {
+    flightId: flight.id,
+    flightTitle: flight.title,
+    summary,
+    whatWorked,
+    whatFailed,
+    lessonsLearned,
+    suggestedImprovements: [],
+    tags: ["flight"],
+  };
+}
+
+/**
+ * Fire `captureFlightCompleted` exactly on the non-`done` → `done`
+ * transition. `statusBefore` is sampled before the attempt patch; the
+ * current status is recomputed here from the freshly-patched flight.
+ * Guarding on the transition (rather than the raw target status) means a
+ * flight that reaches `done` via any last-attempt outcome — completed,
+ * cancelled, or a mixed terminal set — captures once and never re-fires
+ * on subsequent no-op status writes. `captureFlightCompleted` itself
+ * respects the `captureFlights` setting.
+ */
+function captureFlightCompletionOnTransition(flightId: string, statusBefore: string): void {
+  if (statusBefore === "done") return;
+  const flightStore = useFlightStore.getState();
+  if (flightStore.computeFlightStatus(flightId) !== "done") return;
+  const flight = flightStore.flights.find((f) => f.id === flightId);
+  if (!flight) return;
+  useMemoryStore
+    .getState()
+    .captureFlightCompleted(buildFlightCompletedPayload(flight), flight.projectPath);
 }
 
 export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
@@ -503,6 +573,13 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
     const attempt = flight?.attempts?.find((a) => a.id === attemptId);
 
+    // Sample the flight's rolled-up status BEFORE the patch — same
+    // non-`done` → `done` transition guard as `setAttemptStatus` (see
+    // captureFlightCompletionOnTransition). Cancelling the last outstanding
+    // attempt while a sibling has already completed is a real terminal
+    // "done" transition and must capture too.
+    const statusBefore = useFlightStore.getState().computeFlightStatus(flightId);
+
     await cancelFlightAttempt(flightId, attemptId);
     patchAttempt(flightId, attemptId, {
       status: "cancelled",
@@ -511,6 +588,8 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     if (attempt) {
       detachAttemptTerminalListeners(attempt.sessionId);
     }
+
+    captureFlightCompletionOnTransition(flightId, statusBefore);
 
     // SSH worktree cleanup is deferred from the backend cancel because it
     // doesn't have full ServerConfig info — issue it from here using the
@@ -538,6 +617,11 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
   },
 
   setAttemptStatus: async (flightId, attemptId, status) => {
+    // Sample the flight's rolled-up status BEFORE the patch so we can detect
+    // the non-`done` → `done` transition and capture a flight_completed
+    // memory event exactly once (see captureFlightCompletionOnTransition).
+    const statusBefore = useFlightStore.getState().computeFlightStatus(flightId);
+
     await markAttemptStatus(flightId, attemptId, status);
     patchAttempt(flightId, attemptId, {
       status,
@@ -550,6 +634,10 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       const attempt = flight?.attempts?.find((a) => a.id === attemptId);
       if (attempt) detachAttemptTerminalListeners(attempt.sessionId);
     }
+
+    // Flight-completion memory capture. Runs on the terminal-success
+    // transition regardless of which attempt outcome triggered it.
+    captureFlightCompletionOnTransition(flightId, statusBefore);
 
     // v0.8-G: post-attempt publish hook. Fire only when the attempt
     // transitions to `completed` AND the parent Flight has opted in.

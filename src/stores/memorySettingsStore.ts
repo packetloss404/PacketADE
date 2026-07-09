@@ -28,10 +28,15 @@ export type MemoryProjectPathMatching = "exact" | "parent" | "global";
 
 export interface MemorySettingsValues {
   captureSessions: boolean;
-  captureTasks: boolean;
   captureFlights: boolean;
   summarizeSessions: boolean;
   extractPatterns: boolean;
+  /**
+   * When true (default), the composed memory brief is prepended to async
+   * Flight prompts at launch. Turn off to keep Flight launches free of any
+   * ambient project memory while still capturing/injecting elsewhere.
+   */
+  injectIntoFlightPrompts: boolean;
   retentionDays: number | null;
   maxEvents: number;
   maxPatterns: number;
@@ -51,10 +56,10 @@ export interface MemorySettingsValues {
 
 interface MemorySettingsStore extends MemorySettingsValues {
   setCaptureSessions: (enabled: boolean) => void;
-  setCaptureTasks: (enabled: boolean) => void;
   setCaptureFlights: (enabled: boolean) => void;
   setSummarizeSessions: (enabled: boolean) => void;
   setExtractPatterns: (enabled: boolean) => void;
+  setInjectIntoFlightPrompts: (enabled: boolean) => void;
   setRetentionDays: (days: number | null) => void;
   setMaxEvents: (count: number) => void;
   setMaxPatterns: (count: number) => void;
@@ -65,15 +70,14 @@ interface MemorySettingsStore extends MemorySettingsValues {
   setProjectPathMatching: (mode: MemoryProjectPathMatching) => void;
   setPinnedExemptFromCap: (enabled: boolean) => void;
   resetMemorySettings: () => void;
-  hydrateFromStorage: () => void;
 }
 
 const DEFAULTS: MemorySettingsValues = {
   captureSessions: true,
-  captureTasks: true,
   captureFlights: true,
   summarizeSessions: true,
   extractPatterns: true,
+  injectIntoFlightPrompts: true,
   retentionDays: null,
   maxEvents: DEFAULT_MEMORY_MAX_EVENTS,
   maxPatterns: DEFAULT_MEMORY_MAX_PATTERNS,
@@ -104,10 +108,11 @@ function normalize(raw: Partial<MemorySettingsValues> | null | undefined): Memor
   const source = raw ?? {};
   return {
     captureSessions: source.captureSessions ?? DEFAULTS.captureSessions,
-    captureTasks: source.captureTasks ?? DEFAULTS.captureTasks,
     captureFlights: source.captureFlights ?? DEFAULTS.captureFlights,
     summarizeSessions: source.summarizeSessions ?? DEFAULTS.summarizeSessions,
     extractPatterns: source.extractPatterns ?? DEFAULTS.extractPatterns,
+    injectIntoFlightPrompts:
+      source.injectIntoFlightPrompts ?? DEFAULTS.injectIntoFlightPrompts,
     retentionDays:
       source.retentionDays === undefined
         ? DEFAULTS.retentionDays
@@ -178,10 +183,11 @@ export const useMemorySettingsStore = create<MemorySettingsStore>((set, get) => 
   return {
     ...initial,
     setCaptureSessions: (captureSessions) => update({ captureSessions }),
-    setCaptureTasks: (captureTasks) => update({ captureTasks }),
     setCaptureFlights: (captureFlights) => update({ captureFlights }),
     setSummarizeSessions: (summarizeSessions) => update({ summarizeSessions }),
     setExtractPatterns: (extractPatterns) => update({ extractPatterns }),
+    setInjectIntoFlightPrompts: (injectIntoFlightPrompts) =>
+      update({ injectIntoFlightPrompts }),
     setRetentionDays: (retentionDays) => update({ retentionDays }),
     setMaxEvents: (maxEvents) => update({ maxEvents }),
     setMaxPatterns: (maxPatterns) => update({ maxPatterns }),
@@ -193,11 +199,6 @@ export const useMemorySettingsStore = create<MemorySettingsStore>((set, get) => 
     setProjectPathMatching: (projectPathMatching) => update({ projectPathMatching }),
     setPinnedExemptFromCap: (pinnedExemptFromCap) => update({ pinnedExemptFromCap }),
     resetMemorySettings: () => update(DEFAULTS),
-    hydrateFromStorage: () => {
-      const next = loadSettings();
-      set(next);
-      persist(next);
-    },
   };
 });
 
@@ -205,10 +206,10 @@ export function getMemorySettings(): MemorySettingsValues {
   const state = useMemorySettingsStore.getState();
   return normalize({
     captureSessions: state.captureSessions,
-    captureTasks: state.captureTasks,
     captureFlights: state.captureFlights,
     summarizeSessions: state.summarizeSessions,
     extractPatterns: state.extractPatterns,
+    injectIntoFlightPrompts: state.injectIntoFlightPrompts,
     retentionDays: state.retentionDays,
     maxEvents: state.maxEvents,
     maxPatterns: state.maxPatterns,
