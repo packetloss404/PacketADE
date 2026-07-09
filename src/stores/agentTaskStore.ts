@@ -52,7 +52,6 @@ export interface AgentSshConfigInput {
   hostFingerprint?: string | null;
 }
 import { generateId } from "@/lib/storage";
-import { LEGACY_STORAGE_PREFIX, storageKey } from "@/lib/brand";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
 import { useAgentSettingsStore } from "@/stores/agentSettingsStore";
@@ -213,26 +212,6 @@ const apiConversationCleanup = new Map<string, () => void>();
  * whole store surface. */
 export const failoverGuard = new Set<string>();
 
-const PROJECT_LABELS_STORAGE_KEY = storageKey("project-labels");
-const LEGACY_PROJECT_LABELS_STORAGE_KEY = `${LEGACY_STORAGE_PREFIX}project-labels`;
-
-function loadProjectLabels(): Record<string, string> {
-  if (typeof localStorage === "undefined") return {};
-  try {
-    const currentRaw = localStorage.getItem(PROJECT_LABELS_STORAGE_KEY);
-    if (currentRaw) return JSON.parse(currentRaw) as Record<string, string>;
-
-    const legacyRaw = localStorage.getItem(LEGACY_PROJECT_LABELS_STORAGE_KEY);
-    if (!legacyRaw) return {};
-
-    const migrated = JSON.parse(legacyRaw) as Record<string, string>;
-    localStorage.setItem(PROJECT_LABELS_STORAGE_KEY, JSON.stringify(migrated));
-    return migrated;
-  } catch {
-    return {};
-  }
-}
-
 /** Derive a display name for a projectPath (e.g. "owner/repo" or last two segments). */
 export function repoDisplayName(projectPath: string, githubRepos: GitHubRepo[]): string {
   const segments = projectPath.replace(/\\/g, "/").split("/").filter(Boolean);
@@ -385,10 +364,6 @@ interface AgentTaskStore {
    * (no non-Discard removal path ever touches a dirty tree). Idempotent /
    * no-op when the conversation has no local worktree. */
   discardConversationWorktree: (id: string, opts?: { confirmed?: boolean }) => Promise<void>;
-  /** User-customizable display labels per projectPath (drives sidebar group headers).
-   * Falls back to derived basename when unset. */
-  projectLabels: Record<string, string>;
-  setProjectLabel: (projectPath: string, label: string) => void;
   appendRawOutput: (conversationId: string, text: string) => void;
   cancelActiveConversation: (id: string) => Promise<void>;
   changeModel: (id: string, newModel: string) => Promise<void>;
@@ -962,23 +937,6 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
 
     // Flip lifecycle → discarded and persist.
     get().setConversationWorktreeState(conv.id, "discarded");
-  },
-
-  projectLabels: loadProjectLabels(),
-
-  setProjectLabel: (projectPath, label) => {
-    set((s) => {
-      const next = { ...s.projectLabels };
-      const trimmed = label.trim();
-      if (trimmed) next[projectPath] = trimmed;
-      else delete next[projectPath];
-      try {
-        localStorage.setItem(PROJECT_LABELS_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // Best effort.
-      }
-      return { projectLabels: next };
-    });
   },
 
   cancelActiveConversation: async (id) => {

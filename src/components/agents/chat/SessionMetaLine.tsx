@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { estimateTurnCostUsd } from "@/lib/conversationCost";
 import { gitSafetyCheck, type GitSafetyReport } from "@/lib/tauri";
-import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Spinner } from "@/components/ui/Spinner";
 import type { AgentConversation } from "@/types/agent-conversation";
@@ -43,7 +43,7 @@ interface SessionMetaLineProps {
  *   MessageList's per-turn pill uses for older persisted messages)
  */
 export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
-  const projectLabels = useAgentTaskStore((s) => s.projectLabels);
+  const projectLabels = useAgentSidebarPrefsStore((s) => s.projectLabels);
   const [report, setReport] = useState<GitSafetyReport | null>(null);
   const [gitLoading, setGitLoading] = useState(false);
   const gitCancelled = useRef(false);
