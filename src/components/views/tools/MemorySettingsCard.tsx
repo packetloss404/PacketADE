@@ -25,10 +25,10 @@ export function MemorySettingsCard() {
   const applyRetentionPolicy = useMemoryStore((s) => s.applyRetentionPolicy);
 
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
-  const captureTasks = useMemorySettingsStore((s) => s.captureTasks);
   const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
   const summarizeSessions = useMemorySettingsStore((s) => s.summarizeSessions);
   const extractPatterns = useMemorySettingsStore((s) => s.extractPatterns);
+  const injectIntoFlightPrompts = useMemorySettingsStore((s) => s.injectIntoFlightPrompts);
   const retentionDays = useMemorySettingsStore((s) => s.retentionDays);
   const maxEvents = useMemorySettingsStore((s) => s.maxEvents);
   const maxPatterns = useMemorySettingsStore((s) => s.maxPatterns);
@@ -40,10 +40,10 @@ export function MemorySettingsCard() {
   const pinnedExemptFromCap = useMemorySettingsStore((s) => s.pinnedExemptFromCap);
 
   const setCaptureSessions = useMemorySettingsStore((s) => s.setCaptureSessions);
-  const setCaptureTasks = useMemorySettingsStore((s) => s.setCaptureTasks);
   const setCaptureFlights = useMemorySettingsStore((s) => s.setCaptureFlights);
   const setSummarizeSessions = useMemorySettingsStore((s) => s.setSummarizeSessions);
   const setExtractPatterns = useMemorySettingsStore((s) => s.setExtractPatterns);
+  const setInjectIntoFlightPrompts = useMemorySettingsStore((s) => s.setInjectIntoFlightPrompts);
   const setRetentionDays = useMemorySettingsStore((s) => s.setRetentionDays);
   const setMaxEvents = useMemorySettingsStore((s) => s.setMaxEvents);
   const setMaxPatterns = useMemorySettingsStore((s) => s.setMaxPatterns);
@@ -94,12 +94,6 @@ export function MemorySettingsCard() {
             label="Capture terminal sessions"
             checked={captureSessions}
             onChange={setCaptureSessions}
-          />
-          <Toggle
-            icon={ListChecks}
-            label="Capture flight tasks"
-            checked={captureTasks}
-            onChange={setCaptureTasks}
           />
           <Toggle
             icon={GitBranch}
@@ -170,6 +164,12 @@ export function MemorySettingsCard() {
             Agent sessions receive a compact brief assembled from capped sources, never an unbounded
             raw memory dump.
           </div>
+          <Toggle
+            icon={ListChecks}
+            label="Inject brief into Flight prompts"
+            checked={injectIntoFlightPrompts}
+            onChange={setInjectIntoFlightPrompts}
+          />
           <NumberRow
             label="Patterns"
             value={contextMaxPatterns}

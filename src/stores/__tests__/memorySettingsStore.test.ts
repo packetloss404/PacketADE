@@ -18,10 +18,10 @@ describe("memorySettingsStore", () => {
 
     expect(useMemorySettingsStore.getState()).toMatchObject({
       captureSessions: true,
-      captureTasks: true,
       captureFlights: true,
       summarizeSessions: true,
       extractPatterns: true,
+      injectIntoFlightPrompts: true,
       retentionDays: null,
       maxEvents: 200,
       maxPatterns: 20,

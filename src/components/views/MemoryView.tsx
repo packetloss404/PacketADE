@@ -85,7 +85,6 @@ export function MemoryView() {
   const clearMemory = useMemoryStore((s) => s.clearMemory);
   const getContextForSession = useMemoryStore((s) => s.getContextForSession);
   const captureSessions = useMemorySettingsStore((s) => s.captureSessions);
-  const captureTasks = useMemorySettingsStore((s) => s.captureTasks);
   const captureFlights = useMemorySettingsStore((s) => s.captureFlights);
 
   // v0.8-H — deep-link filter (e.g. from FlightsView's "N patterns
@@ -168,7 +167,7 @@ export function MemoryView() {
   );
 
   const tokenEstimate = Math.round((injectedPreview.length || patterns.length * 32) / 4);
-  const captureEnabled = captureSessions || captureTasks || captureFlights;
+  const captureEnabled = captureSessions || captureFlights;
 
   function handleRefreshPatterns() {
     if (projectPath) void refreshPatterns(projectPath);

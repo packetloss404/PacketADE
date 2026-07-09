@@ -93,9 +93,7 @@ interface MemoryStore {
   // Hydration
   hydrateFromBackend: (persisted: Awaited<ReturnType<typeof loadPersistedState>>) => void;
 
-  // Auto-capture (called from session/task/flight lifecycle)
-  captureSessionCompleted: (payload: SessionCompletedPayload, projectPath: string) => void;
-  captureTaskCompleted: (payload: TaskCompletedPayload, projectPath: string) => void;
+  // Auto-capture (called from the flight lifecycle)
   captureFlightCompleted: (payload: FlightCompletedPayload, projectPath: string) => void;
   /**
    * v0.8-D — manual capture from any UI surface (initial caller is GitHub
@@ -141,13 +139,6 @@ interface MemoryStore {
    * string (legacy single-arg form) or an options object so callers can
    * pass a sessionId without breaking back-compat. */
   getContextForSession: (input: string | { sessionId?: string; projectPath: string }) => string;
-  /** v0.8-H: structured form of `getContextForSession` used by the
-   * AgentInputArea context-preview chevron. Returns the same items that
-   * would compose the injected string, broken into rows the UI can
-   * render with relative time + reason tooltips. */
-  getContextItemsForSession: (
-    input: string | ({ sessionId?: string } & MemoryBriefScope),
-  ) => ContextItem[];
   /** Compact prompt-injection form used when launching executor/API-agent
    * sessions. It is intentionally smaller and stricter than the context
    * preview: remote SSH scopes only match memory explicitly keyed to that
@@ -285,6 +276,139 @@ async function persistState(events: MemoryEvent[], patterns?: LearnedPattern[]) 
   }
 }
 
+/**
+ * v0.8-H: structured context items used by both `getContextForSession`
+ * (rendered preview) and `composeMemoryBrief` (prompt injection). Kept as
+ * an internal module helper — the only external callers are the two store
+ * methods above and the store's own unit tests; no UI surface consumes it
+ * directly (MemoryView reads `getContextForSession`).
+ */
+export function computeContextItems(
+  events: MemoryEvent[],
+  patterns: LearnedPattern[],
+  input: string | ({ sessionId?: string } & MemoryBriefScope),
+): ContextItem[] {
+  const scope = normalizeScopeInput(input);
+  if (!scope.projectPath) return [];
+
+  const normalizedCurrent = normalizePath(scope.projectPath);
+  const explicitScopeKeys = new Set<string>();
+  if (scope.workspaceId) {
+    explicitScopeKeys.add(normalizePath(workspaceMemoryProjectKey(scope.workspaceId)));
+  }
+  if (scope.kind === "ssh" && scope.serverId) {
+    explicitScopeKeys.add(
+      normalizePath(remoteMemoryProjectKey(scope.serverId, scope.remotePath || scope.projectPath)),
+    );
+  }
+  const settings = getMemorySettings();
+  const out: ContextItem[] = [];
+
+  // v0.8: `projectPathMatching` setting controls strictness.
+  //   exact  — historical behaviour: normalized path equality
+  //   parent — match when either side is a prefix of the other, so
+  //            sub-workspaces inherit memory from a parent project
+  //   global — every project-scoped item is considered a match
+  //
+  // Items with no `projectPath` (legacy / global) always match.
+  const projectPathsMatch = (recorded: string | undefined | null): boolean => {
+    if (scope.kind === "ssh") {
+      if (!recorded) return false;
+      return explicitScopeKeys.has(normalizePath(recorded));
+    }
+
+    if (!recorded) return true; // legacy/global item — always relevant
+    if (explicitScopeKeys.has(normalizePath(recorded))) return true;
+    if (settings.projectPathMatching === "global") return true;
+    const recordedN = normalizePath(recorded);
+    if (recordedN === normalizedCurrent) return true;
+    if (settings.projectPathMatching === "parent") {
+      const a = recordedN.endsWith("/") ? recordedN : recordedN + "/";
+      const b = normalizedCurrent.endsWith("/") ? normalizedCurrent : normalizedCurrent + "/";
+      return a.startsWith(b) || b.startsWith(a);
+    }
+    return false;
+  };
+
+  // 1. Learned patterns. Pinned patterns sort first and are exempt
+  //    from the confidence cutoff (the user pinned them, so we trust
+  //    their judgment over a 0.6 numerical threshold). Patterns
+  //    without a `projectPath` are legacy/global — they always match.
+  //    Patterns with a `projectPath` are filtered through
+  //    `projectPathsMatch` so the v0.8 matching mode is honoured.
+  const relevantPatterns = patterns
+    .filter((p) => {
+      if (!projectPathsMatch(p.projectPath)) return false;
+      return p.pinned || p.confidence >= 0.6;
+    })
+    .sort((a, b) => {
+      if ((a.pinned ? 1 : 0) !== (b.pinned ? 1 : 0)) {
+        return a.pinned ? -1 : 1;
+      }
+      if (a.confidence !== b.confidence) return b.confidence - a.confidence;
+      return b.extractedAt - a.extractedAt;
+    })
+    .slice(0, settings.contextMaxPatterns);
+
+  for (const p of relevantPatterns) {
+    const patternScope = p.projectPath ? "this project" : "all projects";
+    out.push({
+      id: p.id,
+      kind: "pattern",
+      title: `[${p.category}] ${p.pattern}`,
+      timestamp: p.extractedAt,
+      reason: p.pinned
+        ? `Pinned · ${patternScope} · confidence ${(p.confidence * 100).toFixed(0)}%`
+        : `Top pattern · ${patternScope} · confidence ${(p.confidence * 100).toFixed(0)}%`,
+    });
+  }
+
+  // 2. Lessons from flight retrospectives (last 7 days, current project)
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const flightEvents = events.filter(
+    (e): e is Extract<MemoryEvent, { type: "flight_completed" }> =>
+      e.type === "flight_completed" && projectPathsMatch(e.projectPath) && e.timestamp > cutoff,
+  );
+  let pushed = 0;
+  outer: for (const e of flightEvents) {
+    for (const l of e.payload.lessonsLearned) {
+      if (pushed >= settings.contextMaxLessons) break outer;
+      out.push({
+        id: `${e.id}:lesson:${pushed}`,
+        kind: "lesson",
+        title: l,
+        timestamp: e.timestamp,
+        reason: "Lesson from flight retrospective (last 7 days)",
+      });
+      pushed += 1;
+    }
+  }
+
+  // 3. Recent session summaries (last 48h, current project only)
+  const sessionCutoff = Date.now() - 48 * 60 * 60 * 1000;
+  const sessions = events
+    .filter(
+      (e): e is Extract<MemoryEvent, { type: "session_completed" }> =>
+        e.type === "session_completed" &&
+        projectPathsMatch(e.projectPath) &&
+        e.timestamp > sessionCutoff &&
+        e.payload.summary !== null,
+    )
+    .slice(-settings.contextMaxSessions);
+
+  for (const e of sessions) {
+    out.push({
+      id: e.id,
+      kind: "session",
+      title: e.payload.summary ?? "",
+      timestamp: e.timestamp,
+      reason: "Recent session summary (last 48 hours)",
+    });
+  }
+
+  return out;
+}
+
 export const useMemoryStore = create<MemoryStore>((set, get) => ({
   events: [],
   patterns: [],
@@ -302,22 +426,6 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     if (events.length !== rawEvents.length || patterns.length !== rawPatterns.length) {
       void persistState(events, patterns);
     }
-  },
-
-  captureSessionCompleted: (payload, projectPath) => {
-    if (!getMemorySettings().captureSessions) return;
-    const event = createEvent("session_completed", projectPath, payload);
-    const events = capEvents([...get().events, event]);
-    set({ events });
-    void persistState(events, get().patterns);
-  },
-
-  captureTaskCompleted: (payload, projectPath) => {
-    if (!getMemorySettings().captureTasks) return;
-    const event = createEvent("task_completed", projectPath, payload);
-    const events = capEvents([...get().events, event]);
-    set({ events });
-    void persistState(events, get().patterns);
   },
 
   captureFlightCompleted: (payload, projectPath) => {
@@ -546,7 +654,9 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     const projectPath = typeof input === "string" ? input : input.projectPath;
     if (!projectPath) return "";
 
-    const items = get().getContextItemsForSession(
+    const items = computeContextItems(
+      get().events,
+      get().patterns,
       typeof input === "string" ? { projectPath } : input,
     );
     if (items.length === 0) return "";
@@ -577,135 +687,10 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     return lines.join("\n");
   },
 
-  getContextItemsForSession: (input) => {
-    const scope = normalizeScopeInput(input);
-    if (!scope.projectPath) return [];
-
-    const normalizedCurrent = normalizePath(scope.projectPath);
-    const explicitScopeKeys = new Set<string>();
-    if (scope.workspaceId) {
-      explicitScopeKeys.add(normalizePath(workspaceMemoryProjectKey(scope.workspaceId)));
-    }
-    if (scope.kind === "ssh" && scope.serverId) {
-      explicitScopeKeys.add(
-        normalizePath(
-          remoteMemoryProjectKey(scope.serverId, scope.remotePath || scope.projectPath),
-        ),
-      );
-    }
-    const { events, patterns } = get();
-    const settings = getMemorySettings();
-    const out: ContextItem[] = [];
-
-    // v0.8: `projectPathMatching` setting controls strictness.
-    //   exact  — historical behaviour: normalized path equality
-    //   parent — match when either side is a prefix of the other, so
-    //            sub-workspaces inherit memory from a parent project
-    //   global — every project-scoped item is considered a match
-    //
-    // Items with no `projectPath` (legacy / global) always match.
-    const projectPathsMatch = (recorded: string | undefined | null): boolean => {
-      if (scope.kind === "ssh") {
-        if (!recorded) return false;
-        return explicitScopeKeys.has(normalizePath(recorded));
-      }
-
-      if (!recorded) return true; // legacy/global item — always relevant
-      if (explicitScopeKeys.has(normalizePath(recorded))) return true;
-      if (settings.projectPathMatching === "global") return true;
-      const recordedN = normalizePath(recorded);
-      if (recordedN === normalizedCurrent) return true;
-      if (settings.projectPathMatching === "parent") {
-        const a = recordedN.endsWith("/") ? recordedN : recordedN + "/";
-        const b = normalizedCurrent.endsWith("/") ? normalizedCurrent : normalizedCurrent + "/";
-        return a.startsWith(b) || b.startsWith(a);
-      }
-      return false;
-    };
-
-    // 1. Learned patterns. Pinned patterns sort first and are exempt
-    //    from the confidence cutoff (the user pinned them, so we trust
-    //    their judgment over a 0.6 numerical threshold). Patterns
-    //    without a `projectPath` are legacy/global — they always match.
-    //    Patterns with a `projectPath` are filtered through
-    //    `projectPathsMatch` so the v0.8 matching mode is honoured.
-    const relevantPatterns = patterns
-      .filter((p) => {
-        if (!projectPathsMatch(p.projectPath)) return false;
-        return p.pinned || p.confidence >= 0.6;
-      })
-      .sort((a, b) => {
-        if ((a.pinned ? 1 : 0) !== (b.pinned ? 1 : 0)) {
-          return a.pinned ? -1 : 1;
-        }
-        if (a.confidence !== b.confidence) return b.confidence - a.confidence;
-        return b.extractedAt - a.extractedAt;
-      })
-      .slice(0, settings.contextMaxPatterns);
-
-    for (const p of relevantPatterns) {
-      const scope = p.projectPath ? "this project" : "all projects";
-      out.push({
-        id: p.id,
-        kind: "pattern",
-        title: `[${p.category}] ${p.pattern}`,
-        timestamp: p.extractedAt,
-        reason: p.pinned
-          ? `Pinned · ${scope} · confidence ${(p.confidence * 100).toFixed(0)}%`
-          : `Top pattern · ${scope} · confidence ${(p.confidence * 100).toFixed(0)}%`,
-      });
-    }
-
-    // 2. Lessons from flight retrospectives (last 7 days, current project)
-    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const flightEvents = events.filter(
-      (e): e is Extract<MemoryEvent, { type: "flight_completed" }> =>
-        e.type === "flight_completed" && projectPathsMatch(e.projectPath) && e.timestamp > cutoff,
-    );
-    let pushed = 0;
-    outer: for (const e of flightEvents) {
-      for (const l of e.payload.lessonsLearned) {
-        if (pushed >= settings.contextMaxLessons) break outer;
-        out.push({
-          id: `${e.id}:lesson:${pushed}`,
-          kind: "lesson",
-          title: l,
-          timestamp: e.timestamp,
-          reason: "Lesson from flight retrospective (last 7 days)",
-        });
-        pushed += 1;
-      }
-    }
-
-    // 3. Recent session summaries (last 48h, current project only)
-    const sessionCutoff = Date.now() - 48 * 60 * 60 * 1000;
-    const sessions = events
-      .filter(
-        (e): e is Extract<MemoryEvent, { type: "session_completed" }> =>
-          e.type === "session_completed" &&
-          projectPathsMatch(e.projectPath) &&
-          e.timestamp > sessionCutoff &&
-          e.payload.summary !== null,
-      )
-      .slice(-settings.contextMaxSessions);
-
-    for (const e of sessions) {
-      out.push({
-        id: e.id,
-        kind: "session",
-        title: e.payload.summary ?? "",
-        timestamp: e.timestamp,
-        reason: "Recent session summary (last 48 hours)",
-      });
-    }
-
-    return out;
-  },
-
   composeMemoryBrief: (input, options) => {
     const scope = normalizeScopeInput(input);
     const charBudget = clampBriefChars(options?.maxChars);
-    const items = get().getContextItemsForSession(scope);
+    const items = computeContextItems(get().events, get().patterns, scope);
     const scopeKey = memoryScopeKey(scope);
     if (items.length === 0) {
       return { text: "", items: [], charBudget, truncated: false, scopeKey };
