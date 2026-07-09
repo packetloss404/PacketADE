@@ -6,8 +6,9 @@ test.describe("Welcome screen", () => {
 
     await expect(page.getByRole("heading", { name: "PacketADE" })).toBeVisible();
 
-    // Primary navigation should be present.
-    await expect(page.getByRole("button", { name: "Agents", exact: true })).toBeVisible();
+    // Primary navigation should be present. Tile program (P5): the Agents rail
+    // item was retired; Workspace is the primary surface.
+    await expect(page.getByRole("button", { name: "Workspace", exact: true })).toBeVisible();
   });
 
   test("no uncaught console errors on initial load", async ({ page }) => {

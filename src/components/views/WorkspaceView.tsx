@@ -34,7 +34,11 @@ export function WorkspaceView() {
   const initialized = useAppStore((s) => s.initialized);
   const projectPath = useLayoutStore((s) => s.projectPath);
   const [onboardingDone, setOnboardingDone] = useState<boolean>(() => isOnboardingComplete());
-  const [gitPanelOpen, setGitPanelOpen] = useState(false);
+  // Git panel open-state lives in appStore so the in-tile ReviewBar "Finish →
+  // Commit…" CTA can open the endings surface (openGitPanelForConversation).
+  const gitPanelOpen = useAppStore((s) => s.gitPanelOpen);
+  const setGitPanelOpen = useAppStore((s) => s.setGitPanelOpen);
+  const gitPanelConversationId = useAppStore((s) => s.gitPanelConversationId);
   const [showCreate, setShowCreate] = useState(false);
   const drafts = useDraftTileStore((s) => s.drafts);
   // Tile program (P4-S1): the tab-strip dot reads the SINGLE status truth
@@ -52,6 +56,18 @@ export function WorkspaceView() {
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const activeNonArchived = workspaces.filter((w) => w.status === "active");
+
+  // Scope the GitDashboard's WorktreeLifecycleBar to the conversation the
+  // "Finish → Commit…" CTA opened it for — but only while that conversation
+  // actually has a tile in the workspace on screen (else fall back to the plain
+  // git view). Guards against a stale scope after a workspace switch.
+  const scopedGitConversationId =
+    gitPanelConversationId &&
+    activeWorkspace?.panes.some(
+      (p) => p.kind === "conversation" && p.conversationId === gitPanelConversationId,
+    )
+      ? gitPanelConversationId
+      : undefined;
 
   const showOnboarding =
     initialized && !onboardingDone && activeNonArchived.length === 0 && !projectPath;
@@ -134,7 +150,7 @@ export function WorkspaceView() {
               )}
               {activeWorkspace && (
                 <button
-                  onClick={() => setGitPanelOpen((v) => !v)}
+                  onClick={() => setGitPanelOpen(!gitPanelOpen)}
                   className={`rounded p-1 transition-colors ${
                     gitPanelOpen
                       ? "bg-accent-green/20 text-accent-green"
@@ -268,6 +284,7 @@ export function WorkspaceView() {
                 }
                 workspaceId={activeWorkspace.id}
                 serverId={activeWorkspace.serverId}
+                conversationId={scopedGitConversationId}
               />
             </div>
           )}
