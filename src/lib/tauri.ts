@@ -1439,6 +1439,10 @@ function fromDtoWorkspace(workspace: WorkspaceDto): Workspace {
     serverId: workspace.serverId,
     remoteProjectPath: workspace.remoteProjectPath,
     githubRepo: workspaceWithMetadata.githubRepo,
+    // Tile program (P1-S2): thread the workspace `origin` marker through
+    // hydration so conversation wrappers survive a load/save round-trip; an
+    // unknown value degrades to undefined (a normal workspace).
+    origin: workspace.origin === "conversation" ? "conversation" : undefined,
   };
 }
 
@@ -1473,6 +1477,9 @@ function toDtoWorkspace(workspace: Workspace): WorkspaceDtoWithFrontendMetadata 
     serverId: workspace.serverId,
     remoteProjectPath: workspace.remoteProjectPath,
     githubRepo: workspace.githubRepo,
+    // Tile program (P1-S2): persist the `origin` marker only when set — a
+    // normal workspace stays byte-identical to the pre-tile shape.
+    ...(workspace.origin === "conversation" ? { origin: "conversation" as const } : {}),
   } satisfies WorkspaceDtoWithFrontendMetadata;
 }
 

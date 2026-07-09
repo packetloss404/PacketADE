@@ -22,7 +22,13 @@ conversationId?: string, };
 
 export type GithubRepoDto = { owner: string, repo: string, };
 
-export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, serverId?: string, remoteProjectPath?: string, githubRepo?: GithubRepoDto, };
+export type WorkspaceDto = { id: string, name: string, agents: Array<WorkspaceAgentSlotDto>, panes: Array<WorkspacePaneDto>, projectPath: string, prompt?: string, createdAt: number, updatedAt: number, status: WorkspaceStatusDto, bypassPermissions?: boolean, modelOverrides?: { [key in string]?: string | null }, effortOverrides?: { [key in string]?: string | null }, serverId?: string, remoteProjectPath?: string, githubRepo?: GithubRepoDto, 
+/**
+ * Tile program (P1-S2): `"conversation"` for auto-materialized
+ * conversation wrappers, else absent. Inert `#[ts(optional)]` mirror of
+ * core `Workspace.origin`.
+ */
+origin?: string, };
 
 export type ServerConfigDto = { id: string, name: string, host: string, port: number, username: string, authMethod: string, keyPath: string | null, remotePath: string | null, lastConnectedAt: bigint | null, installedAgents: Array<string>, hostFingerprint: string | null, };
 

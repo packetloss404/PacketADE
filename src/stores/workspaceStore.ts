@@ -53,6 +53,28 @@ interface WorkspaceStore {
   removePinnedCommand: (workspaceId: string, paneId: string, index: number) => void;
   addPane: (workspaceId: string, agentId: WorkspaceAgentSlot) => string | null;
   removePane: (workspaceId: string, paneId: string) => void;
+  /**
+   * Tile program (P1-S2): prune every conversation pane referencing
+   * `conversationId` across all workspaces. Drives the one-directional GC in
+   * `sessionGlue`: deleting a conversation removes its tiles, but closing a
+   * tile (`removePane`) NEVER deletes the conversation. Reference direction is
+   * pane→conversationId only.
+   */
+  removeConversationPanes: (conversationId: string) => void;
+  /**
+   * Tile program (P1-S2): idempotently materialize the conversation wrapper
+   * workspace for `conversationId`. Uses the deterministic id
+   * `ws-wrap-<convId>` and stamps `origin: "conversation"`, so calling twice
+   * yields exactly one workspace. Returns the wrapper id. Does NOT activate the
+   * workspace — `sessionGlue.openSession` orchestrates activation. Conversation
+   * panes carry the inert carrier `agentId: "terminal"` and are never pushed
+   * into `agents`.
+   */
+  ensureConversationWorkspace: (opts: {
+    conversationId: string;
+    name: string;
+    projectPath: string;
+  }) => string;
   setDefaultBypassPermissions: (value: boolean) => void;
   setAutoBindGithubRepo: (value: boolean) => void;
   setZoomedPane: (paneId: string | null) => void;
@@ -89,6 +111,16 @@ function buildPanes(agents: WorkspaceAgentSlot[]): WorkspacePane[] {
 }
 
 const WORKSPACES_CACHE_KEY = "packetade:workspaces-cache";
+
+/**
+ * Tile program (P1-S2): deterministic wrapper-workspace id for a conversation.
+ * The `openSession` materialization and the reconciliation sweep both key off
+ * this exact shape (`ws-wrap-<convId>`) so a conversation maps to at most one
+ * wrapper and repeated opens are idempotent.
+ */
+export function conversationWrapperId(conversationId: string): string {
+  return `ws-wrap-${conversationId}`;
+}
 
 /**
  * Tile program (P1-S1): defensive normalization of a single pane read from an
@@ -447,6 +479,64 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (get().zoomedPaneId === paneId) {
       set({ zoomedPaneId: null });
     }
+  },
+
+  removeConversationPanes: (conversationId) => {
+    const removedPaneIds: string[] = [];
+    set(commitWorkspaces((s) => {
+      let changed = false;
+      const workspaces = s.workspaces.map((w) => {
+        const kept = w.panes.filter((p) => {
+          const match = p.kind === "conversation" && p.conversationId === conversationId;
+          if (match) removedPaneIds.push(p.id);
+          return !match;
+        });
+        if (kept.length === w.panes.length) return w;
+        changed = true;
+        return { ...w, panes: kept, updatedAt: Date.now() };
+      });
+      // No referencing pane anywhere — skip the backend write entirely.
+      if (!changed) return {};
+      return { workspaces };
+    }));
+    // Clear zoom if the zoomed pane was one of the pruned conversation panes.
+    if (get().zoomedPaneId && removedPaneIds.includes(get().zoomedPaneId as string)) {
+      set({ zoomedPaneId: null });
+    }
+  },
+
+  ensureConversationWorkspace: ({ conversationId, name, projectPath }) => {
+    const id = conversationWrapperId(conversationId);
+    // Idempotent: a wrapper already exists ⇒ reuse it. Never overwrite the
+    // existing name (the user may have renamed it — live-follow freezes on
+    // first manual rename, a Phase 4 concern) or duplicate the workspace.
+    if (get().workspaces.some((w) => w.id === id)) return id;
+    const now = Date.now();
+    const pane: WorkspacePane = {
+      id: `ws-pane-${++wsCounter}`,
+      // Inert carrier — conversation panes persist agentId "terminal" so a
+      // downgraded binary renders a harmless terminal pane; `kind` is the sole
+      // discriminant.
+      agentId: "terminal",
+      sessionId: null,
+      kind: "conversation",
+      conversationId,
+    };
+    const workspace: Workspace = {
+      id,
+      name,
+      // Conversation panes are never pushed into `agents` (P1-S1 ruling) — a
+      // pure conversation wrapper starts with an empty agents list.
+      agents: [],
+      panes: [pane],
+      projectPath,
+      createdAt: now,
+      updatedAt: now,
+      status: "active",
+      origin: "conversation",
+    };
+    set(commitWorkspaces((s) => ({ workspaces: [...s.workspaces, workspace] })));
+    return id;
   },
 
   setZoomedPane: (paneId) => {

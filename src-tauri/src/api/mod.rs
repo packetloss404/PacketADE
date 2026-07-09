@@ -115,6 +115,11 @@ pub struct WorkspaceDto {
     pub remote_project_path: Option<String>,
     #[ts(optional)]
     pub github_repo: Option<GithubRepoDto>,
+    /// Tile program (P1-S2): `"conversation"` for auto-materialized
+    /// conversation wrappers, else absent. Inert `#[ts(optional)]` mirror of
+    /// core `Workspace.origin`.
+    #[ts(optional)]
+    pub origin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -862,6 +867,7 @@ impl From<core_workspace::Workspace> for WorkspaceDto {
             server_id: value.server_id,
             remote_project_path: value.remote_project_path,
             github_repo: value.github_repo.map(Into::into),
+            origin: value.origin,
         }
     }
 }
@@ -884,6 +890,7 @@ impl From<WorkspaceDto> for core_workspace::Workspace {
             server_id: value.server_id,
             remote_project_path: value.remote_project_path,
             github_repo: value.github_repo.map(Into::into),
+            origin: value.origin,
         }
     }
 }

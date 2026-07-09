@@ -66,6 +66,14 @@ pub struct Workspace {
     pub remote_project_path: Option<String>,
     #[serde(default)]
     pub github_repo: Option<GithubRepo>,
+    /// Workspace origin marker (tile program, P1-S2). `Some("conversation")`
+    /// tags an auto-materialized conversation wrapper (deterministic id
+    /// `ws-wrap-<convId>`) created by `sessionGlue.openSession`. `None` ⇒ a
+    /// normal user-created workspace, so an old binary that never wrote this
+    /// field degrades cleanly. Inert `#[serde(default)]` mirror — same
+    /// downgrade pattern as the pane-level `kind`/`conversation_id`.
+    #[serde(default)]
+    pub origin: Option<String>,
 }
 
 #[cfg(test)]
@@ -119,6 +127,57 @@ mod tests {
         assert_eq!(pane.agent_id, "terminal");
         assert!(pane.kind.is_none());
         assert!(pane.conversation_id.is_none());
+    }
+
+    fn wrapper_workspace() -> Workspace {
+        Workspace {
+            id: "ws-wrap-conv-123".to_string(),
+            name: "my task".to_string(),
+            agents: vec![],
+            panes: vec![conversation_pane()],
+            project_path: "/proj".to_string(),
+            prompt: None,
+            created_at: 1,
+            updated_at: 1,
+            status: "active".to_string(),
+            bypass_permissions: None,
+            model_overrides: None,
+            effort_overrides: None,
+            server_id: None,
+            remote_project_path: None,
+            github_repo: None,
+            origin: Some("conversation".to_string()),
+        }
+    }
+
+    #[test]
+    fn wrapper_workspace_origin_round_trips() {
+        let ws = wrapper_workspace();
+        let json = serde_json::to_string(&ws).unwrap();
+        let back: Workspace = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.origin.as_deref(), Some("conversation"));
+    }
+
+    #[test]
+    fn old_binary_workspace_without_origin_defaults_to_none() {
+        // A workspace written by an old binary that never knew about `origin`
+        // must default to None — an inert #[serde(default)] mirror.
+        let legacy = r#"{
+            "id": "ws-1",
+            "name": "legacy",
+            "agents": [],
+            "panes": [],
+            "project_path": "/proj",
+            "prompt": null,
+            "created_at": 1,
+            "updated_at": 1,
+            "status": "active",
+            "bypass_permissions": null,
+            "model_overrides": null,
+            "effort_overrides": null
+        }"#;
+        let ws: Workspace = serde_json::from_str(legacy).unwrap();
+        assert!(ws.origin.is_none());
     }
 
     #[test]
