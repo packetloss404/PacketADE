@@ -35,12 +35,14 @@ import {
   Plus,
   Pin,
   Trash2,
+  GitBranch,
 } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useAgentSidebarPrefsStore } from "@/stores/agentSidebarPrefsStore";
-import { openSession } from "@/stores/sessionGlue";
+import { openSession, archiveWorkspaceWithFanout } from "@/stores/sessionGlue";
+import { useToast } from "@/components/ui/Toast";
 import {
   useConversationAttention,
   useWorkspaceStatuses,
@@ -81,7 +83,6 @@ export function FleetSidebar() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
   const deleteWorkspace = useWorkspaceStore((s) => s.deleteWorkspace);
-  const archiveWorkspace = useWorkspaceStore((s) => s.archiveWorkspace);
   const requestPaneFocus = useWorkspaceStore((s) => s.requestPaneFocus);
 
   const conversations = useAgentTaskStore((s) => s.conversations ?? []);
@@ -99,6 +100,8 @@ export function FleetSidebar() {
   // The SINGLE status truth (shared subscriptions with the tab-strip dot).
   const conversationAttention = useConversationAttention();
   const workspaceStatuses = useWorkspaceStatuses();
+
+  const toast = useToast();
 
   const [filter, setFilter] = useState<FleetFilter>("all");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -202,9 +205,35 @@ export function FleetSidebar() {
 
   const handleArchiveToggle = (row: FleetRow) => {
     if (row.kind === "workspace") {
-      // P4-S2 keeps the existing archive semantics; the ruled fan-out
-      // (member-PTY kill, worktree policy) lands in P4-S3.
-      archiveWorkspace(row.workspaceId);
+      // P4-S3 ruled fan-out: kill member PTYs (on archive only), apply the
+      // worktree cleanup policy, archive member conversations (transcripts
+      // kept), archive the workspace. Explicit archive of unlanded work raises
+      // a non-blocking toast with a "Review worktree" action (notification
+      // layer as a consumer — no modal, no second codepath).
+      void archiveWorkspaceWithFanout(row.workspaceId)
+        .then((result) => {
+        if (!result || result.auto) return;
+        const kept = result.keptWorktreeConversationIds;
+        if (kept.length === 0) return;
+        toast.show(
+          kept.length === 1
+            ? "Archived with an unlanded worktree kept for later."
+            : `Archived with ${kept.length} unlanded worktrees kept for later.`,
+          {
+            duration: 8000,
+            action: {
+              label: "Review worktree",
+              // Materialize + activate the first kept conversation so its tile
+              // (and worktree) is reachable for land/discard.
+              onClick: () => openSession({ conversationId: kept[0] }),
+            },
+          },
+        );
+        })
+        .catch(() => {
+          // Fan-out swallows its own IO failures; guard the outer promise too so
+          // a rejection never surfaces as an unhandled rejection.
+        });
     } else if (row.archived) {
       unarchiveConversation(row.conversationId);
     } else {
@@ -273,6 +302,13 @@ export function FleetSidebar() {
               {snippet ?? titleText}
             </span>
             <span className="flex-1" />
+            {row.worktreePending && (
+              <Tooltip content="Worktree pending — unlanded work kept">
+                <span className="flex items-center gap-0.5 shrink-0 text-accent-amber">
+                  <GitBranch size={9} />
+                </span>
+              </Tooltip>
+            )}
             <span className="text-meta text-text-muted shrink-0">
               {formatRelativeTime(row.updatedAt)}
             </span>

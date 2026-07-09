@@ -15,7 +15,7 @@ import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
 import { AgentsOnboarding } from "@/components/agents/AgentsOnboarding";
 import { WorktreeCommitHost } from "@/components/views/WorktreeCommitHost";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
-import { X } from "lucide-react";
+import { X, ArrowRightLeft } from "lucide-react";
 import { API_PROVIDERS } from "@/lib/api-models";
 import {
   getProviderAuthStatus,
@@ -223,8 +223,20 @@ export function AgentsView() {
   }, [selectConversation]);
 
   return (
-    <div className="relative flex flex-1 overflow-hidden bg-bg-primary">
-      <AgentSidebar
+    <div className="relative flex flex-1 flex-col overflow-hidden bg-bg-primary">
+      {/* Tile program (P4-S3): dual-run migration banner. The fleet layer
+          (FleetSidebar in the Workspace view) is now the home for sessions;
+          this tab still works but is slated for retirement in Phase 5. Small,
+          additive, dismissed by navigating away. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-accent-amber/30 bg-accent-amber/10 px-3 py-1.5 text-meta text-accent-amber">
+        <ArrowRightLeft size={12} className="shrink-0" />
+        <span className="flex-1 leading-snug">
+          Sessions have moved to the Workspace view&apos;s Fleet sidebar. This tab
+          still works for now and will be retired soon.
+        </span>
+      </div>
+      <div className="relative flex flex-1 overflow-hidden">
+        <AgentSidebar
         onNewAgent={handleNewAgent}
         selectedId={selectedConversationId}
         onSelect={selectConversation}
@@ -273,11 +285,12 @@ export function AgentsView() {
         </div>
       )}
 
-      <AgentsOnboarding />
+        <AgentsOnboarding />
 
-      {/* P2-S3 DISPOSABLE modal host (deleted in P5-S2): makes the endings
-          loop reachable from the Agents tab. Opened by the ReviewBar CTA. */}
-      <WorktreeCommitHost />
+        {/* P2-S3 DISPOSABLE modal host (deleted in P5-S2): makes the endings
+            loop reachable from the Agents tab. Opened by the ReviewBar CTA. */}
+        <WorktreeCommitHost />
+      </div>
     </div>
   );
 }
