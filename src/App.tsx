@@ -11,6 +11,7 @@ import { useSideChatHotkey } from "@/hooks/useSideChatHotkey";
 import { useDictationTarget } from "@/hooks/useDictationTarget";
 import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { ToastProvider } from "@/components/ui/Toast";
 import { FleetSidebar } from "@/components/workspace/FleetSidebar";
 import { initSessionGlue } from "@/stores/sessionGlue";
 import { useLayoutStore } from "@/stores/layoutStore";
@@ -261,6 +262,11 @@ export default function App() {
 
   return (
     <ErrorBoundary fallbackMessage="PacketADE encountered an error">
+      {/* Tile program (P4-S3): mount the in-app Toast host app-wide so the
+          existing Toast infrastructure is a live consumer (e.g. the archive
+          "worktree pending — Review worktree" toast). Wraps the whole shell so
+          any surface can raise a non-blocking toast. */}
+      <ToastProvider>
       <div className="flex flex-col h-screen bg-bg-primary text-text-primary font-sans">
         <TitleBar />
         <Toolbar />
@@ -314,6 +320,7 @@ export default function App() {
           </Suspense>
         )}
       </div>
+      </ToastProvider>
     </ErrorBoundary>
   );
 }

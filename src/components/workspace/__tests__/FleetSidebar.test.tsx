@@ -43,6 +43,7 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 import { FleetSidebar } from "@/components/workspace/FleetSidebar";
+import { ToastProvider } from "@/components/ui/Toast";
 import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useFlightStore } from "@/stores/flightStore";
@@ -91,13 +92,13 @@ afterEach(() => {
 describe("FleetSidebar", () => {
   it("shows an unplaced legacy conversation as a virtual row", () => {
     useAgentTaskStore.setState({ conversations: [conv()] });
-    render(<FleetSidebar />);
+    render(<FleetSidebar />, { wrapper: ToastProvider });
     expect(screen.getByText("Legacy Task A")).toBeInTheDocument();
   });
 
   it("clicking a virtual row materializes exactly one wrapper workspace and activates it", () => {
     useAgentTaskStore.setState({ conversations: [conv()] });
-    render(<FleetSidebar />);
+    render(<FleetSidebar />, { wrapper: ToastProvider });
 
     act(() => {
       fireEvent.click(screen.getByText("Legacy Task A"));
@@ -124,7 +125,7 @@ describe("FleetSidebar", () => {
       permissions: new Map([["conv-N", [{ id: "p", tool: "bash", input: {} } as never]]]),
       edits: new Map(),
     });
-    render(<FleetSidebar />);
+    render(<FleetSidebar />, { wrapper: ToastProvider });
 
     // Rendered under the Needs you group.
     expect(screen.getByText("Needs you")).toBeInTheDocument();
@@ -152,7 +153,7 @@ describe("FleetSidebar", () => {
         conv({ id: "c2", title: "Write docs" }),
       ],
     });
-    render(<FleetSidebar />);
+    render(<FleetSidebar />, { wrapper: ToastProvider });
 
     fireEvent.click(screen.getByRole("button", { name: /search sessions/i }));
     const input = screen.getByPlaceholderText("Search messages, titles…");
@@ -171,9 +172,11 @@ describe("FleetSidebar", () => {
       commits += 1;
     };
     render(
-      <Profiler id="fleet" onRender={onRender}>
-        <FleetSidebar />
-      </Profiler>,
+      <ToastProvider>
+        <Profiler id="fleet" onRender={onRender}>
+          <FleetSidebar />
+        </Profiler>
+      </ToastProvider>,
     );
     const baseline = commits;
 

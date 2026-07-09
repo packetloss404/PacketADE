@@ -53,6 +53,12 @@ interface FleetRowBase {
   chips: FleetChip[];
   /** SSH grouping metadata. */
   isSsh: boolean;
+  /**
+   * Tile program (P4-S3): a member/own conversation holds an unlanded worktree
+   * (`worktree.state === "active"`). Drives the standing "worktree pending" chip
+   * — the visible signal that archiving Kept the tree rather than losing it.
+   */
+  worktreePending: boolean;
 }
 
 export interface WorkspaceFleetRow extends FleetRowBase {
@@ -256,6 +262,9 @@ export function buildFleetProjection(input: BuildFleetInput): FleetProjection {
     const searchText = [w.name, ...memberConvs.map((c) => c.title ?? "")]
       .join(" ")
       .toLowerCase();
+    const worktreePending = memberConvs.some(
+      (c) => c.worktree?.state === "active",
+    );
     const row: WorkspaceFleetRow = {
       kind: "workspace",
       id: w.id,
@@ -272,6 +281,7 @@ export function buildFleetProjection(input: BuildFleetInput): FleetProjection {
       chips,
       isSsh,
       needsYouPaneId,
+      worktreePending,
     };
     metas.push({
       row,
@@ -313,6 +323,7 @@ export function buildFleetProjection(input: BuildFleetInput): FleetProjection {
         },
       ],
       isSsh,
+      worktreePending: c.worktree?.state === "active",
     };
     metas.push({
       row,
