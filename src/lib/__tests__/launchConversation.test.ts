@@ -3,6 +3,8 @@ import type { LaunchConversationParams } from "@/lib/launchConversation";
 import { makeSshUri } from "@/lib/ssh-uri";
 import { flagsForMode } from "@/components/agents/agentModeChipUtils";
 import type { ServerConfig } from "@/types/server";
+import type { AgentProfile } from "@/types/profiles";
+import type { MemoryEvent } from "@/types/memory";
 
 /**
  * Unit coverage for the launch extraction (tile-program P1-S3, D). Exercises
@@ -33,14 +35,11 @@ vi.mock("@/lib/agentsMd", () => ({
   loadAgentsMd: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("@/stores/memoryStore", () => ({
-  useMemoryStore: {
-    getState: vi.fn(() => ({
-      getContextForSession: vi.fn(() => ""),
-      composeMemoryBrief: vi.fn(() => ({ text: "" })),
-    })),
-  },
-}));
+// NOTE: memoryStore is intentionally NOT mocked. These tests exercise the
+// REAL launchConversation → createApiConversation → composeMemoryBrief
+// injection seam (the artery M1 restored); only the Tauri boundary below is
+// stubbed so the outgoing system prompt handed to startApiAgentSession can be
+// inspected directly.
 
 vi.mock("@/stores/layoutStore", () => ({
   useLayoutStore: {
@@ -77,6 +76,11 @@ vi.mock("@/lib/tauri", () => ({
   saveServersSlice: vi.fn().mockResolvedValue(undefined),
   getGitBranch: (...args: unknown[]) => getGitBranchMock(...args),
   createConversationWorktree: (...args: unknown[]) => createConversationWorktreeMock(...args),
+  // memoryStore's module-level imports (unused by these tests but must exist).
+  saveMemorySlice: vi.fn().mockResolvedValue(undefined),
+  summarizeSession: vi.fn(),
+  extractPatterns: vi.fn(),
+  togglePinnedPattern: vi.fn(),
 }));
 
 const SELECTED_REPO = "D:/projects/example";
@@ -261,6 +265,191 @@ describe("launchConversation — P3-S4 draft-tile additions", () => {
     expect(conv?.sshTarget?.id).toBe("srv-1");
     expect(conv?.sshTarget?.host).toBe("example.com");
     expect(conv?.projectPath).toBe("/srv/app");
+  });
+});
+
+function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
+  return {
+    id: "prof-1",
+    name: "Reviewer",
+    description: "",
+    systemPrompt: "",
+    allowedTools: null,
+    memoryContextEnabled: true,
+    permissionMode: "auto",
+    planMode: false,
+    isBuiltin: false,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function sessionEvent(id: string, projectPath: string, summary: string): MemoryEvent {
+  return {
+    id,
+    type: "session_completed",
+    timestamp: Date.now(),
+    projectPath,
+    payload: {
+      sessionId: id,
+      agentId: "api-openai",
+      durationMs: 100,
+      status: "done",
+      summary,
+      filesModified: [],
+      keyDecisions: [],
+    },
+  };
+}
+
+/**
+ * The injection seam itself — proving the REAL launchConversation →
+ * createApiConversation → composeMemoryBrief chain lands (or withholds) the
+ * project memory brief in the exact `systemPrompt` argument handed to
+ * startApiAgentSession. Every other consumer test mocks memoryStore out; this
+ * suite uses the real store so the seam has committed coverage post-M1
+ * (profile resolution now live).
+ */
+describe("launchConversation — real memory-injection seam", () => {
+  const MEMORY_MARKER = "PacketADE Memory Brief";
+
+  // The system-prompt argument to startApiAgentSession is positional index 5:
+  //   (id, provider, model, projectPath, initialMessage, systemPrompt, ...).
+  function outgoingSystemPrompt(): string | null {
+    const call = startApiAgentSessionMock.mock.calls[0];
+    return (call?.[5] ?? null) as string | null;
+  }
+
+  it("P1: memoryContextEnabled=false withholds the brief even when memory exists", async () => {
+    const { useMemoryStore } = await import("@/stores/memoryStore");
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { launchConversation } = await import("@/lib/launchConversation");
+
+    useMemoryStore.setState({
+      patterns: [
+        {
+          id: "p-1",
+          pattern: "Prefer lucide icons and theme tokens over raw colors.",
+          category: "convention",
+          confidence: 0.9,
+          extractedAt: Date.now(),
+          projectPath: SELECTED_REPO,
+        },
+      ],
+    });
+
+    launchConversation(baseParams({ profile: profile({ memoryContextEnabled: false }) }));
+
+    await vi.waitFor(() => {
+      expect(startApiAgentSessionMock).toHaveBeenCalled();
+    });
+
+    const prompt = outgoingSystemPrompt();
+    expect(prompt ?? "").not.toContain(MEMORY_MARKER);
+    expect(prompt ?? "").not.toContain("Prefer lucide icons");
+
+    const conv = useAgentTaskStore.getState().conversations[0];
+    expect(conv?.systemPromptOverride ?? "").not.toContain(MEMORY_MARKER);
+  });
+
+  it("P2: an enabled profile prepends the brief (with seeded pattern) ahead of the profile prompt", async () => {
+    const { useMemoryStore } = await import("@/stores/memoryStore");
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { launchConversation } = await import("@/lib/launchConversation");
+
+    useMemoryStore.setState({
+      patterns: [
+        {
+          id: "p-1",
+          pattern: "Prefer lucide icons and theme tokens over raw colors.",
+          category: "convention",
+          confidence: 0.9,
+          extractedAt: Date.now(),
+          projectPath: SELECTED_REPO,
+        },
+      ],
+    });
+
+    launchConversation(
+      baseParams({
+        profile: profile({
+          memoryContextEnabled: true,
+          systemPrompt: "PROFILE_DIRECTIVE_SENTINEL",
+        }),
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(startApiAgentSessionMock).toHaveBeenCalled();
+    });
+
+    const prompt = outgoingSystemPrompt() ?? "";
+    expect(prompt).toContain(MEMORY_MARKER);
+    expect(prompt).toContain("Prefer lucide icons");
+    expect(prompt).toContain("PROFILE_DIRECTIVE_SENTINEL");
+    // The brief lands BEFORE the profile's own directive (memory is context,
+    // the profile prompt wins conflicts by living last).
+    expect(prompt.indexOf(MEMORY_MARKER)).toBeLessThan(prompt.indexOf("PROFILE_DIRECTIVE_SENTINEL"));
+
+    const conv = useAgentTaskStore.getState().conversations[0];
+    expect(conv?.systemPromptOverride ?? "").toContain(MEMORY_MARKER);
+  });
+
+  it("P3: an SSH launch injects remote-keyed memory and excludes local-path items", async () => {
+    const { useServerStore } = await import("@/stores/serverStore");
+    const { useMemoryStore, remoteMemoryProjectKey } = await import("@/stores/memoryStore");
+    const { launchConversation } = await import("@/lib/launchConversation");
+
+    const server: ServerConfig = {
+      id: "srv-1",
+      name: "Box",
+      host: "example.com",
+      port: 22,
+      username: "ian",
+      authMethod: "agent",
+      remotePath: "/srv/app",
+      installedAgents: [],
+      hostFingerprint: "SHA256:fp",
+    };
+    useServerStore.setState({ servers: [server] });
+
+    useMemoryStore.setState({
+      events: [
+        sessionEvent(
+          "remote-1",
+          remoteMemoryProjectKey("srv-1", "/srv/app"),
+          "REMOTE_DEPLOY_NOTE pin the host key before deploy.",
+        ),
+      ],
+      patterns: [
+        {
+          id: "local-1",
+          pattern: "LOCAL_ONLY_PATTERN never leaves the workstation.",
+          category: "convention",
+          confidence: 0.95,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/app",
+        },
+      ],
+    });
+
+    launchConversation(
+      baseParams({
+        selectedAgent: "api-claude",
+        selectedRepo: makeSshUri("srv-1", "/srv/app"),
+        profile: profile({ memoryContextEnabled: true, systemPrompt: "PROFILE_DIRECTIVE_SENTINEL" }),
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(startApiAgentSessionMock).toHaveBeenCalled();
+    });
+
+    const prompt = outgoingSystemPrompt() ?? "";
+    expect(prompt).toContain(MEMORY_MARKER);
+    expect(prompt).toContain("REMOTE_DEPLOY_NOTE");
+    expect(prompt).not.toContain("LOCAL_ONLY_PATTERN");
   });
 });
 
