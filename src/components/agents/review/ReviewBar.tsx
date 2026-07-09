@@ -23,6 +23,13 @@ export interface ReviewBarProps {
    * passive. */
   pendingPermissionCount: number;
   respondEdit: ApprovalStore["respondEdit"];
+  /**
+   * Y/N focus gate (P3-S1). Undefined → no pane context (standalone
+   * AgentsView), armed exactly as today. Defined → armed iff true, so only
+   * the focused conversation tile's bar answers a keypress. Extends the
+   * existing arming condition; never alters the standalone path.
+   */
+  keyboardScopeActive?: boolean;
 }
 
 /**
@@ -39,6 +46,7 @@ export function ReviewBar({
   pendingEdits,
   pendingPermissionCount,
   respondEdit,
+  keyboardScopeActive,
 }: ReviewBarProps) {
   const open = useReviewStore(
     (s) => s.open && s.conversationId === conversationId,
@@ -59,7 +67,10 @@ export function ReviewBar({
   const openFinishCommit = useFinishCommitHost((s) => s.openFinishCommit);
 
   const topEdit = pendingEdits[0];
-  const ynActive = !!topEdit && pendingPermissionCount === 0;
+  // Dual-mode focus gate (P3-S1): no pane context (undefined) → armed as
+  // today; pane context → armed iff this instance holds keyboard scope.
+  const scopeArmed = keyboardScopeActive === undefined || keyboardScopeActive;
+  const ynActive = !!topEdit && pendingPermissionCount === 0 && scopeArmed;
 
   useEffect(() => {
     if (!ynActive || commandPaletteOpen) return;

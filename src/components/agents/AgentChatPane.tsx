@@ -50,6 +50,23 @@ const STATUS_DISPLAY: Record<string, { label: string; className: string }> = {
 interface AgentChatPaneProps {
   conversationId: string;
   onClose: () => void;
+  /**
+   * Where this pane is mounted. "standalone" is the AgentsView single-pane
+   * host (default — byte-identical to pre-tile behavior); "tile" is the
+   * mosaic ConversationTile (P3-S2). Strictly additive: no fork, no
+   * extraction. Threaded to the root wrapper as a data attribute so tile
+   * chrome and later frame-conditional behavior have a hook without altering
+   * standalone rendering.
+   */
+  frame?: "standalone" | "tile";
+  /**
+   * Y/N keyboard focus gate for the protected approval shortcuts. Undefined
+   * (no pane context, e.g. standalone AgentsView) → armed exactly as today.
+   * Defined (tile context) → the document-level Y/N handlers arm iff true, so
+   * only the focused tile responds to a keypress. The tile passes
+   * `activePaneId === pane.id` in P3-S2.
+   */
+  keyboardScopeActive?: boolean;
 }
 
 // "← back to plan" link shown when this conversation was spawned by a
@@ -73,7 +90,12 @@ function BackToParentLink({ parentId }: { parentId: string }) {
   );
 }
 
-export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
+export function AgentChatPane({
+  conversationId,
+  onClose,
+  frame = "standalone",
+  keyboardScopeActive,
+}: AgentChatPaneProps) {
   const conversation = useAgentTaskStore((s) =>
     s.conversations.find((c) => c.id === conversationId),
   );
@@ -357,6 +379,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
         respondPermission={approvalActions.respondPermission}
         cancelPendingTools={approvalActions.cancelPendingTools}
         appendAllowedToolPattern={actions.appendAllowedToolPattern}
+        keyboardScopeActive={keyboardScopeActive}
       />
 
       {(conversation.pendingDiffComments?.length ?? 0) > 0 && (
@@ -374,6 +397,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
           pendingEdits={pendingEdits}
           pendingPermissionCount={pendingPermissions.length}
           respondEdit={approvalActions.respondEdit}
+          keyboardScopeActive={keyboardScopeActive}
         />
       )}
 
@@ -389,7 +413,7 @@ export function AgentChatPane({ conversationId, onClose }: AgentChatPaneProps) {
   );
 
   return (
-    <div className="flex h-full bg-bg-primary">
+    <div className="flex h-full bg-bg-primary" data-frame={frame}>
       <div className="min-w-0 flex-1">{chatContent}</div>
     </div>
   );

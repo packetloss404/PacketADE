@@ -5,6 +5,7 @@ import type { MosaicNode, MosaicPath } from "@/types/mosaic";
 import { WorkspacePane } from "./WorkspacePane";
 import type { Workspace } from "@/types/workspace";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useReviewStore } from "@/stores/reviewStore";
 import { buildPresetTree, presetForCount, addToTree, removeFromTree, getLeafOrder } from "@/lib/mosaicPresets";
 
 interface WorkspaceMosaicContainerProps {
@@ -26,15 +27,21 @@ export function WorkspaceMosaicContainer({ workspace }: WorkspaceMosaicContainer
     setZoomedPane(null);
   }, [workspace.id, setZoomedPane]);
 
-  // Escape key exits zoom
+  // Escape key exits zoom — condition-based Escape layering (P3-S1, Alpha's
+  // ruled version). Explicit condition check, NOT defaultPrevented ordering:
+  // while the canonical review surface is open the zoom-exit no-ops so a
+  // single Escape closes review first (ReviewSurface owns that Escape) and
+  // leaves the auto-zoom intact. Review and zoom-exit therefore never
+  // double-fire off one keypress. A later Escape (review closed) exits zoom.
   useEffect(() => {
     if (!zoomedPaneId) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        setZoomedPane(null);
-      }
+      if (e.key !== "Escape") return;
+      // No-op while review is open — the review layer consumes this Escape.
+      if (useReviewStore.getState().open) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setZoomedPane(null);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
