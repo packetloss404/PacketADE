@@ -142,6 +142,51 @@ impl Default for PersistedState {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Test-only data-dir redirection.
+//
+// The real storage writers (`with_state_lock`, `accumulate_*_cost`, the
+// `save_*` slice writers) all resolve their target through `data_dir()`, which
+// is hardcoded to `~/.packetade`. To exercise those writers HERMETICALLY in
+// the default `cargo test` pass — without the historic `#[ignore]`+`HOME`
+// rewrite that clobbered real user state — tests carry a PER-THREAD override
+// that redirects `data_dir()` at a tempdir. It is thread-local (not a global /
+// env-var mutation) so parallel tests each get their own isolated directory
+// and never race one another. The whole facility is `#[cfg(test)]`, so the
+// production `data_dir()` below compiles byte-identically in release builds.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+thread_local! {
+    static TEST_DATA_DIR: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Test-only RAII guard: redirects [`data_dir`] to a tempdir on the current
+/// thread and restores the previous value on drop (including on panic).
+#[cfg(test)]
+pub(crate) struct TestDataDirGuard {
+    prev: Option<PathBuf>,
+}
+
+#[cfg(test)]
+impl Drop for TestDataDirGuard {
+    fn drop(&mut self) {
+        let prev = self.prev.take();
+        TEST_DATA_DIR.with(|c| *c.borrow_mut() = prev);
+    }
+}
+
+/// Test-only: point `data_dir()` at `dir` for the current thread until the
+/// returned guard drops. Because `#[tokio::test]` drives futures on a
+/// current-thread runtime, the override stays live across the async storage
+/// writers' `.await` points (all polled on the one thread that set it).
+#[cfg(test)]
+pub(crate) fn redirect_data_dir_for_test(dir: impl Into<PathBuf>) -> TestDataDirGuard {
+    let prev = TEST_DATA_DIR.with(|c| c.borrow_mut().replace(dir.into()));
+    TestDataDirGuard { prev }
+}
+
 /// Get the PacketADE data directory (~/.packetade/).
 ///
 /// Resolves the SAME directory for both reads and writes so a failed startup
@@ -151,6 +196,10 @@ impl Default for PersistedState {
 /// - otherwise fall back to the legacy dir if it exists,
 /// - otherwise return the new dir (fresh install).
 pub fn data_dir() -> PathBuf {
+    #[cfg(test)]
+    if let Some(dir) = TEST_DATA_DIR.with(|c| c.borrow().clone()) {
+        return dir;
+    }
     let home = home_dir().unwrap_or_else(|| ".".to_string());
     let new_dir = PathBuf::from(&home).join(crate::core::brand::DATA_DIR_NAME);
     if new_dir.exists() {
