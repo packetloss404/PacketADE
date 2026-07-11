@@ -473,3 +473,282 @@ mod e8_accum {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// C1-S1 — HERMETIC money-path guards.
+//
+// The `e8_accum` module above is `#[ignore]`d because it rewrites the real
+// `~/.packetade` state file. This module gives the SAME live cost path
+// CI-run coverage instead: the pure reverse-lookup
+// (`flight_for_executor_session`) needs no storage at all, and the persisting
+// helper (`accumulate_executor_cost`) is exercised end-to-end against a
+// per-thread tempdir via `storage::redirect_data_dir_for_test`, so every test
+// here runs in the default `cargo test` pass with no `#[ignore]` and no risk
+// to real user state. This is the executor money path the CLEAN passes must
+// keep bit-identical.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod hermetic_money_path {
+    use super::*;
+    use crate::core::flight::{
+        Attempt, AttemptStatus, AttemptTarget, Flight, FlightPriority, FlightStatus, Milestone,
+        MilestoneStatus, Task, TaskStatus, TaskType,
+    };
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // --- fixture builders ---------------------------------------------------
+
+    fn base_flight(id: &str) -> Flight {
+        Flight {
+            id: id.to_string(),
+            title: format!("hermetic {}", id),
+            objective: String::new(),
+            status: FlightStatus::Active,
+            priority: FlightPriority::Medium,
+            project_path: "/tmp/hermetic".to_string(),
+            workspace_id: None,
+            git_branch: None,
+            milestones: Vec::new(),
+            linked_session_ids: Vec::new(),
+            created_at: 0,
+            updated_at: 0,
+            completed_at: None,
+            total_cost: 0.0,
+            total_tokens: 0,
+            prompt: None,
+            attempts: Vec::new(),
+            planner_session_id: None,
+            planner_status: None,
+            planner_cost: None,
+            planner_tokens: None,
+            planner_provider: None,
+            publish_attempts_as_prs: false,
+        }
+    }
+
+    fn attempt_with(session_id: &str, model: &str) -> Attempt {
+        Attempt {
+            id: format!("att-{}", session_id),
+            flight_id: String::new(),
+            target: AttemptTarget::Local {
+                base_path: "/tmp/hermetic".to_string(),
+                worktree_path: "/tmp/hermetic/wt".to_string(),
+            },
+            agent_config_id: "claude-code".to_string(),
+            model: model.to_string(),
+            provider: "api-claude".to_string(),
+            branch: "wt".to_string(),
+            base_branch: "main".to_string(),
+            session_id: session_id.to_string(),
+            status: AttemptStatus::Running,
+            started_at: None,
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+            error_message: None,
+            draft_pr_number: None,
+        }
+    }
+
+    fn task_with_session(session_id: &str) -> Task {
+        Task {
+            id: format!("task-{}", session_id),
+            milestone_id: "ms-1".to_string(),
+            flight_id: String::new(),
+            title: "t".to_string(),
+            description: String::new(),
+            order: 0,
+            status: TaskStatus::Running,
+            task_type: TaskType::Implementation,
+            agent_config_id: "claude-code".to_string(),
+            agent_args: None,
+            model: None,
+            depends_on: Vec::new(),
+            session_id: Some(session_id.to_string()),
+            result: None,
+            review_packet: None,
+            created_at: 0,
+            started_at: None,
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+            owned_paths: Vec::new(),
+            replan_count: 0,
+        }
+    }
+
+    fn milestone_with(tasks: Vec<Task>) -> Milestone {
+        Milestone {
+            id: "ms-1".to_string(),
+            flight_id: String::new(),
+            title: "m".to_string(),
+            description: String::new(),
+            order: 0,
+            status: MilestoneStatus::Active,
+            tasks,
+            validation_criteria: Vec::new(),
+        }
+    }
+
+    fn state_with(flights: Vec<Flight>) -> PersistedState {
+        let mut state = PersistedState::default();
+        state.flights = flights;
+        state
+    }
+
+    fn unique_temp_dir(tag: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("packetade-c1s1-{}-{}", tag, nanos));
+        std::fs::create_dir_all(&dir).expect("create unique temp dir");
+        dir
+    }
+
+    // --- flight_for_executor_session (pure logic) ---------------------------
+
+    /// Attempt linkage: a session id recorded on `flight.attempts[].session_id`
+    /// resolves to that flight and returns the attempt's model verbatim (the
+    /// value the caller prices the turn with).
+    #[test]
+    fn executor_lookup_attempt_linkage_returns_attempt_model() {
+        let mut f = base_flight("flight-a");
+        f.attempts = vec![attempt_with("exec-sess-1", "claude-sonnet-4-6")];
+        let state = state_with(vec![f]);
+
+        let owner = flight_for_executor_session(&state, "exec-sess-1")
+            .expect("attempt-linked session must resolve");
+        assert_eq!(owner.flight_id, "flight-a");
+        assert_eq!(owner.model, "claude-sonnet-4-6");
+    }
+
+    /// Legacy milestone-task linkage: a session id living on
+    /// `flight.milestones[].tasks[].session_id` still resolves to the owning
+    /// flight, but `Task` carries no model, so the owner's model is empty
+    /// (priced as zero downstream — the documented v1 trade).
+    #[test]
+    fn executor_lookup_milestone_task_linkage_returns_empty_model() {
+        let mut f = base_flight("flight-b");
+        f.milestones = vec![milestone_with(vec![task_with_session("exec-sess-2")])];
+        let state = state_with(vec![f]);
+
+        let owner = flight_for_executor_session(&state, "exec-sess-2")
+            .expect("task-linked session must resolve");
+        assert_eq!(owner.flight_id, "flight-b");
+        assert_eq!(owner.model, "", "task linkage has no model");
+    }
+
+    /// Miss: a session id referenced by nobody resolves to `None`.
+    #[test]
+    fn executor_lookup_miss_returns_none() {
+        let mut f = base_flight("flight-c");
+        f.attempts = vec![attempt_with("some-other-sess", "m")];
+        f.milestones = vec![milestone_with(vec![task_with_session("yet-another")])];
+        let state = state_with(vec![f]);
+
+        assert!(flight_for_executor_session(&state, "nobody-owns-this").is_none());
+    }
+
+    /// (b) Handler-fallthrough pin: a session id that belongs to NO planner
+    /// registry — a plain executor attempt session — still resolves through
+    /// `flight_for_executor_session`. This is exactly the fallthrough the
+    /// sidecar/api-agent handlers take when the registry lookup misses, and
+    /// the CLEAN passes must preserve it. Scanning multiple flights confirms
+    /// the lookup targets the right owner, not merely the first flight.
+    #[test]
+    fn executor_lookup_fallthrough_resolves_non_planner_session() {
+        let f1 = base_flight("flight-1");
+        let mut f2 = base_flight("flight-2");
+        f2.attempts = vec![attempt_with("registry-miss-sess", "claude-opus-4-6")];
+        let state = state_with(vec![f1, f2]);
+
+        let owner = flight_for_executor_session(&state, "registry-miss-sess")
+            .expect("non-planner executor session must resolve via fallthrough");
+        assert_eq!(owner.flight_id, "flight-2");
+        assert_eq!(owner.model, "claude-opus-4-6");
+    }
+
+    // --- accumulate_executor_cost (persists, via redirected storage) --------
+
+    /// Headline additive case, exercised end-to-end through the REAL storage
+    /// writer against a tempdir: seed `total_cost = 1.5` / `total_tokens = 100`,
+    /// accumulate `(300, 0.5)`, reload from disk, expect `2.0` / `400`.
+    #[tokio::test]
+    async fn accumulate_executor_cost_adds_and_persists() {
+        let dir = unique_temp_dir("exec-add");
+        let _guard = storage::redirect_data_dir_for_test(dir.clone());
+
+        let mut f = base_flight("flight-exec");
+        f.total_cost = 1.5;
+        f.total_tokens = 100;
+        storage::save_flights(vec![f]).expect("seed flight to tempdir");
+
+        accumulate_executor_cost("flight-exec", 300, 0.5)
+            .await
+            .expect("accumulate must succeed for a seeded flight");
+
+        let after = storage::load_state()
+            .flights
+            .into_iter()
+            .find(|f| f.id == "flight-exec")
+            .expect("flight present after add");
+        assert!(
+            (after.total_cost - 2.0).abs() < f64::EPSILON,
+            "total_cost should be 2.0, got {}",
+            after.total_cost
+        );
+        assert_eq!(after.total_tokens, 400);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// First-cost case: a freshly-seeded flight at `total_cost = 0.0` /
+    /// `total_tokens = 0` takes the first executor turn and persists it.
+    #[tokio::test]
+    async fn accumulate_executor_cost_first_cost_persists() {
+        let dir = unique_temp_dir("exec-first");
+        let _guard = storage::redirect_data_dir_for_test(dir.clone());
+
+        storage::save_flights(vec![base_flight("flight-first")]).expect("seed flight to tempdir");
+
+        accumulate_executor_cost("flight-first", 300, 0.5)
+            .await
+            .expect("accumulate must succeed for a seeded flight");
+
+        let after = storage::load_state()
+            .flights
+            .into_iter()
+            .find(|f| f.id == "flight-first")
+            .expect("flight present after first cost");
+        assert!(
+            (after.total_cost - 0.5).abs() < f64::EPSILON,
+            "total_cost should be 0.5, got {}",
+            after.total_cost
+        );
+        assert_eq!(after.total_tokens, 300);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Missing-flight case: accumulating against an id absent from the
+    /// (empty) redirected store surfaces `Err` naming the id — losing
+    /// executor counts silently would skew the StatGrid chip.
+    #[tokio::test]
+    async fn accumulate_executor_cost_errors_on_missing_flight() {
+        let dir = unique_temp_dir("exec-missing");
+        let _guard = storage::redirect_data_dir_for_test(dir.clone());
+
+        let result = accumulate_executor_cost("no-such-flight", 30, 0.1).await;
+        assert!(result.is_err(), "missing flight must return Err");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("no-such-flight"),
+            "error message should name the missing flight: {}",
+            err
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
