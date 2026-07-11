@@ -1,16 +1,8 @@
 import { create } from "zustand";
 import { generateId as genId } from "@/lib/storage";
 import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
-import type {
-  Flight,
-  FlightStatus,
-  Milestone,
-  Task,
-  TaskHandoff,
-  CoordinationEvent,
-} from "@/types/flight";
+import type { Flight, FlightStatus, Task } from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
-import { useRoutingStore } from "@/stores/routingStore";
 
 type FlightState = {
   flights: Flight[];
@@ -41,19 +33,6 @@ async function syncFlightsToBackend(state: FlightState) {
 
 function getAllTasks(flight: Flight): Task[] {
   return flight.milestones.flatMap((m) => m.tasks);
-}
-
-function computeMilestoneStatus(milestone: Milestone): Milestone["status"] {
-  if (milestone.tasks.length === 0) return "pending";
-  if (milestone.tasks.every((t) => t.status === "done")) return "done";
-  if (milestone.tasks.some((t) => t.status === "failed")) return "failed";
-  if (
-    milestone.tasks.some(
-      (t) => t.status === "running" || t.status === "queued" || t.status === "approval_needed",
-    )
-  )
-    return "active";
-  return "pending";
 }
 
 function computeStatusFromTasks(flight: Flight): FlightStatus | null {
@@ -157,66 +136,16 @@ interface FlightStore {
   updateFlight: (id: string, updates: Partial<Flight>) => void;
   deleteFlight: (id: string) => void;
   setActiveFlight: (id: string | null) => void;
-  getActiveFlight: () => Flight | null;
-
-  // Milestone management
-  addMilestone: (
-    flightId: string,
-    milestone: Pick<Milestone, "title" | "description" | "validationCriteria">,
-  ) => string;
-  updateMilestone: (flightId: string, milestoneId: string, updates: Partial<Milestone>) => void;
-  deleteMilestone: (flightId: string, milestoneId: string) => void;
-
-  // Task management
-  addTask: (
-    flightId: string,
-    milestoneId: string,
-    task: Pick<Task, "title" | "description" | "type" | "dependsOn"> & {
-      agentConfigId?: string;
-      model?: string;
-      role?: Task["role"];
-      ownedPaths?: string[];
-    },
-  ) => string;
-  updateTask: (
-    flightId: string,
-    milestoneId: string,
-    taskId: string,
-    updates: Partial<Task>,
-  ) => void;
-  deleteTask: (flightId: string, milestoneId: string, taskId: string) => void;
-
-  // Handoff & blocked
-  appendHandoff: (
-    flightId: string,
-    milestoneId: string,
-    taskId: string,
-    handoff: TaskHandoff,
-  ) => void;
-
-  // Session linking
-  unlinkSessionFromFlight: (flightId: string, sessionId: string) => void;
 
   // Issue linking
   addIssueToFlight: (flightId: string, issueId: string) => void;
   removeIssueFromFlight: (flightId: string, issueId: string) => void;
-  getFlightForIssue: (issueId: string) => Flight | null;
-
-  // Coordination log
-  addCoordinationEvent: (
-    flightId: string,
-    event: Omit<CoordinationEvent, "id" | "timestamp">,
-  ) => void;
-  getCoordinationLog: (flightId: string) => CoordinationEvent[];
 
   // Computed status
   computeFlightStatus: (flightId: string) => FlightStatus;
-  getFlightProgress: (flightId: string) => { done: number; total: number };
-  getAttentionFlights: () => Flight[];
   // `issueIds` is a legacy frontend cache; Rust flights do not round-trip it.
   reconcileIssueLinks: (options?: { persist?: boolean; touchUpdatedAt?: boolean }) => void;
   hydrateFromBackend: (persisted?: Awaited<ReturnType<typeof loadPersistedState>>) => Promise<void>;
-  reconcileLiveSessions: (liveSessionIds: string[]) => void;
 }
 
 const initial = loadState();
@@ -288,224 +217,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     });
   },
 
-  getActiveFlight: () => {
-    const { flights, activeFlightId } = get();
-    if (!activeFlightId) return null;
-    return flights.find((f) => f.id === activeFlightId) ?? null;
-  },
-
-  // === Milestone management ===
-
-  addMilestone: (flightId, input) => {
-    const msId = generateId("ms");
-    set((s) => {
-      const flights = s.flights.map((f) => {
-        if (f.id !== flightId) return f;
-        const milestone: Milestone = {
-          id: msId,
-          flightId,
-          title: input.title,
-          description: input.description,
-          order: f.milestones.length,
-          status: "pending",
-          tasks: [],
-          validationCriteria: input.validationCriteria,
-        };
-        return { ...f, milestones: [...f.milestones, milestone], updatedAt: Date.now() };
-      });
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-    return msId;
-  },
-
-  updateMilestone: (flightId, milestoneId, updates) => {
-    set((s) => {
-      const flights = s.flights.map((f) => {
-        if (f.id !== flightId) return f;
-        const milestones = f.milestones.map((m) =>
-          m.id === milestoneId ? { ...m, ...updates } : m,
-        );
-        return { ...f, milestones, updatedAt: Date.now() };
-      });
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-  },
-
-  deleteMilestone: (flightId, milestoneId) => {
-    set((s) => {
-      const flights = s.flights.map((f) => {
-        if (f.id !== flightId) return f;
-        return {
-          ...f,
-          milestones: f.milestones.filter((m) => m.id !== milestoneId),
-          updatedAt: Date.now(),
-        };
-      });
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-  },
-
-  // === Task management ===
-
-  addTask: (flightId, milestoneId, input) => {
-    // Resolve agent + model from routing table when not explicitly provided
-    const routing = useRoutingStore.getState().resolveForTask(input.type);
-    const agentConfigId = input.agentConfigId ?? routing.agentConfigId;
-    const model = input.model ?? routing.model;
-    const taskId = generateId("task");
-
-    set((s) => {
-      const flights = s.flights.map((f) => {
-        if (f.id !== flightId) return f;
-        const milestones = f.milestones.map((m) => {
-          if (m.id !== milestoneId) return m;
-          const task: Task = {
-            id: taskId,
-            milestoneId,
-            flightId,
-            title: input.title,
-            description: input.description,
-            order: m.tasks.length,
-            status: "pending",
-            type: input.type,
-            role: input.role ?? "builder",
-            ownedPaths: input.ownedPaths ?? [],
-            agentConfigId,
-            dependsOn: input.dependsOn,
-            sessionId: null,
-            createdAt: Date.now(),
-            cost: 0,
-            tokens: 0,
-            ...(model ? { model } : {}),
-          };
-          return { ...m, tasks: [...m.tasks, task] };
-        });
-        return { ...f, milestones, updatedAt: Date.now() };
-      });
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-    return taskId;
-  },
-
-  updateTask: (flightId, milestoneId, taskId, updates) => {
-    // Capture old task for coordination event detection
-    const prevFlight = get().flights.find((f) => f.id === flightId);
-    const prevTask = prevFlight?.milestones
-      .find((m) => m.id === milestoneId)
-      ?.tasks.find((t) => t.id === taskId);
-
-    set((s) => {
-      const flights = s.flights.map((f) => {
-        if (f.id !== flightId) return f;
-        const milestones = f.milestones.map((m) => {
-          if (m.id !== milestoneId) return m;
-          const tasks = m.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
-          const updatedMilestone = { ...m, tasks, status: computeMilestoneStatus({ ...m, tasks }) };
-          return updatedMilestone;
-        });
-        return { ...f, milestones, updatedAt: Date.now() };
-      });
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-
-    // Auto-create coordination events on task status transitions
-    if (prevTask && updates.status && updates.status !== prevTask.status) {
-      const statusEventMap: Record<
-        string,
-        { type: CoordinationEvent["type"]; verb: string } | undefined
-      > = {
-        running: { type: "task_started", verb: "started" },
-        done: { type: "task_completed", verb: "completed" },
-        failed: { type: "task_failed", verb: "failed" },
-        approval_needed: { type: "review_requested", verb: "requested review" },
-      };
-      const mapping = statusEventMap[updates.status];
-      if (mapping) {
-        get().addCoordinationEvent(flightId, {
-          flightId,
-          type: mapping.type,
-          taskId,
-          taskTitle: prevTask.title,
-          agentId: prevTask.agentConfigId,
-          summary: `Task "${prevTask.title}" ${mapping.verb}`,
-        });
-      }
-    }
-  },
-
-  deleteTask: (flightId, milestoneId, taskId) => {
-    set((s) => {
-      const flights = s.flights.map((f) => {
-        if (f.id !== flightId) return f;
-        const milestones = f.milestones.map((m) => {
-          if (m.id !== milestoneId) return m;
-          return { ...m, tasks: m.tasks.filter((t) => t.id !== taskId) };
-        });
-        return { ...f, milestones, updatedAt: Date.now() };
-      });
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-  },
-
-  // === Handoff & blocked ===
-
-  appendHandoff: (flightId, milestoneId, taskId, handoff) => {
-    set((s) => {
-      const flights = s.flights.map((f) => {
-        if (f.id !== flightId) return f;
-        const milestones = f.milestones.map((m) => {
-          if (m.id !== milestoneId) return m;
-          const tasks = m.tasks.map((t) => {
-            if (t.id !== taskId) return t;
-            const handoffLog = [...(t.handoffLog ?? []), handoff];
-            return {
-              ...t,
-              handoffLog,
-              result: {
-                ...(t.result ?? {
-                  exitCode: null,
-                  summary: "",
-                  filesChanged: [],
-                  errors: [],
-                  duration: 0,
-                }),
-                handoff,
-              },
-            };
-          });
-          return { ...m, tasks };
-        });
-        return { ...f, milestones, updatedAt: Date.now() };
-      });
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-  },
-
-  // === Session linking ===
-
-  unlinkSessionFromFlight: (flightId, sessionId) => {
-    set((s) => {
-      const flights = s.flights.map((f) =>
-        f.id === flightId
-          ? {
-              ...f,
-              linkedSessionIds: f.linkedSessionIds.filter((id) => id !== sessionId),
-              updatedAt: Date.now(),
-            }
-          : f,
-      );
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-  },
-
   // === Issue linking (PacketADE-specific legacy) ===
 
   addIssueToFlight: (flightId, issueId) => {
@@ -532,60 +243,12 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     });
   },
 
-  getFlightForIssue: (issueId) => {
-    return get().flights.find((f) => f.issueIds.includes(issueId)) ?? null;
-  },
-
-  // === Coordination log ===
-
-  addCoordinationEvent: (flightId, event) => {
-    set((s) => {
-      const flights = s.flights.map((f) => {
-        if (f.id !== flightId) return f;
-        const entry: CoordinationEvent = {
-          ...event,
-          id: generateId("coord"),
-          timestamp: Date.now(),
-        };
-        const log = [...(f.coordinationLog ?? []), entry];
-        // Cap at 100 events per flight (drop oldest)
-        const capped = log.length > 100 ? log.slice(log.length - 100) : log;
-        return { ...f, coordinationLog: capped, updatedAt: Date.now() };
-      });
-      saveState({ flights, activeFlightId: s.activeFlightId });
-      return { flights };
-    });
-  },
-
-  getCoordinationLog: (flightId) => {
-    const flight = get().flights.find((f) => f.id === flightId);
-    return flight?.coordinationLog ?? [];
-  },
-
   // === Computed status ===
 
   computeFlightStatus: (flightId) => {
     const flight = get().flights.find((f) => f.id === flightId);
     if (!flight) return "draft";
     return computeStatus(flight);
-  },
-
-  getFlightProgress: (flightId) => {
-    const flight = get().flights.find((f) => f.id === flightId);
-    if (!flight) return { done: 0, total: 0 };
-    const tasks = getAllTasks(flight);
-    return {
-      done: tasks.filter((t) => t.status === "done").length,
-      total: tasks.length,
-    };
-  },
-
-  getAttentionFlights: () => {
-    const { flights } = get();
-    return flights.filter((f) => {
-      const tasks = getAllTasks(f);
-      return tasks.some((t) => t.status === "approval_needed" || t.status === "failed");
-    });
   },
 
   reconcileIssueLinks: (options = {}) => {
@@ -613,90 +276,5 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     } catch (err) {
       console.warn("[flightStore.hydrate] swallowed error:", err);
     }
-  },
-
-  reconcileLiveSessions: (liveSessionIds) => {
-    const liveSet = new Set(liveSessionIds);
-    set((s) => {
-      let changed = false;
-      const flights = s.flights.map((flight) => {
-        let flightChanged = false;
-
-        const milestones = flight.milestones.map((milestone) => {
-          let milestoneChanged = false;
-          const tasks = milestone.tasks.map((task) => {
-            if (!task.sessionId) return task;
-
-            if (liveSet.has(task.sessionId)) {
-              const nextStatus =
-                task.status === "queued" || task.status === "paused"
-                  ? ("running" as const)
-                  : task.status;
-              if (nextStatus !== task.status) {
-                changed = true;
-                milestoneChanged = true;
-                flightChanged = true;
-                return { ...task, status: nextStatus };
-              }
-              return task;
-            }
-
-            if (["running", "queued", "approval_needed"].includes(task.status)) {
-              changed = true;
-              milestoneChanged = true;
-              flightChanged = true;
-              return { ...task, sessionId: null, status: "paused" as const };
-            }
-
-            changed = true;
-            milestoneChanged = true;
-            flightChanged = true;
-            return { ...task, sessionId: null };
-          });
-
-          return milestoneChanged ? { ...milestone, tasks } : milestone;
-        });
-
-        const linkedSessionIds = Array.from(
-          new Set(
-            milestones.flatMap((milestone) =>
-              milestone.tasks
-                .map((task) => task.sessionId)
-                .filter((sessionId): sessionId is string => Boolean(sessionId)),
-            ),
-          ),
-        );
-
-        const hasLiveTasks = milestones.some((milestone) =>
-          milestone.tasks.some((task) => task.sessionId && liveSet.has(task.sessionId)),
-        );
-
-        let status = flight.status;
-        if (hasLiveTasks && status !== "done" && status !== "failed" && status !== "cancelled") {
-          status = "active";
-        } else if (!hasLiveTasks && status === "active") {
-          status = "paused";
-        }
-
-        if (
-          flightChanged ||
-          linkedSessionIds.length !== flight.linkedSessionIds.length ||
-          linkedSessionIds.some((id, idx) => flight.linkedSessionIds[idx] !== id) ||
-          status !== flight.status
-        ) {
-          changed = true;
-          return { ...flight, milestones, linkedSessionIds, status, updatedAt: Date.now() };
-        }
-
-        return flight;
-      });
-
-      if (changed) {
-        saveState({ flights, activeFlightId: s.activeFlightId });
-        return { flights };
-      }
-
-      return s;
-    });
   },
 }));
