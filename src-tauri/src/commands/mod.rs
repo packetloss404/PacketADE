@@ -27,6 +27,7 @@ pub mod insights;
 pub mod issues;
 pub mod mcp;
 pub mod memory;
+pub mod flight_cost;
 pub mod flight_planner;
 pub mod flight_planner_compaction;
 pub mod flight_planner_costs;

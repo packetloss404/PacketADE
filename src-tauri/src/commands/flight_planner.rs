@@ -40,19 +40,14 @@ use crate::core::flight_journal::{append_journal, JournalEntry, JournalKind, Jou
 use crate::core::flight_planner_prompts::{spec_mode_system_prompt, wake_user_message};
 use crate::core::storage::{self, PersistedState};
 
-// Re-export the E8 cost / token accumulation helpers extracted into
+// Re-export the E8 planner cost / token accumulation helper extracted into
 // `flight_planner_costs` so the existing
-// `crate::commands::flight_planner::accumulate_*` /
-// `crate::commands::flight_planner::flight_for_executor_session` call sites
-// (api_agent.rs, agent_sidecar::handler.rs) keep compiling unchanged.
-// `ExecutorSessionOwner` is intentionally NOT re-exported here — no
-// out-of-module caller references it by name today; callers consume it via
-// the `flight_for_executor_session` return type and reach in for
-// `.flight_id` / `.model` directly. If a future caller needs the type, add
-// it to this re-export or import it from `flight_planner_costs` directly.
-pub use crate::commands::flight_planner_costs::{
-    accumulate_executor_cost, accumulate_planner_cost, flight_for_executor_session,
-};
+// `crate::commands::flight_planner::accumulate_planner_cost` call site
+// (agent_sidecar::handler.rs) keeps compiling unchanged. The executor money
+// path (`accumulate_executor_cost` / `flight_for_executor_session` /
+// `ExecutorSessionOwner`) moved to `commands::flight_cost` (C1-S2) — its call
+// sites reference that module directly, so it is no longer re-exported here.
+pub use crate::commands::flight_planner_costs::accumulate_planner_cost;
 
 // ---------------------------------------------------------------------------
 // Wake consumer tuning constants

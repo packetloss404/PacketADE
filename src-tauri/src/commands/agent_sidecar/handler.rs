@@ -653,7 +653,7 @@ impl SidecarManager {
                     // Not a planner session — try the executor (flight-attempt
                     // / flight-task) linkage instead.
                     let state_snap = crate::core::storage::load_state();
-                    let owner = match crate::commands::flight_planner::flight_for_executor_session(
+                    let owner = match crate::commands::flight_cost::flight_for_executor_session(
                         &state_snap,
                         &session_for_async,
                     ) {
@@ -671,7 +671,7 @@ impl SidecarManager {
                         cache_read_input_tokens,
                         cache_creation_input_tokens,
                     );
-                    if let Err(e) = crate::commands::flight_planner::accumulate_executor_cost(
+                    if let Err(e) = crate::commands::flight_cost::accumulate_executor_cost(
                         &owner.flight_id,
                         exec_total_tokens,
                         exec_cost_usd,

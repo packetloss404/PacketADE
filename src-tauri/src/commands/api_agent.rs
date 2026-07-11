@@ -1364,7 +1364,7 @@ fn spawn_executor_cost_rollup(
     let model = model.to_string();
     tauri::async_runtime::spawn(async move {
         let state_snap = crate::core::storage::load_state();
-        let owner = match crate::commands::flight_planner::flight_for_executor_session(
+        let owner = match crate::commands::flight_cost::flight_for_executor_session(
             &state_snap,
             &session_id,
         ) {
@@ -1375,7 +1375,7 @@ fn spawn_executor_cost_rollup(
             .saturating_add(output_tokens)
             .saturating_add(cache_read)
             .saturating_add(cache_write);
-        if let Err(e) = crate::commands::flight_planner::accumulate_executor_cost(
+        if let Err(e) = crate::commands::flight_cost::accumulate_executor_cost(
             &owner.flight_id,
             total_tokens,
             cost_usd,
