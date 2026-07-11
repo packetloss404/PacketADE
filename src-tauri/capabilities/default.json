@@ -13,6 +13,7 @@
     "core:window:allow-is-maximized",
     "core:window:allow-toggle-maximize",
     "core:window:allow-set-title",
+    "window-state:default",
     "shell:default",
     "shell:allow-stdin-write",
     "shell:allow-kill",
