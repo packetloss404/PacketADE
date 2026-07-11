@@ -178,18 +178,28 @@ Deferred items called out in `dev/multi-platform-build.md` and
 
 ## Flight Planner backend
 
-- **DECISION PENDING — Orphaned Rust flight-planner backend.** 13 flight-planner
-  commands in `src-tauri/src/lib.rs` plus the sidecar MCP server
-  (`agent-sidecar/src/mcp/flight-planner-server.ts`) have had zero frontend
-  callers since P2-20. **DELETE the backend or RE-EXPOSE it — user decision
-  pending.** The ~45 Flight Planner v1.1 reliability/quality deferrals that used
-  to sit here (helper-planner escalation, milestone-gating back-port, predictive
-  quota, crash-resilient sessions, compaction UX, cost-split plumbing, journal
-  incremental-fetch, etc.) are all conditional on this decision and are not worth
-  itemizing while the surface may be removed. If the decision is RE-EXPOSE, mine
-  the pre-collapse history of this file (and `dev/archive/flight-planner-plan.md`)
-  for the full deferral list. Two concrete residues carried forward from the
-  retired Sprint-3 plan, both conditional on RE-EXPOSE:
+- **DECISION RESOLVED 2026-07-11 — KEEP (deletion blocked by dependency map).**
+  The user approved deletion conditional on the Flight Deck being unaffected; a
+  dedicated deletion task (FP-DEL) built the full dependency map and found the
+  premise false at the backend level: `commands/flight_planner.rs` is the home
+  of SHARED, compile-time load-bearing machinery that live paths call directly —
+  `flight_for_executor_session` + `accumulate_executor_cost` from BOTH the
+  sidecar attempt terminal listener (`agent_sidecar/handler.rs:653-700`) and the
+  api-agent turn-close cost path (`api_agent.rs:1355-1400`); journal emit
+  (`core/flight_journal.rs`) from the same handler; wake plumbing from
+  `orchestration.rs`; spec-import summarization from `issues.rs` via
+  `flight_planner_compaction`; and the sidecar's LIVE anthropic provider imports
+  `flight-planner-server.ts` under `mcpKind === "planner"`. Only the 13 Tauri
+  command REGISTRATIONS are frontend-orphaned. Two independent reviewers
+  confirmed the map; nothing was deleted.
+  **Future path if slimming is still wanted (own task, real Flight-Deck risk):
+  extract-then-delete** — move the shared executor-cost/journal/wake machinery
+  into a Flight-Deck-owned module (e.g. `commands::flight_cost`), repoint
+  handler.rs / api_agent.rs / orchestration.rs / issues.rs, and only then delete
+  the genuinely planner-only remnants (spec-mode prompts, planner lifecycle
+  commands + registrations, `flight_planner_tools/`, the sidecar planner MCP
+  server + `mcpKind:"planner"` branch). Until then the two Sprint-3 residues
+  below stand on their own merits (no longer conditional on a RE-EXPOSE):
   - `read_journal_after(flight_id, last_entry_id)` incremental journal fetch —
     today every `journal-appended` event refetches the whole file.
   - `now_millis()` is duplicated across the 6 `flight_planner_tools` files —
