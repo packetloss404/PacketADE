@@ -16,15 +16,13 @@ export type FlightPriority = "low" | "medium" | "high" | "critical";
 
 // === Milestone ===
 
-export type MilestoneStatus = "pending" | "active" | "done" | "failed";
-
 export interface Milestone {
   id: string;
   flightId: string;
   title: string;
   description: string;
   order: number;
-  status: MilestoneStatus;
+  status: "pending" | "active" | "done" | "failed";
   tasks: Task[];
   validationCriteria: string[];
 }
@@ -209,18 +207,6 @@ export interface Attempt {
 }
 
 // === Flight ===
-
-export type ApprovalDecisionType = "approved" | "denied" | "force_overridden";
-
-export interface ApprovalDecision {
-  id: string;
-  reviewPacketId: string;
-  taskId: string;
-  flightId: string;
-  decision: ApprovalDecisionType;
-  decidedAt: number;
-  reason?: string;
-}
 
 export interface Flight {
   id: string;
