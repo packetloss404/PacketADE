@@ -53,7 +53,6 @@ async function handleRequest(raw: string): Promise<void> {
     case "set_model":
     case "retry":
     case "inject_user_turn":
-    case "planner_tool_result":
       void registry.dispatch(req.sessionId, req, emit).catch((err) => {
         emit({
           type: "error",

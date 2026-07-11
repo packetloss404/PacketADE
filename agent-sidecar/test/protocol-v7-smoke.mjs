@@ -1,14 +1,19 @@
-// Protocol v6 regression smoke test for the PacketADE agent sidecar.
+// Protocol v7 regression smoke test for the PacketADE agent sidecar.
 //
 // Validates that the protocol v2 request types plus the v4
-// `cancel_pending_tools` request, v5 `inject_user_turn` /
-// `planner_tool_result` requests, and the v6 `rate_limited` event shape
-// all route correctly through the dispatcher against the echo provider.
-// This is a wiring test only — it does not exercise any real provider.
-// The echo provider's v2 handlers emit one `chunk` echoing the received
-// field, then `done` with zero tokens. Echo does NOT implement v4
-// `cancel_pending_tools` or the v5 planner methods, so for those requests
-// the expected result is the registry's clean "not supported" error.
+// `cancel_pending_tools` request, the v5 `inject_user_turn` request, and
+// the v6 `rate_limited` event shape all route correctly through the
+// dispatcher against the echo provider. This is a wiring test only — it
+// does not exercise any real provider. The echo provider's v2 handlers
+// emit one `chunk` echoing the received field, then `done` with zero
+// tokens. Echo does NOT implement v4 `cancel_pending_tools` or v5
+// `inject_user_turn`, so for those requests the expected result is the
+// registry's clean "not supported" error.
+//
+// (v7 removed the in-process planner MCP surface — the `planner_tool`
+// event, `planner_tool_result` request, and `mcpKind` — so this file no
+// longer probes those. `inject_user_turn` survives as the shared
+// wake-trigger / spec-mode re-entry path.)
 //
 // The v6 `rate_limited` event is a server→client envelope (no request
 // type to dispatch), so we only round-trip the JSON shape via JSON.parse
@@ -17,7 +22,7 @@
 // session.
 //
 // Sequence:
-//   1. Spawn the sidecar, wait for `ready` (must advertise protocol v6).
+//   1. Spawn the sidecar, wait for `ready` (must advertise protocol v7).
 //   2. `start_session` with an SSH workspace → expect clean refusal before
 //      any provider can treat the remote path as local cwd.
 //   3. `start_session` for provider "echo", wait for its `done`.
@@ -28,8 +33,7 @@
 //   6. `retry` → expect chunk containing "retry" then `done`, within 3s.
 //   7. `cancel_pending_tools` → expect clean unsupported error, within 3s.
 //   8. `inject_user_turn` → expect clean unsupported error, within 3s.
-//   9. `planner_tool_result` → expect clean unsupported error, within 3s.
-//   10. v6 `rate_limited` event shape round-trip via JSON.parse — pure
+//   9. v6 `rate_limited` event shape round-trip via JSON.parse — pure
 //      wire-format check, no IPC.
 //
 // Exits 0 if all steps pass, 1 otherwise — printing which step failed
@@ -44,8 +48,8 @@ import { existsSync } from "node:fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SESSION_ID = "protocol-v6-smoke";
-const EXPECTED_PROTOCOL_VERSION = 6;
+const SESSION_ID = "protocol-v7-smoke";
+const EXPECTED_PROTOCOL_VERSION = 7;
 const STEP_TIMEOUT_MS = 3000;
 const START_TIMEOUT_MS = 3000;
 const READY_TIMEOUT_MS = 3000;
@@ -53,9 +57,9 @@ const READY_TIMEOUT_MS = 3000;
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");
 
 if (!existsSync(sidecarEntry)) {
-  console.error(`[protocol-v6-smoke] sidecar entry not found at ${sidecarEntry}`);
+  console.error(`[protocol-v7-smoke] sidecar entry not found at ${sidecarEntry}`);
   console.error(
-    `[protocol-v6-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
+    `[protocol-v7-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
   );
   process.exit(1);
 }
@@ -70,7 +74,7 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
 
 child.on("error", (err) => {
-  console.error(`[protocol-v6-smoke] child spawn error: ${err.message}`);
+  console.error(`[protocol-v7-smoke] child spawn error: ${err.message}`);
   process.exit(1);
 });
 
@@ -96,7 +100,7 @@ rl.on("line", (line) => {
   try {
     event = JSON.parse(trimmed);
   } catch {
-    console.error(`[protocol-v6-smoke] non-JSON stdout line: ${trimmed}`);
+    console.error(`[protocol-v7-smoke] non-JSON stdout line: ${trimmed}`);
     return;
   }
 
@@ -135,8 +139,8 @@ rl.on("line", (line) => {
       break;
     default:
       // Ignore other event types (thinking, tool_*, permission_request,
-      // pending_edit, thinking_stop, rate_limited, planner_tool) — this
-      // test only cares about chunk / done / error for SESSION_ID.
+      // pending_edit, thinking_stop, rate_limited) — this test only cares
+      // about chunk / done / error for SESSION_ID.
       break;
   }
 });
@@ -190,13 +194,13 @@ function shutdown(code) {
   }, 500);
   child.on("exit", () => clearTimeout(killTimer));
   if (code !== 0 && stderrChunks.length > 0) {
-    console.error(`[protocol-v6-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
+    console.error(`[protocol-v7-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
   }
   process.exit(code);
 }
 
 function fail(step, reason) {
-  console.error(`[protocol-v6-smoke] FAIL at step '${step}': ${reason}`);
+  console.error(`[protocol-v7-smoke] FAIL at step '${step}': ${reason}`);
   shutdown(1);
 }
 
@@ -225,7 +229,7 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
       );
       return;
     }
-    console.log(`[protocol-v6-smoke] PASS: ${step}`);
+    console.log(`[protocol-v7-smoke] PASS: ${step}`);
     return;
   }
   if (term.kind === "error") {
@@ -247,7 +251,7 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
     );
     return;
   }
-  console.log(`[protocol-v6-smoke] PASS: ${step}`);
+  console.log(`[protocol-v7-smoke] PASS: ${step}`);
 }
 
 /**
@@ -300,7 +304,7 @@ function checkRateLimitedEventShape() {
     fail(step, "minimal envelope should not invent a retryAfterSeconds value");
     return;
   }
-  console.log(`[protocol-v6-smoke] PASS: ${step}`);
+  console.log(`[protocol-v7-smoke] PASS: ${step}`);
 }
 
 async function run() {
@@ -370,7 +374,7 @@ async function run() {
     }
     // Not strictly required, but prove echo actually streamed something.
     void chunks.slice(chunkStart);
-    console.log(`[protocol-v6-smoke] PASS: start_session`);
+    console.log(`[protocol-v7-smoke] PASS: start_session`);
   }
 
   // 3) set_permission_mode { mode: "plan" }
@@ -418,29 +422,15 @@ async function run() {
     { expectErrorSubstring: "does not support inject_user_turn" },
   );
 
-  // 8) planner_tool_result. v5 in-process MCP correlation reply. Same
-  // not-supported expectation as #7.
-  await runStep(
-    "planner_tool_result",
-    {
-      type: "planner_tool_result",
-      sessionId: SESSION_ID,
-      callId: "pl-test-0",
-      success: true,
-      result: null,
-    },
-    { expectErrorSubstring: "does not support planner_tool_result" },
-  );
-
-  // 9) v6 `rate_limited` event-shape round-trip. Server→client envelope —
+  // 8) v6 `rate_limited` event-shape round-trip. Server→client envelope —
   // pure wire-format check, no IPC.
   checkRateLimitedEventShape();
 
-  console.log(`[protocol-v6-smoke] OK`);
+  console.log(`[protocol-v7-smoke] OK`);
   shutdown(0);
 }
 
 run().catch((err) => {
-  console.error(`[protocol-v6-smoke] unexpected error: ${err?.stack ?? err}`);
+  console.error(`[protocol-v7-smoke] unexpected error: ${err?.stack ?? err}`);
   shutdown(1);
 });
