@@ -1177,7 +1177,6 @@ pub async fn github_ai_pr_description(
             None,
             None,
             None,
-            None,
         )
         .await;
 
@@ -1295,7 +1294,6 @@ pub async fn github_ai_pr_review(
             Some(false),
             serde_json::Value::Null,
             serde_json::Value::Null,
-            None,
             None,
             None,
             None,

@@ -779,11 +779,6 @@ pub async fn start_api_agent_session(
                     resume_messages_json,
                     permission_mode.clone(),
                     approve_writes,
-                    // Flight Planner E1: no in-process MCP kind for the regular
-                    // API-agent flow. The planner registers its own session via
-                    // `commands::flight_planner::start_flight_planner` which
-                    // sets this to `Some("planner")`.
-                    None,
                     sidecar_command_path,
                     Some(sidecar_workspace),
                     ssh_config,
@@ -808,11 +803,6 @@ pub async fn start_api_agent_session(
                     resume_messages_json,
                     permission_mode.clone(),
                     approve_writes,
-                    // Flight Planner E1: no in-process MCP kind for the regular
-                    // API-agent flow. The planner registers its own session via
-                    // `commands::flight_planner::start_flight_planner` which
-                    // sets this to `Some("planner")`.
-                    None,
                     sidecar_command_path,
                     Some(sidecar_workspace),
                 )

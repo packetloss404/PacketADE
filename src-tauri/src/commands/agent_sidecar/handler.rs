@@ -1,13 +1,12 @@
 //! Inbound event dispatcher — translates a parsed sidecar event into the
 //! matching `api-agent:*` Tauri event(s) and runs any side effects
-//! (flight-planner registry updates, one-shot waiter resolution, lifetime
+//! (one-shot waiter resolution, executor cost accumulation, lifetime
 //! bookkeeping for the `ready` handshake, etc.).
 
-use std::sync::Arc;
 use std::time::Instant;
 
 use serde_json::Value;
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 use tracing::{info, warn};
 
 use super::events::{
@@ -116,24 +115,6 @@ impl SidecarManager {
                     if let Some(waiter) = waiters.get_mut(&session_id) {
                         waiter.buffer.push_str(&text);
                     }
-                }
-
-                // E7-HOOKS site 6 (Option A) — aggregate planner chunks into
-                // a per-session buffer that we drain on `done` to emit a
-                // single `PlannerMessage` journal entry. Non-planner sidecar
-                // sessions are a no-op inside `append_chunk` (reverse-lookup
-                // miss). Spawned off-thread so the chunk event-loop never
-                // waits on the registry lock.
-                if !text.is_empty() {
-                    let session_for_async = session_id.clone();
-                    let app_for_async = self.app_handle.clone();
-                    tauri::async_runtime::spawn(async move {
-                        if let Some(registry) = app_for_async
-                            .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>()
-                        {
-                            registry.append_chunk(&session_for_async, &text).await;
-                        }
-                    });
                 }
             }
             "thinking" => {
@@ -358,57 +339,6 @@ impl SidecarManager {
                 // A `done` event marks the current turn complete, not the
                 // lifetime of the sidecar conversation. Keep ownership so the
                 // next send/cancel/model change still routes to the sidecar.
-
-                // E6-KILL-AWAKE: tell the Flight Planner registry that this
-                // turn finished so it can flip the owning planner's status
-                // from `Awake` back to `Idle`. The registry no-ops on
-                // non-planner sidecar sessions (lookup miss) and on every
-                // status other than `Awake`, so this is safe to fire
-                // unconditionally. Spawn off-thread to avoid holding any
-                // borrow tied to `try_state` across an await.
-                //
-                // E7-HOOKS site 6 (Option A) — after on_planner_done runs,
-                // drain the per-session chunk buffer and write a single
-                // aggregated `PlannerMessage` journal entry. The drain
-                // method returns `None` for non-planner sidecar sessions
-                // (no buffer was ever written) so no extra guard is needed.
-                let session_for_async = session_id.clone();
-                let app_for_async = self.app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Some(registry) = app_for_async
-                        .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
-                    ) {
-                        // Resolve flight_id BEFORE on_planner_done — that
-                        // call never removes sessions (it only flips status),
-                        // but resolving up front keeps the two registry
-                        // operations independent and easier to reason about
-                        // under contention.
-                        let flight_id_opt = registry
-                            .flight_id_for_sidecar_session(&session_for_async)
-                            .await;
-                        registry.on_planner_done(&session_for_async).await;
-                        if let Some(flight_id) = flight_id_opt {
-                            if let Some(buffer) =
-                                registry.drain_chunk_buffer(&session_for_async).await
-                            {
-                                let trimmed = buffer.trim();
-                                if !trimmed.is_empty() {
-                                    let entry = crate::commands::flight_planner::journal_entry(
-                                        flight_id,
-                                        crate::core::flight_journal::JournalKind::PlannerMessage,
-                                        trimmed.to_string(),
-                                        None,
-                                    );
-                                    crate::commands::flight_planner::write_journal_and_emit(
-                                        &app_for_async,
-                                        entry,
-                                    )
-                                    .await;
-                                }
-                            }
-                        }
-                    }
-                });
             }
             "plan_block" => {
                 let items: Vec<PlanItemPayload> = value
@@ -514,144 +444,21 @@ impl SidecarManager {
                 );
 
                 // E8-ACCUM — accumulate this turn's token + cost spend onto
-                // the owning Flight DTO. Two cases, both async-dispatched so
-                // we never block the sidecar event loop on the
-                // `with_state_lock` mutex:
+                // the owning Flight DTO for executor sidecar sessions linked
+                // to a flight via `attempt.session_id` or `task.session_id`.
+                // Rolls up onto `flight.total_tokens` / `total_cost`; lookup
+                // via the on-disk PersistedState. The StatGrid chip in the
+                // frontend derives the "Exec" cost as `totalCost -
+                // plannerCost`; pre-E8 the chip always showed zero because
+                // nothing wrote `total_cost`.
                 //
-                //   1. Planner sidecar session → roll up onto
-                //      `flight.planner_tokens` / `planner_cost` (the dedicated
-                //      planner chip fields). Lookup via the in-memory
-                //      `FlightPlannerRegistry`.
-                //   2. Executor sidecar session linked to a flight via
-                //      `attempt.session_id` or `task.session_id` → roll up
-                //      onto `flight.total_tokens` / `total_cost`. Lookup via
-                //      the on-disk PersistedState (the executor path doesn't
-                //      maintain an in-memory registry of its own). The
-                //      StatGrid chip in the frontend derives the "Exec" cost
-                //      as `totalCost - plannerCost`; pre-E8 the chip always
-                //      showed zero because nothing wrote `total_cost`.
-                //
-                // Both lookups short-circuit cleanly for sidecar sessions
-                // that own neither role (e.g. a standalone API-agent chat
-                // not linked to any flight) — no-op fallthrough.
+                // Async-dispatched so we never block the sidecar event loop
+                // on the `with_state_lock` mutex, and short-circuits cleanly
+                // for sidecar sessions that own no flight role (e.g. a
+                // standalone API-agent chat) — no-op fallthrough.
                 let session_for_async = session_id.clone();
                 let app_for_async = self.app_handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    let registry_opt = app_for_async
-                        .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
-                    );
-                    if let Some(registry) = registry_opt {
-                        if let Some(flight_id) = registry
-                            .flight_id_for_sidecar_session(&session_for_async)
-                            .await
-                        {
-                            let model = registry
-                                .get_by_flight(&flight_id)
-                                .await
-                                .map(|s| s.model)
-                                .unwrap_or_default();
-                            let cost_usd = crate::commands::pricing::calculate_cost(
-                                &model,
-                                input_tokens,
-                                output_tokens,
-                                cache_read_input_tokens,
-                                cache_creation_input_tokens,
-                            );
-                            // E8 FIX 2: include cache-read + cache-create
-                            // tokens in the `planner_tokens` chip sum so it
-                            // matches the token categories `cost_usd` already
-                            // prices. Pre-fix this only summed input +
-                            // output, which under-reported tokens for every
-                            // cache-heavy turn (effectively every turn after
-                            // the first on long-running planner sessions).
-                            //
-                            // E10-DETECT: feed input + cache directions into
-                            // a single "input-direction" total for the
-                            // compaction threshold counter (these are the
-                            // pieces that grow with conversation length).
-                            // Output tokens flow into the chip's
-                            // displayed total but NOT into the compaction
-                            // counter — output is small per turn.
-                            let planner_input_direction = input_tokens
-                                .saturating_add(cache_read_input_tokens)
-                                .saturating_add(cache_creation_input_tokens);
-                            let planner_total_tokens =
-                                planner_input_direction.saturating_add(output_tokens);
-
-                            // E10-DETECT + E10 FIX P1-E — bump the planner's
-                            // cumulative-input counter and emit the
-                            // compaction-triggered event when the threshold
-                            // is crossed for the first time. The registry's
-                            // atomic flip in `bump_cumulative_input_and_check`
-                            // ensures only ONE event fires per crossing;
-                            // E10-SWAP listens for the event and is
-                            // responsible for `reset_cumulative_input` /
-                            // `swap_sidecar_session_after_compaction` once
-                            // the swap completes.
-                            //
-                            // FIX P1-E: this bump used to sit INSIDE the
-                            // `else` arm of the `accumulate_planner_cost`
-                            // call below — a transient `with_state_lock`
-                            // error would silently skip the bump, causing
-                            // the cumulative counter to under-report and
-                            // delaying (or missing) compaction triggers.
-                            // The two operations are independent (cost goes
-                            // to the DTO; cumulative tokens are in-memory on
-                            // the registry), so the bump now runs first and
-                            // unconditionally.
-                            let crossed = registry
-                                .bump_cumulative_input_and_check(
-                                    &flight_id,
-                                    planner_input_direction,
-                                )
-                                .await;
-                            if crossed {
-                                let _ = app_for_async.emit(
-                                    &format!(
-                                        "flight-planner:compaction-triggered:{}",
-                                        flight_id
-                                    ),
-                                    serde_json::json!({
-                                        "flightId": flight_id,
-                                        "threshold": crate::commands::flight_planner::COMPACTION_THRESHOLD_TOKENS,
-                                    }),
-                                );
-                            }
-
-                            if let Err(e) =
-                                crate::commands::flight_planner::accumulate_planner_cost(
-                                    &flight_id,
-                                    planner_input_direction,
-                                    output_tokens,
-                                    cost_usd,
-                                )
-                                .await
-                            {
-                                warn!(
-                                    flight_id = %flight_id,
-                                    error = %e,
-                                    "E8-ACCUM: failed to accumulate planner cost"
-                                );
-                            } else {
-                                let _ = app_for_async.emit(
-                                    &format!("flight-planner:cost-updated:{}", flight_id),
-                                    serde_json::json!({
-                                        "flightId": flight_id,
-                                        "inputTokens": input_tokens,
-                                        "outputTokens": output_tokens,
-                                        "cacheReadInputTokens": cache_read_input_tokens,
-                                        "cacheCreationInputTokens": cache_creation_input_tokens,
-                                        "totalTokens": planner_total_tokens,
-                                        "costUsd": cost_usd,
-                                        "source": "planner",
-                                    }),
-                                );
-                            }
-                            return;
-                        }
-                    }
-                    // Not a planner session — try the executor (flight-attempt
-                    // / flight-task) linkage instead.
                     let state_snap = crate::core::storage::load_state();
                     let owner = match crate::commands::flight_cost::flight_for_executor_session(
                         &state_snap,
@@ -741,150 +548,14 @@ impl SidecarManager {
                     s.last_error = Some(message.clone());
                 })
                 .await;
-
-                // E7-HOOKS — `error` is a turn-terminal event for planner
-                // sessions (no `done` will follow). Drain any partial
-                // streamed text so the next turn's chunks don't bleed into
-                // the abandoned buffer, and journal the partial as a
-                // `PlannerMessage` so the timeline reflects what the
-                // planner had said up to the failure point.
-                let session_for_async = session_id.clone();
-                let app_for_async = self.app_handle.clone();
-                let error_for_async = message.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Some(registry) = app_for_async
-                        .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
-                    ) {
-                        let flight_id_opt = registry
-                            .flight_id_for_sidecar_session(&session_for_async)
-                            .await;
-                        if let Some(flight_id) = flight_id_opt {
-                            if let Some(buffer) =
-                                registry.drain_chunk_buffer(&session_for_async).await
-                            {
-                                let trimmed = buffer.trim();
-                                if !trimmed.is_empty() {
-                                    let body = format!(
-                                        "{}\n\n*(partial — error: {})*",
-                                        trimmed, error_for_async
-                                    );
-                                    let entry = crate::commands::flight_planner::journal_entry(
-                                        flight_id,
-                                        crate::core::flight_journal::JournalKind::PlannerMessage,
-                                        body,
-                                        Some(serde_json::json!({
-                                            "partial": true,
-                                            "reason": "error",
-                                            "error": error_for_async,
-                                        })),
-                                    );
-                                    crate::commands::flight_planner::write_journal_and_emit(
-                                        &app_for_async,
-                                        entry,
-                                    )
-                                    .await;
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-            "planner_tool" => {
-                // v5: the sidecar's in-process planner MCP server invoked
-                // one of its `mcp__planner__*` tools. The handler is parked
-                // on a pending promise keyed by `callId`; we dispatch the
-                // tool call against the FlightPlannerRegistry and forward
-                // the result back via `planner_tool_result` so the SDK's
-                // tool_use → tool_result round-trip stays well-formed.
-                //
-                // Without this arm the sidecar would hang forever waiting
-                // for a result that never comes (and the event would log as
-                // "unknown event type"), blocking E2's MCP work.
-                let tool = value
-                    .get("tool")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let call_id = value
-                    .get("callId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let args = value.get("args").cloned().unwrap_or(Value::Null);
-                if call_id.is_empty() {
-                    warn!(
-                        tool = %tool,
-                        "planner_tool event missing callId; cannot reply"
-                    );
-                } else if let Some(manager) = self
-                    .app_handle
-                    .try_state::<Arc<SidecarManager>>()
-                    .map(|s| s.inner().clone())
-                {
-                    let app_handle = self.app_handle.clone();
-                    let session_for_reply = session_id.clone();
-                    let call_for_reply = call_id.clone();
-                    let tool_for_reply = tool.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let outcome = match app_handle
-                            .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
-                        ) {
-                            Some(registry) => {
-                                registry
-                                    .handle_tool_call(
-                                        &app_handle,
-                                        &session_for_reply,
-                                        &tool_for_reply,
-                                        args,
-                                    )
-                                    .await
-                            }
-                            None => Err("flight planner registry not managed".to_string()),
-                        };
-                        let (success, result, error) = match outcome {
-                            Ok(v) => (true, Some(v), None),
-                            Err(e) => (false, None, Some(e)),
-                        };
-                        if let Err(e) = manager
-                            .forward_planner_tool_result(
-                                &session_for_reply,
-                                &call_for_reply,
-                                success,
-                                result,
-                                error,
-                            )
-                            .await
-                        {
-                            warn!(
-                                error = %e,
-                                tool = %tool_for_reply,
-                                "failed to forward planner_tool_result"
-                            );
-                        }
-                    });
-                } else {
-                    warn!(
-                        tool = %tool,
-                        "planner_tool event but SidecarManager not managed"
-                    );
-                }
             }
             "rate_limited" => {
                 // v6 (E6-CEILING-RATELIMIT): the Anthropic provider caught
                 // a `RateLimitError` (HTTP 429) from the SDK and surfaced
                 // it as a typed event alongside its regular `error` emit.
-                // Route it into the Flight Planner registry — the
-                // planner-bound branch flips the owning flight's status
-                // to `QuotaPaused`, arms an auto-resume timer, and fires
-                // a `flight-planner:rate-limited:<flightId>` event so
-                // the frontend can fan out an OS-level notification.
-                //
-                // Non-planner sidecar sessions land here too (any
-                // `api-claude-oauth` session that hits 429), but the
-                // registry's `flight_id_for_sidecar_session` lookup
-                // returns `None` for them and `on_rate_limited` no-ops.
-                // The regular `error` event has already been emitted, so
-                // those sessions still surface the failure to the user.
+                // The regular `error` event has already been emitted (see
+                // above), so the session surfaces the failure to the user;
+                // here we just record the rate-limit signal to the log.
                 let retry_after_seconds = value.get("retryAfterSeconds").and_then(|v| v.as_f64());
                 let message = value
                     .get("message")
@@ -896,69 +567,6 @@ impl SidecarManager {
                     message = ?message,
                     "sidecar reported rate-limit error"
                 );
-                // The registry is Tauri-managed for the app lifetime, so we
-                // simply spawn an async task that re-fetches `try_state`
-                // inside the future — that keeps the (non-`'static`) borrow
-                // returned by `try_state` here scoped to this match arm,
-                // while still letting the supervisor's status flip + emit +
-                // sleep timer happen off the event-handler thread.
-                let session_for_async = session_id.clone();
-                let app_for_async = self.app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Some(registry) = app_for_async
-                        .try_state::<crate::commands::flight_planner::FlightPlannerRegistry>(
-                    ) {
-                        registry
-                            .on_rate_limited(
-                                &session_for_async,
-                                retry_after_seconds,
-                                &app_for_async,
-                            )
-                            .await;
-
-                        // E7-HOOKS — `rate_limited` is a turn-terminal
-                        // event for planner sessions (the SDK throws
-                        // `RateLimitError` and exits without firing
-                        // `done`). Drain any partial streamed text so the
-                        // next turn's chunks don't bleed into the
-                        // abandoned buffer, and journal the partial so the
-                        // timeline shows what the planner had said up to
-                        // the throttle point.
-                        let flight_id_opt = registry
-                            .flight_id_for_sidecar_session(&session_for_async)
-                            .await;
-                        if let Some(flight_id) = flight_id_opt {
-                            if let Some(buffer) =
-                                registry.drain_chunk_buffer(&session_for_async).await
-                            {
-                                let trimmed = buffer.trim();
-                                if !trimmed.is_empty() {
-                                    let entry = crate::commands::flight_planner::journal_entry(
-                                        flight_id,
-                                        crate::core::flight_journal::JournalKind::PlannerMessage,
-                                        format!(
-                                            "{}\n\n*(partial — rate-limited mid-stream)*",
-                                            trimmed
-                                        ),
-                                        Some(serde_json::json!({
-                                            "partial": true,
-                                            "reason": "rate_limited",
-                                        })),
-                                    );
-                                    crate::commands::flight_planner::write_journal_and_emit(
-                                        &app_for_async,
-                                        entry,
-                                    )
-                                    .await;
-                                }
-                            }
-                        }
-                    } else {
-                        warn!(
-                            "rate_limited event but FlightPlannerRegistry not managed; cannot pause planner"
-                        );
-                    }
-                });
             }
             other => {
                 warn!(
