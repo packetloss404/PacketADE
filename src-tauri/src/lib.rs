@@ -141,6 +141,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // Restore the last window size/position on launch; saves on close.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(create_github_auth_state())
         .manage(create_shared_pty_manager())
         .manage(create_shared_orchestrator())

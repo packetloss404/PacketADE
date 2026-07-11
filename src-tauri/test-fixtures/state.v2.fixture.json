@@ -95,7 +95,7 @@
   "settings": {
     "max_parallel_sessions": 3,
     "milestone_gating": true,
-    "project_path": "D:\\projects\\PacketADE\\src-tauri",
+    "project_path": "/Users/ianwalmsley/projects/PacketADE/src-tauri",
     "auto_commit_trailer_enabled": true,
     "auto_commit_trailer_format": "Run-By: PacketADE flight F-{flightId} attempt A-{attemptId}"
   },
