@@ -25,16 +25,9 @@
 //   - `inject_user_turn` request: typed wake-trigger/user-turn injection
 //     into a long-lived session, used by the autonomous Flight Planner
 //     wake bus and (eventually) the spec-mode chat path.
-//   - `planner_tool` event + `planner_tool_result` request: in-process
-//     MCP tool-call envelope so planner tools dispatched inside the sidecar
-//     can round-trip a structured result through the Rust supervisor.
-//   - `StartSessionRequest.mcpKind` (optional): when set to "planner", the
-//     sidecar constructs an in-process planner MCP server locally and
-//     merges it into the SDK's `mcpServers` map under the pinned key
-//     "planner" (so tool names are `mcp__planner__*`). See
-//     `dev/flight-planner-plan.md` and `dev/flight-planner-spike-retro.md`.
-//   - E1 scaffolds the planner request/event types and ships a single stub
-//     tool (`noop`); the eight real planner tools land in E2.
+//   (v5 also shipped an in-process planner MCP surface — `planner_tool`
+//   event, `planner_tool_result` request, and `StartSessionRequest.mcpKind`
+//   — all removed in v7 when the Rust planner backend was amputated.)
 //
 // v6 (Flight Planner E6 — rate-limit handler): adds the `rate_limited`
 // sidecar event. The Anthropic provider catches `RateLimitError` from the
@@ -45,7 +38,15 @@
 // planner's status to `QuotaPaused`, schedules an auto-resume timer
 // (clamped to 60-600s), and emits a per-flight Tauri event the frontend
 // turns into an OS-level desktop notification.
-export const PROTOCOL_VERSION = 6;
+//
+// v7 (planner amputation): removes the in-process planner MCP surface —
+// the `planner_tool` event, the `planner_tool_result` request, and
+// `StartSessionRequest.mcpKind`. The Rust planner backend was deleted in
+// C2-S1, so the sidecar no longer emits or accepts planner envelopes.
+// `inject_user_turn` (shared re-entry) and `rate_limited` (generic 429
+// surface) survive. Negotiation stays warn-only, so an old supervisor
+// paired with a v7 sidecar (or vice versa) still connects.
+export const PROTOCOL_VERSION = 7;
 
 /** Image content a model can interpret natively. base64-encoded bytes. */
 export type ImageAttachment = {
@@ -100,13 +101,6 @@ export type StartSessionRequest = {
   resumeMessages?: ResumeMessage[];
   permissionMode?: PermissionMode;
   approveWrites?: boolean;
-  /** v5: opt-in in-process MCP server kind. Currently the only recognized
-   * value is `"planner"`, which tells the Anthropic provider to construct
-   * the Flight Planner MCP server in-sidecar and merge it into the SDK's
-   * `mcpServers` map under the pinned key `"planner"` (tool names then
-   * read as `mcp__planner__*`). Unknown values are ignored — old sidecars
-   * silently skip this field. */
-  mcpKind?: string;
   /** Optional absolute command path for CLI-backed providers. Currently used
    * by `openai-codex` so PacketADE can honor a user-pinned Codex binary
    * instead of relying on PATH resolution. */
@@ -212,18 +206,6 @@ export type InjectUserTurnRequest = {
   maxOutputTokens?: number;
 };
 
-/** v5: result envelope for an in-process planner MCP tool call. The
- * sidecar emits a matching `planner_tool` event keyed by `callId` and
- * awaits this request before resolving the SDK tool handler. */
-export type PlannerToolResultRequest = {
-  type: "planner_tool_result";
-  sessionId: string;
-  callId: string;
-  success: boolean;
-  result?: unknown;
-  error?: string;
-};
-
 export type SidecarRequest =
   | StartSessionRequest
   | SendMessageRequest
@@ -235,8 +217,7 @@ export type SidecarRequest =
   | SetModelRequest
   | RetryRequest
   | CancelPendingToolsRequest
-  | InjectUserTurnRequest
-  | PlannerToolResultRequest;
+  | InjectUserTurnRequest;
 
 /** v3: structured todo/plan item produced by Anthropic's TodoWrite tool. */
 export type PlanItem = {
@@ -338,18 +319,6 @@ export type SidecarEvent =
        * the children's spend. Empty/absent = root thread. */
       address?: string;
     }
-  // v5 additions ----------------------------------------------------------
-  /** Flight Planner: an in-sidecar MCP tool was invoked by the model.
-   * The Rust supervisor routes the args to its dispatcher and replies via
-   * `planner_tool_result` (matched by `callId`). The sidecar awaits that
-   * response before resolving the SDK tool handler. */
-  | {
-      type: "planner_tool";
-      sessionId: string;
-      tool: string;
-      args: unknown;
-      callId: string;
-    }
   // v6 additions ----------------------------------------------------------
   /** Flight Planner E6: the underlying provider returned a rate-limit
    * error (HTTP 429 in Anthropic's case). Emitted IN ADDITION to the
@@ -366,10 +335,6 @@ export type SidecarEvent =
       retryAfterSeconds?: number;
       message?: string;
     };
-
-/** Wire shape for `planner_tool` (typed so call sites in E2 can import a
- * single name rather than re-spelling the inline union arm). */
-export type PlannerToolCallEvent = Extract<SidecarEvent, { type: "planner_tool" }>;
 
 /** Wire shape for `rate_limited` (typed so the Anthropic provider and the
  * Rust supervisor can import a single name rather than re-spelling the
