@@ -26,6 +26,7 @@ vi.mock("@/stores/issueStore", () => ({
 
 import { useFlightStore } from "@/stores/flightStore";
 import { useIssueStore } from "@/stores/issueStore";
+import { saveUiSlice } from "@/lib/tauri";
 
 function makePersistedState(
   flights: ReturnType<typeof useFlightStore.getState>["flights"],
@@ -113,6 +114,28 @@ describe("flightStore", () => {
     const updated = useFlightStore.getState().flights.find((f) => f.id === flight.id);
     expect(updated?.title).toBe("New Title");
     expect(updated?.objective).toBe("Obj"); // unchanged field preserved
+  });
+
+  it("setActiveFlight sets activeFlightId and persists it", async () => {
+    const flight = useFlightStore.getState().addFlight({
+      title: "Active Flight",
+      objective: "Test active",
+      priority: "high",
+      projectPath: ".",
+    });
+
+    expect(useFlightStore.getState().activeFlightId).toBeNull();
+
+    useFlightStore.getState().setActiveFlight(flight.id);
+
+    expect(useFlightStore.getState().activeFlightId).toBe(flight.id);
+
+    // persist-on-set: activeFlightId is written through to the ui slice
+    await new Promise((r) => setTimeout(r, 0));
+    expect(vi.mocked(saveUiSlice)).toHaveBeenCalledWith({ selectedFlightId: flight.id });
+
+    useFlightStore.getState().setActiveFlight(null);
+    expect(useFlightStore.getState().activeFlightId).toBeNull();
   });
 
   it("computeFlightStatus returns draft for empty flight", () => {
