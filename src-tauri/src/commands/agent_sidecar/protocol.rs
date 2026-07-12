@@ -9,17 +9,6 @@ use crate::core::execution::SshConfig;
 
 impl SidecarManager {
     /// Forward a start_session request to the sidecar.
-    ///
-    /// `mcp_kind` (v5) is an optional discriminator that tells the sidecar to
-    /// construct an additional in-process MCP server locally before opening
-    /// the SDK `query()`. The Flight Planner uses `Some("planner")` to ask
-    /// the sidecar to register the planner tool surface
-    /// (`mcp__planner__create_milestone`, etc.). Live `McpServer` instances
-    /// cannot cross the stdio boundary, so this discriminator is the wire
-    /// hand-off; the actual tool definitions live in
-    /// `agent-sidecar/src/mcp/flight-planner-server.ts`. `None` for
-    /// non-planner sessions, which keeps the existing `api-claude-oauth`
-    /// chat path untouched.
     #[allow(clippy::too_many_arguments)]
     pub async fn forward_start(
         &self,
@@ -39,7 +28,6 @@ impl SidecarManager {
         resume_messages: Value,
         permission_mode: Option<String>,
         approve_writes: Option<bool>,
-        mcp_kind: Option<String>,
         command_path: Option<String>,
         workspace: Option<Value>,
     ) -> Result<(), String> {
@@ -60,7 +48,6 @@ impl SidecarManager {
             resume_messages,
             permission_mode,
             approve_writes,
-            mcp_kind,
             command_path,
             workspace,
             None,
@@ -89,7 +76,6 @@ impl SidecarManager {
         resume_messages: Value,
         permission_mode: Option<String>,
         approve_writes: Option<bool>,
-        mcp_kind: Option<String>,
         command_path: Option<String>,
         workspace: Option<Value>,
         ssh_config: SshConfig,
@@ -111,7 +97,6 @@ impl SidecarManager {
             resume_messages,
             permission_mode,
             approve_writes,
-            mcp_kind,
             command_path,
             workspace,
             Some(ssh_config),
@@ -138,7 +123,6 @@ impl SidecarManager {
         resume_messages: Value,
         permission_mode: Option<String>,
         approve_writes: Option<bool>,
-        mcp_kind: Option<String>,
         command_path: Option<String>,
         workspace: Option<Value>,
         ssh_config: Option<SshConfig>,
@@ -169,7 +153,6 @@ impl SidecarManager {
             "resumeMessages": resume_messages,
             "permissionMode": permission_mode,
             "approveWrites": approve_writes,
-            "mcpKind": mcp_kind,
             "commandPath": command_path,
             "workspace": workspace.unwrap_or_else(|| {
                 json!({
@@ -184,85 +167,6 @@ impl SidecarManager {
             self.close_remote_session(&session_id).await;
         }
         result
-    }
-
-    /// Forward a typed `inject_user_turn` request to the sidecar (v5).
-    ///
-    /// Distinct from [`forward_send`] so the planner system prompt can
-    /// reliably distinguish wake-triggered re-entry from a real human
-    /// message. The sidecar wraps `content` in
-    /// `<wake_trigger source="..." kind="...">…</wake_trigger>` before
-    /// pushing it onto the SDK's prompt iterable; responses stream back
-    /// over the same `api-agent:chunk:<sid>` / `api-agent:done:<sid>`
-    /// channel as any other turn.
-    ///
-    /// `source` is `"user"` for human-initiated injections (e.g. the
-    /// journal-comment path) and `"wake_trigger"` for orchestration-driven
-    /// re-entry (task complete/failed, approval gate reached, collision
-    /// detected, quota exhausted).
-    ///
-    /// `trigger_kind` is the specific wake-trigger kind for the
-    /// `<wake_trigger kind="…">` attribute. `None` is fine for plain user
-    /// turns; required (effectively) for `source == "wake_trigger"`.
-    ///
-    /// E6-CAPS: `max_output_tokens` is the per-mode output budget the
-    /// Flight Planner wants the sidecar to honor for this turn. Threaded
-    /// onto the wire as `maxOutputTokens` (camelCase to match the rest of
-    /// the protocol). NOTE: the Claude Agent SDK (0.2.116) does not expose
-    /// a per-turn `max_tokens` setter — the sidecar's anthropic provider
-    /// logs a warning and leaves the SDK's defaults in place. The field is
-    /// still threaded through so future SDK versions can pick it up
-    /// without another protocol change.
-    pub async fn forward_inject_user_turn(
-        &self,
-        session_id: &str,
-        content: &str,
-        source: &str,
-        trigger_kind: Option<&str>,
-        max_output_tokens: Option<u32>,
-    ) -> Result<(), String> {
-        let trigger = trigger_kind.map(|kind| json!({ "kind": kind }));
-        let req = json!({
-            "type": "inject_user_turn",
-            "sessionId": session_id,
-            "content": content,
-            "source": source,
-            "trigger": trigger,
-            "maxOutputTokens": max_output_tokens,
-        });
-        self.send_json_for_session(session_id, req).await
-    }
-
-    /// Forward a `planner_tool_result` envelope to the sidecar (v5).
-    ///
-    /// The sidecar's in-process planner MCP server emits a `planner_tool`
-    /// event when the model invokes a `mcp__planner__*` tool, and parks the
-    /// SDK handler on a pending promise keyed by `call_id`. This method
-    /// resolves that promise from the Rust side after
-    /// [`FlightPlannerRegistry::handle_tool_call`] has produced a result.
-    ///
-    /// `success: true` + `result` resolves the SDK handler with `result`;
-    /// `success: false` + `error` rejects it with that message string. The
-    /// sidecar's `respondPlannerTool` handler tolerates an unknown `callId`
-    /// (e.g. the call already resolved via cancel) — this is a fire-and-go
-    /// dispatch.
-    pub async fn forward_planner_tool_result(
-        &self,
-        session_id: &str,
-        call_id: &str,
-        success: bool,
-        result: Option<Value>,
-        error: Option<String>,
-    ) -> Result<(), String> {
-        let req = json!({
-            "type": "planner_tool_result",
-            "sessionId": session_id,
-            "callId": call_id,
-            "success": success,
-            "result": result,
-            "error": error,
-        });
-        self.send_json_for_session(session_id, req).await
     }
 
     /// Forward a send_message request for an existing sidecar session.

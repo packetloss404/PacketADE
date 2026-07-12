@@ -5,7 +5,6 @@ import type {
   Emit,
   InjectUserTurnRequest,
   PermissionResponseRequest,
-  PlannerToolResultRequest,
   RetryRequest,
   SendMessageRequest,
   SetModelRequest,
@@ -130,8 +129,7 @@ export class SessionRegistry {
       | SetModelRequest
       | RetryRequest
       | CancelPendingToolsRequest
-      | InjectUserTurnRequest
-      | PlannerToolResultRequest,
+      | InjectUserTurnRequest,
     emit: Emit,
   ): Promise<void> {
     return this.enqueue(sessionId, () => this.dispatchNow(sessionId, req, emit));
@@ -148,8 +146,7 @@ export class SessionRegistry {
       | SetModelRequest
       | RetryRequest
       | CancelPendingToolsRequest
-      | InjectUserTurnRequest
-      | PlannerToolResultRequest,
+      | InjectUserTurnRequest,
     emit: Emit,
   ): Promise<void> {
     const entry = this.sessions.get(sessionId);
@@ -228,17 +225,6 @@ export class SessionRegistry {
               type: "error",
               sessionId,
               message: `${provider} does not support inject_user_turn`,
-            });
-          }
-          break;
-        case "planner_tool_result":
-          if (handler.respondPlannerTool) {
-            await handler.respondPlannerTool(req, emit);
-          } else {
-            emit({
-              type: "error",
-              sessionId,
-              message: `${provider} does not support planner_tool_result`,
             });
           }
           break;

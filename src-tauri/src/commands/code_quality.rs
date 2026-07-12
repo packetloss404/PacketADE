@@ -724,7 +724,6 @@ pub async fn code_quality_ai_explain(
             None,
             None,
             None,
-            None,
         )
         .await;
 
@@ -890,7 +889,6 @@ pub async fn code_quality_ai_summarize(
             Some(false),
             serde_json::Value::Null,
             serde_json::Value::Null,
-            None,
             None,
             None,
             None,

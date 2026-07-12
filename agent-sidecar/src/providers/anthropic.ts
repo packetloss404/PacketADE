@@ -19,7 +19,6 @@ import type {
   InjectUserTurnRequest,
   PermissionResponseRequest,
   PlanItem,
-  PlannerToolResultRequest,
   ResumeMessage,
   RetryRequest,
   SendMessageRequest,
@@ -28,10 +27,6 @@ import type {
   StartSessionRequest,
 } from "../protocol.js";
 import type { ProviderHandler } from "./base.js";
-import {
-  createFlightPlannerMcpServer,
-  PLANNER_MCP_KEY,
-} from "../mcp/flight-planner-server.js";
 import {
   query,
   type CanUseTool,
@@ -441,19 +436,6 @@ export class AnthropicProvider implements ProviderHandler {
    */
   private lastUserMessage: string | null = null;
   private approveWrites = false;
-  /**
-   * Flight Planner (v5): when a planner MCP tool fires, the in-sidecar
-   * handler emits a `planner_tool` event and parks a resolver here keyed by
-   * `callId`. The Rust supervisor replies with `planner_tool_result`, which
-   * `resolvePlannerTool` looks up and either resolves (success) or rejects
-   * (failure). The handler then maps the resolved value into the SDK's
-   * tool-result content. Only populated for sessions started with
-   * `mcpKind === "planner"`.
-   */
-  private pendingPlannerCalls = new Map<
-    string,
-    { resolve: (value: unknown) => void; reject: (err: Error) => void }
-  >();
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.emitCurrent = emit;
@@ -601,22 +583,8 @@ export class AnthropicProvider implements ProviderHandler {
       });
     };
 
-    // v5: when the supervisor asks for `mcpKind: "planner"`, construct the
-    // in-sidecar Flight Planner MCP server locally and merge it under the
-    // pinned `PLANNER_MCP_KEY` so the SDK exposes its tools as
-    // `mcp__planner__*`. Live `McpServer` instances cannot cross the stdio
-    // wire, so this is the only place planner tools come into existence.
-    const wireMcp = toMcpServers(req.mcpServers ?? {});
-    let mcpServers: NonNullable<Options["mcpServers"]> | undefined = wireMcp;
-    if (req.mcpKind === "planner") {
-      const plannerServer = createFlightPlannerMcpServer(
-        req.sessionId,
-        (event) => this.dispatchPlannerTool(event, emit),
-      );
-      mcpServers = { ...(wireMcp ?? {}), [PLANNER_MCP_KEY]: plannerServer };
-    } else if (req.mcpKind && req.mcpKind.length > 0) {
-      logStderr(`unknown mcpKind=${req.mcpKind}; ignoring`);
-    }
+    const mcpServers: NonNullable<Options["mcpServers"]> | undefined =
+      toMcpServers(req.mcpServers ?? {});
 
     const options: Options = {
       abortController: this.abort,
@@ -996,51 +964,6 @@ export class AnthropicProvider implements ProviderHandler {
     this.lastUserMessage = content;
   }
 
-  /**
-   * v5: resolve (or reject) an outstanding planner MCP tool call. Called by
-   * the registry when the Rust supervisor returns a `planner_tool_result`.
-   * No-op if the callId is unknown (e.g. arrived after a cancel).
-   */
-  async respondPlannerTool(
-    req: PlannerToolResultRequest,
-    _emit: Emit,
-  ): Promise<void> {
-    const pending = this.pendingPlannerCalls.get(req.callId);
-    if (!pending) {
-      logStderr(
-        `respondPlannerTool: unknown callId=${req.callId} (session=${req.sessionId})`,
-      );
-      return;
-    }
-    this.pendingPlannerCalls.delete(req.callId);
-    if (req.success) {
-      pending.resolve(req.result);
-    } else {
-      pending.reject(new Error(req.error ?? "planner tool failed"));
-    }
-  }
-
-  /**
-   * Internal: emit a `planner_tool` envelope and park a resolver. The
-   * planner MCP server in `flight-planner-server.ts` awaits this promise
-   * inside the tool's handler, so the SDK's `tool_use → tool_result` round
-   * trip stays well-formed.
-   */
-  private dispatchPlannerTool(
-    event: import("../protocol.js").PlannerToolCallEvent,
-    emit: Emit,
-  ): Promise<unknown> {
-    return new Promise<unknown>((resolve, reject) => {
-      this.pendingPlannerCalls.set(event.callId, { resolve, reject });
-      try {
-        emit(event);
-      } catch (err) {
-        this.pendingPlannerCalls.delete(event.callId);
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
-    });
-  }
-
   async respondPermission(req: PermissionResponseRequest, _emit: Emit): Promise<void> {
     const resolver = this.pendingPermissions.get(req.toolUseId);
     if (!resolver) {
@@ -1169,12 +1092,6 @@ export class AnthropicProvider implements ProviderHandler {
       this.pendingEdits.delete(id);
       meta.resolver({ continue: false, stopReason: "cancelled" });
     }
-    // v5: drain parked planner tool calls so the SDK tool handlers don't
-    // hang waiting for a result that will never come.
-    for (const [id, pending] of this.pendingPlannerCalls.entries()) {
-      this.pendingPlannerCalls.delete(id);
-      pending.reject(new Error("cancelled"));
-    }
     // done/error is emitted by the pump when the iterator unwinds.
   }
 
@@ -1288,10 +1205,6 @@ export class AnthropicProvider implements ProviderHandler {
     for (const [id, meta] of this.pendingEdits.entries()) {
       this.pendingEdits.delete(id);
       meta.resolver({ continue: false, stopReason: "closed" });
-    }
-    for (const [id, pending] of this.pendingPlannerCalls.entries()) {
-      this.pendingPlannerCalls.delete(id);
-      pending.reject(new Error("closed"));
     }
     if (this.runPromise) {
       await this.runPromise.catch(() => undefined);

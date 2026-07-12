@@ -30,8 +30,6 @@ pub mod llm_types;
 pub mod mcp_bridge;
 pub mod mcp_client;
 pub mod migration;
-pub mod flight_journal;
-pub mod flight_planner_prompts;
 pub mod orchestrator;
 pub mod pty;
 pub mod shared;

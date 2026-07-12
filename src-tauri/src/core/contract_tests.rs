@@ -297,6 +297,154 @@ mod tests {
         assert!(parsed.flights.is_empty());
     }
 
+    /// C1-S1 — LEGACY-FIXTURE COMPAT (persisted-data policy, made executable).
+    ///
+    /// Simulates an OLD user's on-disk `PersistedState`: a flight in the
+    /// legacy `spec` status carrying every Flight-Planner field
+    /// (`planner_session_id` / `planner_status` / `planner_cost` /
+    /// `planner_tokens` / `planner_provider`), a milestone+task, and a
+    /// `flight_approvals` record with a `FlightApprovalRequest`. The
+    /// planner-amputation work leaves these fields as inert serde
+    /// pass-through, and this test PINS that: the fixture must deserialize
+    /// losslessly, round-trip through the DTO, and re-serialize WITHOUT
+    /// dropping any planner field. If a future change removes a planner field
+    /// from the struct, this test fails — old users' data would silently lose
+    /// those values on the next save.
+    #[test]
+    fn legacy_planner_fixture_roundtrips_without_losing_planner_fields() {
+        // Hand-authored to match what an older release wrote to disk. Note the
+        // legacy `"spec"` flight status and the full planner_* field set.
+        let legacy_json = r#"{
+            "version": 7,
+            "flights": [
+                {
+                    "id": "legacy-flight-1",
+                    "title": "Legacy planner flight",
+                    "objective": "Ship the thing",
+                    "status": "spec",
+                    "priority": "high",
+                    "project_path": "/legacy/project",
+                    "git_branch": "main",
+                    "milestones": [
+                        {
+                            "id": "ms-legacy-1",
+                            "flight_id": "legacy-flight-1",
+                            "title": "Legacy milestone",
+                            "description": "old",
+                            "order": 0,
+                            "status": "active",
+                            "tasks": [
+                                {
+                                    "id": "task-legacy-1",
+                                    "milestone_id": "ms-legacy-1",
+                                    "flight_id": "legacy-flight-1",
+                                    "title": "Legacy task",
+                                    "description": "old task",
+                                    "order": 0,
+                                    "status": "running",
+                                    "task_type": "implementation",
+                                    "agent_config_id": "claude-code",
+                                    "agent_args": null,
+                                    "model": "claude-sonnet-4-6",
+                                    "depends_on": [],
+                                    "session_id": "legacy-exec-sess",
+                                    "result": null,
+                                    "review_packet": null,
+                                    "created_at": 1000,
+                                    "started_at": 2000,
+                                    "completed_at": null,
+                                    "cost": 0.25,
+                                    "tokens": 500
+                                }
+                            ],
+                            "validation_criteria": ["builds"]
+                        }
+                    ],
+                    "linked_session_ids": ["legacy-planner-sess"],
+                    "created_at": 1000,
+                    "updated_at": 2000,
+                    "completed_at": null,
+                    "total_cost": 1.25,
+                    "total_tokens": 4200,
+                    "planner_session_id": "legacy-planner-sess",
+                    "planner_status": "awake",
+                    "planner_cost": 0.75,
+                    "planner_tokens": 3100,
+                    "planner_provider": "claude-oauth"
+                }
+            ],
+            "agents": [],
+            "settings": {
+                "max_parallel_sessions": 2,
+                "milestone_gating": true,
+                "project_path": "/legacy/project"
+            },
+            "ui": {},
+            "flight_approvals": [
+                {
+                    "id": "appr-legacy-1",
+                    "flightId": "legacy-flight-1",
+                    "question": "Proceed?",
+                    "options": ["yes", "no"],
+                    "awaitingSince": 1500,
+                    "resolved": false
+                }
+            ]
+        }"#;
+
+        // 1. Deserializes losslessly.
+        let state: PersistedState =
+            serde_json::from_str(legacy_json).expect("legacy state must deserialize");
+        let flight = &state.flights[0];
+        assert_eq!(flight.status, FlightStatus::Spec, "legacy 'spec' status");
+        assert_eq!(
+            flight.planner_session_id.as_deref(),
+            Some("legacy-planner-sess")
+        );
+        assert_eq!(flight.planner_status, Some(PlannerStatus::Awake));
+        assert_eq!(flight.planner_cost, Some(0.75));
+        assert_eq!(flight.planner_tokens, Some(3100));
+        assert_eq!(flight.planner_provider.as_deref(), Some("claude-oauth"));
+        assert_eq!(flight.milestones.len(), 1);
+        assert_eq!(flight.milestones[0].tasks.len(), 1);
+        // flight_approvals (+ camelCase / missionId alias) survive too.
+        assert_eq!(state.flight_approvals.len(), 1);
+        assert_eq!(state.flight_approvals[0].flight_id, "legacy-flight-1");
+
+        // 2. Round-trips through the DTO (parse -> struct -> serialize -> parse).
+        let reserialized = serde_json::to_string(&state).expect("re-serialize state");
+        let reparsed: PersistedState =
+            serde_json::from_str(&reserialized).expect("re-parse state");
+        let rf = &reparsed.flights[0];
+
+        // 3. Re-serializes WITHOUT losing any planner field.
+        assert_eq!(rf.planner_session_id, flight.planner_session_id);
+        assert_eq!(rf.planner_status, flight.planner_status);
+        assert_eq!(rf.planner_cost, flight.planner_cost);
+        assert_eq!(rf.planner_tokens, flight.planner_tokens);
+        assert_eq!(rf.planner_provider, flight.planner_provider);
+        assert_eq!(rf.status, FlightStatus::Spec);
+
+        // Belt-and-suspenders: the re-serialized JSON literally still contains
+        // every planner key (guards against a future `skip_serializing` that
+        // would drop a set field on save).
+        let value: serde_json::Value = serde_json::from_str(&reserialized).unwrap();
+        let out_flight = &value["flights"][0];
+        for key in [
+            "planner_session_id",
+            "planner_status",
+            "planner_cost",
+            "planner_tokens",
+            "planner_provider",
+        ] {
+            assert!(
+                out_flight.get(key).is_some(),
+                "re-serialized flight dropped planner key: {}",
+                key
+            );
+        }
+    }
+
     #[test]
     fn enum_variants_serialize_to_expected_strings() {
         // FlightStatus
