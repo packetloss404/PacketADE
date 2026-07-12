@@ -8,10 +8,9 @@
 //! Unlike `github_ai_triage` which talks to the in-process `LlmProvider`
 //! (Anthropic API key route), this command intentionally routes through the
 //! `claude-oauth` sidecar so it draws from the user's Claude Pro / Max
-//! subscription rather than a metered API key. That matches the pattern in
-//! [`crate::commands::flight_planner_compaction::summarize_flight_journal`]:
-//! register a one-shot waiter, fire `forward_start`, wait for `done`, close
-//! the session.
+//! subscription rather than a metered API key. It follows the standard
+//! one-shot sidecar pattern: register a one-shot waiter, fire
+//! `forward_start`, wait for `done`, close the session.
 //!
 //! ## Why synchronous?
 //!
@@ -192,7 +191,6 @@ pub async fn issues_extract_from_spec(
             serde_json::Value::Null, // resume_messages
             None,                    // permission_mode
             None,                    // approve_writes
-            None,                    // mcp_kind — vanilla one-shot
             None,                    // command_path
             None,                    // workspace — derive local from project_path
         )
@@ -207,8 +205,7 @@ pub async fn issues_extract_from_spec(
     let wait_result = tokio::time::timeout(SPEC_IMPORT_TIMEOUT, receiver).await;
 
     // Always best-effort close the session so the supervisor's owned-set
-    // doesn't leak a stale id. Mirrors the pattern in
-    // `flight_planner_compaction::summarize_flight_journal`.
+    // doesn't leak a stale id. Mirrors the standard one-shot sidecar pattern.
     if let Err(e) = manager.forward_close(session_id.clone()).await {
         warn!(
             session_id = %session_id,

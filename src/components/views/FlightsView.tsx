@@ -641,7 +641,6 @@ interface DetailProps {
 
 function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
   const cfg = FLIGHT_STATUS_CONFIG[status];
-  const dot = STATUS_DOT[status];
   const tasks = flightTasks(flight);
   const sessions = flight.linkedSessionIds.length;
 
@@ -675,7 +674,7 @@ function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
           </div>
         </div>
 
-        <StatGrid flight={flight} tasks={tasks} sessions={sessions} dot={dot} />
+        <StatGrid flight={flight} tasks={tasks} sessions={sessions} />
 
         <AsyncFlightGrid flight={flight} onLaunch={onLaunchAttempt} />
 
@@ -792,7 +791,6 @@ interface StatGridProps {
   flight: Flight;
   tasks: { done: number; total: number; approvals: number; hasInProgress: boolean };
   sessions: number;
-  dot: DesignDot;
 }
 
 function StatGrid({ flight, tasks, sessions }: StatGridProps) {
@@ -802,9 +800,7 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
   const cells: {
     label: string;
     value: string;
-    sub?: string;
     valueClass?: string;
-    title?: string;
   }[] = [
     { label: "Cost", value: formatCost(flight.totalCost ?? 0) },
     { label: "Tokens", value: formatTokens(flight.totalTokens) },
@@ -823,11 +819,10 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
       {cells.map((c) => (
         <div
           key={c.label}
-          title={c.title}
           className="flex flex-col gap-0.5 rounded border border-bg-border bg-bg-secondary px-2.5 py-2"
         >
           <span className="text-[10px] uppercase tracking-[0.08em] text-text-muted">{c.label}</span>
@@ -838,7 +833,6 @@ function StatGrid({ flight, tasks, sessions }: StatGridProps) {
           >
             {c.value}
           </span>
-          {c.sub && <span className="font-mono text-[9px] text-text-muted">{c.sub}</span>}
         </div>
       ))}
     </div>

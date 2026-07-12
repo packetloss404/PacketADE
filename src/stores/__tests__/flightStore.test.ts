@@ -24,20 +24,9 @@ vi.mock("@/stores/issueStore", () => ({
   },
 }));
 
-// Mock routingStore
-vi.mock("@/stores/routingStore", () => ({
-  useRoutingStore: {
-    getState: vi.fn().mockReturnValue({
-      resolveForTask: vi.fn().mockReturnValue({
-        agentConfigId: "claude-code",
-        model: undefined,
-      }),
-    }),
-  },
-}));
-
 import { useFlightStore } from "@/stores/flightStore";
 import { useIssueStore } from "@/stores/issueStore";
+import { saveUiSlice } from "@/lib/tauri";
 
 function makePersistedState(
   flights: ReturnType<typeof useFlightStore.getState>["flights"],
@@ -127,7 +116,7 @@ describe("flightStore", () => {
     expect(updated?.objective).toBe("Obj"); // unchanged field preserved
   });
 
-  it("setActiveFlight and getActiveFlight work together", () => {
+  it("setActiveFlight sets activeFlightId and persists it", async () => {
     const flight = useFlightStore.getState().addFlight({
       title: "Active Flight",
       objective: "Test active",
@@ -135,108 +124,18 @@ describe("flightStore", () => {
       projectPath: ".",
     });
 
-    expect(useFlightStore.getState().getActiveFlight()).toBeNull();
+    expect(useFlightStore.getState().activeFlightId).toBeNull();
 
     useFlightStore.getState().setActiveFlight(flight.id);
 
-    const active = useFlightStore.getState().getActiveFlight();
-    expect(active).not.toBeNull();
-    expect(active?.id).toBe(flight.id);
-  });
+    expect(useFlightStore.getState().activeFlightId).toBe(flight.id);
 
-  it("addMilestone adds to the correct flight", () => {
-    const flight = useFlightStore.getState().addFlight({
-      title: "With Milestone",
-      objective: "Milestone test",
-      priority: "medium",
-      projectPath: ".",
-    });
+    // persist-on-set: activeFlightId is written through to the ui slice
+    await new Promise((r) => setTimeout(r, 0));
+    expect(vi.mocked(saveUiSlice)).toHaveBeenCalledWith({ selectedFlightId: flight.id });
 
-    const msId = useFlightStore.getState().addMilestone(flight.id, {
-      title: "MS-1",
-      description: "First milestone",
-      validationCriteria: ["tests pass"],
-    });
-
-    const updated = useFlightStore.getState().flights.find((f) => f.id === flight.id);
-    expect(updated?.milestones).toHaveLength(1);
-    expect(updated?.milestones[0].id).toBe(msId);
-    expect(updated?.milestones[0].title).toBe("MS-1");
-    expect(updated?.milestones[0].status).toBe("pending");
-    expect(updated?.milestones[0].tasks).toEqual([]);
-  });
-
-  it("addTask adds to the correct milestone", () => {
-    const flight = useFlightStore.getState().addFlight({
-      title: "With Task",
-      objective: "Task test",
-      priority: "medium",
-      projectPath: ".",
-    });
-
-    const msId = useFlightStore.getState().addMilestone(flight.id, {
-      title: "MS-1",
-      description: "Milestone",
-      validationCriteria: [],
-    });
-
-    const taskId = useFlightStore.getState().addTask(flight.id, msId, {
-      title: "Implement feature",
-      description: "Do the thing",
-      type: "implementation",
-      dependsOn: [],
-    });
-
-    const updated = useFlightStore.getState().flights.find((f) => f.id === flight.id);
-    const milestone = updated?.milestones.find((m) => m.id === msId);
-    expect(milestone?.tasks).toHaveLength(1);
-    expect(milestone?.tasks[0].id).toBe(taskId);
-    expect(milestone?.tasks[0].title).toBe("Implement feature");
-    expect(milestone?.tasks[0].status).toBe("pending");
-    expect(milestone?.tasks[0].type).toBe("implementation");
-  });
-
-  it("updateTask updates task fields", () => {
-    const flight = useFlightStore.getState().addFlight({
-      title: "Task Update",
-      objective: "Update test",
-      priority: "medium",
-      projectPath: ".",
-    });
-
-    const msId = useFlightStore.getState().addMilestone(flight.id, {
-      title: "MS-1",
-      description: "Milestone",
-      validationCriteria: [],
-    });
-
-    const taskId = useFlightStore.getState().addTask(flight.id, msId, {
-      title: "Task",
-      description: "Desc",
-      type: "implementation",
-      dependsOn: [],
-    });
-
-    useFlightStore.getState().updateTask(flight.id, msId, taskId, { status: "running" });
-
-    const updated = useFlightStore.getState().flights.find((f) => f.id === flight.id);
-    const task = updated?.milestones.find((m) => m.id === msId)?.tasks.find((t) => t.id === taskId);
-    expect(task?.status).toBe("running");
-  });
-
-  it("unlinkSessionFromFlight removes session ID", () => {
-    const flight = useFlightStore.getState().addFlight({
-      title: "Session Unlink",
-      objective: "Unlink test",
-      priority: "medium",
-      projectPath: ".",
-    });
-
-    useFlightStore.getState().updateFlight(flight.id, { linkedSessionIds: ["sess-1"] });
-    useFlightStore.getState().unlinkSessionFromFlight(flight.id, "sess-1");
-
-    const updated = useFlightStore.getState().flights.find((f) => f.id === flight.id);
-    expect(updated?.linkedSessionIds).toEqual([]);
+    useFlightStore.getState().setActiveFlight(null);
+    expect(useFlightStore.getState().activeFlightId).toBeNull();
   });
 
   it("computeFlightStatus returns draft for empty flight", () => {
@@ -296,39 +195,5 @@ describe("flightStore", () => {
     await useFlightStore.getState().hydrateFromBackend(makePersistedState([backendFlight]));
 
     expect(useFlightStore.getState().flights[0].issueIds).toEqual(["issue_hydrated"]);
-  });
-
-  it("getFlightProgress counts done tasks", () => {
-    const flight = useFlightStore.getState().addFlight({
-      title: "Progress Flight",
-      objective: "Progress test",
-      priority: "medium",
-      projectPath: ".",
-    });
-
-    const msId = useFlightStore.getState().addMilestone(flight.id, {
-      title: "MS-1",
-      description: "Milestone",
-      validationCriteria: [],
-    });
-
-    const taskId1 = useFlightStore.getState().addTask(flight.id, msId, {
-      title: "Task 1",
-      description: "First",
-      type: "implementation",
-      dependsOn: [],
-    });
-
-    useFlightStore.getState().addTask(flight.id, msId, {
-      title: "Task 2",
-      description: "Second",
-      type: "testing",
-      dependsOn: [],
-    });
-
-    useFlightStore.getState().updateTask(flight.id, msId, taskId1, { status: "done" });
-
-    const progress = useFlightStore.getState().getFlightProgress(flight.id);
-    expect(progress).toEqual({ done: 1, total: 2 });
   });
 });

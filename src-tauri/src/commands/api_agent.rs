@@ -779,11 +779,6 @@ pub async fn start_api_agent_session(
                     resume_messages_json,
                     permission_mode.clone(),
                     approve_writes,
-                    // Flight Planner E1: no in-process MCP kind for the regular
-                    // API-agent flow. The planner registers its own session via
-                    // `commands::flight_planner::start_flight_planner` which
-                    // sets this to `Some("planner")`.
-                    None,
                     sidecar_command_path,
                     Some(sidecar_workspace),
                     ssh_config,
@@ -808,11 +803,6 @@ pub async fn start_api_agent_session(
                     resume_messages_json,
                     permission_mode.clone(),
                     approve_writes,
-                    // Flight Planner E1: no in-process MCP kind for the regular
-                    // API-agent flow. The planner registers its own session via
-                    // `commands::flight_planner::start_flight_planner` which
-                    // sets this to `Some("planner")`.
-                    None,
                     sidecar_command_path,
                     Some(sidecar_workspace),
                 )
@@ -1364,7 +1354,7 @@ fn spawn_executor_cost_rollup(
     let model = model.to_string();
     tauri::async_runtime::spawn(async move {
         let state_snap = crate::core::storage::load_state();
-        let owner = match crate::commands::flight_planner::flight_for_executor_session(
+        let owner = match crate::commands::flight_cost::flight_for_executor_session(
             &state_snap,
             &session_id,
         ) {
@@ -1375,7 +1365,7 @@ fn spawn_executor_cost_rollup(
             .saturating_add(output_tokens)
             .saturating_add(cache_read)
             .saturating_add(cache_write);
-        if let Err(e) = crate::commands::flight_planner::accumulate_executor_cost(
+        if let Err(e) = crate::commands::flight_cost::accumulate_executor_cost(
             &owner.flight_id,
             total_tokens,
             cost_usd,

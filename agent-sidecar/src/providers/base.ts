@@ -4,7 +4,6 @@ import type {
   EditResponseRequest,
   InjectUserTurnRequest,
   PermissionResponseRequest,
-  PlannerToolResultRequest,
   RetryRequest,
   SendMessageRequest,
   SetModelRequest,
@@ -39,10 +38,4 @@ export interface ProviderHandler {
    * long-lived session without restarting the query. Powers the Flight
    * Planner wake bus and the spec-mode chat path. */
   injectUserTurn?(req: InjectUserTurnRequest, emit: Emit): Promise<void>;
-  /** v5: resolve an outstanding in-process planner MCP tool call. Matched
-   * to the originating `planner_tool` event by `callId`. */
-  respondPlannerTool?(
-    req: PlannerToolResultRequest,
-    emit: Emit,
-  ): Promise<void>;
 }

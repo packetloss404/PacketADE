@@ -3,9 +3,7 @@ use std::sync::{Arc, Mutex};
 use tracing::warn;
 
 use crate::api::{OrchestratorSnapshotDto, PersistedStateDto, TaskSpawnRequestDto};
-use crate::commands::flight_planner::{FlightPlannerRegistry, PlannerWakeEvent, WakeTrigger};
 use crate::commands::pty::SharedPtyManager;
-use crate::core::flight::Flight;
 use crate::core::orchestrator::{Orchestrator, TaskSpawnRequest};
 use crate::core::shared::lock_mutex;
 use crate::core::storage::{self, PersistedState};
@@ -269,82 +267,26 @@ pub fn record_task_spawn(
 }
 
 #[tauri::command]
-pub async fn notify_task_complete(
+pub fn notify_task_complete(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
-    planner_registry: tauri::State<'_, FlightPlannerRegistry>,
     task_id: String,
     success: bool,
 ) -> Result<PersistedStateDto, String> {
-    // Look up the affected flight BEFORE applying the state change so we
-    // can fire a Flight Planner wake even if the orchestrator mutation
-    // (which may clear `running_tasks`) wins the race.
-    let flight_id_with_planner = with_orchestrator_and_flights(&orchestrator, |orch, _state| {
-        Ok(orch
-            .running_tasks
-            .get(&task_id)
-            .map(|rt| rt.flight_id.clone()))
-    })?
-    .and_then(|fid| flight_planner_flight_id(&fid));
-
-    let result = with_orchestrator_and_flights(&orchestrator, |orch, state| {
+    with_orchestrator_and_flights(&orchestrator, |orch, state| {
         orch.on_task_complete(&task_id, success, &mut state.flights);
         Ok(state.clone().into())
-    })?;
-
-    // After: emit a planner wake if the flight has an active planner. The
-    // trigger discriminant carries success vs failure so the planner's
-    // wake-message builder picks the right per-trigger guidance (stubbed
-    // in E1, filled in by E5 — reactive replan).
-    if let Some(flight_id) = flight_id_with_planner {
-        let trigger = if success {
-            WakeTrigger::TaskCompleted(task_id.clone())
-        } else {
-            WakeTrigger::TaskFailed(task_id.clone())
-        };
-        planner_registry
-            .send_wake(PlannerWakeEvent {
-                flight_id,
-                trigger,
-                payload: serde_json::json!({ "taskId": task_id, "success": success }),
-            })
-            .await;
-    }
-
-    Ok(result)
+    })
 }
 
 #[tauri::command]
-pub async fn notify_approval_needed(
+pub fn notify_approval_needed(
     orchestrator: tauri::State<'_, SharedOrchestrator>,
-    planner_registry: tauri::State<'_, FlightPlannerRegistry>,
     task_id: String,
 ) -> Result<PersistedStateDto, String> {
-    // Snapshot the flight id BEFORE the mutation in case downstream
-    // bookkeeping removes the running-task entry.
-    let flight_id_with_planner = with_orchestrator_and_flights(&orchestrator, |orch, _state| {
-        Ok(orch
-            .running_tasks
-            .get(&task_id)
-            .map(|rt| rt.flight_id.clone()))
-    })?
-    .and_then(|fid| flight_planner_flight_id(&fid));
-
-    let result = with_orchestrator_and_flights(&orchestrator, |orch, state| {
+    with_orchestrator_and_flights(&orchestrator, |orch, state| {
         orch.on_task_approval_needed(&task_id, &mut state.flights);
         Ok(state.clone().into())
-    })?;
-
-    if let Some(flight_id) = flight_id_with_planner {
-        planner_registry
-            .send_wake(PlannerWakeEvent {
-                flight_id,
-                trigger: WakeTrigger::ApprovalGateReached(task_id.clone()),
-                payload: serde_json::json!({ "taskId": task_id }),
-            })
-            .await;
-    }
-
-    Ok(result)
+    })
 }
 
 #[tauri::command]
@@ -359,16 +301,4 @@ pub fn notify_approval_resolved(
         orch.on_task_approval_resolved(&task_id, &mut state.flights);
         Ok(state.clone().into())
     })
-}
-
-/// Look up a flight by id and return its flight id ONLY if the flight has
-/// an active planner attached. Returns `None` otherwise. Used to short-circuit
-/// the wake-event emit path for flights that never opted into the planner.
-fn flight_planner_flight_id(flight_id: &str) -> Option<String> {
-    let state = storage::load_state();
-    state
-        .flights
-        .iter()
-        .find(|f: &&Flight| f.id == flight_id)
-        .and_then(|f| f.planner_session_id.as_ref().map(|_| f.id.clone()))
 }

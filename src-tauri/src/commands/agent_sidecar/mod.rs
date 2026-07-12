@@ -53,13 +53,19 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "openai
 /// (e.g. the Flight Planner tool surface) locally without those live
 /// JS instances having to cross the wire.
 ///
-/// v6 (Flight Planner E6 — rate-limit handler): added the `rate_limited`
-/// event. The Anthropic provider catches `RateLimitError` (HTTP 429) and
-/// emits it alongside the regular `error` emit; this supervisor routes it
-/// into [`crate::commands::flight_planner::FlightPlannerRegistry::on_rate_limited`]
-/// which flips the owning planner's status to `QuotaPaused` and arms an
-/// auto-resume timer.
-pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 6;
+/// v6 (rate-limit signal): added the `rate_limited` event. The Anthropic
+/// provider catches `RateLimitError` (HTTP 429) and emits it alongside the
+/// regular `error` emit; this supervisor records it to the log (the
+/// `error` event already surfaces the failure to the session).
+///
+/// v7 (planner amputation): removed the in-process planner MCP surface —
+/// the `planner_tool` event, the `planner_tool_result` request, and the
+/// `mcpKind` field on `start_session`. The Rust planner backend was deleted
+/// in C2-S1, so the supervisor no longer emits or accepts planner
+/// envelopes. `inject_user_turn` and `rate_limited` survive. Negotiation
+/// stays warn-only, so a v6 sidecar paired with a v7 supervisor (or vice
+/// versa) still connects.
+pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 7;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.
