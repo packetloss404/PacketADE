@@ -7,6 +7,74 @@ it from here.
 Priority: **P1** = real bug or major user-facing gap · **P2** = correctness/UX
 · **P3** = cleanup.
 
+## Shipped 2026-07-13 — P2 hardening batch (see `CHANGELOG.md` `[0.10.1]`)
+
+A verify-then-fix pass over the "ready and unblocked" P2 work. Each candidate was
+re-checked against current code (many predated the single-surface refactor) and the
+changes were 2-agent peer-reviewed before commit. **Shipped** (remove the matching
+lines below as they are reconciled): backpressure-swallow short-circuit (RA1),
+`tool_web` body-size cap + untrusted-content envelope + regex hoist (RA2/RA3),
+UTF-8-across-chunks in both LLM streamers (F46), SSH stdin-password leak
+(F06/F11), auth-watcher trailing-edge debounce (F16), worktree leak on
+session-start failure (G26), `truncate` multibyte panic (G03), Codex duplicate
+text (G10), spinning-bubble on send failure (F32), `deleteConversation` listener
+leak (F36/G32), `hydrateFromBackend` optimistic-merge (F51), FlightStatus contract
+test vs generated schema (F55), and cost-threshold notifications (ROADMAP N5).
+
+**Verified ALREADY-FIXED during the pass** (obsolete backlog entries — safe to drop):
+F01 (pty reaps children via `exit_child.lock().wait()`), G08 (Codex signal-kill
+exit treated as `done`), plus the H4-wave items F50, F38, and the "Path will be
+created" copy.
+
+**Deferred with cause (NOT done — do not treat as ready):**
+- **F28 — send/retry cancel-sender overwrite.** Not a clean fix: `cancel_senders`
+  is keyed only by `session_id`, so a surgical patch hits a chain of hazards
+  (busy-spin on a completed receiver, post-loop `senders.remove` ripping out the
+  *newer* turn's sender, `Ok(())` real-cancel vs `Err` supersede-drop being
+  indistinguishable). Needs per-turn cancel keying — a small concurrency redesign,
+  not a P2 patch.
+- **G11 — `respondEdit` resolves all pending edits.** The correct fix threads a
+  `toolUseId` through the `edit_response` wire protocol (TS + Rust); low impact
+  today (guarded by "one edit in flight"), so deferred to a deliberate protocol change.
+- **RA4 — `worktree.rs` force-remove guard.** Every current caller is an
+  intentional discard that would pass `force=true`, so the guard is pure churn +
+  risk with no live-caller benefit today. Revisit if a non-discard caller appears.
+- **S6 / SSH password on Unix (F11 follow-up).** `ssh_check_remote_path` ignoring
+  the saved keychain password is real, but password-over-stdin only functions on
+  Windows OpenSSH — on Unix the whole path is non-functional regardless (see the
+  new "SSH password auth on Unix" item below). Fixing S6 in isolation only helps
+  Windows and needs a new command param + FE wiring; folded into that larger item.
+- **N2 (swarm auto-reassignment), N3 (MCP server transport), S7/S8/S9
+  (remote git commands / MCP-over-SSH / Codex-over-SSH):** blocked on a policy
+  decision (N2), greenfield + doc-deferred (N3), or M/L feature builds (S7–S9) —
+  out of scope for a hardening pass.
+
+### New findings from the pass (now tracked)
+
+- **P2 — Deploy command family is orphaned.** `run_deploy`, `read_deploy_config`,
+  `validate_deploy`, `create_deploy_config` (`commands/deploy.rs`) have **no**
+  frontend or Rust caller — only their `lib.rs` registrations — since the deploy
+  UI was removed in the P2-20 state pruning (`705f0b6`). This makes the June
+  review's F23 (`DeployConfig.env` never applied) and F24 (runs can't be
+  cancelled) bugs in dead code. Either delete `deploy.rs` + its 4 registrations,
+  or re-surface a deploy UI and fix F23/F24 then. **Supersedes F23/F24.**
+- **P2 — SSH password auth on Unix is non-functional.** Post-F06/F11, the keychain
+  password is only fed to ssh stdin on Windows, because Unix OpenSSH reads the
+  password from `/dev/tty`, not stdin. So password-auth SSH targets can't
+  authenticate non-interactively on macOS/Linux via `ssh_run`/`ssh_exec`, and with
+  `BatchMode` dropped a dev build with a controlling TTY can block until the
+  command timeout. Proper fix: `sshpass`/`SSH_ASKPASS` (or keep `BatchMode=yes` on
+  Unix to fail fast), applied consistently across `ssh_run`, `ssh_exec`, and
+  `ssh_check_remote_path` (subsumes **S6**).
+- **P3 — auth-watcher edge cases.** The new trailing-edge debounce has no
+  max-wait cap (a cred file rewritten with <500 ms gaps indefinitely never emits —
+  theoretical; real logins settle) and doesn't flush a pending emit if the channel
+  closes mid-burst (teardown-only, inconsequential).
+- **P3 — Codex flat-path suffix assumption.** G10's `text.slice(flatTextEmitted)`
+  assumes the terminal `agent_message` is a length-extension of the concatenated
+  deltas; a *corrected* terminal text would be mis-emitted. Matches the existing
+  0.135 item-path assumption; only manifests if Codex diverges.
+
 ## Remote Agents (current flagship)
 
 Canonical plan: [`dev/remoteagents/README.md`](./dev/remoteagents/README.md).
