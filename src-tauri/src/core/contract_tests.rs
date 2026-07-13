@@ -271,10 +271,12 @@ mod tests {
         assert_eq!(task["task_type"].as_str().unwrap(), "implementation");
         assert_eq!(validation["verdict"].as_str().unwrap(), "pass");
 
-        // Write fixture for TS tests
-        let fixture_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test-fixtures");
-        let _ = std::fs::create_dir_all(&fixture_dir);
-        std::fs::write(fixture_dir.join("state.v2.fixture.json"), &json).unwrap();
+        // NOTE: this test used to write test-fixtures/state.v2.fixture.json
+        // "for TS tests", but no TS (or other) consumer ever existed, and the
+        // write embedded the running machine's current_dir via
+        // OrchestratorSettings::default() — dirtying the tree on every
+        // `cargo test` run. The write and the orphan fixture were removed;
+        // the in-memory contract assertions above are the real guard.
     }
 
     #[test]
