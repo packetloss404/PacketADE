@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Flight, Task, Milestone, TaskResult } from "@/types/flight";
-import type { PersistedStateDto, TaskDto } from "@/generated/tauri-schema";
+import type { FlightStatusDto, PersistedStateDto, TaskDto } from "@/generated/tauri-schema";
 
 describe("TS/Rust contract tests", () => {
   // ---------------------------------------------------------------
@@ -166,18 +166,24 @@ describe("TS/Rust contract tests", () => {
   // ---------------------------------------------------------------
 
   it("FlightStatus enum covers all Rust variants", () => {
-    const allStatuses: import("@/types/flight").FlightStatus[] = [
-      "draft",
-      "planning",
-      "ready",
-      "active",
-      "paused",
-      "review",
-      "done",
-      "failed",
-      "cancelled",
-    ];
-    expect(allStatuses).toHaveLength(9);
+    // Keyed by every generated FlightStatusDto member (the Rust-derived source
+    // of truth). If the Rust enum gains or drops a variant, the regenerated
+    // DTO makes this Record non-exhaustive and the test fails to COMPILE — so
+    // the count below is cross-checked, not hand-kept.
+    const exhaustive: Record<FlightStatusDto, true> = {
+      draft: true,
+      spec: true,
+      planning: true,
+      ready: true,
+      active: true,
+      paused: true,
+      review: true,
+      done: true,
+      failed: true,
+      cancelled: true,
+    };
+    const allStatuses = Object.keys(exhaustive) as import("@/types/flight").FlightStatus[];
+    expect(allStatuses).toHaveLength(10);
   });
 
   it("TaskStatus enum covers all Rust variants", () => {

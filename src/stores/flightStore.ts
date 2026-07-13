@@ -268,8 +268,13 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   hydrateFromBackend: async (persisted) => {
     try {
       const state = persisted ?? (await loadPersistedState());
+      // F51: merge rather than wholesale-replace so locally-added optimistic
+      // flights not yet in the backend snapshot survive hydration. Backend is
+      // authoritative for any id it does contain.
+      const backendIds = new Set(state.flights.map((f) => f.id));
+      const localOnly = get().flights.filter((f) => !backendIds.has(f.id));
       set({
-        flights: state.flights,
+        flights: [...state.flights, ...localOnly],
         activeFlightId: state.ui.selectedFlightId ?? null,
       });
       get().reconcileIssueLinks({ persist: false, touchUpdatedAt: false });
