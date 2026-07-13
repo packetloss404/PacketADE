@@ -81,18 +81,22 @@ The factory lives in `src/session-registry.ts`. Currently wired:
 
 ## Protocol summary
 
-**Protocol version: 6**. The version is advertised
+**Protocol version: 7**. The version is advertised
 in the `ready` event's `protocolVersion` field at startup, and the Rust
-supervisor's `EXPECTED_PROTOCOL_VERSION` constant must match. v2 added
-`set_permission_mode`, `set_model`, and `retry`; v3 added typed attachments,
-per-hunk edit acceptance payloads, richer tool/plan/token events, and resume
-tokens on `done`; v4 added `cancel_pending_tools`, which drains parked
-permission/edit prompts as denied without killing the session; v5 added the
-Mission Planner `inject_user_turn` request, in-process planner MCP handshake,
-and planner-tool result round-trip; v6 added the typed `rate_limited` event
-used by the Mission Planner quota-pause flow. Providers advertise support by
-implementing the matching handler methods on `ProviderHandler`; the registry
-emits a clean "not supported" error when a provider skips one.
+supervisor's `EXPECTED_PROTOCOL_VERSION` constant must match (negotiation is
+warn-only: a version mismatch logs but doesn't block the connection). v2
+added `set_permission_mode`, `set_model`, and `retry`; v3 added typed
+attachments, per-hunk edit acceptance payloads, richer tool/plan/token
+events, and resume tokens on `done`; v4 added `cancel_pending_tools`, which
+drains parked permission/edit prompts as denied without killing the session;
+v5 added `inject_user_turn` (kept) plus an in-process Flight Planner MCP
+handshake and planner-tool result round-trip (removed in v7); v6 added the
+typed `rate_limited` event, now a generic provider-quota signal; v7 (2026-07-11,
+the planner-amputation refactor) deleted the entire in-process Flight Planner
+MCP surface — `planner_tool`, `planner_tool_result`, and `mcpKind:"planner"`
+are gone. Providers advertise support by implementing the matching handler
+methods on `ProviderHandler`; the registry emits a clean "not supported"
+error when a provider skips one.
 
 **stdin (requests, one per line):**
 
@@ -109,7 +113,6 @@ emits a clean "not supported" error when a provider skips one.
 | `retry`                | v2: re-run the last turn (UI "Retry" affordance)              |
 | `cancel_pending_tools` | v4: deny parked tool/edit prompts without cancelling the turn |
 | `inject_user_turn`     | v5: inject a user/wake-trigger turn into a long-lived session |
-| `planner_tool_result`  | v5: resolve an in-process Mission Planner MCP tool call       |
 
 **stdout (events, one per line):**
 
@@ -126,7 +129,6 @@ emits a clean "not supported" error when a provider skips one.
 | `plan_block`                 | v3: structured plan/TodoWrite mirror                        |
 | `tool_output_extended`       | v3: tool exit code, paths, stdout/stderr                    |
 | `turn_summary`               | v3: running token totals between turns                      |
-| `planner_tool`               | v5: ask Rust to execute/record a planner MCP tool call      |
 | `rate_limited`               | v6: provider hit a quota limit and may include retry timing |
 
 See `src/protocol.ts` for the full TypeScript definitions — that file is the

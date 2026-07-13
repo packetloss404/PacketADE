@@ -1,6 +1,6 @@
 # Dev Planning Docs
 
-Last updated: 2026-06-15
+Last updated: 2026-07-13
 
 This directory holds **active** planning docs with outstanding work items plus the engineering reference docs that used to live in `docs/`. Completed docs have been moved to `dev/archive/`.
 
@@ -47,17 +47,20 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 
 - `mcp-provider-transport.md` — Phases 2-3 deferred (local MCP server transport)
 
-### Flight Planner (archived — backend fate pending)
+### Flight Planner (archived — backend amputated 2026-07-11)
 
 The Flight Planner planning docs are now in [`archive/`](./archive/). The Rust
-flight-planner backend has had zero frontend callers since the single-surface
-refactor; its fate (delete vs re-expose) is a single **DECISION PENDING** item in
-[`../backlog.md`](../backlog.md) (Flight Planner backend). Do not resume this work
-from the archived docs until that decision lands.
+flight-planner backend's fate was resolved and executed: the shared executor
+money path was extracted into `commands/flight_cost.rs`, then the
+genuinely-dead planner command family, prompts, journal, and the sidecar's
+in-process planner MCP surface were deleted (sidecar protocol bumped to v7).
+See [`../backlog.md`](../backlog.md) (Flight Planner backend) for the full
+account. Do not resume this work from the archived docs — they describe the
+deleted v1 planner surface.
 
-- `archive/flight-planner-v1-acceptance-runbook.md` — manual sign-off runbook (v1)
-- `archive/flight-planner-reliability-continuity-pack.md` — reliability + continuity contract for Flight Planner journals
-- `archive/flight-planner-plan.md` and `archive/flight-planner-spike-retro.md` — locked v1 design/reference
+- `archive/flight-planner-v1-acceptance-runbook.md` — manual sign-off runbook (v1, deleted backend)
+- `archive/flight-planner-reliability-continuity-pack.md` — reliability + continuity contract for Flight Planner journals (deleted backend)
+- `archive/flight-planner-plan.md` and `archive/flight-planner-spike-retro.md` — locked v1 design/reference (deleted backend)
 
 ### Workspace UX
 
@@ -83,7 +86,7 @@ from the archived docs until that decision lands.
 
 - `archive/backlog.md`, `archive/cross-competitor-map.md`, `archive/positioning-notes.md`, `archive/priority-resolution.md`
 - `archive/agents-tab-modernization-plan.md` — 314-finding review that seeded the Agents-tab Waves 1–4 (surface since folded into the tile composer)
-- `archive/flight-planner-plan.md`, `archive/flight-planner-spike-retro.md`, `archive/flight-planner-v1-acceptance-runbook.md`, `archive/flight-planner-reliability-continuity-pack.md` — Flight Planner v1 design/reference/runbooks (backend fate pending in `/backlog.md`)
+- `archive/flight-planner-plan.md`, `archive/flight-planner-spike-retro.md`, `archive/flight-planner-v1-acceptance-runbook.md`, `archive/flight-planner-reliability-continuity-pack.md` — Flight Planner v1 design/reference/runbooks (backend amputated 2026-07-11, see `/backlog.md`)
 - `archive/v0.8-github-and-memory.md` — locked v0.8 GitHub + Memory design/scope
 - `archive/sprints-2026-06-15.md` — post-rename sprint plan; residual open items folded into `/backlog.md`
 - `archive/moat/` — memory layer, insights, deploy, scaffold, analytics, cost unification specs

@@ -9,7 +9,7 @@ platform. If you are adding a new target triple, extend this doc.
 
 | OS          | Triple                      | Bundle formats          |
 | ----------- | --------------------------- | ----------------------- |
-| Windows x64 | `x86_64-pc-windows-msvc`    | `.exe` + NSIS installer |
+| Windows x64 | `x86_64-pc-windows-msvc`    | `.exe` + NSIS + MSI installers |
 | macOS x64   | `x86_64-apple-darwin`       | `.app` + DMG            |
 | macOS ARM64 | `aarch64-apple-darwin`      | `.app` + DMG            |
 | Linux x64   | `x86_64-unknown-linux-gnu`  | AppImage + DEB          |
