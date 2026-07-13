@@ -23,7 +23,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter, Manager};
@@ -133,9 +133,54 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let claude_dir_for_task = claude_dir;
     let codex_dir_for_task = codex_dir;
     tauri::async_runtime::spawn(async move {
-        let mut last_emit_claude: Option<Instant> = None;
-        let mut last_emit_codex: Option<Instant> = None;
-        while let Some(res) = rx.recv().await {
+        // F16: trailing-edge debounce. A login writes the cred file several times
+        // in quick succession; a leading-edge debounce emitted on the FIRST event
+        // (re-probing a half-written file) and dropped every later event —
+        // including the final authoritative write. Instead we accumulate which
+        // providers changed and emit a fresh probe only once the burst has been
+        // quiet for the debounce window, so the emitted status is the settled one.
+        let settle = Duration::from_millis(DEBOUNCE_MS);
+        let mut dirty_claude = false;
+        let mut dirty_codex = false;
+        loop {
+            let next = if dirty_claude || dirty_codex {
+                match tokio::time::timeout(settle, rx.recv()).await {
+                    Ok(v) => v,
+                    Err(_) => {
+                        // Quiescent for the debounce window — flush the trailing,
+                        // authoritative state with a fresh probe per dirty provider.
+                        if dirty_claude {
+                            let status = probe_claude_oauth();
+                            let _ = app_for_task.emit(
+                                "provider-auth:changed",
+                                AuthChangedPayload {
+                                    provider: PROVIDER_CLAUDE.to_string(),
+                                    status,
+                                },
+                            );
+                            dirty_claude = false;
+                        }
+                        if dirty_codex {
+                            let status = probe_codex_oauth();
+                            let _ = app_for_task.emit(
+                                "provider-auth:changed",
+                                AuthChangedPayload {
+                                    provider: PROVIDER_CODEX.to_string(),
+                                    status,
+                                },
+                            );
+                            dirty_codex = false;
+                        }
+                        continue;
+                    }
+                }
+            } else {
+                rx.recv().await
+            };
+
+            let Some(res) = next else {
+                break; // channel closed
+            };
             let event = match res {
                 Ok(ev) => ev,
                 Err(e) => {
@@ -144,37 +189,15 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
 
-            // Which provider(s) are affected by this event?
-            let mut affects_claude = false;
-            let mut affects_codex = false;
+            // Mark which provider(s) this event affects; the actual probe + emit
+            // happens on the trailing edge above.
             for p in &event.paths {
                 if path_is_in(&p, &claude_dir_for_task) {
-                    affects_claude = true;
+                    dirty_claude = true;
                 }
                 if path_is_in(&p, &codex_dir_for_task) {
-                    affects_codex = true;
+                    dirty_codex = true;
                 }
-            }
-
-            if affects_claude && should_emit(&mut last_emit_claude) {
-                let status = probe_claude_oauth();
-                let _ = app_for_task.emit(
-                    "provider-auth:changed",
-                    AuthChangedPayload {
-                        provider: PROVIDER_CLAUDE.to_string(),
-                        status,
-                    },
-                );
-            }
-            if affects_codex && should_emit(&mut last_emit_codex) {
-                let status = probe_codex_oauth();
-                let _ = app_for_task.emit(
-                    "provider-auth:changed",
-                    AuthChangedPayload {
-                        provider: PROVIDER_CODEX.to_string(),
-                        status,
-                    },
-                );
             }
         }
     });
@@ -196,16 +219,3 @@ fn path_is_in(candidate: &Path, dir: &Path) -> bool {
     candidate == dir || candidate.starts_with(dir)
 }
 
-/// Debounce helper. Returns true if enough time has elapsed since the last
-/// emit that we should emit again, and updates the stored timestamp.
-fn should_emit(last: &mut Option<Instant>) -> bool {
-    let now = Instant::now();
-    let threshold = Duration::from_millis(DEBOUNCE_MS);
-    match *last {
-        Some(prev) if now.duration_since(prev) < threshold => false,
-        _ => {
-            *last = Some(now);
-            true
-        }
-    }
-}

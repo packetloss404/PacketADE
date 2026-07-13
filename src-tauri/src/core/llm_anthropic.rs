@@ -198,7 +198,12 @@ impl LlmProvider for AnthropicProvider {
         }
 
         let mut stream = response.bytes_stream();
-        let mut buffer = String::new();
+        // F46: buffer raw bytes rather than lossy-decoding each chunk. A multibyte
+        // UTF-8 char split across two chunks would otherwise be mangled into U+FFFD
+        // by a per-chunk from_utf8_lossy. SSE lines are '\n'-terminated (an ASCII
+        // byte that cannot occur mid-codepoint), so a complete line is always a
+        // complete UTF-8 sequence; we only decode once a full line is buffered.
+        let mut buffer: Vec<u8> = Vec::new();
         let mut current_tool_id = String::new();
         let mut current_tool_name = String::new();
         let mut current_tool_args = String::new();
@@ -209,12 +214,17 @@ impl LlmProvider for AnthropicProvider {
         let mut cache_creation_input_tokens: u64 = 0;
 
         while let Some(chunk_result) = stream.next().await {
+            // RA1: if the consumer dropped the receiver, stop parsing the rest of
+            // the upstream HTTP stream instead of draining it into a dead channel.
+            if tx.is_closed() {
+                return Ok(());
+            }
             let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
+            buffer.extend_from_slice(&chunk);
 
-            while let Some(line_end) = buffer.find('\n') {
-                let line = buffer[..line_end].trim().to_string();
-                buffer = buffer[line_end + 1..].to_string();
+            while let Some(line_end) = buffer.iter().position(|&b| b == b'\n') {
+                let line_bytes: Vec<u8> = buffer.drain(..=line_end).collect();
+                let line = String::from_utf8_lossy(&line_bytes).trim().to_string();
 
                 if line.is_empty() || line.starts_with(':') {
                     continue;
