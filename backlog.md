@@ -17,9 +17,17 @@ bridge.
 **Sequencing note.** Remote Agents (ROADMAP R0, P0) is the headline direction.
 Its relay reuses the same `api-agent:*` event contract that tile conversations
 already emit, so the "stream `api-agent:*` / respond to prompts / cancel"
-envelope should treat that event shape as a stable input. The orphaned Rust
-flight-planner backend (see the single decision item under **Flight Planner
-backend** below) is a pending user decision and does not gate this work.
+envelope should treat that event shape as a stable input. The Rust
+flight-planner backend question (see **Flight Planner backend** below) is
+resolved (shipped 2026-07-11) and does not gate this work.
+
+**Blocked on Sprint-0 decisions.** [`dev/remoteagents/09-open-decisions.md`](./dev/remoteagents/09-open-decisions.md)
+records three Sprint-0 BLOCKING decisions — auth provider choice,
+payload-encryption timing, and code location — all still marked "Open" as of
+that doc's 2026-06-15 last touch (four weeks stale as of this writing). Per
+that doc, no `remoteagents/` code should be written until each is resolved.
+The P1 items below are the target backlog once Sprint-0 unblocks; do not pick
+them up before that gate clears.
 
 - **P1 — Packet Cloud relay MVP.** Implement the Worker/Durable Object relay,
   desktop connector, host/session routing, reconnect semantics, and relay
@@ -178,32 +186,18 @@ Deferred items called out in `dev/multi-platform-build.md` and
 
 ## Flight Planner backend
 
-- **DECISION RESOLVED 2026-07-11 — KEEP (deletion blocked by dependency map).**
-  The user approved deletion conditional on the Flight Deck being unaffected; a
-  dedicated deletion task (FP-DEL) built the full dependency map and found the
-  premise false at the backend level: `commands/flight_planner.rs` is the home
-  of SHARED, compile-time load-bearing machinery that live paths call directly —
-  `flight_for_executor_session` + `accumulate_executor_cost` from BOTH the
-  sidecar attempt terminal listener (`agent_sidecar/handler.rs:653-700`) and the
-  api-agent turn-close cost path (`api_agent.rs:1355-1400`); journal emit
-  (`core/flight_journal.rs`) from the same handler; wake plumbing from
-  `orchestration.rs`; spec-import summarization from `issues.rs` via
-  `flight_planner_compaction`; and the sidecar's LIVE anthropic provider imports
-  `flight-planner-server.ts` under `mcpKind === "planner"`. Only the 13 Tauri
-  command REGISTRATIONS are frontend-orphaned. Two independent reviewers
-  confirmed the map; nothing was deleted.
-  **Future path if slimming is still wanted (own task, real Flight-Deck risk):
-  extract-then-delete** — move the shared executor-cost/journal/wake machinery
-  into a Flight-Deck-owned module (e.g. `commands::flight_cost`), repoint
-  handler.rs / api_agent.rs / orchestration.rs / issues.rs, and only then delete
-  the genuinely planner-only remnants (spec-mode prompts, planner lifecycle
-  commands + registrations, `flight_planner_tools/`, the sidecar planner MCP
-  server + `mcpKind:"planner"` branch). Until then the two Sprint-3 residues
-  below stand on their own merits (no longer conditional on a RE-EXPOSE):
-  - `read_journal_after(flight_id, last_entry_id)` incremental journal fetch —
-    today every `journal-appended` event refetches the whole file.
-  - `now_millis()` is duplicated across the 6 `flight_planner_tools` files —
-    hoist to one shared helper.
+- **SHIPPED 2026-07-11 — extract-then-delete complete.** See
+  [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]` for the full account
+  (`chore/planner-amputation`, merged `b930297`). Two facts worth keeping
+  live here rather than letting them go stale in CHANGELOG prose:
+  - **KEPT (persisted-data policy, deliberate):** `core/flight.rs`'s `planner_*`
+    fields, `PlannerStatus` enum/DTO, `PersistedState.flight_approvals`, and
+    `FlightApprovalRequest(Dto)` stay so old users' on-disk state keeps
+    loading losslessly — write-once/read-never now that there's no planner UI.
+  - **Orphaned, not migrated:** on-disk flight journals under
+    `data_dir().join("missions")` are now harmless orphans; nothing reads or
+    writes them. This supersedes the "Class B — live path" framing below —
+    treat that framing as historical.
 
 ### Intentional Mission→Flight back-compat surfaces (do NOT flag as leftover)
 

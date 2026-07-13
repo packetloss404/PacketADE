@@ -5,7 +5,7 @@
 
 // Bumped when the wire protocol changes in a way the supervisor must notice.
 // Keep in lockstep with `EXPECTED_PROTOCOL_VERSION` in
-// `src-tauri/src/commands/agent_sidecar.rs`.
+// `src-tauri/src/commands/agent_sidecar/mod.rs`.
 //
 // v2 (Tier 3 slice B): added `set_permission_mode`, `set_model`, and `retry`
 // request types.

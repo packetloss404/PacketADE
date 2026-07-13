@@ -87,10 +87,10 @@ The **Workspace is the single surface**: every agent — chat or terminal — is
 
 ### Sidecar Protocol
 
-The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **6**:
+The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **7**:
 
-- Events: `ready` (handshake), `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken`), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns), `planner_tool` (v5 Flight Planner round-trip), and `rate_limited` (v6, typed quota-pause for the Flight Planner)
-- Requests: `start_session` (with image attachments + resume), `send_message`, `permission_response`, `edit_response` (with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`, `inject_user_turn` (v5), `planner_tool_result` (v5)
+- Events: `ready` (handshake), `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken`), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns), and `rate_limited` (v6, typed provider quota-pause)
+- Requests: `start_session` (with image attachments + resume), `send_message`, `permission_response`, `edit_response` (with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`, `inject_user_turn` (v5)
 
 ### Workspaces — Terminal CLI Command Center
 
@@ -226,7 +226,7 @@ PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription),
 
 #### Sidecar status
 
-The sidecar work is complete across the original four v2 tiers and the v3–v6 protocol additions that power the unified Agents pane:
+The sidecar work is complete across the original four v2 tiers and the v3–v7 protocol additions that power the unified Agents pane:
 
 - **v2 Tier 1 — Bundling:** pinned Node 24.15.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
 - **v2 Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
@@ -235,8 +235,9 @@ The sidecar work is complete across the original four v2 tiers and the v3–v6 p
 - **Refresh-token aware expiry:** `provider_auth` now treats expired access tokens as `ready` when a refresh token is present, avoiding spurious "please log in" prompts for subscription users whose SDK / CLI would have refreshed on next use anyway.
 - **v3 — Protocol additions for the Agents pane:** typed image attachments on `start_session` / `send_message`; `mergedContent` on `edit_response` (per-hunk acceptance); `batchId`/`batchSize` on `permission_request`; `resumeToken` on `done`; new `plan_block` event mirroring `TodoWrite`; `tool_output_extended` event with Bash exit code + stdout/stderr + Write/Edit modified paths; `turn_summary` event for live mid-stream token totals.
 - **v4 — `cancel_pending_tools`:** drains parked permission/edit prompts as denied without aborting the SDK query, so the model receives synthetic "User cancelled this tool" results and the loop continues.
-- **v5 — Flight Planner round-trips:** `inject_user_turn` and the `planner_tool` / `planner_tool_result` request/event pair let the Flight Planner drive multi-step planning over the same protocol.
-- **v6 — typed `rate_limited` event:** surfaces Flight Planner quota pauses as a typed event instead of an opaque error.
+- **v5 — `inject_user_turn`:** injects a user/wake-trigger turn into a long-lived session; originally paired with a Flight Planner `planner_tool` / `planner_tool_result` MCP round-trip that v7 removed (see below).
+- **v6 — typed `rate_limited` event:** surfaces provider quota pauses as a typed event instead of an opaque error.
+- **v7 — planner amputation (2026-07-11):** the entire in-process Flight Planner MCP surface — the `planner_tool` event, the `planner_tool_result` request, and the sidecar's `mcpKind:"planner"` construction branch — was deleted along with the Rust `flight_planner` command family (~13,300 net lines removed). The live executor money path (`flight_for_executor_session` / `accumulate_executor_cost`) was extracted first into `commands/flight_cost.rs` and is unaffected. See [`backlog.md`](./backlog.md) → Flight Planner backend.
 - **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so CostDashboard reports GPT-5.5 spend correctly; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
 - **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with the same OpenAI API key as `api-openai`, preserving the existing Agents pane event contract while leaving the stable Rust OpenAI API provider and Codex subscription provider untouched. The default `auto` mode requires approval before `bash` / `write_file`.
 - **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.

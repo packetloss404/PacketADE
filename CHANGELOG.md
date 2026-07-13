@@ -7,6 +7,35 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [0.10.1] - 2026-07-13
+
+### Changed
+
+- **Flight Planner backend amputated (`chore/planner-amputation`).** The
+  2026-07-11 extract-then-delete: the live executor money path
+  (`flight_for_executor_session` / `accumulate_executor_cost`) moved verbatim
+  into a new Flight-Deck-owned `commands/flight_cost.rs`; the now-unreachable
+  planner command family, prompts, and on-disk journal were then deleted
+  (`commands/flight_planner.rs` + 4 sibling modules + `flight_planner_tools/`,
+  ~13,300 net lines), along with the sidecar's in-process Flight Planner MCP
+  surface (`flight-planner-server.ts`, `mcpKind:"planner"`). Sidecar protocol
+  bumped **v6 → v7** (negotiation stays warn-only). `planner_status` /
+  `flight_approvals` persisted fields are kept read-only so old users' state
+  still loads losslessly. See `backlog.md` → Flight Planner backend.
+
+### Added
+
+- **Window geometry persistence.** The desktop window remembers its last
+  size and position across launches.
+
+### Fixed
+
+- **Contract-test fixture write removed** (`core/contract_tests.rs`). A test
+  used to write `test-fixtures/state.v2.fixture.json` "for TS tests" that
+  never existed, dirtying the tree on every `cargo test` run and embedding
+  the running machine's `current_dir`. Removed the write and the orphaned
+  fixture.
+
 ## [0.10.0] - 2026-07-09
 
 Single-surface consolidation. The Agents tab is retired and every agent —

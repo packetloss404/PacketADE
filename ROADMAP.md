@@ -1,6 +1,8 @@
 # PacketADE Roadmap
 
-Last updated: 2026-07-09 (reflects the 0.10.0 single-surface consolidation state)
+Last updated: 2026-07-13 (0.10.0 single-surface consolidation state, plus the
+2026-07-11 planner-amputation and window-state-persistence merges, both of
+which landed after the 0.10.0 cut and are not yet in `CHANGELOG.md`)
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
@@ -69,7 +71,7 @@ canonical plan docs.
 
 Sprints 0-4, Flight Planner v1, workspace panes, Issues, GitHub + Memory,
 dictation, cost analytics, cost guardrails / budget thresholds, API-agent
-conversations, sidecar protocol v6, local
+conversations, sidecar protocol v7 (the v6→v7 planner-amputation bump), local
 quality gates, and the conversation-as-tile single-surface consolidation (the
 "match Claude Code & Codex" initiative, now folded into the Workspace tile
 surface) are shipped. The full release narrative lives in
