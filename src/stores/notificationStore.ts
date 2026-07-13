@@ -6,6 +6,7 @@ interface NotificationPreferences {
   onApprovalNeeded: boolean;
   onSessionComplete: boolean;
   onSessionError: boolean;
+  onCostThreshold: boolean;
 }
 
 interface NotificationStore extends NotificationPreferences {
@@ -14,6 +15,7 @@ interface NotificationStore extends NotificationPreferences {
   setOnApprovalNeeded: (v: boolean) => void;
   setOnSessionComplete: (v: boolean) => void;
   setOnSessionError: (v: boolean) => void;
+  setOnCostThreshold: (v: boolean) => void;
 }
 
 const STORAGE_KEY = "packetade:notifications";
@@ -44,6 +46,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   onApprovalNeeded: saved.onApprovalNeeded ?? true,
   onSessionComplete: saved.onSessionComplete ?? true,
   onSessionError: saved.onSessionError ?? true,
+  onCostThreshold: saved.onCostThreshold ?? true,
 
   setEnabled: (enabled) => {
     set({ enabled });
@@ -64,5 +67,9 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   setOnSessionError: (onSessionError) => {
     set({ onSessionError });
     persist({ ...get(), onSessionError });
+  },
+  setOnCostThreshold: (onCostThreshold) => {
+    set({ onCostThreshold });
+    persist({ ...get(), onCostThreshold });
   },
 }));

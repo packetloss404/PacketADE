@@ -4,11 +4,15 @@ import { storageKey } from "@/lib/brand";
 import {
   computeCostGuardrailStatus,
   DEFAULT_COST_GUARDRAIL_SETTINGS,
+  evaluationMessage,
   normalizeCostGuardrailSettings,
+  type CostGuardrailScope,
+  type CostGuardrailScopeStatus,
   type CostGuardrailStatus,
   type CostGuardrailSettings,
   type CostPricingStatus,
 } from "@/lib/costGuardrails";
+import { notifyCostThreshold } from "@/lib/notifications";
 
 export interface ModelUsage {
   model: string;
@@ -63,11 +67,17 @@ export const useAnalyticsStore = create<AnalyticsStore>((set, get) => ({
     try {
       const raw = await readUsageAnalytics();
       const parsed = JSON.parse(raw) as AnalyticsData;
+      const settings = get().guardrailSettings;
+      const guardrailStatus = computeCostGuardrailStatus(parsed, settings);
       set({
         data: parsed,
-        guardrailStatus: computeCostGuardrailStatus(parsed, get().guardrailSettings),
+        guardrailStatus,
         loading: false,
       });
+      // Proactive cost-threshold notifications: fired here (on the poll
+      // cadence, not the LiveSpendChip render path) so alerts still surface
+      // when the chip is hidden or shows nothing (spend <= 0).
+      void fireGuardrailTransitions(guardrailStatus, settings);
     } catch (err) {
       set({
         error: err instanceof Error ? err.message : String(err),
@@ -120,5 +130,76 @@ function getLocalStorage(): Storage | null {
     return typeof window === "undefined" ? null : window.localStorage;
   } catch {
     return null;
+  }
+}
+
+// Per-scope last-seen guardrail level, kept in-memory across polls so a
+// steady "warning"/"limit" doesn't re-notify every 30s — only upward
+// transitions fire. Unseen scopes are treated as "ok".
+type TrackedLevel = CostGuardrailScopeStatus["level"];
+const LEVEL_RANK: Record<TrackedLevel, number> = { ok: 0, warning: 1, limit: 2 };
+const lastGuardrailLevelByScope: Record<string, TrackedLevel> = {};
+
+function scopeLabel(scope: CostGuardrailScope): string {
+  if (scope === "daily") return "Daily spend";
+  if (scope === "monthly") return "Global monthly spend";
+  if (scope === "session") return "Current session spend";
+  if (scope.startsWith("provider:")) return `${scope.slice("provider:".length)} spend`;
+  if (scope.startsWith("flight:")) return `Flight ${scope.slice("flight:".length)}`;
+  return scope;
+}
+
+async function fireGuardrailTransitions(
+  status: CostGuardrailStatus,
+  settings: CostGuardrailSettings,
+): Promise<void> {
+  const warningRatio = settings.warningThresholdPercent / 100;
+  for (const scope of status.scopes) {
+    const seen = scope.scope in lastGuardrailLevelByScope;
+    const prev = lastGuardrailLevelByScope[scope.scope] ?? "ok";
+
+    // First time we observe a scope (e.g. a fresh app launch, where the
+    // in-memory map is empty), seed the baseline silently. A level that was
+    // already breached in a prior session must NOT fire on cold start —
+    // only genuine in-session upward transitions notify.
+    if (!seen) {
+      lastGuardrailLevelByScope[scope.scope] = scope.level;
+      continue;
+    }
+
+    // Only fire on an upward transition (ok→warning, warning→limit, or a
+    // straight ok→limit spike). Steady or improving levels just track.
+    const isUpward =
+      LEVEL_RANK[scope.level] > LEVEL_RANK[prev] && scope.level !== "ok";
+    if (!isUpward) {
+      lastGuardrailLevelByScope[scope.scope] = scope.level;
+      continue;
+    }
+
+    const message = evaluationMessage({
+      key: scope.scope,
+      label: scopeLabel(scope.scope),
+      currentUsd: scope.spendUsd,
+      limitUsd: scope.limitUsd,
+      warningUsd: scope.limitUsd * warningRatio,
+      percentUsed: scope.percentUsed,
+      status: scope.level === "limit" ? "blocked" : "warning",
+      overrideActive: false,
+    });
+    // Only advance the stored level if the notification was actually
+    // delivered. If it was suppressed (focus, debounce, disabled, denied),
+    // hold the old level so the next poll retries instead of consuming the
+    // transition silently.
+    const delivered = await notifyCostThreshold(scope.scope, message);
+    if (delivered) {
+      lastGuardrailLevelByScope[scope.scope] = scope.level;
+    }
+  }
+
+  // Prune scopes that no longer exist (dynamic flight:*/provider:* scopes come
+  // and go) so the map can't grow unbounded across a long session.
+  const current = new Set<string>(status.scopes.map((s) => s.scope));
+  for (const key of Object.keys(lastGuardrailLevelByScope)) {
+    if (!current.has(key)) delete lastGuardrailLevelByScope[key];
   }
 }

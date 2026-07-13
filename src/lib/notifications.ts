@@ -133,6 +133,27 @@ export async function notifyConversationDone(convTitle: string): Promise<void> {
 }
 
 
+/**
+ * Fire a cost-threshold notification. Returns whether a notification was
+ * actually shown, so the caller can decide whether to treat the transition as
+ * "delivered" (suppressed transitions — disabled pref, focus, debounce, denied
+ * permission — must be retried on the next poll rather than silently consumed).
+ */
+export async function notifyCostThreshold(
+  scope: string,
+  message: string
+): Promise<boolean> {
+  if (!useNotificationStore.getState().onCostThreshold) return false;
+  if (!shouldNotify(`cost-${scope}`)) return false;
+  if (!(await ensurePermission())) return false;
+
+  new Notification("Cost Threshold", {
+    body: message,
+    tag: `cost-${scope}`,
+  });
+  return true;
+}
+
 export async function requestNotificationPermission(): Promise<boolean> {
   return ensurePermission();
 }
