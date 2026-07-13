@@ -8,12 +8,14 @@ export function NotificationSettingsCard() {
   const onApprovalNeeded = useNotificationStore((s) => s.onApprovalNeeded);
   const onSessionComplete = useNotificationStore((s) => s.onSessionComplete);
   const onSessionError = useNotificationStore((s) => s.onSessionError);
+  const onCostThreshold = useNotificationStore((s) => s.onCostThreshold);
 
   const setEnabled = useNotificationStore((s) => s.setEnabled);
   const setOnlyWhenUnfocused = useNotificationStore((s) => s.setOnlyWhenUnfocused);
   const setOnApprovalNeeded = useNotificationStore((s) => s.setOnApprovalNeeded);
   const setOnSessionComplete = useNotificationStore((s) => s.setOnSessionComplete);
   const setOnSessionError = useNotificationStore((s) => s.setOnSessionError);
+  const setOnCostThreshold = useNotificationStore((s) => s.setOnCostThreshold);
 
   const handleEnableToggle = async (checked: boolean) => {
     if (checked) {
@@ -46,6 +48,7 @@ export function NotificationSettingsCard() {
               <Toggle label="Approval needed" checked={onApprovalNeeded} onChange={setOnApprovalNeeded} />
               <Toggle label="Session complete" checked={onSessionComplete} onChange={setOnSessionComplete} />
               <Toggle label="Session error" checked={onSessionError} onChange={setOnSessionError} />
+              <Toggle label="Cost threshold alerts" checked={onCostThreshold} onChange={setOnCostThreshold} />
             </div>
           </>
         )}
