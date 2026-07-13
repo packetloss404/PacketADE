@@ -746,6 +746,11 @@ pub async fn launch_flight_async(
                     Some(message.clone()),
                 )
                 .await;
+                // G26: the worktree was provisioned before we tried to start the
+                // session; on start failure the attempt is terminal, so tear its
+                // now-orphaned worktree down instead of leaking it. The persisted
+                // Failed record stays so the failure remains visible in the UI.
+                cleanup_unpersisted_attempt(&spec, &attempt.target, &attempt_id).await;
                 (AttemptStatus::Failed, Some(message))
             }
         };

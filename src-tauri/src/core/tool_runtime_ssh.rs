@@ -104,11 +104,12 @@ fn load_password(config: &SshConfig) -> Option<String> {
 }
 
 /// Run an SSH command. If a password is saved in the keychain for this
-/// target, it's piped to stdin (and `BatchMode=yes` is dropped so SSH
-/// will accept it). Otherwise key-only auth is used.
+/// target, `BatchMode=yes` is dropped so SSH will accept interactive auth.
+/// On Windows the password is piped to ssh's stdin (OpenSSH-for-Windows reads
+/// it from a non-TTY stdin); on Unix it is NOT — see the stdin handling below.
 ///
-/// Note: when password auth is in use, the remote process's stdin is
-/// occupied by the password — callers cannot use `stdin_data` and must
+/// Note: on Windows, when password auth is in use the remote process's stdin
+/// is occupied by the password — callers cannot use `stdin_data` and must
 /// embed any payload directly in `remote_cmd` (e.g. via heredoc).
 async fn ssh_run(
     config: &SshConfig,
@@ -138,14 +139,21 @@ async fn ssh_run(
         .map_err(|e| format!("Failed to spawn ssh: {}", e))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        if let Some(pw) = password {
-            // OpenSSH on Windows reads the password from stdin when stdin
-            // is not a TTY. After writing it we close stdin so the remote
-            // process sees EOF rather than waiting on input.
-            stdin
-                .write_all(format!("{}\n", pw).as_bytes())
-                .await
-                .map_err(|e| format!("Failed to write ssh stdin: {}", e))?;
+        // F06/F11: only OpenSSH-for-Windows reads the auth password from a
+        // non-TTY stdin. On Unix, ssh reads it from /dev/tty instead, so writing
+        // it to stdin does nothing for authentication — and worse, on a
+        // ControlMaster-multiplexed connection the client performs no auth at all
+        // and forwards those stdin bytes straight to the remote command, leaking
+        // the password. So feed the password only on Windows; elsewhere just
+        // close stdin so the remote sees EOF.
+        #[cfg(windows)]
+        {
+            if let Some(pw) = password.as_ref() {
+                stdin
+                    .write_all(format!("{}\n", pw).as_bytes())
+                    .await
+                    .map_err(|e| format!("Failed to write ssh stdin: {}", e))?;
+            }
         }
         stdin.shutdown().await.ok();
     }
