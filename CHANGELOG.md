@@ -27,14 +27,50 @@ task list.
 
 - **Window geometry persistence.** The desktop window remembers its last
   size and position across launches.
+- **Proactive cost-threshold notifications (ROADMAP N5).** With budget
+  guardrails already hard-gating launches, spend now also raises a notification
+  as it *approaches* a limit — firing on an upward guardrail transition
+  (`ok→warning`, `warning→limit`, or an `ok→limit` spike), gated by a new
+  "Cost threshold alerts" toggle. Detection runs on the 30s analytics poll (not
+  the spend-chip render), seeds each scope's baseline silently so launching
+  already-over-threshold doesn't spuriously fire, and only consumes a transition
+  once the notification is actually delivered.
 
 ### Fixed
 
-- **Contract-test fixture write removed** (`core/contract_tests.rs`). A test
-  used to write `test-fixtures/state.v2.fixture.json` "for TS tests" that
-  never existed, dirtying the tree on every `cargo test` run and embedding
-  the running machine's `current_dir`. Removed the write and the orphaned
-  fixture.
+- **P2 hardening batch** (verified against current code — several findings
+  predated the single-surface refactor — and 2-agent peer-reviewed):
+  - **web_fetch** (`core/tool_web.rs`): caps buffered response bytes (10 MB,
+    streamed, with a Content-Length early-reject) so an oversized response can't
+    OOM the process; wraps returned content in a nonce-delimited
+    untrusted-content envelope to blunt prompt injection; hoisted its HTML-strip
+    regexes to compile once.
+  - **LLM streamers** (`core/llm_anthropic.rs`, `core/llm_openai_compat.rs`):
+    byte-buffered SSE parsing so a multibyte UTF-8 char split across network
+    chunks is no longer corrupted (F46); stop draining the upstream stream once
+    the consumer drops the receiver (RA1).
+  - **SSH credential leak** (`core/tool_runtime_ssh.rs`): the keychain password
+    is fed to ssh stdin on Windows only; on Unix, OpenSSH ignored it for auth and
+    over a ControlMaster-multiplexed connection forwarded it to the remote command
+    (F06/F11).
+  - **auth-watcher** (`commands/auth_watcher.rs`): trailing-edge (settle) debounce
+    so a login's final authoritative cred write is the one probed/emitted, not a
+    half-written first event (F16).
+  - **worktree leak** (`commands/flight_attempts.rs`): an attempt whose API session
+    fails to start now tears down its orphaned worktree, keeping the Failed record
+    (G26).
+  - **truncate panic** (`commands/agent_sidecar/handler.rs`): walks to a char
+    boundary before slicing (G03).
+  - **Codex duplicate text** (`agent-sidecar/.../openai-codex.ts`): the legacy
+    event path dedups assistant text like the item path (G10).
+  - **API sendMessage failure** (`stores/agentTaskStore.ts`): a failed send clears
+    the streaming bubble instead of spinning forever (F32); `deleteConversation`
+    always releases api-agent listeners so done/failed conversations don't leak
+    them (F36/G32).
+  - **flight hydrate** (`stores/flightStore.ts`): `hydrateFromBackend` merges
+    local-only optimistic flights instead of wholesale-replacing (F51).
+  - **contract test** (`lib/__tests__/contract.test.ts`): the FlightStatus test
+    now cross-checks the generated schema enum (F55).
 
 ## [0.10.0] - 2026-07-09
 
