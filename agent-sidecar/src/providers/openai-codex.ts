@@ -362,6 +362,13 @@ export class OpenAICodexProvider implements ProviderHandler {
    */
   private itemTextEmitted = new Map<string, number>();
 
+  /**
+   * Legacy 0.121 flat-event analogue of `itemTextEmitted`: those events carry no
+   * item id, so a single running counter of chars emitted via `agent_message_delta`
+   * lets the terminal `agent_message` forward only the unseen suffix (or nothing).
+   */
+  private flatTextEmitted = 0;
+
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.sessionId = req.sessionId;
     this.lastReq = req;
@@ -474,6 +481,7 @@ export class OpenAICodexProvider implements ProviderHandler {
     // Each `codex exec` restarts item ids at item_0, so clear the per-item
     // emitted-length tracker or turn 2's item_0 would be seen as "already sent".
     this.itemTextEmitted.clear();
+    this.flatTextEmitted = 0;
 
     child.on("error", (err) => {
       logStderr(`child process error: ${err.message}`);
@@ -814,8 +822,21 @@ export class OpenAICodexProvider implements ProviderHandler {
         pickString(payload, "message", "text", "delta", "content") ??
         extractTextBlock(payload.content) ??
         extractTextBlock((payload as { message?: unknown }).message);
-      if (text && text.length > 0) {
-        emit({ type: "chunk", sessionId, text });
+      if (typeStr === "agent_message_delta") {
+        // Streaming chunk — forward as-is and remember how much we've emitted so
+        // the terminal `agent_message` can print only the newly-added suffix.
+        if (text && text.length > 0) {
+          emit({ type: "chunk", sessionId, text });
+          this.flatTextEmitted += text.length;
+        }
+      } else {
+        // Terminal full-text message — deltas may already have covered it, so
+        // emit only the unseen suffix (nothing if the deltas ran ahead), then
+        // reset the counter for the next turn.
+        if (text && text.length > this.flatTextEmitted) {
+          emit({ type: "chunk", sessionId, text: text.slice(this.flatTextEmitted) });
+        }
+        this.flatTextEmitted = 0;
       }
       return;
     }

@@ -745,12 +745,10 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         ),
       }));
 
-      void sendApiAgentMessage(conversationId, content, attachments ?? undefined).catch(() => {
-        set((s) => ({
-          conversations: s.conversations.map((c) =>
-            c.id === conversationId ? { ...c, status: "failed", updatedAt: Date.now() } : c,
-          ),
-        }));
+      void sendApiAgentMessage(conversationId, content, attachments ?? undefined).catch((err) => {
+        // Mark the conversation failed AND clear the streaming assistant
+        // placeholder created just above — otherwise its spinner never stops.
+        failTurn(conversationId, assistantMsgId, err);
       });
     } else {
       // PTY mode
@@ -803,15 +801,18 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
         // potentially keeps billing tokens) — log so it's diagnosable.
         void cancelApiAgentSession(id).catch(logSwallowed("agentTaskStore.cancelApiSession"));
         void closeApiAgentSession(id).catch(logSwallowed("agentTaskStore.closeApiSession"));
-        const cleanup = apiConversationCleanup.get(id);
-        if (cleanup) {
-          cleanup();
-          apiConversationCleanup.delete(id);
-        }
       } else if (conv.sessionId) {
         // Best-effort kill — swallow if PTY already exited.
         void killPty(conv.sessionId).catch(() => {});
       }
+    }
+    // Always release the registered api-agent:* event listeners regardless of
+    // status — done/failed conversations still hold their ~13 listeners
+    // (registered in apiAgentListeners.ts), which would otherwise leak.
+    const cleanup = apiConversationCleanup.get(id);
+    if (cleanup) {
+      cleanup();
+      apiConversationCleanup.delete(id);
     }
     // GC the substores. Approval-store `clearConversation` also routes
     // through maybeResolveTaskApproval so the Review queue isn't stuck on
