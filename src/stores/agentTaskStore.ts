@@ -485,6 +485,7 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
               remotePath: sshTarget.remotePath,
             }
           : { kind: "local", projectPath },
+        { query: initialMessage },
       );
       if (memoryBrief.text.trim().length > 0) {
         const base = effectiveSystemPrompt ?? "";

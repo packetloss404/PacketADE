@@ -271,4 +271,112 @@ describe("memoryStore settings integration", () => {
     // Optimistic: state changes before the backend resolves.
     expect(useMemoryStore.getState().patterns[0].pinned).toBe(true);
   });
+
+  it("ranks a task-relevant pattern above a higher-confidence irrelevant one when a query is given", async () => {
+    const { useMemoryStore, computeContextItems } = await loadStores();
+    useMemoryStore.setState({
+      events: [],
+      patterns: [
+        {
+          id: "p-css",
+          pattern: "prefer flexbox for layout styling",
+          category: "convention",
+          confidence: 0.95,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/A",
+        },
+        {
+          id: "p-auth",
+          pattern: "authentication uses JWT tokens with refresh",
+          category: "architecture",
+          confidence: 0.7,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/A",
+        },
+      ],
+    });
+    const s = useMemoryStore.getState();
+
+    // Without a query: highest confidence wins (prior behaviour).
+    const noQuery = computeContextItems(s.events, s.patterns, { projectPath: "D:/projects/A" });
+    expect(noQuery.map((i) => i.id)).toEqual(["p-css", "p-auth"]);
+
+    // With a task query: the relevant pattern is surfaced first despite lower
+    // confidence.
+    const withQuery = computeContextItems(
+      s.events,
+      s.patterns,
+      { projectPath: "D:/projects/A" },
+      "add JWT authentication to the login endpoint",
+    );
+    expect(withQuery.map((i) => i.id)).toEqual(["p-auth", "p-css"]);
+    expect(withQuery[0].reason).toContain("Relevant to task");
+  });
+
+  it("keeps pinned patterns first even when the query matches an unpinned one", async () => {
+    const { useMemoryStore, computeContextItems } = await loadStores();
+    useMemoryStore.setState({
+      events: [],
+      patterns: [
+        {
+          id: "p-auth",
+          pattern: "authentication uses JWT tokens",
+          category: "architecture",
+          confidence: 0.7,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/A",
+        },
+        {
+          id: "p-pinned",
+          pattern: "always run the linter before committing",
+          category: "convention",
+          confidence: 0.3,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/A",
+          pinned: true,
+        },
+      ],
+    });
+    const s = useMemoryStore.getState();
+    const items = computeContextItems(
+      s.events,
+      s.patterns,
+      { projectPath: "D:/projects/A" },
+      "add JWT authentication",
+    );
+    expect(items[0].id).toBe("p-pinned");
+  });
+
+  it("falls back to confidence order for an empty / stopword-only query", async () => {
+    const { useMemoryStore, computeContextItems } = await loadStores();
+    useMemoryStore.setState({
+      events: [],
+      patterns: [
+        {
+          id: "p-css",
+          pattern: "prefer flexbox for layout styling",
+          category: "convention",
+          confidence: 0.95,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/A",
+        },
+        {
+          id: "p-auth",
+          pattern: "authentication uses JWT tokens",
+          category: "architecture",
+          confidence: 0.7,
+          extractedAt: Date.now(),
+          projectPath: "D:/projects/A",
+        },
+      ],
+    });
+    const s = useMemoryStore.getState();
+    const items = computeContextItems(
+      s.events,
+      s.patterns,
+      { projectPath: "D:/projects/A" },
+      "the and to of", // all stopwords → no usable query
+    );
+    expect(items.map((i) => i.id)).toEqual(["p-css", "p-auth"]);
+  });
 });

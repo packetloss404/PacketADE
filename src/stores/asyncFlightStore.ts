@@ -416,7 +416,9 @@ function composeAsyncLaunchPrompt(
   if (normalized.size !== 1) return prompt;
 
   const [projectPath] = candidatePaths;
-  const brief = useMemoryStore.getState().composeMemoryBrief({ kind: "local", projectPath });
+  const brief = useMemoryStore
+    .getState()
+    .composeMemoryBrief({ kind: "local", projectPath }, { query: prompt });
   if (!brief.text.trim()) return prompt;
   return `${brief.text}\n\n---\n\n${prompt}`;
 }
