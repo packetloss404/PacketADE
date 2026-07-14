@@ -145,7 +145,7 @@ interface MemoryStore {
    * workspace/server. */
   composeMemoryBrief: (
     input: string | MemoryBriefScope,
-    options?: { maxChars?: number },
+    options?: { maxChars?: number; query?: string },
   ) => MemoryBrief;
 }
 
@@ -276,18 +276,74 @@ async function persistState(events: MemoryEvent[], patterns?: LearnedPattern[]) 
   }
 }
 
+// Relevance scoring (memory retrieval Phase 1). Retrieval used to be
+// task-blind — it injected the top-N highest-confidence patterns regardless of
+// what was being built. When a task/objective `query` is available we score
+// candidate memory text by IDF-weighted term overlap against the query and
+// blend that with confidence, so the injected memory is relevant to the task.
+const RELEVANCE_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "but", "to", "of", "in", "on", "for", "with",
+  "is", "are", "be", "this", "that", "it", "as", "at", "by", "from", "into",
+  "we", "you", "should", "add", "fix", "make", "use", "using", "when", "then",
+  "so", "if", "not", "no", "do", "does", "the", "your", "our", "can", "will",
+]);
+
+function relevanceTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 3 && !RELEVANCE_STOPWORDS.has(t));
+}
+
+/**
+ * IDF-weighted overlap of `query` against each candidate text. The corpus is
+ * tiny (≤100 patterns), so we compute document frequency across the candidates
+ * and reward a candidate for sharing the query's rarer terms. Returns a score
+ * per candidate in [0, 1] — the fraction of the query's achievable IDF weight
+ * the candidate covers. Query terms that appear in no candidate don't count
+ * (they don't discriminate). Empty/degenerate query → all zeros, so the caller
+ * falls back to the prior confidence-based ordering.
+ */
+function relevanceScores(query: string, candidates: string[]): number[] {
+  const zeros = candidates.map(() => 0);
+  const qTokens = [...new Set(relevanceTokens(query))];
+  if (qTokens.length === 0 || candidates.length === 0) return zeros;
+  const candTokens = candidates.map((c) => new Set(relevanceTokens(c)));
+  const n = candidates.length;
+  const idf = new Map<string, number>();
+  for (const t of qTokens) {
+    let df = 0;
+    for (const set of candTokens) if (set.has(t)) df += 1;
+    if (df > 0) idf.set(t, Math.log(1 + n / df));
+  }
+  const scoredTokens = [...idf.keys()];
+  const totalIdf = scoredTokens.reduce((s, t) => s + (idf.get(t) as number), 0);
+  if (totalIdf <= 0) return zeros;
+  return candTokens.map((set) => {
+    let matched = 0;
+    for (const t of scoredTokens) if (set.has(t)) matched += idf.get(t) as number;
+    return matched / totalIdf;
+  });
+}
+
 /**
  * v0.8-H: structured context items used by both `getContextForSession`
  * (rendered preview) and `composeMemoryBrief` (prompt injection). Kept as
  * an internal module helper — the only external callers are the two store
  * methods above and the store's own unit tests; no UI surface consumes it
  * directly (MemoryView reads `getContextForSession`).
+ *
+ * When `query` (the task/objective text) is provided, patterns and lessons are
+ * ranked by relevance-to-the-task blended with confidence, instead of purely by
+ * confidence. Without a query, behaviour is unchanged.
  */
 export function computeContextItems(
   events: MemoryEvent[],
   patterns: LearnedPattern[],
   input: string | ({ sessionId?: string } & MemoryBriefScope),
+  query?: string,
 ): ContextItem[] {
+  const hasQuery = Boolean(query && query.trim());
   const scope = normalizeScopeInput(input);
   if (!scope.projectPath) return [];
 
@@ -336,30 +392,49 @@ export function computeContextItems(
   //    without a `projectPath` are legacy/global — they always match.
   //    Patterns with a `projectPath` are filtered through
   //    `projectPathsMatch` so the v0.8 matching mode is honoured.
-  const relevantPatterns = patterns
-    .filter((p) => {
-      if (!projectPathsMatch(p.projectPath)) return false;
-      return p.pinned || p.confidence >= 0.6;
-    })
+  const filteredPatterns = patterns.filter((p) => {
+    if (!projectPathsMatch(p.projectPath)) return false;
+    return p.pinned || p.confidence >= 0.6;
+  });
+  // Relevance re-ranks the trusted set (the confidence gate above still decides
+  // *what* is eligible); a query only changes the *order*, so we always inject
+  // the most task-relevant of the patterns we already trust.
+  const patternRel = hasQuery
+    ? relevanceScores(
+        query as string,
+        filteredPatterns.map((p) => `${p.category} ${p.pattern}`),
+      )
+    : null;
+  const relevantPatterns = filteredPatterns
+    .map((p, i) => ({ p, rel: patternRel ? patternRel[i] : 0 }))
     .sort((a, b) => {
-      if ((a.pinned ? 1 : 0) !== (b.pinned ? 1 : 0)) {
-        return a.pinned ? -1 : 1;
+      if ((a.p.pinned ? 1 : 0) !== (b.p.pinned ? 1 : 0)) {
+        return a.p.pinned ? -1 : 1;
       }
-      if (a.confidence !== b.confidence) return b.confidence - a.confidence;
-      return b.extractedAt - a.extractedAt;
+      if (patternRel) {
+        const as = 0.6 * a.rel + 0.4 * a.p.confidence;
+        const bs = 0.6 * b.rel + 0.4 * b.p.confidence;
+        if (as !== bs) return bs - as;
+      } else if (a.p.confidence !== b.p.confidence) {
+        return b.p.confidence - a.p.confidence;
+      }
+      return b.p.extractedAt - a.p.extractedAt;
     })
     .slice(0, settings.contextMaxPatterns);
 
-  for (const p of relevantPatterns) {
+  for (const { p, rel } of relevantPatterns) {
     const patternScope = p.projectPath ? "this project" : "all projects";
+    const lead = p.pinned
+      ? "Pinned"
+      : patternRel && rel > 0
+        ? "Relevant to task"
+        : "Top pattern";
     out.push({
       id: p.id,
       kind: "pattern",
       title: `[${p.category}] ${p.pattern}`,
       timestamp: p.extractedAt,
-      reason: p.pinned
-        ? `Pinned · ${patternScope} · confidence ${(p.confidence * 100).toFixed(0)}%`
-        : `Top pattern · ${patternScope} · confidence ${(p.confidence * 100).toFixed(0)}%`,
+      reason: `${lead} · ${patternScope} · confidence ${(p.confidence * 100).toFixed(0)}%`,
     });
   }
 
@@ -369,18 +444,45 @@ export function computeContextItems(
     (e): e is Extract<MemoryEvent, { type: "flight_completed" }> =>
       e.type === "flight_completed" && projectPathsMatch(e.projectPath) && e.timestamp > cutoff,
   );
-  let pushed = 0;
-  outer: for (const e of flightEvents) {
-    for (const l of e.payload.lessonsLearned) {
-      if (pushed >= settings.contextMaxLessons) break outer;
-      out.push({
-        id: `${e.id}:lesson:${pushed}`,
-        kind: "lesson",
-        title: l,
-        timestamp: e.timestamp,
-        reason: "Lesson from flight retrospective (last 7 days)",
+  if (hasQuery) {
+    // Rank all candidate lessons by relevance to the task, then take the top N.
+    const candidates = flightEvents.flatMap((e) =>
+      e.payload.lessonsLearned.map((text) => ({ text, timestamp: e.timestamp, eventId: e.id })),
+    );
+    const lessonRel = relevanceScores(
+      query as string,
+      candidates.map((c) => c.text),
+    );
+    candidates
+      .map((c, i) => ({ c, rel: lessonRel[i] }))
+      .sort((a, b) => b.rel - a.rel || b.c.timestamp - a.c.timestamp)
+      .slice(0, settings.contextMaxLessons)
+      .forEach(({ c, rel }, k) => {
+        out.push({
+          id: `${c.eventId}:lesson:${k}`,
+          kind: "lesson",
+          title: c.text,
+          timestamp: c.timestamp,
+          reason:
+            rel > 0
+              ? "Relevant lesson from a flight retrospective (last 7 days)"
+              : "Lesson from flight retrospective (last 7 days)",
+        });
       });
-      pushed += 1;
+  } else {
+    let pushed = 0;
+    outer: for (const e of flightEvents) {
+      for (const l of e.payload.lessonsLearned) {
+        if (pushed >= settings.contextMaxLessons) break outer;
+        out.push({
+          id: `${e.id}:lesson:${pushed}`,
+          kind: "lesson",
+          title: l,
+          timestamp: e.timestamp,
+          reason: "Lesson from flight retrospective (last 7 days)",
+        });
+        pushed += 1;
+      }
     }
   }
 
@@ -690,7 +792,7 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   composeMemoryBrief: (input, options) => {
     const scope = normalizeScopeInput(input);
     const charBudget = clampBriefChars(options?.maxChars);
-    const items = computeContextItems(get().events, get().patterns, scope);
+    const items = computeContextItems(get().events, get().patterns, scope, options?.query);
     const scopeKey = memoryScopeKey(scope);
     if (items.length === 0) {
       return { text: "", items: [], charBudget, truncated: false, scopeKey };
