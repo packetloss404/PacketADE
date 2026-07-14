@@ -57,6 +57,9 @@ import {
   type FlightReviewTaskRef,
 } from "@/lib/flightReview";
 import { WorktreeLifecycleBar } from "@/components/workspace/WorktreeLifecycleBar";
+import { ReviewPacketPanel } from "@/components/workspace/ReviewPacketPanel";
+import { useAgentApprovalStore } from "@/stores/agentApprovalStore";
+import { focusConversationDeepLink } from "@/stores/sessionGlue";
 
 function statusIcon(status: string) {
   switch (status) {
@@ -208,6 +211,9 @@ export function GitDashboard({
     error?: string;
   } | null>(null);
 
+  // N4: the changed file whose linked flight review packet(s) are being viewed.
+  const [packetRefs, setPacketRefs] = useState<FlightReviewTaskRef[] | null>(null);
+
   const server = useServerStore((s) =>
     serverId ? s.servers.find((srv) => srv.id === serverId) : undefined,
   );
@@ -225,6 +231,24 @@ export function GitDashboard({
         { projectPath, workspaceId: workspaceId ?? null },
       ),
     [files, flights, projectPath, workspaceId],
+  );
+
+  // N4: session ids with a live pending approval prompt, so the review panel can
+  // deep-link to where the (session-scoped) approve/reject actually happens.
+  const pendingPermissions = useAgentApprovalStore((s) => s.permissions);
+  const pendingEdits = useAgentApprovalStore((s) => s.edits);
+  const pendingApprovalSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [cid, list] of pendingPermissions) if (list.length) ids.add(cid);
+    for (const [cid, list] of pendingEdits) if (list.length) ids.add(cid);
+    return ids;
+  }, [pendingPermissions, pendingEdits]);
+
+  // All flight-linked refs across changed files — used by the aggregate banner
+  // to open the same review panel the per-file chips open.
+  const allReviewRefs = useMemo(
+    () => [...reviewContext.matchesByPath.values()].flatMap((m) => m.refs),
+    [reviewContext.matchesByPath],
   );
 
   const commitCandidateFiles = useMemo(() => files.filter((file) => file.staged), [files]);
@@ -255,12 +279,6 @@ export function GitDashboard({
   const seededRef = useRef(false);
   // Monotonic token so a stale diff fetch can't clobber a newer selection.
   const diffReqRef = useRef(0);
-
-  const openReviewFlight = useCallback(() => {
-    const [flightId] = reviewContext.flightIds;
-    if (flightId) setActiveFlight(flightId);
-    setActiveView("flights");
-  }, [reviewContext.flightIds, setActiveFlight, setActiveView]);
 
   const refresh = useCallback(async () => {
     if (!projectPath) return;
@@ -322,6 +340,16 @@ export function GitDashboard({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [diff]);
+
+  // N4: Escape closes the review-packet overlay.
+  useEffect(() => {
+    if (!packetRefs) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setPacketRefs(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [packetRefs]);
 
   // P1-15: a workspace switch must not carry a half-typed message (or a
   // stale `Fixes #N` seed) into another repo — this replaces
@@ -605,10 +633,10 @@ export function GitDashboard({
             <span className="flex-1" />
             <button
               type="button"
-              onClick={openReviewFlight}
+              onClick={() => allReviewRefs.length > 0 && setPacketRefs(allReviewRefs)}
               className="hover:text-accent-amber/80 text-ui text-accent-amber transition-colors"
             >
-              Open flight
+              Review
             </button>
           </div>
           <div className="mt-0.5 text-meta leading-relaxed text-text-muted">
@@ -745,17 +773,30 @@ export function GitDashboard({
                 <span className="truncate text-ui text-text-secondary">
                   {f.path}
                 </span>
-                {primaryRef && (
+                {match && primaryRef && (
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      openReviewFlight();
+                      setPacketRefs(match.refs);
+                    }}
+                    onKeyDown={(e) => {
+                      // Don't let Enter/Space bubble to the row handler (which
+                      // opens the git diff) — the chip opens the review panel.
+                      if (e.key === "Enter" || e.key === " ") e.stopPropagation();
                     }}
                     title={reviewTitle(match.refs)}
-                    className="border-accent-amber/25 bg-accent-amber/10 hover:bg-accent-amber/15 ml-auto inline-flex min-w-0 max-w-[112px] shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-meta text-accent-amber transition-colors"
+                    className={`ml-auto inline-flex min-w-0 max-w-[112px] shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-meta transition-colors ${
+                      match.refs.some((r) => r.taskStatus === "approval_needed")
+                        ? "border-accent-amber/40 bg-accent-amber/15 text-accent-amber hover:bg-accent-amber/25"
+                        : "border-bg-border bg-bg-secondary text-text-muted hover:bg-bg-hover hover:text-text-secondary"
+                    }`}
                   >
-                    <FileCheck2 size={9} className="shrink-0" />
+                    {match.refs.some((r) => r.taskStatus === "approval_needed") ? (
+                      <AlertCircle size={9} className="shrink-0" />
+                    ) : (
+                      <FileCheck2 size={9} className="shrink-0" />
+                    )}
                     <span className="truncate">
                       {shortFlightId(primaryRef.flightId)} · {primaryRef.taskTitle}
                     </span>
@@ -887,6 +928,24 @@ export function GitDashboard({
               ))}
           </div>
         </div>
+      )}
+
+      {packetRefs && (
+        <ReviewPacketPanel
+          refs={packetRefs}
+          flights={flights}
+          pendingApprovalSessionIds={pendingApprovalSessionIds}
+          onOpenFlight={(flightId) => {
+            setActiveFlight(flightId);
+            setActiveView("flights");
+            setPacketRefs(null);
+          }}
+          onOpenApproval={(conversationId) => {
+            setPacketRefs(null);
+            focusConversationDeepLink(conversationId);
+          }}
+          onClose={() => setPacketRefs(null)}
+        />
       )}
     </div>
   );
