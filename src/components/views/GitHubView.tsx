@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  Bell,
   Brain,
   Check,
   Clock,
@@ -37,6 +38,7 @@ import { PRChecksTab } from "@/components/views/github/PRChecksTab";
 import { RepoSelector } from "@/components/views/github/RepoSelector";
 import { PRList } from "@/components/views/github/PRList";
 import { ActivityFeed } from "@/components/views/github/ActivityFeed";
+import { NotificationsInbox } from "@/components/views/github/NotificationsInbox";
 import { AITriageDrawer } from "@/components/views/github/AITriageDrawer";
 import { InvestigationPanel } from "@/components/views/github/InvestigationPanel";
 import { timeAgo } from "@/components/views/github/shared";
@@ -59,7 +61,7 @@ function slugifyIssueTitle(title: string): string {
     .replace(/-+$/g, "");
 }
 
-type TabKey = "issues" | "prs" | "activity";
+type TabKey = "issues" | "prs" | "activity" | "inbox";
 
 export function GitHubView() {
   const {
@@ -102,6 +104,10 @@ export function GitHubView() {
     loadMorePrs,
     // v0.8-F: needed to apply labels emitted by AITriageDrawer
     setIssueLabels,
+    // notifications inbox
+    unreadCount,
+    notifications,
+    fetchNotifications,
   } = useGitHubStore();
 
   const addIssue = useIssueStore((s) => s.addIssue);
@@ -136,6 +142,15 @@ export function GitHubView() {
       fetchPrs();
     }
   }, [isConnected, config.selectedRepo, fetchIssues, fetchPrs]);
+
+  // Lazy-load notifications the first time the Inbox tab is opened. Unlike
+  // issues/PRs these are global to the authenticated user, so they don't
+  // depend on the selected repo.
+  useEffect(() => {
+    if (isConnected && tab === "inbox" && notifications.length === 0) {
+      fetchNotifications();
+    }
+  }, [isConnected, tab, notifications.length, fetchNotifications]);
 
   useEffect(() => {
     if (selectedIssueNum == null && issues.length > 0) {
@@ -302,6 +317,7 @@ export function GitHubView() {
         onTab={setTab}
         issueCount={openCount}
         prCount={prs.length}
+        unreadCount={unreadCount}
         lastSyncAt={lastSyncAt}
       />
 
@@ -318,7 +334,11 @@ export function GitHubView() {
         </div>
       )}
 
-      {!config.selectedRepo ? (
+      {tab === "inbox" ? (
+        // Notifications are global to the authenticated user, so the Inbox
+        // renders regardless of the selected repository.
+        <NotificationsInbox />
+      ) : !config.selectedRepo ? (
         <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
           Select a repository to begin.
         </div>
@@ -581,10 +601,18 @@ interface SubTabsProps {
   onTab: (t: TabKey) => void;
   issueCount: number;
   prCount: number;
+  unreadCount: number;
   lastSyncAt: number | null;
 }
 
-function SubTabs({ tab, onTab, issueCount, prCount, lastSyncAt }: SubTabsProps) {
+function SubTabs({
+  tab,
+  onTab,
+  issueCount,
+  prCount,
+  unreadCount,
+  lastSyncAt,
+}: SubTabsProps) {
   return (
     <div className="flex items-center px-2.5 bg-bg-secondary border-b border-bg-border flex-shrink-0">
       <GhTab
@@ -608,6 +636,14 @@ function SubTabs({ tab, onTab, issueCount, prCount, lastSyncAt }: SubTabsProps) 
         onClick={() => onTab("activity")}
         icon={<Clock size={10} />}
         label="Activity"
+        accent="default"
+      />
+      <GhTab
+        active={tab === "inbox"}
+        onClick={() => onTab("inbox")}
+        icon={<Bell size={10} />}
+        label="Inbox"
+        badge={unreadCount > 0 ? unreadCount : undefined}
         accent="default"
       />
       <div className="flex-1" />
