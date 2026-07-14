@@ -161,10 +161,16 @@ them up before that gate clears.
   keeps `authMethod: "password"` for legacy keyring-stored SSH passwords (was
   forcing `keyPath ? "key" : "agent"`). Covered by
   `src/lib/__tests__/sshTargetMigration.test.ts`.
-- **P2 — Read-only remote git dashboard.** Phase 3.3 disabled commit / push /
-  pull / branch. Add `git_commit_remote`, `git_push_remote`,
-  `git_pull_remote`, `git_create_branch_remote`. The `validate_branch_name`
-  helper in `src-tauri/src/core/git.rs` is reusable.
+- **SHIPPED 2026-07-14 — Remote git dashboard write actions.**
+  `git_stage_files_remote` / `git_unstage_files_remote` / `git_commit_remote` /
+  `git_push_remote` / `git_pull_remote` / `git_create_branch_remote` landed
+  (over the existing SSH `ssh_git` transport, shell-safe via `sh_quote`), and
+  the GitDashboard's remote read-only gate is lifted. See `CHANGELOG.md`
+  `[0.10.1]`. Follow-ups (P3): the remote per-file diff view (needs a remote
+  file-read path); a friendlier "behind upstream — pull first" message on remote
+  push (today git's raw non-ff rejection surfaces); defense-in-depth `..`/absolute
+  path rejection on remote staging (harmless today — `--` + `sh_quote` + git's
+  repo-boundary check already prevent escape).
 - **P2 — MCP servers over SSH (Phase 4.2).** `build_mcp_config_for_sidecar`
   hardcodes local paths.
 - **DONE — Consolidate duplicate `CloneServerConfigDto` and
