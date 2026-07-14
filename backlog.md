@@ -322,10 +322,11 @@ compatibility outlives API/config deprecation.
   support + the in-diff composer UI. Right place: extend `DiffViewer` with
   per-line gutter affordances; backend command pair
   `github_post_pr_review_comment` + `github_reply_to_pr_review_comment`.
-- **P2 — Notifications inbox.** `GET /notifications` integration with a
-  dedicated tab listing unread items, with mark-as-read and link-back to the
-  source issue / PR. Significant work — own state, polling cadence, and
-  badge wiring across the app.
+- **SHIPPED 2026-07-14 — Notifications inbox.** `GET /notifications` in a
+  dedicated "Inbox" subtab with unread badge, optimistic mark-as-read, and
+  link-back to the source issue/PR (type-aware html_url). See `CHANGELOG.md`
+  `[0.10.1]`. Follow-up (P3): background poll to keep the badge live (today the
+  inbox lazy-fetches on open + manual refresh — no background cadence yet).
 - **P3 — Issue → Flight auto-mirroring (bidirectional).** v0.8 has one-way
   Plane / Flight spec handoff. A "mirror this flight to GitHub issues"
   toggle would create + update issues automatically. Two-way sync is risky
@@ -344,10 +345,17 @@ compatibility outlives API/config deprecation.
 
 ## Memory v0.9+ (from v0.8 deferrals)
 
-- **P2 — Embedding / RAG over memory.** Today's pattern retrieval is
-  keyword/recency-based. An embedding layer (sqlite-vss or LanceDB)
-  would enable semantic context injection for the Flight Planner
-  decomposition phase and the executor brief.
+- **Phase 1 SHIPPED 2026-07-14 — task-relevant retrieval; embeddings deferred.**
+  Retrieval used to be task-*blind* (top-N by confidence, no query). It now
+  ranks patterns + lessons by IDF-weighted term overlap against the task query
+  blended with confidence — the injected memory is relevant to what's being
+  built. See `CHANGELOG.md` `[0.10.1]`. **Phase 2 (embeddings) — DEFERRED, and
+  re-scoped:** memory is a JSON blob of ≤100 patterns / ≤2000 events (not sqlite),
+  so **sqlite-vss / LanceDB are unjustified** — a vector index for ≤100 rows is
+  pointless. If paraphrase-misses prove real in practice, the fit is a bundled
+  local embedding model (e.g. `fastembed`) with brute-force cosine over the tiny
+  corpus (M, with real cross-platform ML packaging risk), NOT a vector DB. Only
+  pursue once Phase 1's keyword relevance is shown insufficient.
 - **SHIPPED — Pre-execution memory brief for executor sessions.** Memory is on
   by default and the pre-execution brief injects project-scoped patterns into
   flight/attempt prompts, gated by `memorySettings.injectIntoFlightPrompts`
@@ -367,8 +375,10 @@ compatibility outlives API/config deprecation.
   should have a single-click capture affordance.
 - **P3 — Project-scoped filter chips in the Timeline.** (The `TimelineTab` now
   lives inside `src/components/views/MemoryView.tsx`.)
-- **P3 — Provenance linking on event cards** in `MemoryView`'s Timeline
-  (clickable `sessionId`/`taskId`/`flightId` jumps to the originating surface).
+- **SHIPPED 2026-07-14 — Provenance linking on event cards** in `MemoryView`'s
+  Timeline: `sessionId`/`taskId`/`flightId` labels now deep-link to the
+  originating surface (guarded against dangling targets). See `CHANGELOG.md`
+  `[0.10.1]`.
 - **P3 — Export / import memory** as JSON+Markdown.
 - **P3 — Date-range scope chips.**
 - **P3 — 30-day memory digest.**
