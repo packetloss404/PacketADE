@@ -27,6 +27,14 @@ task list.
 
 - **Window geometry persistence.** The desktop window remembers its last
   size and position across launches.
+- **Flight review packets in the git panel (ROADMAP N4).** GitDashboard already
+  matched changed files to flight tasks; it now opens a `ReviewPacketPanel`
+  surfacing the linked task's `ReviewPacket` — summary, review type, command, and
+  a colored diff of the agent-reported change — plus approval status. When a task
+  is `approval_needed` and its session has a live prompt, a "Go to approval"
+  button deep-links to that conversation tile; otherwise it offers "Open flight".
+  The approve/reject action itself stays session-scoped in ReviewSurface. The
+  aggregate "Review before commit" banner opens the same panel.
 - **Proactive cost-threshold notifications (ROADMAP N5).** With budget
   guardrails already hard-gating launches, spend now also raises a notification
   as it *approaches* a limit — firing on an upward guardrail transition
