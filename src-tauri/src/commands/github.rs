@@ -2791,6 +2791,112 @@ pub async fn github_list_pr_review_comments(
     Ok(arr.iter().map(parse_pr_review_comment).collect())
 }
 
+/// `POST /repos/{owner}/{repo}/pulls/{n}/comments` — author a new inline review
+/// comment anchored to a line of the diff. `side` is `RIGHT` (new file) or
+/// `LEFT` (old file); `line` is the file line number on that side. The PR head
+/// sha needed for `commit_id` is resolved here, so the caller only supplies the
+/// anchor.
+#[tauri::command]
+pub async fn github_post_pr_review_comment(
+    auth: State<'_, GitHubAuthState>,
+    owner: String,
+    repo: String,
+    pr_number: u32,
+    path: String,
+    line: u32,
+    side: String,
+    body: String,
+) -> Result<PullRequestReviewComment, String> {
+    validate_github_name(&owner, "owner")?;
+    validate_github_name(&repo, "repo")?;
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return Err("Comment body cannot be empty".to_string());
+    }
+    // GitHub only accepts LEFT/RIGHT; default anything else to RIGHT (new file).
+    let side_norm = if side.eq_ignore_ascii_case("LEFT") {
+        "LEFT"
+    } else {
+        "RIGHT"
+    };
+    let client = github_client_from_state(auth.inner()).await?;
+
+    // Resolve the PR head sha for `commit_id` (mirrors github_get_pr_diff).
+    let pr_url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}",
+        owner, repo, pr_number
+    );
+    let pr_resp = client
+        .get(&pr_url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let pr_body = github_response_text(pr_resp).await?;
+    let pr_json: serde_json::Value = serde_json::from_str(&pr_body)
+        .map_err(|e| format!("Failed to parse PR response: {}", e))?;
+    let head_sha = pr_json
+        .get("head")
+        .and_then(|h| h.get("sha"))
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| "PR response missing head.sha".to_string())?
+        .to_string();
+
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}/comments",
+        owner, repo, pr_number
+    );
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({
+            "body": trimmed,
+            "commit_id": head_sha,
+            "path": path,
+            "line": line,
+            "side": side_norm,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let text = github_response_text(resp).await?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("Failed to parse comment: {}", e))?;
+    Ok(parse_pr_review_comment(&v))
+}
+
+/// `POST /repos/{owner}/{repo}/pulls/{n}/comments/{comment_id}/replies` — reply
+/// to an existing inline review comment thread.
+#[tauri::command]
+pub async fn github_reply_to_pr_review_comment(
+    auth: State<'_, GitHubAuthState>,
+    owner: String,
+    repo: String,
+    pr_number: u32,
+    comment_id: u64,
+    body: String,
+) -> Result<PullRequestReviewComment, String> {
+    validate_github_name(&owner, "owner")?;
+    validate_github_name(&repo, "repo")?;
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return Err("Comment body cannot be empty".to_string());
+    }
+    let client = github_client_from_state(auth.inner()).await?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}/comments/{}/replies",
+        owner, repo, pr_number, comment_id
+    );
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({ "body": trimmed }))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let text = github_response_text(resp).await?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("Failed to parse comment: {}", e))?;
+    Ok(parse_pr_review_comment(&v))
+}
+
 // === Notifications inbox ===================================================
 //
 // The GitHub notifications API returns the authenticated user's notification

@@ -1,15 +1,36 @@
-import { useMemo, useRef } from "react";
-import { FileText, FilePlus, FileMinus, FileEdit } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { FileText, FilePlus, FileMinus, FileEdit, MessageSquarePlus, Loader2 } from "lucide-react";
+
+/** GitHub side + file line number that a comment anchors to. */
+export interface DiffCommentAnchor {
+  path: string;
+  line: number;
+  side: "LEFT" | "RIGHT";
+}
 
 interface DiffViewerProps {
   diff: string;
   className?: string;
+  /** When provided, each diff line gets a hover affordance to author an inline
+   *  review comment. Omit for a read-only diff. */
+  onAddComment?: (anchor: DiffCommentAnchor, body: string) => Promise<void>;
 }
 
 interface DiffLine {
   type: "add" | "remove" | "context" | "header";
   content: string;
   fileIndex?: number;
+  /** File line number on the old (LEFT) side, when this line exists there. */
+  oldLine?: number;
+  /** File line number on the new (RIGHT) side, when this line exists there. */
+  newLine?: number;
+}
+
+/** Parse an `@@ -a,b +c,d @@` hunk header into its old/new starting lines. */
+function parseHunkHeader(line: string): { oldStart: number; newStart: number } | null {
+  const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+  if (!m) return null;
+  return { oldStart: Number(m[1]), newStart: Number(m[2]) };
 }
 
 /**
@@ -43,7 +64,7 @@ function stripPrefix(path: string): string {
   return path;
 }
 
-function parseDiff(diff: string): ParsedDiff {
+export function parseDiff(diff: string): ParsedDiff {
   const rawLines = diff.split("\n");
   const lines: DiffLine[] = [];
   const files: DiffFile[] = [];
@@ -51,6 +72,9 @@ function parseDiff(diff: string): ParsedDiff {
   let pendingFile: { path?: string; status?: DiffFile["status"]; lineIndex?: number } | null = null;
   let totalAdditions = 0;
   let totalDeletions = 0;
+  // Running file line numbers within the current hunk (set from each `@@` header).
+  let oldLine = 0;
+  let newLine = 0;
 
   for (const line of rawLines) {
     let entry: DiffLine;
@@ -60,53 +84,73 @@ function parseDiff(diff: string): ParsedDiff {
       // status correctly.
       pendingFile = { lineIndex: lines.length };
       entry = { type: "header", content: line };
-    } else if (line.startsWith("--- ")) {
-      // `--- /dev/null` = added file (no source). Otherwise it's
-      // modified or deleted — we'll determine after seeing `+++`.
-      if (pendingFile && line === "--- /dev/null") {
-        pendingFile.status = "added";
+    } else if (line.startsWith("--- ") && pendingFile) {
+      // Source-side file header. Only a real header while a `diff --git` is
+      // pending — in the hunk body, `--- x` is a removed `-- x` content line.
+      const source = line.slice(4).trim();
+      if (source === "/dev/null") {
+        pendingFile.status = "added"; // no source → added file
+      } else {
+        // Capture the old path so a deletion (whose `+++` is /dev/null) still
+        // reports the real file path, not "/dev/null".
+        pendingFile.path = stripPrefix(source);
       }
       entry = { type: "header", content: line };
-    } else if (line.startsWith("+++ ")) {
+    } else if (line.startsWith("+++ ") && pendingFile) {
       const target = line.slice(4).trim();
-      if (pendingFile) {
-        if (target === "/dev/null") {
-          pendingFile.status = "deleted";
-          // path comes from the previous `--- a/PATH`
-        } else {
-          pendingFile.path = pendingFile.path ?? stripPrefix(target);
-          if (!pendingFile.status) pendingFile.status = "modified";
-        }
-        const path = pendingFile.path ?? stripPrefix(target);
-        files.push({
-          path,
-          status: pendingFile.status ?? "modified",
-          additions: 0,
-          deletions: 0,
-          lineIndex: pendingFile.lineIndex ?? lines.length,
-        });
-        currentFileIdx = files.length - 1;
-        pendingFile = null;
+      if (target === "/dev/null") {
+        pendingFile.status = "deleted";
+        // path already captured from the `--- a/PATH` line above.
+      } else {
+        // New path wins (covers renames — the RIGHT side uses the new path).
+        pendingFile.path = stripPrefix(target);
+        if (!pendingFile.status) pendingFile.status = "modified";
       }
+      const path = pendingFile.path ?? stripPrefix(target);
+      files.push({
+        path,
+        status: pendingFile.status ?? "modified",
+        additions: 0,
+        deletions: 0,
+        lineIndex: pendingFile.lineIndex ?? lines.length,
+      });
+      currentFileIdx = files.length - 1;
+      pendingFile = null;
       entry = { type: "header", content: line };
     } else if (line.startsWith("@@")) {
+      const hunk = parseHunkHeader(line);
+      if (hunk) {
+        oldLine = hunk.oldStart;
+        newLine = hunk.newStart;
+      }
       entry = { type: "header", content: line };
     } else if (line.startsWith("index ")) {
       entry = { type: "header", content: line };
     } else if (line.startsWith("+")) {
-      entry = { type: "add", content: line };
+      entry = { type: "add", content: line, newLine };
+      newLine++;
       if (currentFileIdx >= 0) {
         files[currentFileIdx].additions++;
         totalAdditions++;
       }
     } else if (line.startsWith("-")) {
-      entry = { type: "remove", content: line };
+      entry = { type: "remove", content: line, oldLine };
+      oldLine++;
       if (currentFileIdx >= 0) {
         files[currentFileIdx].deletions++;
         totalDeletions++;
       }
-    } else {
+    } else if (line.startsWith("\\") || line === "") {
+      // `\ No newline at end of file` marker, or a trailing split artifact —
+      // NOT a real file line: give it no line numbers (so it isn't commentable)
+      // and don't advance the counters, or every following line's anchor would
+      // be off by one and post to a nonexistent line.
       entry = { type: "context", content: line };
+    } else {
+      // Context line — present on both sides.
+      entry = { type: "context", content: line, oldLine, newLine };
+      oldLine++;
+      newLine++;
     }
     entry.fileIndex = currentFileIdx >= 0 ? currentFileIdx : undefined;
     lines.push(entry);
@@ -146,16 +190,57 @@ function StatusIcon({ status }: { status: DiffFile["status"] }) {
   return <FileEdit size={11} className="text-accent-blue" />;
 }
 
-export function DiffViewer({ diff, className = "" }: DiffViewerProps) {
+export function DiffViewer({ diff, className = "", onAddComment }: DiffViewerProps) {
   const parsed = useMemo(() => parseDiff(diff), [diff]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  // Inline-comment composer: index into parsed.lines of the line being commented.
+  const [composerLine, setComposerLine] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
 
   function scrollToFile(file: DiffFile) {
     const el = lineRefs.current[file.lineIndex];
     if (el && scrollRef.current) {
       // Anchor the line at the top of the visible diff area.
       el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  /** The GitHub comment anchor for a diff line, or null if not commentable. */
+  function anchorForLine(line: DiffLine): DiffCommentAnchor | null {
+    if (line.type === "header") return null;
+    const path = line.fileIndex != null ? parsed.files[line.fileIndex]?.path : undefined;
+    if (!path) return null;
+    // Prefer the new side (add/context); fall back to the old side (removals).
+    if (line.newLine != null) return { path, line: line.newLine, side: "RIGHT" };
+    if (line.oldLine != null) return { path, line: line.oldLine, side: "LEFT" };
+    return null;
+  }
+
+  function openComposer(i: number) {
+    setComposerLine(i);
+    setDraft("");
+    setPostError(null);
+  }
+  function closeComposer() {
+    setComposerLine(null);
+    setDraft("");
+    setPostError(null);
+  }
+  async function submitComposer(anchor: DiffCommentAnchor) {
+    if (!onAddComment || !draft.trim() || posting) return;
+    setPosting(true);
+    setPostError(null);
+    try {
+      await onAddComment(anchor, draft.trim());
+      closeComposer();
+    } catch (e) {
+      setPostError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPosting(false);
     }
   }
 
@@ -214,18 +299,117 @@ export function DiffViewer({ diff, className = "" }: DiffViewerProps) {
           ref={scrollRef}
           className="font-mono text-[11px] flex-1 overflow-auto"
         >
-          {parsed.lines.map((line, i) => (
-            <div
-              key={i}
-              ref={(el) => {
-                lineRefs.current[i] = el;
-              }}
-              className={`px-3 py-0.5 whitespace-pre ${lineStyles[line.type]}`}
-            >
-              {line.content}
-            </div>
-          ))}
+          {parsed.lines.map((line, i) => {
+            const anchor = onAddComment ? anchorForLine(line) : null;
+            return (
+              <div
+                key={i}
+                ref={(el) => {
+                  lineRefs.current[i] = el;
+                }}
+              >
+                <div className={`group flex items-stretch ${lineStyles[line.type]}`}>
+                  {/* line-number gutter (old | new) */}
+                  <span className="w-9 flex-shrink-0 select-none px-1 text-right text-[10px] tabular-nums text-text-muted/60">
+                    {line.oldLine ?? ""}
+                  </span>
+                  <span className="w-9 flex-shrink-0 select-none px-1 text-right text-[10px] tabular-nums text-text-muted/60">
+                    {line.newLine ?? ""}
+                  </span>
+                  {/* comment affordance (hover) */}
+                  {onAddComment &&
+                    (anchor ? (
+                      <button
+                        type="button"
+                        onClick={() => openComposer(i)}
+                        title="Comment on this line"
+                        className="flex w-5 flex-shrink-0 items-center justify-center text-accent-blue opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
+                      >
+                        <MessageSquarePlus size={11} />
+                      </button>
+                    ) : (
+                      <span className="w-5 flex-shrink-0" />
+                    ))}
+                  <span className="flex-1 whitespace-pre pr-3">{line.content}</span>
+                </div>
+                {composerLine === i && anchor && (
+                  <CommentComposer
+                    anchor={anchor}
+                    draft={draft}
+                    setDraft={setDraft}
+                    posting={posting}
+                    error={postError}
+                    onSubmit={() => void submitComposer(anchor)}
+                    onCancel={closeComposer}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Inline composer rendered directly beneath the line being commented. */
+function CommentComposer({
+  anchor,
+  draft,
+  setDraft,
+  posting,
+  error,
+  onSubmit,
+  onCancel,
+}: {
+  anchor: DiffCommentAnchor;
+  draft: string;
+  setDraft: (v: string) => void;
+  posting: boolean;
+  error: string | null;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="border-y border-bg-border bg-bg-secondary px-3 py-2">
+      <div className="mb-1 font-mono text-[10px] text-text-muted">
+        Commenting on {anchor.path}:{anchor.line} ({anchor.side === "RIGHT" ? "new" : "old"})
+      </div>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+            e.preventDefault();
+            onSubmit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        autoFocus
+        rows={3}
+        placeholder="Leave a review comment…  (Cmd/Ctrl+Enter to submit)"
+        className="w-full resize-y rounded border border-bg-border bg-bg-primary px-2 py-1.5 font-sans text-[11px] text-text-primary placeholder:text-text-muted focus:border-accent-blue focus:outline-none"
+      />
+      {error && <div className="mt-1 text-[10px] text-accent-red">{error}</div>}
+      <div className="mt-1.5 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-[11px] text-text-muted transition-colors hover:text-text-primary"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={posting || !draft.trim()}
+          className="hover:bg-accent-blue/25 inline-flex items-center gap-1 rounded bg-accent-blue/15 px-2 py-1 text-[11px] font-medium text-accent-blue transition-colors disabled:opacity-50"
+        >
+          {posting && <Loader2 size={10} className="animate-spin" />}
+          Comment
+        </button>
       </div>
     </div>
   );

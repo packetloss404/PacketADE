@@ -14,10 +14,11 @@ import { relativeTime } from "@/lib/time";
 import type { GitHubPr } from "@/types/github";
 
 /**
- * v0.8-13: read-only viewer for the existing GitHub review activity on a
- * PR — formal reviews (Approved / Changes Requested / Commented) plus
- * the per-file inline comment threads. Composing new comments is out of
- * scope for v0.8 (tracked for v1.1).
+ * Viewer for the existing GitHub review activity on a PR — formal reviews
+ * (Approved / Changes Requested / Commented) plus the per-file inline comment
+ * threads. Authoring: threads can be replied to here; new line comments are
+ * authored from the diff gutter (DiffViewer). `refreshKey` from the parent
+ * forces a refetch after a new line comment is posted.
  *
  * Mounted by `GitHubView.tsx::PRDetail` below the AI review panel.
  *
@@ -59,6 +60,8 @@ interface PullRequestReviewComment {
 
 interface Props {
   pr: GitHubPr;
+  /** Bumped by the parent after an inline comment is posted, to force a refetch. */
+  refreshKey?: number;
 }
 
 type LoadState =
@@ -176,11 +179,16 @@ function groupCommentsByFile(comments: PullRequestReviewComment[]): Map<string, 
   return new Map([...byFile.entries()].sort((a, b) => a[0].localeCompare(b[0])));
 }
 
-export function PullRequestReviewsPanel({ pr }: Props) {
+export function PullRequestReviewsPanel({ pr, refreshKey }: Props) {
   const { config } = useGitHubStore();
   const [reviews, setReviews] = useState<PullRequestReview[]>([]);
   const [comments, setComments] = useState<PullRequestReviewComment[]>([]);
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
+  // Reply composer: the root comment id of the thread being replied to.
+  const [replyingTo, setReplyingTo] = useState<number | null>(null);
+  const [replyDraft, setReplyDraft] = useState("");
+  const [replyPosting, setReplyPosting] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!config.selectedRepo) {
@@ -215,7 +223,33 @@ export function PullRequestReviewsPanel({ pr }: Props) {
 
   useEffect(() => {
     void fetchAll();
-  }, [fetchAll]);
+  }, [fetchAll, refreshKey]);
+
+  const submitReply = useCallback(
+    async (rootId: number) => {
+      if (!config.selectedRepo || !replyDraft.trim() || replyPosting) return;
+      setReplyPosting(true);
+      setReplyError(null);
+      try {
+        const { owner, repo } = config.selectedRepo;
+        await invoke("github_reply_to_pr_review_comment", {
+          owner,
+          repo,
+          prNumber: pr.number,
+          commentId: rootId,
+          body: replyDraft.trim(),
+        });
+        setReplyingTo(null);
+        setReplyDraft("");
+        await fetchAll();
+      } catch (e) {
+        setReplyError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setReplyPosting(false);
+      }
+    },
+    [config.selectedRepo, pr.number, replyDraft, replyPosting, fetchAll],
+  );
 
   const commentsByFile = useMemo(() => groupCommentsByFile(comments), [comments]);
   const hasAnything = reviews.length > 0 || comments.length > 0;
@@ -339,6 +373,65 @@ export function PullRequestReviewsPanel({ pr }: Props) {
                           <CommentRow comment={reply} />
                         </div>
                       ))}
+                      {replyingTo === thread.root.id ? (
+                        <div className="flex flex-col gap-1.5 pl-3">
+                          <textarea
+                            value={replyDraft}
+                            onChange={(e) => setReplyDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                                e.preventDefault();
+                                void submitReply(thread.root.id);
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                setReplyingTo(null);
+                                setReplyDraft("");
+                              }
+                            }}
+                            autoFocus
+                            rows={2}
+                            placeholder="Reply…  (Cmd/Ctrl+Enter to submit)"
+                            className="w-full resize-y rounded border border-bg-border bg-bg-primary px-2 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted focus:border-accent-blue focus:outline-none"
+                          />
+                          {replyError && (
+                            <span className="text-[10px] text-accent-red">{replyError}</span>
+                          )}
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReplyingTo(null);
+                                setReplyDraft("");
+                                setReplyError(null);
+                              }}
+                              className="text-[10px] text-text-muted hover:text-text-primary"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void submitReply(thread.root.id)}
+                              disabled={replyPosting || !replyDraft.trim()}
+                              className="inline-flex items-center gap-1 rounded bg-accent-blue/15 px-2 py-0.5 text-[10px] font-medium text-accent-blue hover:bg-accent-blue/25 disabled:opacity-50"
+                            >
+                              {replyPosting && <Loader2 size={9} className="animate-spin" />}
+                              Reply
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReplyingTo(thread.root.id);
+                            setReplyDraft("");
+                            setReplyError(null);
+                          }}
+                          className="self-start pl-3 text-[10px] text-text-muted hover:text-accent-blue"
+                        >
+                          Reply
+                        </button>
+                      )}
                     </div>
                   );
                 })}
