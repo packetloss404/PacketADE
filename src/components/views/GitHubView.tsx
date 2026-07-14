@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { DiffCommentAnchor } from "@/components/views/DiffViewer";
 import {
   AlertCircle,
   Bell,
@@ -120,6 +122,9 @@ export function GitHubView() {
   const [showPRModal, setShowPRModal] = useState(false);
   const [selectedPrNumber, setSelectedPrNumber] = useState<number | null>(null);
   // v0.8-B: which tab is active in the PR detail panel.
+  // Bumped after posting an inline review comment so PullRequestReviewsPanel
+  // refetches and shows the new thread.
+  const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
   const [prDetailTab, setPrDetailTab] = useState<"overview" | "checks">(
     "overview",
   );
@@ -454,7 +459,26 @@ export function GitHubView() {
                       </div>
                     ) : prDiff ? (
                       <div className="border border-bg-border rounded-lg overflow-hidden">
-                        <DiffViewer diff={prDiff} />
+                        <DiffViewer
+                          diff={prDiff}
+                          onAddComment={
+                            config.selectedRepo && selectedPrNumber != null
+                              ? async (anchor: DiffCommentAnchor, body: string) => {
+                                  const { owner, repo } = config.selectedRepo!;
+                                  await invoke("github_post_pr_review_comment", {
+                                    owner,
+                                    repo,
+                                    prNumber: selectedPrNumber,
+                                    path: anchor.path,
+                                    line: anchor.line,
+                                    side: anchor.side,
+                                    body,
+                                  });
+                                  setReviewRefreshKey((k) => k + 1);
+                                }
+                              : undefined
+                          }
+                        />
                       </div>
                     ) : (
                       <p className="text-[11px] text-text-muted">
@@ -477,7 +501,7 @@ export function GitHubView() {
                   {(() => {
                     const pr = prs.find((p) => p.number === selectedPrNumber);
                     if (!pr) return null;
-                    return <PullRequestReviewsPanel pr={pr} />;
+                    return <PullRequestReviewsPanel pr={pr} refreshKey={reviewRefreshKey} />;
                   })()}
                 </>
               ) : (

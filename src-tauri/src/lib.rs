@@ -355,6 +355,8 @@ pub fn run() {
             // v0.8-13 pr review viewer
             commands::github::github_list_pr_reviews,
             commands::github::github_list_pr_review_comments,
+            commands::github::github_post_pr_review_comment,
+            commands::github::github_reply_to_pr_review_comment,
             // notifications inbox
             commands::github::github_list_notifications,
             commands::github::github_mark_notification_read,
