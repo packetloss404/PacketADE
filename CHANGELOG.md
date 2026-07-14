@@ -38,6 +38,11 @@ task list.
 - **GitHub notifications inbox.** A new "Inbox" subtab in the GitHub pane lists
   `GET /notifications` unread threads with an unread badge, optimistic
   mark-as-read, and type-aware link-back to the source issue/PR.
+- **Authored PR line comments + reply threads.** The GitHub pane could only read
+  review threads; now the PR diff has a line-number gutter and a per-line hover
+  composer to author an inline review comment (`github_post_pr_review_comment`),
+  and existing threads can be replied to from the reviews panel
+  (`github_reply_to_pr_review_comment`).
 - **Clickable provenance on memory timeline cards.** `flightId`/`sessionId`/
   `taskId` references on memory event cards now deep-link to the originating
   flight/conversation surface (guarded against dangling targets).

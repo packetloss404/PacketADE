@@ -316,12 +316,14 @@ compatibility outlives API/config deprecation.
 
 ## GitHub pane v0.9+ (from v0.8 deferrals)
 
-- **P2 — Authored PR line comments + reply threads.** v0.8 shipped read-only
-  viewing of existing review comments via `PullRequestReviewsPanel`. Adding
-  new threads requires `POST /repos/{o}/{r}/pulls/{n}/comments` + reply
-  support + the in-diff composer UI. Right place: extend `DiffViewer` with
-  per-line gutter affordances; backend command pair
-  `github_post_pr_review_comment` + `github_reply_to_pr_review_comment`.
+- **SHIPPED 2026-07-14 — Authored PR line comments + reply threads.**
+  `github_post_pr_review_comment` + `github_reply_to_pr_review_comment` landed;
+  `DiffViewer` gained line-number gutters + a per-line hover composer, and
+  `PullRequestReviewsPanel` gained per-thread reply. See `CHANGELOG.md`
+  `[0.10.1]`. Follow-up (P3): pin the fetched diff's head sha as `commit_id`
+  (today it's resolved at post time) to close a narrow concurrent-force-push
+  race; and surface existing comments inline in the diff (the panel shows them,
+  the diff is authoring-only for now).
 - **SHIPPED 2026-07-14 — Notifications inbox.** `GET /notifications` in a
   dedicated "Inbox" subtab with unread badge, optimistic mark-as-read, and
   link-back to the source issue/PR (type-aware html_url). See `CHANGELOG.md`
