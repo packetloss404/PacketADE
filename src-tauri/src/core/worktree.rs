@@ -897,6 +897,154 @@ pub async fn ssh_get_branch(cfg: &SshConfig, remote_path: &str) -> Result<String
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+// --- Remote git write operations (SSH) ---------------------------------------
+//
+// These mirror the local `core::git` write ops (`stage_files`, `commit`,
+// `push`, `pull`, `create_branch`) over SSH via `ssh_git`, which POSIX-quotes
+// every argument through `sh_quote` — so commit messages, paths, and branch
+// names cannot break out of the remote shell command. The safety guards from
+// the local ops (protected-branch refusal on push, clean-worktree checks) are
+// mirrored to keep behaviour consistent across local and remote workspaces.
+
+/// True when `git status --porcelain` on the remote is empty.
+async fn ssh_worktree_clean(cfg: &SshConfig, remote_path: &str) -> Result<bool, String> {
+    let (out, code) = ssh_git(cfg, remote_path, &["status", "--porcelain"]).await?;
+    if code != 0 {
+        return Err(format!("git status failed (exit {}): {}", code, out.trim()));
+    }
+    Ok(out.trim().is_empty())
+}
+
+/// `git add -- <paths>` on the remote (stage specific files).
+pub async fn ssh_stage_files(
+    cfg: &SshConfig,
+    remote_path: &str,
+    paths: &[String],
+) -> Result<String, String> {
+    if paths.is_empty() {
+        return Ok(String::new());
+    }
+    let mut args: Vec<&str> = vec!["add", "--"];
+    args.extend(paths.iter().map(|s| s.as_str()));
+    let (out, code) = ssh_git(cfg, remote_path, &args).await?;
+    if code != 0 {
+        return Err(format!("git add failed (exit {}): {}", code, out.trim()));
+    }
+    Ok(out)
+}
+
+/// `git restore --staged -- <paths>` on the remote (unstage specific files).
+pub async fn ssh_unstage_files(
+    cfg: &SshConfig,
+    remote_path: &str,
+    paths: &[String],
+) -> Result<String, String> {
+    if paths.is_empty() {
+        return Ok(String::new());
+    }
+    let mut args: Vec<&str> = vec!["restore", "--staged", "--"];
+    args.extend(paths.iter().map(|s| s.as_str()));
+    let (out, code) = ssh_git(cfg, remote_path, &args).await?;
+    if code != 0 {
+        return Err(format!("git restore failed (exit {}): {}", code, out.trim()));
+    }
+    Ok(out)
+}
+
+/// `git commit -m <message>` on the remote — commits the already-staged index
+/// (no `stage_all`, matching the local commit's safety model).
+pub async fn ssh_commit(
+    cfg: &SshConfig,
+    remote_path: &str,
+    message: &str,
+) -> Result<String, String> {
+    let (out, code) = ssh_git(cfg, remote_path, &["commit", "-m", message]).await?;
+    if code != 0 {
+        return Err(format!("git commit failed (exit {}): {}", code, out.trim()));
+    }
+    Ok(out)
+}
+
+/// Push the remote workspace's current branch to origin. Mirrors the local
+/// `git::push` guards: refuses main/master, refuses a dirty worktree, and sets
+/// upstream tracking on first push.
+pub async fn ssh_push(cfg: &SshConfig, remote_path: &str) -> Result<String, String> {
+    let (branch_out, code) =
+        ssh_git(cfg, remote_path, &["rev-parse", "--abbrev-ref", "HEAD"]).await?;
+    if code != 0 {
+        return Err(format!(
+            "git rev-parse failed (exit {}): {}",
+            code,
+            branch_out.trim()
+        ));
+    }
+    let branch = branch_out.trim().to_string();
+    if branch == "main" || branch == "master" {
+        return Err(format!(
+            "Refusing to push '{}' from the in-app toolbar. Use a terminal if you intend to push this protected branch.",
+            branch
+        ));
+    }
+    if !ssh_worktree_clean(cfg, remote_path).await? {
+        return Err("Cannot push with local changes present. Commit or stash them first.".to_string());
+    }
+    // No upstream set → push with -u to establish tracking; else a plain push.
+    let (_, up_code) =
+        ssh_git(cfg, remote_path, &["rev-parse", "--abbrev-ref", "@{upstream}"]).await?;
+    let (out, code) = if up_code != 0 {
+        ssh_git(cfg, remote_path, &["push", "-u", "origin", &branch]).await?
+    } else {
+        ssh_git(cfg, remote_path, &["push"]).await?
+    };
+    if code != 0 {
+        return Err(format!("git push failed (exit {}): {}", code, out.trim()));
+    }
+    Ok(out)
+}
+
+/// `git pull --ff-only` on the remote, refusing when the worktree is dirty
+/// (mirrors the local `git::pull`).
+pub async fn ssh_pull(cfg: &SshConfig, remote_path: &str) -> Result<String, String> {
+    if !ssh_worktree_clean(cfg, remote_path).await? {
+        return Err(
+            "Cannot pull with local changes present. Commit, stash, or discard them first."
+                .to_string(),
+        );
+    }
+    let (out, code) = ssh_git(cfg, remote_path, &["pull", "--ff-only"]).await?;
+    if code != 0 {
+        return Err(format!("git pull failed (exit {}): {}", code, out.trim()));
+    }
+    Ok(out)
+}
+
+/// Create a branch on the remote (`git checkout -b` / `git branch --`), reusing
+/// the same `validate_branch_name` guard as the local path.
+pub async fn ssh_create_branch(
+    cfg: &SshConfig,
+    remote_path: &str,
+    branch_name: &str,
+    checkout: bool,
+) -> Result<String, String> {
+    crate::core::git::validate_branch_name(branch_name)?;
+    // `checkout -b -- <name>` is broken (git reads `--` as the branch name), so
+    // mirror the local op: `checkout -b <name>` for checkout, `branch -- <name>`
+    // otherwise. `validate_branch_name` already rejects leading `-`.
+    let (out, code) = if checkout {
+        ssh_git(cfg, remote_path, &["checkout", "-b", branch_name]).await?
+    } else {
+        ssh_git(cfg, remote_path, &["branch", "--", branch_name]).await?
+    };
+    if code != 0 {
+        return Err(format!(
+            "git branch create failed (exit {}): {}",
+            code,
+            out.trim()
+        ));
+    }
+    Ok(out)
+}
+
 /// Remove a remote git worktree. Idempotent.
 pub async fn remove_remote_worktree(
     cfg: &SshConfig,

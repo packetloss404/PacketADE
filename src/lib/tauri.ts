@@ -456,6 +456,59 @@ export async function getGitStatusRemote(
   return invoke<string>("get_git_status_remote", { serverConfig, remotePath });
 }
 
+/** Remote write variants of the git dashboard commands (over SSH). */
+export async function gitStageFilesRemote(
+  serverConfig: GitServerConfigInput,
+  remotePath: string,
+  paths: string[],
+): Promise<string> {
+  return invoke<string>("git_stage_files_remote", { serverConfig, remotePath, paths });
+}
+
+export async function gitUnstageFilesRemote(
+  serverConfig: GitServerConfigInput,
+  remotePath: string,
+  paths: string[],
+): Promise<string> {
+  return invoke<string>("git_unstage_files_remote", { serverConfig, remotePath, paths });
+}
+
+export async function gitCommitRemote(
+  serverConfig: GitServerConfigInput,
+  remotePath: string,
+  message: string,
+): Promise<string> {
+  return invoke<string>("git_commit_remote", { serverConfig, remotePath, message });
+}
+
+export async function gitPushRemote(
+  serverConfig: GitServerConfigInput,
+  remotePath: string,
+): Promise<string> {
+  return invoke<string>("git_push_remote", { serverConfig, remotePath });
+}
+
+export async function gitPullRemote(
+  serverConfig: GitServerConfigInput,
+  remotePath: string,
+): Promise<string> {
+  return invoke<string>("git_pull_remote", { serverConfig, remotePath });
+}
+
+export async function gitCreateBranchRemote(
+  serverConfig: GitServerConfigInput,
+  remotePath: string,
+  branchName: string,
+  checkout: boolean,
+): Promise<string> {
+  return invoke<string>("git_create_branch_remote", {
+    serverConfig,
+    remotePath,
+    branchName,
+    checkout,
+  });
+}
+
 /** Phase 3.2: clone `repoUrl` into `destPath` on the SSH host. Returns
  *  the remote path that was created plus the freshly-cloned default
  *  branch (`git rev-parse --abbrev-ref HEAD`). The Tauri layer

@@ -26,6 +26,12 @@ import {
   gitPush,
   gitPull,
   gitCreateBranch,
+  gitStageFilesRemote,
+  gitUnstageFilesRemote,
+  gitCommitRemote,
+  gitPushRemote,
+  gitPullRemote,
+  gitCreateBranchRemote,
   getFileHeadContent,
   readFileForDiff,
   toGitServerConfigInput,
@@ -222,6 +228,8 @@ export function GitDashboard({
   const setActiveView = useAppStore((s) => s.setActiveView);
   const issues = useIssueStore((s) => s.issues);
   const isRemote = !!serverId;
+  // Server config for remote (SSH) git write commands; null for local workspaces.
+  const serverConfig = useMemo(() => (server ? toGitServerConfigInput(server) : null), [server]);
 
   const reviewContext = useMemo(
     () =>
@@ -371,12 +379,30 @@ export function GitDashboard({
     setCommitMsg((prev) => (prev.length > 0 ? prev : `Fixes #${linkedIssue.num}\n\n`));
   }, [isRemote, linkedIssue]);
 
+  // Guard against a remote workspace whose server config hasn't resolved (still
+  // loading, or the server was deleted). Without this, the write handlers below
+  // would fall through to the LOCAL git command run against a remote path.
+  function remoteConfigMissing(): boolean {
+    if (isRemote && !serverConfig) {
+      setFeedback({
+        type: "err",
+        msg: "Remote server config is not available — reopen the workspace.",
+      });
+      return true;
+    }
+    return false;
+  }
+
   async function handleCommit() {
     if (!commitMsg.trim() || stagedCount === 0) return;
+    if (remoteConfigMissing()) return;
     const path = projectPath;
     setActionLoading("commit");
     try {
-      const result = await commitStaged(path, commitMsg, commitContext);
+      const result =
+        isRemote && serverConfig
+          ? await gitCommitRemote(serverConfig, path, commitMsg)
+          : await commitStaged(path, commitMsg, commitContext);
       setCommitMsg("");
       setFeedback({ type: "ok", msg: result || "Committed successfully" });
       await refresh();
@@ -388,9 +414,13 @@ export function GitDashboard({
   }
 
   async function handlePush() {
+    if (remoteConfigMissing()) return;
     setActionLoading("push");
     try {
-      const result = await gitPush(projectPath);
+      const result =
+        isRemote && serverConfig
+          ? await gitPushRemote(serverConfig, projectPath)
+          : await gitPush(projectPath);
       setFeedback({ type: "ok", msg: result || "Pushed successfully" });
     } catch (e: unknown) {
       setFeedback({ type: "err", msg: `Push failed: ${e}` });
@@ -400,9 +430,13 @@ export function GitDashboard({
   }
 
   async function handlePull() {
+    if (remoteConfigMissing()) return;
     setActionLoading("pull");
     try {
-      const result = await gitPull(projectPath);
+      const result =
+        isRemote && serverConfig
+          ? await gitPullRemote(serverConfig, projectPath)
+          : await gitPull(projectPath);
       setFeedback({ type: "ok", msg: result || "Pulled successfully" });
       await refresh();
     } catch (e: unknown) {
@@ -414,9 +448,14 @@ export function GitDashboard({
 
   async function handleCreateBranch() {
     if (!newBranch.trim()) return;
+    if (remoteConfigMissing()) return;
     setActionLoading("branch");
     try {
-      await gitCreateBranch(projectPath, newBranch.trim(), true);
+      if (isRemote && serverConfig) {
+        await gitCreateBranchRemote(serverConfig, projectPath, newBranch.trim(), true);
+      } else {
+        await gitCreateBranch(projectPath, newBranch.trim(), true);
+      }
       setNewBranch("");
       setShowBranchInput(false);
       setFeedback({ type: "ok", msg: `Switched to new branch: ${newBranch.trim()}` });
@@ -430,10 +469,18 @@ export function GitDashboard({
 
   async function handleToggleStage(file: ChangedFile) {
     if (stagingBusy) return;
+    if (remoteConfigMissing()) return;
     setStagingBusy(true);
     try {
       const fullyStaged = file.staged && !file.unstaged;
-      if (fullyStaged) {
+      if (isRemote && serverConfig) {
+        const paths = pathsForStagingOp(file);
+        if (fullyStaged) {
+          await gitUnstageFilesRemote(serverConfig, projectPath, paths);
+        } else {
+          await gitStageFilesRemote(serverConfig, projectPath, paths);
+        }
+      } else if (fullyStaged) {
         await unstageFile(projectPath, file);
       } else {
         await stageFile(projectPath, file);
@@ -448,9 +495,15 @@ export function GitDashboard({
 
   async function handleStageAll() {
     if (stagingBusy) return;
+    if (remoteConfigMissing()) return;
     setStagingBusy(true);
     try {
-      await stageAllFiles(projectPath, files);
+      if (isRemote && serverConfig) {
+        const paths = files.filter((f) => f.unstaged).flatMap(pathsForStagingOp);
+        if (paths.length > 0) await gitStageFilesRemote(serverConfig, projectPath, paths);
+      } else {
+        await stageAllFiles(projectPath, files);
+      }
       await refresh();
     } catch (e: unknown) {
       setFeedback({ type: "err", msg: `Stage all failed: ${e}` });
@@ -461,9 +514,15 @@ export function GitDashboard({
 
   async function handleUnstageAll() {
     if (stagingBusy) return;
+    if (remoteConfigMissing()) return;
     setStagingBusy(true);
     try {
-      await unstageAllFiles(projectPath, files);
+      if (isRemote && serverConfig) {
+        const paths = files.filter((f) => f.staged).flatMap(pathsForStagingOp);
+        if (paths.length > 0) await gitUnstageFilesRemote(serverConfig, projectPath, paths);
+      } else {
+        await unstageAllFiles(projectPath, files);
+      }
       await refresh();
     } catch (e: unknown) {
       setFeedback({ type: "err", msg: `Unstage all failed: ${e}` });
@@ -501,10 +560,10 @@ export function GitDashboard({
     [projectPath],
   );
 
-  // Phase 3.3: remote workspaces are read-only in this slice — commit /
-  // push / pull / create-branch over SSH lands in a later phase. Disable
-  // the action buttons but still expose status + refresh.
-  const remoteReadOnlyTip = isRemote ? "Remote commit/push/pull not yet supported" : undefined;
+  // Remote (SSH) workspaces now support write actions (stage / commit / push /
+  // pull / create-branch) via the git_*_remote commands. The per-file diff
+  // viewer still requires local file reads, so rows stay non-interactive on
+  // remote (see `rowInteractive` below).
   const hasUnstaged = files.some((f) => f.unstaged);
 
   return (
@@ -528,22 +587,20 @@ export function GitDashboard({
               remote
             </span>
           )}
-          {!isRemote && (
-            <button
-              onClick={() => setShowBranchInput((v) => !v)}
-              className="p-0.5 text-text-muted transition-colors hover:text-text-primary"
-              title="Create branch"
-            >
-              <GitBranchPlus size={11} />
-            </button>
-          )}
+          <button
+            onClick={() => setShowBranchInput((v) => !v)}
+            className="p-0.5 text-text-muted transition-colors hover:text-text-primary"
+            title="Create branch"
+          >
+            <GitBranchPlus size={11} />
+          </button>
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={handlePull}
-            disabled={!!actionLoading || isRemote}
+            disabled={!!actionLoading}
             className="flex items-center gap-1 rounded bg-bg-tertiary px-1.5 py-0.5 text-ui text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary disabled:opacity-40"
-            title={remoteReadOnlyTip ?? "Pull"}
+            title="Pull"
           >
             {actionLoading === "pull" ? (
               <Loader2 size={10} className="animate-spin" />
@@ -554,9 +611,9 @@ export function GitDashboard({
           </button>
           <button
             onClick={handlePush}
-            disabled={!!actionLoading || isRemote}
+            disabled={!!actionLoading}
             className="flex items-center gap-1 rounded bg-bg-tertiary px-1.5 py-0.5 text-ui text-text-secondary transition-colors hover:bg-bg-border hover:text-text-primary disabled:opacity-40"
-            title={remoteReadOnlyTip ?? "Push"}
+            title="Push"
           >
             {actionLoading === "push" ? (
               <Loader2 size={10} className="animate-spin" />
@@ -652,7 +709,7 @@ export function GitDashboard({
       )}
 
       {/* Select-all affordance — local workspaces only */}
-      {!loadError && !isRemote && files.length > 0 && (
+      {!loadError && files.length > 0 && (
         <div className="flex shrink-0 items-center gap-2 border-b border-bg-border px-3 py-1 text-ui text-text-muted">
           <span>
             {stagedCount} of {files.length} staged
@@ -759,13 +816,11 @@ export function GitDashboard({
                   rowInteractive ? "cursor-pointer" : ""
                 } ${diff?.path === f.path ? "bg-bg-secondary" : ""}`}
               >
-                {!isRemote && (
-                  <StageCheckbox
-                    file={f}
-                    disabled={stagingBusy}
-                    onToggle={() => handleToggleStage(f)}
-                  />
-                )}
+                <StageCheckbox
+                  file={f}
+                  disabled={stagingBusy}
+                  onToggle={() => handleToggleStage(f)}
+                />
                 {statusIcon(f.status)}
                 <span className={`w-5 shrink-0 font-mono text-meta ${statusColor(f.status)}`}>
                   {f.status}
@@ -807,15 +862,10 @@ export function GitDashboard({
           })}
       </div>
 
-      {/* Commit section — local workspaces only. Remote commit/push lands
-          in a follow-up phase; for now we hide the form and surface a
-          short note. */}
-      {isRemote ? (
-        <div className="shrink-0 border-t border-bg-border bg-bg-secondary px-3 py-2 text-meta text-text-muted">
-          Remote write actions (commit, push, pull, branch) are not yet supported. Use a terminal
-          session on the remote host for now.
-        </div>
-      ) : (
+      {/* Commit section — local and remote (SSH) workspaces. The Fixes-trailer
+          seeding + linked-issue banner are local-only (their effects early-out
+          on remote); the commit itself routes through git_commit_remote. */}
+      {(
         <div className="shrink-0 space-y-1.5 border-t border-bg-border bg-bg-secondary px-3 py-2">
           {linkedIssue && (
             <div
