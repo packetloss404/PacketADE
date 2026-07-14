@@ -612,6 +612,106 @@ pub async fn clone_repo_remote(
     Ok(result.into())
 }
 
+// --- Remote git write commands (SSH) -----------------------------------------
+//
+// Mirror the local git_* write commands over SSH so the GitDashboard can lift
+// its remote read-only gate. Each turns the DTO into an `SshConfig` and
+// delegates to the `worktree::ssh_*` helper (which POSIX-quotes every argument).
+
+/// Stage specific files on a remote SSH workspace (`git add -- <paths>`).
+#[tauri::command]
+pub async fn git_stage_files_remote(
+    server_config: GitServerConfigDto,
+    remote_path: String,
+    paths: Vec<String>,
+) -> Result<String, String> {
+    if remote_path.trim().is_empty() {
+        return Err("Remote path cannot be empty".to_string());
+    }
+    for p in &paths {
+        super::validate_input_size(p, super::MAX_INPUT_SIZE, "File path")?;
+    }
+    let cfg = server_config.into_ssh_config(remote_path.clone());
+    worktree::ssh_stage_files(&cfg, &remote_path, &paths).await
+}
+
+/// Unstage specific files on a remote SSH workspace
+/// (`git restore --staged -- <paths>`).
+#[tauri::command]
+pub async fn git_unstage_files_remote(
+    server_config: GitServerConfigDto,
+    remote_path: String,
+    paths: Vec<String>,
+) -> Result<String, String> {
+    if remote_path.trim().is_empty() {
+        return Err("Remote path cannot be empty".to_string());
+    }
+    for p in &paths {
+        super::validate_input_size(p, super::MAX_INPUT_SIZE, "File path")?;
+    }
+    let cfg = server_config.into_ssh_config(remote_path.clone());
+    worktree::ssh_unstage_files(&cfg, &remote_path, &paths).await
+}
+
+/// Commit the staged index on a remote SSH workspace (`git commit -m <message>`).
+#[tauri::command]
+pub async fn git_commit_remote(
+    server_config: GitServerConfigDto,
+    remote_path: String,
+    message: String,
+) -> Result<String, String> {
+    if remote_path.trim().is_empty() {
+        return Err("Remote path cannot be empty".to_string());
+    }
+    super::validate_input_size(&message, super::MAX_INPUT_SIZE, "Commit message")?;
+    if message.trim().is_empty() {
+        return Err("Commit message cannot be empty".to_string());
+    }
+    let cfg = server_config.into_ssh_config(remote_path.clone());
+    worktree::ssh_commit(&cfg, &remote_path, &message).await
+}
+
+/// Push the current branch of a remote SSH workspace to origin.
+#[tauri::command]
+pub async fn git_push_remote(
+    server_config: GitServerConfigDto,
+    remote_path: String,
+) -> Result<String, String> {
+    if remote_path.trim().is_empty() {
+        return Err("Remote path cannot be empty".to_string());
+    }
+    let cfg = server_config.into_ssh_config(remote_path.clone());
+    worktree::ssh_push(&cfg, &remote_path).await
+}
+
+/// `git pull --ff-only` on a remote SSH workspace.
+#[tauri::command]
+pub async fn git_pull_remote(
+    server_config: GitServerConfigDto,
+    remote_path: String,
+) -> Result<String, String> {
+    if remote_path.trim().is_empty() {
+        return Err("Remote path cannot be empty".to_string());
+    }
+    let cfg = server_config.into_ssh_config(remote_path.clone());
+    worktree::ssh_pull(&cfg, &remote_path).await
+}
+
+/// Create a branch on a remote SSH workspace.
+#[tauri::command]
+pub async fn git_create_branch_remote(
+    server_config: GitServerConfigDto,
+    remote_path: String,
+    branch_name: String,
+    checkout: bool,
+) -> Result<String, String> {
+    if remote_path.trim().is_empty() {
+        return Err("Remote path cannot be empty".to_string());
+    }
+    let cfg = server_config.into_ssh_config(remote_path.clone());
+    worktree::ssh_create_branch(&cfg, &remote_path, &branch_name, checkout).await
+}
+
 // v0.8.5 — `Fixes #N` trailer parsing & ticket-id mapping tests. Kept
 // alongside the parser so the canonical close-loop contract is locked
 // down by the test suite.

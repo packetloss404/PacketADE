@@ -423,7 +423,7 @@ pub fn push_branch(project_path: &str, branch_name: &str, force: bool) -> Result
     git_command_result(&args, project_path)
 }
 
-fn validate_branch_name(name: &str) -> Result<(), String> {
+pub(crate) fn validate_branch_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("Branch name cannot be empty".to_string());
     }
