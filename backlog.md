@@ -381,8 +381,10 @@ compatibility outlives API/config deprecation.
 - **P2 — PacketADE MCP provider transport** —
   `dev/mcp-provider-transport.md` Phases 2-3;
   `dev/bridgemind/packetade-mcp-server-plan.md`.
-- **P3 — Workspace UX gaps** — git review packet ties
-  (`dev/zen-workspace/features-git-workspace.md` Phase 3); command-palette
+- **P3 — Workspace UX gaps** — git review packet ties **SHIPPED** (N4, 2026-07-14,
+  → `CHANGELOG.md` `[0.10.1]`): `ReviewPacketPanel` surfaces linked review packets
+  in GitDashboard + deep-links to the live approval. Remaining nicety: open the
+  git diff editor directly from the packet. Still open: command-palette
   integration of prompt library
   (`dev/zen-workspace/features-prompt-library.md`).
 

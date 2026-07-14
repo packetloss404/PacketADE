@@ -6,7 +6,7 @@
 |------|--------|-------|
 | Phase 1: Branch display + changed files | ✅ Done | GitDashboard.tsx in workspace |
 | Phase 2: Stage/unstage + commit flow | ✅ Done | Stage all + commit in GitDashboard |
-| Phase 3: Review packet + flight approval ties | ⚠️ Partial | Not wired to review packets yet |
+| Phase 3: Review packet + flight approval ties | ✅ Mostly done | `ReviewPacketPanel` surfaces each linked task's `ReviewPacket` (summary/type/command/diff + status) in the git panel and deep-links to the live approval prompt. Remaining nicety: open the git diff editor directly from the packet (the packet shows the agent's reported diff; the authoritative git diff is one row-click away). |
 
 > Research date: 2026-04-09
 > Source repo: [riftzen-bit/zen-workspace-ide](https://github.com/riftzen-bit/zen-workspace-ide)
