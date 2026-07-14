@@ -38,6 +38,11 @@ task list.
 - **GitHub notifications inbox.** A new "Inbox" subtab in the GitHub pane lists
   `GET /notifications` unread threads with an unread badge, optimistic
   mark-as-read, and type-aware link-back to the source issue/PR.
+- **Remote git write actions over SSH.** The workspace GitDashboard was
+  read-only on remote (SSH) workspaces; it can now stage, commit, push, pull, and
+  create branches on the remote host (`git_*_remote` commands over the existing
+  SSH transport, with the same protected-branch / clean-worktree guards as local
+  and shell-safe argument quoting).
 - **Authored PR line comments + reply threads.** The GitHub pane could only read
   review threads; now the PR diff has a line-number gutter and a per-line hover
   composer to author an inline review comment (`github_post_pr_review_comment`),
