@@ -27,6 +27,20 @@ task list.
 
 - **Window geometry persistence.** The desktop window remembers its last
   size and position across launches.
+- **Task-relevant memory retrieval (memory Phase 1).** Memory injection was
+  task-blind — it injected the top-N highest-confidence patterns regardless of
+  the task. Retrieval now ranks patterns and lessons by IDF-weighted term overlap
+  against the task/objective, blended with confidence, so injected memory is
+  relevant to what's being built. The confidence gate is unchanged (relevance
+  only re-orders the trusted set; pinning still forces inclusion). Chosen over an
+  embeddings/RAG build, which is deferred and re-scoped (the ≤100-pattern corpus
+  doesn't justify a vector index).
+- **GitHub notifications inbox.** A new "Inbox" subtab in the GitHub pane lists
+  `GET /notifications` unread threads with an unread badge, optimistic
+  mark-as-read, and type-aware link-back to the source issue/PR.
+- **Clickable provenance on memory timeline cards.** `flightId`/`sessionId`/
+  `taskId` references on memory event cards now deep-link to the originating
+  flight/conversation surface (guarded against dangling targets).
 - **Flight review packets in the git panel (ROADMAP N4).** GitDashboard already
   matched changed files to flight tasks; it now opens a `ReviewPacketPanel`
   surfacing the linked task's `ReviewPacket` — summary, review type, command, and
