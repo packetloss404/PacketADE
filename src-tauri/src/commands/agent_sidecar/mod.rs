@@ -99,3 +99,21 @@ pub async fn get_sidecar_status(
 ) -> Result<SidecarStatus, String> {
     Ok(state.current_status().await)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codex_routes_through_the_sidecar_forward_path() {
+        // Codex is a sidecar provider, so start_session for it goes through the
+        // `forward_*` path — which is provider-agnostic w.r.t. SSH. This is what
+        // makes Codex-over-SSH work via the remote sidecar (no per-provider SSH
+        // gate); a regression that dropped codex here would force it local-only.
+        assert!(is_sidecar_provider("openai-codex"));
+        assert!(is_sidecar_provider("claude-oauth"));
+        assert!(is_sidecar_provider("openai-agents"));
+        assert!(!is_sidecar_provider("api-openai"));
+        assert!(!is_sidecar_provider("api-claude"));
+    }
+}
