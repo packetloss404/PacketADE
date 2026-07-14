@@ -2791,6 +2791,165 @@ pub async fn github_list_pr_review_comments(
     Ok(arr.iter().map(parse_pr_review_comment).collect())
 }
 
+// === Notifications inbox ===================================================
+//
+// The GitHub notifications API returns the authenticated user's notification
+// threads across all repos. Each thread has a `subject` (the Issue/PR/etc.
+// it concerns) whose `url` is an *API* url; we derive a browser `html_url`
+// from it so the frontend can open the subject in the system browser.
+
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubNotification {
+    /// Thread id (used to mark the thread read).
+    pub id: String,
+    pub unread: bool,
+    /// Why this notification was received (e.g. `mention`, `review_requested`,
+    /// `assign`, `subscribed`, `state_change`).
+    pub reason: String,
+    pub updated_at: String,
+    pub title: String,
+    /// `Issue | PullRequest | Commit | Release | Discussion | ...`
+    pub subject_type: String,
+    /// Browser url for the subject, derived from the API `subject.url`.
+    /// Falls back to the repository url when no subject url is present.
+    pub html_url: String,
+    pub repository: String,
+}
+
+/// Convert a GitHub *API* url into its browser (`html_url`) equivalent.
+///
+/// The notifications API only exposes API urls on `subject.url` (e.g.
+/// `https://api.github.com/repos/o/r/pulls/12`). We rewrite the host and the
+/// `pulls` → `pull` path segment so the link opens in a browser. Unknown
+/// shapes fall back to the repository html url.
+fn notification_subject_html_url(
+    subject_type: &str,
+    subject_url: Option<&str>,
+    repo_full_name: &str,
+) -> String {
+    let repo_html = format!("https://github.com/{}", repo_full_name);
+    // Releases resolve by tag in the browser, not by the numeric API id, so the
+    // notification alone can't yield a canonical release page — send the user to
+    // the repo's releases list instead of a 404-ing `/releases/{id}` URL.
+    if subject_type.eq_ignore_ascii_case("Release") {
+        return format!("{}/releases", repo_html);
+    }
+    let Some(url) = subject_url else {
+        return repo_html;
+    };
+    let Some(rest) = url.strip_prefix("https://api.github.com/repos/") else {
+        return repo_html;
+    };
+    // `rest` looks like "o/r/pulls/12", "o/r/issues/5", or "o/r/commits/{sha}".
+    // Map the API path segments to their browser equivalents (issues map 1:1;
+    // pulls→pull, commits→commit are the two that differ). Unknown shapes fall
+    // through to the rewritten path.
+    let html = rest
+        .replacen("/pulls/", "/pull/", 1)
+        .replacen("/commits/", "/commit/", 1);
+    format!("https://github.com/{}", html)
+}
+
+fn parse_notification(v: &serde_json::Value) -> GithubNotification {
+    let repository = v
+        .get("repository")
+        .and_then(|r| r.get("full_name"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let subject = v.get("subject");
+    let subject_url = subject
+        .and_then(|s| s.get("url"))
+        .and_then(|x| x.as_str());
+    let subject_type = subject
+        .and_then(|s| s.get("type"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+    GithubNotification {
+        id: v
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        unread: v.get("unread").and_then(|x| x.as_bool()).unwrap_or(false),
+        reason: v
+            .get("reason")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        updated_at: v
+            .get("updated_at")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        title: subject
+            .and_then(|s| s.get("title"))
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        subject_type: subject_type.to_string(),
+        html_url: notification_subject_html_url(subject_type, subject_url, &repository),
+        repository,
+    }
+}
+
+/// `GET /notifications` — list the authenticated user's notification threads.
+/// When `all` is false (or omitted) only unread threads are returned.
+#[tauri::command]
+pub async fn github_list_notifications(
+    auth: State<'_, GitHubAuthState>,
+    all: Option<bool>,
+) -> Result<Vec<GithubNotification>, String> {
+    let client = github_client_from_state(auth.inner()).await?;
+    let all = all.unwrap_or(false);
+    let url = format!(
+        "https://api.github.com/notifications?all={}&per_page=50",
+        all
+    );
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let body = github_response_text(resp).await?;
+    let arr: Vec<serde_json::Value> =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse notifications: {}", e))?;
+    Ok(arr.iter().map(parse_notification).collect())
+}
+
+/// `PATCH /notifications/threads/{thread_id}` — mark a single notification
+/// thread as read. Returns `Ok(())` on success.
+#[tauri::command]
+pub async fn github_mark_notification_read(
+    auth: State<'_, GitHubAuthState>,
+    thread_id: String,
+) -> Result<(), String> {
+    validate_github_name(&thread_id, "thread_id")?;
+    let client = github_client_from_state(auth.inner()).await?;
+    let url = format!(
+        "https://api.github.com/notifications/threads/{}",
+        thread_id
+    );
+    let resp = client
+        .patch(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    // On success GitHub returns 205 (reset content) with an empty body, so we
+    // check the status directly rather than reading a JSON body.
+    if !resp.status().is_success() {
+        let status = resp.status();
+        warn!(
+            "GitHub API error {}: {}",
+            status,
+            resp.text().await.unwrap_or_default()
+        );
+        return Err(sanitize_github_error(status));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

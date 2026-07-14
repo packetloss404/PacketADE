@@ -21,7 +21,10 @@ import {
   githubSetToken,
   githubListPrs,
   githubGetPrDiff,
+  githubListNotifications,
+  githubMarkNotificationRead,
 } from "@/lib/tauri";
+import type { GithubNotification } from "@/lib/tauri";
 import type {
   GitHubRepo,
   GitHubIssue,
@@ -211,6 +214,17 @@ interface GitHubStore {
   prAiReviews: Record<string, string>;
   setPrAiReview: (pr: { number: number }, markdown: string) => void;
   clearPrAiReview: (pr: { number: number }) => void;
+
+  // Notifications inbox: the authenticated user's cross-repo notification
+  // threads. Fetched lazily when the Inbox sub-tab is first opened.
+  notifications: GithubNotification[];
+  notificationsLoading: boolean;
+  notificationsError: string | null;
+  /** Count of unread threads — drives the sub-tab badge. Derived on fetch. */
+  unreadCount: number;
+  fetchNotifications: () => Promise<void>;
+  /** Optimistically flip a thread to read, then reconcile with the backend. */
+  markNotificationRead: (threadId: string) => Promise<void>;
 
   // v0.8: persisted GitHub-related preferences (Settings → GitHub card).
   defaultMergeStrategy: GitHubMergeStrategy;
@@ -1000,6 +1014,66 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       delete next[key];
       return { prAiReviews: next };
     }),
+
+  // === Notifications inbox ==================================================
+  notifications: [],
+  notificationsLoading: false,
+  notificationsError: null,
+  unreadCount: 0,
+
+  fetchNotifications: async () => {
+    if (!get().isConnected) return;
+    set({ notificationsLoading: true, notificationsError: null });
+    try {
+      const notifications = await githubListNotifications(false);
+      set({
+        notifications,
+        unreadCount: notifications.filter((n) => n.unread).length,
+        notificationsLoading: false,
+      });
+    } catch (e) {
+      const message = String(e);
+      set({
+        notificationsError: message,
+        notificationsLoading: false,
+        isConnected: isTokenError(message) ? false : get().isConnected,
+      });
+    }
+  },
+
+  markNotificationRead: async (threadId) => {
+    const target = get().notifications.find((n) => n.id === threadId);
+    // Nothing to do if it's already read / unknown.
+    if (!target || !target.unread) return;
+    // Optimistic: flip to read locally and drop the unread count.
+    set((s) => ({
+      notifications: s.notifications.map((n) =>
+        n.id === threadId ? { ...n, unread: false } : n,
+      ),
+      unreadCount: Math.max(0, s.unreadCount - 1),
+    }));
+    try {
+      await githubMarkNotificationRead(threadId);
+    } catch (e) {
+      const message = String(e);
+      // Roll back the optimistic update. Recompute unreadCount from the
+      // (rolled-back) array rather than blindly re-incrementing, so a refetch
+      // that replaced the list mid-flight can't leave the badge over-counting.
+      set((s) => {
+        const notifications = s.notifications.map((n) =>
+          n.id === threadId ? { ...n, unread: true } : n,
+        );
+        return {
+          notifications,
+          unreadCount: notifications.filter((n) => n.unread).length,
+          notificationsError: message,
+          isConnected: isTokenError(message) ? false : s.isConnected,
+        };
+      });
+      // Error is surfaced via notificationsError; don't rethrow (callers invoke
+      // this as fire-and-forget, so a throw becomes an unhandled rejection).
+    }
+  },
 
   clearError: () => set({ error: null }),
   clearInvestigation: () => set({ investigation: null }),

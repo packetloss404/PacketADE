@@ -1831,6 +1831,39 @@ export async function githubGetPrChecks(
   });
 }
 
+// === Notifications inbox ====================================================
+//
+// The authenticated user's cross-repo notification threads. Backend lives in
+// `src-tauri/src/commands/github.rs` (`github_list_notifications` /
+// `github_mark_notification_read`). Mirrors the camelCase DTO.
+
+export interface GithubNotification {
+  /** Thread id — used to mark the thread read. */
+  id: string;
+  unread: boolean;
+  /** Why this notification arrived (mention, review_requested, assign, …). */
+  reason: string;
+  updatedAt: string;
+  title: string;
+  /** Issue | PullRequest | Commit | Release | Discussion | … */
+  subjectType: string;
+  /** Browser url for the subject, derived from the API subject url. */
+  htmlUrl: string;
+  repository: string;
+}
+
+/** GET /notifications — unread threads by default, all threads when `all`. */
+export async function githubListNotifications(all?: boolean): Promise<GithubNotification[]> {
+  return invoke<GithubNotification[]>("github_list_notifications", {
+    all: all ?? null,
+  });
+}
+
+/** PATCH /notifications/threads/{threadId} — mark a single thread read. */
+export async function githubMarkNotificationRead(threadId: string): Promise<void> {
+  return invoke("github_mark_notification_read", { threadId });
+}
+
 export async function githubInvestigateIssue(
   projectPath: string,
   owner: string,
