@@ -87,8 +87,15 @@ Use one Unix SSH host with a pinned host key and a real git checkout.
     idle state without leaving the session stuck active.
 11. Resume the same conversation and confirm the stored remote server id,
     remote path, port, key path, and host fingerprint are used.
-12. Repeat the smoke with **OpenAI (ChatGPT Plus/Pro)** once Codex CLI remote
-    session support is wired.
+12. Repeat the smoke with **OpenAI (ChatGPT Plus/Pro)** — Codex routes through
+    the remote sidecar today (no per-provider SSH gate; `codex exec` runs
+    natively on the host where the sidecar runs). Preconditions: `~/.codex/auth.json`
+    present on the remote host (`codex login` there), and the sidecar built under
+    `~/.packetade/agent-sidecar`. Confirm a multi-turn conversation resumes
+    correctly (the `codex exec resume` rollout file lives on the remote host, so
+    cross-turn resume stays on one host). This step is the only remaining
+    Codex-over-SSH verification — the routing itself is regression-locked in
+    `agentCatalog.test.ts` and `agent_sidecar/mod.rs`.
 
 ## Failure Modes To Watch
 

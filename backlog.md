@@ -44,10 +44,10 @@ created" copy.
   Windows OpenSSH — on Unix the whole path is non-functional regardless (see the
   new "SSH password auth on Unix" item below). Fixing S6 in isolation only helps
   Windows and needs a new command param + FE wiring; folded into that larger item.
-- **N2 (swarm auto-reassignment), N3 (MCP server transport), S7/S8/S9
-  (remote git commands / MCP-over-SSH / Codex-over-SSH):** blocked on a policy
-  decision (N2), greenfield + doc-deferred (N3), or M/L feature builds (S7–S9) —
-  out of scope for a hardening pass.
+- **N2 (swarm auto-reassignment), N3 (MCP server transport), S8 (MCP-over-SSH):**
+  blocked on a policy decision (N2), greenfield + doc-deferred (N3), or a
+  larger transport build (S8). (S7 remote git commands — SHIPPED 2026-07-14;
+  S9 Codex-over-SSH — no code gate found, routes today, see below.)
 
 ### New findings from the pass (now tracked)
 
@@ -132,13 +132,24 @@ them up before that gate clears.
   protocol now runs the sidecar over SSH, so Anthropic (Subscription) and OpenAI
   (ChatGPT) providers work against remote codebases. Verification contract:
   [`dev/sidecar-over-ssh-verification.md`](./dev/sidecar-over-ssh-verification.md).
-  Follow-up: Codex-over-SSH (see below) is not yet covered.
-- **P2 — Codex-over-SSH sidecar support.** The sidecar-over-SSH transport ships
-  for Anthropic and OpenAI Agents, but the Codex provider still runs local-only.
-  `codex exec` closes stdin and does its own process management, so routing it
-  over `ssh <host>` needs a remote-aware spawn path in the sidecar Codex
-  provider plus remote process-group teardown. Extend the sidecar-over-SSH
-  forward path to cover `api-openai-codex`.
+  Follow-up: Codex-over-SSH — no gate found (see below); live smoke still pending.
+- **NO GATE FOUND 2026-07-14 — Codex-over-SSH already routes.** The original
+  premise was false: it assumed a *spawn-`codex`-over-`ssh`* model, but the
+  sidecar-over-SSH transport runs the **whole sidecar on the remote host**
+  (`PACKETADE_REMOTE_SIDECAR=1`), so `codex exec` spawns natively there against
+  the remote filesystem — no per-provider SSH spawn path is needed. A full code
+  trace found zero exclusion: `openai-codex` is in `SIDECAR_PROVIDERS`
+  (`agent_sidecar/mod.rs:30`); the remote preflight has a codex auth check
+  (`supervisor.rs:1244`); `api_agent.rs:696+` routes remote workspaces
+  generically for every sidecar provider; and the FE catalog marks
+  `api-openai-codex` `supportsSsh: true` (only `api-ollama` is local-only,
+  `agent-catalog.ts:72`). Regression-locked by tests
+  (`is_sidecar_provider("openai-codex")` in `agent_sidecar/mod.rs`; the
+  `supportsSsh` assertion in `agentCatalog.test.ts`). **Remaining: a live
+  end-to-end smoke** (remote host with `~/.codex/auth.json` + the sidecar built
+  under `~/.packetade/agent-sidecar`) per `dev/sidecar-over-ssh-verification.md`
+  step 12 — not runnable without a remote host, so it stays open as a
+  verification item, not an implementation one.
 - **P2 — Misleading "Path will be created" copy.** `WorkspaceCreationModal`
   promises the path will be created on workspace start; nothing actually
   `mkdir -p`s it. Either add the mkdir over SSH on first launch, or revise

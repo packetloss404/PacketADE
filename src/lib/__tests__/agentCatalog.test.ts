@@ -42,6 +42,19 @@ describe("agent-catalog merged registry", () => {
     expect(getChatAgent("api-claude")?.supportsSsh).toBe(true);
   });
 
+  it("keeps Codex ChatGPT SSH-capable (routes through the remote sidecar)", () => {
+    // Codex-over-SSH works via the remote sidecar (the whole sidecar runs on the
+    // host, so `codex exec` spawns natively there). Only Ollama is local-only, so
+    // Codex must stay SSH-capable — a regression here would silently hide Codex
+    // from remote workspaces.
+    expect(getChatAgent("api-openai-codex")?.supportsSsh).toBe(true);
+    // The subscription providers that run over the remote sidecar are all
+    // SSH-capable; Ollama is the sole exclusion.
+    for (const c of CHAT_AGENTS) {
+      expect(c.supportsSsh).toBe(c.agentCli !== "api-ollama");
+    }
+  });
+
   it("exposes the six Terminal slots with catalog faces, ending in a bare Terminal", () => {
     const slots = TERMINAL_AGENTS.map((t) => t.slot);
     expect(slots).toEqual([
