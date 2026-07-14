@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   Terminal,
   CheckCircle,
@@ -9,10 +10,60 @@ import {
 } from "lucide-react";
 import { relativeTime } from "@/lib/time";
 import type { MemoryEvent } from "@/types/memory";
+import type { Flight } from "@/types/flight";
+import { useFlightStore } from "@/stores/flightStore";
+import { useAppStore } from "@/stores/appStore";
+import { focusConversationDeepLink } from "@/stores/sessionGlue";
 
 interface MemoryEventCardProps {
   event: MemoryEvent;
   onDelete: () => void;
+}
+
+/** Navigate to the Flights surface with the given flight selected — the same
+ *  pair GitDashboard's openReviewFlight uses (setActiveFlight + flights view). */
+function navigateToFlight(flightId: string): void {
+  useFlightStore.getState().setActiveFlight(flightId);
+  useAppStore.getState().setActiveView("flights");
+}
+
+/** The flight that owns a task id, if any lives in the store. Mirrors the
+ *  flightStore's own milestone→task walk. */
+function findFlightForTask(flights: Flight[], taskId: string): Flight | undefined {
+  return flights.find((f) => f.milestones.some((m) => m.tasks.some((t) => t.id === taskId)));
+}
+
+/**
+ * A compact, keyboard-activatable deep-link rendered inline in place of inert
+ * provenance text. Subtle by default; reveals a dotted underline + accent-blue
+ * on hover/focus (the app's `text-accent-blue`/hover affordance). Callers only
+ * render this when the target is known to resolve — a dangling target is
+ * rendered as plain text by the card instead, so there is never a dead link.
+ */
+function ProvenanceLink({
+  children,
+  title,
+  onClick,
+  className = "",
+}: {
+  children: ReactNode;
+  title: string;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={`rounded-sm underline-offset-2 transition-colors hover:text-accent-blue hover:underline hover:decoration-dotted focus-visible:text-accent-blue focus-visible:underline focus-visible:decoration-dotted focus-visible:outline-none ${className}`}
+    >
+      {children}
+    </button>
+  );
 }
 
 function formatDuration(ms: number): string {
@@ -128,9 +179,23 @@ function SessionCard({
     <>
       <div className="flex items-center gap-2 mb-1">
         <Terminal size={11} className="text-accent-green flex-shrink-0" />
-        <span className="text-[11px] font-semibold text-text-primary">
-          {p.agentId}
-        </span>
+        {p.sessionId ? (
+          // sessionId === conversationId for API agents. focusConversationDeepLink
+          // existence-checks the conversation: if it vanished it skips the tile
+          // focus and just switches to the workspace view (no crash, no dead
+          // link), so the link is always safe to offer when a sessionId exists.
+          <ProvenanceLink
+            title="Open conversation"
+            onClick={() => focusConversationDeepLink(p.sessionId)}
+            className="text-[11px] font-semibold text-text-primary"
+          >
+            {p.agentId}
+          </ProvenanceLink>
+        ) : (
+          <span className="text-[11px] font-semibold text-text-primary">
+            {p.agentId}
+          </span>
+        )}
         <StatusPill label={p.status} tone={tone} />
         <span className="text-[10px] text-text-faint">
           {formatDuration(p.durationMs)}
@@ -154,6 +219,12 @@ function TaskCard({
   event: Extract<MemoryEvent, { type: "task_completed" }>;
 }) {
   const p = event.payload;
+  const flights = useFlightStore((s) => s.flights);
+  // taskId → the flight that owns it (search milestones[].tasks). No owning
+  // flight in the store ⇒ render inert (no dead link).
+  const owningFlight = findFlightForTask(flights, p.taskId);
+  // flightId guard: only link the flight line when the flight still exists.
+  const flightExists = flights.some((f) => f.id === p.flightId);
   return (
     <>
       <div className="flex items-center gap-2 mb-1">
@@ -165,9 +236,19 @@ function TaskCard({
         ) : (
           <XCircle size={11} className="text-accent-red flex-shrink-0" />
         )}
-        <span className="text-[11px] font-semibold text-text-primary truncate">
-          {p.taskTitle}
-        </span>
+        {owningFlight ? (
+          <ProvenanceLink
+            title="Open flight for this task"
+            onClick={() => navigateToFlight(owningFlight.id)}
+            className="text-[11px] font-semibold text-text-primary truncate"
+          >
+            {p.taskTitle}
+          </ProvenanceLink>
+        ) : (
+          <span className="text-[11px] font-semibold text-text-primary truncate">
+            {p.taskTitle}
+          </span>
+        )}
         <StatusPill
           label={p.success ? "passed" : "failed"}
           tone={p.success ? "green" : "red"}
@@ -180,7 +261,17 @@ function TaskCard({
       </div>
       <div className="text-[10px] text-text-faint mb-1">
         Flight:{" "}
-        <span className="text-text-muted">{p.flightTitle}</span>
+        {flightExists ? (
+          <ProvenanceLink
+            title="Open flight"
+            onClick={() => navigateToFlight(p.flightId)}
+            className="text-text-muted"
+          >
+            {p.flightTitle}
+          </ProvenanceLink>
+        ) : (
+          <span className="text-text-muted">{p.flightTitle}</span>
+        )}
       </div>
       {p.summary && (
         <p className="text-[11px] text-text-secondary leading-relaxed">
@@ -249,13 +340,24 @@ function FlightCard({
   event: Extract<MemoryEvent, { type: "flight_completed" }>;
 }) {
   const p = event.payload;
+  const flightExists = useFlightStore((s) => s.flights.some((f) => f.id === p.flightId));
   return (
     <>
       <div className="flex items-center gap-2 mb-1.5">
         <Plane size={11} className="text-accent-green flex-shrink-0" />
-        <span className="text-[11px] font-semibold text-text-primary">
-          {p.flightTitle}
-        </span>
+        {flightExists ? (
+          <ProvenanceLink
+            title="Open flight"
+            onClick={() => navigateToFlight(p.flightId)}
+            className="text-[11px] font-semibold text-text-primary"
+          >
+            {p.flightTitle}
+          </ProvenanceLink>
+        ) : (
+          <span className="text-[11px] font-semibold text-text-primary">
+            {p.flightTitle}
+          </span>
+        )}
         <div className="flex-1" />
         <TypeChip label="flight" tone="accent" />
       </div>

@@ -22,6 +22,9 @@ vi.mock("@/lib/tauri", () => ({
   readPtyTranscript: vi.fn(),
   togglePinnedPattern: vi.fn(),
   loadPersistedState: vi.fn(),
+  // Pulled in transitively now that event cards deep-link into conversations
+  // (MemoryEventCard → focusConversationDeepLink → sessionGlue → agentTaskStore).
+  loadConversations: vi.fn().mockResolvedValue([]),
 }));
 
 // Control the active project path the preview is scoped to.
