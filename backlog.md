@@ -543,22 +543,24 @@ already Batch A), F33 (`orchestrationSchedulerStore.ts` — already Batch B), an
 G31 (`orchestrationSchedulerStore.ts`). The referenced files no longer exist in
 the tile-program single surface.
 
-**Still verified-open** (audit-confirmed against current code): **F40** (SSRF —
-promoted to the dedicated P1 security item below), **F02**, **F24**, **G16**,
-**F50**, **F38**. F50 and F38 are being fixed by H4 this wave. Other findings
-below that are not annotated as shipped/obsolete predate the single-surface
-refactor and await per-finding re-verification against current code.
+**Still verified-open** (audit-confirmed against current code): **F02**, **G16**.
+(F40 SSRF — SHIPPED 2026-07-14, see below. F24 — orphaned deploy code, superseded
+by the "Deploy command family orphaned" item in the P2 batch summary. F50, F38 —
+shipped in the H4 wave.) Other findings below that are not annotated as
+shipped/obsolete predate the single-surface refactor and await per-finding
+re-verification against current code.
 
 ### P1 — confirmed high
 
-> **P1 SECURITY (out of scope this wave — do not fix here).** **F40 — `web_fetch`
-> is an unrestricted SSRF primitive** — `core/tool_web.rs`. It fetches
-> attacker-supplied URLs with no guard against private/link-local/metadata
-> targets and does not re-validate after redirects. Fix: block private/link-local
-> IP ranges and re-resolve+re-check after every redirect hop; pair with the
-> `tool_web.rs` body-size cap and untrusted-content envelope items under **Rust
-> audit follow-ups → Tool runtime**. Deliberately deferred as a tracked security
-> item; not touched by the housekeeping wave.
+> ~~**F40 — `web_fetch` is an unrestricted SSRF primitive**~~ — **SHIPPED
+> 2026-07-14 (→ `CHANGELOG.md` `[0.10.1]`).** `core/tool_web.rs` now blocks
+> private/loopback/link-local/metadata IP ranges (incl. IPv4-mapped, NAT64, 6to4,
+> and IPv4-compatible embedded-IPv4 forms), validates every hostname at connect
+> time via a custom DNS resolver (closing the rebinding TOCTOU across the initial
+> request and every redirect hop), pre-screens IP-literal hosts and their
+> encoding bypasses, and caps + re-checks (scheme + IP) each redirect. Shipped
+> with the body-size cap and untrusted-content envelope (the paired
+> `tool_web.rs` items). 2-agent security-reviewed; 11 unit tests.
 
 - **F02 — one invalid UTF-8 byte freezes a terminal forever** (unbounded `pending`) — `core/pty.rs:55-76`. Use `Utf8Error::error_len()`. _(verified open)_
 - ~~**F13 — deploy run stuck "running" forever on EIO**~~ — **SHIPPED (Batch B → CHANGELOG).**

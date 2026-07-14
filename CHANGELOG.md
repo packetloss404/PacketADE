@@ -36,6 +36,18 @@ task list.
   already-over-threshold doesn't spuriously fire, and only consumes a transition
   once the notification is actually delivered.
 
+### Security
+
+- **web_fetch SSRF closed (F40).** `web_fetch` fetched attacker-controllable URLs
+  with no guard against internal targets. It now blocks private / loopback /
+  link-local / cloud-metadata IP ranges — including IPv4-mapped, NAT64
+  (`64:ff9b::/96`), 6to4, and IPv4-compatible embedded-IPv4 forms — validates
+  every hostname at connect time through a custom DNS resolver (closing the
+  DNS-rebinding TOCTOU across the initial request and every redirect hop),
+  pre-screens IP-literal hosts and their decimal/octal/hex/userinfo encodings,
+  and caps redirects while re-checking scheme + target on each hop. 2-agent
+  security-reviewed; 11 unit tests.
+
 ### Fixed
 
 - **P2 hardening batch** (verified against current code — several findings
