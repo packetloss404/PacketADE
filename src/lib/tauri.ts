@@ -2312,6 +2312,22 @@ export async function mcpServerStatus(): Promise<McpServerStatus> {
   return invoke<McpServerStatus>("mcp_server_status");
 }
 
+/** One MCP access (tool call or resource read) recorded by the server. */
+export interface McpActivityEntry {
+  /** Monotonic per-run id — used to dedupe the backlog against live events. */
+  seq: number;
+  /** "tool" or "resource". */
+  kind: string;
+  /** Tool name or resource URI. */
+  name: string;
+  /** Epoch milliseconds. */
+  at: number;
+}
+
+export async function mcpServerRecentActivity(): Promise<McpActivityEntry[]> {
+  return invoke<McpActivityEntry[]>("mcp_server_recent_activity");
+}
+
 // Usage analytics
 export async function readUsageAnalytics(): Promise<string> {
   return invoke<string>("read_usage_analytics");

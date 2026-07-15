@@ -1,14 +1,41 @@
 # MCP Provider Transport — Implementation Plan
 
-## Implementation Status — 2026-04-28
+## Implementation Status — 2026-07-15
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Phase 1: Frontend types + store + settings UI | ✅ Done | `mcpProviderStore.ts`, `McpProviderCard.tsx`, 8 tool definitions |
-| Phase 2: Local MCP server (Rust) | ❌ Deferred | Not needed until external tools need to query PacketADE |
-| Phase 2: Read-only resources | ❌ Deferred | — |
-| Phase 2: Safe workflow tools | ❌ Deferred | — |
-| Phase 3: Ownership-aware tools | ❌ Deferred | Depends on Phase 2 |
+| Phase 1: Frontend types + store + settings UI | ✅ Done | `mcpProviderStore.ts`, `McpProviderCard.tsx` |
+| Phase 2: Local MCP server (Rust) — lifecycle + transport + auth | ✅ **Shipped** (N3 Slice 0) | `rmcp` 2.2 Streamable HTTP, `mcp_server/{mod,transport}.rs` |
+| Phase 2: Read-only resources (7) + read tools (5) + audit | ✅ **Shipped** (N3 Slice 1) | `mcp_server/reads.rs` |
+| Phase 2: Safe workflow tools (writes) | ⏸️ Deferred (see below) | `append_handoff` / `request_review` / `mark_blocked` — needs event-routed write design |
+| Phase 3: Ownership-aware tools | ⏸️ Deferred (see below) | Assumes deleted orchestrator substrate — re-validate first |
+
+### What shipped (N3, 2026-07-15) — read-only server
+
+Decision (user): **v1 is read-only** — no external agent may mutate PacketADE.
+Auth: **bearer token + Origin check + `127.0.0.1` bind**.
+
+- **Transport correction:** the original plan below specced "HTTP/SSE", but that
+  2024 two-endpoint transport is **deprecated**. Shipped as **Streamable HTTP**
+  (single `/mcp` endpoint) via the official **`rmcp` 2.2** crate + `axum`,
+  hosted in the **Rust core** (where `storage::load_state()` owns the state) —
+  NOT the sidecar.
+- Lifecycle: `mcp_server_{start,stop,status,recent_activity}` Tauri commands.
+- Resources (7) and read tools (5) per the tables below (read-only rows only).
+- Audit: bounded in-memory ring + `mcp-server-activity` event → card viewer.
+- `list_runnable_tasks` gates on flight status (`Active` only).
+
+### Deferred with cause
+
+- **Safe writes** (`append_handoff`/`request_review`/`mark_blocked`): the
+  frontend saves state wholesale from Zustand, so a direct Rust file write from
+  the MCP server would be clobbered and invisible to the UI. Writes must be
+  **event-routed** (Rust emits → frontend applies → saves). Design deliberately
+  when un-deferring.
+- **Phase 3 ownership** (`claim_task`/`reserve_paths`/`release_paths`/
+  `escalate_task`): designed against the orchestrator/coordination substrate
+  that the flight-planner amputation deleted. Re-validate against the live
+  attempt/path-ownership model before building.
 
 ## Context
 
@@ -22,7 +49,11 @@ PacketADE currently manages MCP client configs (connecting TO other MCP servers)
 
 ### Transport
 
-HTTP/SSE on localhost (configurable port, default 3100). Chosen over stdio because:
+> **Superseded — see "What shipped" above.** This section specced HTTP/SSE;
+> the deprecated 2024 transport. Shipped as **Streamable HTTP** on
+> `127.0.0.1:<port>` (default 3100) via `rmcp` 2.2.
+
+Localhost, configurable port. Chosen over stdio because:
 - External agents connect to a running PacketADE instance
 - Multiple clients can connect simultaneously
 - Port already configurable in `McpProviderCard.tsx`

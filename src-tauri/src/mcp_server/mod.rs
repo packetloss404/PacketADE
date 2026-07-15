@@ -100,6 +100,9 @@ const AUDIT_CAP: usize = 200;
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditEntry {
+    /// Monotonic per-run id — lets the UI dedupe the backlog fetch against the
+    /// live event stream (both can carry the same access).
+    seq: u64,
     /// `"tool"` or `"resource"`.
     kind: String,
     /// Tool name or resource URI.
@@ -114,6 +117,7 @@ pub struct McpAuditLog {
     /// `None` in tests (no Tauri runtime); `Some` at runtime, for event emit.
     app: Option<tauri::AppHandle>,
     entries: StdMutex<VecDeque<AuditEntry>>,
+    seq: std::sync::atomic::AtomicU64,
 }
 
 impl McpAuditLog {
@@ -121,6 +125,7 @@ impl McpAuditLog {
         Self {
             app: Some(app),
             entries: StdMutex::new(VecDeque::new()),
+            seq: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -129,11 +134,13 @@ impl McpAuditLog {
         Self {
             app: None,
             entries: StdMutex::new(VecDeque::new()),
+            seq: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
     fn record(&self, kind: &str, name: &str) {
         let entry = AuditEntry {
+            seq: self.seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             kind: kind.to_string(),
             name: name.to_string(),
             at: now_millis(),

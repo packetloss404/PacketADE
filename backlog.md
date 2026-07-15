@@ -44,12 +44,12 @@ created" copy.
   Windows OpenSSH — on Unix the whole path is non-functional regardless (see the
   new "SSH password auth on Unix" item below). Fixing S6 in isolation only helps
   Windows and needs a new command param + FE wiring; folded into that larger item.
-- **N3 (MCP server transport), S8-Phase-B (stdio MCP-over-SSH + remote config
-  ownership):** blocked on greenfield + doc-deferred (N3) or a decision-gated
-  transport build (S8-Phase-B). (N2 swarm escalation — SHIPPED 2026-07-14, see
-  below; S7 remote git commands — SHIPPED 2026-07-14; S8-Phase-A HTTP/SSE
-  MCP-over-SSH — SHIPPED 2026-07-14; S9 Codex-over-SSH — no code gate, routes
-  today. All see the relevant sections below.)
+- **S8-Phase-B (stdio MCP-over-SSH + remote config ownership):** blocked on a
+  decision-gated transport build. (N3 PacketADE-as-MCP-server read-only —
+  SHIPPED 2026-07-15, see below; N2 swarm escalation — SHIPPED 2026-07-14;
+  S7 remote git commands — SHIPPED 2026-07-14; S8-Phase-A HTTP/SSE MCP-over-SSH
+  — SHIPPED 2026-07-14; S9 Codex-over-SSH — no code gate, routes today. All see
+  the relevant sections below.)
 
 ### New findings from the pass (now tracked)
 
@@ -440,9 +440,17 @@ compatibility outlives API/config deprecation.
   failure **or** cancellation of the last sibling) it adds one signature-deduped
   `escalation` suggestion to the timeline. `src/lib/flightCoordination.ts`;
   `dev/bridgemind/swarm-orchestration-plan.md` Phase 4.
-- **P2 — PacketADE MCP provider transport** —
-  `dev/mcp-provider-transport.md` Phases 2-3;
-  `dev/bridgemind/packetade-mcp-server-plan.md`.
+- **PacketADE MCP provider transport (N3) — read-only server SHIPPED**
+  2026-07-15 (→ `CHANGELOG.md` `[0.10.1]`). PacketADE exposes itself as an MCP
+  server over Streamable HTTP (`rmcp` 2.2, Rust core, loopback + bearer/Origin
+  auth): 5 read tools + 7 `packetade://` resources + audit feed
+  (`src-tauri/src/mcp_server/`). **Still deferred, with cause** (see
+  `dev/mcp-provider-transport.md`): (a) **safe writes**
+  (`append_handoff`/`request_review`/`mark_blocked`) need an event-routed design
+  because the frontend saves state wholesale and would clobber a direct Rust
+  write; (b) **Phase-3 ownership tools** (`claim_task`/`reserve_paths`/
+  `release_paths`/`escalate_task`) assume the deleted orchestrator substrate and
+  must be re-validated against the live attempt/path-ownership model first.
 - **P3 — Workspace UX gaps** — git review packet ties **SHIPPED** (N4, 2026-07-14,
   → `CHANGELOG.md` `[0.10.1]`): `ReviewPacketPanel` surfaces linked review packets
   in GitDashboard + deep-links to the live approval. Remaining nicety: open the
