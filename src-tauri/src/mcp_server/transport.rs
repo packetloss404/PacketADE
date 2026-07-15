@@ -25,7 +25,7 @@ use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
 
-use super::PacketAdeMcp;
+use super::{McpAuditLog, PacketAdeMcp};
 
 /// Bind `127.0.0.1:<port>` (0 → OS-assigned), spawn the server on the ambient
 /// tokio runtime, and return the actually-bound port. The server shuts down
@@ -34,10 +34,11 @@ pub async fn serve(
     port: u16,
     token: String,
     cancel: CancellationToken,
+    audit: Arc<McpAuditLog>,
 ) -> std::io::Result<u16> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     let bound_port = listener.local_addr()?.port();
-    let router = build_router(token, bound_port, cancel.child_token());
+    let router = build_router(token, bound_port, cancel.child_token(), audit);
 
     let shutdown = cancel.child_token();
     tauri::async_runtime::spawn(async move {
@@ -55,9 +56,14 @@ pub async fn serve(
 /// Build the axum router: the `rmcp` Streamable HTTP service at `/mcp`, wrapped
 /// in the loopback/bearer auth layer. `service_ct` cancels in-flight MCP
 /// sessions on shutdown.
-pub fn build_router(token: String, port: u16, service_ct: CancellationToken) -> Router {
+pub fn build_router(
+    token: String,
+    port: u16,
+    service_ct: CancellationToken,
+    audit: Arc<McpAuditLog>,
+) -> Router {
     let service = StreamableHttpService::new(
-        || Ok(PacketAdeMcp::new()),
+        move || Ok(PacketAdeMcp::new(audit.clone())),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_cancellation_token(service_ct)
@@ -197,7 +203,8 @@ mod tests {
     async fn auth_gates_the_transport() {
         let token = "test-token-abc".to_string();
         let cancel = CancellationToken::new();
-        let port = serve(0, token.clone(), cancel.clone())
+        let audit = Arc::new(super::McpAuditLog::detached());
+        let port = serve(0, token.clone(), cancel.clone(), audit)
             .await
             .expect("server binds");
         let base = format!("http://127.0.0.1:{port}/mcp");

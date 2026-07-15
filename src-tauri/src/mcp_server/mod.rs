@@ -1,23 +1,35 @@
 //! N3 — PacketADE exposes ITSELF as an MCP server so external agents (Claude
-//! Code, Codex, Cursor) can read its live state. Slice 0 is the walking
-//! skeleton: lifecycle (start/stop/status) + Streamable HTTP transport bound to
-//! loopback + bearer-token/Origin auth. Read resources & tools land in Slice 1.
+//! Code, Codex, Cursor) can READ its live state. Read-only by design: no tool
+//! or resource mutates PacketADE. Slice 0 = lifecycle + Streamable HTTP
+//! transport + bearer/Origin auth; Slice 1 = read resources + tools + audit.
 //!
 //! Transport: **Streamable HTTP** (the current MCP transport; the 2024 HTTP+SSE
 //! transport is deprecated) via the official `rmcp` crate, mounted at `/mcp`.
 //! The server reads from the same `~/.packetade/state.v1.json` the Tauri core
 //! owns (`storage::load_state`), so it lives here in Rust, not the sidecar.
 
+mod reads;
 mod transport;
 
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex as StdMutex};
+
 use serde::Serialize;
+use serde_json::Value;
+use tauri::Emitter;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use rmcp::{
-    handler::server::router::tool::ToolRouter,
-    model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo},
-    tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    model::{
+        CallToolResult, ContentBlock, Implementation, ListResourcesResult, PaginatedRequestParams,
+        ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
+        ServerCapabilities, ServerInfo,
+    },
+    schemars,
+    service::RequestContext,
+    tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler,
 };
 
 /// Managed Tauri state: the single (optional) running server. A `tokio::Mutex`
@@ -38,6 +50,7 @@ struct RunningServer {
     cancel: CancellationToken,
     port: u16,
     token: String,
+    audit: Arc<McpAuditLog>,
 }
 
 impl RunningServer {
@@ -78,6 +91,79 @@ fn generate_token() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
 
+// === Audit log ===
+
+const AUDIT_CAP: usize = 200;
+
+/// One MCP access, surfaced to the UI so the user can see what external agents
+/// have been reading.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditEntry {
+    /// `"tool"` or `"resource"`.
+    kind: String,
+    /// Tool name or resource URI.
+    name: String,
+    /// Epoch milliseconds.
+    at: u64,
+}
+
+/// Bounded in-memory ring of recent accesses + a Tauri event on each, so the
+/// McpProviderCard can show live activity. Not persisted.
+pub struct McpAuditLog {
+    /// `None` in tests (no Tauri runtime); `Some` at runtime, for event emit.
+    app: Option<tauri::AppHandle>,
+    entries: StdMutex<VecDeque<AuditEntry>>,
+}
+
+impl McpAuditLog {
+    fn new(app: tauri::AppHandle) -> Self {
+        Self {
+            app: Some(app),
+            entries: StdMutex::new(VecDeque::new()),
+        }
+    }
+
+    #[cfg(test)]
+    fn detached() -> Self {
+        Self {
+            app: None,
+            entries: StdMutex::new(VecDeque::new()),
+        }
+    }
+
+    fn record(&self, kind: &str, name: &str) {
+        let entry = AuditEntry {
+            kind: kind.to_string(),
+            name: name.to_string(),
+            at: now_millis(),
+        };
+        if let Ok(mut q) = self.entries.lock() {
+            q.push_back(entry.clone());
+            while q.len() > AUDIT_CAP {
+                q.pop_front();
+            }
+        }
+        if let Some(app) = &self.app {
+            let _ = app.emit("mcp-server-activity", entry);
+        }
+    }
+
+    fn recent(&self) -> Vec<AuditEntry> {
+        self.entries
+            .lock()
+            .map(|q| q.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 // === Tauri lifecycle commands ===
 
 /// Start the MCP server on `127.0.0.1:<port>` (pass `0` to let the OS choose a
@@ -85,6 +171,7 @@ fn generate_token() -> String {
 /// unchanged. Returns the bound port + freshly-minted bearer token.
 #[tauri::command]
 pub async fn mcp_server_start(
+    app: tauri::AppHandle,
     state: tauri::State<'_, McpServerState>,
     port: u16,
 ) -> Result<McpServerStatus, String> {
@@ -95,7 +182,8 @@ pub async fn mcp_server_start(
 
     let token = generate_token();
     let cancel = CancellationToken::new();
-    let bound_port = transport::serve(port, token.clone(), cancel.clone())
+    let audit = Arc::new(McpAuditLog::new(app));
+    let bound_port = transport::serve(port, token.clone(), cancel.clone(), audit.clone())
         .await
         .map_err(|e| format!("Failed to start MCP server: {e}"))?;
 
@@ -103,6 +191,7 @@ pub async fn mcp_server_start(
         cancel,
         port: bound_port,
         token,
+        audit,
     };
     let status = running.status();
     *guard = Some(running);
@@ -135,27 +224,98 @@ pub async fn mcp_server_status(
         .unwrap_or_else(McpServerStatus::stopped))
 }
 
+/// Recent MCP accesses (most-recent-last), for the activity viewer. Empty when
+/// the server isn't running.
+#[tauri::command]
+pub async fn mcp_server_recent_activity(
+    state: tauri::State<'_, McpServerState>,
+) -> Result<Vec<AuditEntry>, String> {
+    let guard = state.inner.lock().await;
+    Ok(guard.as_ref().map(|r| r.audit.recent()).unwrap_or_default())
+}
+
 // === MCP handler ===
 
+fn load() -> crate::core::storage::PersistedState {
+    crate::core::storage::load_state()
+}
+
+/// Wrap a JSON value as an MCP tool result (pretty-printed text content).
+fn json_result(value: &Value) -> CallToolResult {
+    let text = serde_json::to_string_pretty(value).unwrap_or_else(|_| "null".to_string());
+    CallToolResult::success(vec![ContentBlock::text(text)])
+}
+
+/// Args for `read_task_details`. camelCase on the wire to match MCP convention.
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct ReadTaskArgs {
+    flight_id: String,
+    task_id: String,
+}
+
 /// The MCP server handler. A fresh instance is created per session by the
-/// transport's service factory. Stateless for now (reads state on demand in
-/// Slice 1); Slice 0 exposes only a `ping` health-check tool.
+/// transport's service factory; state is read on demand from disk, so the
+/// handler is cheap and shares only the audit sink.
 #[derive(Clone)]
 pub struct PacketAdeMcp {
     tool_router: ToolRouter<PacketAdeMcp>,
+    audit: Arc<McpAuditLog>,
 }
 
 #[tool_router]
 impl PacketAdeMcp {
-    pub fn new() -> Self {
+    pub fn new(audit: Arc<McpAuditLog>) -> Self {
         Self {
             tool_router: Self::tool_router(),
+            audit,
         }
     }
 
     #[tool(description = "Health check — returns 'pong'.")]
     async fn ping(&self) -> Result<CallToolResult, McpError> {
         Ok(CallToolResult::success(vec![ContentBlock::text("pong")]))
+    }
+
+    #[tool(description = "Get the currently active flight, or null if none is selected.")]
+    async fn get_active_flight(&self) -> Result<CallToolResult, McpError> {
+        self.audit.record("tool", "get_active_flight");
+        Ok(json_result(&reads::active_flight_json(&load())))
+    }
+
+    #[tool(
+        description = "List tasks that can be launched now (pending or queued), across all flights."
+    )]
+    async fn list_runnable_tasks(&self) -> Result<CallToolResult, McpError> {
+        self.audit.record("tool", "list_runnable_tasks");
+        Ok(json_result(&reads::runnable_tasks_json(&load())))
+    }
+
+    #[tool(
+        description = "Read a task's full details, including its review packet, by flight and task ID."
+    )]
+    async fn read_task_details(
+        &self,
+        Parameters(args): Parameters<ReadTaskArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.audit.record("tool", "read_task_details");
+        match reads::task_details_json(&load(), &args.flight_id, &args.task_id) {
+            Some(v) => Ok(json_result(&v)),
+            None => Err(McpError::invalid_params("task not found", None)),
+        }
+    }
+
+    #[tool(description = "Read learned memory patterns for the workspace.")]
+    async fn read_memory_context(&self) -> Result<CallToolResult, McpError> {
+        self.audit.record("tool", "read_memory_context");
+        Ok(json_result(&reads::memory_patterns_json(&load())))
+    }
+
+    #[tool(description = "List all workspaces.")]
+    async fn list_workspaces(&self) -> Result<CallToolResult, McpError> {
+        self.audit.record("tool", "list_workspaces");
+        Ok(json_result(&reads::workspaces_json(&load())))
     }
 }
 
@@ -172,5 +332,60 @@ impl ServerHandler for PacketAdeMcp {
         .with_instructions(
             "PacketADE MCP server — read-only access to flights, tasks, memory, and workspaces.",
         )
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, McpError> {
+        let state = load();
+        let mut resources = vec![
+            Resource::new("packetade://project", "Project overview"),
+            Resource::new("packetade://flights", "All flights"),
+            Resource::new("packetade://memory/patterns", "Memory patterns"),
+            Resource::new("packetade://workspaces", "Workspaces"),
+            Resource::new("packetade://reviews", "Review packets"),
+        ];
+        for f in &state.flights {
+            resources.push(Resource::new(
+                format!("packetade://flights/{}", f.id),
+                f.title.clone(),
+            ));
+        }
+        Ok(ListResourcesResult::with_all_items(resources))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, McpError> {
+        use reads::ResourceRoute;
+        self.audit.record("resource", &request.uri);
+        let state = load();
+        let value: Option<Value> = match reads::parse_resource_uri(&request.uri) {
+            ResourceRoute::Project => Some(reads::project_overview_json(&state)),
+            ResourceRoute::Flights => Some(reads::all_flights_json(&state)),
+            ResourceRoute::Flight(id) => reads::one_flight_json(&state, id),
+            ResourceRoute::FlightTasks(id) => reads::flight_tasks_json(&state, id),
+            ResourceRoute::MemoryPatterns => Some(reads::memory_patterns_json(&state)),
+            ResourceRoute::Workspaces => Some(reads::workspaces_json(&state)),
+            ResourceRoute::Reviews => Some(reads::reviews_json(&state)),
+            ResourceRoute::Unknown => None,
+        };
+        match value {
+            Some(v) => {
+                let text = serde_json::to_string_pretty(&v).unwrap_or_else(|_| "null".to_string());
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                    text,
+                    request.uri.clone(),
+                )]))
+            }
+            None => Err(McpError::resource_not_found(
+                "resource not found",
+                Some(serde_json::json!({ "uri": request.uri })),
+            )),
+        }
     }
 }
