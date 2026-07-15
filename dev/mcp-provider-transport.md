@@ -8,7 +8,7 @@
 | Phase 2: Local MCP server (Rust) — lifecycle + transport + auth | ✅ **Shipped** (N3 Slice 0) | `rmcp` 2.2 Streamable HTTP, `mcp_server/{mod,transport}.rs` |
 | Phase 2: Read-only resources (7) + read tools (5) + audit | ✅ **Shipped** (N3 Slice 1) | `mcp_server/reads.rs` |
 | Phase 2: Safe workflow tools (writes) | ◑ **Partly shipped** (N3 Slice 2) | `append_handoff` shipped opt-in (event-routed); `request_review` + `mark_blocked` **cut** (dead task substrate) |
-| Phase 3: Ownership-aware tools | ⏸️ Deferred (see below) | Assumes deleted orchestrator substrate — re-validate first |
+| Phase 3: Ownership-aware tools | ◑ **Resolved** (N3 Slice 4) | `escalate` shipped opt-in; `claim_task`/`reserve_paths`/`release_paths` **cut** (no live substrate) |
 
 ### What shipped (N3, 2026-07-15) — read-only server
 
@@ -40,17 +40,27 @@ writer) which persists it.
   bounded; the coordination log now round-trips through storage (Flight +
   FlightDto gained `coordination_log`) so notes — and N2's escalation events —
   survive reload.
-- **`request_review` + `mark_blocked` — CUT.** Both target the amputated
-  task/milestone tree: no frontend mutator exists and no live flight is ever
-  populated with tasks (spec→flight decomposition has no live caller). Building
-  them would write into dead code.
+- **`escalate` — SHIPPED, opt-in (N3 Slice 4).** Reshaped from Phase-3's
+  `escalate_task`: a one-field variant of `append_handoff` that emits a
+  `type: "escalation"` coordination event (red dot in FlightsView) through the
+  same event-routed path. Shares `post_coordination_event` with `append_handoff`.
+- **`request_review` + `mark_blocked` + `claim_task` — CUT.** All target the
+  amputated task/milestone tree: no frontend mutator exists and no live flight is
+  ever populated with tasks (spec→flight decomposition has no live caller).
+- **`reserve_paths` + `release_paths` — CUT.** No live claim store exists. Path-
+  ownership is a launch-time *compute* over active attempts' `target.basePath` +
+  `baseBranch` (`asyncFlightStore.assertAsyncLaunchPathGate`,
+  `flight_attempts.rs::attempt_claim`) that throws on overlap — you "reserve" by
+  launching an attempt and "release" by finishing it. There is nothing to append
+  to or remove from; building these would mean inventing a net-new persisted
+  registry.
 
-### Deferred with cause
+### Status: N3 complete
 
-- **Phase 3 ownership** (`claim_task`/`reserve_paths`/`release_paths`/
-  `escalate_task`): designed against the orchestrator/coordination substrate
-  that the flight-planner amputation deleted. Re-validate against the live
-  attempt/path-ownership model before building.
+Every planned tool is shipped or cut-with-cause. The only remaining extension is
+reviving the task/orchestration substrate itself (a large, separate effort),
+which would re-enable the task-scoped tools (`request_review`, `mark_blocked`,
+`claim_task`, `read`-side task richness).
 
 ## Context
 

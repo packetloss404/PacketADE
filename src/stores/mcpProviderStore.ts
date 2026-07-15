@@ -75,6 +75,20 @@ const PROVIDER_TOOLS: McpTool[] = [
     },
   },
   {
+    name: "escalate",
+    description:
+      "Flag a flight for human attention (an escalation on its coordination timeline; changes no state)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        flightId: { type: "string" },
+        summary: { type: "string" },
+        agentId: { type: "string" },
+      },
+      required: ["flightId", "summary"],
+    },
+  },
+  {
     name: "read_memory_context",
     description: "Reads learned memory patterns for the current project",
     inputSchema: { type: "object", properties: {}, required: [] },

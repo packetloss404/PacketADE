@@ -443,17 +443,21 @@ compatibility outlives API/config deprecation.
 - **PacketADE MCP provider transport (N3) — SHIPPED** 2026-07-15 (→ `CHANGELOG.md`
   `[0.10.1]`). PacketADE exposes itself as an MCP server over Streamable HTTP
   (`rmcp` 2.2, Rust core, loopback + bearer/Origin auth): 5 read tools + 7
-  `packetade://` resources + audit feed, plus **one opt-in append-only write**
-  — `append_handoff` (posts a namespaced, human-visible note to a flight's
-  coordination timeline; gated behind an "Allow writes" toggle, default off;
-  event-routed so the frontend is the sole state writer; the coordination log
-  now round-trips through storage). `src-tauri/src/mcp_server/`.
-  - **Cut (dead substrate):** the plan's other two writes, `request_review` and
-    `mark_blocked`, target the amputated task/milestone tree — no frontend
-    mutator exists and no live flight has tasks to mutate. Not built.
-  - **Still deferred:** **Phase-3 ownership tools** (`claim_task`/`reserve_paths`/
-    `release_paths`/`escalate_task`) assume the deleted orchestrator substrate;
-    re-validate against the live attempt/path-ownership model before building.
+  `packetade://` resources + audit feed, plus **two opt-in append-only writes**
+  — `append_handoff` and `escalate` (post a namespaced, human-visible note /
+  escalation to a flight's coordination timeline; gated behind an "Allow writes"
+  toggle, default off; event-routed so the frontend is the sole state writer;
+  the coordination log now round-trips through storage). `src-tauri/src/mcp_server/`.
+  - **Cut (dead / no substrate):** `request_review` + `mark_blocked` target the
+    amputated task/milestone tree (no mutator, no live tasks). `claim_task`
+    likewise dead. `reserve_paths`/`release_paths` have no live claim store —
+    path-ownership is a launch-time *compute* over active attempts
+    (`asyncFlightStore.assertAsyncLaunchPathGate`, `flight_attempts.rs::attempt_claim`),
+    not a persisted registry; building them would mean inventing one. Not built.
+  - **N3 is complete** — every planned tool is either shipped or cut-with-cause.
+    The only genuinely open extension is reviving the task/orchestration
+    substrate itself (large, separate effort), which would re-enable the
+    task-scoped tools.
 - **P3 — Workspace UX gaps** — git review packet ties **SHIPPED** (N4, 2026-07-14,
   → `CHANGELOG.md` `[0.10.1]`): `ReviewPacketPanel` surfaces linked review packets
   in GitDashboard + deep-links to the live approval. Remaining nicety: open the
