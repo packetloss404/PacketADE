@@ -8,6 +8,12 @@ import type {
 import { useFlightStore } from "@/stores/flightStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useMemoryStore } from "@/stores/memoryStore";
+import {
+  mcpServerStart,
+  mcpServerStop,
+  mcpServerStatus,
+  type McpServerStatus,
+} from "@/lib/tauri";
 
 // --- Static tool definitions ---
 
@@ -114,12 +120,20 @@ interface McpProviderStore {
   config: McpProviderConfig;
   resources: McpResource[];
   tools: McpTool[];
+  /** Live backend server status (null until first queried). */
+  serverStatus: McpServerStatus | null;
+  /** Set when the last start/stop attempt failed, cleared on success. */
+  serverError: string | null;
+  /** True while a start/stop is in flight — serializes toggles. */
+  serverBusy: boolean;
 
-  setEnabled: (enabled: boolean) => void;
+  setEnabled: (enabled: boolean) => Promise<void>;
   setPort: (port: number) => void;
   setScope: (scope: McpProviderScope) => void;
   toggleTool: (name: string) => void;
 
+  /** Reconcile `config.enabled` with the actual backend server state. */
+  syncServerStatus: () => Promise<void>;
   refreshResources: () => void;
 }
 
@@ -127,11 +141,53 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
   config: loadConfig(),
   resources: [],
   tools: PROVIDER_TOOLS,
+  serverStatus: null,
+  serverError: null,
+  serverBusy: false,
 
-  setEnabled: (enabled) => {
-    const config = { ...get().config, enabled };
-    saveConfig(config);
-    set({ config });
+  setEnabled: async (enabled) => {
+    // Serialize toggles: ignore a click while a start/stop is still resolving,
+    // so start/stop can't interleave and desync config vs. the real backend.
+    if (get().serverBusy) return;
+    const prev = get().config;
+    const config = { ...prev, enabled };
+    set({ serverBusy: true, serverError: null });
+    try {
+      // Optimistically reflect the intent; revert if the backend rejects it.
+      saveConfig(config);
+      set({ config });
+      const status = enabled ? await mcpServerStart(config.port) : await mcpServerStop();
+      set({ serverStatus: status });
+    } catch (e) {
+      try {
+        saveConfig(prev);
+      } catch {
+        // localStorage unavailable; in-memory revert still applies
+      }
+      set({ config: prev, serverError: String(e) });
+    } finally {
+      set({ serverBusy: false });
+    }
+  },
+
+  syncServerStatus: async () => {
+    // Don't fight an in-flight toggle — that operation is authoritative.
+    if (get().serverBusy) return;
+    try {
+      const status = await mcpServerStatus();
+      set((s) => {
+        // Re-check: a toggle may have started while we awaited.
+        if (s.serverBusy) return {};
+        if (s.config.enabled === status.running) return { serverStatus: status };
+        // Backend is authoritative: reconcile + PERSIST the stale intent
+        // (e.g. `enabled:true` in localStorage after the server died on exit).
+        const config = { ...s.config, enabled: status.running };
+        saveConfig(config);
+        return { serverStatus: status, config };
+      });
+    } catch {
+      // best-effort; leave prior state intact
+    }
   },
 
   setPort: (port) => {

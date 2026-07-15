@@ -50,6 +50,12 @@ rustfft = "6"
 rusqlite = { version = "0.33", features = ["bundled"] }
 notify = "6"
 tauri-plugin-window-state = "2"
+# N3 — PacketADE-as-MCP-server (Streamable HTTP, loopback-only). `rmcp` is the
+# official Rust MCP SDK; axum hosts the transport service; tokio-util provides
+# the CancellationToken used for graceful shutdown.
+rmcp = { version = "2", features = ["transport-streamable-http-server"] }
+axum = "0.8"
+tokio-util = "0.7"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard-win = "5.0"

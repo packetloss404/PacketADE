@@ -2290,6 +2290,28 @@ export async function deleteMcpServer(
   return invoke("delete_mcp_server", { projectPath, name, scope });
 }
 
+// N3 — PacketADE-as-MCP-server lifecycle (the Rust-hosted Streamable HTTP server)
+export interface McpServerStatus {
+  running: boolean;
+  port: number | null;
+  /** Bearer token external MCP clients must send. Null when stopped. */
+  token: string | null;
+  /** URL to paste into a client's MCP config. Null when stopped. */
+  url: string | null;
+}
+
+export async function mcpServerStart(port: number): Promise<McpServerStatus> {
+  return invoke<McpServerStatus>("mcp_server_start", { port });
+}
+
+export async function mcpServerStop(): Promise<McpServerStatus> {
+  return invoke<McpServerStatus>("mcp_server_stop");
+}
+
+export async function mcpServerStatus(): Promise<McpServerStatus> {
+  return invoke<McpServerStatus>("mcp_server_status");
+}
+
 // Usage analytics
 export async function readUsageAnalytics(): Promise<string> {
   return invoke<string>("read_usage_analytics");
