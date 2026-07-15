@@ -408,11 +408,10 @@ impl Orchestrator {
                         continue;
                     }
 
-                    let agent = agents.iter().find(|a| a.id == task.agent_config_id);
-                    if agent.is_none() {
+                    let Some(agent) = agents.iter().find(|a| a.id == task.agent_config_id)
+                    else {
                         continue;
-                    }
-                    let agent = agent.unwrap();
+                    };
 
                     let mut args = agent.default_args.clone();
                     if let Some(ref agent_args) = task.agent_args {

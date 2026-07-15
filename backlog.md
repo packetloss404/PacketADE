@@ -449,6 +449,23 @@ Items surfaced by the Phase C `core/` library audit that didn't ship in
 Phase D. Backend is 100% audit-covered now; these are the next-tier
 hardening passes worth doing when context allows.
 
+**SHIPPED 2026-07-14 — P3 cleanup batch** (verified against current code first):
+tool-arg-JSON parse now `tracing::warn!`s before coercing to `{}` (4 sites in
+`llm_anthropic.rs` / `llm_openai_compat.rs`); `include_usage` extended to MiniMax
+(Ollama deliberately left out — older builds reject unknown params); SSH
+`project_path` degradation in `tool_custom_agent.rs` documented; dead
+`_title_unused` binding removed from `worktree.rs`; `orchestrator.rs` `unwrap()`
+after `is_none()` replaced with `let-else`; `pty.rs` transcript-init failure now
+`warn!`s. **Verified ALREADY-DONE (dropped):** `tool_web.rs` regex hoist (LazyLock,
+shipped in RA2/RA3), `hooks.rs` payload-serialize warn, `commands/mcp.rs` atomic
+write (F21), `migration.rs` cross-volume copy fallback. **OBSOLETE:**
+`flight_planner_prompts.rs` LoC bloat (file deleted with the planner). **NOT a
+bug:** finish_reason "stop" tool flush (guarded by `!current_tool_id.is_empty()`).
+**Deferred (not trivial):** brand `const` interpolation (`llm_system_prompt.rs`,
+purity nit); PR-body `NamedTempFile` (needs the `tempfile` dep); the
+`pick_heredoc_terminator` / subagent / worktree-hook dedups (refactors, churn+risk);
+the pty reader-thread error-spin log (needs log-once, not a naive warn).
+
 ### LLM provider stack
 
 - **P2 — `let _ = tx.send(...)` backpressure swallow.**
