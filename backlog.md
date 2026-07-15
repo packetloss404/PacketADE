@@ -44,10 +44,12 @@ created" copy.
   Windows OpenSSH — on Unix the whole path is non-functional regardless (see the
   new "SSH password auth on Unix" item below). Fixing S6 in isolation only helps
   Windows and needs a new command param + FE wiring; folded into that larger item.
-- **N2 (swarm auto-reassignment), N3 (MCP server transport), S8 (MCP-over-SSH):**
-  blocked on a policy decision (N2), greenfield + doc-deferred (N3), or a
-  larger transport build (S8). (S7 remote git commands — SHIPPED 2026-07-14;
-  S9 Codex-over-SSH — no code gate found, routes today, see below.)
+- **N2 (swarm auto-reassignment), N3 (MCP server transport), S8-Phase-B
+  (stdio MCP-over-SSH + remote config ownership):** blocked on a policy decision
+  (N2), greenfield + doc-deferred (N3), or a decision-gated transport build
+  (S8-Phase-B). (S7 remote git commands — SHIPPED 2026-07-14; S8-Phase-A HTTP/SSE
+  MCP-over-SSH — SHIPPED 2026-07-14; S9 Codex-over-SSH — no code gate, routes
+  today. All three see the SSH & remote workspaces section below.)
 
 ### New findings from the pass (now tracked)
 
@@ -182,8 +184,32 @@ them up before that gate clears.
   push (today git's raw non-ff rejection surfaces); defense-in-depth `..`/absolute
   path rejection on remote staging (harmless today — `--` + `sh_quote` + git's
   repo-boundary check already prevent escape).
-- **P2 — MCP servers over SSH (Phase 4.2).** `build_mcp_config_for_sidecar`
-  hardcodes local paths.
+- **MCP servers over SSH (Phase 4.2) — split into two.** The original single
+  item conflated two very different problems:
+  - **Phase A — HTTP/SSE MCP over SSH — SHIPPED 2026-07-14.** Remote sidecar
+    launches now forward URL-reachable HTTP/SSE MCP servers (they need no local
+    binary); stdio servers are dropped with a warn. `split_mcp_network_servers` +
+    the `is_remote_workspace` branch in `commands/api_agent.rs` (was: hard error
+    when any MCP server was enabled remotely). Config is sourced from the local
+    global `~/.claude/settings.json`; secrets in headers/env travel to the remote
+    sidecar over the SSH-encrypted channel (consistent with the existing
+    `openai` api_key forwarding). Servers pointed at a loopback/`localhost`/
+    unspecified URL are dropped too (`mcp_url_is_local_only`) — they're
+    unreachable from the remote host and would leak their token; private-LAN URLs
+    are a deliberate documented caveat (the remote may share the LAN), NOT blocked.
+    Remaining Phase-A polish: surface the skipped stdio/local servers to the user
+    (today it's a backend warn only). See `CHANGELOG.md` `[0.10.1]`.
+  - **Phase B — stdio MCP + remote project config — DEFERRED (L, decision-gated).**
+    The hard part: stdio (process) MCP servers need their binaries on the *remote*
+    host, and project-scoped `.mcp.json` lives on the remote host (today's
+    local-fs read returns empty for a remote path). Needs (1) sourcing MCP config
+    from the remote host — either read it over SSH in Rust, or have the remote
+    sidecar source its own `.mcp.json` + `~/.claude/settings.json` (a new sidecar
+    capability + protocol flag), and (2) a **product decision on config
+    ownership** (does a remote session use the remote host's global settings, the
+    local machine's, or a merge?). Sits alongside N2/N3 as a decision-gated track.
+    Phase-A polish that could fold in: surface skipped stdio servers to the user
+    (today it's a backend warn only).
 - **DONE — Consolidate duplicate `CloneServerConfigDto` and
   `GitServerConfigDto`.** The duplicate `CloneServerConfigDto` in
   `commands/scaffold.rs` was removed; `commands/git.rs::GitServerConfigDto` is

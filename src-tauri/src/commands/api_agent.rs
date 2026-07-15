@@ -470,6 +470,54 @@ mod tests {
     }
 
     #[test]
+    fn split_mcp_network_servers_keeps_http_sse_drops_stdio() {
+        // Phase 4.2 (Phase A): remote launches forward only URL-reachable
+        // HTTP/SSE MCP servers; stdio servers (local binaries) are dropped.
+        let config = serde_json::json!({
+            "hosted": { "type": "http", "url": "https://example.com/mcp", "headers": {} },
+            "streamed": { "type": "sse", "url": "https://example.com/sse" },
+            "local_proc": { "type": "stdio", "command": "node", "args": ["s.js"] },
+            "implicit_stdio": { "command": "python", "args": ["m.py"] },
+            // http but points at localhost — unreachable from the remote host and
+            // would leak its token, so it's dropped too.
+            "localhost_http": { "type": "http", "url": "http://localhost:8080/mcp", "headers": {} },
+        });
+        let (network, mut skipped) = split_mcp_network_servers(config);
+        let net = network.as_object().unwrap();
+        assert!(net.contains_key("hosted"));
+        assert!(net.contains_key("streamed"));
+        assert!(!net.contains_key("local_proc"));
+        assert!(!net.contains_key("implicit_stdio"));
+        assert!(!net.contains_key("localhost_http"));
+        skipped.sort();
+        assert_eq!(skipped, vec!["implicit_stdio", "local_proc", "localhost_http"]);
+    }
+
+    #[test]
+    fn mcp_url_is_local_only_flags_loopback_and_localhost() {
+        let local = |u: &str| mcp_url_is_local_only(&serde_json::json!({ "url": u }));
+        assert!(local("http://localhost:8080/mcp"));
+        assert!(local("http://127.0.0.1/mcp"));
+        assert!(local("http://[::1]:9000/sse"));
+        assert!(local("http://0.0.0.0/mcp"));
+        // Public / LAN hosts are NOT flagged (LAN is a documented caveat).
+        assert!(!local("https://mcp.example.com/mcp"));
+        assert!(!local("http://192.168.1.10/mcp"));
+        // No url (stdio entry) or unparseable → not flagged here.
+        assert!(!mcp_url_is_local_only(&serde_json::json!({ "command": "node" })));
+    }
+
+    #[test]
+    fn split_mcp_network_servers_empty_when_no_network_servers() {
+        let config = serde_json::json!({
+            "a": { "type": "stdio", "command": "x" },
+        });
+        let (network, skipped) = split_mcp_network_servers(config);
+        assert!(network.as_object().unwrap().is_empty());
+        assert_eq!(skipped, vec!["a"]);
+    }
+
+    #[test]
     fn merge_mcp_entries_for_sidecar_project_disabled_shadows_global() {
         let global = McpServerEntry {
             name: "danger".to_string(),
@@ -572,6 +620,63 @@ struct ErrorPayload {
 /// enabled servers (back-compat for older conversations). `Some(&[])` =
 /// explicitly none. Otherwise only servers whose `name` appears in the
 /// slice are forwarded.
+/// True if an HTTP/SSE MCP entry's URL host is only reachable on the *local*
+/// machine (loopback / `localhost` / unspecified). Such a server can't be
+/// reached from a remote sidecar, and forwarding it would hand its (possibly
+/// secret) headers to the remote host for a connection that can't work — so it
+/// is skipped on remote launches. Private-LAN hosts are intentionally NOT
+/// blocked here (the remote host may legitimately share the LAN); that trade-off
+/// is a documented caveat, not enforced.
+fn mcp_url_is_local_only(entry: &serde_json::Value) -> bool {
+    let Some(raw) = entry.get("url").and_then(serde_json::Value::as_str) else {
+        return false;
+    };
+    let Ok(url) = reqwest::Url::parse(raw) else {
+        return false; // unparseable — let it through; the sidecar surfaces the error
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip.is_loopback() || ip.is_unspecified(),
+        Err(_) => false,
+    }
+}
+
+/// Phase 4.2 (Phase A): split a sidecar MCP config map into the HTTP/SSE
+/// ("network") servers a remote sidecar can reach by URL without any local
+/// binary, and the names of the servers that are dropped for a remote launch —
+/// stdio (process) servers (their executables live on the local machine) and
+/// HTTP/SSE servers pointed at a local-only URL (see `mcp_url_is_local_only`).
+/// Returns `(network_config, skipped_names)`.
+fn split_mcp_network_servers(config: serde_json::Value) -> (serde_json::Value, Vec<String>) {
+    let serde_json::Value::Object(map) = config else {
+        return (serde_json::Value::Object(serde_json::Map::new()), Vec::new());
+    };
+    let mut network = serde_json::Map::new();
+    let mut skipped = Vec::new();
+    for (name, entry) in map {
+        let is_network = entry
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .map(|t| t == "http" || t == "sse")
+            .unwrap_or(false);
+        // No `type: http|sse` → stdio (the default); can't run remotely. A
+        // network server on a local-only URL is unreachable from the remote host
+        // and would leak its header token, so it's dropped too.
+        if is_network && !mcp_url_is_local_only(&entry) {
+            network.insert(name, entry);
+        } else {
+            skipped.push(name);
+        }
+    }
+    (serde_json::Value::Object(network), skipped)
+}
+
 async fn build_mcp_config_for_sidecar(
     project_path: &str,
     filter: Option<&[String]>,
@@ -722,21 +827,25 @@ pub async fn start_api_agent_session(
         // the Claude Agent SDK expects. See `build_mcp_config_for_sidecar`
         // below for the exact output shape and per-entry fields.
         let mcp_servers = if is_remote_workspace {
-            if enabled_mcp_server_ids
-                .as_deref()
-                .map(|ids| !ids.is_empty())
-                .unwrap_or(false)
-            {
-                return Err(
-                    "Remote sidecar sessions do not support PacketADE MCP server forwarding yet. Disable MCP servers for this launch or run the provider locally.".to_string(),
+            // Phase 4.2 (Phase A): a remote sidecar can use HTTP/SSE MCP servers —
+            // they connect to a URL reachable from the remote host, so no local
+            // binary is required. stdio (process) MCP servers are still skipped:
+            // their executables live on the local machine, not the remote host
+            // (that's Phase B). Config is sourced from the local global
+            // ~/.claude/settings.json here; project-scoped `.mcp.json` lives on the
+            // remote host and is also deferred to Phase B.
+            let full =
+                build_mcp_config_for_sidecar(&project_path, enabled_mcp_server_ids.as_deref()).await;
+            let (network, skipped) = split_mcp_network_servers(full);
+            if !skipped.is_empty() {
+                warn!(
+                    session_id = %session_id,
+                    provider = %provider,
+                    skipped = ?skipped,
+                    "Remote sidecar launch: skipped stdio MCP servers (only HTTP/SSE run over SSH)"
                 );
             }
-            warn!(
-                session_id = %session_id,
-                provider = %provider,
-                "Remote sidecar launch skips local PacketADE MCP server config"
-            );
-            serde_json::Value::Object(serde_json::Map::new())
+            network
         } else {
             build_mcp_config_for_sidecar(&project_path, enabled_mcp_server_ids.as_deref()).await
         };
