@@ -25,18 +25,22 @@ task list.
 
 ### Added
 
-- **PacketADE as an MCP server (N3, read-only).** PacketADE now exposes its own
-  state to external agents (Claude Code, Codex, Cursor) over **Streamable HTTP**
-  (the current MCP transport) via the official `rmcp` crate, hosted in the Rust
-  core and bound to `127.0.0.1`. Enable it from Tools → MCP Provider: the card
-  shows the URL + a bearer token to paste into a client's MCP config, plus a
-  live activity feed. Read-only by design — no external agent can mutate
-  PacketADE. Exposes 5 tools (`get_active_flight`, `list_runnable_tasks`,
+- **PacketADE as an MCP server (N3).** PacketADE now exposes its own state to
+  external agents (Claude Code, Codex, Cursor) over **Streamable HTTP** (the
+  current MCP transport) via the official `rmcp` crate, hosted in the Rust core
+  and bound to `127.0.0.1`. Enable it from Tools → MCP Provider: the card shows
+  the URL + a bearer token to paste into a client's MCP config, plus a live
+  activity feed. Exposes 5 read tools (`get_active_flight`, `list_runnable_tasks`,
   `read_task_details`, `read_memory_context`, `list_workspaces`) and 7
   `packetade://…` resources (project, flights, flight/tasks, memory patterns,
   workspaces, reviews), sourced from the same persisted state the app owns.
-  Auth is a bearer token + `Origin` validation + loopback bind; safe *writes*
-  and ownership tools are deferred (see `backlog.md`). `src-tauri/src/mcp_server/`.
+  Optionally (**off by default** — a separate "Allow writes" toggle) agents can
+  post append-only **handoff notes** to a flight's coordination timeline via
+  `append_handoff`; the note is human-visible in Flights and namespaced (`mcp:…`)
+  so it can't impersonate you, and now persists across reload (the coordination
+  log is round-tripped through storage — this also makes N2's escalation events
+  durable). Auth is a bearer token + `Origin` validation + loopback bind.
+  `src-tauri/src/mcp_server/`.
 - **Swarm escalation suggestions (N2).** When a flight's agent attempts fail,
   the coordination timeline now records an informational `task_failed` event per
   failed attempt, and when a flight becomes *stuck* — every attempt terminal

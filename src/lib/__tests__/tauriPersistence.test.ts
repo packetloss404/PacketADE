@@ -90,6 +90,21 @@ describe("Tauri persistence DTO mapping", () => {
     });
   });
 
+  it("round-trips the coordination log so handoff/escalation events survive reload", async () => {
+    const event = {
+      id: "coord-1",
+      flightId: "flight-1",
+      type: "handoff" as const,
+      summary: "Implemented auth; handing off for review",
+      timestamp: 99,
+      metadata: { source: "mcp" },
+    };
+    await saveFlightsSlice([makeFlight({ coordinationLog: [event] })]);
+    expect(mockInvoke).toHaveBeenCalledWith("save_flights_slice", {
+      flights: [expect.objectContaining({ coordinationLog: [event] })],
+    });
+  });
+
   it("hydrates flight planner fields and server host fingerprints from DTOs", async () => {
     mockInvoke.mockResolvedValue(
       makePersistedStateDto({

@@ -138,6 +138,31 @@ pub fn project_overview_json(state: &PersistedState) -> Value {
     })
 }
 
+// === Write validation ===
+
+/// Max handoff-note length. Bounds per-event growth of the persisted flights
+/// slice (each note is appended to `state.v1.json`).
+pub const MAX_HANDOFF_SUMMARY: usize = 4096;
+
+/// Validate an `append_handoff` request against current state. Returns the
+/// rejection message on failure. Pure so the tool's guard is unit-testable.
+pub fn validate_handoff(
+    state: &PersistedState,
+    flight_id: &str,
+    summary: &str,
+) -> Result<(), &'static str> {
+    if summary.trim().is_empty() {
+        return Err("summary must not be empty");
+    }
+    if summary.len() > MAX_HANDOFF_SUMMARY {
+        return Err("summary too long");
+    }
+    if !state.flights.iter().any(|f| f.id == flight_id) {
+        return Err("unknown flightId");
+    }
+    Ok(())
+}
+
 // === Resource URI routing ===
 
 #[derive(Debug, PartialEq, Eq)]
@@ -239,6 +264,7 @@ mod tests {
             planner_tokens: None,
             planner_provider: None,
             publish_attempts_as_prs: false,
+            coordination_log: Vec::new(),
         }
     }
 
@@ -345,6 +371,25 @@ mod tests {
         assert_eq!(v["taskCount"], 2);
         assert_eq!(v["runnableTaskCount"], 1);
         assert_eq!(v["activeFlightId"], "f1");
+    }
+
+    #[test]
+    fn validate_handoff_guards() {
+        let state = state_with(vec![flight_with("f1", vec![])], None);
+        assert!(validate_handoff(&state, "f1", "did the thing").is_ok());
+        assert_eq!(
+            validate_handoff(&state, "f1", "   "),
+            Err("summary must not be empty")
+        );
+        assert_eq!(
+            validate_handoff(&state, "nope", "hi"),
+            Err("unknown flightId")
+        );
+        // Over-long summaries are rejected (bounds persisted-state growth).
+        let long = "x".repeat(MAX_HANDOFF_SUMMARY + 1);
+        assert_eq!(validate_handoff(&state, "f1", &long), Err("summary too long"));
+        let exact = "x".repeat(MAX_HANDOFF_SUMMARY);
+        assert!(validate_handoff(&state, "f1", &exact).is_ok());
     }
 
     #[test]

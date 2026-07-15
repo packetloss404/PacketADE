@@ -35,10 +35,11 @@ pub async fn serve(
     token: String,
     cancel: CancellationToken,
     audit: Arc<McpAuditLog>,
+    allow_writes: bool,
 ) -> std::io::Result<u16> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     let bound_port = listener.local_addr()?.port();
-    let router = build_router(token, bound_port, cancel.child_token(), audit);
+    let router = build_router(token, bound_port, cancel.child_token(), audit, allow_writes);
 
     let shutdown = cancel.child_token();
     tauri::async_runtime::spawn(async move {
@@ -61,9 +62,10 @@ pub fn build_router(
     port: u16,
     service_ct: CancellationToken,
     audit: Arc<McpAuditLog>,
+    allow_writes: bool,
 ) -> Router {
     let service = StreamableHttpService::new(
-        move || Ok(PacketAdeMcp::new(audit.clone())),
+        move || Ok(PacketAdeMcp::new(audit.clone(), allow_writes)),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_cancellation_token(service_ct)
@@ -204,7 +206,7 @@ mod tests {
         let token = "test-token-abc".to_string();
         let cancel = CancellationToken::new();
         let audit = Arc::new(super::McpAuditLog::detached());
-        let port = serve(0, token.clone(), cancel.clone(), audit)
+        let port = serve(0, token.clone(), cancel.clone(), audit, false)
             .await
             .expect("server binds");
         let base = format!("http://127.0.0.1:{port}/mcp");

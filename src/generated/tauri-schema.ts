@@ -132,7 +132,12 @@ plannerProvider?: string,
  * pushes each attempt's branch and opens a draft PR after the attempt
  * reaches a terminal state. Persisted so the toggle round-trips.
  */
-publishAttemptsAsPrs: boolean, };
+publishAttemptsAsPrs: boolean, 
+/**
+ * N3: append-only coordination timeline. Frontend-owned schema (opaque
+ * here) — round-trips so handoff/escalation events survive reload.
+ */
+coordinationLog: any[], };
 
 export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, issues: any[], settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: any[], memoryPatterns: any[], servers: Array<ServerConfigDto>, };
 

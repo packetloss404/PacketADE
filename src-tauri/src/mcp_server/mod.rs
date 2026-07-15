@@ -1,7 +1,10 @@
 //! N3 — PacketADE exposes ITSELF as an MCP server so external agents (Claude
-//! Code, Codex, Cursor) can READ its live state. Read-only by design: no tool
-//! or resource mutates PacketADE. Slice 0 = lifecycle + Streamable HTTP
-//! transport + bearer/Origin auth; Slice 1 = read resources + tools + audit.
+//! Code, Codex, Cursor) can READ its live state, and (opt-in) post append-only
+//! handoff notes back to a flight's timeline. Reads never mutate; the single
+//! write (`append_handoff`) is gated behind `allow_writes` (default off) so a
+//! read-only posture stays a real guarantee. Slice 0 = lifecycle + Streamable
+//! HTTP transport + bearer/Origin auth; Slice 1 = read resources + tools +
+//! audit; Slice 2 = the event-routed handoff write.
 //!
 //! Transport: **Streamable HTTP** (the current MCP transport; the 2024 HTTP+SSE
 //! transport is deprecated) via the official `rmcp` crate, mounted at `/mcp`.
@@ -50,6 +53,7 @@ struct RunningServer {
     cancel: CancellationToken,
     port: u16,
     token: String,
+    allow_writes: bool,
     audit: Arc<McpAuditLog>,
 }
 
@@ -60,6 +64,7 @@ impl RunningServer {
             port: Some(self.port),
             token: Some(self.token.clone()),
             url: Some(format!("http://127.0.0.1:{}/mcp", self.port)),
+            allow_writes: self.allow_writes,
         }
     }
 }
@@ -73,6 +78,8 @@ pub struct McpServerStatus {
     pub token: Option<String>,
     /// Convenience URL to paste into a client's MCP config.
     pub url: Option<String>,
+    /// Whether the append-only write tool (`append_handoff`) is enabled.
+    pub allow_writes: bool,
 }
 
 impl McpServerStatus {
@@ -82,6 +89,7 @@ impl McpServerStatus {
             port: None,
             token: None,
             url: None,
+            allow_writes: false,
         }
     }
 }
@@ -162,6 +170,27 @@ impl McpAuditLog {
             .map(|q| q.iter().cloned().collect())
             .unwrap_or_default()
     }
+
+    /// Emit an event-routed write intent. The MCP server can't write persisted
+    /// state directly (the frontend saves it wholesale and would clobber the
+    /// write), so a write tool emits this and the frontend's `mcpWriteBridge`
+    /// applies it through the owning store action (the sole writer).
+    fn emit_write(&self, intent: WriteIntent) {
+        if let Some(app) = &self.app {
+            let _ = app.emit("mcp-server-write", intent);
+        }
+    }
+}
+
+/// A write the frontend should apply. `op` selects the store action; `event` is
+/// the op-specific payload (for `append_coordination_event`, a partial
+/// `CoordinationEvent`).
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WriteIntent {
+    op: String,
+    flight_id: String,
+    event: Value,
 }
 
 fn now_millis() -> u64 {
@@ -181,6 +210,7 @@ pub async fn mcp_server_start(
     app: tauri::AppHandle,
     state: tauri::State<'_, McpServerState>,
     port: u16,
+    allow_writes: bool,
 ) -> Result<McpServerStatus, String> {
     let mut guard = state.inner.lock().await;
     if let Some(running) = guard.as_ref() {
@@ -190,14 +220,16 @@ pub async fn mcp_server_start(
     let token = generate_token();
     let cancel = CancellationToken::new();
     let audit = Arc::new(McpAuditLog::new(app));
-    let bound_port = transport::serve(port, token.clone(), cancel.clone(), audit.clone())
-        .await
-        .map_err(|e| format!("Failed to start MCP server: {e}"))?;
+    let bound_port =
+        transport::serve(port, token.clone(), cancel.clone(), audit.clone(), allow_writes)
+            .await
+            .map_err(|e| format!("Failed to start MCP server: {e}"))?;
 
     let running = RunningServer {
         cancel,
         port: bound_port,
         token,
+        allow_writes,
         audit,
     };
     let status = running.status();
@@ -262,6 +294,17 @@ struct ReadTaskArgs {
     task_id: String,
 }
 
+/// Args for `append_handoff`.
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[schemars(rename_all = "camelCase")]
+struct AppendHandoffArgs {
+    flight_id: String,
+    summary: String,
+    #[serde(default)]
+    agent_id: Option<String>,
+}
+
 /// The MCP server handler. A fresh instance is created per session by the
 /// transport's service factory; state is read on demand from disk, so the
 /// handler is cheap and shares only the audit sink.
@@ -269,14 +312,18 @@ struct ReadTaskArgs {
 pub struct PacketAdeMcp {
     tool_router: ToolRouter<PacketAdeMcp>,
     audit: Arc<McpAuditLog>,
+    /// When false the server is strictly read-only — `append_handoff` is
+    /// rejected. Opt-in so a user who wants read-only keeps that guarantee.
+    allow_writes: bool,
 }
 
 #[tool_router]
 impl PacketAdeMcp {
-    pub fn new(audit: Arc<McpAuditLog>) -> Self {
+    pub fn new(audit: Arc<McpAuditLog>, allow_writes: bool) -> Self {
         Self {
             tool_router: Self::tool_router(),
             audit,
+            allow_writes,
         }
     }
 
@@ -324,6 +371,47 @@ impl PacketAdeMcp {
         self.audit.record("tool", "list_workspaces");
         Ok(json_result(&reads::workspaces_json(&load())))
     }
+
+    #[tool(
+        description = "Post a handoff note to a flight's coordination timeline. \
+                       Append-only and human-visible (shown in the Flights view); \
+                       does not change any task or flight state. Delivery is \
+                       best-effort: it targets the running app instance."
+    )]
+    async fn append_handoff(
+        &self,
+        Parameters(args): Parameters<AppendHandoffArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.allow_writes {
+            return Err(McpError::invalid_params(
+                "writes are disabled; enable them in PacketADE's MCP Provider settings",
+                None,
+            ));
+        }
+        // Validate against fresh state before emitting, so the agent gets a real
+        // error rather than a silently-dropped write.
+        if let Err(msg) = reads::validate_handoff(&load(), &args.flight_id, &args.summary) {
+            return Err(McpError::invalid_params(
+                msg,
+                Some(serde_json::json!({ "flightId": args.flight_id })),
+            ));
+        }
+        self.audit.record("tool", "append_handoff");
+        // Event-routed: the frontend applies + persists this (it is the sole
+        // writer of state.v1.json). See `src/lib/mcpWriteBridge.ts`.
+        self.audit.emit_write(WriteIntent {
+            op: "append_coordination_event".to_string(),
+            flight_id: args.flight_id,
+            event: serde_json::json!({
+                "type": "handoff",
+                "summary": args.summary,
+                "agentId": args.agent_id,
+            }),
+        });
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            "Handoff note posted to the flight timeline.",
+        )]))
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -336,9 +424,13 @@ impl ServerHandler for PacketAdeMcp {
                 .build(),
         )
         .with_server_info(Implementation::from_build_env())
-        .with_instructions(
-            "PacketADE MCP server — read-only access to flights, tasks, memory, and workspaces.",
-        )
+        .with_instructions(if self.allow_writes {
+            "PacketADE MCP server — read access to flights, tasks, memory, and \
+             workspaces, plus append-only handoff notes (append_handoff)."
+        } else {
+            "PacketADE MCP server — read-only access to flights, tasks, memory, \
+             and workspaces."
+        })
     }
 
     async fn list_resources(
