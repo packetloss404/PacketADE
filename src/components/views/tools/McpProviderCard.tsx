@@ -1,20 +1,25 @@
 import { useEffect } from "react";
-import { RadioTower, RefreshCw, Globe, FolderOpen } from "lucide-react";
+import { RadioTower, RefreshCw, Globe, FolderOpen, Copy } from "lucide-react";
 import { useMcpProviderStore } from "@/stores/mcpProviderStore";
 
 export function McpProviderCard() {
   const config = useMcpProviderStore((s) => s.config);
   const tools = useMcpProviderStore((s) => s.tools);
   const resources = useMcpProviderStore((s) => s.resources);
+  const serverStatus = useMcpProviderStore((s) => s.serverStatus);
+  const serverError = useMcpProviderStore((s) => s.serverError);
+  const serverBusy = useMcpProviderStore((s) => s.serverBusy);
   const setEnabled = useMcpProviderStore((s) => s.setEnabled);
   const setPort = useMcpProviderStore((s) => s.setPort);
   const setScope = useMcpProviderStore((s) => s.setScope);
   const toggleTool = useMcpProviderStore((s) => s.toggleTool);
+  const syncServerStatus = useMcpProviderStore((s) => s.syncServerStatus);
   const refreshResources = useMcpProviderStore((s) => s.refreshResources);
 
   useEffect(() => {
     refreshResources();
-  }, [refreshResources]);
+    void syncServerStatus();
+  }, [refreshResources, syncServerStatus]);
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
@@ -41,10 +46,11 @@ export function McpProviderCard() {
       <div className="flex items-center justify-between bg-bg-primary border border-bg-border rounded-lg px-3 py-2 mb-3">
         <span className="text-[11px] text-text-secondary">Enable MCP Provider</span>
         <button
-          onClick={() => setEnabled(!config.enabled)}
+          onClick={() => void setEnabled(!config.enabled)}
+          disabled={serverBusy}
           className={`relative w-8 h-[18px] rounded-full transition-colors ${
             config.enabled ? "bg-accent-green" : "bg-bg-elevated"
-          }`}
+          } ${serverBusy ? "opacity-50 cursor-wait" : ""}`}
         >
           <span
             className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
@@ -53,6 +59,49 @@ export function McpProviderCard() {
           />
         </button>
       </div>
+
+      {/* Running status + bearer token (paste into an external client's config) */}
+      {serverError && (
+        <div className="mb-3 px-3 py-2 bg-accent-red/10 border border-accent-red/30 rounded-lg text-[10px] text-accent-red">
+          {serverError}
+        </div>
+      )}
+      {serverStatus?.running && serverStatus.url && (
+        <div className="mb-3 px-3 py-2 bg-bg-primary border border-accent-green/30 rounded-lg space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent-green" />
+            <span className="text-[10px] text-text-secondary">Running — Streamable HTTP</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-text-muted w-10">URL</span>
+            <code className="flex-1 text-[10px] text-text-primary truncate">
+              {serverStatus.url}
+            </code>
+            <button
+              onClick={() => void navigator.clipboard.writeText(serverStatus.url ?? "")}
+              className="text-text-muted hover:text-text-primary"
+              title="Copy URL"
+            >
+              <Copy size={11} />
+            </button>
+          </div>
+          {serverStatus.token && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-text-muted w-10">Token</span>
+              <code className="flex-1 text-[10px] text-text-primary truncate">
+                {serverStatus.token}
+              </code>
+              <button
+                onClick={() => void navigator.clipboard.writeText(serverStatus.token ?? "")}
+                className="text-text-muted hover:text-text-primary"
+                title="Copy bearer token"
+              >
+                <Copy size={11} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Port input */}
       <div className="flex items-center gap-3 bg-bg-primary border border-bg-border rounded-lg px-3 py-2 mb-3">

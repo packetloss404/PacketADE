@@ -2,6 +2,7 @@ pub mod api;
 mod claude;
 mod commands;
 pub mod core;
+mod mcp_server;
 
 use commands::agent_sidecar::SidecarManager;
 use commands::api_agent::ApiAgentState;
@@ -150,6 +151,7 @@ pub fn run() {
         .manage(std::sync::Arc::new(ApiAgentState::new()))
         .manage(std::sync::Arc::new(QualityRunnerState::new()))
         .manage(std::sync::Arc::new(CodeQualityAutoFixState::new()))
+        .manage(mcp_server::create_mcp_server_state())
         .setup(|app| {
             // Spawn the Node agent sidecar and stash the supervisor in
             // managed state so slice C's routing layer can reach it via
@@ -444,6 +446,10 @@ pub fn run() {
             commands::pricing::calculate_turn_cost,
             // Sidecar lifecycle status (for the status-bar chip)
             commands::agent_sidecar::get_sidecar_status,
+            // N3 — PacketADE-as-MCP-server lifecycle
+            mcp_server::mcp_server_start,
+            mcp_server::mcp_server_stop,
+            mcp_server::mcp_server_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
