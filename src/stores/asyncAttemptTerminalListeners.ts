@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { apiAgentDoneEvent, apiAgentErrorEvent } from "@/lib/events";
 import { notifyAttemptCompleted } from "@/lib/notifications";
+import { recordAttemptFailure } from "@/lib/flightCoordination";
 import { useFlightStore } from "@/stores/flightStore";
 import type { Attempt, AttemptStatus } from "@/types/flight";
 
@@ -91,6 +92,7 @@ async function ensureAttemptTerminalListeners(flightId: string, attempt: Attempt
 
       void transitionAttemptStatus(flightId, attempt.id, "failed", event.payload?.message).then(
         () => {
+          recordAttemptFailure(flightId, attempt.id, event.payload?.message);
           detachAttemptTerminalListeners(attempt.sessionId);
         },
       );

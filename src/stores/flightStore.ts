@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { generateId as genId } from "@/lib/storage";
 import { loadPersistedState, saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
-import type { Flight, FlightStatus, Task } from "@/types/flight";
+import type { CoordinationEvent, Flight, FlightStatus, Task } from "@/types/flight";
 import { useIssueStore } from "@/stores/issueStore";
 
 type FlightState = {
@@ -134,6 +134,12 @@ interface FlightStore {
       Partial<Pick<Flight, "gitBranch" | "issueIds" | "workspaceId" | "publishAttemptsAsPrs">>,
   ) => Flight;
   updateFlight: (id: string, updates: Partial<Flight>) => void;
+  /** N2: append a coordination event (task_failed / escalation suggestion / …)
+   *  to a flight's timeline, surfaced in FlightsView's coordination log. */
+  appendCoordinationEvent: (
+    flightId: string,
+    event: Omit<CoordinationEvent, "id" | "flightId" | "timestamp">,
+  ) => void;
   deleteFlight: (id: string) => void;
   setActiveFlight: (id: string | null) => void;
 
@@ -187,6 +193,26 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       const flights = s.flights.map((f) =>
         f.id === id ? { ...f, ...updates, updatedAt: Date.now() } : f,
       );
+      saveState({ flights, activeFlightId: s.activeFlightId });
+      return { flights };
+    });
+  },
+
+  appendCoordinationEvent: (flightId, event) => {
+    set((s) => {
+      let changed = false;
+      const flights = s.flights.map((f) => {
+        if (f.id !== flightId) return f;
+        changed = true;
+        const full: CoordinationEvent = {
+          ...event,
+          id: generateId("coord"),
+          flightId,
+          timestamp: Date.now(),
+        };
+        return { ...f, coordinationLog: [...(f.coordinationLog ?? []), full] };
+      });
+      if (!changed) return {};
       saveState({ flights, activeFlightId: s.activeFlightId });
       return { flights };
     });

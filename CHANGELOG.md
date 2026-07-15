@@ -25,6 +25,15 @@ task list.
 
 ### Added
 
+- **Swarm escalation suggestions (N2).** When a flight's agent attempts fail,
+  the coordination timeline now records an informational `task_failed` event per
+  failed attempt, and when a flight becomes *stuck* — every attempt terminal
+  (failed/cancelled), at least one failed, and none succeeded — it adds a single
+  `escalation` suggestion prompting you to reassign, revise the prompt, or review
+  the failures. The suggestion **suggests, never acts**: nothing is reassigned
+  automatically. It is deduped per stuck state (a re-run's new attempts can
+  escalate again) and fires whether the stuck state is reached by a failure or by
+  cancelling the last outstanding sibling. `src/lib/flightCoordination.ts`.
 - **Window geometry persistence.** The desktop window remembers its last
   size and position across launches.
 - **Task-relevant memory retrieval (memory Phase 1).** Memory injection was

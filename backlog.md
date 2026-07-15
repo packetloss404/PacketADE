@@ -44,12 +44,12 @@ created" copy.
   Windows OpenSSH — on Unix the whole path is non-functional regardless (see the
   new "SSH password auth on Unix" item below). Fixing S6 in isolation only helps
   Windows and needs a new command param + FE wiring; folded into that larger item.
-- **N2 (swarm auto-reassignment), N3 (MCP server transport), S8-Phase-B
-  (stdio MCP-over-SSH + remote config ownership):** blocked on a policy decision
-  (N2), greenfield + doc-deferred (N3), or a decision-gated transport build
-  (S8-Phase-B). (S7 remote git commands — SHIPPED 2026-07-14; S8-Phase-A HTTP/SSE
+- **N3 (MCP server transport), S8-Phase-B (stdio MCP-over-SSH + remote config
+  ownership):** blocked on greenfield + doc-deferred (N3) or a decision-gated
+  transport build (S8-Phase-B). (N2 swarm escalation — SHIPPED 2026-07-14, see
+  below; S7 remote git commands — SHIPPED 2026-07-14; S8-Phase-A HTTP/SSE
   MCP-over-SSH — SHIPPED 2026-07-14; S9 Codex-over-SSH — no code gate, routes
-  today. All three see the SSH & remote workspaces section below.)
+  today. All see the relevant sections below.)
 
 ### New findings from the pass (now tracked)
 
@@ -431,8 +431,15 @@ compatibility outlives API/config deprecation.
 ## Product tracks (from `dev/README.md`)
 
 - **P2 — Cost dashboard alerts** (`dev/moat/cost-dashboard-plan.md`).
-- **P2 — Swarm orchestration Phase 4 escalation** — auto-reassignment
-  (`dev/bridgemind/swarm-orchestration-plan.md`).
+- **Swarm orchestration Phase 4 escalation (N2) — SHIPPED** 2026-07-14
+  (→ `CHANGELOG.md` `[0.10.1]`). Decision: escalation **suggests, not acts** —
+  no auto-reassignment. Built as a producer on the live *attempt* lifecycle (the
+  orchestrator-scheduler substrate the plan assumed is dead): a failed attempt
+  records an informational `task_failed` coordination event, and when a flight
+  becomes stuck (all attempts terminal, ≥1 failed, zero successes — reached by
+  failure **or** cancellation of the last sibling) it adds one signature-deduped
+  `escalation` suggestion to the timeline. `src/lib/flightCoordination.ts`;
+  `dev/bridgemind/swarm-orchestration-plan.md` Phase 4.
 - **P2 — PacketADE MCP provider transport** —
   `dev/mcp-provider-transport.md` Phases 2-3;
   `dev/bridgemind/packetade-mcp-server-plan.md`.

@@ -26,6 +26,7 @@ import {
   detachAttemptTerminalListeners,
   syncAsyncAttemptTerminalListeners,
 } from "@/stores/asyncAttemptTerminalListeners";
+import { maybeEscalate, recordAttemptFailure } from "@/lib/flightCoordination";
 
 export interface AsyncLaunchOptions {
   allowPathCollisions?: boolean;
@@ -593,6 +594,11 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
 
     captureFlightCompletionOnTransition(flightId, statusBefore);
 
+    // N2: cancelling the last non-terminal attempt can leave the flight stuck
+    // (a sibling already failed) — evaluate an escalation *suggestion*. A cancel
+    // is not itself a failure, so no `task_failed` event is recorded here.
+    maybeEscalate(flightId);
+
     // SSH worktree cleanup is deferred from the backend cancel because it
     // doesn't have full ServerConfig info — issue it from here using the
     // saved ServerConfig from serverStore (Phase 2 — was sshTargetStore).
@@ -635,6 +641,20 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
       const attempt = flight?.attempts?.find((a) => a.id === attemptId);
       if (attempt) detachAttemptTerminalListeners(attempt.sessionId);
+    }
+
+    // N2: a rejected/failed attempt records a coordination event and, when the
+    // flight is now stuck, an escalation *suggestion* (never an auto-action).
+    if (status === "failed") {
+      const attempt = useFlightStore
+        .getState()
+        .flights.find((f) => f.id === flightId)
+        ?.attempts?.find((a) => a.id === attemptId);
+      recordAttemptFailure(flightId, attemptId, attempt?.errorMessage);
+    } else if (status === "cancelled") {
+      // A cancel isn't a failure, so no `task_failed` — but it may complete a
+      // stuck state if a sibling already failed. Suggest, don't act.
+      maybeEscalate(flightId);
     }
 
     // Flight-completion memory capture. Runs on the terminal-success
