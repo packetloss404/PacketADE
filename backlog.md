@@ -600,7 +600,8 @@ already Batch A), F33 (`orchestrationSchedulerStore.ts` — already Batch B), an
 G31 (`orchestrationSchedulerStore.ts`). The referenced files no longer exist in
 the tile-program single surface.
 
-**Still verified-open** (audit-confirmed against current code): **F02**, **G16**.
+**Still verified-open** (audit-confirmed against current code): **G16**.
+(F02 — SHIPPED 2026-07-14, see below.)
 (F40 SSRF — SHIPPED 2026-07-14, see below. F24 — orphaned deploy code, superseded
 by the "Deploy command family orphaned" item in the P2 batch summary. F50, F38 —
 shipped in the H4 wave.) Other findings below that are not annotated as
@@ -619,7 +620,7 @@ re-verification against current code.
 > with the body-size cap and untrusted-content envelope (the paired
 > `tool_web.rs` items). 2-agent security-reviewed; 11 unit tests.
 
-- **F02 — one invalid UTF-8 byte freezes a terminal forever** (unbounded `pending`) — `core/pty.rs:55-76`. Use `Utf8Error::error_len()`. _(verified open)_
+- ~~**F02 — one invalid UTF-8 byte freezes a terminal forever** (unbounded `pending`) — `core/pty.rs`.~~ **SHIPPED 2026-07-14.** `decode_terminal_chunk` now uses `Utf8Error::error_len()` to distinguish an incomplete trailing sequence (buffer it) from a genuinely invalid byte (emit U+FFFD, skip it) — an incremental lossy decode, so a bad byte can no longer re-queue forever. Tests cover invalid→flush, a flood of invalid bytes staying bounded, and invalid-then-incomplete.
 - ~~**F13 — deploy run stuck "running" forever on EIO**~~ — **SHIPPED (Batch B → CHANGELOG).**
 - ~~**F19 — MCP write clobbers shared `~/.claude/settings.json` on parse failure**~~ — **SHIPPED (Batch A → CHANGELOG).**
 - ~~**F20 — MCP server edit drops `disabled`/`type`/`url`/`headers`**~~ — **SHIPPED (Batch A → CHANGELOG).**

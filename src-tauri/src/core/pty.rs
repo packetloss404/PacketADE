@@ -53,26 +53,46 @@ const PTY_TRANSCRIPT_LIMIT_BYTES: usize = 256 * 1024;
 static PTY_TRANSCRIPT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub(crate) fn decode_terminal_chunk(bytes: &[u8], pending: &mut Vec<u8>) -> String {
-    let (data, leftover) = {
-        let chunk = if pending.is_empty() {
-            bytes
-        } else {
-            pending.extend_from_slice(bytes);
-            pending.as_slice()
-        };
+    // Combine any buffered bytes with the new chunk. Taking `pending` by value
+    // avoids aliasing so we can freely reassign it at the end.
+    let combined: Vec<u8> = if pending.is_empty() {
+        bytes.to_vec()
+    } else {
+        let mut v = std::mem::take(pending);
+        v.extend_from_slice(bytes);
+        v
+    };
 
-        let valid_up_to = match std::str::from_utf8(chunk) {
-            Ok(_) => chunk.len(),
-            Err(e) => e.valid_up_to(),
-        };
-
-        let data = String::from_utf8_lossy(&chunk[..valid_up_to]).into_owned();
-        let leftover = chunk[valid_up_to..].to_vec();
-        (data, leftover)
+    // Incrementally decode. Only a trailing *incomplete* multibyte sequence is
+    // buffered for the next chunk (`error_len() == None`). A genuinely INVALID
+    // byte (`error_len() == Some(n)`) is emitted as U+FFFD and skipped — F02: the
+    // old code buffered it instead, so one bad byte re-queued forever and the
+    // terminal's `pending` grew without bound, freezing output.
+    let mut out = String::new();
+    let mut i = 0usize;
+    let leftover: Vec<u8> = loop {
+        match std::str::from_utf8(&combined[i..]) {
+            Ok(s) => {
+                out.push_str(s);
+                break Vec::new();
+            }
+            Err(e) => {
+                let valid = e.valid_up_to();
+                // `combined[i..i+valid]` is valid UTF-8 by definition.
+                out.push_str(&String::from_utf8_lossy(&combined[i..i + valid]));
+                match e.error_len() {
+                    None => break combined[i + valid..].to_vec(),
+                    Some(bad) => {
+                        out.push('\u{FFFD}');
+                        i += valid + bad;
+                    }
+                }
+            }
+        }
     };
 
     *pending = leftover;
-    data
+    out
 }
 
 /// Events emitted by PTY sessions via channels
@@ -706,6 +726,35 @@ mod tests {
         let data = decode_terminal_chunk("Claude Code for Cursor".as_bytes(), &mut pending);
 
         assert_eq!(data, "Claude Code for Cursor");
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn decode_terminal_chunk_flushes_invalid_bytes_without_wedging() {
+        // F02: an invalid byte must be emitted as U+FFFD and NOT buffered, or it
+        // re-queues forever and freezes the terminal.
+        let mut pending = Vec::new();
+        let data = decode_terminal_chunk(b"\xffhello", &mut pending);
+        assert_eq!(data, "\u{FFFD}hello");
+        assert!(pending.is_empty(), "invalid byte must not be buffered");
+
+        // A flood of invalid bytes across many chunks must not accumulate.
+        for _ in 0..1000 {
+            let out = decode_terminal_chunk(b"\xff", &mut pending);
+            assert_eq!(out, "\u{FFFD}");
+        }
+        assert!(pending.is_empty(), "pending must stay bounded on invalid input");
+    }
+
+    #[test]
+    fn decode_terminal_chunk_handles_invalid_then_incomplete() {
+        // An invalid byte followed by a split multibyte sequence: the bad byte is
+        // flushed, and only the incomplete tail is buffered.
+        let mut pending = Vec::new();
+        let first = decode_terminal_chunk(&[0xff, 0xE2, 0x94], &mut pending);
+        assert_eq!(first, "\u{FFFD}");
+        let second = decode_terminal_chunk(&[0x82, b'\n'], &mut pending);
+        assert_eq!(second, "│\n");
         assert!(pending.is_empty());
     }
 

@@ -87,6 +87,10 @@ task list.
 
 ### Fixed
 
+- **PTY UTF-8 freeze (F02).** A single invalid UTF-8 byte from a terminal used to
+  be re-buffered forever (unbounded `pending`), freezing the terminal's output.
+  `decode_terminal_chunk` now uses `Utf8Error::error_len()` to flush invalid bytes
+  as U+FFFD while still buffering only genuinely-incomplete trailing sequences.
 - **P2 hardening batch** (verified against current code — several findings
   predated the single-surface refactor — and 2-agent peer-reviewed):
   - **web_fetch** (`core/tool_web.rs`): caps buffered response bytes (10 MB,
