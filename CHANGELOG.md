@@ -43,6 +43,11 @@ task list.
   create branches on the remote host (`git_*_remote` commands over the existing
   SSH transport, with the same protected-branch / clean-worktree guards as local
   and shell-safe argument quoting).
+- **HTTP/SSE MCP servers over SSH (Phase 4.2 Phase A).** Remote sidecar sessions
+  previously refused any MCP servers; they now forward URL-reachable HTTP/SSE MCP
+  servers to the remote host (no local binary needed). stdio (process) MCP
+  servers are still skipped remotely (their binaries are local — deferred to a
+  decision-gated Phase B).
 - **Authored PR line comments + reply threads.** The GitHub pane could only read
   review threads; now the PR diff has a line-number gutter and a per-line hover
   composer to author an inline review comment (`github_post_pr_review_comment`),
