@@ -617,8 +617,8 @@ already Batch A), F33 (`orchestrationSchedulerStore.ts` — already Batch B), an
 G31 (`orchestrationSchedulerStore.ts`). The referenced files no longer exist in
 the tile-program single surface.
 
-**Still verified-open** (audit-confirmed against current code): **G16**.
-(F02 — SHIPPED 2026-07-14, see below.)
+**Still verified-open** (audit-confirmed against current code): _(none — F02 and
+G16 both SHIPPED 2026-07-14, see below.)_
 (F40 SSRF — SHIPPED 2026-07-14, see below. F24 — orphaned deploy code, superseded
 by the "Deploy command family orphaned" item in the P2 batch summary. F50, F38 —
 shipped in the H4 wave.) Other findings below that are not annotated as
@@ -646,7 +646,7 @@ re-verification against current code.
 - **G01 — sidecar + grandchildren orphaned on app exit** (no `kill_on_drop`/shutdown) — `agent_sidecar/supervisor.rs`, `lib.rs`.
 - ~~**G02 — sidecar restart silently bricks live sessions**~~ — **SHIPPED (Batch B → CHANGELOG).**
 - **G09 — Codex `respondPermission` writes to a stdin `codex exec` ignores → turn hangs** — `providers/openai-codex.ts:895-929`.
-- **G16 — OpenAI-compat parallel tool calls collapse/cross-contaminate (`index` ignored)** — `core/llm_openai_compat.rs:226-343`. _(verified open; panel severity split)_
+- ~~**G16 — OpenAI-compat parallel tool calls collapse/cross-contaminate (`index` ignored)** — `core/llm_openai_compat.rs`.~~ **SHIPPED 2026-07-14.** The streamer tracked a single `current_tool_*` scalar, so parallel tool calls (distinguished only by `tool_calls[].index`, with possibly-interleaved arg deltas) collapsed onto one another. Now accumulated per-index in a `BTreeMap` (pure `accumulate_tool_call_delta` / `drain_tool_calls` helpers), emitting one `ToolUseEnd` per call in index order. Also guards the non-standard index-omitting-multiple-calls case (roll the slot on a new id). 4 tests cover interleaved parallel, start-once-per-index, index-omitting rollover, and single-call. 2-agent-reviewed.
 - ~~**G23 — orchestrated PTY task success uses exit reason, not exit code**~~ — **SHIPPED (Batch B → CHANGELOG).**
 - ~~**G25 — async attempt has no terminal transition on done/error**~~ — **SHIPPED (Batch B → CHANGELOG).**
 - **G33 — Stop with a queued message re-sends it (cancel emits `done` → drain)** — `agentTaskStore.ts`, `apiAgentListeners.ts`.

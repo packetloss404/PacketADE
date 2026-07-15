@@ -91,6 +91,11 @@ task list.
   be re-buffered forever (unbounded `pending`), freezing the terminal's output.
   `decode_terminal_chunk` now uses `Utf8Error::error_len()` to flush invalid bytes
   as U+FFFD while still buffering only genuinely-incomplete trailing sequences.
+- **OpenAI-compat parallel tool calls (G16).** The streaming parser tracked a
+  single in-flight tool call, so parallel tool calls (distinguished by
+  `tool_calls[].index`, with interleaving argument deltas) collapsed or
+  cross-contaminated. It now accumulates each call per-index and emits them
+  independently — affects the OpenAI / OpenRouter / MiniMax / Ollama providers.
 - **P2 hardening batch** (verified against current code — several findings
   predated the single-surface refactor — and 2-agent peer-reviewed):
   - **web_fetch** (`core/tool_web.rs`): caps buffered response bytes (10 MB,
