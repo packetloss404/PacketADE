@@ -460,7 +460,6 @@ async fn install_prepare_commit_msg_hook_for_issue(
     let hook_path = hooks_dir.join("prepare-commit-msg");
 
     let issue_id_safe = sanitize_trailer_value(&issue.issue_id);
-    let issue_title_safe = sanitize_trailer_value(&issue.issue_title);
     let issue_number = issue.issue_number;
 
     let fixes_trailer = format!("Fixes #{}", issue_number);
@@ -475,7 +474,6 @@ async fn install_prepare_commit_msg_hook_for_issue(
     //
     // Single-quoted printf literals — `$` / backticks inside the
     // sanitized values are already neutralised by sanitize_trailer_value().
-    let _title_unused = &issue_title_safe; // reserved for a future "Issue: <title>" comment line; not emitted today
     let script = format!(
         "#!/bin/sh\n\
          # PacketADE auto-trailer (issue v0.8.5) — appended to commits made inside this issue worktree.\n\

@@ -170,6 +170,10 @@ pub async fn execute_custom_agent(
 
     let project_path = match parent_target {
         ExecutionTarget::Local { project_path } => project_path.clone(),
+        // Custom agents run local-only today: an SSH parent target has no local
+        // project path, so we degrade to an empty path (home-dir agents only).
+        // Documented rather than silently misleading — remote custom-agent
+        // execution isn't wired.
         ExecutionTarget::Ssh { .. } => String::new(),
     };
 

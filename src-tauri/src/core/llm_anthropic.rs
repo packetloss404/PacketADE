@@ -333,9 +333,11 @@ impl LlmProvider for AnthropicProvider {
                             }
                             "content_block_stop" => {
                                 if current_block_type == "tool_use" && !current_tool_id.is_empty() {
-                                    let args = serde_json::from_str(&current_tool_args).unwrap_or(
-                                        serde_json::Value::Object(serde_json::Map::new()),
-                                    );
+                                    let args = serde_json::from_str(&current_tool_args)
+                                        .unwrap_or_else(|e| {
+                                            tracing::warn!(error = %e, tool = %current_tool_name, "malformed tool-arg JSON from stream; coercing to empty object");
+                                            serde_json::Value::Object(serde_json::Map::new())
+                                        });
                                     let _ = tx
                                         .send(StreamChunk::ToolUseEnd {
                                             id: current_tool_id.clone(),

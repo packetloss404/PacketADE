@@ -175,7 +175,11 @@ pub async fn stream_chat_compat(
         "max_tokens": request.max_tokens,
     });
 
-    if matches!(config.provider_id.as_str(), "openai" | "openrouter") {
+    // MiniMax is OpenAI-compatible and honors `stream_options.include_usage`, so
+    // include it here to get token/cost counts (was OpenAI/OpenRouter only). Ollama
+    // is deliberately left out: older builds reject unknown params, and a hard
+    // stream failure isn't worth cosmetic usage counts — revisit once verified.
+    if matches!(config.provider_id.as_str(), "openai" | "openrouter" | "minimax") {
         body["stream_options"] = serde_json::json!({ "include_usage": true });
     }
 
@@ -309,9 +313,10 @@ pub async fn stream_chat_compat(
                                             // Finish previous tool call if any
                                             if !current_tool_id.is_empty() {
                                                 let args = serde_json::from_str(&current_tool_args)
-                                                    .unwrap_or(serde_json::Value::Object(
-                                                        serde_json::Map::new(),
-                                                    ));
+                                                    .unwrap_or_else(|e| {
+                                                        tracing::warn!(error = %e, tool = %current_tool_name, "malformed tool-arg JSON from stream; coercing to empty object");
+                                                        serde_json::Value::Object(serde_json::Map::new())
+                                                    });
                                                 let _ = tx
                                                     .send(StreamChunk::ToolUseEnd {
                                                         id: current_tool_id.clone(),
@@ -361,9 +366,11 @@ pub async fn stream_chat_compat(
                                     || finish_reason == "function_call")
                                     && !current_tool_id.is_empty()
                                 {
-                                    let args = serde_json::from_str(&current_tool_args).unwrap_or(
-                                        serde_json::Value::Object(serde_json::Map::new()),
-                                    );
+                                    let args = serde_json::from_str(&current_tool_args)
+                                        .unwrap_or_else(|e| {
+                                            tracing::warn!(error = %e, tool = %current_tool_name, "malformed tool-arg JSON from stream; coercing to empty object");
+                                            serde_json::Value::Object(serde_json::Map::new())
+                                        });
                                     let _ = tx
                                         .send(StreamChunk::ToolUseEnd {
                                             id: current_tool_id.clone(),
@@ -385,8 +392,10 @@ pub async fn stream_chat_compat(
 
     // If we exited the stream without [DONE], still finalize
     if !current_tool_id.is_empty() {
-        let args = serde_json::from_str(&current_tool_args)
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+        let args = serde_json::from_str(&current_tool_args).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, tool = %current_tool_name, "malformed tool-arg JSON from stream; coercing to empty object");
+            serde_json::Value::Object(serde_json::Map::new())
+        });
         let _ = tx
             .send(StreamChunk::ToolUseEnd {
                 id: current_tool_id,

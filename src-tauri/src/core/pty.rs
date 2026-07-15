@@ -240,7 +240,9 @@ impl PtyManager {
         };
 
         if let Some(path) = transcript_path(&session_id) {
-            let _ = fs::write(path, "");
+            if let Err(e) = fs::write(&path, "") {
+                tracing::warn!(error = %e, ?path, "failed to initialize PTY transcript file");
+            }
         }
         if let Some(path) = transcript_truncated_marker_path(&session_id) {
             let _ = fs::remove_file(path);
