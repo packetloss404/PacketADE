@@ -35,12 +35,12 @@ task list.
   `packetade://…` resources (project, flights, flight/tasks, memory patterns,
   workspaces, reviews), sourced from the same persisted state the app owns.
   Optionally (**off by default** — a separate "Allow writes" toggle) agents can
-  post append-only **handoff notes** to a flight's coordination timeline via
-  `append_handoff`; the note is human-visible in Flights and namespaced (`mcp:…`)
-  so it can't impersonate you, and now persists across reload (the coordination
-  log is round-tripped through storage — this also makes N2's escalation events
-  durable). Auth is a bearer token + `Origin` validation + loopback bind.
-  `src-tauri/src/mcp_server/`.
+  post append-only notes to a flight's coordination timeline: `append_handoff`
+  (a handoff note) and `escalate` (flag a flight for human attention). Notes are
+  human-visible in Flights and namespaced (`mcp:…`) so they can't impersonate
+  you, and now persist across reload (the coordination log is round-tripped
+  through storage — this also makes N2's escalation events durable). Auth is a
+  bearer token + `Origin` validation + loopback bind. `src-tauri/src/mcp_server/`.
 - **Swarm escalation suggestions (N2).** When a flight's agent attempts fail,
   the coordination timeline now records an informational `task_failed` event per
   failed attempt, and when a flight becomes *stuck* — every attempt terminal

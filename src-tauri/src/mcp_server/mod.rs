@@ -1,10 +1,10 @@
 //! N3 — PacketADE exposes ITSELF as an MCP server so external agents (Claude
 //! Code, Codex, Cursor) can READ its live state, and (opt-in) post append-only
-//! handoff notes back to a flight's timeline. Reads never mutate; the single
-//! write (`append_handoff`) is gated behind `allow_writes` (default off) so a
-//! read-only posture stays a real guarantee. Slice 0 = lifecycle + Streamable
-//! HTTP transport + bearer/Origin auth; Slice 1 = read resources + tools +
-//! audit; Slice 2 = the event-routed handoff write.
+//! coordination notes back to a flight's timeline. Reads never mutate; the
+//! writes (`append_handoff`, `escalate`) are gated behind `allow_writes`
+//! (default off) so a read-only posture stays a real guarantee. Slice 0 =
+//! lifecycle + Streamable HTTP transport + bearer/Origin auth; Slice 1 = read
+//! resources + tools + audit; Slice 2 = event-routed coordination writes.
 //!
 //! Transport: **Streamable HTTP** (the current MCP transport; the 2024 HTTP+SSE
 //! transport is deprecated) via the official `rmcp` crate, mounted at `/mcp`.
@@ -294,11 +294,11 @@ struct ReadTaskArgs {
     task_id: String,
 }
 
-/// Args for `append_handoff`.
+/// Args for the coordination-note writes (`append_handoff`, `escalate`).
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[schemars(rename_all = "camelCase")]
-struct AppendHandoffArgs {
+struct CoordinationWriteArgs {
     flight_id: String,
     summary: String,
     #[serde(default)]
@@ -380,7 +380,33 @@ impl PacketAdeMcp {
     )]
     async fn append_handoff(
         &self,
-        Parameters(args): Parameters<AppendHandoffArgs>,
+        Parameters(args): Parameters<CoordinationWriteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.post_coordination_event(args, "handoff", "append_handoff")
+    }
+
+    #[tool(
+        description = "Flag a flight for human attention (an escalation on its \
+                       coordination timeline). Append-only and human-visible; \
+                       changes no task or flight state. Use when a flight is stuck \
+                       or needs a decision. Best-effort delivery."
+    )]
+    async fn escalate(
+        &self,
+        Parameters(args): Parameters<CoordinationWriteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.post_coordination_event(args, "escalation", "escalate")
+    }
+
+    /// Shared body for the append-only coordination-note writes. Gates on
+    /// `allow_writes`, validates against fresh state, audits, then emits the
+    /// event-routed write (the frontend applies + persists it — see
+    /// `src/lib/mcpWriteBridge.ts`).
+    fn post_coordination_event(
+        &self,
+        args: CoordinationWriteArgs,
+        event_type: &str,
+        tool_name: &str,
     ) -> Result<CallToolResult, McpError> {
         if !self.allow_writes {
             return Err(McpError::invalid_params(
@@ -388,28 +414,24 @@ impl PacketAdeMcp {
                 None,
             ));
         }
-        // Validate against fresh state before emitting, so the agent gets a real
-        // error rather than a silently-dropped write.
         if let Err(msg) = reads::validate_handoff(&load(), &args.flight_id, &args.summary) {
             return Err(McpError::invalid_params(
                 msg,
                 Some(serde_json::json!({ "flightId": args.flight_id })),
             ));
         }
-        self.audit.record("tool", "append_handoff");
-        // Event-routed: the frontend applies + persists this (it is the sole
-        // writer of state.v1.json). See `src/lib/mcpWriteBridge.ts`.
+        self.audit.record("tool", tool_name);
         self.audit.emit_write(WriteIntent {
             op: "append_coordination_event".to_string(),
             flight_id: args.flight_id,
             event: serde_json::json!({
-                "type": "handoff",
+                "type": event_type,
                 "summary": args.summary,
                 "agentId": args.agent_id,
             }),
         });
         Ok(CallToolResult::success(vec![ContentBlock::text(
-            "Handoff note posted to the flight timeline.",
+            "Posted to the flight timeline.",
         )]))
     }
 }
@@ -426,7 +448,8 @@ impl ServerHandler for PacketAdeMcp {
         .with_server_info(Implementation::from_build_env())
         .with_instructions(if self.allow_writes {
             "PacketADE MCP server — read access to flights, tasks, memory, and \
-             workspaces, plus append-only handoff notes (append_handoff)."
+             workspaces, plus append-only coordination notes (append_handoff, \
+             escalate)."
         } else {
             "PacketADE MCP server — read-only access to flights, tasks, memory, \
              and workspaces."
