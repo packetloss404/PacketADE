@@ -151,6 +151,111 @@ fn build_openai_tools(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// G16: per-`index` accumulator for a streamed tool call. OpenAI-compatible
+/// streams send parallel tool calls distinguished only by a `tool_calls[].index`,
+/// and their argument deltas can interleave — so we accumulate each call's id /
+/// name / args independently instead of a single "current tool" scalar (which
+/// collapsed or cross-contaminated parallel calls).
+#[derive(Default)]
+struct ToolCallAcc {
+    id: String,
+    name: String,
+    args: String,
+    started: bool,
+}
+
+/// G16: fold one streamed `tool_calls[]` delta into the per-index accumulator,
+/// returning the `ToolUseStart` / `ToolUseInputDelta` chunks to emit for it.
+/// Pure (no I/O) so the parallel/interleaved behavior is unit-testable.
+fn accumulate_tool_call_delta(
+    tc: &serde_json::Value,
+    calls: &mut std::collections::BTreeMap<i64, ToolCallAcc>,
+) -> Vec<StreamChunk> {
+    let mut out = Vec::new();
+    let index = tc.get("index").and_then(|i| i.as_i64()).unwrap_or(0);
+    let new_id = tc
+        .get("id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let acc = calls.entry(index).or_default();
+
+    // Non-standard providers that OMIT `index` reuse slot 0 for sequential
+    // calls. A new, different `id` at an already-started slot therefore means the
+    // previous call finished — roll it before starting the new one. (Compliant
+    // providers send `id` only on a call's first delta, so this never fires for
+    // real parallel calls, which land on distinct indexes.)
+    if let Some(id) = new_id {
+        if acc.started && !acc.id.is_empty() && acc.id != id {
+            if let Some(end) = finish_tool_acc(std::mem::take(acc)) {
+                out.push(end);
+            }
+        }
+        acc.id = id.to_string();
+    }
+    let function = match tc.get("function") {
+        Some(f) => f,
+        None => return out,
+    };
+    if let Some(name) = function.get("name").and_then(|n| n.as_str()) {
+        if !name.is_empty() {
+            acc.name = name.to_string();
+        }
+    }
+    // Emit ToolUseStart once, when the call is first identified.
+    if !acc.started && (!acc.id.is_empty() || !acc.name.is_empty()) {
+        acc.started = true;
+        out.push(StreamChunk::ToolUseStart {
+            id: acc.id.clone(),
+            name: acc.name.clone(),
+        });
+    }
+    if let Some(args_delta) = function.get("arguments").and_then(|a| a.as_str()) {
+        acc.args.push_str(args_delta);
+        out.push(StreamChunk::ToolUseInputDelta {
+            delta: args_delta.to_string(),
+        });
+    }
+    out
+}
+
+/// Build the terminal `ToolUseEnd` for one accumulated call, parsing its args
+/// (warning + coercing to `{}` on malformed JSON). None for an empty slot.
+fn finish_tool_acc(acc: ToolCallAcc) -> Option<StreamChunk> {
+    if acc.id.is_empty() && acc.name.is_empty() && acc.args.is_empty() {
+        return None;
+    }
+    let name_for_log = acc.name.clone();
+    let args = serde_json::from_str(&acc.args).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, tool = %name_for_log, "malformed tool-arg JSON from stream; coercing to empty object");
+        serde_json::Value::Object(serde_json::Map::new())
+    });
+    Some(StreamChunk::ToolUseEnd {
+        id: acc.id,
+        name: acc.name,
+        arguments: args,
+    })
+}
+
+/// Drain the accumulator into a `ToolUseEnd` per call, in `index` order. Pure.
+fn drain_tool_calls(calls: &mut std::collections::BTreeMap<i64, ToolCallAcc>) -> Vec<StreamChunk> {
+    std::mem::take(calls)
+        .into_iter()
+        .filter_map(|(_index, acc)| finish_tool_acc(acc))
+        .collect()
+}
+
+/// Emit `ToolUseEnd` for every accumulated tool call, then clear the
+/// accumulator. Called at each stream terminator (finish_reason, `[DONE]`, and
+/// the post-loop finalize).
+async fn flush_tool_calls(
+    tx: &mpsc::Sender<StreamChunk>,
+    calls: &mut std::collections::BTreeMap<i64, ToolCallAcc>,
+) {
+    for chunk in drain_tool_calls(calls) {
+        let _ = tx.send(chunk).await;
+    }
+}
+
 /// Stream a chat completion from an OpenAI-compatible endpoint.
 pub async fn stream_chat_compat(
     config: &OpenAiCompatConfig,
@@ -232,9 +337,10 @@ pub async fn stream_chat_compat(
     // byte that cannot occur mid-codepoint), so a complete line is always a
     // complete UTF-8 sequence; we only decode once a full line is buffered.
     let mut buffer: Vec<u8> = Vec::new();
-    let mut current_tool_id = String::new();
-    let mut current_tool_name = String::new();
-    let mut current_tool_args = String::new();
+    // G16: tool calls keyed by their streamed `index` (BTreeMap → emitted in
+    // index order), so parallel calls with interleaving arg deltas don't collapse.
+    let mut tool_calls_acc: std::collections::BTreeMap<i64, ToolCallAcc> =
+        std::collections::BTreeMap::new();
     let mut input_tokens: u64 = 0;
     let mut output_tokens: u64 = 0;
 
@@ -257,6 +363,7 @@ pub async fn stream_chat_compat(
             }
 
             if line == "data: [DONE]" {
+                flush_tool_calls(&tx, &mut tool_calls_acc).await;
                 let _ = tx
                     .send(StreamChunk::Done {
                         input_tokens,
@@ -300,87 +407,34 @@ pub async fn stream_chat_compat(
                                 }
                             }
 
-                            // Tool calls
+                            // Tool calls. G16: several may stream in parallel,
+                            // distinguished only by `index`; accumulate each
+                            // independently rather than flushing on every new
+                            // name (which collapsed/cross-contaminated them).
                             if let Some(tool_calls) =
                                 delta.get("tool_calls").and_then(|tc| tc.as_array())
                             {
                                 for tc in tool_calls {
-                                    if let Some(function) = tc.get("function") {
-                                        // New tool call start
-                                        if let Some(name) =
-                                            function.get("name").and_then(|n| n.as_str())
-                                        {
-                                            // Finish previous tool call if any
-                                            if !current_tool_id.is_empty() {
-                                                let args = serde_json::from_str(&current_tool_args)
-                                                    .unwrap_or_else(|e| {
-                                                        tracing::warn!(error = %e, tool = %current_tool_name, "malformed tool-arg JSON from stream; coercing to empty object");
-                                                        serde_json::Value::Object(serde_json::Map::new())
-                                                    });
-                                                let _ = tx
-                                                    .send(StreamChunk::ToolUseEnd {
-                                                        id: current_tool_id.clone(),
-                                                        name: current_tool_name.clone(),
-                                                        arguments: args,
-                                                    })
-                                                    .await;
-                                            }
-
-                                            current_tool_id = tc
-                                                .get("id")
-                                                .and_then(|id| id.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            current_tool_name = name.to_string();
-                                            current_tool_args = String::new();
-
-                                            let _ = tx
-                                                .send(StreamChunk::ToolUseStart {
-                                                    id: current_tool_id.clone(),
-                                                    name: current_tool_name.clone(),
-                                                })
-                                                .await;
-                                        }
-
-                                        // Argument delta
-                                        if let Some(args_delta) =
-                                            function.get("arguments").and_then(|a| a.as_str())
-                                        {
-                                            current_tool_args.push_str(args_delta);
-                                            let _ = tx
-                                                .send(StreamChunk::ToolUseInputDelta {
-                                                    delta: args_delta.to_string(),
-                                                })
-                                                .await;
-                                        }
+                                    for chunk in
+                                        accumulate_tool_call_delta(tc, &mut tool_calls_acc)
+                                    {
+                                        let _ = tx.send(chunk).await;
                                     }
                                 }
                             }
 
-                            // Check finish_reason for tool_calls
+                            // finish_reason terminates the turn — flush every
+                            // accumulated tool call (in index order). "stop" is a
+                            // defensive extra terminator; flush_tool_calls is a
+                            // no-op when nothing was accumulated.
                             if let Some(finish_reason) =
                                 choice.get("finish_reason").and_then(|f| f.as_str())
                             {
-                                if (finish_reason == "tool_calls"
+                                if finish_reason == "tool_calls"
                                     || finish_reason == "stop"
-                                    || finish_reason == "function_call")
-                                    && !current_tool_id.is_empty()
+                                    || finish_reason == "function_call"
                                 {
-                                    let args = serde_json::from_str(&current_tool_args)
-                                        .unwrap_or_else(|e| {
-                                            tracing::warn!(error = %e, tool = %current_tool_name, "malformed tool-arg JSON from stream; coercing to empty object");
-                                            serde_json::Value::Object(serde_json::Map::new())
-                                        });
-                                    let _ = tx
-                                        .send(StreamChunk::ToolUseEnd {
-                                            id: current_tool_id.clone(),
-                                            name: current_tool_name.clone(),
-                                            arguments: args,
-                                        })
-                                        .await;
-                                    current_tool_id.clear();
-                                    current_tool_name.clear();
-                                    current_tool_args.clear();
+                                    flush_tool_calls(&tx, &mut tool_calls_acc).await;
                                 }
                             }
                         }
@@ -390,20 +444,9 @@ pub async fn stream_chat_compat(
         }
     }
 
-    // If we exited the stream without [DONE], still finalize
-    if !current_tool_id.is_empty() {
-        let args = serde_json::from_str(&current_tool_args).unwrap_or_else(|e| {
-            tracing::warn!(error = %e, tool = %current_tool_name, "malformed tool-arg JSON from stream; coercing to empty object");
-            serde_json::Value::Object(serde_json::Map::new())
-        });
-        let _ = tx
-            .send(StreamChunk::ToolUseEnd {
-                id: current_tool_id,
-                name: current_tool_name,
-                arguments: args,
-            })
-            .await;
-    }
+    // If we exited the stream without [DONE]/finish_reason, still flush any
+    // accumulated tool calls before signalling Done.
+    flush_tool_calls(&tx, &mut tool_calls_acc).await;
     let _ = tx
         .send(StreamChunk::Done {
             input_tokens,
@@ -414,4 +457,114 @@ pub async fn stream_chat_compat(
         .await;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn parallel_tool_calls_do_not_cross_contaminate() {
+        // G16: interleaved deltas — call 0 starts, call 1 starts, THEN call 0's
+        // args, then call 1's args. The old single-scalar parser appended call
+        // 0's args onto call 1 (cross-contamination); per-index accumulation
+        // keeps them separate.
+        let mut acc: BTreeMap<i64, ToolCallAcc> = BTreeMap::new();
+        let deltas = [
+            json!({"index":0,"id":"call_a","function":{"name":"foo","arguments":""}}),
+            json!({"index":1,"id":"call_b","function":{"name":"bar","arguments":""}}),
+            json!({"index":0,"function":{"arguments":"{\"x\":1}"}}),
+            json!({"index":1,"function":{"arguments":"{\"y\":2}"}}),
+        ];
+        for d in &deltas {
+            let _ = accumulate_tool_call_delta(d, &mut acc);
+        }
+        let ends = drain_tool_calls(&mut acc);
+        assert_eq!(ends.len(), 2, "one ToolUseEnd per parallel call");
+        match (&ends[0], &ends[1]) {
+            (
+                StreamChunk::ToolUseEnd { id: id0, name: n0, arguments: a0 },
+                StreamChunk::ToolUseEnd { id: id1, name: n1, arguments: a1 },
+            ) => {
+                // Emitted in index order, each with its OWN id/name/args.
+                assert_eq!(id0, "call_a");
+                assert_eq!(n0, "foo");
+                assert_eq!(a0["x"], 1);
+                assert_eq!(id1, "call_b");
+                assert_eq!(n1, "bar");
+                assert_eq!(a1["y"], 2);
+            }
+            _ => panic!("expected two ToolUseEnd chunks"),
+        }
+        assert!(acc.is_empty(), "drain clears the accumulator");
+    }
+
+    #[test]
+    fn accumulate_emits_tool_use_start_once_per_index() {
+        let mut acc: BTreeMap<i64, ToolCallAcc> = BTreeMap::new();
+        let first = accumulate_tool_call_delta(
+            &json!({"index":0,"id":"a","function":{"name":"foo","arguments":"{"}}),
+            &mut acc,
+        );
+        assert!(matches!(first[0], StreamChunk::ToolUseStart { .. }));
+        // A second delta for the same index must NOT re-emit ToolUseStart.
+        let more = accumulate_tool_call_delta(
+            &json!({"index":0,"function":{"arguments":"}"}}),
+            &mut acc,
+        );
+        assert!(more.iter().all(|c| !matches!(c, StreamChunk::ToolUseStart { .. })));
+        let ends = drain_tool_calls(&mut acc);
+        assert_eq!(ends.len(), 1);
+    }
+
+    #[test]
+    fn index_omitting_provider_sequential_calls_do_not_collapse() {
+        // A non-standard server that omits `index` and streams two calls back to
+        // back (each with its own id). The new-id-at-started-slot guard rolls the
+        // first call before starting the second, so they don't merge.
+        let mut acc: BTreeMap<i64, ToolCallAcc> = BTreeMap::new();
+        let mut emitted: Vec<StreamChunk> = Vec::new();
+        for d in [
+            json!({"id":"c1","function":{"name":"foo","arguments":"{\"x\":1}"}}),
+            json!({"id":"c2","function":{"name":"bar","arguments":"{\"y\":2}"}}),
+        ] {
+            emitted.extend(accumulate_tool_call_delta(&d, &mut acc));
+        }
+        emitted.extend(drain_tool_calls(&mut acc));
+        let ends: Vec<_> = emitted
+            .iter()
+            .filter(|c| matches!(c, StreamChunk::ToolUseEnd { .. }))
+            .collect();
+        assert_eq!(ends.len(), 2, "two distinct calls, not one merged");
+        if let StreamChunk::ToolUseEnd { id, arguments, .. } = ends[0] {
+            assert_eq!(id, "c1");
+            assert_eq!(arguments["x"], 1);
+        }
+        if let StreamChunk::ToolUseEnd { id, arguments, .. } = ends[1] {
+            assert_eq!(id, "c2");
+            assert_eq!(arguments["y"], 2);
+        }
+    }
+
+    #[test]
+    fn single_tool_call_still_works() {
+        let mut acc: BTreeMap<i64, ToolCallAcc> = BTreeMap::new();
+        for d in [
+            json!({"index":0,"id":"c1","function":{"name":"do","arguments":"{\"a\":"}}),
+            json!({"index":0,"function":{"arguments":"true}"}}),
+        ] {
+            let _ = accumulate_tool_call_delta(&d, &mut acc);
+        }
+        let ends = drain_tool_calls(&mut acc);
+        assert_eq!(ends.len(), 1);
+        if let StreamChunk::ToolUseEnd { id, name, arguments } = &ends[0] {
+            assert_eq!(id, "c1");
+            assert_eq!(name, "do");
+            assert_eq!(arguments["a"], true);
+        } else {
+            panic!("expected ToolUseEnd");
+        }
+    }
 }
