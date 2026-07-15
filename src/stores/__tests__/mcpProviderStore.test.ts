@@ -33,7 +33,7 @@ function persistedEnabled(): boolean {
 function reset() {
   localStorage.clear();
   useMcpProviderStore.setState({
-    config: { enabled: false, port: 3100, allowedTools: [], scope: "project" },
+    config: { enabled: false, port: 3100, allowedTools: [], scope: "project", allowWrites: false },
     serverStatus: null,
     serverError: null,
     serverBusy: false,
@@ -45,8 +45,15 @@ const RUNNING: McpServerStatus = {
   port: 3100,
   token: "tok",
   url: "http://127.0.0.1:3100/mcp",
+  allowWrites: false,
 };
-const STOPPED: McpServerStatus = { running: false, port: null, token: null, url: null };
+const STOPPED: McpServerStatus = {
+  running: false,
+  port: null,
+  token: null,
+  url: null,
+  allowWrites: false,
+};
 
 describe("mcpProviderStore server lifecycle", () => {
   beforeEach(() => {
@@ -59,7 +66,7 @@ describe("mcpProviderStore server lifecycle", () => {
   it("setEnabled(true) starts the backend, stores status, and persists", async () => {
     mockStart.mockResolvedValue(RUNNING);
     await useMcpProviderStore.getState().setEnabled(true);
-    expect(mockStart).toHaveBeenCalledWith(3100);
+    expect(mockStart).toHaveBeenCalledWith(3100, false);
     const s = useMcpProviderStore.getState();
     expect(s.config.enabled).toBe(true);
     expect(s.serverStatus?.token).toBe("tok");
@@ -94,7 +101,13 @@ describe("mcpProviderStore server lifecycle", () => {
 
   it("syncServerStatus reconciles AND persists a stale enabled flag", async () => {
     // Simulate a restart: localStorage says enabled but the server isn't running.
-    const stale = { enabled: true, port: 3100, allowedTools: [], scope: "project" as const };
+    const stale = {
+      enabled: true,
+      port: 3100,
+      allowedTools: [],
+      scope: "project" as const,
+      allowWrites: false,
+    };
     useMcpProviderStore.setState({ config: stale });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stale));
     mockStatus.mockResolvedValue(STOPPED);

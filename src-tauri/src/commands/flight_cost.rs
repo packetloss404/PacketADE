@@ -216,6 +216,7 @@ mod e8_accum {
                 planner_tokens: None,
                 planner_provider: None,
                 publish_attempts_as_prs: false,
+                coordination_log: Vec::new(),
             });
             std::future::ready(Ok(()))
         })
@@ -328,6 +329,7 @@ mod hermetic_money_path {
             planner_tokens: None,
             planner_provider: None,
             publish_attempts_as_prs: false,
+            coordination_log: Vec::new(),
         }
     }
 

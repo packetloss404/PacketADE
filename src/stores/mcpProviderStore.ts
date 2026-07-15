@@ -62,41 +62,16 @@ const PROVIDER_TOOLS: McpTool[] = [
   },
   {
     name: "append_handoff",
-    description: "Adds a handoff note to a task",
+    description:
+      "Post an append-only handoff note to a flight's coordination timeline (human-visible; changes no state)",
     inputSchema: {
       type: "object",
       properties: {
         flightId: { type: "string" },
-        taskId: { type: "string" },
         summary: { type: "string" },
-        filesChanged: { type: "array", items: { type: "string" } },
+        agentId: { type: "string" },
       },
-      required: ["flightId", "taskId", "summary"],
-    },
-  },
-  {
-    name: "request_review",
-    description: "Creates a review packet for a task or milestone",
-    inputSchema: {
-      type: "object",
-      properties: {
-        flightId: { type: "string" },
-        taskId: { type: "string" },
-      },
-      required: ["flightId", "taskId"],
-    },
-  },
-  {
-    name: "mark_blocked",
-    description: "Marks a task as blocked with a reason",
-    inputSchema: {
-      type: "object",
-      properties: {
-        flightId: { type: "string" },
-        taskId: { type: "string" },
-        reason: { type: "string" },
-      },
-      required: ["flightId", "taskId", "reason"],
+      required: ["flightId", "summary"],
     },
   },
   {
@@ -118,15 +93,22 @@ const STORAGE_KEY = "packetade:mcp-provider";
 function loadConfig(): McpProviderConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as McpProviderConfig;
+    // Merge over defaults so configs persisted before a field existed (e.g.
+    // `allowWrites`) don't come back `undefined`.
+    if (raw) return { ...defaultConfig(), ...(JSON.parse(raw) as Partial<McpProviderConfig>) };
   } catch {
     // ignore corrupt data
   }
+  return defaultConfig();
+}
+
+function defaultConfig(): McpProviderConfig {
   return {
     enabled: false,
     port: 3100,
     allowedTools: PROVIDER_TOOLS.map((t) => t.name),
     scope: "project",
+    allowWrites: false,
   };
 }
 
@@ -152,6 +134,7 @@ interface McpProviderStore {
   setEnabled: (enabled: boolean) => Promise<void>;
   setPort: (port: number) => void;
   setScope: (scope: McpProviderScope) => void;
+  setAllowWrites: (allowWrites: boolean) => void;
   toggleTool: (name: string) => void;
 
   /** Reconcile `config.enabled` with the actual backend server state. */
@@ -196,7 +179,9 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
       // Optimistically reflect the intent; revert if the backend rejects it.
       saveConfig(config);
       set({ config });
-      const status = enabled ? await mcpServerStart(config.port) : await mcpServerStop();
+      const status = enabled
+        ? await mcpServerStart(config.port, config.allowWrites)
+        : await mcpServerStop();
       // The backend ring is per-run; a stop empties it, so mirror that here.
       set(enabled ? { serverStatus: status } : { serverStatus: status, activity: [] });
     } catch (e) {
@@ -239,6 +224,12 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
 
   setScope: (scope) => {
     const config = { ...get().config, scope };
+    saveConfig(config);
+    set({ config });
+  },
+
+  setAllowWrites: (allowWrites) => {
+    const config = { ...get().config, allowWrites };
     saveConfig(config);
     set({ config });
   },

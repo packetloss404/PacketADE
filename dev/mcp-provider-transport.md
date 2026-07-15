@@ -7,7 +7,7 @@
 | Phase 1: Frontend types + store + settings UI | ✅ Done | `mcpProviderStore.ts`, `McpProviderCard.tsx` |
 | Phase 2: Local MCP server (Rust) — lifecycle + transport + auth | ✅ **Shipped** (N3 Slice 0) | `rmcp` 2.2 Streamable HTTP, `mcp_server/{mod,transport}.rs` |
 | Phase 2: Read-only resources (7) + read tools (5) + audit | ✅ **Shipped** (N3 Slice 1) | `mcp_server/reads.rs` |
-| Phase 2: Safe workflow tools (writes) | ⏸️ Deferred (see below) | `append_handoff` / `request_review` / `mark_blocked` — needs event-routed write design |
+| Phase 2: Safe workflow tools (writes) | ◑ **Partly shipped** (N3 Slice 2) | `append_handoff` shipped opt-in (event-routed); `request_review` + `mark_blocked` **cut** (dead task substrate) |
 | Phase 3: Ownership-aware tools | ⏸️ Deferred (see below) | Assumes deleted orchestrator substrate — re-validate first |
 
 ### What shipped (N3, 2026-07-15) — read-only server
@@ -25,13 +25,28 @@ Auth: **bearer token + Origin check + `127.0.0.1` bind**.
 - Audit: bounded in-memory ring + `mcp-server-activity` event → card viewer.
 - `list_runnable_tasks` gates on flight status (`Active` only).
 
+### Writes (N3 Slice 2, 2026-07-15)
+
+The write design is **event-routed**: the frontend saves state wholesale from
+Zustand, so a direct Rust file write would be clobbered and invisible to the UI.
+A write tool validates against fresh state and emits a `mcp-server-write` event;
+`src/lib/mcpWriteBridge.ts` applies it through the owning store action (the sole
+writer) which persists it.
+
+- **`append_handoff` — SHIPPED, opt-in.** Posts an append-only, human-visible
+  note to a flight's coordination timeline. Gated behind an "Allow writes"
+  toggle (default off) so a read-only posture stays a real guarantee; the actor
+  is namespaced (`mcp:<id>`) to prevent impersonation; the summary is length-
+  bounded; the coordination log now round-trips through storage (Flight +
+  FlightDto gained `coordination_log`) so notes — and N2's escalation events —
+  survive reload.
+- **`request_review` + `mark_blocked` — CUT.** Both target the amputated
+  task/milestone tree: no frontend mutator exists and no live flight is ever
+  populated with tasks (spec→flight decomposition has no live caller). Building
+  them would write into dead code.
+
 ### Deferred with cause
 
-- **Safe writes** (`append_handoff`/`request_review`/`mark_blocked`): the
-  frontend saves state wholesale from Zustand, so a direct Rust file write from
-  the MCP server would be clobbered and invisible to the UI. Writes must be
-  **event-routed** (Rust emits → frontend applies → saves). Design deliberately
-  when un-deferring.
 - **Phase 3 ownership** (`claim_task`/`reserve_paths`/`release_paths`/
   `escalate_task`): designed against the orchestrator/coordination substrate
   that the flight-planner amputation deleted. Re-validate against the live

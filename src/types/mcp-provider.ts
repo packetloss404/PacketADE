@@ -21,4 +21,7 @@ export interface McpProviderConfig {
   port: number;
   allowedTools: string[];
   scope: McpProviderScope;
+  /** Opt-in: allow the append-only handoff write tool. Default false keeps the
+   *  server strictly read-only. */
+  allowWrites: boolean;
 }

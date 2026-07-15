@@ -433,6 +433,12 @@ pub struct Flight {
     /// previously-persisted Flights.
     #[serde(default)]
     pub publish_attempts_as_prs: bool,
+    /// N3: append-only coordination timeline (handoff / task_failed /
+    /// escalation events) rendered in FlightsView. Frontend-owned schema, so
+    /// stored as opaque JSON here purely to round-trip through persistence
+    /// (was previously frontend-only and lost on reload).
+    #[serde(default)]
+    pub coordination_log: Vec<serde_json::Value>,
 }
 
 impl Flight {
@@ -592,6 +598,7 @@ mod tests {
             planner_tokens: None,
             planner_provider: None,
             publish_attempts_as_prs: false,
+            coordination_log: Vec::new(),
         }
     }
 

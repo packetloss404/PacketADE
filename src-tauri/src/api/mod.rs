@@ -610,6 +610,11 @@ pub struct FlightDto {
     /// reaches a terminal state. Persisted so the toggle round-trips.
     #[serde(default)]
     pub publish_attempts_as_prs: bool,
+    /// N3: append-only coordination timeline. Frontend-owned schema (opaque
+    /// here) — round-trips so handoff/escalation events survive reload.
+    #[serde(default)]
+    #[ts(type = "any[]")]
+    pub coordination_log: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -1530,6 +1535,7 @@ impl From<core_flight::Flight> for FlightDto {
             planner_tokens: value.planner_tokens,
             planner_provider: value.planner_provider,
             publish_attempts_as_prs: value.publish_attempts_as_prs,
+            coordination_log: value.coordination_log,
         }
     }
 }
@@ -1560,6 +1566,7 @@ impl From<FlightDto> for core_flight::Flight {
             planner_tokens: value.planner_tokens,
             planner_provider: value.planner_provider,
             publish_attempts_as_prs: value.publish_attempts_as_prs,
+            coordination_log: value.coordination_log,
         }
     }
 }
@@ -1806,6 +1813,7 @@ mod tests {
                 planner_tokens: None,
                 planner_provider: None,
                 publish_attempts_as_prs: false,
+                coordination_log: Vec::new(),
             }],
             agents: Vec::new(),
             issues: Vec::new(),

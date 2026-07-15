@@ -15,6 +15,7 @@ export function McpProviderCard() {
   const setEnabled = useMcpProviderStore((s) => s.setEnabled);
   const setPort = useMcpProviderStore((s) => s.setPort);
   const setScope = useMcpProviderStore((s) => s.setScope);
+  const setAllowWrites = useMcpProviderStore((s) => s.setAllowWrites);
   const toggleTool = useMcpProviderStore((s) => s.toggleTool);
   const syncServerStatus = useMcpProviderStore((s) => s.syncServerStatus);
   const refreshActivity = useMcpProviderStore((s) => s.refreshActivity);
@@ -177,6 +178,30 @@ export function McpProviderCard() {
             Global
           </button>
         </div>
+      </div>
+
+      {/* Allow-writes toggle — opt-in; keeps the server read-only by default */}
+      <div className="flex items-center justify-between bg-bg-primary border border-bg-border rounded-lg px-3 py-2 mb-4">
+        <div className="min-w-0 pr-2">
+          <div className="text-[11px] text-text-secondary">Allow writes</div>
+          <div className="text-[10px] text-text-muted">
+            Lets agents post append-only handoff notes. Off = strictly read-only.
+          </div>
+        </div>
+        <button
+          onClick={() => setAllowWrites(!config.allowWrites)}
+          disabled={running}
+          title={running ? "Stop the server to change this" : undefined}
+          className={`relative w-8 h-[18px] rounded-full transition-colors shrink-0 ${
+            config.allowWrites ? "bg-accent-amber" : "bg-bg-elevated"
+          } ${running ? "opacity-50 cursor-not-allowed" : ""}`}
+        >
+          <span
+            className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
+              config.allowWrites ? "left-[16px]" : "left-[2px]"
+            }`}
+          />
+        </button>
       </div>
 
       {/* Tools list */}

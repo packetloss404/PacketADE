@@ -16,6 +16,8 @@ import { FleetSidebar } from "@/components/workspace/FleetSidebar";
 import { useAgentTabHoists } from "@/hooks/useAgentTabHoists";
 import { VIEW_HOTKEY_MAP } from "@/lib/viewHotkeys";
 import { initSessionGlue } from "@/stores/sessionGlue";
+import { startMcpWriteBridge } from "@/lib/mcpWriteBridge";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, getModuleId } from "@/stores/appStore";
 import { useModuleStore } from "@/stores/moduleStore";
@@ -101,6 +103,24 @@ export default function App() {
     if (!initialized) return;
     initSessionGlue();
   }, [initialized]);
+
+  // N3: apply event-routed writes from the MCP server (handoff notes → the
+  // flight coordination timeline). Always mounted; the event only fires while
+  // the server runs.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    startMcpWriteBridge()
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((err) => console.warn("startMcpWriteBridge failed", err));
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // Apply theme class to document
   useEffect(() => {

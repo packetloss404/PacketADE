@@ -1447,6 +1447,7 @@ function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
     plannerTokens: flight.plannerTokens,
     plannerProvider: flight.plannerProvider,
     publishAttemptsAsPrs: flight.publishAttemptsAsPrs ?? false,
+    coordinationLog: flight.coordinationLog ?? [],
   };
 }
 
@@ -1485,6 +1486,7 @@ function toDtoFlight(flight: Flight): PersistedStateDto["flights"][number] {
     plannerTokens: flight.plannerTokens,
     plannerProvider: flight.plannerProvider,
     publishAttemptsAsPrs: flight.publishAttemptsAsPrs ?? false,
+    coordinationLog: flight.coordinationLog ?? [],
   };
 }
 
@@ -2298,10 +2300,15 @@ export interface McpServerStatus {
   token: string | null;
   /** URL to paste into a client's MCP config. Null when stopped. */
   url: string | null;
+  /** Whether the append-only write tool is enabled on the running server. */
+  allowWrites: boolean;
 }
 
-export async function mcpServerStart(port: number): Promise<McpServerStatus> {
-  return invoke<McpServerStatus>("mcp_server_start", { port });
+export async function mcpServerStart(
+  port: number,
+  allowWrites: boolean,
+): Promise<McpServerStatus> {
+  return invoke<McpServerStatus>("mcp_server_start", { port, allowWrites });
 }
 
 export async function mcpServerStop(): Promise<McpServerStatus> {

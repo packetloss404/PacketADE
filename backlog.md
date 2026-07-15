@@ -440,17 +440,20 @@ compatibility outlives API/config deprecation.
   failure **or** cancellation of the last sibling) it adds one signature-deduped
   `escalation` suggestion to the timeline. `src/lib/flightCoordination.ts`;
   `dev/bridgemind/swarm-orchestration-plan.md` Phase 4.
-- **PacketADE MCP provider transport (N3) — read-only server SHIPPED**
-  2026-07-15 (→ `CHANGELOG.md` `[0.10.1]`). PacketADE exposes itself as an MCP
-  server over Streamable HTTP (`rmcp` 2.2, Rust core, loopback + bearer/Origin
-  auth): 5 read tools + 7 `packetade://` resources + audit feed
-  (`src-tauri/src/mcp_server/`). **Still deferred, with cause** (see
-  `dev/mcp-provider-transport.md`): (a) **safe writes**
-  (`append_handoff`/`request_review`/`mark_blocked`) need an event-routed design
-  because the frontend saves state wholesale and would clobber a direct Rust
-  write; (b) **Phase-3 ownership tools** (`claim_task`/`reserve_paths`/
-  `release_paths`/`escalate_task`) assume the deleted orchestrator substrate and
-  must be re-validated against the live attempt/path-ownership model first.
+- **PacketADE MCP provider transport (N3) — SHIPPED** 2026-07-15 (→ `CHANGELOG.md`
+  `[0.10.1]`). PacketADE exposes itself as an MCP server over Streamable HTTP
+  (`rmcp` 2.2, Rust core, loopback + bearer/Origin auth): 5 read tools + 7
+  `packetade://` resources + audit feed, plus **one opt-in append-only write**
+  — `append_handoff` (posts a namespaced, human-visible note to a flight's
+  coordination timeline; gated behind an "Allow writes" toggle, default off;
+  event-routed so the frontend is the sole state writer; the coordination log
+  now round-trips through storage). `src-tauri/src/mcp_server/`.
+  - **Cut (dead substrate):** the plan's other two writes, `request_review` and
+    `mark_blocked`, target the amputated task/milestone tree — no frontend
+    mutator exists and no live flight has tasks to mutate. Not built.
+  - **Still deferred:** **Phase-3 ownership tools** (`claim_task`/`reserve_paths`/
+    `release_paths`/`escalate_task`) assume the deleted orchestrator substrate;
+    re-validate against the live attempt/path-ownership model before building.
 - **P3 — Workspace UX gaps** — git review packet ties **SHIPPED** (N4, 2026-07-14,
   → `CHANGELOG.md` `[0.10.1]`): `ReviewPacketPanel` surfaces linked review packets
   in GitDashboard + deep-links to the live approval. Remaining nicety: open the
