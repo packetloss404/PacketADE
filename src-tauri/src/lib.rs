@@ -450,6 +450,7 @@ pub fn run() {
             mcp_server::mcp_server_start,
             mcp_server::mcp_server_stop,
             mcp_server::mcp_server_status,
+            mcp_server::mcp_server_recent_activity,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
