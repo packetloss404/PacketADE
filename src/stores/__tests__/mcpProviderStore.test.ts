@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { McpServerStatus } from "@/lib/tauri";
+import type { McpServerStatus, McpActivityEntry } from "@/lib/tauri";
 
 const mockStart = vi.fn();
 const mockStop = vi.fn();
@@ -22,7 +22,7 @@ vi.mock("@/stores/memoryStore", () => ({
   useMemoryStore: { getState: () => ({ patterns: [] }) },
 }));
 
-import { useMcpProviderStore } from "@/stores/mcpProviderStore";
+import { useMcpProviderStore, mergeActivity } from "@/stores/mcpProviderStore";
 
 const STORAGE_KEY = "packetade:mcp-provider";
 
@@ -103,5 +103,35 @@ describe("mcpProviderStore server lifecycle", () => {
 
     expect(useMcpProviderStore.getState().config.enabled).toBe(false);
     expect(persistedEnabled()).toBe(false); // reconciled value survives reload
+  });
+});
+
+describe("mergeActivity", () => {
+  const e = (seq: number): McpActivityEntry => ({
+    seq,
+    kind: "tool",
+    name: `t${seq}`,
+    at: 1000 + seq,
+  });
+
+  it("dedupes by seq (backlog + live overlap shows once)", () => {
+    // Backlog fetched [1,2,3]; live event re-delivers 3 and adds 4.
+    const merged = mergeActivity([e(1), e(2), e(3)], [e(3), e(4)]);
+    expect(merged.map((x) => x.seq)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("keeps an event that landed before the fetch (no loss)", () => {
+    // Live event 5 pushed first, then backlog fetch [1,2] resolves.
+    const afterPush = mergeActivity([], [e(5)]);
+    const afterFetch = mergeActivity(afterPush, [e(1), e(2)]);
+    expect(afterFetch.map((x) => x.seq)).toEqual([1, 2, 5]);
+  });
+
+  it("sorts most-recent-last and caps at 50", () => {
+    const many = Array.from({ length: 60 }, (_, i) => e(i));
+    const merged = mergeActivity([], many);
+    expect(merged).toHaveLength(50);
+    expect(merged[0].seq).toBe(10);
+    expect(merged[49].seq).toBe(59);
   });
 });

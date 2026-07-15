@@ -1,6 +1,8 @@
 import { useEffect } from "react";
-import { RadioTower, RefreshCw, Globe, FolderOpen, Copy } from "lucide-react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { RadioTower, RefreshCw, Globe, FolderOpen, Copy, Activity } from "lucide-react";
 import { useMcpProviderStore } from "@/stores/mcpProviderStore";
+import type { McpActivityEntry } from "@/lib/tauri";
 
 export function McpProviderCard() {
   const config = useMcpProviderStore((s) => s.config);
@@ -9,17 +11,44 @@ export function McpProviderCard() {
   const serverStatus = useMcpProviderStore((s) => s.serverStatus);
   const serverError = useMcpProviderStore((s) => s.serverError);
   const serverBusy = useMcpProviderStore((s) => s.serverBusy);
+  const activity = useMcpProviderStore((s) => s.activity);
   const setEnabled = useMcpProviderStore((s) => s.setEnabled);
   const setPort = useMcpProviderStore((s) => s.setPort);
   const setScope = useMcpProviderStore((s) => s.setScope);
   const toggleTool = useMcpProviderStore((s) => s.toggleTool);
   const syncServerStatus = useMcpProviderStore((s) => s.syncServerStatus);
+  const refreshActivity = useMcpProviderStore((s) => s.refreshActivity);
+  const pushActivity = useMcpProviderStore((s) => s.pushActivity);
   const refreshResources = useMcpProviderStore((s) => s.refreshResources);
+
+  const running = serverStatus?.running ?? false;
 
   useEffect(() => {
     refreshResources();
     void syncServerStatus();
   }, [refreshResources, syncServerStatus]);
+
+  // Live audit feed: fetch the backlog once running, then stream new accesses.
+  useEffect(() => {
+    if (!running) return;
+    void refreshActivity();
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    listen<McpActivityEntry>("mcp-server-activity", (event) => {
+      pushActivity(event.payload);
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((err) => {
+        console.warn("listen(mcp-server-activity) failed", err);
+      });
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [running, refreshActivity, pushActivity]);
 
   return (
     <div className="bg-bg-secondary border border-bg-border rounded-lg p-4">
@@ -111,11 +140,13 @@ export function McpProviderCard() {
           min={1024}
           max={65535}
           value={config.port}
+          disabled={running}
+          title={running ? "Stop the server to change the port" : undefined}
           onChange={(e) => {
             const v = parseInt(e.target.value, 10);
             if (!isNaN(v) && v >= 1024 && v <= 65535) setPort(v);
           }}
-          className="flex-1 bg-bg-secondary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent-green w-20"
+          className="flex-1 bg-bg-secondary border border-bg-border rounded px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent-green w-20 disabled:opacity-50 disabled:cursor-not-allowed"
         />
       </div>
 
@@ -176,6 +207,47 @@ export function McpProviderCard() {
           })}
         </div>
       </div>
+
+      {/* Live activity — tool calls / resource reads from external clients */}
+      {running && (
+        <div className="mt-3">
+          <h4 className="text-[10px] font-medium text-text-secondary uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Activity size={11} className="text-accent-green" />
+            Activity
+          </h4>
+          {activity.length === 0 ? (
+            <div className="text-[10px] text-text-muted px-3 py-2 bg-bg-primary border border-bg-border rounded-lg">
+              No requests yet.
+            </div>
+          ) : (
+            <div className="space-y-0.5 max-h-40 overflow-y-auto">
+              {activity
+                .slice()
+                .reverse()
+                .map((entry) => (
+                  <div
+                    key={entry.seq}
+                    className="flex items-center gap-2 px-3 py-1 bg-bg-primary border border-bg-border rounded text-[10px]"
+                  >
+                    <span
+                      className={`px-1 py-0.5 rounded text-[9px] font-medium ${
+                        entry.kind === "tool"
+                          ? "bg-accent-blue/15 text-accent-blue"
+                          : "bg-accent-purple/15 text-accent-purple"
+                      }`}
+                    >
+                      {entry.kind}
+                    </span>
+                    <code className="flex-1 text-text-primary truncate">{entry.name}</code>
+                    <span className="text-text-muted tabular-nums">
+                      {new Date(entry.at).toLocaleTimeString()}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

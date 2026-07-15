@@ -12,8 +12,28 @@ import {
   mcpServerStart,
   mcpServerStop,
   mcpServerStatus,
+  mcpServerRecentActivity,
   type McpServerStatus,
+  type McpActivityEntry,
 } from "@/lib/tauri";
+
+const ACTIVITY_CAP = 50;
+
+/**
+ * Merge activity lists deduped by `seq`, sorted most-recent-last, capped. Used
+ * for BOTH the backlog fetch and the live event stream so an access carried by
+ * both (the backend records + emits in one call) appears exactly once, and an
+ * event that lands before the fetch resolves isn't clobbered by the fetch.
+ */
+export function mergeActivity(
+  existing: McpActivityEntry[],
+  incoming: McpActivityEntry[],
+): McpActivityEntry[] {
+  const bySeq = new Map<number, McpActivityEntry>();
+  for (const e of existing) bySeq.set(e.seq, e);
+  for (const e of incoming) bySeq.set(e.seq, e);
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq).slice(-ACTIVITY_CAP);
+}
 
 // --- Static tool definitions ---
 
@@ -126,6 +146,8 @@ interface McpProviderStore {
   serverError: string | null;
   /** True while a start/stop is in flight — serializes toggles. */
   serverBusy: boolean;
+  /** Recent tool/resource accesses (most-recent-last), for the viewer. */
+  activity: McpActivityEntry[];
 
   setEnabled: (enabled: boolean) => Promise<void>;
   setPort: (port: number) => void;
@@ -134,6 +156,10 @@ interface McpProviderStore {
 
   /** Reconcile `config.enabled` with the actual backend server state. */
   syncServerStatus: () => Promise<void>;
+  /** Fetch the current audit ring from the backend. */
+  refreshActivity: () => Promise<void>;
+  /** Append a live access (from the `mcp-server-activity` event). */
+  pushActivity: (entry: McpActivityEntry) => void;
   refreshResources: () => void;
 }
 
@@ -144,6 +170,20 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
   serverStatus: null,
   serverError: null,
   serverBusy: false,
+  activity: [],
+
+  refreshActivity: async () => {
+    try {
+      const fetched = await mcpServerRecentActivity();
+      set((s) => ({ activity: mergeActivity(s.activity, fetched) }));
+    } catch {
+      // best-effort
+    }
+  },
+
+  pushActivity: (entry) => {
+    set((s) => ({ activity: mergeActivity(s.activity, [entry]) }));
+  },
 
   setEnabled: async (enabled) => {
     // Serialize toggles: ignore a click while a start/stop is still resolving,
@@ -157,7 +197,8 @@ export const useMcpProviderStore = create<McpProviderStore>((set, get) => ({
       saveConfig(config);
       set({ config });
       const status = enabled ? await mcpServerStart(config.port) : await mcpServerStop();
-      set({ serverStatus: status });
+      // The backend ring is per-run; a stop empties it, so mirror that here.
+      set(enabled ? { serverStatus: status } : { serverStatus: status, activity: [] });
     } catch (e) {
       try {
         saveConfig(prev);
