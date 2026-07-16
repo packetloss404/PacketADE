@@ -25,6 +25,17 @@ task list.
 
 ### Added
 
+- **stdio MCP servers over SSH — remote-owned config (S8-Phase-B).** Remote
+  (SSH) agent sessions can now use **stdio** MCP servers, not just HTTP/SSE. When
+  a session runs on the remote sidecar, the sidecar sources its **own** MCP
+  config from the remote host — `~/.claude/settings.json` + the project's
+  `.mcp.json` (project-over-global) — and runs every server there. Local command
+  paths and secrets never cross SSH, and the remote project `.mcp.json` (which
+  was silently ignored before, even for HTTP/SSE) is finally honored. This
+  supersedes Phase-A's local-config forwarding for remote sessions; configure a
+  remote host's MCP integrations on that host. The session meta line now shows
+  which remote MCP servers were sourced (and flags any unreadable config),
+  replacing the previous silent backend warning. Sidecar protocol bumped v7 → v8.
 - **PacketADE as an MCP server (N3).** PacketADE now exposes its own state to
   external agents (Claude Code, Codex, Cursor) over **Streamable HTTP** (the
   current MCP transport) via the official `rmcp` crate, hosted in the Rust core

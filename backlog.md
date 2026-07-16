@@ -44,12 +44,11 @@ created" copy.
   Windows OpenSSH — on Unix the whole path is non-functional regardless (see the
   new "SSH password auth on Unix" item below). Fixing S6 in isolation only helps
   Windows and needs a new command param + FE wiring; folded into that larger item.
-- **S8-Phase-B (stdio MCP-over-SSH + remote config ownership):** blocked on a
-  decision-gated transport build. (N3 PacketADE-as-MCP-server read-only —
-  SHIPPED 2026-07-15, see below; N2 swarm escalation — SHIPPED 2026-07-14;
-  S7 remote git commands — SHIPPED 2026-07-14; S8-Phase-A HTTP/SSE MCP-over-SSH
-  — SHIPPED 2026-07-14; S9 Codex-over-SSH — no code gate, routes today. All see
-  the relevant sections below.)
+- Recently shipped (all see the relevant sections below): **S8-Phase-B stdio
+  MCP-over-SSH — SHIPPED 2026-07-16**; N3 PacketADE-as-MCP-server — SHIPPED
+  2026-07-15; N2 swarm escalation — SHIPPED 2026-07-14; S7 remote git commands —
+  SHIPPED 2026-07-14; S8-Phase-A HTTP/SSE MCP-over-SSH — SHIPPED 2026-07-14; S9
+  Codex-over-SSH — no code gate, routes today.
 
 ### New findings from the pass (now tracked)
 
@@ -199,17 +198,19 @@ them up before that gate clears.
     are a deliberate documented caveat (the remote may share the LAN), NOT blocked.
     Remaining Phase-A polish: surface the skipped stdio/local servers to the user
     (today it's a backend warn only). See `CHANGELOG.md` `[0.10.1]`.
-  - **Phase B — stdio MCP + remote project config — DEFERRED (L, decision-gated).**
-    The hard part: stdio (process) MCP servers need their binaries on the *remote*
-    host, and project-scoped `.mcp.json` lives on the remote host (today's
-    local-fs read returns empty for a remote path). Needs (1) sourcing MCP config
-    from the remote host — either read it over SSH in Rust, or have the remote
-    sidecar source its own `.mcp.json` + `~/.claude/settings.json` (a new sidecar
-    capability + protocol flag), and (2) a **product decision on config
-    ownership** (does a remote session use the remote host's global settings, the
-    local machine's, or a merge?). Sits alongside N2/N3 as a decision-gated track.
-    Phase-A polish that could fold in: surface skipped stdio servers to the user
-    (today it's a backend warn only).
+  - **Phase B — stdio MCP + remote project config — SHIPPED 2026-07-16**
+    (→ `CHANGELOG.md` `[0.10.1]`). Decision (user): **remote-owned config**.
+    When a session runs on the remote sidecar it now sources its OWN MCP config
+    from the remote FS (`~/.claude/settings.json` + `<project>/.mcp.json`,
+    project-over-global) and runs ALL servers (stdio + http/sse) from there via a
+    new `sourceMcpFromFs` protocol flag (proto v7→v8, lockstep); Rust sends an
+    empty server map for remote and the old Phase-A `split_mcp_network_servers` /
+    `mcp_url_is_local_only` were deleted. Local commands/secrets never cross SSH;
+    the remote project-`.mcp.json` gap is fixed. The sidecar reports a
+    secrets-free `mcp_sources` summary (names/transport/scope + read errors),
+    surfaced in the session meta line (the deferred Phase-A "skipped servers" UX).
+    `agent-sidecar/src/mcp-config.ts` + `commands/agent_sidecar/`. Built via an
+    autonomous plan→build→review→fix workflow on `feat/s8-phase-b-mcp-over-ssh`.
 - **DONE — Consolidate duplicate `CloneServerConfigDto` and
   `GitServerConfigDto`.** The duplicate `CloneServerConfigDto` in
   `commands/scaffold.rs` was removed; `commands/git.rs::GitServerConfigDto` is
