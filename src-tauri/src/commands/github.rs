@@ -1165,6 +1165,7 @@ pub async fn github_ai_pr_description(
             crate::core::github_ai_prompts::PR_DESCRIPTION_SYSTEM_PROMPT.to_string(),
             Vec::new(),
             serde_json::Value::Null,
+            false, // source_mcp_from_fs — local session
             String::new(),
             user_turn,
             None,
@@ -1286,6 +1287,7 @@ pub async fn github_ai_pr_review(
             crate::core::github_ai_prompts::PR_REVIEW_SYSTEM_PROMPT.to_string(),
             Vec::new(),
             serde_json::Value::Null,
+            false, // source_mcp_from_fs — local session
             String::new(),
             user_turn,
             None,
