@@ -13,6 +13,8 @@ import { useDictationGlobalShortcuts } from "@/hooks/useDictationGlobalShortcuts
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { FleetSidebar } from "@/components/workspace/FleetSidebar";
+import { AgentInspectorPane } from "@/components/agents/AgentInspectorPane";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
 import { useAgentTabHoists } from "@/hooks/useAgentTabHoists";
 import { VIEW_HOTKEY_MAP } from "@/lib/viewHotkeys";
 import { initSessionGlue } from "@/stores/sessionGlue";
@@ -280,6 +282,8 @@ export default function App() {
   }, []);
 
   const showWorkspaceSidebar = activeView === "workspace";
+  // Right-side inspector/preview pane follows the selected conversation.
+  const selectedConversationId = useAgentTaskStore((s) => s.selectedConversationId);
 
   return (
     <ErrorBoundary fallbackMessage="PacketADE encountered an error">
@@ -294,6 +298,10 @@ export default function App() {
         <div className="flex flex-1 overflow-hidden">
           {/* Primary view nav */}
           <LeftRail />
+          {/* Fleet sidebar — on the LEFT of the main content (workspace view
+              only). Tile program (P4-S2): the unified fleet list (workspaces +
+              virtual rows for unplaced legacy conversations). */}
+          {showWorkspaceSidebar && <FleetSidebar />}
           {/* Main content area */}
           <div className="flex flex-col flex-1 overflow-hidden">
             <ErrorBoundary fallbackMessage="View error">
@@ -320,10 +328,16 @@ export default function App() {
             </ErrorBoundary>
           </div>
 
-          {/* Fleet sidebar — persistent across core views. Tile program
-              (P4-S2): replaces WorkspaceSidebar with the unified fleet list
-              (workspaces + virtual rows for unplaced legacy conversations). */}
-          {showWorkspaceSidebar && <FleetSidebar />}
+          {/* Right-side inspector/preview pane — Inspector / Plan / Preview
+              (markdown) / Diff / Files for the selected conversation. Mounts as
+              a thin rail and expands "when in use" (a plan arrives, a .md opens,
+              or a tab icon is clicked). Wrapped so a render error can't take
+              down the shell. */}
+          {showWorkspaceSidebar && selectedConversationId && (
+            <ErrorBoundary fallbackMessage="Inspector pane error">
+              <AgentInspectorPane conversationId={selectedConversationId} defaultOpen={false} />
+            </ErrorBoundary>
+          )}
         </div>
         <StatusStrip />
         {commandPaletteOpen && <CommandPalette />}

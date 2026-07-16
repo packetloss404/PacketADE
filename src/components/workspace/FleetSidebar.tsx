@@ -385,7 +385,7 @@ export function FleetSidebar() {
       ref={sidebarRef}
       tabIndex={-1}
       onKeyDown={handleSidebarKeyDown}
-      className="w-[240px] flex-shrink-0 flex flex-col bg-bg-secondary border-l border-bg-border overflow-hidden focus:outline-none"
+      className="w-[240px] flex-shrink-0 flex flex-col bg-bg-secondary border-r border-bg-border overflow-hidden focus:outline-none"
     >
       {/* Header */}
       <div className="px-3 py-2 flex items-center gap-1.5 border-b border-line-soft">
