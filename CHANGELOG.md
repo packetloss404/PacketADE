@@ -11,6 +11,19 @@ task list.
 
 ### Changed
 
+- **Remote (SSH) sessions now use the remote host's MCP config, not your local
+  one (S8-Phase-B — behavior change).** Previously a remote session inherited
+  your *local* MCP configuration (and in practice only local *global* HTTP/SSE
+  servers actually reached the remote). Now the remote sidecar sources its **own**
+  config from the remote host — `~/.claude/settings.json` + the project's
+  `.mcp.json` — and runs every server (stdio included) from there. **Action
+  required:** to keep using an MCP server in a remote workspace, configure it on
+  the **remote host** (its `~/.claude/settings.json` and/or the repo's
+  `.mcp.json`). Local-only MCP servers no longer appear in remote sessions. The
+  upside: your local command paths and secrets never cross SSH, the remote
+  project `.mcp.json` is finally honored, and the session meta line shows exactly
+  which remote MCP servers were sourced (and flags any unreadable config). See
+  `### Added` below and `backlog.md` → S8-Phase-B.
 - **Flight Planner backend amputated (`chore/planner-amputation`).** The
   2026-07-11 extract-then-delete: the live executor money path
   (`flight_for_executor_session` / `accumulate_executor_cost`) moved verbatim
