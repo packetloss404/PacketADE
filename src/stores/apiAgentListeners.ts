@@ -13,6 +13,7 @@ import {
   apiAgentPlanBlockEvent,
   apiAgentToolOutputExtendedEvent,
   apiAgentTurnSummaryEvent,
+  apiAgentMcpSourcesEvent,
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import { toProjectRelativePath } from "@/lib/parseToolInput";
@@ -49,6 +50,12 @@ import type {
   PendingPermission,
   PendingEdit,
 } from "@/types/agent-conversation";
+
+// S8-Phase-B: prefix marking the `role:"system"` notice appended when the
+// remote sidecar reports MCP config read errors. Used both to build the notice
+// and to dedup prior copies before re-appending (mcp_sources re-fires on every
+// session (re)start), so a broken remote config never stacks duplicates.
+const REMOTE_MCP_NOTICE_PREFIX = "(remote MCP:";
 
 function sendPromotedQueuedMessage(
   conversationId: string,
@@ -600,6 +607,54 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     if (touched) requestConversationSave(id);
   });
 
+  // S8-Phase-B (Slice B): the remote sidecar reports which MCP servers it
+  // sourced from its OWN filesystem (name/transport/scope only — never
+  // commands or secrets), plus any read/parse errors. Stamp the summary onto
+  // the conversation so the SessionMetaLine pill can surface it, and — when
+  // any source failed to load — append a one-time system notice naming the
+  // failing paths (mirrors the auto-failover notice pattern above) so the
+  // silent backend warn is replaced by a visible signal.
+  const mcpSourcesUnlisten = await listen<{
+    sources: { name: string; transport: "stdio" | "http" | "sse"; scope: "global" | "project" }[];
+    readErrors: { scope: "global" | "project"; path: string; message: string }[];
+  }>(apiAgentMcpSourcesEvent(id), (event) => {
+    const sources = event.payload.sources ?? [];
+    const readErrors = event.payload.readErrors ?? [];
+    const noticeMsg: AgentMessage | null =
+      readErrors.length > 0
+        ? {
+            id: generateId("msg"),
+            role: "system",
+            content: `${REMOTE_MCP_NOTICE_PREFIX} loaded ${sources.length}, ${readErrors.length} config file${
+              readErrors.length === 1 ? "" : "s"
+            } could not be read — ${readErrors.map((e) => e.path).join(", ")})`,
+            timestamp: Date.now(),
+          }
+        : null;
+    setState((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        // Idempotent: `mcp_sources` re-fires on every session (re)start —
+        // resume-after-restart (resumeApiConversation) and retryLastTurn both
+        // re-issue createSession, which re-emits this event against the same,
+        // already-persisted message list. Strip any prior remote-MCP notice
+        // before re-appending so a broken remote config yields exactly one
+        // notice reflecting the LATEST summary, not a fresh duplicate stacked
+        // below the persisted one each restart/retry.
+        const base = c.messages.filter(
+          (m) => !(m.role === "system" && m.content.startsWith(REMOTE_MCP_NOTICE_PREFIX)),
+        );
+        return {
+          ...c,
+          mcpSources: { sources, readErrors },
+          messages: noticeMsg ? [...base, noticeMsg] : base,
+          updatedAt: Date.now(),
+        };
+      }),
+    }));
+    requestConversationSave(id);
+  });
+
   return () => {
     coalescer.dispose();
     chunkUnlisten();
@@ -615,5 +670,6 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     planBlockUnlisten();
     toolOutputExtendedUnlisten();
     turnSummaryUnlisten();
+    mcpSourcesUnlisten();
   };
 }

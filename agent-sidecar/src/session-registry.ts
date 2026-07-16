@@ -11,6 +11,7 @@ import type {
   SetPermissionModeRequest,
   StartSessionRequest,
 } from "./protocol.js";
+import { loadMcpFromFs } from "./mcp-config.js";
 import type { ProviderHandler } from "./providers/base.js";
 import { EchoProvider } from "./providers/echo.js";
 import { AnthropicProvider } from "./providers/anthropic.js";
@@ -90,6 +91,17 @@ export class SessionRegistry {
           "Remote SSH workspace metadata reached the local sidecar, but Sidecar-over-SSH transport is not active yet. PacketADE refused to treat the remote path as a local filesystem path.",
       });
       return;
+    }
+    // v8 (S8-Phase-B): remote-owned MCP config. When the supervisor set this
+    // flag (remote SSH sessions only), source MCP servers from the sidecar's
+    // OWN filesystem and replace whatever `mcpServers` was forwarded — the
+    // supervisor deliberately sends an empty map so local commands/secrets
+    // never cross SSH. Emitted BEFORE handler.start so the UX surfaces the
+    // sourced servers (and any read errors) even if provider start fails.
+    if (req.sourceMcpFromFs) {
+      const { servers, summary } = await loadMcpFromFs(req.projectPath, req.sessionId);
+      req.mcpServers = servers;
+      emit({ type: "mcp_sources", sessionId: req.sessionId, ...summary });
     }
     const handler = factory();
     this.sessions.set(req.sessionId, { handler, provider: req.provider });

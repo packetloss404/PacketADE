@@ -46,7 +46,15 @@
 // `inject_user_turn` (shared re-entry) and `rate_limited` (generic 429
 // surface) survive. Negotiation stays warn-only, so an old supervisor
 // paired with a v7 sidecar (or vice versa) still connects.
-export const PROTOCOL_VERSION = 7;
+//
+// v8 (S8-Phase-B): adds `sourceMcpFromFs` on `start_session` — when true the
+// sidecar sources its OWN MCP config from the remote filesystem
+// (~/.claude/settings.json + <project>/.mcp.json, project-over-global) and runs
+// ALL servers from there, ignoring `req.mcpServers`. Also adds the
+// `mcp_sources` event reporting which servers were sourced (name/transport/
+// scope) plus any read/parse errors — names/transport/scope only, never
+// commands or secrets. Negotiation stays warn-only.
+export const PROTOCOL_VERSION = 8;
 
 /** Image content a model can interpret natively. base64-encoded bytes. */
 export type ImageAttachment = {
@@ -109,6 +117,12 @@ export type StartSessionRequest = {
    * compatibility with local sidecars; remote launches use this object to
    * avoid treating an SSH path as a local filesystem path. */
   workspace?: WorkspaceRef;
+  /** v8 (S8-Phase-B): when true the sidecar sources its OWN MCP config from the
+   * remote FS (~/.claude/settings.json + <project>/.mcp.json, project-over-global)
+   * and runs ALL servers from there, ignoring req.mcpServers. Remote (SSH) sessions
+   * only; local leaves it unset. Local commands/secrets never cross SSH. Per-session
+   * enabled-server filtering is NOT applied to FS-sourced servers. */
+  sourceMcpFromFs?: boolean;
 };
 
 export type SendMessageRequest = {
@@ -334,6 +348,17 @@ export type SidecarEvent =
       sessionId: string;
       retryAfterSeconds?: number;
       message?: string;
+    }
+  // v8 additions (S8-Phase-B) --------------------------------------------
+  /** Reports which MCP servers the sidecar sourced from its OWN filesystem
+   * for this session (when `sourceMcpFromFs` was set on start_session), plus
+   * any read/parse errors encountered. Carries names/transport/scope and
+   * error paths/messages ONLY — never commands, env, headers, or secrets. */
+  | {
+      type: "mcp_sources";
+      sessionId: string;
+      sources: { name: string; transport: "stdio" | "http" | "sse"; scope: "global" | "project" }[];
+      readErrors: { scope: "global" | "project"; path: string; message: string }[];
     };
 
 /** Wire shape for `rate_limited` (typed so the Anthropic provider and the

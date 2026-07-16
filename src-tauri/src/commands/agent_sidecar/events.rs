@@ -49,6 +49,11 @@ pub(super) fn tool_output_extended_event(session_id: &str) -> String {
 pub(super) fn turn_summary_event(session_id: &str) -> String {
     format!("api-agent:turn-summary:{}", session_id)
 }
+/// S8-Phase-B: reports which MCP servers the remote sidecar sourced from its
+/// OWN filesystem for this session (plus read/parse errors).
+pub(super) fn mcp_sources_event(session_id: &str) -> String {
+    format!("api-agent:mcp-sources:{}", session_id)
+}
 
 // ---------------------------------------------------------------------------
 // Event payload shapes — must match `api_agent.rs` exactly so the frontend
@@ -183,4 +188,38 @@ pub(super) struct TurnSummaryPayload {
 #[derive(Clone, Serialize)]
 pub(super) struct ErrorPayload {
     pub message: String,
+}
+
+/// S8-Phase-B (Slice B): one MCP server the remote sidecar sourced from its
+/// own filesystem. Carries name/transport/scope ONLY — never command, env,
+/// headers, or any secret.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct McpSourceInfo {
+    pub name: String,
+    /// "stdio" | "http" | "sse"
+    pub transport: String,
+    /// "global" | "project"
+    pub scope: String,
+}
+
+/// S8-Phase-B (Slice B): a read/parse error the sidecar hit while sourcing
+/// remote MCP config. Carries the failing scope/path/message ONLY.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct McpReadError {
+    /// "global" | "project"
+    pub scope: String,
+    pub path: String,
+    pub message: String,
+}
+
+/// S8-Phase-B (Slice B): structured summary of the remote-sourced MCP config
+/// for a session, translated from the sidecar `mcp_sources` event and
+/// re-emitted as `api-agent:mcp-sources:{sessionId}`.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct McpSourcesPayload {
+    pub sources: Vec<McpSourceInfo>,
+    pub read_errors: Vec<McpReadError>,
 }

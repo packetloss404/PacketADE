@@ -1,4 +1,4 @@
-// Protocol v7 regression smoke test for the PacketADE agent sidecar.
+// Protocol v8 regression smoke test for the PacketADE agent sidecar.
 //
 // Validates that the protocol v2 request types plus the v4
 // `cancel_pending_tools` request, the v5 `inject_user_turn` request, and
@@ -22,7 +22,7 @@
 // session.
 //
 // Sequence:
-//   1. Spawn the sidecar, wait for `ready` (must advertise protocol v7).
+//   1. Spawn the sidecar, wait for `ready` (must advertise protocol v8).
 //   2. `start_session` with an SSH workspace → expect clean refusal before
 //      any provider can treat the remote path as local cwd.
 //   3. `start_session` for provider "echo", wait for its `done`.
@@ -48,8 +48,8 @@ import { existsSync } from "node:fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SESSION_ID = "protocol-v7-smoke";
-const EXPECTED_PROTOCOL_VERSION = 7;
+const SESSION_ID = "protocol-v8-smoke";
+const EXPECTED_PROTOCOL_VERSION = 8;
 const STEP_TIMEOUT_MS = 3000;
 const START_TIMEOUT_MS = 3000;
 const READY_TIMEOUT_MS = 3000;
@@ -57,9 +57,9 @@ const READY_TIMEOUT_MS = 3000;
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");
 
 if (!existsSync(sidecarEntry)) {
-  console.error(`[protocol-v7-smoke] sidecar entry not found at ${sidecarEntry}`);
+  console.error(`[protocol-v8-smoke] sidecar entry not found at ${sidecarEntry}`);
   console.error(
-    `[protocol-v7-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
+    `[protocol-v8-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
   );
   process.exit(1);
 }
@@ -74,7 +74,7 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
 
 child.on("error", (err) => {
-  console.error(`[protocol-v7-smoke] child spawn error: ${err.message}`);
+  console.error(`[protocol-v8-smoke] child spawn error: ${err.message}`);
   process.exit(1);
 });
 
@@ -100,7 +100,7 @@ rl.on("line", (line) => {
   try {
     event = JSON.parse(trimmed);
   } catch {
-    console.error(`[protocol-v7-smoke] non-JSON stdout line: ${trimmed}`);
+    console.error(`[protocol-v8-smoke] non-JSON stdout line: ${trimmed}`);
     return;
   }
 
@@ -139,8 +139,8 @@ rl.on("line", (line) => {
       break;
     default:
       // Ignore other event types (thinking, tool_*, permission_request,
-      // pending_edit, thinking_stop, rate_limited) — this test only cares
-      // about chunk / done / error for SESSION_ID.
+      // pending_edit, thinking_stop, rate_limited, mcp_sources) — this test
+      // only cares about chunk / done / error for SESSION_ID.
       break;
   }
 });
@@ -194,13 +194,13 @@ function shutdown(code) {
   }, 500);
   child.on("exit", () => clearTimeout(killTimer));
   if (code !== 0 && stderrChunks.length > 0) {
-    console.error(`[protocol-v7-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
+    console.error(`[protocol-v8-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
   }
   process.exit(code);
 }
 
 function fail(step, reason) {
-  console.error(`[protocol-v7-smoke] FAIL at step '${step}': ${reason}`);
+  console.error(`[protocol-v8-smoke] FAIL at step '${step}': ${reason}`);
   shutdown(1);
 }
 
@@ -229,7 +229,7 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
       );
       return;
     }
-    console.log(`[protocol-v7-smoke] PASS: ${step}`);
+    console.log(`[protocol-v8-smoke] PASS: ${step}`);
     return;
   }
   if (term.kind === "error") {
@@ -251,7 +251,7 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
     );
     return;
   }
-  console.log(`[protocol-v7-smoke] PASS: ${step}`);
+  console.log(`[protocol-v8-smoke] PASS: ${step}`);
 }
 
 /**
@@ -304,7 +304,7 @@ function checkRateLimitedEventShape() {
     fail(step, "minimal envelope should not invent a retryAfterSeconds value");
     return;
   }
-  console.log(`[protocol-v7-smoke] PASS: ${step}`);
+  console.log(`[protocol-v8-smoke] PASS: ${step}`);
 }
 
 async function run() {
@@ -374,7 +374,7 @@ async function run() {
     }
     // Not strictly required, but prove echo actually streamed something.
     void chunks.slice(chunkStart);
-    console.log(`[protocol-v7-smoke] PASS: start_session`);
+    console.log(`[protocol-v8-smoke] PASS: start_session`);
   }
 
   // 3) set_permission_mode { mode: "plan" }
@@ -426,11 +426,11 @@ async function run() {
   // pure wire-format check, no IPC.
   checkRateLimitedEventShape();
 
-  console.log(`[protocol-v7-smoke] OK`);
+  console.log(`[protocol-v8-smoke] OK`);
   shutdown(0);
 }
 
 run().catch((err) => {
-  console.error(`[protocol-v7-smoke] unexpected error: ${err?.stack ?? err}`);
+  console.error(`[protocol-v8-smoke] unexpected error: ${err?.stack ?? err}`);
   shutdown(1);
 });
