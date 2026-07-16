@@ -152,10 +152,23 @@ export async function loadMcpFromFs(
   const sources: McpSourceInfo[] = [];
   const readErrors: McpReadError[] = [];
 
-  const scopes: { scope: McpScope; path: string }[] = [
-    { scope: "global", path: globalSettingsPath() },
-    { scope: "project", path: projectMcpPath(cwd) },
-  ];
+  const scopes: { scope: McpScope; path: string }[] = [];
+  // Resolving the global path calls os.homedir(), which THROWS (not returns
+  // "") when $HOME is unset AND the uid has no passwd entry — a real config on
+  // containerized/sandboxed SSH targets. Guard it so a missing home degrades to
+  // a read error on the global scope instead of failing the whole session; the
+  // project scope (derived from cwd, no homedir) still loads. This keeps the
+  // module's "NEVER throws" contract intact.
+  try {
+    scopes.push({ scope: "global", path: globalSettingsPath() });
+  } catch (err) {
+    const message = errorMessage(err);
+    readErrors.push({ scope: "global", path: "~/.claude/settings.json", message });
+    process.stderr.write(
+      `[sidecar] failed to resolve global MCP config path (home directory unavailable): ${message}\n`,
+    );
+  }
+  scopes.push({ scope: "project", path: projectMcpPath(cwd) });
 
   for (const { scope, path } of scopes) {
     const { servers: raw, error } = await readMcpServersFile(path, scope);
