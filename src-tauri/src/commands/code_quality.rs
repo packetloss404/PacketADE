@@ -712,6 +712,7 @@ pub async fn code_quality_ai_explain(
             crate::core::code_quality_ai_prompts::EXPLAIN_ERROR_SYSTEM_PROMPT.to_string(),
             Vec::new(),
             serde_json::Value::Null,
+            false, // source_mcp_from_fs — local session
             String::new(),
             user_turn,
             None,
@@ -881,6 +882,7 @@ pub async fn code_quality_ai_summarize(
             crate::core::code_quality_ai_prompts::SUMMARIZE_RUN_SYSTEM_PROMPT.to_string(),
             Vec::new(),
             serde_json::Value::Null,
+            false, // source_mcp_from_fs — local session
             String::new(),
             user_turn,
             None,
