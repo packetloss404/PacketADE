@@ -1,5 +1,9 @@
-# This repo has mixed historical line endings. Preserve each file's existing
-# endings so neither git nor tooling silently flips CRLF<->LF (which produces
-# whole-file diff noise). Run a deliberate `git add --renormalize` if you ever
-# want to converge the repo to LF.
-* -text
+# Normalize all text files to LF in the repo and on checkout, so tools that
+# rewrite files with CRLF (Windows editors, some CLIs) no longer produce
+# whole-file line-ending diff noise. Binary files are auto-detected and left
+# untouched. Repo was converged to LF via `git add --renormalize .`.
+* text=auto eol=lf
+
+# Windows batch scripts require CRLF (none exist today; rule is future-proofing)
+*.bat text eol=crlf
+*.cmd text eol=crlf
