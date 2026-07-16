@@ -171,6 +171,30 @@ async function run() {
     assert.equal(servers.on.disabled, undefined);
   }
 
+  // 10) $HOME unset → loader must NOT throw (os.homedir() can throw when HOME
+  //     is unset AND the uid has no passwd entry). Project scope (cwd-derived,
+  //     independent of homedir) must still load; a homedir failure, if any, is
+  //     folded into readErrors rather than escaping to fail the session.
+  {
+    const projectDir = await mkdtemp(join(tmpdir(), "packetade-mcp-proj-"));
+    cleanups.push(projectDir);
+    await writeFile(
+      join(projectDir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { p: { type: "stdio", command: "node" } } }),
+      "utf8",
+    );
+    const savedHome = process.env.HOME;
+    delete process.env.HOME;
+    try {
+      const { servers, summary } = await loadMcpFromFs(projectDir, "mcp-config-merge-smoke");
+      assert.equal(servers.p.command, "node", "project scope must load with HOME unset");
+      assert.ok(Array.isArray(summary.readErrors), "summary must be well-formed with HOME unset");
+    } finally {
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+    }
+  }
+
   console.log("[mcp-config-merge-smoke] OK");
 }
 
