@@ -10,12 +10,13 @@ use tauri::Emitter;
 use tracing::{info, warn};
 
 use super::events::{
-    chunk_event, done_event, edit_baseline_event, error_event, pending_edit_event,
-    permission_request_event, plan_block_event, thinking_event, thinking_stop_event,
-    tool_output_extended_event, tool_result_event, tool_start_event, turn_summary_event,
-    DonePayload, EditBaselinePayload, ErrorPayload, PendingEditPayload,
-    PermissionRequestPayload, PlanBlockPayload, PlanItemPayload, ThinkingPayload,
-    ToolOutputExtendedPayload, ToolResultPayload, ToolStartPayload, TurnSummaryPayload,
+    chunk_event, done_event, edit_baseline_event, error_event, mcp_sources_event,
+    pending_edit_event, permission_request_event, plan_block_event, thinking_event,
+    thinking_stop_event, tool_output_extended_event, tool_result_event, tool_start_event,
+    turn_summary_event, DonePayload, EditBaselinePayload, ErrorPayload, McpReadError,
+    McpSourceInfo, McpSourcesPayload, PendingEditPayload, PermissionRequestPayload,
+    PlanBlockPayload, PlanItemPayload, ThinkingPayload, ToolOutputExtendedPayload,
+    ToolResultPayload, ToolStartPayload, TurnSummaryPayload,
 };
 use super::status::SidecarState;
 use super::supervisor::SidecarManager;
@@ -372,6 +373,72 @@ impl SidecarManager {
                 let _ = self
                     .app_handle
                     .emit(&plan_block_event(&session_id), PlanBlockPayload { items });
+            }
+            "mcp_sources" => {
+                // S8-Phase-B (Slice B): pure translation of the remote
+                // sidecar's MCP-sourcing summary. Names/transport/scope +
+                // read errors only — the sidecar never puts secrets here.
+                let sources: Vec<McpSourceInfo> = value
+                    .get("sources")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|item| {
+                                let name =
+                                    item.get("name").and_then(|v| v.as_str())?.to_string();
+                                let transport = item
+                                    .get("transport")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("stdio")
+                                    .to_string();
+                                let scope = item
+                                    .get("scope")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("project")
+                                    .to_string();
+                                Some(McpSourceInfo {
+                                    name,
+                                    transport,
+                                    scope,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let read_errors: Vec<McpReadError> = value
+                    .get("readErrors")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|item| {
+                                let scope = item
+                                    .get("scope")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("project")
+                                    .to_string();
+                                let path =
+                                    item.get("path").and_then(|v| v.as_str())?.to_string();
+                                let message = item
+                                    .get("message")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                Some(McpReadError {
+                                    scope,
+                                    path,
+                                    message,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let _ = self.app_handle.emit(
+                    &mcp_sources_event(&session_id),
+                    McpSourcesPayload {
+                        sources,
+                        read_errors,
+                    },
+                );
             }
             "tool_output_extended" => {
                 let id = value

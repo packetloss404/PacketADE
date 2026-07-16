@@ -13,6 +13,7 @@ import {
   apiAgentPlanBlockEvent,
   apiAgentToolOutputExtendedEvent,
   apiAgentTurnSummaryEvent,
+  apiAgentMcpSourcesEvent,
 } from "@/lib/events";
 import { generateId } from "@/lib/storage";
 import { toProjectRelativePath } from "@/lib/parseToolInput";
@@ -600,6 +601,45 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     if (touched) requestConversationSave(id);
   });
 
+  // S8-Phase-B (Slice B): the remote sidecar reports which MCP servers it
+  // sourced from its OWN filesystem (name/transport/scope only — never
+  // commands or secrets), plus any read/parse errors. Stamp the summary onto
+  // the conversation so the SessionMetaLine pill can surface it, and — when
+  // any source failed to load — append a one-time system notice naming the
+  // failing paths (mirrors the auto-failover notice pattern above) so the
+  // silent backend warn is replaced by a visible signal.
+  const mcpSourcesUnlisten = await listen<{
+    sources: { name: string; transport: "stdio" | "http" | "sse"; scope: "global" | "project" }[];
+    readErrors: { scope: "global" | "project"; path: string; message: string }[];
+  }>(apiAgentMcpSourcesEvent(id), (event) => {
+    const sources = event.payload.sources ?? [];
+    const readErrors = event.payload.readErrors ?? [];
+    const noticeMsg: AgentMessage | null =
+      readErrors.length > 0
+        ? {
+            id: generateId("msg"),
+            role: "system",
+            content: `(remote MCP: loaded ${sources.length}, ${readErrors.length} config file${
+              readErrors.length === 1 ? "" : "s"
+            } could not be read — ${readErrors.map((e) => e.path).join(", ")})`,
+            timestamp: Date.now(),
+          }
+        : null;
+    setState((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              mcpSources: { sources, readErrors },
+              messages: noticeMsg ? [...c.messages, noticeMsg] : c.messages,
+              updatedAt: Date.now(),
+            }
+          : c,
+      ),
+    }));
+    requestConversationSave(id);
+  });
+
   return () => {
     coalescer.dispose();
     chunkUnlisten();
@@ -615,5 +655,6 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     planBlockUnlisten();
     toolOutputExtendedUnlisten();
     turnSummaryUnlisten();
+    mcpSourcesUnlisten();
   };
 }

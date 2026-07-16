@@ -145,6 +145,15 @@ export interface AgentConversation {
    * `McpServerEntry.name` from `useMcpStore`. Sidecar protocol has no
    * mid-session MCP swap, so flips here apply on the NEXT session start. */
   enabledMcpServerIds?: string[];
+  /** S8-Phase-B: MCP servers the sidecar sourced from its OWN remote FS for
+   * this session (name/transport/scope only — never commands or secrets),
+   * plus any read/parse errors. Populated from the `mcp_sources` event for
+   * remote (SSH) sessions; undefined for local. Persisted so the pill and
+   * any error notice survive reload. */
+  mcpSources?: {
+    sources: { name: string; transport: "stdio" | "http" | "sse"; scope: "global" | "project" }[];
+    readErrors: { scope: "global" | "project"; path: string; message: string }[];
+  };
   /** B1: hover-`+` diff comments queued by the user on pending edits.
    * Folded into the next user turn as a "File comments:" preamble and
    * cleared on send (or via the chip-strip "Clear" action). */
