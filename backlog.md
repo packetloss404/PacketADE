@@ -238,11 +238,14 @@ them up before that gate clears.
   the server, resume hits the old host.
 - **P3 — Sentinel rename.** `src-tauri/src/commands/pty.rs`
   `PACKETCODE_SSH_OK` and `src-tauri/src/core/tool_runtime_ssh.rs`
-  `PACKETCODE_EOF_*` still use the old brand. **(being fixed by H4 this wave.)**
+  `PACKETCODE_EOF_*` still use the old brand. (Still open as of 2026-07-16 —
+  verified both sentinels remain; the earlier "fixed by H4" note was premature.
+  Internal-only sentinels, so cosmetic, but rename for brand consistency.)
 - **P3 — `cancel_flight_attempt` fingerprint asymmetry**
   (`src-tauri/src/commands/flight_attempts.rs:330-342`) — cleanup deferred
   to FE, which carries fingerprint correctly.
-- **P3 — No unit test for `sshTargetMigration.ts`.**
+- ~~**P3 — No unit test for `sshTargetMigration.ts`.**~~ RESOLVED — covered by
+  `src/lib/__tests__/sshTargetMigration.test.ts` (verified 2026-07-16).
 - **P3 — Heredoc terminator predictability** — use random hex suffix
   instead of unix-nanos.
 - **P3 — `keyPath` argv hygiene** — reject paths with non-printable / shell
@@ -431,7 +434,9 @@ compatibility outlives API/config deprecation.
 
 ## Product tracks (from `dev/README.md`)
 
-- **P2 — Cost dashboard alerts** (`dev/moat/cost-dashboard-plan.md`).
+- ~~**P2 — Cost dashboard alerts** (`dev/moat/cost-dashboard-plan.md`).~~
+  SUPERSEDED — shipped as N5 (cost-threshold notifications on an upward guardrail
+  transition, `notifyCostThreshold`). See `ROADMAP.md` N5 + `CHANGELOG.md` `[0.10.1]`.
 - **Swarm orchestration Phase 4 escalation (N2) — SHIPPED** 2026-07-14
   (→ `CHANGELOG.md` `[0.10.1]`). Decision: escalation **suggests, not acts** —
   no auto-reassignment. Built as a producer on the live *attempt* lifecycle (the

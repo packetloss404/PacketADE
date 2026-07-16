@@ -1,8 +1,8 @@
 # PacketADE Roadmap
 
-Last updated: 2026-07-13 (0.10.0 single-surface consolidation state, plus the
-2026-07-11 planner-amputation and window-state-persistence merges, both of
-which landed after the 0.10.0 cut and are not yet in `CHANGELOG.md`)
+Last updated: 2026-07-16 (adds the 2026-07-14..16 wave: N2 swarm escalation, N3
+PacketADE-as-MCP-server, and S7/S8-A/S8-B/S9 SSH + MCP-over-SSH tracks — all
+shipped and in `CHANGELOG.md` `[0.10.1]`)
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
@@ -48,8 +48,9 @@ canonical plan docs.
 | ID  | Track                            | Priority | Status      | Notes                                                                                                                                                                                   |
 | --- | -------------------------------- | -------: | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | N1  | Sidecar-over-SSH                 |       P1 | Shipped     | `forward_start_ssh` landed — subscription providers now run over SSH remote workspaces through the sidecar. See [`CHANGELOG.md`](./CHANGELOG.md).                                        |
-| N2  | Swarm orchestration escalation   |       P2 | Partial     | Auto-reassignment remains deferred. See [`dev/bridgemind/swarm-orchestration-plan.md`](./dev/bridgemind/swarm-orchestration-plan.md).                                                   |
-| N3  | PacketADE MCP provider transport |       P2 | Deferred    | Frontend provider config exists; Rust transport is deferred. See [`dev/mcp-provider-transport.md`](./dev/mcp-provider-transport.md).                                                    |
+| N2  | Swarm orchestration escalation   |       P2 | Shipped     | Escalation **suggests, not acts** (the "auto-reassignment" question resolved to human-in-the-loop): a stuck flight (all attempts terminal, none succeeded) gets one deduped `escalation` suggestion on its coordination timeline. Built on the live attempt lifecycle. See [`dev/bridgemind/swarm-orchestration-plan.md`](./dev/bridgemind/swarm-orchestration-plan.md) and [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
+| N3  | PacketADE MCP provider transport |       P2 | Shipped     | PacketADE now exposes itself as an MCP server (Streamable HTTP via `rmcp`, loopback + bearer/Origin auth): 5 read tools + 7 `packetade://` resources + a live activity feed, plus two opt-in append-only writes (`append_handoff`, `escalate`). `src-tauri/src/mcp_server/`. See [`dev/mcp-provider-transport.md`](./dev/mcp-provider-transport.md) and [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
+| S8  | MCP servers over SSH             |       P1 | Shipped     | Remote (SSH) sessions run MCP servers: Phase-A forwards HTTP/SSE; Phase-B (remote-owned config) adds **stdio** — the remote sidecar sources its own `~/.claude/settings.json` + `<project>/.mcp.json` and reports a `mcp_sources` summary. Sidecar protocol v7→v8. See [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
 | N4  | Git review packet integration    |       P2 | Shipped     | GitDashboard now surfaces each changed file's linked flight `ReviewPacket` (summary / type / command / agent diff + status) via `ReviewPacketPanel`, and deep-links to the live approval prompt when one exists (`focusConversationDeepLink`). Approve/reject stays session-scoped in ReviewSurface. Remaining nicety: open the git diff editor directly from the packet. See [`dev/zen-workspace/features-git-workspace.md`](./dev/zen-workspace/features-git-workspace.md) and [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
 | N5  | Cost alerts                      |       P2 | Shipped     | Budget thresholds (daily / global-monthly / session / per-provider / per-flight) + warning thresholds + 24h overrides + the launch gate were already in place; the remaining alert/notification UX now ships — a notification fires on an upward guardrail transition, gated by a "Cost threshold alerts" toggle (`notifyCostThreshold` in `src/lib/notifications.ts`, transition detection in `analyticsStore.load()`). See [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
 
@@ -71,11 +72,12 @@ canonical plan docs.
 
 Sprints 0-4, Flight Planner v1, workspace panes, Issues, GitHub + Memory,
 dictation, cost analytics, cost guardrails / budget thresholds, API-agent
-conversations, sidecar protocol v7 (the v6→v7 planner-amputation bump), local
-quality gates, and the conversation-as-tile single-surface consolidation (the
-"match Claude Code & Codex" initiative, now folded into the Workspace tile
-surface) are shipped. The full release narrative lives in
-[`CHANGELOG.md`](./CHANGELOG.md).
+conversations, sidecar protocol v8 (v6→v7 planner-amputation, v7→v8 S8-Phase-B
+MCP-over-SSH), PacketADE-as-MCP-server (N3), MCP servers over SSH (S8 A+B),
+remote git commands (S7), Codex-over-SSH (S9), local quality gates, and the
+conversation-as-tile single-surface consolidation (the "match Claude Code &
+Codex" initiative, now folded into the Workspace tile surface) are shipped. The
+full release narrative lives in [`CHANGELOG.md`](./CHANGELOG.md).
 
 Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`,
 `pnpm e2e`, `cargo check --manifest-path src-tauri/Cargo.toml`, and

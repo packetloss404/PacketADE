@@ -15,7 +15,7 @@ Use these as the trust anchors before reading older plan files:
 | Remote/mobile agent access | [`remoteagents/README.md`](./remoteagents/README.md)                                                                                                                                                                                 | Supersedes the older `mobile/` investigation for phone/PWA work.                                       |
 | Multi-monitor operations   | [`send-to-monitor-plan.md`](./send-to-monitor-plan.md)                                                                                                                                                                               | Paused planning doc for detached Monitor windows; no implementation until current feature/bug checks.  |
 | SSH workspace parity       | [`sidecar-over-ssh-verification.md`](./sidecar-over-ssh-verification.md)                                                                                                                                                             | Test and manual verification contract for subscription providers on remote workspaces.                 |
-| MCP provider transport     | [`mcp-provider-transport.md`](./mcp-provider-transport.md)                                                                                                                                                                           | Implementation owner for the deferred local MCP server.                                                |
+| MCP provider transport     | [`mcp-provider-transport.md`](./mcp-provider-transport.md)                                                                                                                                                                           | SHIPPED (N3) — PacketADE-as-MCP-server: reads + opt-in append-only writes. Doc records the cut/deferred tools. |
 | Build and release ops      | [`multi-platform-build.md`](./multi-platform-build.md), [`updater-setup.md`](./updater-setup.md), [`local-quality-gates.md`](./local-quality-gates.md), [`beta-distribution-trust-runbook.md`](./beta-distribution-trust-runbook.md) | Operational runbooks, not feature backlogs.                                                            |
 | Historical plans           | [`archive/`](./archive/)                                                                                                                                                                                                             | Cold storage; do not treat as current unless an active doc links to a specific artifact as background. |
 
@@ -40,12 +40,12 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 
 ### Swarm Orchestration
 
-- `bridgemind/swarm-orchestration-plan.md` — Phase 4 escalation (auto-reassignment) partial
-- `bridgemind/packetade-mcp-server-plan.md` — PacketADE MCP provider Phase 1 frontend done, transport layer deferred
+- `bridgemind/swarm-orchestration-plan.md` — Phase 4 escalation SHIPPED (N2): escalation *suggests, not acts* (human-in-the-loop)
+- `bridgemind/packetade-mcp-server-plan.md` — PacketADE MCP provider SHIPPED (N3): frontend + Rust MCP server (reads + opt-in writes)
 
 ### MCP Provider
 
-- `mcp-provider-transport.md` — Phases 2-3 deferred (local MCP server transport)
+- `mcp-provider-transport.md` — SHIPPED (N3): local MCP server (Streamable HTTP via `rmcp`). Doc records cut/deferred tools.
 
 ### Flight Planner (archived — backend amputated 2026-07-11)
 
@@ -104,5 +104,5 @@ All five product tracks have been implemented:
 - **W** — Workspace Foundation (workspace-per-project) ✅
 - **X** — Workspace UX (templates, editor, git, prompts) ✅
 - **S** — Swarm Orchestration (roles, ownership, coordination) ✅
-- **M** — MCP Provider (frontend types/store/settings) ✅ (transport deferred)
+- **M** — MCP Provider (frontend + Rust MCP server transport) ✅ (N3 shipped)
 - **T** — TUI Evolution (polling, search, leader key) ✅
