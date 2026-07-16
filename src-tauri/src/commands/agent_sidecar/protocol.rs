@@ -18,6 +18,7 @@ impl SidecarManager {
         system_prompt: String,
         allowed_tools: Vec<String>,
         mcp_servers: Value,
+        source_mcp_from_fs: bool,
         project_path: String,
         initial_message: String,
         api_key: Option<String>,
@@ -38,6 +39,7 @@ impl SidecarManager {
             system_prompt,
             allowed_tools,
             mcp_servers,
+            source_mcp_from_fs,
             project_path,
             initial_message,
             api_key,
@@ -66,6 +68,7 @@ impl SidecarManager {
         system_prompt: String,
         allowed_tools: Vec<String>,
         mcp_servers: Value,
+        source_mcp_from_fs: bool,
         project_path: String,
         initial_message: String,
         api_key: Option<String>,
@@ -87,6 +90,7 @@ impl SidecarManager {
             system_prompt,
             allowed_tools,
             mcp_servers,
+            source_mcp_from_fs,
             project_path,
             initial_message,
             api_key,
@@ -113,6 +117,7 @@ impl SidecarManager {
         system_prompt: String,
         allowed_tools: Vec<String>,
         mcp_servers: Value,
+        source_mcp_from_fs: bool,
         project_path: String,
         initial_message: String,
         api_key: Option<String>,
@@ -135,32 +140,27 @@ impl SidecarManager {
             let mut sessions = self.owned_sessions.lock().await;
             sessions.insert(session_id.clone());
         }
-        let req = json!({
-            "type": "start_session",
-            "sessionId": session_id,
-            "provider": provider,
-            "model": model,
-            "systemPrompt": system_prompt,
-            "allowedTools": allowed_tools,
-            "mcpServers": mcp_servers,
-            "projectPath": project_path,
-            "initialMessage": initial_message,
-            "apiKey": api_key,
-            "resume": resume,
-            "thinkingEnabled": thinking_enabled,
-            "planMode": plan_mode,
-            "attachments": attachments,
-            "resumeMessages": resume_messages,
-            "permissionMode": permission_mode,
-            "approveWrites": approve_writes,
-            "commandPath": command_path,
-            "workspace": workspace.unwrap_or_else(|| {
-                json!({
-                    "kind": "local",
-                    "projectPath": project_path,
-                })
-            }),
-        });
+        let req = encode_start_session(
+            &session_id,
+            provider,
+            model,
+            system_prompt,
+            allowed_tools,
+            mcp_servers,
+            source_mcp_from_fs,
+            project_path,
+            initial_message,
+            api_key,
+            resume,
+            thinking_enabled,
+            plan_mode,
+            attachments,
+            resume_messages,
+            permission_mode,
+            approve_writes,
+            command_path,
+            workspace,
+        );
         let result = self.send_json_for_session(&session_id, req).await;
         if result.is_err() {
             self.forget_owned_session(&session_id).await;
@@ -300,5 +300,122 @@ impl SidecarManager {
         self.forget_owned_session(&session_id).await;
         self.close_remote_session(&session_id).await;
         result
+    }
+}
+
+/// Encode a `start_session` request as the wire JSON the sidecar consumes.
+/// Extracted as a pure seam so the wire shape — including S8-Phase-B's
+/// `sourceMcpFromFs` flag — is unit-testable without a live supervisor.
+#[allow(clippy::too_many_arguments)]
+fn encode_start_session(
+    session_id: &str,
+    provider: String,
+    model: String,
+    system_prompt: String,
+    allowed_tools: Vec<String>,
+    mcp_servers: Value,
+    source_mcp_from_fs: bool,
+    project_path: String,
+    initial_message: String,
+    api_key: Option<String>,
+    resume: Option<String>,
+    thinking_enabled: Option<bool>,
+    plan_mode: Option<bool>,
+    attachments: Value,
+    resume_messages: Value,
+    permission_mode: Option<String>,
+    approve_writes: Option<bool>,
+    command_path: Option<String>,
+    workspace: Option<Value>,
+) -> Value {
+    json!({
+        "type": "start_session",
+        "sessionId": session_id,
+        "provider": provider,
+        "model": model,
+        "systemPrompt": system_prompt,
+        "allowedTools": allowed_tools,
+        "mcpServers": mcp_servers,
+        "sourceMcpFromFs": source_mcp_from_fs,
+        "projectPath": project_path,
+        "initialMessage": initial_message,
+        "apiKey": api_key,
+        "resume": resume,
+        "thinkingEnabled": thinking_enabled,
+        "planMode": plan_mode,
+        "attachments": attachments,
+        "resumeMessages": resume_messages,
+        "permissionMode": permission_mode,
+        "approveWrites": approve_writes,
+        "commandPath": command_path,
+        "workspace": workspace.unwrap_or_else(|| {
+            json!({
+                "kind": "local",
+                "projectPath": project_path,
+            })
+        }),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encode_start_session_carries_source_mcp_from_fs_and_empty_servers() {
+        // S8-Phase-B: a remote launch forwards an empty `mcpServers` map plus
+        // `sourceMcpFromFs = true` so the sidecar sources its own remote FS
+        // config — assert both land on the wire.
+        let req = encode_start_session(
+            "sess-1",
+            "echo".to_string(),
+            "echo".to_string(),
+            String::new(),
+            Vec::new(),
+            json!({}),
+            true,
+            "/srv/app".to_string(),
+            "hi".to_string(),
+            None,
+            None,
+            None,
+            None,
+            Value::Null,
+            Value::Null,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(req["type"], "start_session");
+        assert_eq!(req["mcpServers"], json!({}));
+        assert_eq!(req["sourceMcpFromFs"], json!(true));
+    }
+
+    #[test]
+    fn encode_start_session_local_flag_off() {
+        let req = encode_start_session(
+            "sess-2",
+            "echo".to_string(),
+            "echo".to_string(),
+            String::new(),
+            Vec::new(),
+            json!({ "srv": { "type": "stdio", "command": "node" } }),
+            false,
+            "/home/me/app".to_string(),
+            "hi".to_string(),
+            None,
+            None,
+            None,
+            None,
+            Value::Null,
+            Value::Null,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(req["sourceMcpFromFs"], json!(false));
+        assert_eq!(req["mcpServers"]["srv"]["command"], "node");
     }
 }

@@ -181,6 +181,7 @@ pub async fn issues_extract_from_spec(
             system_prompt,
             Vec::new(),              // allowed_tools — none
             serde_json::Value::Null, // mcp_servers — none
+            false,                   // source_mcp_from_fs — local session
             resolved_project_path,
             user_turn,               // initial_message carries the work
             None,                    // api_key — claude-oauth uses ~/.claude

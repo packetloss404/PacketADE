@@ -65,7 +65,14 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "openai
 /// envelopes. `inject_user_turn` and `rate_limited` survive. Negotiation
 /// stays warn-only, so a v6 sidecar paired with a v7 supervisor (or vice
 /// versa) still connects.
-pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 7;
+///
+/// v8 (S8-Phase-B): added `sourceMcpFromFs` on `start_session` (remote-owned
+/// MCP config sourcing — the sidecar reads its own ~/.claude/settings.json +
+/// <project>/.mcp.json and runs ALL servers from there, ignoring the forwarded
+/// `mcpServers`) plus the `mcp_sources` event reporting which servers were
+/// sourced (name/transport/scope) and any read errors — no commands/secrets.
+/// Negotiation stays warn-only.
+pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 8;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.
