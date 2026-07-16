@@ -942,19 +942,22 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
   },
 
   cancelActiveConversation: async (id) => {
-    try {
-      await invoke("cancel_api_agent_session", { sessionId: id });
-    } catch (e) {
-      console.warn("cancel_api_agent_session failed:", e);
-    }
+    // Clear the queue and settle the conversation SYNCHRONOUSLY, before the
+    // backend cancel can emit its `api-agent:done` — otherwise the done
+    // listener drains the queue and re-sends the very message the user was
+    // cancelling (G33). Dropping `queued:true` bubbles prevents a bubble
+    // stuck forever in "queued".
     let updated: AgentConversation | undefined;
     set((s) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
-        const messages = c.messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
+        const messages = c.messages
+          .filter((m) => !m.queued)
+          .map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
         const next: AgentConversation = {
           ...c,
           messages,
+          queuedMessages: [],
           status: "idle",
           updatedAt: Date.now(),
         };
@@ -963,6 +966,11 @@ export const useAgentTaskStore = create<AgentTaskStore>((set, get) => ({
       }),
     }));
     if (updated) scheduleSave(updated);
+    try {
+      await invoke("cancel_api_agent_session", { sessionId: id });
+    } catch (e) {
+      console.warn("cancel_api_agent_session failed:", e);
+    }
   },
 
   changeModel: async (id, newModel) => {
