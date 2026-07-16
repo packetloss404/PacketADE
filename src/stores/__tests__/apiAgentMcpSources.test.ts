@@ -152,6 +152,53 @@ describe("apiAgentListeners mcp_sources (S8-Phase-B Slice B)", () => {
     expect(notice?.content).toContain("remote MCP");
   });
 
+  it("does not stack duplicate notices when the event re-fires (resume/retry)", async () => {
+    const { useAgentTaskStore } = await setup("conv-retry");
+    const payload = {
+      payload: {
+        sources: [{ name: "fs", transport: "stdio", scope: "global" }],
+        readErrors: [
+          { scope: "project", path: "/proj/.mcp.json", message: "Unexpected token" },
+        ],
+      },
+    };
+    // mcp_sources re-fires on every session (re)start — resume-after-restart
+    // and retryLastTurn both re-issue createSession against the same persisted
+    // message list. The notice must stay deduped to exactly one.
+    listeners.get("api-agent:mcp-sources:conv-retry")?.(payload);
+    listeners.get("api-agent:mcp-sources:conv-retry")?.(payload);
+    listeners.get("api-agent:mcp-sources:conv-retry")?.(payload);
+
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-retry");
+    const notices = conv?.messages.filter((m) => m.role === "system") ?? [];
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.content).toContain("/proj/.mcp.json");
+  });
+
+  it("clears a stale notice when a later summary reports no errors", async () => {
+    const { useAgentTaskStore } = await setup("conv-heal");
+    listeners.get("api-agent:mcp-sources:conv-heal")?.({
+      payload: {
+        sources: [],
+        readErrors: [
+          { scope: "project", path: "/proj/.mcp.json", message: "Unexpected token" },
+        ],
+      },
+    });
+    // Config fixed between restarts → next summary has no errors; the prior
+    // notice must be dropped, not left dangling below the latest good state.
+    listeners.get("api-agent:mcp-sources:conv-heal")?.({
+      payload: {
+        sources: [{ name: "fs", transport: "stdio", scope: "project" }],
+        readErrors: [],
+      },
+    });
+
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-heal");
+    expect(conv?.messages.some((m) => m.role === "system")).toBe(false);
+    expect(conv?.mcpSources?.sources.map((s) => s.name)).toEqual(["fs"]);
+  });
+
   it("sets the field with no notice for an empty summary", async () => {
     const { useAgentTaskStore } = await setup("conv-empty");
     listeners.get("api-agent:mcp-sources:conv-empty")?.({

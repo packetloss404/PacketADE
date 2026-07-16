@@ -51,6 +51,12 @@ import type {
   PendingEdit,
 } from "@/types/agent-conversation";
 
+// S8-Phase-B: prefix marking the `role:"system"` notice appended when the
+// remote sidecar reports MCP config read errors. Used both to build the notice
+// and to dedup prior copies before re-appending (mcp_sources re-fires on every
+// session (re)start), so a broken remote config never stacks duplicates.
+const REMOTE_MCP_NOTICE_PREFIX = "(remote MCP:";
+
 function sendPromotedQueuedMessage(
   conversationId: string,
   content: string,
@@ -619,23 +625,32 @@ export async function installApiAgentListeners(conversationId: string): Promise<
         ? {
             id: generateId("msg"),
             role: "system",
-            content: `(remote MCP: loaded ${sources.length}, ${readErrors.length} config file${
+            content: `${REMOTE_MCP_NOTICE_PREFIX} loaded ${sources.length}, ${readErrors.length} config file${
               readErrors.length === 1 ? "" : "s"
             } could not be read — ${readErrors.map((e) => e.path).join(", ")})`,
             timestamp: Date.now(),
           }
         : null;
     setState((s) => ({
-      conversations: s.conversations.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              mcpSources: { sources, readErrors },
-              messages: noticeMsg ? [...c.messages, noticeMsg] : c.messages,
-              updatedAt: Date.now(),
-            }
-          : c,
-      ),
+      conversations: s.conversations.map((c) => {
+        if (c.id !== id) return c;
+        // Idempotent: `mcp_sources` re-fires on every session (re)start —
+        // resume-after-restart (resumeApiConversation) and retryLastTurn both
+        // re-issue createSession, which re-emits this event against the same,
+        // already-persisted message list. Strip any prior remote-MCP notice
+        // before re-appending so a broken remote config yields exactly one
+        // notice reflecting the LATEST summary, not a fresh duplicate stacked
+        // below the persisted one each restart/retry.
+        const base = c.messages.filter(
+          (m) => !(m.role === "system" && m.content.startsWith(REMOTE_MCP_NOTICE_PREFIX)),
+        );
+        return {
+          ...c,
+          mcpSources: { sources, readErrors },
+          messages: noticeMsg ? [...base, noticeMsg] : base,
+          updatedAt: Date.now(),
+        };
+      }),
     }));
     requestConversationSave(id);
   });
