@@ -91,3 +91,8 @@ export function apiAgentToolOutputExtendedEvent(sessionId: string): string {
 export function apiAgentTurnSummaryEvent(sessionId: string): string {
   return `api-agent:turn-summary:${sessionId}`;
 }
+
+// S8-Phase-B (Slice B): remote-sourced MCP config summary for a session.
+export function apiAgentMcpSourcesEvent(sessionId: string): string {
+  return `api-agent:mcp-sources:${sessionId}`;
+}

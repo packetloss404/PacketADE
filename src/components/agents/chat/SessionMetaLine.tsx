@@ -4,6 +4,7 @@ import {
   Coins,
   FolderOpen,
   GitBranch as GitBranchIcon,
+  Plug,
   Server,
 } from "lucide-react";
 import { estimateTurnCostUsd } from "@/lib/conversationCost";
@@ -85,6 +86,15 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
 
   const isApi = conversation.mode === "api";
 
+  // S8-Phase-B (Slice B): MCP servers the sidecar sourced from its own FS for
+  // this session (remote sessions), plus any read/parse errors. Shown for all
+  // sessions — it's a free signal for local stdio too — with amber styling
+  // carrying the attention when a config file could not be read.
+  const mcpSources = conversation.mcpSources;
+  const mcpCount = mcpSources?.sources.length ?? 0;
+  const mcpErrorCount = mcpSources?.readErrors.length ?? 0;
+  const showMcpPill = !!mcpSources && (mcpCount > 0 || mcpErrorCount > 0);
+
   const sessionCost = useMemo(() => {
     if (!isApi) return null;
     let total = 0;
@@ -151,6 +161,43 @@ export function SessionMetaLine({ conversation }: SessionMetaLineProps) {
 
       {!isSsh && gitLoading && !report && (
         <Spinner size={10} className="text-text-faint" />
+      )}
+
+      {/* MCP sources pill (S8-Phase-B) */}
+      {showMcpPill && (
+        <Tooltip
+          content={
+            <div className="flex flex-col gap-0.5 text-left">
+              {mcpCount > 0 ? (
+                mcpSources!.sources.map((s) => (
+                  <span key={`${s.scope}:${s.name}`}>
+                    {s.name} ({s.transport}, {s.scope})
+                  </span>
+                ))
+              ) : (
+                <span>No MCP servers sourced</span>
+              )}
+              {mcpErrorCount > 0 &&
+                mcpSources!.readErrors.map((e) => (
+                  <span key={`err:${e.scope}:${e.path}`} className="text-accent-amber">
+                    {e.scope}: {e.path} — {e.message}
+                  </span>
+                ))}
+            </div>
+          }
+          side="bottom"
+        >
+          <span className="flex items-center gap-1 shrink-0 cursor-default">
+            <Plug
+              size={10}
+              className={mcpErrorCount > 0 ? "text-accent-amber" : "text-text-muted"}
+            />
+            <span className={mcpErrorCount > 0 ? "text-accent-amber" : undefined}>
+              MCP {mcpCount}
+              {mcpErrorCount > 0 ? ` (!${mcpErrorCount})` : ""}
+            </span>
+          </span>
+        </Tooltip>
       )}
 
       {/* Right-aligned session cost (api-only) */}
