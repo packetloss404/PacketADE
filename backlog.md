@@ -753,3 +753,15 @@ re-verification against current code.
 - **G36** done notification + queue drain fire even on user cancel — `apiAgentListeners.ts:251-265`.
 
 **Refuted (do not action):** F07, F08, F14, F30, F31, F45 (F-series) · G12, G19, G22, G27, G28, G37 (G-series). Reasons in the report §1.
+
+## Portfolio audit backlog — 2026-07-17
+_Findings from a 2026-07-17 code audit, preserved for later._
+
+### Later / deferred
+- **[low/L]** Remote Agents (PWA + Packet Cloud relay) planned but unbuilt — dev/remoteagents/ holds only .md/html plan docs, no source
+  - Fix: Either implement PWA + relay per dev/remoteagents/ plan docs, or descope and delete the stale plan docs. Not a defect — deliberate roadmap item.
+
+### Known limitations (deliberate — not planned)
+- Sidecar PROTOCOL_VERSION lock-step flagged as stale (deepread said 7)
+- Version number flagged stale (deepread said 0.10.0)
+- Single TODO at core/worktree.rs:394 (documented low-pri Windows follow-up)
