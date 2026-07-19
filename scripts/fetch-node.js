@@ -48,6 +48,8 @@ import https from "node:https";
 import AdmZip from "adm-zip";
 import * as tar from "tar";
 
+import { SUPPORTED_TRIPLES, resolveTarget } from "./target-triple.js";
+
 // ---------------------------------------------------------------------------
 // Pinned constants
 // ---------------------------------------------------------------------------
@@ -204,18 +206,20 @@ function log(message) {
 }
 
 // ---------------------------------------------------------------------------
-// Target selection
+// Target selection (shared resolver in scripts/target-triple.js)
 // ---------------------------------------------------------------------------
 
-function detectHostTarget() {
-  const plat = process.platform;
-  const arch = process.arch;
-  if (plat === "win32" && arch === "x64") return "x86_64-pc-windows-msvc";
-  if (plat === "darwin" && arch === "arm64") return "aarch64-apple-darwin";
-  if (plat === "darwin" && arch === "x64") return "x86_64-apple-darwin";
-  if (plat === "linux" && arch === "x64") return "x86_64-unknown-linux-gnu";
-  if (plat === "linux" && arch === "arm64") return "aarch64-unknown-linux-gnu";
-  return null;
+// Drift guard: TARGETS (fetch/extract descriptors) must cover exactly the
+// triples the shared resolver supports.
+{
+  const local = Object.keys(TARGETS).sort().join(",");
+  const shared = [...SUPPORTED_TRIPLES].sort().join(",");
+  if (local !== shared) {
+    fail(
+      `TARGETS in fetch-node.js has drifted from SUPPORTED_TRIPLES in ` +
+        `target-triple.js (local: ${local}; shared: ${shared})`,
+    );
+  }
 }
 
 function printHelp() {
@@ -262,25 +266,13 @@ function resolveTargets(args) {
   if (args.all) {
     return Object.keys(TARGETS);
   }
-  const candidate =
-    args.target ??
-    process.env.TAURI_TARGET ??
-    process.env.TAURI_ENV_TARGET_TRIPLE ??
-    detectHostTarget();
-  if (!candidate) {
-    const supported = Object.keys(TARGETS).join(", ");
-    fail(
-      `could not auto-detect a supported target for ` +
-        `platform=${process.platform} arch=${process.arch}. ` +
-        `Pass --target=<triple>, set TAURI_TARGET, or set ` +
-        `TAURI_ENV_TARGET_TRIPLE. Supported: ${supported}`,
-    );
+  // Shared resolver: --target= → TAURI_TARGET → TAURI_ENV_TARGET_TRIPLE →
+  // host detection; throws on unknown/undetectable targets.
+  try {
+    return [resolveTarget({ argv: process.argv, env: process.env })];
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err));
   }
-  if (!TARGETS[candidate]) {
-    const supported = Object.keys(TARGETS).join(", ");
-    fail(`unknown target '${candidate}'. Supported targets: ${supported}`);
-  }
-  return [candidate];
 }
 
 function cachedTargetStatus(triple) {
