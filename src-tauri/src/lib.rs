@@ -314,8 +314,6 @@ pub fn run() {
             commands::flight_chat::ask_flight_chat_stream,
             // Side chat (ephemeral context-aware helper)
             commands::side_chat::ask_side_chat_stream,
-            // Ideation scanner
-            commands::ideation::generate_ideas,
             // GitHub integration
             commands::github::github_set_token,
             commands::github::github_clear_token,
@@ -396,11 +394,6 @@ pub fn run() {
             commands::dictation::list_whisper_models,
             commands::dictation::download_whisper_model,
             commands::dictation::delete_whisper_model,
-            // Deploy pipeline
-            commands::deploy::read_deploy_config,
-            commands::deploy::create_deploy_config,
-            commands::deploy::validate_deploy,
-            commands::deploy::run_deploy,
             // API keys
             commands::api_keys::set_api_key,
             commands::api_keys::get_api_key_exists,

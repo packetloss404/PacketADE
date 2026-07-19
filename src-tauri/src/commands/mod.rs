@@ -12,7 +12,6 @@ pub mod code_quality_autofix;
 pub mod conversations;
 pub mod crashes;
 pub mod custom_agents;
-pub mod deploy;
 pub mod dictation;
 pub mod error_classifier;
 pub mod flight_attempts;
@@ -21,7 +20,6 @@ pub mod fs;
 pub mod git;
 pub mod github;
 pub mod history;
-pub mod ideation;
 pub mod insights;
 // v0.8.5 — issues spec import.
 pub mod issues;
