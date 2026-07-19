@@ -316,6 +316,93 @@ describe("apiAgentListeners queued message drain", () => {
   });
 });
 
+describe("Stop with a queued message does not re-send it (G33)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.doUnmock("@/stores/agentTaskStore");
+    vi.doUnmock("@/stores/apiAgentListeners");
+    localStorage.clear();
+    listeners = new Map();
+    listenMock.mockImplementation((eventName: string, callback: EventListener) => {
+      listeners.set(eventName, callback);
+      return Promise.resolve(() => {});
+    });
+    invokeMock.mockResolvedValue(undefined);
+    loadConversationsMock.mockResolvedValue([]);
+    sendApiAgentMessageMock.mockResolvedValue(undefined);
+  });
+
+  it("clears the queue on Stop so the cancel-induced done does not drain it", async () => {
+    vi.useFakeTimers();
+    try {
+      const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+      const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+      const conv: AgentConversation = {
+        id: "conv-stop",
+        title: "Stop while queued",
+        agent: "api-openai",
+        projectPath: "D:/projects/example",
+        status: "active",
+        messages: [
+          makeMessage({ id: "msg-initial", content: "initial" }),
+          makeMessage({
+            id: "msg-current-assistant",
+            role: "assistant",
+            content: "current response",
+            isStreaming: true,
+          }),
+          makeMessage({
+            id: "msg-queued",
+            content: "please cancel me",
+            queued: true,
+          }),
+        ],
+        queuedMessages: ["please cancel me"],
+        sessionId: "conv-stop",
+        rawOutput: "",
+        createdAt: 1,
+        updatedAt: 1,
+        mode: "api",
+        provider: "openai",
+        model: "gpt-4o",
+      };
+      useAgentTaskStore.setState({
+        conversations: [conv],
+        selectedConversationId: "conv-stop",
+      });
+
+      await installApiAgentListeners("conv-stop");
+      await useAgentTaskStore.getState().cancelActiveConversation("conv-stop");
+
+      // Backend cancel surfaces as the same `done` event a real completion
+      // emits — it must find an already-empty queue.
+      listeners.get("api-agent:done:conv-stop")?.({
+        payload: {
+          input_tokens: 1,
+          output_tokens: 2,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      });
+
+      vi.runAllTimers();
+
+      expect(sendApiAgentMessageMock).not.toHaveBeenCalled();
+
+      const updated = useAgentTaskStore
+        .getState()
+        .conversations.find((c) => c.id === "conv-stop");
+      expect(updated?.queuedMessages).toEqual([]);
+      expect(updated?.status).toBe("idle");
+      expect(updated?.messages.some((m) => m.queued)).toBe(false);
+      expect(updated?.messages.some((m) => m.isStreaming)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 /**
  * P1-7: baseline recording + tool-input plumbing. Every edit-bearing tool
  * call must store its pre-edit content (from `pending_edit.before` for
