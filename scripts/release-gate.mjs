@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
+import { resolveTarget, sidecarPlatformPackage } from "./target-triple.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const root = path.resolve(__dirname, "..");
@@ -106,6 +108,69 @@ if (exists("src-tauri/binaries/node-x86_64-pc-windows-msvc.exe")) {
   pass("Windows Node runtime fetched");
 } else {
   fail("Windows Node runtime fetched", "Run pnpm run fetch-node before Windows packaging");
+}
+
+// Cross-arch consistency: the staged Node runtime and the installed sidecar
+// native platform package must both match the resolved build target.
+let releaseTarget = null;
+try {
+  releaseTarget = resolveTarget({ argv: process.argv, env: process.env });
+  pass("Build target resolved", releaseTarget);
+} catch (err) {
+  fail("Build target resolved", err instanceof Error ? err.message : String(err));
+}
+
+if (releaseTarget) {
+  const isWindowsTarget = releaseTarget.includes("-windows-");
+  const platformPkg = sidecarPlatformPackage(releaseTarget);
+  const platformDirName = platformPkg.split("/")[1];
+  const claudeRel = path.join(
+    "agent-sidecar",
+    "node_modules",
+    "@anthropic-ai",
+    platformDirName,
+    isWindowsTarget ? "claude.exe" : "claude",
+  );
+  const claudeAbs = path.join(root, claudeRel);
+  if (fs.existsSync(claudeAbs) && fs.statSync(claudeAbs).size > 0) {
+    pass("Sidecar native platform package matches target", `${platformPkg} (${claudeRel})`);
+  } else {
+    fail(
+      "Sidecar native platform package matches target",
+      `${claudeRel} missing or empty — run pnpm run sidecar:prune for target ${releaseTarget}`,
+    );
+  }
+
+  const scopeAbs = path.join(root, "agent-sidecar", "node_modules", "@anthropic-ai");
+  let foreign = [];
+  try {
+    foreign = fs
+      .readdirSync(scopeAbs)
+      .filter((name) => /^claude-agent-sdk-/.test(name) && name !== platformDirName);
+  } catch (err) {
+    fail(
+      "No foreign sidecar platform packages",
+      `could not read ${scopeAbs}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    foreign = null;
+  }
+  if (foreign !== null) {
+    if (foreign.length === 0) {
+      pass("No foreign sidecar platform packages");
+    } else {
+      fail(
+        "No foreign sidecar platform packages",
+        `found ${foreign.join(", ")} alongside target ${releaseTarget} — the bundle would ship the wrong native sidecar`,
+      );
+    }
+  }
+
+  const nodeRel = `src-tauri/binaries/node-${releaseTarget}${isWindowsTarget ? ".exe" : ""}`;
+  if (exists(nodeRel)) {
+    pass("Target Node runtime fetched", nodeRel);
+  } else {
+    fail("Target Node runtime fetched", `${nodeRel} missing — run pnpm run fetch-node for ${releaseTarget}`);
+  }
 }
 
 if (exists("dev/updater-setup.md")) {
