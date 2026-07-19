@@ -11,14 +11,23 @@
  *   1. Verifies `agent-sidecar/dist/` exists. If not, the build step did
  *      not run and this script refuses to proceed (exit 1). We do NOT
  *      silently re-run the build — that's the caller's job.
- *   2. Invokes `pnpm -C agent-sidecar install --prod --ignore-scripts`
- *      to re-materialise node_modules with production deps only. This
- *      is DESTRUCTIVE to devDependencies: after a production build the
- *      repo's sidecar node_modules will be missing `typescript` and
- *      `@types/node`. Re-run `pnpm sidecar:install` to restore dev deps
- *      before further sidecar development work.
+ *   2. Resolves the build's Rust target triple (scripts/target-triple.js;
+ *      `--target=` → TAURI_TARGET → TAURI_ENV_TARGET_TRIPLE → host) and
+ *      invokes `pnpm -C agent-sidecar install --prod --ignore-scripts`
+ *      with pnpm's `supportedArchitectures` temporarily injected into
+ *      agent-sidecar/package.json so the TARGET platform's native deps
+ *      are materialised (the original package.json is restored
+ *      byte-exact afterwards). This is DESTRUCTIVE to devDependencies:
+ *      after a production build the repo's sidecar node_modules will be
+ *      missing `typescript` and `@types/node`. Re-run
+ *      `pnpm sidecar:install` to restore dev deps before further sidecar
+ *      development work.
  *   3. Walks the pruned tree and prints a size summary (human-friendly
  *      bytes + file count) so CI logs show what's about to be bundled.
+ *   4. Asserts the target's `@anthropic-ai/claude-agent-sdk-<os>-<cpu>`
+ *      platform package is present (non-empty `claude` executable) and
+ *      that no foreign-platform variant leaked in; exits 1 otherwise,
+ *      aborting the Tauri beforeBuildCommand.
  *
  * Uses only Node stdlib + the root devDependencies already installed.
  * No new dependency is introduced.
@@ -27,9 +36,15 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import {
+  resolveTarget,
+  sidecarPlatformPackage,
+  tripleToSupportedArchitectures,
+} from "./target-triple.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +53,7 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const SIDECAR_DIR = path.join(REPO_ROOT, "agent-sidecar");
 const SIDECAR_DIST = path.join(SIDECAR_DIR, "dist");
 const SIDECAR_NODE_MODULES = path.join(SIDECAR_DIR, "node_modules");
+const SIDECAR_PKG_JSON = path.join(SIDECAR_DIR, "package.json");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -165,34 +181,79 @@ function main() {
     }
   }
 
-  // 2b. Re-install with a hoisted (flat) node_modules layout. This
-  //     produces a symlink-free, Tauri-bundler-friendly tree containing
-  //     only production dependencies.
-  log(`installing prod deps with hoisted linker in ${SIDECAR_DIR}`);
-  const pnpm = pnpmSpawn([
-    "-C",
-    SIDECAR_DIR,
-    "install",
-    "--prod",
-    "--ignore-scripts",
-    "--config.node-linker=hoisted",
-  ]);
-  const installResult = spawnSync(pnpm.command, pnpm.args, {
-    env: pnpm.env,
-    shell: false,
-    stdio: "inherit",
-  });
-  if (installResult.error) {
-    fail(`failed to spawn pnpm install`, installResult.error);
+  // 2b. Resolve the Rust target triple this build is for, so the prod
+  //     install materialises the TARGET platform's native deps (e.g. the
+  //     @anthropic-ai/claude-agent-sdk-<os>-<cpu> package carrying the
+  //     `claude` executable) rather than the HOST's. Without this, any
+  //     cross-arch build ships a target `node` next to a host-arch
+  //     `claude` and the sidecar cannot launch.
+  let target;
+  try {
+    target = resolveTarget({ argv: process.argv, env: process.env });
+  } catch (err) {
+    fail(`could not resolve build target`, err);
   }
-  if (installResult.status !== 0) {
-    fail(
-      `pnpm install --prod exited with status ${installResult.status} ` +
-        `(signal ${installResult.signal ?? "none"})`,
-    );
+  log(`resolved build target: ${target}`);
+  const supportedArchitectures = tripleToSupportedArchitectures(target);
+  log(`pnpm supportedArchitectures: ${JSON.stringify(supportedArchitectures)}`);
+
+  // 2c. Re-install with a hoisted (flat) node_modules layout. This
+  //     produces a symlink-free, Tauri-bundler-friendly tree containing
+  //     only production dependencies. pnpm's `supportedArchitectures`
+  //     must go through the package.json `pnpm` field (the CLI
+  //     `--config.supportedArchitectures...` form is non-functional in
+  //     pnpm 9.15.4), so we temporarily inject it and restore the
+  //     byte-exact original afterwards.
+  log(`installing prod deps with hoisted linker in ${SIDECAR_DIR}`);
+  const rawSidecarPkg = readFileSync(SIDECAR_PKG_JSON);
+  let sidecarPkg;
+  try {
+    sidecarPkg = JSON.parse(rawSidecarPkg.toString("utf8"));
+  } catch (err) {
+    fail(`could not parse ${SIDECAR_PKG_JSON}`, err);
+  }
+  sidecarPkg.pnpm = {
+    ...(sidecarPkg.pnpm ?? {}),
+    supportedArchitectures,
+  };
+
+  // Capture install failures instead of exiting inside the try block —
+  // fail() calls process.exit(1), which would skip the `finally` restore.
+  let installFailure = null;
+  try {
+    writeFileSync(SIDECAR_PKG_JSON, `${JSON.stringify(sidecarPkg, null, 2)}\n`);
+    const pnpm = pnpmSpawn([
+      "-C",
+      SIDECAR_DIR,
+      "install",
+      "--prod",
+      "--ignore-scripts",
+      "--config.node-linker=hoisted",
+    ]);
+    const installResult = spawnSync(pnpm.command, pnpm.args, {
+      env: pnpm.env,
+      shell: false,
+      stdio: "inherit",
+    });
+    if (installResult.error) {
+      installFailure = { message: `failed to spawn pnpm install`, cause: installResult.error };
+    } else if (installResult.status !== 0) {
+      installFailure = {
+        message:
+          `pnpm install --prod exited with status ${installResult.status} ` +
+          `(signal ${installResult.signal ?? "none"})`,
+        cause: null,
+      };
+    }
+  } finally {
+    // Restore the byte-exact original package.json no matter what.
+    writeFileSync(SIDECAR_PKG_JSON, rawSidecarPkg);
+  }
+  if (installFailure) {
+    fail(installFailure.message, installFailure.cause);
   }
 
-  // 2c. Remove the `.pnpm/` metadata directory. With a hoisted layout it
+  // 2d. Remove the `.pnpm/` metadata directory. With a hoisted layout it
   //     only contains pnpm's lock.yaml; leaving it adds nothing except
   //     resource-walk noise for the Tauri bundler.
   const pnpmMeta = path.join(SIDECAR_NODE_MODULES, ".pnpm");
@@ -216,6 +277,51 @@ function main() {
   log(
     `pruned node_modules: ${formatBytes(bytes)} across ${files} files (path=${SIDECAR_NODE_MODULES})`,
   );
+
+  // 4. Build-failing asserts: the pruned tree must contain the TARGET's
+  //    claude-agent-sdk platform package (with a non-empty `claude`
+  //    executable) and NO foreign-platform variant. Failing here aborts
+  //    the Tauri beforeBuildCommand before a broken bundle ships.
+  const platformPkg = sidecarPlatformPackage(target);
+  const claudeBinName = target.includes("-windows-") ? "claude.exe" : "claude";
+  const claudePath = path.join(SIDECAR_NODE_MODULES, ...platformPkg.split("/"), claudeBinName);
+  if (!existsSync(claudePath)) {
+    fail(
+      `expected native sidecar executable missing for target ${target}: ${claudePath}. ` +
+        `The pnpm supportedArchitectures injection did not materialise ${platformPkg}.`,
+    );
+  }
+  let claudeSize = 0;
+  try {
+    claudeSize = statSync(claudePath).size;
+  } catch (err) {
+    fail(`could not stat ${claudePath}`, err);
+  }
+  if (claudeSize === 0) {
+    fail(`native sidecar executable is empty: ${claudePath}`);
+  }
+  log(`target platform package OK: ${platformPkg} (${claudeBinName}, ${formatBytes(claudeSize)})`);
+
+  const scopeDir = path.join(SIDECAR_NODE_MODULES, "@anthropic-ai");
+  const expectedPlatformDir = platformPkg.split("/")[1];
+  let scopeEntries = [];
+  try {
+    scopeEntries = readdirSync(scopeDir);
+  } catch (err) {
+    fail(`could not read ${scopeDir}`, err);
+  }
+  const foreign = scopeEntries.filter(
+    (name) => /^claude-agent-sdk-/.test(name) && name !== expectedPlatformDir,
+  );
+  if (foreign.length > 0) {
+    fail(
+      `foreign claude-agent-sdk platform package(s) present for target ${target}: ` +
+        `${foreign.join(", ")} (expected only ${expectedPlatformDir}). ` +
+        `The bundle would ship the wrong native sidecar.`,
+    );
+  }
+  log(`no foreign claude-agent-sdk platform packages present`);
+
   log(
     `NOTE: devDependencies (typescript, @types/node) were removed. ` +
       `Run 'pnpm sidecar:install' to restore them for dev work.`,
