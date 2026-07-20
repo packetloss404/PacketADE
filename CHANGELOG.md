@@ -7,7 +7,7 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
-## [0.10.1] - 2026-07-13
+## [0.10.1] - 2026-07-19
 
 ### Changed
 
@@ -135,6 +135,16 @@ task list.
   security-reviewed; 11 unit tests.
 
 ### Fixed
+
+- **P1/P2 reliability closeout (G01 / G09 / SSH password auth).** App exit now
+  terminates local and SSH sidecar process trees (including Codex/MCP/SSH
+  grandchildren) and suppresses supervisor resurrection. Password-authenticated
+  SSH works non-interactively on Unix through a self-reinvoked `SSH_ASKPASS`
+  helper with a guarded 0600 secret file; Windows retains its stdin path. The
+  Codex exec provider no longer passes rejected `-a`/resume `--sandbox` flags or
+  writes approval responses to closed stdin, terminates stdout-idle turns, and
+  safely launches the Windows npm shim through its adjacent `codex.js` without a
+  command shell. Deterministic Codex compatibility smokes are now release-gated.
 
 - **PTY UTF-8 freeze (F02).** A single invalid UTF-8 byte from a terminal used to
   be re-buffered forever (unbounded `pending`), freezing the terminal's output.
