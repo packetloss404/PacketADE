@@ -830,6 +830,7 @@ export interface RemotePathCheck {
  *  8s. When `hostFingerprint` is provided, SSH connects with strict
  *  host-key checking against the app-managed known_hosts file. */
 export async function sshCheckRemotePath(args: {
+  targetId?: string | null;
   host: string;
   port: number;
   user: string;
@@ -840,6 +841,7 @@ export async function sshCheckRemotePath(args: {
   remotePath: string;
 }): Promise<RemotePathCheck> {
   return invoke<RemotePathCheck>("ssh_check_remote_path", {
+    targetId: args.targetId ?? null,
     host: args.host,
     port: args.port,
     user: args.user,
@@ -1441,6 +1443,7 @@ function fromDtoFlight(flight: PersistedStateDto["flights"][number]): Flight {
     totalTokens: flight.totalTokens,
     prompt: flight.prompt,
     attempts: (flight.attempts ?? []).map(fromDtoAttempt),
+    planningConversationId: flight.planningConversationId,
     plannerSessionId: flight.plannerSessionId,
     plannerStatus: flight.plannerStatus,
     plannerCost: flight.plannerCost,
@@ -1480,6 +1483,7 @@ function toDtoFlight(flight: Flight): PersistedStateDto["flights"][number] {
     totalTokens: flight.totalTokens,
     prompt: flight.prompt,
     attempts: (flight.attempts ?? []).map(toDtoAttempt),
+    planningConversationId: flight.planningConversationId,
     plannerSessionId: flight.plannerSessionId,
     plannerStatus: flight.plannerStatus,
     plannerCost: flight.plannerCost,

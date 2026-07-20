@@ -154,8 +154,9 @@ export interface CoordinationEvent {
 
 // === Async Flight Attempts ===
 // An Attempt is one parallel agent session, bound to a git worktree on either
-// the local filesystem or a remote SSH host. A Flight in async-mode has
-// `attempts.length > 0`; legacy multi-task flights have `milestones[]` instead.
+// the local filesystem or a remote SSH host. Flights can also carry an upfront
+// conversation-backed plan in `milestones[]`; attempts remain independently
+// launchable and are not autonomously scheduled from those tasks.
 
 export type AttemptStatus =
   | "queued"
@@ -220,6 +221,8 @@ export interface Flight {
   prompt?: string;
   /** Parallel agent attempts. Non-empty = async-mode Flight. */
   attempts?: Attempt[];
+  /** Normal API-agent conversation used to refine the current upfront plan. */
+  planningConversationId?: string;
   // Legacy autonomous-Planner fields — retained only for lossless hydration.
   plannerSessionId?: string;
   plannerStatus?: "idle" | "awake" | "paused" | "quota_paused" | "completed" | "failed";

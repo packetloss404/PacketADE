@@ -64,10 +64,11 @@ describe("Tauri persistence DTO mapping", () => {
     mockInvoke.mockResolvedValue(undefined);
   });
 
-  it("round-trips flight workspace and planner fields to the backend DTO", async () => {
+  it("round-trips flight workspace, planning conversation, and legacy planner fields", async () => {
     await saveFlightsSlice([
       makeFlight({
         workspaceId: "workspace-1",
+        planningConversationId: "conversation-1",
         plannerSessionId: "planner-session-1",
         plannerStatus: "quota_paused",
         plannerCost: 1.25,
@@ -80,6 +81,7 @@ describe("Tauri persistence DTO mapping", () => {
       flights: [
         expect.objectContaining({
           workspaceId: "workspace-1",
+          planningConversationId: "conversation-1",
           plannerSessionId: "planner-session-1",
           plannerStatus: "quota_paused",
           plannerCost: 1.25,
@@ -112,6 +114,7 @@ describe("Tauri persistence DTO mapping", () => {
           {
             ...makeFlight({
               workspaceId: "workspace-1",
+              planningConversationId: "conversation-1",
               plannerSessionId: "planner-session-1",
               plannerStatus: "awake",
               plannerCost: 2.5,
@@ -145,6 +148,7 @@ describe("Tauri persistence DTO mapping", () => {
     expect(state.flights[0]).toEqual(
       expect.objectContaining({
         workspaceId: "workspace-1",
+        planningConversationId: "conversation-1",
         plannerSessionId: "planner-session-1",
         plannerStatus: "awake",
         plannerCost: 2.5,

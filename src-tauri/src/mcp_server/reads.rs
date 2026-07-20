@@ -258,6 +258,7 @@ mod tests {
             total_tokens: 0,
             prompt: None,
             attempts: Vec::new(),
+            planning_conversation_id: None,
             planner_session_id: None,
             planner_status: None,
             planner_cost: None,

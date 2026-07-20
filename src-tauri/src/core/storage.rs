@@ -482,6 +482,9 @@ fn merge_flights_for_frontend_save(existing: &[Flight], incoming: Vec<Flight>) -
             if candidate.prompt.is_none() {
                 candidate.prompt = current.prompt.clone();
             }
+            if candidate.planning_conversation_id.is_none() {
+                candidate.planning_conversation_id = current.planning_conversation_id.clone();
+            }
 
             // These fields are retained only for lossless loading of legacy
             // Flight Planner state. A current frontend snapshot must not erase
@@ -822,6 +825,7 @@ mod tests {
             total_tokens: 0,
             prompt: None,
             attempts: Vec::new(),
+            planning_conversation_id: None,
             planner_session_id: None,
             planner_status: None,
             planner_cost: None,
@@ -863,6 +867,7 @@ mod tests {
         current.total_cost = 1.25;
         current.total_tokens = 400;
         current.prompt = Some("Run the audit".to_string());
+        current.planning_conversation_id = Some("conversation-1".to_string());
         current.updated_at = 20;
 
         let mut stale_frontend = test_flight("flight-1");
@@ -878,6 +883,10 @@ mod tests {
         assert_eq!(merged[0].total_cost, 1.25);
         assert_eq!(merged[0].total_tokens, 400);
         assert_eq!(merged[0].prompt.as_deref(), Some("Run the audit"));
+        assert_eq!(
+            merged[0].planning_conversation_id.as_deref(),
+            Some("conversation-1")
+        );
         assert_eq!(merged[0].updated_at, 20);
     }
 

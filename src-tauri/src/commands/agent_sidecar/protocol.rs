@@ -219,12 +219,14 @@ impl SidecarManager {
     pub async fn forward_edit(
         &self,
         session_id: String,
+        tool_use_id: String,
         approved: bool,
         merged_content: Option<String>,
     ) -> Result<(), String> {
         let req = json!({
             "type": "edit_response",
             "sessionId": session_id,
+            "toolUseId": tool_use_id,
             "approved": approved,
             "mergedContent": merged_content,
         });

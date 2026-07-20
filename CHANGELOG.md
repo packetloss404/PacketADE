@@ -36,7 +36,28 @@ task list.
   `flight_approvals` persisted fields are kept read-only so old users' state
   still loads losslessly. See `backlog.md` → Flight Planner backend.
 
+### Fixed
+
+- **API-agent turn cancellation ownership (F28).** In-process sessions now own
+  cancellation per turn, serialize overlapping send/retry work before mutating
+  the transcript, keep cancelled turns reserved until their task unwinds, and
+  use compare-and-remove cleanup so an older turn cannot erase a newer handle.
+- **Targeted sidecar edit approvals (G11).** Sidecar protocol bumped v8 → v9;
+  `edit_response` now requires `toolUseId`, and Anthropic/OpenAI Agents resolve
+  only the addressed pending edit instead of draining every edit in the session.
+- **Saved-password remote path probes.** `ssh_check_remote_path` now accepts the
+  canonical server id and resolves password-auth credentials inside Rust from
+  the OS keyring when no transient password was supplied. The credential never
+  needs to round-trip through the webview.
+
 ### Added
+
+- **Lightweight Flight planning (Option B).** “Plan first” starts a normal
+  read-only API-agent conversation against the selected local or SSH target.
+  Users can refine the plan in chat and explicitly apply its latest structured
+  milestones/tasks to Flight Deck before launching independent worktree
+  attempts. This intentionally does not restore Planner v1's scheduler, wake
+  loop, journal, approval FSM, or autonomous replanning.
 
 - **stdio MCP servers over SSH — remote-owned config (S8-Phase-B).** Remote
   (SSH) agent sessions can now use **stdio** MCP servers, not just HTTP/SSE. When

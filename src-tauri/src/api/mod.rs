@@ -568,6 +568,10 @@ pub struct FlightDto {
     pub prompt: Option<String>,
     #[serde(default)]
     pub attempts: Vec<AttemptDto>,
+    /// Normal API-agent conversation used to refine the current upfront plan.
+    #[serde(default)]
+    #[ts(optional)]
+    pub planning_conversation_id: Option<String>,
     /// Legacy autonomous-Planner session id; read-compatible only.
     #[serde(default)]
     #[ts(optional)]
@@ -1513,6 +1517,7 @@ impl From<core_flight::Flight> for FlightDto {
             total_tokens: value.total_tokens,
             prompt: value.prompt,
             attempts: value.attempts.into_iter().map(Into::into).collect(),
+            planning_conversation_id: value.planning_conversation_id,
             planner_session_id: value.planner_session_id,
             planner_status: value.planner_status.map(Into::into),
             planner_cost: value.planner_cost,
@@ -1544,6 +1549,7 @@ impl From<FlightDto> for core_flight::Flight {
             total_tokens: value.total_tokens,
             prompt: value.prompt,
             attempts: value.attempts.into_iter().map(Into::into).collect(),
+            planning_conversation_id: value.planning_conversation_id,
             planner_session_id: value.planner_session_id,
             planner_status: value.planner_status.map(Into::into),
             planner_cost: value.planner_cost,
@@ -1791,6 +1797,7 @@ mod tests {
                 total_tokens: 0,
                 prompt: None,
                 attempts: vec![],
+                planning_conversation_id: None,
                 planner_session_id: None,
                 planner_status: None,
                 planner_cost: None,

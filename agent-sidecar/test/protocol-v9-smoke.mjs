@@ -1,4 +1,4 @@
-// Protocol v8 regression smoke test for the PacketADE agent sidecar.
+// Protocol v9 regression smoke test for the PacketADE agent sidecar.
 //
 // Validates that the protocol v2 request types plus the v4
 // `cancel_pending_tools` request, the v5 `inject_user_turn` request, and
@@ -22,7 +22,7 @@
 // session.
 //
 // Sequence:
-//   1. Spawn the sidecar, wait for `ready` (must advertise protocol v8).
+//   1. Spawn the sidecar, wait for `ready` (must advertise protocol v9).
 //   2. `start_session` with an SSH workspace → expect clean refusal before
 //      any provider can treat the remote path as local cwd.
 //   3. `start_session` for provider "echo", wait for its `done`.
@@ -31,9 +31,10 @@
 //   5. `set_model { model: "test-model" }` → expect chunk echoing
 //      "test-model" then `done`, within 3s.
 //   6. `retry` → expect chunk containing "retry" then `done`, within 3s.
-//   7. `cancel_pending_tools` → expect clean unsupported error, within 3s.
-//   8. `inject_user_turn` → expect clean unsupported error, within 3s.
-//   9. v6 `rate_limited` event shape round-trip via JSON.parse — pure
+//   7. `edit_response` → echo the v9 `toolUseId` correlation field.
+//   8. `cancel_pending_tools` → expect clean unsupported error, within 3s.
+//   9. `inject_user_turn` → expect clean unsupported error, within 3s.
+//  10. v6 `rate_limited` event shape round-trip via JSON.parse — pure
 //      wire-format check, no IPC.
 //
 // Exits 0 if all steps pass, 1 otherwise — printing which step failed
@@ -48,8 +49,8 @@ import { existsSync } from "node:fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SESSION_ID = "protocol-v8-smoke";
-const EXPECTED_PROTOCOL_VERSION = 8;
+const SESSION_ID = "protocol-v9-smoke";
+const EXPECTED_PROTOCOL_VERSION = 9;
 const STEP_TIMEOUT_MS = 3000;
 const START_TIMEOUT_MS = 3000;
 const READY_TIMEOUT_MS = 3000;
@@ -57,10 +58,8 @@ const READY_TIMEOUT_MS = 3000;
 const sidecarEntry = resolve(__dirname, "..", "dist", "index.js");
 
 if (!existsSync(sidecarEntry)) {
-  console.error(`[protocol-v8-smoke] sidecar entry not found at ${sidecarEntry}`);
-  console.error(
-    `[protocol-v8-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`,
-  );
+  console.error(`[protocol-v9-smoke] sidecar entry not found at ${sidecarEntry}`);
+  console.error(`[protocol-v9-smoke] run 'pnpm sidecar:install && pnpm sidecar:build' first`);
   process.exit(1);
 }
 
@@ -74,7 +73,7 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
 
 child.on("error", (err) => {
-  console.error(`[protocol-v8-smoke] child spawn error: ${err.message}`);
+  console.error(`[protocol-v9-smoke] child spawn error: ${err.message}`);
   process.exit(1);
 });
 
@@ -100,7 +99,7 @@ rl.on("line", (line) => {
   try {
     event = JSON.parse(trimmed);
   } catch {
-    console.error(`[protocol-v8-smoke] non-JSON stdout line: ${trimmed}`);
+    console.error(`[protocol-v9-smoke] non-JSON stdout line: ${trimmed}`);
     return;
   }
 
@@ -170,7 +169,9 @@ function waitForTerminal(timeoutMs, label) {
   return new Promise((resolveFn, rejectFn) => {
     const timer = setTimeout(() => {
       terminalResolver = null;
-      rejectFn(new Error(`timed out after ${timeoutMs}ms waiting for done/error during '${label}'`));
+      rejectFn(
+        new Error(`timed out after ${timeoutMs}ms waiting for done/error during '${label}'`),
+      );
     }, timeoutMs);
     terminalResolver = (result) => {
       clearTimeout(timer);
@@ -194,13 +195,13 @@ function shutdown(code) {
   }, 500);
   child.on("exit", () => clearTimeout(killTimer));
   if (code !== 0 && stderrChunks.length > 0) {
-    console.error(`[protocol-v8-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
+    console.error(`[protocol-v9-smoke] sidecar stderr:\n${stderrChunks.join("")}`);
   }
   process.exit(code);
 }
 
 function fail(step, reason) {
-  console.error(`[protocol-v8-smoke] FAIL at step '${step}': ${reason}`);
+  console.error(`[protocol-v9-smoke] FAIL at step '${step}': ${reason}`);
   shutdown(1);
 }
 
@@ -218,7 +219,10 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
   }
   if (expectErrorSubstring !== null) {
     if (term.kind !== "error") {
-      fail(step, `expected error containing ${JSON.stringify(expectErrorSubstring)}, got ${term.kind}`);
+      fail(
+        step,
+        `expected error containing ${JSON.stringify(expectErrorSubstring)}, got ${term.kind}`,
+      );
       return;
     }
     const message = term.event.message ?? "";
@@ -229,7 +233,7 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
       );
       return;
     }
-    console.log(`[protocol-v8-smoke] PASS: ${step}`);
+    console.log(`[protocol-v9-smoke] PASS: ${step}`);
     return;
   }
   if (term.kind === "error") {
@@ -251,7 +255,7 @@ async function runStep(step, request, { expectSubstring = null, expectErrorSubst
     );
     return;
   }
-  console.log(`[protocol-v8-smoke] PASS: ${step}`);
+  console.log(`[protocol-v9-smoke] PASS: ${step}`);
 }
 
 /**
@@ -304,7 +308,7 @@ function checkRateLimitedEventShape() {
     fail(step, "minimal envelope should not invent a retryAfterSeconds value");
     return;
   }
-  console.log(`[protocol-v8-smoke] PASS: ${step}`);
+  console.log(`[protocol-v9-smoke] PASS: ${step}`);
 }
 
 async function run() {
@@ -374,7 +378,7 @@ async function run() {
     }
     // Not strictly required, but prove echo actually streamed something.
     void chunks.slice(chunkStart);
-    console.log(`[protocol-v8-smoke] PASS: start_session`);
+    console.log(`[protocol-v9-smoke] PASS: start_session`);
   }
 
   // 3) set_permission_mode { mode: "plan" }
@@ -392,13 +396,21 @@ async function run() {
   );
 
   // 5) retry
+  await runStep("retry", { type: "retry", sessionId: SESSION_ID }, { expectSubstring: "retry" });
+
+  // 6) v9 edit_response correlation reaches the provider unchanged.
   await runStep(
-    "retry",
-    { type: "retry", sessionId: SESSION_ID },
-    { expectSubstring: "retry" },
+    "edit_response_tool_id",
+    {
+      type: "edit_response",
+      sessionId: SESSION_ID,
+      toolUseId: "tool-edit-2",
+      approved: true,
+    },
+    { expectSubstring: "tool-edit-2" },
   );
 
-  // 6) cancel_pending_tools. Echo intentionally does not implement this
+  // 7) cancel_pending_tools. Echo intentionally does not implement this
   // method; the registry error proves index.ts dispatches v4 requests into
   // the registry instead of dropping them as unknown request types.
   await runStep(
@@ -407,7 +419,7 @@ async function run() {
     { expectErrorSubstring: "does not support cancel_pending_tools" },
   );
 
-  // 7) inject_user_turn. v5 wake-trigger / spec-mode chat path. Echo does
+  // 8) inject_user_turn. v5 wake-trigger / spec-mode chat path. Echo does
   // not implement it; we want the registry's "not supported" error rather
   // than the parser's "unknown request type" log line (which would mean
   // index.ts dropped it without dispatching).
@@ -422,15 +434,15 @@ async function run() {
     { expectErrorSubstring: "does not support inject_user_turn" },
   );
 
-  // 8) v6 `rate_limited` event-shape round-trip. Server→client envelope —
+  // 9) v6 `rate_limited` event-shape round-trip. Server→client envelope —
   // pure wire-format check, no IPC.
   checkRateLimitedEventShape();
 
-  console.log(`[protocol-v8-smoke] OK`);
+  console.log(`[protocol-v9-smoke] OK`);
   shutdown(0);
 }
 
 run().catch((err) => {
-  console.error(`[protocol-v8-smoke] unexpected error: ${err?.stack ?? err}`);
+  console.error(`[protocol-v9-smoke] unexpected error: ${err?.stack ?? err}`);
   shutdown(1);
 });

@@ -77,7 +77,6 @@ interface CodexSandboxFlags {
   /** `codex exec resume` accepts config overrides, but not `--sandbox`. */
   resumeArgs: string[];
 }
-
 /**
  * Translate an SDK-style `PermissionMode` (set via the protocol v2
  * `set_permission_mode` request) onto Codex's sandbox + approval flags.
@@ -1230,7 +1229,9 @@ export class OpenAICodexProvider implements ProviderHandler {
   async respondEdit(req: EditResponseRequest, _emit: Emit): Promise<void> {
     // Codex applies changes inside its selected sandbox and does not expose a
     // blocking edit-response channel in exec mode.
-    logStderr(`respondEdit ignored (approved=${req.approved}); codex exec is non-interactive`);
+    logStderr(
+      `respondEdit ignored for toolUseId=${req.toolUseId} (approved=${req.approved}); codex exec is non-interactive`,
+    );
   }
 
   async cancel(_emit: Emit): Promise<void> {

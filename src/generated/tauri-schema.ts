@@ -96,6 +96,10 @@ draftPrNumber?: number, };
 
 export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, prompt?: string, attempts: Array<AttemptDto>, 
 /**
+ * Normal API-agent conversation used to refine the current upfront plan.
+ */
+planningConversationId?: string,
+/**
  * Legacy autonomous-Planner session id; read-compatible only.
  */
 plannerSessionId?: string, 

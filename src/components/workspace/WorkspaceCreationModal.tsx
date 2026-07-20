@@ -203,6 +203,7 @@ export function WorkspaceCreationModal({ onClose, initialSelected, serverId: ini
 
     const handle = window.setTimeout(() => {
       sshCheckRemotePath({
+        targetId: server.id,
         host: server.host,
         port: server.port,
         user: server.username,

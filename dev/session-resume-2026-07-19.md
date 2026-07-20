@@ -13,10 +13,13 @@ Continuation note for the P1/P2 fix loop. The recorded starting point was
 | sshpw-P2 | `fix/sshpw-askpass-unix` | ✅ Implemented; Rust check, frontend build/lint, and all 956 Vitest tests pass. Unix cross-check reaches the OpenSSL sysroot boundary on Windows; a real password-host smoke remains optional/manual. |
 | G09 | `fix/g09-codex-nohang` | ✅ Five commits merged locally: exec-compatible flags, clean unsupported-approval behavior, idle watchdog, gated smokes, and safe Windows npm-shim launch. Full sidecar gate passes. |
 | deploy-P2 | `f20801e` + residual cleanup | ✅ Option A had already shipped: the orphaned backend was deleted. The remaining constants and E2E mocks were removed in the follow-up cleanup. |
-| Flight Deck audit | current cleanup | ✅ Autonomous Planner deletion was safe for the live Attempt runtime. Fixed create/launch persistence ordering, stale snapshot merge, draft-PR-before-cleanup ordering, and SSH terminal cleanup. Product choice remains: attempt-only board vs lightweight conversation-backed planning. |
+| Flight Deck audit | current cleanup | ✅ Autonomous Planner deletion was safe for the live Attempt runtime. Fixed create/launch persistence ordering, stale snapshot merge, draft-PR-before-cleanup ordering, and SSH terminal cleanup. Option B then added lightweight conversation-backed planning without restoring the scheduler. |
+| F28 + G11 | current hardening | ✅ In-process turns are serialized with per-turn cancellation ownership; sidecar protocol v9 correlates edit responses by `toolUseId`. |
+| SSH path probe | current hardening | ✅ Saved password-auth credentials resolve inside Rust by server id. Live Codex-over-SSH remains environment-gated because this profile has no configured server. |
 
-All five mechanical items, the deploy residual cleanup, and the Flight Deck
-runtime audit are complete.
+All five mechanical items, the deploy residual cleanup, the Flight Deck audit,
+Option B planning, F28/G11, and the saved-password probe are complete. Only the
+real-host Codex-over-SSH smoke remains from this follow-up set.
 
 Gate note: all 956 Vitest tests pass when run without competing build jobs. A
 parallel gate can still trip the known 5s `persistenceMigration.test.ts` timeout;
@@ -32,7 +35,8 @@ still fails in the loader before the harness with `STATUS_ENTRYPOINT_NOT_FOUND`.
 4. User decisions blocking roadmap: R0 Remote Agents 3 Sprint-0 decisions
    (`dev/remoteagents/09-open-decisions.md`: auth provider, E2EE timing, code
    location, ~5 weeks stale); R2 = buy Win+macOS signing certs.
-5. Loose: live Codex-over-SSH smoke (step 12, `dev/sidecar-over-ssh-verification.md`);
+5. Loose: live Codex-over-SSH smoke (step 12, `dev/sidecar-over-ssh-verification.md`;
+   saved-password path probing is fixed, but this profile has no configured server);
    residual items in backlog.md's 83-finding register; stash `agent-leak-from-W5-run`
    on main (only copy of that work — inspect or drop).
 
