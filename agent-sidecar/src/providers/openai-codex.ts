@@ -290,12 +290,6 @@ export class OpenAICodexProvider implements ProviderHandler {
   private doneEmitted = false;
   /** Track the last request snapshot so sendMessage can reuse model/planMode. */
   private lastReq: StartSessionRequest | null = null;
-  /**
-   * Pending approval events keyed by whatever id Codex uses for its
-   * approval request. We need the id later when respondPermission fires so
-   * we can route the response to the right in-flight ask.
-   */
-  private pendingApprovals = new Map<string, string>();
   /** Last-seen token counts from the most recent token_count event.
    * `reasoning` and `cachedInput` were added in Codex CLI 0.125 (Apr 2026)
    * — capturing them lets PacketADE's CostDashboard report GPT-5.5 spend
@@ -903,31 +897,16 @@ export class OpenAICodexProvider implements ProviderHandler {
       return;
     }
 
-    // Approval / permission prompt. Codex emits these when `-a on-request`
-    // is active and the model wants to run a gated command.
+    // `codex exec` is non-interactive. Approval requests cannot be answered
+    // over its closed stdin, so never surface a prompt that would strand the
+    // turn. Safe modes run with approval_policy=never and a sandbox boundary.
     if (
       typeStr === "exec_approval_request" ||
       typeStr === "apply_patch_approval_request" ||
       typeStr === "approval_request" ||
       typeStr === "user_approval_request"
     ) {
-      const toolUseId =
-        pickString(payload, "id", "call_id", "sub_id", "approval_id") ??
-        pickString(envelope, "id") ??
-        randomUUID();
-      const name =
-        pickString(payload, "name", "command", "reason") ??
-        (typeStr === "apply_patch_approval_request" ? "apply_patch" : "exec");
-      const input =
-        payload.arguments ?? payload.command ?? payload.patch ?? payload.input ?? payload;
-      this.pendingApprovals.set(toolUseId, typeStr);
-      emit({
-        type: "permission_request",
-        sessionId,
-        toolUseId,
-        name,
-        input,
-      });
+      logStderr(`ignored unsupported codex exec approval event: ${typeStr}`);
       return;
     }
 
@@ -1091,7 +1070,6 @@ export class OpenAICodexProvider implements ProviderHandler {
     }
 
     this.doneEmitted = false;
-    this.pendingApprovals.clear();
     this.lastUserMessage = req.content;
 
     const nextReq: StartSessionRequest = {
@@ -1117,63 +1095,18 @@ export class OpenAICodexProvider implements ProviderHandler {
     this.spawnCodex(args, emit);
   }
 
-  async respondPermission(req: PermissionResponseRequest, _emit: Emit): Promise<void> {
-    const kind = this.pendingApprovals.get(req.toolUseId);
-    if (!kind) {
-      logStderr(`respondPermission: no pending approval for toolUseId=${req.toolUseId}`);
-      return;
-    }
-    this.pendingApprovals.delete(req.toolUseId);
-
-    if (!this.child || this.child.exitCode !== null) {
-      logStderr(
-        `respondPermission: child not running (exitCode=${this.child?.exitCode ?? "null"}); dropping response`,
-      );
-      return;
-    }
-
-    // Codex reads approval responses from stdin as JSONL envelopes. The exact
-    // shape is driven by codex-rs's Submission schema; the common form is:
-    //   { "id": "<approval_id>", "op": { "type": "exec_approval", "decision": "approved"|"denied" } }
-    // We emit a shape that matches both exec and patch approvals by setting
-    // the op type based on the tracked request kind. If Codex doesn't
-    // recognize it, the process will emit an error event and we surface it.
-    const opType = kind === "apply_patch_approval_request" ? "patch_approval" : "exec_approval";
-    const decision = req.decision === "deny" ? "denied" : "approved";
-    const submission = {
-      id: req.toolUseId,
-      op: { type: opType, decision },
-    };
-    try {
-      this.child.stdin.write(JSON.stringify(submission) + "\n");
-    } catch (err) {
-      logStderr(
-        `respondPermission: stdin write failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+  async respondPermission(req: PermissionResponseRequest, emit: Emit): Promise<void> {
+    const message =
+      "Codex exec is non-interactive; per-command approvals are not supported. " +
+      "Permissions are pre-granted within the selected sandbox policy.";
+    logStderr(`respondPermission ignored for toolUseId=${req.toolUseId}: ${message}`);
+    emit({ type: "error", sessionId: req.sessionId, message });
   }
 
-  async respondEdit(req: EditResponseRequest, emit: Emit): Promise<void> {
-    // Codex does not emit pending_edit today, so there's no separate edit
-    // response channel. If an approval for apply_patch is open, route
-    // through it; otherwise no-op.
-    const pendingPatch = Array.from(this.pendingApprovals.entries()).find(
-      ([, kind]) => kind === "apply_patch_approval_request",
-    );
-    if (!pendingPatch) {
-      logStderr(`respondEdit received (approved=${req.approved}) but no pending patch; ignoring`);
-      return;
-    }
-    const [toolUseId] = pendingPatch;
-    await this.respondPermission(
-      {
-        type: "permission_response",
-        sessionId: req.sessionId,
-        toolUseId,
-        decision: req.approved ? "approve" : "deny",
-      },
-      emit,
-    );
+  async respondEdit(req: EditResponseRequest, _emit: Emit): Promise<void> {
+    // Codex applies changes inside its selected sandbox and does not expose a
+    // blocking edit-response channel in exec mode.
+    logStderr(`respondEdit ignored (approved=${req.approved}); codex exec is non-interactive`);
   }
 
   async cancel(_emit: Emit): Promise<void> {
