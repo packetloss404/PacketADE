@@ -6,7 +6,8 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -35,6 +36,32 @@ const REMOTE_PATH_SETUP: &str = r#"export PATH="$HOME/.local/bin:$HOME/.npm-glob
 const SIDECAR_RESTART_RECOVERABLE_ERROR: &str =
     "Sidecar restarted — please resend your message to continue this conversation.";
 
+fn kill_process_tree(pid: u32, own_group: bool) {
+    if pid <= 1 {
+        return;
+    }
+
+    #[cfg(unix)]
+    unsafe {
+        let target = if own_group { -(pid as i32) } else { pid as i32 };
+        if own_group {
+            libc::kill(target, libc::SIGTERM);
+        }
+        libc::kill(target, libc::SIGKILL);
+    }
+
+    #[cfg(windows)]
+    {
+        let _ = own_group;
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct RemoteSidecarSession {
     writer_tx: mpsc::UnboundedSender<String>,
@@ -61,6 +88,12 @@ pub(super) struct OneshotWaiter {
     /// double-resolution if both `done` and `error` race in pathological
     /// cases).
     pub sender: Option<oneshot::Sender<Result<String, String>>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ChildHandle {
+    pid: u32,
+    own_group: bool,
 }
 
 pub struct SidecarManager {
@@ -93,6 +126,11 @@ pub struct SidecarManager {
     /// using `writer_tx`; remote sessions get a dedicated SSH process so
     /// local and remote conversations cannot steal each other's stdin.
     pub(super) remote_sessions: Arc<Mutex<HashMap<String, RemoteSidecarSession>>>,
+    /// Synchronous process bookkeeping used by the Tauri exit hook. These
+    /// locks must remain usable after the async runtime begins shutting down.
+    local_child: StdMutex<Option<ChildHandle>>,
+    remote_children: Arc<StdMutex<HashMap<String, u32>>>,
+    shutting_down: AtomicBool,
 }
 
 impl SidecarManager {
@@ -114,6 +152,9 @@ impl SidecarManager {
             oneshot_waiters: Arc::new(Mutex::new(HashMap::new())),
             remote_owned_sessions: Arc::new(Mutex::new(HashSet::new())),
             remote_sessions: Arc::new(Mutex::new(HashMap::new())),
+            local_child: StdMutex::new(None),
+            remote_children: Arc::new(StdMutex::new(HashMap::new())),
+            shutting_down: AtomicBool::new(false),
         });
 
         // Spawn the child + reader/writer tasks in the background. If the
@@ -143,6 +184,20 @@ impl SidecarManager {
             // Rust runtime which will error cleanly if the session doesn't
             // exist there either.
             Err(_) => false,
+        }
+    }
+
+    /// Stop local and SSH-backed sidecars synchronously while Tauri's exit
+    /// event is still running. Process groups include Codex, MCP, and SSH
+    /// grandchildren spawned by the sidecar.
+    pub fn shutdown(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
+        if let Some(child) = self.local_child.lock().unwrap().take() {
+            kill_process_tree(child.pid, child.own_group);
+        }
+        let children = std::mem::take(&mut *self.remote_children.lock().unwrap());
+        for (_, pid) in children {
+            kill_process_tree(pid, true);
         }
     }
 
@@ -296,6 +351,9 @@ impl SidecarManager {
         config: &'a SshConfig,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
+            if self.shutting_down.load(Ordering::SeqCst) {
+                return Err("Sidecar manager is shutting down".to_string());
+            }
             validate_remote_sidecar_target(config)?;
             reject_remote_password_auth(config)?;
             remote_sidecar_preflight(config, provider.as_ref()).await?;
@@ -307,6 +365,8 @@ impl SidecarManager {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
             hide_window_async(&mut cmd);
+            #[cfg(unix)]
+            cmd.process_group(0);
 
             let mut child = cmd.spawn().map_err(|e| {
                 format!(
@@ -316,6 +376,17 @@ impl SidecarManager {
                 )
             })?;
             let child_pid = child.id();
+            if let Some(pid) = child_pid {
+                self.remote_children
+                    .lock()
+                    .unwrap()
+                    .insert(session_id.to_string(), pid);
+                if self.shutting_down.load(Ordering::SeqCst) {
+                    self.remote_children.lock().unwrap().remove(session_id);
+                    kill_process_tree(pid, true);
+                    return Err("Sidecar manager is shutting down".to_string());
+                }
+            }
 
             let stdin = child
                 .stdin
@@ -371,6 +442,7 @@ impl SidecarManager {
             let session_for_wait = session_id.to_string();
             let target_for_wait = target_label.clone();
             let remote_sessions = Arc::clone(&self.remote_sessions);
+            let remote_children = Arc::clone(&self.remote_children);
             let owned_sessions = Arc::clone(&self.owned_sessions);
             let remote_owned_sessions = Arc::clone(&self.remote_owned_sessions);
             let oneshot_waiters = Arc::clone(&self.oneshot_waiters);
@@ -381,6 +453,7 @@ impl SidecarManager {
                     let mut guard = remote_sessions.lock().await;
                     guard.remove(&session_for_wait);
                 }
+                remote_children.lock().unwrap().remove(&session_for_wait);
 
                 let still_owned = {
                     let mut guard = owned_sessions.lock().await;
@@ -431,6 +504,9 @@ impl SidecarManager {
         let mut restart_times: Vec<Instant> = Vec::new();
 
         loop {
+            if self.shutting_down.load(Ordering::SeqCst) {
+                return;
+            }
             match self.spawn_child().await {
                 Ok(()) => {
                     // spawn_child returned because the child exited cleanly or
@@ -589,6 +665,8 @@ impl SidecarManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         hide_window_async(&mut cmd);
+        #[cfg(unix)]
+        cmd.process_group(0);
 
         let mut child = cmd.spawn().map_err(|e| {
             format!(
@@ -600,6 +678,16 @@ impl SidecarManager {
         })?;
 
         let child_pid = child.id();
+        if let Some(pid) = child_pid {
+            *self.local_child.lock().unwrap() = Some(ChildHandle {
+                pid,
+                own_group: cfg!(unix),
+            });
+            if self.shutting_down.load(Ordering::SeqCst) {
+                self.local_child.lock().unwrap().take();
+                kill_process_tree(pid, cfg!(unix));
+            }
+        }
         info!(
             pid = ?child_pid,
             node = %node_exe.display(),
@@ -644,9 +732,11 @@ impl SidecarManager {
                 // Kill the IO tasks by dropping the writer channel.
                 let mut guard = self.writer_tx.lock().await;
                 *guard = None;
+                *self.local_child.lock().unwrap() = None;
                 return Ok(());
             }
         };
+        *self.local_child.lock().unwrap() = None;
 
         warn!(?status, pid = ?child_pid, "agent sidecar exited");
         if !status.success() {
@@ -690,6 +780,14 @@ impl SidecarManager {
             .map_err(|e| format!("spawn bundled node sidecar: {}", e))?;
 
         let child_pid = child.pid();
+        *self.local_child.lock().unwrap() = Some(ChildHandle {
+            pid: child_pid,
+            own_group: false,
+        });
+        if self.shutting_down.load(Ordering::SeqCst) {
+            self.local_child.lock().unwrap().take();
+            kill_process_tree(child_pid, false);
+        }
         info!(
             pid = child_pid,
             path = %sidecar_arg.display(),
@@ -792,6 +890,7 @@ impl SidecarManager {
         // happens we drop the writer channel so the writer task joins and
         // the supervisor can decide whether to restart.
         let _ = reader_handle.await;
+        *self.local_child.lock().unwrap() = None;
         {
             let mut guard = self.writer_tx.lock().await;
             *guard = None;

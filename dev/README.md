@@ -1,6 +1,6 @@
 # Dev Planning Docs
 
-Last updated: 2026-07-13
+Last updated: 2026-07-19
 
 This directory holds **active** planning docs with outstanding work items plus the engineering reference docs that used to live in `docs/`. Completed docs have been moved to `dev/archive/`.
 
@@ -10,7 +10,7 @@ Use these as the trust anchors before reading older plan files:
 
 | Area                       | Canonical owner                                                                                                                                                                                                                      | Notes                                                                                                  |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Live task register         | [`../backlog.md`](../backlog.md)                                                                                                                                                                                                     | Single source for outstanding work. Extract open items here before freezing old specs.                 |
+| Live task register         | [`../backlog.md`](../backlog.md)                                                                                                                                                                                                     | Single source for outstanding work. The active hardening sequence is G01 → Unix SSH password auth → G09. |
 | Release priorities         | [`../ROADMAP.md`](../ROADMAP.md)                                                                                                                                                                                                     | Short current summary; detailed plans stay in this folder.                                             |
 | Remote/mobile agent access | [`remoteagents/README.md`](./remoteagents/README.md)                                                                                                                                                                                 | Supersedes the older `mobile/` investigation for phone/PWA work.                                       |
 | Multi-monitor operations   | [`send-to-monitor-plan.md`](./send-to-monitor-plan.md)                                                                                                                                                                               | Paused planning doc for detached Monitor windows; no implementation until current feature/bug checks.  |
@@ -34,9 +34,11 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 
 ## Active (Outstanding Items)
 
-### Moat
+### Current hardening loop
 
-- `moat/cost-dashboard-plan.md` — cost alerts not yet implemented
+- [`p1-p2-fix-loop-spec.md`](./p1-p2-fix-loop-spec.md) — G33 and F53 are merged; G01, Unix SSH password auth, and G09 remain, in that order.
+- [`session-resume-2026-07-19.md`](./session-resume-2026-07-19.md) — recovery notes and verification constraints for the current loop.
+- Deploy-P2 remains a product decision: delete the orphaned backend (recommended) or rebuild a UI. It is not part of the mechanical loop until that decision is made.
 
 ### Swarm Orchestration
 
