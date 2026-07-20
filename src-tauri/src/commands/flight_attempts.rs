@@ -915,8 +915,8 @@ pub async fn set_flight_publish_attempts_as_prs(
     flight_id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    // v0.8 race-fix: serialize against other planner-tool / attempt writers
-    // via `with_state_lock` so concurrent saves can't drop the toggle flip.
+    // Serialize against other attempt/cost writers via `with_state_lock` so
+    // concurrent saves can't drop the toggle flip.
     storage::with_state_lock(move |state| {
         let result: Result<(), String> = (|| {
             let flight = state
@@ -976,7 +976,8 @@ pub async fn mark_attempt_status(
         // deferred to the frontend because we don't have host/user/key here.
         match &attempt.target {
             AttemptTarget::Local { base_path, .. } => {
-                if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id, false).await {
+                if let Err(e) = worktree::remove_local_worktree(base_path, &attempt_id, false).await
+                {
                     warn!(attempt = %attempt_id, error = %e, "Local worktree cleanup failed");
                 }
             }

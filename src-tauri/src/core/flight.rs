@@ -6,9 +6,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum FlightStatus {
     Draft,
-    /// Flight Planner spec-mode conversation — planner is the chat partner,
-    /// no decomposition has happened yet. Transitions to `Planning`/`Active`
-    /// when the user hits Launch.
+    /// Legacy Flight Planner spec-mode status. Retained so persisted v1
+    /// Flights deserialize losslessly; the current Flight Deck does not enter it.
     Spec,
     Planning,
     Ready,
@@ -37,12 +36,12 @@ impl FlightStatus {
     }
 }
 
-// === Flight Planner status (mirrors `commands::flight_planner::PlannerStatus`) ===
+// === Legacy Flight Planner status ===
 //
 // This is the persisted form serialized into the Flight DTO. Kept in this
 // module so the `Flight` struct's `planner_status` field doesn't need to
-// import from `commands`. The runtime registry holds its own copy; this enum
-// is just the wire/persistence shape.
+// import from the deleted planner command module. There is no live runtime
+// registry; this enum is now only a wire/persistence compatibility shape.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -276,11 +275,8 @@ pub struct Task {
     /// usually repo-relative and optional for legacy/manual tasks.
     #[serde(default)]
     pub owned_paths: Vec<String>,
-    /// Number of times the planner has called `replan_after_failure` for
-    /// this task. RateLimit/Network failures (per E5) do NOT increment.
-    /// Mirrored from `FlightPlannerSession.replans_per_task` whenever
-    /// `bump_replan_count` runs. Read by `render_task_failed` to surface
-    /// budget to the planner.
+    /// Legacy autonomous-Planner replan count. Read-compatible persisted data;
+    /// the current attempt runtime does not increment this field.
     ///
     /// `#[serde(default)]` is critical for backwards-compat with existing
     /// persisted state — without it, old state files written before this
@@ -395,34 +391,20 @@ pub struct Flight {
     pub prompt: Option<String>,
     #[serde(default)]
     pub attempts: Vec<Attempt>,
-    /// Flight Planner: the long-lived `api-claude-oauth` sidecar session
-    /// that owns this flight's planning/replan loop. `None` until the user
-    /// starts the planner from spec mode.
+    /// Legacy autonomous-Planner session id. Read-compatible only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner_session_id: Option<String>,
-    /// Flight Planner: last-known status of the planner agent for this
-    /// flight. `None` for flights that never used the planner.
+    /// Legacy autonomous-Planner status. Read-compatible only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner_status: Option<PlannerStatus>,
-    /// Flight Planner (E8): cumulative USD cost attributed to the planner's
-    /// own `turn_summary` events (NOT executor sessions — those roll up into
-    /// `total_cost` separately). Accumulated from the sidecar's pricing
-    /// calculation on every planner-owned turn. `None` until the first turn
-    /// closes.
+    /// Legacy autonomous-Planner cost. Executor cost still rolls up through
+    /// `flight_cost.rs`; no live code increments this compatibility field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner_cost: Option<f64>,
-    /// Flight Planner (E8): cumulative input+output tokens used by the
-    /// planner session. `None` until the first turn closes. Stored as a
-    /// single sum because the StatGrid chip displays a single token total;
-    /// per-direction breakdown lives on `FlightPlannerSession` in the
-    /// registry for the few callers that need it.
+    /// Legacy autonomous-Planner token count. Read-compatible only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner_tokens: Option<u64>,
-    /// Flight Planner (E8): which provider the planner session is running
-    /// against. `"claude-oauth"` (subscription, the v1 default) vs
-    /// `"api-claude"` (pay-per-token) — the StatGrid chip renders these
-    /// differently because subscription usage doesn't burn API credit.
-    /// `None` for flights that never used the planner.
+    /// Legacy autonomous-Planner provider id. Read-compatible only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner_provider: Option<String>,
     /// v0.8-G: when set on an async-mode Flight, the executor pipeline
@@ -470,12 +452,9 @@ impl Flight {
 
 // === Flight Approval Request ===
 //
-// Persisted record of a pending `request_user_approval` tool call from the
-// Flight Planner. The planner files this synchronously (async-return per
-// the locked design) and keeps working; the user resolves it later via
-// `resolve_flight_approval`, which flips `resolved=true`, records the
-// chosen option, and fires a `WakeTrigger::UserMessageInJournal` so the
-// planner sees the answer on its next turn.
+// Persisted record from the deleted autonomous Planner approval flow. Kept so
+// historical state loads losslessly; current Flight Deck code does not create
+// or resolve these records.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

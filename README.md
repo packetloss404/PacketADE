@@ -11,13 +11,13 @@ PacketADE is a Tauri v2 desktop app that brings AI coding agents, planning, issu
 - [`dev/README.md`](./dev/README.md) — planning index, active implementation briefs, runbooks, and archive.
 - [`dev/remoteagents/README.md`](./dev/remoteagents/README.md) — canonical Remote Agents plan.
 - [`CHANGELOG.md`](./CHANGELOG.md) — shipped history only.
-- [`AGENTS.md`](./AGENTS.md) / [`CLAUDE.md`](./CLAUDE.md) — agent-facing repository instructions.
+- `AGENTS.md` / `CLAUDE.md` — local agent-facing repository instructions (generated and intentionally gitignored).
 
 ## What It Does
 
 - Chat with eight coding-agent providers as **conversation tiles in the Workspace** — Claude Code subscription, Codex subscription, OpenAI Agents SDK, four API-key providers, and local Ollama all normalize into one event contract
 - Run agent chat tiles and PTY-backed terminal sessions side-by-side in one draggable mosaic — the **Workspace** is the single surface
-- Plan and supervise larger units of work from the **Flight Deck** — a single-screen master-detail flight control surface
+- Launch and supervise larger units of work from the **Flight Deck** — a single-screen master-detail flight control surface
 - Track issues on a kanban board and send them directly to workspace sessions
 - Connect to remote servers via SSH and run agent sessions over the wire
 - Keep project context close with auto-learning memory, history, and GitHub integration
@@ -87,7 +87,7 @@ The **Workspace is the single surface**: every agent — chat or terminal — is
 
 ### Sidecar Protocol
 
-The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **7**:
+The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **8**:
 
 - Events: `ready` (handshake), `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken`), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns), and `rate_limited` (v6, typed provider quota-pause)
 - Requests: `start_session` (with image attachments + resume), `send_message`, `permission_response`, `edit_response` (with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`, `inject_user_turn` (v5)
@@ -103,9 +103,11 @@ The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK p
 ### Flight Deck — Flight Control
 
 - Single-screen master-detail layout: a status-grouped flight list on the left, the selected flight's flight control on the right
-- **Attention** group automatically surfaces paused, failed, and approval-needed flights
-- Live tiles for the selected flight: stat strip (cost, tokens, tasks, approvals, sessions, last update), milestones, live agents, approvals queue, and timeline
-- Inline edit of title and objective; status and priority dropdowns; pause/resume/cancel lifecycle controls
+- Launch one or more local or SSH agents against isolated worktrees, choosing the provider, model, base path, and branch per target
+- **Attention** grouping automatically surfaces paused, failed, and approval-needed Flights; active path collisions and unpinned SSH targets are blocked before launch
+- Each Attempt tile streams the agent conversation, accepts follow-up turns, and exposes review/complete/reject/cancel controls; terminal status, tokens, cost, and coordination events persist on the Flight
+- Optional local draft-PR publishing pushes the Attempt branch before worktree cleanup, while SSH worktree cleanup is resolved through the saved Server configuration
+- The former autonomous Flight Planner UI/FSM/journal was intentionally removed; legacy planner fields remain load-compatible but are not a live feature
 - Kanban issue tracking with priorities, labels, acceptance criteria, and flight linkage
 
 ### SSH Remote Workspaces
@@ -226,7 +228,7 @@ PacketADE ships with a Node.js sidecar that powers the Anthropic (Subscription),
 
 #### Sidecar status
 
-The sidecar work is complete across the original four v2 tiers and the v3–v7 protocol additions that power the unified Agents pane:
+The sidecar work is complete across the original four v2 tiers and the v3–v8 protocol additions that power the unified conversation tiles:
 
 - **v2 Tier 1 — Bundling:** pinned Node 24.15.0 runtime fetched as a Tauri `externalBin`, sidecar resources bundled with pruned production `node_modules`, `prebundle` chain wired into `tauri build`.
 - **v2 Tier 2 — Lifecycle & auth:** sidecar version handshake on startup, toolbar status chip reflecting live sidecar state, credential expiry parsing for Anthropic Subscription / OpenAI ChatGPT tokens, and a filesystem watcher that re-reads auth when cred files change on disk.
@@ -237,7 +239,8 @@ The sidecar work is complete across the original four v2 tiers and the v3–v7 p
 - **v4 — `cancel_pending_tools`:** drains parked permission/edit prompts as denied without aborting the SDK query, so the model receives synthetic "User cancelled this tool" results and the loop continues.
 - **v5 — `inject_user_turn`:** injects a user/wake-trigger turn into a long-lived session; originally paired with a Flight Planner `planner_tool` / `planner_tool_result` MCP round-trip that v7 removed (see below).
 - **v6 — typed `rate_limited` event:** surfaces provider quota pauses as a typed event instead of an opaque error.
-- **v7 — planner amputation (2026-07-11):** the entire in-process Flight Planner MCP surface — the `planner_tool` event, the `planner_tool_result` request, and the sidecar's `mcpKind:"planner"` construction branch — was deleted along with the Rust `flight_planner` command family (~13,300 net lines removed). The live executor money path (`flight_for_executor_session` / `accumulate_executor_cost`) was extracted first into `commands/flight_cost.rs` and is unaffected. See [`backlog.md`](./backlog.md) → Flight Planner backend.
+- **v7 — planner amputation (2026-07-11):** the entire in-process Flight Planner MCP surface — the `planner_tool` event, the `planner_tool_result` request, and the sidecar's `mcpKind:"planner"` construction branch — was deleted along with the Rust `flight_planner` command family (~13,300 net lines removed). The live executor money path (`flight_for_executor_session` / `accumulate_executor_cost`) was extracted first into `commands/flight_cost.rs` and is unaffected. See [`backlog.md`](./backlog.md#flight-deck).
+- **v8 — remote-owned MCP over SSH:** a remote sidecar loads its own `~/.claude/settings.json` and project `.mcp.json`, runs both stdio and network MCP servers on the remote host, and reports a secrets-free `mcp_sources` summary to the conversation.
 - **Codex absorption:** Codex `todo_list` items map to the existing `plan_block` event; `reasoning_tokens` + `cached_input_tokens` flow into `turn_summary` so CostDashboard reports GPT-5.5 spend correctly; `turn_summary.address` carries the MultiAgentV2 sub-agent path (`/root/agent_a` etc.) so child token totals attribute to a per-address bucket on the conversation instead of the root.
 - **OpenAI Agents SDK provider:** `api-openai-agents` runs in the sidecar with the same OpenAI API key as `api-openai`, preserving the existing Agents pane event contract while leaving the stable Rust OpenAI API provider and Codex subscription provider untouched. The default `auto` mode requires approval before `bash` / `write_file`.
 - **Standalone exe sidecar fix:** the Tauri shell plugin on Windows resolves `app.shell().sidecar("node")` to `<exe_dir>/node-<target-triple>.exe`, and the call is gated by an explicit `shell:allow-execute` capability entry. `build.rs` now copies `binaries/node-<triple>.<ext>` into the cargo output directory at compile time, and `capabilities/default.json` grants the `node` sidecar entry — so running `target/<profile>/packetade.exe` directly (without installing the MSI/NSIS) no longer reports the sidecar as down.
@@ -302,7 +305,7 @@ PacketADE/
       layout/                  # Title bar, toolbar, mosaic tiling, status bar, left rail
       session/                 # Terminal panes, session modals, status bars, inspect UI
       issues/                  # Kanban issue board and issue detail UI
-      flights/                 # Flight Deck tiles (FlightList, FlightDetail, FlightHeaderTile, etc.)
+      flights/                 # Flight Deck attempts (LaunchAsyncFlightModal, AsyncFlightGrid, AttemptTile)
       views/                   # First-class application views (FlightsView, WorkspaceView, GitHubView, …)
       editor/                  # Lightweight editor/diff support
       workspace/               # Single-surface Workspace: ConversationTile, FleetSidebar, AddAgentPicker, GitDashboard, WorktreeLifecycleBar, pane container

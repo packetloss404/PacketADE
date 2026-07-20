@@ -9,7 +9,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use tracing::{info, warn};
 
 use super::agent_config::AgentConfig;
-use super::flight::{Flight, Issue, FlightApprovalRequest};
+use super::flight::{Attempt, Flight, FlightApprovalRequest, Issue};
 use super::orchestrator::OrchestratorSettings;
 use super::shared::home_dir;
 use super::workspace::Workspace;
@@ -78,10 +78,9 @@ static PROVIDER_SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 /// a stale async full-state save cannot overwrite a sync slice save that
 /// landed between the async load and save.
 ///
-/// Migration note: callers that take `&mut PersistedState` and only need
-/// to be serialized against other planner-tool callers should use
-/// [`with_state_lock`]. Sync state writers in this module must acquire this
-/// gate before `STATE_LOCK`; do not invert that order.
+/// Async callers that mutate `PersistedState` use [`with_state_lock`]. Sync
+/// state writers in this module must acquire this gate before `STATE_LOCK`;
+/// do not invert that order.
 static ASYNC_STATE_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
@@ -116,9 +115,7 @@ pub struct PersistedState {
     pub memory_patterns: Vec<serde_json::Value>,
     #[serde(default)]
     pub servers: Vec<ServerConfig>,
-    /// Flight Planner: pending / resolved `request_user_approval`
-    /// records. Filed async-style by the planner via the MCP tool
-    /// surface (E2) and drained by `resolve_flight_approval`.
+    /// Legacy autonomous-Planner approval records. Read-compatible only.
     #[serde(default)]
     pub flight_approvals: Vec<FlightApprovalRequest>,
 }
@@ -395,8 +392,7 @@ where
 /// Run an async closure with an exclusive load → mutate → save critical
 /// section over `PersistedState`. Solves the lost-update race that
 /// `load_state(); mutate; save_state()` exposes when called from
-/// concurrent async contexts (e.g. multiple Flight Planner MCP tool
-/// handlers firing in parallel within a single planner turn).
+/// concurrent async contexts (attempt status, executor cost, etc.).
 ///
 /// Contract:
 ///   * The closure receives a `&mut PersistedState` already loaded under
@@ -431,13 +427,93 @@ where
     Ok(result)
 }
 
+fn merge_attempts_for_frontend_save(existing: &[Attempt], incoming: Vec<Attempt>) -> Vec<Attempt> {
+    let mut merged = Vec::with_capacity(existing.len().max(incoming.len()));
+
+    for candidate in incoming {
+        if let Some(current) = existing.iter().find(|attempt| attempt.id == candidate.id) {
+            // Attempt lifecycle is backend-owned. A whole-slice frontend save
+            // may carry a stale status while Rust is processing done/error or
+            // cleanup. Keep the authoritative record, accepting only the
+            // frontend's independently-derived usage counters and error text.
+            let mut attempt = current.clone();
+            attempt.tokens = attempt.tokens.max(candidate.tokens);
+            attempt.cost = attempt.cost.max(candidate.cost);
+            if attempt.error_message.is_none() {
+                attempt.error_message = candidate.error_message;
+            }
+            if attempt.completed_at.is_none() {
+                attempt.completed_at = candidate.completed_at;
+            }
+            if attempt.draft_pr_number.is_none() {
+                attempt.draft_pr_number = candidate.draft_pr_number;
+            }
+            merged.push(attempt);
+        } else {
+            merged.push(candidate);
+        }
+    }
+
+    // A stale frontend snapshot can predate an Attempt that Rust just
+    // appended. Never delete such an Attempt merely because it is absent from
+    // the incoming whole-slice save.
+    for current in existing {
+        if !merged.iter().any(|attempt| attempt.id == current.id) {
+            merged.push(current.clone());
+        }
+    }
+
+    merged
+}
+
+fn merge_flights_for_frontend_save(existing: &[Flight], incoming: Vec<Flight>) -> Vec<Flight> {
+    incoming
+        .into_iter()
+        .map(|mut candidate| {
+            let Some(current) = existing.iter().find(|flight| flight.id == candidate.id) else {
+                return candidate;
+            };
+
+            candidate.attempts =
+                merge_attempts_for_frontend_save(&current.attempts, candidate.attempts);
+            candidate.total_tokens = candidate.total_tokens.max(current.total_tokens);
+            candidate.total_cost = candidate.total_cost.max(current.total_cost);
+            candidate.updated_at = candidate.updated_at.max(current.updated_at);
+            if candidate.prompt.is_none() {
+                candidate.prompt = current.prompt.clone();
+            }
+
+            // These fields are retained only for lossless loading of legacy
+            // Flight Planner state. A current frontend snapshot must not erase
+            // them simply because no live UI reads or writes them anymore.
+            if candidate.planner_session_id.is_none() {
+                candidate.planner_session_id = current.planner_session_id.clone();
+            }
+            if candidate.planner_status.is_none() {
+                candidate.planner_status = current.planner_status;
+            }
+            if candidate.planner_cost.is_none() {
+                candidate.planner_cost = current.planner_cost;
+            }
+            if candidate.planner_tokens.is_none() {
+                candidate.planner_tokens = current.planner_tokens;
+            }
+            if candidate.planner_provider.is_none() {
+                candidate.planner_provider = current.planner_provider.clone();
+            }
+
+            candidate
+        })
+        .collect()
+}
+
 pub fn save_flights(flights: Vec<Flight>) -> Result<(), String> {
     let _async_lock = lock_state_gate_blocking();
     let _lock = STATE_LOCK
         .lock()
         .map_err(|e| format!("Lock poisoned: {}", e))?;
     let mut state = load_state();
-    state.flights = flights;
+    state.flights = merge_flights_for_frontend_save(&state.flights, flights);
     state.version += 1;
     save_state_inner(&state)
 }
@@ -725,6 +801,112 @@ fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::flight::{AttemptStatus, AttemptTarget, FlightPriority, FlightStatus};
+
+    fn test_flight(id: &str) -> Flight {
+        Flight {
+            id: id.to_string(),
+            title: "Flight".to_string(),
+            objective: "Test persistence".to_string(),
+            status: FlightStatus::Active,
+            priority: FlightPriority::Medium,
+            project_path: "D:/repo".to_string(),
+            workspace_id: None,
+            git_branch: None,
+            milestones: Vec::new(),
+            linked_session_ids: Vec::new(),
+            created_at: 1,
+            updated_at: 1,
+            completed_at: None,
+            total_cost: 0.0,
+            total_tokens: 0,
+            prompt: None,
+            attempts: Vec::new(),
+            planner_session_id: None,
+            planner_status: None,
+            planner_cost: None,
+            planner_tokens: None,
+            planner_provider: None,
+            publish_attempts_as_prs: false,
+            coordination_log: Vec::new(),
+        }
+    }
+
+    fn test_attempt(id: &str, status: AttemptStatus) -> Attempt {
+        Attempt {
+            id: id.to_string(),
+            flight_id: "flight-1".to_string(),
+            target: AttemptTarget::Local {
+                base_path: "D:/repo".to_string(),
+                worktree_path: format!("D:/repo/.worktrees/{id}"),
+            },
+            agent_config_id: "api-claude".to_string(),
+            model: "claude-sonnet".to_string(),
+            provider: "claude".to_string(),
+            branch: format!("packetade/{id}"),
+            base_branch: "main".to_string(),
+            session_id: id.to_string(),
+            status,
+            started_at: Some(1),
+            completed_at: None,
+            cost: 0.0,
+            tokens: 0,
+            error_message: None,
+            draft_pr_number: None,
+        }
+    }
+
+    #[test]
+    fn frontend_flight_save_preserves_backend_appended_attempts_and_cost() {
+        let mut current = test_flight("flight-1");
+        current.attempts = vec![test_attempt("attempt-1", AttemptStatus::Running)];
+        current.total_cost = 1.25;
+        current.total_tokens = 400;
+        current.prompt = Some("Run the audit".to_string());
+        current.updated_at = 20;
+
+        let mut stale_frontend = test_flight("flight-1");
+        stale_frontend.title = "Renamed flight".to_string();
+        stale_frontend.updated_at = 10;
+
+        let merged = merge_flights_for_frontend_save(&[current], vec![stale_frontend]);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].title, "Renamed flight");
+        assert_eq!(merged[0].attempts.len(), 1);
+        assert_eq!(merged[0].attempts[0].status, AttemptStatus::Running);
+        assert_eq!(merged[0].total_cost, 1.25);
+        assert_eq!(merged[0].total_tokens, 400);
+        assert_eq!(merged[0].prompt.as_deref(), Some("Run the audit"));
+        assert_eq!(merged[0].updated_at, 20);
+    }
+
+    #[test]
+    fn frontend_flight_save_cannot_rewind_attempt_status_but_can_add_usage() {
+        let mut current = test_flight("flight-1");
+        let mut backend_attempt = test_attempt("attempt-1", AttemptStatus::Reviewing);
+        backend_attempt.tokens = 10;
+        current.attempts = vec![backend_attempt];
+
+        let mut stale_frontend = test_flight("flight-1");
+        let mut frontend_attempt = test_attempt("attempt-1", AttemptStatus::Running);
+        frontend_attempt.tokens = 25;
+        stale_frontend.attempts = vec![frontend_attempt];
+
+        let merged = merge_flights_for_frontend_save(&[current], vec![stale_frontend]);
+
+        assert_eq!(merged[0].attempts[0].status, AttemptStatus::Reviewing);
+        assert_eq!(merged[0].attempts[0].tokens, 25);
+    }
+
+    #[test]
+    fn frontend_flight_save_still_deletes_omitted_flights() {
+        let current = vec![test_flight("keep"), test_flight("delete")];
+        let merged = merge_flights_for_frontend_save(&current, vec![test_flight("keep")]);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].id, "keep");
+    }
 
     /// Create a fresh, unique tempdir for one test and return its path.
     /// Mirrors the `std::env::temp_dir()` + nanosecond-suffix convention used

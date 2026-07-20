@@ -11,6 +11,12 @@ const mocks = vi.hoisted(() => ({
   createApiConversation: vi.fn(),
   loadPersistedState: vi.fn(),
   markAttemptStatus: vi.fn(),
+  cleanupAttemptWorktreeSsh: vi.fn(),
+  gitPushBranch: vi.fn(),
+  githubCreatePr: vi.fn(),
+  setAttemptDraftPr: vi.fn(),
+  getServer: vi.fn(),
+  selectedRepo: null as { owner: string; repo: string } | null,
   notifyAttemptCompleted: vi.fn(),
   composeMemoryBrief: vi.fn(),
   captureFlightCompleted: vi.fn(),
@@ -29,11 +35,11 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("@/lib/tauri", () => ({
   launchFlightAsync: mocks.launchFlightAsync,
   cancelFlightAttempt: vi.fn().mockResolvedValue(undefined),
-  cleanupAttemptWorktreeSsh: vi.fn().mockResolvedValue(undefined),
+  cleanupAttemptWorktreeSsh: mocks.cleanupAttemptWorktreeSsh,
   markAttemptStatus: mocks.markAttemptStatus,
-  gitPushBranch: vi.fn().mockResolvedValue(undefined),
-  githubCreatePr: vi.fn().mockResolvedValue(JSON.stringify({ number: 1 })),
-  setAttemptDraftPr: vi.fn().mockResolvedValue(undefined),
+  gitPushBranch: mocks.gitPushBranch,
+  githubCreatePr: mocks.githubCreatePr,
+  setAttemptDraftPr: mocks.setAttemptDraftPr,
   loadPersistedState: mocks.loadPersistedState,
   saveFlightsSlice: vi.fn().mockResolvedValue(undefined),
   saveUiSlice: vi.fn().mockResolvedValue(undefined),
@@ -59,7 +65,7 @@ vi.mock("@/lib/notifications", () => ({
 vi.mock("@/stores/serverStore", () => ({
   useServerStore: {
     getState: () => ({
-      getServer: vi.fn(),
+      getServer: mocks.getServer,
     }),
   },
 }));
@@ -67,7 +73,7 @@ vi.mock("@/stores/serverStore", () => ({
 vi.mock("@/stores/githubStore", () => ({
   useGitHubStore: {
     getState: () => ({
-      config: { selectedRepo: null },
+      config: { selectedRepo: mocks.selectedRepo },
     }),
   },
 }));
@@ -395,6 +401,37 @@ describe("asyncFlightStore collision gate", () => {
     expect(mocks.listeners.has(apiAgentErrorEvent("session-fast-fail"))).toBe(false);
   });
 
+  it("rehydrates and attaches earlier attempts when a later target fails to provision", async () => {
+    const partialAttempt = attempt({ id: "att-partial", sessionId: "session-partial" });
+    mocks.launchFlightAsync.mockRejectedValueOnce(new Error("target 2 provisioning failed"));
+    mocks.loadPersistedState.mockResolvedValueOnce({
+      version: 1,
+      flights: [flight({ attempts: [partialAttempt] })],
+      agents: [],
+      settings: { maxParallelSessions: 3, milestoneGating: true, projectPath: "." },
+      ui: {},
+    });
+    useFlightStore.setState({ flights: [flight()], activeFlightId: null });
+
+    await expect(
+      useAsyncFlightStore
+        .getState()
+        .launchAsync("flight-1", "Do it", [localTarget("d:/repo"), localTarget("e:/repo")]),
+    ).rejects.toThrow("target 2 provisioning failed");
+
+    expect(
+      useFlightStore
+        .getState()
+        .flights[0]?.attempts?.some((current) => current.id === "att-partial"),
+    ).toBe(true);
+    expect(mocks.createApiConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        explicitId: "session-partial",
+        skipBackendStart: true,
+      }),
+    );
+  });
+
   it("uses the refreshed backend terminal status when an attempt finishes before listeners are ready", async () => {
     const optimisticAttempt = attempt({
       id: "att-instant-done",
@@ -429,7 +466,7 @@ describe("asyncFlightStore collision gate", () => {
     );
   });
 
-  it("registers terminal listeners for planner-hydrated active attempts", async () => {
+  it("registers terminal listeners for backend-hydrated active attempts", async () => {
     const hydratedAttempt = attempt({
       id: "att-hydrated",
       sessionId: "session-hydrated",
@@ -475,6 +512,90 @@ describe("asyncFlightStore collision gate", () => {
       expect(mocks.markAttemptStatus).toHaveBeenCalledWith("flight-1", "att-sentinel", "reviewing");
     });
     expect(mocks.notifyAttemptCompleted).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("asyncFlightStore terminal cleanup and publishing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.markAttemptStatus.mockResolvedValue(undefined);
+    mocks.cleanupAttemptWorktreeSsh.mockResolvedValue(undefined);
+    mocks.gitPushBranch.mockResolvedValue(undefined);
+    mocks.githubCreatePr.mockResolvedValue(JSON.stringify({ number: 42 }));
+    mocks.setAttemptDraftPr.mockResolvedValue(undefined);
+    mocks.selectedRepo = null;
+    mocks.getServer.mockReturnValue(undefined);
+    useFlightStore.setState({ flights: [], activeFlightId: null });
+  });
+
+  it("publishes a completed local attempt before Rust removes its worktree", async () => {
+    mocks.selectedRepo = { owner: "packetloss404", repo: "PacketADE" };
+    useFlightStore.setState({
+      flights: [
+        flight({
+          publishAttemptsAsPrs: true,
+          attempts: [attempt({ status: "reviewing" })],
+        }),
+      ],
+      activeFlightId: null,
+    });
+
+    await useAsyncFlightStore
+      .getState()
+      .setAttemptStatus("flight-1", "att-running", "completed");
+
+    expect(mocks.gitPushBranch).toHaveBeenCalledWith(
+      "D:\\Repo\\.git\\packetade-worktrees\\att-running",
+      "packetade/att-running",
+      false,
+    );
+    expect(mocks.setAttemptDraftPr).toHaveBeenCalledWith("flight-1", "att-running", 42);
+    expect(mocks.gitPushBranch.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.markAttemptStatus.mock.invocationCallOrder[0],
+    );
+    expect(mocks.setAttemptDraftPr.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.markAttemptStatus.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("cleans up an SSH worktree after accepting an attempt", async () => {
+    mocks.getServer.mockReturnValue({
+      id: "server-1",
+      host: "example.test",
+      port: 22,
+      username: "ian",
+      keyPath: "C:/keys/id_ed25519",
+      hostFingerprint: "SHA256:test",
+    });
+    const sshAttempt = attempt({
+      status: "reviewing",
+      target: {
+        kind: "ssh",
+        targetId: "server-1",
+        basePath: "/srv/repo",
+        worktreePath: "/srv/repo/.packetade-worktrees/att-running",
+      },
+    });
+    useFlightStore.setState({
+      flights: [flight({ attempts: [sshAttempt] })],
+      activeFlightId: null,
+    });
+
+    await useAsyncFlightStore
+      .getState()
+      .setAttemptStatus("flight-1", "att-running", "completed");
+
+    expect(mocks.cleanupAttemptWorktreeSsh).toHaveBeenCalledWith({
+      flightId: "flight-1",
+      attemptId: "att-running",
+      host: "example.test",
+      port: 22,
+      user: "ian",
+      keyPath: "C:/keys/id_ed25519",
+      basePath: "/srv/repo",
+      targetId: "server-1",
+      hostFingerprint: "SHA256:test",
+    });
   });
 });
 

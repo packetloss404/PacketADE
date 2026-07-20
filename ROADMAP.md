@@ -1,13 +1,12 @@
 # PacketADE Roadmap
 
-Last updated: 2026-07-19 (P1/P2 hardening loop complete: G33, F53, G01,
-Unix SSH password auth, and G09 are merged locally on `main`)
+Last updated: 2026-07-19 (hardening loop and Flight Deck runtime audit complete)
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
 briefs, runbooks, and historical planning live under [`dev/`](./dev/README.md).
-For architectural conventions, see [`AGENTS.md`](./AGENTS.md) and
-[`CLAUDE.md`](./CLAUDE.md).
+For architectural conventions, see the local generated `AGENTS.md` and
+`CLAUDE.md` files (intentionally gitignored).
 
 ## North Star
 
@@ -21,9 +20,10 @@ without turning PacketADE into a cloud-only coding agent.
 
 | ID  | Track                                     | Priority | Status                                            | Canonical Plan                                                                                                   |
 | --- | ----------------------------------------- | -------: | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| R0  | Remote Agents: PWA + Packet Cloud relay   |       P0 | Planning complete; ready for implementation split | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                     |
+| R0  | Remote Agents: PWA + Packet Cloud relay   |       P0 | Blocked on three Sprint-0 product decisions        | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                     |
 | R1  | Docs and planning consolidation           |       P1 | Refreshed; ongoing maintenance                    | [`dev/README.md`](./dev/README.md)                                                                               |
 | R2  | Distribution readiness: signing + updater |       P1 | Still blocked on signing certificates             | [`dev/updater-setup.md`](./dev/updater-setup.md), [`dev/multi-platform-build.md`](./dev/multi-platform-build.md) |
+| R3  | Flight Deck planning scope                |       P1 | Decision needed after runtime audit               | [`backlog.md`](./backlog.md#flight-deck)                                                                        |
 
 ### Remote Agents Acceptance Shape
 
@@ -46,18 +46,20 @@ canonical plan docs.
 
 The reliability loop in
 [`dev/p1-p2-fix-loop-spec.md`](./dev/p1-p2-fix-loop-spec.md) is complete. The
-next local decision is whether to delete the orphaned deploy backend
-(recommended) or rebuild its UI. The next major-product gate remains the three
-Remote Agents Sprint-0 decisions: auth provider, E2EE timing, and code location.
+orphaned deploy backend was already deleted; its unused constants and test mocks
+have now been removed as well. The next product gates are the three Remote
+Agents Sprint-0 decisions (auth provider, E2EE timing, and code location) and
+Flight Deck's scope: keep the streamlined parallel-attempt board, or add the
+recommended lightweight conversation-backed planning step without restoring
+the deleted autonomous Planner v1.
 
-| ID  | Track                            | Priority | Status      | Notes                                                                                                                                                                                   |
-| --- | -------------------------------- | -------: | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| N1  | Sidecar-over-SSH                 |       P1 | Shipped     | `forward_start_ssh` landed — subscription providers now run over SSH remote workspaces through the sidecar. See [`CHANGELOG.md`](./CHANGELOG.md).                                        |
-| N2  | Swarm orchestration escalation   |       P2 | Shipped     | Escalation **suggests, not acts** (the "auto-reassignment" question resolved to human-in-the-loop): a stuck flight (all attempts terminal, none succeeded) gets one deduped `escalation` suggestion on its coordination timeline. Built on the live attempt lifecycle. See [`dev/bridgemind/swarm-orchestration-plan.md`](./dev/bridgemind/swarm-orchestration-plan.md) and [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
-| N3  | PacketADE MCP provider transport |       P2 | Shipped     | PacketADE now exposes itself as an MCP server (Streamable HTTP via `rmcp`, loopback + bearer/Origin auth): 5 read tools + 7 `packetade://` resources + a live activity feed, plus two opt-in append-only writes (`append_handoff`, `escalate`). `src-tauri/src/mcp_server/`. See [`dev/mcp-provider-transport.md`](./dev/mcp-provider-transport.md) and [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
-| S8  | MCP servers over SSH             |       P1 | Shipped     | Remote (SSH) sessions run MCP servers: Phase-A forwards HTTP/SSE; Phase-B (remote-owned config) adds **stdio** — the remote sidecar sources its own `~/.claude/settings.json` + `<project>/.mcp.json` and reports a `mcp_sources` summary. Sidecar protocol v7→v8. See [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
-| N4  | Git review packet integration    |       P2 | Shipped     | GitDashboard now surfaces each changed file's linked flight `ReviewPacket` (summary / type / command / agent diff + status) via `ReviewPacketPanel`, and deep-links to the live approval prompt when one exists (`focusConversationDeepLink`). Approve/reject stays session-scoped in ReviewSurface. Remaining nicety: open the git diff editor directly from the packet. See [`dev/zen-workspace/features-git-workspace.md`](./dev/zen-workspace/features-git-workspace.md) and [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
-| N5  | Cost alerts                      |       P2 | Shipped     | Budget thresholds (daily / global-monthly / session / per-provider / per-flight) + warning thresholds + 24h overrides + the launch gate were already in place; the remaining alert/notification UX now ships — a notification fires on an upward guardrail transition, gated by a "Cost threshold alerts" toggle (`notifyCostThreshold` in `src/lib/notifications.ts`, transition detection in `analyticsStore.load()`). See [`CHANGELOG.md`](./CHANGELOG.md) `[0.10.1]`. |
+| ID | Track | Priority | Status | Next action |
+| --- | --- | ---: | --- | --- |
+| D1 | Remote Agents Sprint 0 | P0 | Blocked | Decide auth provider, E2EE timing, and code location; then split the six-agent implementation runbook. |
+| D2 | Flight Deck scope | P1 | Decision needed | Keep the parallel-attempt board only, or add the recommended lightweight conversation-backed planning step. |
+| D3 | API-agent concurrency | P2 | Ready | Redesign F28 per-turn cancellation, then thread `toolUseId` through G11 edit responses. |
+| D4 | SSH parity verification | P2 | Ready / environment-gated | Fix the saved-password path probe and run the live Codex-over-SSH smoke. |
+| D5 | Signing and updater | P1 | Externally blocked | Acquire Windows/macOS credentials, then follow the existing release runbooks. |
 
 ## Later
 
@@ -75,7 +77,7 @@ Remote Agents Sprint-0 decisions: auth provider, E2EE timing, and code location.
 
 ## Shipped Foundation
 
-Sprints 0-4, Flight Planner v1, workspace panes, Issues, GitHub + Memory,
+Sprints 0-4, the Flight Deck worktree-attempt runtime, workspace panes, Issues, GitHub + Memory,
 dictation, cost analytics, cost guardrails / budget thresholds, API-agent
 conversations, sidecar protocol v8 (v6→v7 planner-amputation, v7→v8 S8-Phase-B
 MCP-over-SSH), PacketADE-as-MCP-server (N3), MCP servers over SSH (S8 A+B),
@@ -83,6 +85,13 @@ remote git commands (S7), Codex-over-SSH (S9), local quality gates, and the
 conversation-as-tile single-surface consolidation (the "match Claude Code &
 Codex" initiative, now folded into the Workspace tile surface) are shipped. The
 full release narrative lives in [`CHANGELOG.md`](./CHANGELOG.md).
+
+The former autonomous Flight Planner v1 is historical, not a shipped current
+surface: its UI/FSM was removed during the July 6 orchestration convergence and
+its unreachable Rust/sidecar backend was amputated July 11. The next Flight Deck
+decision is whether to keep the intentionally smaller parallel-attempt board or
+add a lightweight explicit planning step on the normal conversation contract;
+the deleted autonomous runtime should not be restored wholesale.
 
 Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`,
 `pnpm e2e`, `cargo check --manifest-path src-tauri/Cargo.toml`, and
@@ -104,10 +113,10 @@ Run the usual gates before release: `pnpm lint`, `pnpm test`, `pnpm build`,
 
 ## Release Path
 
-1. Keep Remote Agents implementation split against the six-agent runbook.
+1. Resolve the three Remote Agents Sprint-0 decisions, then split work against the six-agent runbook.
 2. Land a private PWA/relay alpha with desktop-owned execution and audited
    command envelopes.
 3. Acquire Windows + macOS signing certificates.
 4. Wire signing config and the Tauri updater.
 5. Expand E2E coverage across workspace session creation, API-agent launch,
-   Remote Agents approval flow, and flight approval cycle.
+   Remote Agents approval flow, and the Flight attempt lifecycle.

@@ -124,18 +124,7 @@ export interface Task {
   completedAt?: number;
   cost: number;
   tokens: number;
-  /**
-   * Flight Planner: number of `replan_after_failure` calls this task has
-   * triggered (excluding RateLimit/Network exemptions). Mirrored from
-   * `FlightPlannerSession.replans_per_task` by
-   * `FlightPlannerRegistry::bump_replan_count`. Read by the planner's
-   * failure-wake body renderer to surface budget headroom (`N / 3`).
-   *
-   * Optional on the frontend Task because legacy Task constructors and
-   * helper factories may not set it; the Rust DTO carries it as a
-   * required `replanCount: number` (with `#[serde(default)]` for
-   * back-compat with old persisted state).
-   */
+  /** Legacy autonomous-Planner replan count; read-compatible only. */
   replanCount?: number;
 }
 
@@ -231,22 +220,12 @@ export interface Flight {
   prompt?: string;
   /** Parallel agent attempts. Non-empty = async-mode Flight. */
   attempts?: Attempt[];
-  // Flight Planner (E1+) — autonomous planner session bound to this Flight.
+  // Legacy autonomous-Planner fields — retained only for lossless hydration.
   plannerSessionId?: string;
   plannerStatus?: "idle" | "awake" | "paused" | "quota_paused" | "completed" | "failed";
   plannerCost?: number;
   plannerTokens?: number;
-  /**
-   * Identifies which planner backend provider was used for cost/token
-   * accounting on this Flight. E1 populates this when the planner session
-   * starts; today the values are `"claude-oauth"` (Anthropic OAuth via the
-   * sidecar / Agent SDK) or `"api-claude"` (Anthropic API via the in-process
-   * LlmProvider). The StatGrid uses this to decide whether the planner
-   * dollar value is best-effort (OAuth: no public quota endpoint, surface
-   * cumulative tokens as the authoritative measure) or fully reliable (API:
-   * priced per-token by us). Optional because legacy persisted Flights
-   * created before E8-ACCUM landed don't carry the field.
-   */
+  /** Legacy autonomous-Planner provider id; read-compatible only. */
   plannerProvider?: string;
   /**
    * v0.8-G: when true on an async-mode Flight, the executor pipeline

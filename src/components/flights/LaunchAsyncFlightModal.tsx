@@ -62,6 +62,8 @@ export function LaunchAsyncFlightModal({
   flightId,
 }: LaunchAsyncFlightModalProps) {
   const addFlight = useFlightStore((s) => s.addFlight);
+  const updateFlight = useFlightStore((s) => s.updateFlight);
+  const flushFlightPersistence = useFlightStore((s) => s.flushPersistence);
   const flights = useFlightStore((s) => s.flights);
   const launchAsync = useAsyncFlightStore((s) => s.launchAsync);
   const activeWorkspace = useWorkspaceStore((s) =>
@@ -150,9 +152,17 @@ export function LaunchAsyncFlightModal({
       // When launching into an already-staged flight (e.g. from GitHub's
       // "Plan flight" hand-off or the Flights detail pane's empty-attempts
       // state), reuse it instead of minting a disconnected duplicate.
-      const flight =
-        existingFlight ??
-        addFlight({
+      let flight;
+      if (existingFlight) {
+        const updates = {
+          title: title.trim() || existingFlight.title,
+          objective: prompt.trim(),
+          publishAttemptsAsPrs: publishAsPrs,
+        };
+        updateFlight(existingFlight.id, updates);
+        flight = { ...existingFlight, ...updates };
+      } else {
+        flight = addFlight({
           title: title.trim() || promptShort || "Untitled flight",
           objective: prompt.trim(),
           priority: "medium" as FlightPriority,
@@ -161,14 +171,12 @@ export function LaunchAsyncFlightModal({
           issueIds: [],
           publishAttemptsAsPrs: publishAsPrs,
         });
+      }
 
-      // v0.8 race-fix: `addFlight` already carries `publishAttemptsAsPrs`
-      // through to backend persistence via `saveFlightsSlice`, so a
-      // separate `setFlightPublishAttemptsAsPrs` call here was both
-      // redundant and racy — its `await` could resolve before the
-      // fire-and-forget `syncFlightsToBackend` queued by `addFlight` had
-      // written the flight, surfacing as "Flight not found" warnings that
-      // were silently swallowed.
+      // The backend appends Attempts to the persisted Flight. Ensure the
+      // create/update above has landed first; otherwise a fast launch can see
+      // "Flight not found" or race a delayed stale whole-slice write.
+      await flushFlightPersistence();
 
       await launchAsync(flight.id, prompt.trim(), targetSpecs);
 

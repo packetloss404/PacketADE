@@ -1,17 +1,21 @@
-# PacketADE — LAUNCH-READY BUILD SPEC (6 items)
+# PacketADE — LAUNCH-READY BUILD SPEC (completed historical record)
+
+> **Completed 2026-07-19.** Deploy Option A had already landed in `f20801e` and
+> was merged through `5bbf0c5`; the later cleanup removed its unused brand
+> constants and E2E mocks. Do not relaunch this workflow from this document.
 
 Each item below is a self-contained slice. The loop runs one slice per iteration on its own branch: **implement → 2 adversarial reviews → fix → run the item's GATE → commit**. Do not re-derive; the file/line anchors and edits are pinned. Never run prettier on `src/`. Never run preflight/format:check.
 
 ---
 
-## ⚠️ RESOLVE BEFORE LAUNCH — deploy-P2 USER DECISION
+## RESOLVED — deploy-P2 Option A shipped
 
-**deploy-P2 is a DECISION, not a mechanical fix.** The deploy command family is confirmed 100% dead (zero callers in `src/`, `src-tauri/`, `e2e/`, `agent-sidecar/`; not in `api/mod.rs` or `tauri-schema.ts`; FE deploy surface already removed).
+The deploy command family was confirmed 100% dead (zero callers in `src/`, `src-tauri/`, `e2e/`, `agent-sidecar/`; not in `api/mod.rs` or `tauri-schema.ts`; FE deploy surface already removed). **Option A was selected and shipped.** The alternatives below are retained only as historical context.
 
 - **Option A — DELETE (RECOMMENDED DEFAULT):** amputate the dead command family. Closes F22/F23/F24/F25/F39 as a side effect. One commit, low risk, no schema impact.
 - **Option B — RE-SURFACE UI:** net-new feature (rebuild `DeployTerminal.tsx`, `deployStore.ts`, listeners, invoke wrappers). Out of scope for a bug-fix loop; do NOT let the loop attempt this.
 
-**The user must pick A or B before the loop starts.** If unresolved, SKIP deploy-P2 and proceed with the other five. The spec below assumes **A (delete)**.
+The loop proceeded with **A (delete)**. This gate is closed; do not ask for the decision again.
 
 ---
 
@@ -184,5 +188,5 @@ Leave untouched: `dev/archive/moat/deploy-pipeline-*.md`, `dictation/whisper.rs:
 - One branch per item: e.g. `fix/g33-stop-requeue`, `refactor/deploy-amputate-p2`, `fix/f53-cross-arch-sidecar`, `fix/g01-sidecar-exit-hook`, `fix/sshpw-askpass-unix`, `fix/g09-codex-nohang`.
 - Per slice: implement → **2 adversarial reviews** → apply fixes → run the item's GATE (listed above) → commit. G09 commits 4 times within its branch.
 - Cargo/schema/sidecar GATE steps are harmless to run on frontend-only items but only load-bearing where noted.
-- **Blocking pre-launch:** resolve the deploy-P2 A/B decision. All other decisions have recommended defaults baked in.
+- **Historical pre-launch gate:** deploy-P2 A/B was resolved as Option A; this completed workflow must not be relaunched.
 - Order: G33 → deploy-P2(A) → F53 → G01 → sshpw-P2 → G09. Rebase G01/sshpw-P2/deploy-P2 against each other for the trivial `lib.rs`/`pty.rs` context overlaps.

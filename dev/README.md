@@ -28,6 +28,8 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 - `beta-distribution-trust-runbook.md` — beta release trust gates, signing/updater credential checks, and release-candidate flow
 - `sidecar-over-ssh-verification.md` — test and manual checklist for Sidecar-over-SSH provider parity
 - `updater-setup.md` — runbook for wiring up the Tauri v2 auto-updater (currently not enabled)
+- `bridgemind/swarm-orchestration-plan.md` — shipped human-in-the-loop escalation design record
+- `bridgemind/packetade-mcp-server-plan.md` / `mcp-provider-transport.md` — shipped PacketADE MCP-provider design records
 - `ssh-tech-debt.md` — redirect to `/backlog.md` (left for old links)
 - `p1-p2-fix-loop-spec.md` / `session-resume-2026-07-19.md` — completed July hardening loop and verification record
 
@@ -35,18 +37,14 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 
 ## Active (Outstanding Items)
 
-### Current decision gate
+### Current decision gates
 
-- Deploy-P2 remains a product decision: delete the orphaned backend (recommended) or rebuild a UI. The mechanical G33/F53/G01/Unix-SSH/G09 hardening loop is complete.
-
-### Swarm Orchestration
-
-- `bridgemind/swarm-orchestration-plan.md` — Phase 4 escalation SHIPPED (N2): escalation *suggests, not acts* (human-in-the-loop)
-- `bridgemind/packetade-mcp-server-plan.md` — PacketADE MCP provider SHIPPED (N3): frontend + Rust MCP server (reads + opt-in writes)
-
-### MCP Provider
-
-- `mcp-provider-transport.md` — SHIPPED (N3): local MCP server (Streamable HTTP via `rmcp`). Doc records cut/deferred tools.
+- Remote Agents remains blocked on its three Sprint-0 choices: auth provider, E2EE timing, and code location.
+- Flight Deck needs a scope decision: parallel-attempt board only, or the
+  recommended lightweight `AgentConversation`-backed planning step. The old
+  autonomous Planner v1 is not a restoration candidate.
+- Distribution remains blocked on Windows and macOS signing credentials.
+- The mechanical G33/F53/G01/Unix-SSH/G09 hardening loop and deploy-backend cleanup are complete.
 
 ### Flight Planner (archived — backend amputated 2026-07-11)
 
@@ -55,9 +53,17 @@ flight-planner backend's fate was resolved and executed: the shared executor
 money path was extracted into `commands/flight_cost.rs`, then the
 genuinely-dead planner command family, prompts, journal, and the sidecar's
 in-process planner MCP surface were deleted (sidecar protocol bumped to v7).
-See [`../backlog.md`](../backlog.md) (Flight Planner backend) for the full
-account. Do not resume this work from the archived docs — they describe the
+See [`../backlog.md`](../backlog.md#flight-deck) for the current audit and
+remaining decisions. Do not resume this work from the archived docs — they describe the
 deleted v1 planner surface.
+
+The live Flight Deck is the smaller worktree-attempt system
+(`flightStore.ts` + `asyncFlightStore.ts` + `commands/flight_attempts.rs`), not
+the archived autonomous Planner. A 2026-07-19 audit verified that separation and
+fixed launch-persistence, pre-cleanup draft-PR publishing, and SSH terminal
+cleanup races. The remaining product decision is whether Flight Deck stays a
+parallel-attempt execution board or gains a lightweight explicit planning step
+on the normal `AgentConversation` contract; do not restore archived Planner v1.
 
 - `archive/flight-planner-v1-acceptance-runbook.md` — manual sign-off runbook (v1, deleted backend)
 - `archive/flight-planner-reliability-continuity-pack.md` — reliability + continuity contract for Flight Planner journals (deleted backend)

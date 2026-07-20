@@ -211,7 +211,7 @@ pub struct AgentConfigDto {
 #[serde(rename_all = "snake_case")]
 pub enum FlightStatusDto {
     Draft,
-    /// Flight Planner spec-mode conversation (planner is the chat partner).
+    /// Legacy autonomous-Planner spec status; read-compatible only.
     Spec,
     Planning,
     Ready,
@@ -223,8 +223,7 @@ pub enum FlightStatusDto {
     Cancelled,
 }
 
-/// Flight Planner status mirror of `core_flight::PlannerStatus` for the
-/// frontend wire format. See `core/flight.rs::PlannerStatus`.
+/// Legacy autonomous-Planner status mirror retained for persisted DTOs.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PlannerStatusDto {
@@ -236,10 +235,7 @@ pub enum PlannerStatusDto {
     Failed,
 }
 
-/// Flight Planner: persisted approval-gate record mirror of
-/// `core_flight::FlightApprovalRequest`. Filed by the planner via the
-/// `request_user_approval` MCP tool (E2) and drained by the
-/// `resolve_flight_approval` Tauri command.
+/// Legacy autonomous-Planner approval record retained for persisted DTOs.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct FlightApprovalRequestDto {
@@ -449,11 +445,7 @@ pub struct TaskDto {
     pub cost: f64,
     #[ts(type = "number")]
     pub tokens: u64,
-    /// Flight Planner: number of `replan_after_failure` calls this task
-    /// has triggered (excluding RateLimit/Network exemptions). Mirrored
-    /// from `FlightPlannerSession.replans_per_task` by
-    /// `FlightPlannerRegistry::bump_replan_count`. Read by
-    /// `render_task_failed` for the budget header (`replanCount / 3`).
+    /// Legacy autonomous-Planner replan count; read-compatible only.
     #[serde(default)]
     pub replan_count: u32,
     #[serde(default)]
@@ -576,32 +568,24 @@ pub struct FlightDto {
     pub prompt: Option<String>,
     #[serde(default)]
     pub attempts: Vec<AttemptDto>,
-    /// Flight Planner: long-lived `api-claude-oauth` session id that owns
-    /// this flight. Absent for flights that never used the planner.
+    /// Legacy autonomous-Planner session id; read-compatible only.
     #[serde(default)]
     #[ts(optional)]
     pub planner_session_id: Option<String>,
-    /// Flight Planner: last-known status of the planner agent for this
-    /// flight.
+    /// Legacy autonomous-Planner status; read-compatible only.
     #[serde(default)]
     #[ts(optional)]
     pub planner_status: Option<PlannerStatusDto>,
-    /// Flight Planner (E8): cumulative USD cost attributed to the planner's
-    /// own turns. Distinct from `total_cost` which rolls up executor task
-    /// spend. Absent until the planner closes its first turn.
+    /// Legacy autonomous-Planner cost; read-compatible only.
     #[serde(default)]
     #[ts(optional)]
     pub planner_cost: Option<f64>,
-    /// Flight Planner (E8): cumulative input+output tokens used by the
-    /// planner session. Absent until the planner closes its first turn.
+    /// Legacy autonomous-Planner token count; read-compatible only.
     #[serde(default)]
     #[ts(optional)]
     #[ts(type = "number")]
     pub planner_tokens: Option<u64>,
-    /// Flight Planner (E8): provider string the planner runs on (e.g.
-    /// `"claude-oauth"` for subscription, `"api-claude"` for API-key). The
-    /// StatGrid chip renders these differently because subscription usage
-    /// doesn't burn API credit.
+    /// Legacy autonomous-Planner provider id; read-compatible only.
     #[serde(default)]
     #[ts(optional)]
     pub planner_provider: Option<String>,

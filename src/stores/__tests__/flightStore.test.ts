@@ -26,7 +26,7 @@ vi.mock("@/stores/issueStore", () => ({
 
 import { useFlightStore } from "@/stores/flightStore";
 import { useIssueStore } from "@/stores/issueStore";
-import { saveUiSlice } from "@/lib/tauri";
+import { saveFlightsSlice, saveUiSlice } from "@/lib/tauri";
 
 function makePersistedState(
   flights: ReturnType<typeof useFlightStore.getState>["flights"],
@@ -53,7 +53,8 @@ function setMockIssues(issues: Array<{ id: string; flightId: string | null }>) {
 }
 
 describe("flightStore", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await useFlightStore.getState().flushPersistence().catch(() => undefined);
     localStorage.clear();
     vi.clearAllMocks();
     setMockIssues([]);
@@ -114,6 +115,32 @@ describe("flightStore", () => {
     const updated = useFlightStore.getState().flights.find((f) => f.id === flight.id);
     expect(updated?.title).toBe("New Title");
     expect(updated?.objective).toBe("Obj"); // unchanged field preserved
+  });
+
+  it("flushPersistence waits for the queued backend Flight save", async () => {
+    let release!: () => void;
+    vi.mocked(saveFlightsSlice).mockImplementationOnce(
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+
+    useFlightStore.getState().addFlight({
+      title: "Persist before launch",
+      objective: "Do not race the first attempt",
+      priority: "medium",
+      projectPath: ".",
+    });
+
+    let flushed = false;
+    const flush = useFlightStore
+      .getState()
+      .flushPersistence()
+      .then(() => (flushed = true));
+    await Promise.resolve();
+    expect(flushed).toBe(false);
+
+    release();
+    await flush;
+    expect(flushed).toBe(true);
   });
 
   it("setActiveFlight sets activeFlightId and persists it", async () => {

@@ -76,11 +76,7 @@ export type ReviewPacketDto = { id: string, taskId: string, flightId: string, mi
 
 export type TaskDto = { id: string, milestoneId: string, flightId: string, title: string, description: string, order: number, status: TaskStatusDto, type: TaskTypeDto, agentConfigId: string, agentArgs?: Array<string>, model?: string, dependsOn: Array<string>, sessionId: string | null, result?: TaskResultDto, reviewPacket?: ReviewPacketDto, createdAt: number, startedAt?: number, completedAt?: number, cost: number, tokens: number, 
 /**
- * Flight Planner: number of `replan_after_failure` calls this task
- * has triggered (excluding RateLimit/Network exemptions). Mirrored
- * from `FlightPlannerSession.replans_per_task` by
- * `FlightPlannerRegistry::bump_replan_count`. Read by
- * `render_task_failed` for the budget header (`replanCount / 3`).
+ * Legacy autonomous-Planner replan count; read-compatible only.
  */
 replanCount: number, ownedPaths?: Array<string>, };
 
@@ -100,31 +96,23 @@ draftPrNumber?: number, };
 
 export type FlightDto = { id: string, title: string, objective: string, status: FlightStatusDto, priority: FlightPriorityDto, projectPath: string, workspaceId?: string, gitBranch?: string, milestones: Array<MilestoneDto>, linkedSessionIds: Array<string>, issueIds: Array<string>, createdAt: number, updatedAt: number, completedAt?: number, totalCost: number, totalTokens: number, prompt?: string, attempts: Array<AttemptDto>, 
 /**
- * Flight Planner: long-lived `api-claude-oauth` session id that owns
- * this flight. Absent for flights that never used the planner.
+ * Legacy autonomous-Planner session id; read-compatible only.
  */
 plannerSessionId?: string, 
 /**
- * Flight Planner: last-known status of the planner agent for this
- * flight.
+ * Legacy autonomous-Planner status; read-compatible only.
  */
 plannerStatus?: PlannerStatusDto, 
 /**
- * Flight Planner (E8): cumulative USD cost attributed to the planner's
- * own turns. Distinct from `total_cost` which rolls up executor task
- * spend. Absent until the planner closes its first turn.
+ * Legacy autonomous-Planner cost; read-compatible only.
  */
 plannerCost?: number, 
 /**
- * Flight Planner (E8): cumulative input+output tokens used by the
- * planner session. Absent until the planner closes its first turn.
+ * Legacy autonomous-Planner token count; read-compatible only.
  */
 plannerTokens?: number, 
 /**
- * Flight Planner (E8): provider string the planner runs on (e.g.
- * `"claude-oauth"` for subscription, `"api-claude"` for API-key). The
- * StatGrid chip renders these differently because subscription usage
- * doesn't burn API credit.
+ * Legacy autonomous-Planner provider id; read-compatible only.
  */
 plannerProvider?: string, 
 /**
