@@ -11,10 +11,8 @@
 //   - Prompt delivery: positional arg (stdin also supported if `-` is used)
 //   - Auth file: ~/.codex/auth.json (OAuth token from `codex login`)
 //   - Sandbox flags: -s read-only|workspace-write|danger-full-access
-//   - Approval flags: -a untrusted|on-request|never (NOTE: `on-request` needs an
-//     open stdin channel to answer prompts, which `codex exec` does not have —
-//     this surface only ever passes `-a never` or the bypass flag; see
-//     modeToCodexFlags)
+//   - Approval policy: `codex exec` is non-interactive and no longer accepts
+//     the root CLI's `-a` flag, so safe modes use `-c approval_policy=never`.
 //   - Model flag: -m / --model
 //   - Resume: `codex exec resume <SESSION_ID> [PROMPT]` with --json
 //
@@ -23,7 +21,7 @@
 //     own MCP config via `codex mcp`, and wiring PacketADE's shape through
 //     `-c mcp_servers.*` is out of scope. A one-time stderr warning is logged
 //     if the supervisor passes any.
-//   * planMode is translated to `--sandbox read-only -a never` as a best-effort
+//   * planMode is translated to a read-only sandbox with approval_policy=never as a best-effort
 //     proxy (Codex has no literal "plan mode"). The read-only sandbox is the
 //     boundary — write/exec tools are blocked outright rather than prompted
 //     (per-command approval can't work under exec; see modeToCodexFlags).
@@ -38,12 +36,9 @@
 //     the event's `id` / `call_id` / `sub_id` (whichever is present) or a
 //     UUID when none is provided. Input/output payloads are passed through
 //     as-is when structured, or stringified when not.
-//   * Permission approvals: `codex exec` runs with stdin closed (the prompt is
-//     a positional arg), so Codex's interactive `-a on-request` flow can't work
-//     here. modeToCodexFlags always resolves to `-a never` or the bypass flag,
-//     so no approval events fire in practice. The `permission_request` /
-//     `respondPermission` plumbing below is retained as defensive dead code for
-//     a future non-exec surface that could reopen the stdin approval channel.
+//   * Permission approvals: `codex exec` runs with stdin closed and has no
+//     response protocol for interactive approvals. Safe modes pre-grant the
+//     sandbox boundary with approval_policy=never instead.
 //   * Pending edit diffs: Codex does NOT emit a pre-apply diff event in
 //     `--json` mode today (patches are applied inside the sandbox). We rely
 //     on the sandbox + approval policy instead; `respondEdit` is routed
@@ -77,15 +72,10 @@ import type { ProviderHandler } from "./base.js";
  * from drifting.
  */
 interface CodexSandboxFlags {
-  args: string[];
-  /**
-   * Whether the child was launched with an interactive approval flag
-   * (`-a on-request`). Always false in this surface: `codex exec` closes stdin,
-   * so on-request can't answer prompts (see modeToCodexFlags) and every branch
-   * resolves to `-a never` or the bypass flag. Kept as a field for future
-   * visibility if a non-exec surface ever reintroduces interactive approvals.
-   */
-  hasApprovals: boolean;
+  /** Fresh `codex exec` accepts the explicit sandbox CLI option. */
+  execArgs: string[];
+  /** `codex exec resume` accepts config overrides, but not `--sandbox`. */
+  resumeArgs: string[];
 }
 
 /**
@@ -93,11 +83,11 @@ interface CodexSandboxFlags {
  * `set_permission_mode` request) onto Codex's sandbox + approval flags.
  *
  * Mapping (codex-cli 0.121.0). The sandbox mode is the safety boundary in every
- * case; approvals are never interactive here — `-a never` throughout, because
+ * case; approvals are never interactive here — approval_policy=never throughout, because
  * `codex exec` can't answer on-request prompts (see the NOTE below):
- *   - plan                → `--sandbox read-only -a never`
+ *   - plan                → read-only + approval_policy=never
  *   - bypassPermissions   → `--dangerously-bypass-approvals-and-sandbox`
- *   - acceptEdits         → `--sandbox workspace-write -a never`
+ *   - acceptEdits         → workspace-write + approval_policy=never
  *                           (writes allowed, no per-call prompt)
  *   - allow_all           → same as bypassPermissions
  *   - deny_all            → read-only with no approval prompts
@@ -108,49 +98,46 @@ interface CodexSandboxFlags {
  */
 // NOTE: `codex exec` runs non-interactively — we deliver the prompt as a
 // positional arg and CLOSE stdin (otherwise codex 0.135+ blocks reading stdin).
-// That means Codex's `-a on-request` interactive approval flow can't work here
+// That means Codex's interactive approval flow can't work here
 // (there's no open channel to write the approval response back), and would
-// leave the turn stalled waiting for input. So we never use `-a on-request`;
+// leave the turn stalled waiting for input. So we always use a non-interactive policy;
 // the sandbox mode is the safety boundary instead (read-only can't write/exec;
 // workspace-write is confined to the project dir). Per-command approval prompts
 // aren't supported for Codex in this surface.
-function modeToCodexFlags(mode: string | null | undefined): CodexSandboxFlags {
+export function modeToCodexFlags(mode: string | null | undefined): CodexSandboxFlags {
+  const safe = (sandbox: "read-only" | "workspace-write"): CodexSandboxFlags => ({
+    execArgs: ["--sandbox", sandbox, "-c", "approval_policy=never"],
+    resumeArgs: [
+      "-c",
+      `sandbox_mode=${sandbox}`,
+      "-c",
+      "approval_policy=never",
+    ],
+  });
   switch (mode) {
     case "plan":
-      return {
-        // Plan/investigate only — read-only, no writes or command execution.
-        args: ["--sandbox", "read-only", "-a", "never"],
-        hasApprovals: false,
-      };
+      // Plan/investigate only — read-only, no writes or command execution.
+      return safe("read-only");
     case "bypassPermissions":
     case "allow_all":
     case "dontAsk":
     case "auto":
       return {
-        args: ["--dangerously-bypass-approvals-and-sandbox"],
-        hasApprovals: false,
+        execArgs: ["--dangerously-bypass-approvals-and-sandbox"],
+        resumeArgs: ["--dangerously-bypass-approvals-and-sandbox"],
       };
     case "deny_all":
-      return {
-        args: ["--sandbox", "read-only", "-a", "never"],
-        hasApprovals: false,
-      };
+      return safe("read-only");
     case "acceptEdits":
-      return {
-        args: ["--sandbox", "workspace-write", "-a", "never"],
-        hasApprovals: false,
-      };
+      return safe("workspace-write");
     case "ask_for_risky":
     case "default":
     case null:
     case undefined:
     default:
       // Confined to the project dir via the sandbox; no interactive approval
-      // (unsupported for exec — see note above), so `-a never` to avoid a stall.
-      return {
-        args: ["--sandbox", "workspace-write", "-a", "never"],
-        hasApprovals: false,
-      };
+      // (unsupported for exec — see note above), so never prompt.
+      return safe("workspace-write");
   }
 }
 
@@ -261,7 +248,7 @@ function buildResumeFallbackPrompt(
  * than re-reading the original `StartSessionRequest` so an override takes
  * effect on the *next* spawn.
  */
-function buildExecArgs(
+export function buildExecArgs(
   req: StartSessionRequest,
   model: string,
   sandbox: CodexSandboxFlags,
@@ -273,11 +260,11 @@ function buildExecArgs(
   if (req.projectPath && req.projectPath.length > 0) {
     args.push("--cd", req.projectPath);
   }
-  args.push(...sandbox.args);
+  args.push(...sandbox.execArgs);
   return args;
 }
 
-function buildResumeArgs(
+export function buildResumeArgs(
   sessionId: string,
   _req: StartSessionRequest,
   model: string,
@@ -287,17 +274,7 @@ function buildResumeArgs(
   if (model.length > 0) {
     args.push("--model", model);
   }
-  // `codex exec resume` accepts the sandbox flags but not `-a` in 0.121.0 —
-  // approval policy is inherited from the resumed session. Strip any `-a N`
-  // pair from the sandbox tuple so we don't confuse the CLI.
-  for (let i = 0; i < sandbox.args.length; i++) {
-    const flag = sandbox.args[i];
-    if (flag === "-a" || flag === "--ask-for-approval") {
-      i += 1; // skip the value too
-      continue;
-    }
-    args.push(flag);
-  }
+  args.push(...sandbox.resumeArgs);
   return args;
 }
 
