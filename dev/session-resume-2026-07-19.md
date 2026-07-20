@@ -24,7 +24,7 @@ still fails in the loader before the harness with `STATUS_ENTRYPOINT_NOT_FOUND`.
 
 ## After the loop (agreed sequencing)
 
-1. ✅ Merge the five `fix/*` branches into main. Local merge complete; push not performed.
+1. ✅ Merge the five `fix/*` branches into main and push to `origin/main`.
 2. User decides deploy-P2 (A/B above); if A, run it as a sixth item.
 3. Regenerate CLAUDE.md — it is gitignored/untracked and badly stale (says protocol
    v6, real is v8; Agents tab deleted → ConversationTiles; etc.). Full drift list is
