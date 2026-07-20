@@ -99,7 +99,6 @@ const logStderr = (msg: string): void => {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-
 function numberField(value: unknown, ...keys: string[]): number {
   if (!isRecord(value)) return 0;
   for (const key of keys) {
@@ -327,20 +326,18 @@ export class OpenAIAgentsProvider implements ProviderHandler {
   }
 
   async respondEdit(req: EditResponseRequest, _emit: Emit): Promise<void> {
-    const entries = Array.from(this.pendingEdits.entries());
-    if (entries.length === 0) {
-      logStderr(`respondEdit: no pending edit (approved=${req.approved})`);
+    const pending = this.pendingEdits.get(req.toolUseId);
+    if (!pending) {
+      logStderr(`respondEdit: no pending edit for toolUseId=${req.toolUseId}`);
       return;
     }
 
-    for (const [id, pending] of entries) {
-      clearTimeout(pending.timer);
-      this.pendingEdits.delete(id);
-      pending.resolve({
-        approved: req.approved,
-        content: typeof req.mergedContent === "string" ? req.mergedContent : undefined,
-      });
-    }
+    clearTimeout(pending.timer);
+    this.pendingEdits.delete(req.toolUseId);
+    pending.resolve({
+      approved: req.approved,
+      content: typeof req.mergedContent === "string" ? req.mergedContent : undefined,
+    });
   }
 
   async cancelPendingTools(

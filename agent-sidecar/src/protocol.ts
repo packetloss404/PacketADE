@@ -54,7 +54,10 @@
 // `mcp_sources` event reporting which servers were sourced (name/transport/
 // scope) plus any read/parse errors — names/transport/scope only, never
 // commands or secrets. Negotiation stays warn-only.
-export const PROTOCOL_VERSION = 8;
+//
+// v9 (G11): adds required `toolUseId` correlation to `edit_response` so one
+// approval resolves exactly one pending edit instead of draining the session.
+export const PROTOCOL_VERSION = 9;
 
 /** Image content a model can interpret natively. base64-encoded bytes. */
 export type ImageAttachment = {
@@ -148,6 +151,8 @@ export type PermissionResponseRequest = {
 export type EditResponseRequest = {
   type: "edit_response";
   sessionId: string;
+  /** v9: exact pending edit/tool call this response resolves. */
+  toolUseId: string;
   approved: boolean;
   /** v3: when set, the provider should write this content instead of the
    * tool's original `content`. Used by per-hunk diff acceptance — the

@@ -67,11 +67,8 @@ them up before that gate clears.
 - **P2 — Live Codex-over-SSH smoke.** The generic remote-sidecar route and
   provider capability are regression-tested, but still need one real remote
   host smoke with remote Codex auth and the installed sidecar. Follow
-  `dev/sidecar-over-ssh-verification.md` step 12.
-- **P2 — `ssh_check_remote_path` doesn't use saved keychain password.** For
-  password-auth servers the probe fails unless the FE retrieves the password
-  first. Fix: pull from keyring by `target_id` when auth method is
-  `password` and no inline password is supplied.
+  `dev/sidecar-over-ssh-verification.md` step 12. The 2026-07-19 development
+  environment had no configured SSH server, so this remains environment-gated.
 - **P3 — Rust bash/ssh tools orphan grandchildren on timeout.** The
   abnormal-termination PR added `kill_on_drop(true)` to `tool_runtime.rs`
   (`execute_bash`) and `tool_runtime_ssh.rs` (`ssh_run`), but that only reaps
@@ -88,12 +85,11 @@ them up before that gate clears.
   wrapper (`src/lib/tauri.ts`) exists but nothing invokes it. Surface a "Clone
   to remote workspace" action in `WorkspaceCreationModal` / ServersView, or
   remove the binding.
-- **P3 — Dead Tauri commands.** `get_ssh_password_exists` now has a live
-  caller (`sshTargetMigration.ts` uses it to preserve password auth). The
-  remaining three — `set_ssh_password`, `delete_ssh_password`,
+- **P3 — Dead Tauri commands.** `get_ssh_password_exists` has a live caller and
+  `ssh_check_remote_path` now uses the internal keyring loader directly. The
+  remaining three commands — `set_ssh_password`, `delete_ssh_password`, and
   `ssh_test_connection` — still have no callers beyond their `tauri.ts`
-  wrappers. Either remove them or repurpose for the `ssh_check_remote_path`
-  keyring-password probe above.
+  wrappers. Either surface them in Servers settings or remove the bindings.
 - **P3 — Rename `target_id` → `server_id` across the wire.** Field name
   kept for in-flight back-compat (see `src/lib/tauri.ts:1331-1336`).
 - **P3 — `resumeApiConversation` partial live-config lookup.** Resolves
@@ -157,16 +153,11 @@ The deleted backend was the long-lived autonomous **Flight Planner**, not the
 live Flight Deck attempt runtime. The current Deck still creates/persists
 Flights, provisions local/SSH worktrees, starts API-agent attempts, streams
 their sessions, rolls up cost/status, accepts/rejects/cancels attempts, and can
-publish completed local attempts as draft PRs.
+publish completed local attempts as draft PRs. The Option B product decision is
+implemented: “Plan first” opens a normal read-only `AgentConversation`, the user
+refines and explicitly applies milestones/tasks, and attempts remain
+user-launched. It does not restore Planner v1's autonomous runtime.
 
-- **P1 product decision — what should “planning” mean now?** The July 6
-  convergence intentionally removed `NewFlightModal`, `FlightChatPanel`, the
-  planner FSM/journal/approval UI, and task scheduler. Do **not** resurrect the
-  deleted 13k-line autonomous Planner v1. Choose between (A) formally narrowing
-  Flight Deck to a parallel-attempt execution board and removing its remaining
-  dead planning/orchestration surfaces, or (B, recommended) adding a smaller,
-  explicit “plan this Flight” step on the normal `AgentConversation` contract
-  that writes milestones/tasks and then launches worktree attempts.
 - **P3 — structured partial multi-target launch result.** Rust launches targets
   sequentially. If provisioning target N fails after earlier targets started,
   the frontend now rehydrates and attaches those partial successes before
@@ -339,16 +330,6 @@ Only unresolved follow-ups remain here; shipped audit work is in `CHANGELOG.md`.
 Full evidence for the original findings remains in
 [`dev/code-review-2026-06-07.md`](./dev/code-review-2026-06-07.md). This section
 contains only unresolved items.
-
-### P2 — confirmed medium
-
-- **F28 — send/retry cancel-sender overwrite.** `cancel_senders` is keyed only by
-  `session_id`; overlapping turns can replace one another's sender, busy-spin on
-  a completed receiver, or let old cleanup remove the newer sender. Redesign the
-  keying/lifecycle per turn rather than applying a local map replacement.
-- **G11 — `respondEdit` resolves every pending edit.** Thread `toolUseId` through
-  the TypeScript/Rust `edit_response` protocol and resolve one request. Current
-  impact is limited by the one-edit-in-flight UI guard.
 
 ### P3 — confirmed low
 

@@ -19,6 +19,7 @@ import { useMemoryStore } from "@/stores/memoryStore";
 import { useAppStore } from "@/stores/appStore";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
 import { AsyncFlightGrid } from "@/components/flights/AsyncFlightGrid";
+import { FlightPlanningCard } from "@/components/flights/FlightPlanningCard";
 import { relativeTime } from "@/lib/time";
 import { summarizeFlightReview } from "@/lib/flightReview";
 import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
@@ -675,6 +676,8 @@ function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
         </div>
 
         <StatGrid flight={flight} tasks={tasks} sessions={sessions} />
+
+        <FlightPlanningCard flight={flight} />
 
         <AsyncFlightGrid flight={flight} onLaunch={onLaunchAttempt} />
 

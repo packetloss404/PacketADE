@@ -81,7 +81,7 @@ The factory lives in `src/session-registry.ts`. Currently wired:
 
 ## Protocol summary
 
-**Protocol version: 7**. The version is advertised
+**Protocol version: 9**. The version is advertised
 in the `ready` event's `protocolVersion` field at startup, and the Rust
 supervisor's `EXPECTED_PROTOCOL_VERSION` constant must match (negotiation is
 warn-only: a version mismatch logs but doesn't block the connection). v2
@@ -94,7 +94,9 @@ handshake and planner-tool result round-trip (removed in v7); v6 added the
 typed `rate_limited` event, now a generic provider-quota signal; v7 (2026-07-11,
 the planner-amputation refactor) deleted the entire in-process Flight Planner
 MCP surface — `planner_tool`, `planner_tool_result`, and `mcpKind:"planner"`
-are gone. Providers advertise support by implementing the matching handler
+are gone; v8 added remote-owned MCP filesystem sourcing and `mcp_sources`; v9
+added required `toolUseId` correlation on `edit_response`, so a response resolves
+one pending edit rather than draining the session. Providers advertise support by implementing the matching handler
 methods on `ProviderHandler`; the registry emits a clean "not supported"
 error when a provider skips one.
 
@@ -105,7 +107,7 @@ error when a provider skips one.
 | `start_session`        | Begin a new session with a provider                           |
 | `send_message`         | Send a follow-up user message                                 |
 | `permission_response`  | Approve/deny a tool call                                      |
-| `edit_response`        | Approve/deny a pending file edit                              |
+| `edit_response`        | Approve/deny one pending file edit by `toolUseId` (v9)        |
 | `cancel`               | Interrupt in-flight generation                                |
 | `close_session`        | Tear down a session                                           |
 | `set_permission_mode`  | v2: switch permission/approval mode mid-session               |

@@ -16,10 +16,11 @@ use crate::core::tool_runtime;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::Emitter;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, watch, Mutex};
 use tracing::{info, warn};
 
 /// Maximum number of tool-use loop iterations per turn. Set high so a real
@@ -83,8 +84,11 @@ pub enum EditDecision {
 
 /// Shared state for managing active API agent sessions.
 pub struct ApiAgentState {
-    /// Cancellation senders keyed by session_id.
-    cancel_senders: Mutex<HashMap<String, oneshot::Sender<()>>>,
+    /// Exactly one in-process turn may own a session at a time. The turn id
+    /// makes cleanup compare-and-remove so an older task can never clear a
+    /// newer turn's cancellation handle.
+    active_turns: Mutex<HashMap<String, ActiveTurn>>,
+    next_turn_id: AtomicU64,
     /// Message histories keyed by session_id.
     histories: Mutex<HashMap<String, Vec<ChatMessage>>>,
     /// Session configs keyed by session_id.
@@ -93,6 +97,12 @@ pub struct ApiAgentState {
     pending_permissions: Mutex<HashMap<String, oneshot::Sender<PermissionDecision>>>,
     /// Pending write_file edits awaiting user approval, keyed by tool_call id.
     pending_edits: Mutex<HashMap<String, oneshot::Sender<EditDecision>>>,
+}
+
+struct ActiveTurn {
+    id: u64,
+    cancel: Option<oneshot::Sender<()>>,
+    finished: watch::Sender<bool>,
 }
 
 struct SessionConfig {
@@ -118,11 +128,67 @@ struct SessionConfig {
 impl ApiAgentState {
     pub fn new() -> Self {
         Self {
-            cancel_senders: Mutex::new(HashMap::new()),
+            active_turns: Mutex::new(HashMap::new()),
+            next_turn_id: AtomicU64::new(0),
             histories: Mutex::new(HashMap::new()),
             configs: Mutex::new(HashMap::new()),
             pending_permissions: Mutex::new(HashMap::new()),
             pending_edits: Mutex::new(HashMap::new()),
+        }
+    }
+
+    async fn begin_turn(&self, session_id: &str) -> Result<(u64, oneshot::Receiver<()>), String> {
+        loop {
+            let mut turns = self.active_turns.lock().await;
+            if let Some(turn) = turns.get(session_id) {
+                // Subscribe while holding the ownership lock. `watch` retains
+                // the completion value, so cleanup cannot race between this
+                // check and `.changed()` and strand a queued follow-up.
+                let mut finished = turn.finished.subscribe();
+                drop(turns);
+                let _ = finished.changed().await;
+            } else {
+                let id = self.next_turn_id.fetch_add(1, Ordering::Relaxed) + 1;
+                let (cancel, receiver) = oneshot::channel();
+                let (finished, _) = watch::channel(false);
+                turns.insert(
+                    session_id.to_string(),
+                    ActiveTurn {
+                        id,
+                        cancel: Some(cancel),
+                        finished,
+                    },
+                );
+                return Ok((id, receiver));
+            }
+        }
+    }
+
+    async fn cancel_turn(&self, session_id: &str) -> bool {
+        let cancel = {
+            let mut turns = self.active_turns.lock().await;
+            turns
+                .get_mut(session_id)
+                .and_then(|turn| turn.cancel.take())
+        };
+        if let Some(cancel) = cancel {
+            let _ = cancel.send(());
+            true
+        } else {
+            false
+        }
+    }
+
+    async fn finish_turn(&self, session_id: &str, turn_id: u64) {
+        let mut turns = self.active_turns.lock().await;
+        let finished = if turns.get(session_id).is_some_and(|turn| turn.id == turn_id) {
+            turns.remove(session_id).map(|turn| turn.finished)
+        } else {
+            None
+        };
+        drop(turns);
+        if let Some(finished) = finished {
+            let _ = finished.send(true);
         }
     }
 }
@@ -508,6 +574,67 @@ mod tests {
 
         assert!(!merged.contains_key("danger"));
     }
+
+    #[tokio::test]
+    async fn active_turn_serializes_overlapping_work() {
+        let state = ApiAgentState::new();
+        let (first_id, _first_rx) = state.begin_turn("session-1").await.unwrap();
+        let mut second = Box::pin(state.begin_turn("session-1"));
+
+        assert!(tokio::time::timeout(Duration::from_millis(5), &mut second)
+            .await
+            .is_err());
+
+        state.finish_turn("session-1", first_id).await;
+        assert!(tokio::time::timeout(Duration::from_millis(50), &mut second)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn cancelled_turn_stays_owned_until_its_task_finishes() {
+        let state = ApiAgentState::new();
+        let (turn_id, receiver) = state.begin_turn("session-1").await.unwrap();
+
+        assert!(state.cancel_turn("session-1").await);
+        assert!(receiver.await.is_ok());
+        let mut replacement = Box::pin(state.begin_turn("session-1"));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(5), &mut replacement)
+                .await
+                .is_err()
+        );
+
+        state.finish_turn("session-1", turn_id).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut replacement)
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_turn_cleanup_cannot_remove_a_newer_turn() {
+        let state = ApiAgentState::new();
+        let (old_id, _old_rx) = state.begin_turn("session-1").await.unwrap();
+        state.finish_turn("session-1", old_id).await;
+        let (new_id, _new_rx) = state.begin_turn("session-1").await.unwrap();
+
+        state.finish_turn("session-1", old_id).await;
+
+        let mut replacement = Box::pin(state.begin_turn("session-1"));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(5), &mut replacement)
+                .await
+                .is_err()
+        );
+        state.finish_turn("session-1", new_id).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut replacement)
+                .await
+                .is_ok()
+        );
+    }
 }
 
 /// Fire all SessionEnd hooks (best-effort; failures logged).
@@ -872,6 +999,10 @@ pub async fn start_api_agent_session(
 
     let messages = build_start_history(resume_messages, &initial_message);
 
+    // Claim the session before mutating its config/history. A duplicate start
+    // cannot overwrite a live turn and inherit the old task's eventual cleanup.
+    let (turn_id, cancel_rx) = state.begin_turn(&session_id).await?;
+
     // Store session config and history
     {
         let mut configs = state.configs.lock().await;
@@ -897,13 +1028,6 @@ pub async fn start_api_agent_session(
         histories.insert(session_id.clone(), messages.clone());
     }
 
-    // Set up cancellation
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    {
-        let mut senders = state.cancel_senders.lock().await;
-        senders.insert(session_id.clone(), cancel_tx);
-    }
-
     let state_clone = Arc::clone(&state.inner());
     let session_id_clone = session_id.clone();
 
@@ -927,9 +1051,7 @@ pub async fn start_api_agent_session(
             );
         }
 
-        // Cleanup cancel sender
-        let mut senders = state_clone.cancel_senders.lock().await;
-        senders.remove(&session_id_clone);
+        state_clone.finish_turn(&session_id_clone, turn_id).await;
     });
 
     Ok(())
@@ -956,16 +1078,25 @@ pub async fn send_api_agent_message(
             .await;
     }
 
-    // Append user message to history
-    {
+    // Claim the turn before appending the user message. A rapid follow-up waits
+    // for the current owner without leaving a transcript entry that never ran.
+    let (turn_id, cancel_rx) = state.begin_turn(&session_id).await?;
+    let append_result = {
         let mut histories = state.histories.lock().await;
-        let history = histories
-            .get_mut(&session_id)
-            .ok_or_else(|| format!("No active session: {}", session_id))?;
-        history.push(ChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::text(&message),
-        });
+        match histories.get_mut(&session_id) {
+            Some(history) => {
+                history.push(ChatMessage {
+                    role: ChatRole::User,
+                    content: MessageContent::text(&message),
+                });
+                Ok(())
+            }
+            None => Err(format!("No active session: {}", session_id)),
+        }
+    };
+    if let Err(error) = append_result {
+        state.finish_turn(&session_id, turn_id).await;
+        return Err(error);
     }
 
     // Replace per-turn attachments if caller provided new ones.
@@ -974,13 +1105,6 @@ pub async fn send_api_agent_message(
         if let Some(cfg) = configs.get_mut(&session_id) {
             cfg.pending_attachments = new_attachments;
         }
-    }
-
-    // Set up new cancellation for this turn
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    {
-        let mut senders = state.cancel_senders.lock().await;
-        senders.insert(session_id.clone(), cancel_tx);
     }
 
     let state_clone = Arc::clone(&state.inner());
@@ -998,8 +1122,7 @@ pub async fn send_api_agent_message(
             );
         }
 
-        let mut senders = state_clone.cancel_senders.lock().await;
-        senders.remove(&session_id_clone);
+        state_clone.finish_turn(&session_id_clone, turn_id).await;
     });
 
     Ok(())
@@ -1017,9 +1140,7 @@ pub async fn cancel_api_agent_session(
         return sidecar.forward_cancel(session_id).await;
     }
 
-    let mut senders = state.cancel_senders.lock().await;
-    if let Some(tx) = senders.remove(&session_id) {
-        let _ = tx.send(());
+    if state.cancel_turn(&session_id).await {
         info!(session_id = %session_id, "API agent session cancelled");
     }
     Ok(())
@@ -1187,7 +1308,7 @@ pub async fn respond_edit(
             _ => return Err(format!("Unknown edit decision: {}", decision)),
         };
         return sidecar
-            .forward_edit(session_id, approved, merged_content)
+            .forward_edit(session_id, tool_id, approved, merged_content)
             .await;
     }
 
@@ -1266,21 +1387,29 @@ pub async fn retry_last_turn(
         return sidecar.forward_retry(session_id).await;
     }
 
-    // Truncate history to before the last assistant message (and any trailing tool messages).
-    {
+    // Claim before truncating so an overlapping retry cannot mutate the live
+    // turn's history. Release the claim on every validation failure.
+    let (turn_id, cancel_rx) = state.begin_turn(&session_id).await?;
+    let truncate_result = {
         let mut histories = state.histories.lock().await;
-        let history = histories
-            .get_mut(&session_id)
-            .ok_or_else(|| format!("No active session: {}", session_id))?;
-        // Walk backward, find the last Assistant index, truncate there.
-        if let Some(last_assistant) = history
-            .iter()
-            .rposition(|m| matches!(m.role, ChatRole::Assistant))
-        {
-            history.truncate(last_assistant);
-        } else {
-            return Err("No assistant turn to retry".to_string());
+        match histories.get_mut(&session_id) {
+            Some(history) => {
+                if let Some(last_assistant) = history
+                    .iter()
+                    .rposition(|m| matches!(m.role, ChatRole::Assistant))
+                {
+                    history.truncate(last_assistant);
+                    Ok(())
+                } else {
+                    Err("No assistant turn to retry".to_string())
+                }
+            }
+            None => Err(format!("No active session: {}", session_id)),
         }
+    };
+    if let Err(error) = truncate_result {
+        state.finish_turn(&session_id, turn_id).await;
+        return Err(error);
     }
 
     // Swap model if requested.
@@ -1289,13 +1418,6 @@ pub async fn retry_last_turn(
         if let Some(cfg) = configs.get_mut(&session_id) {
             cfg.model = model;
         }
-    }
-
-    // Kick off a new turn with the existing history.
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    {
-        let mut senders = state.cancel_senders.lock().await;
-        senders.insert(session_id.clone(), cancel_tx);
     }
 
     let state_clone = Arc::clone(&state.inner());
@@ -1313,8 +1435,7 @@ pub async fn retry_last_turn(
             );
         }
 
-        let mut senders = state_clone.cancel_senders.lock().await;
-        senders.remove(&session_id_clone);
+        state_clone.finish_turn(&session_id_clone, turn_id).await;
     });
 
     Ok(())
@@ -1332,13 +1453,9 @@ pub async fn close_api_agent_session(
         return sidecar.forward_close(session_id).await;
     }
 
-    // Cancel if running
-    {
-        let mut senders = state.cancel_senders.lock().await;
-        if let Some(tx) = senders.remove(&session_id) {
-            let _ = tx.send(());
-        }
-    }
+    // Keep the active-turn marker until the task actually unwinds; this blocks
+    // a replacement turn from racing with cleanup after close.
+    state.cancel_turn(&session_id).await;
     // Remove history and config
     {
         let mut histories = state.histories.lock().await;

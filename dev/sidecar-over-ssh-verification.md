@@ -44,6 +44,11 @@ pnpm exec vitest run src/components/agents/__tests__/ProjectPickerRemoteSupport.
 cargo test --manifest-path src-tauri/Cargo.toml remote_
 ```
 
+The 2026-07-19 parity pass also fixed password-auth path probing: the frontend
+now sends the canonical server id and Rust loads the saved credential from the
+OS keyring when no transient password is present. Passwords never round-trip to
+the webview for this probe.
+
 Run these before handing off a release-confidence build:
 
 ```bash
@@ -96,6 +101,11 @@ Use one Unix SSH host with a pinned host key and a real git checkout.
     cross-turn resume stays on one host). This step is the only remaining
     Codex-over-SSH verification — the routing itself is regression-locked in
     `agentCatalog.test.ts` and `agent_sidecar/mod.rs`.
+
+Current verification state (2026-07-19): automated route, remote-project, and
+protocol checks pass. The live step 12 remains pending because this development
+profile contains no configured SSH server; it requires a real pinned Unix host
+with remote Codex auth and the installed sidecar.
 
 ## Failure Modes To Watch
 

@@ -40,9 +40,9 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 ### Current decision gates
 
 - Remote Agents remains blocked on its three Sprint-0 choices: auth provider, E2EE timing, and code location.
-- Flight Deck needs a scope decision: parallel-attempt board only, or the
-  recommended lightweight `AgentConversation`-backed planning step. The old
-  autonomous Planner v1 is not a restoration candidate.
+- Flight Deck Option B is implemented: upfront read-only
+  `AgentConversation`-backed planning with an explicit apply step. The old
+  autonomous Planner v1 remains historical, not a restoration candidate.
 - Distribution remains blocked on Windows and macOS signing credentials.
 - The mechanical G33/F53/G01/Unix-SSH/G09 hardening loop and deploy-backend cleanup are complete.
 
@@ -61,9 +61,9 @@ The live Flight Deck is the smaller worktree-attempt system
 (`flightStore.ts` + `asyncFlightStore.ts` + `commands/flight_attempts.rs`), not
 the archived autonomous Planner. A 2026-07-19 audit verified that separation and
 fixed launch-persistence, pre-cleanup draft-PR publishing, and SSH terminal
-cleanup races. The remaining product decision is whether Flight Deck stays a
-parallel-attempt execution board or gains a lightweight explicit planning step
-on the normal `AgentConversation` contract; do not restore archived Planner v1.
+cleanup races. Option B subsequently added a lightweight explicit planning step
+on the normal `AgentConversation` contract; plans are user-applied and attempts
+remain user-launched. Do not restore archived Planner v1.
 
 - `archive/flight-planner-v1-acceptance-runbook.md` — manual sign-off runbook (v1, deleted backend)
 - `archive/flight-planner-reliability-continuity-pack.md` — reliability + continuity contract for Flight Planner journals (deleted backend)

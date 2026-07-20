@@ -391,6 +391,9 @@ pub struct Flight {
     pub prompt: Option<String>,
     #[serde(default)]
     pub attempts: Vec<Attempt>,
+    /// Normal API-agent conversation used to refine the current upfront plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planning_conversation_id: Option<String>,
     /// Legacy autonomous-Planner session id. Read-compatible only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner_session_id: Option<String>,
@@ -571,6 +574,7 @@ mod tests {
             total_tokens: 0,
             prompt: None,
             attempts: Vec::new(),
+            planning_conversation_id: None,
             planner_session_id: None,
             planner_status: None,
             planner_cost: None,

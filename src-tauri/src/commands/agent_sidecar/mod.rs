@@ -72,7 +72,10 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "openai
 /// `mcpServers`) plus the `mcp_sources` event reporting which servers were
 /// sourced (name/transport/scope) and any read errors — no commands/secrets.
 /// Negotiation stays warn-only.
-pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 8;
+///
+/// v9 (G11): `edit_response` now carries the pending edit's `toolUseId`, so
+/// providers resolve one exact approval instead of draining every edit.
+pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 9;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.

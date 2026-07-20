@@ -99,7 +99,6 @@ class PushableAsyncIterable<T> implements AsyncIterable<T> {
     };
   }
 }
-
 /**
  * Map the sidecar's planMode / other flags to an SDK PermissionMode. The
  * Rust side only surfaces `planMode` today; if/when manual/agent modes
@@ -993,47 +992,40 @@ export class AnthropicProvider implements ProviderHandler {
   }
 
   async respondEdit(req: EditResponseRequest, _emit: Emit): Promise<void> {
-    // Look up the parked PreToolUse hook resolver. The wire protocol doesn't
-    // yet carry `toolUseId` on edit_response, so we operate on the single
-    // currently-open pending edit. In practice only one edit is ever in
-    // flight per session.
-    //
     // v3: when `mergedContent` is supplied (per-hunk acceptance), we write
     // the override directly to disk first, then DENY the SDK's tool — the
     // file is already at the desired state, so letting the SDK's Write run
     // would clobber our merged result with the original `after`.
-    const entries = Array.from(this.pendingEdits.entries());
-    if (entries.length === 0) {
+    const meta = this.pendingEdits.get(req.toolUseId);
+    if (!meta) {
       logStderr(
-        `respondEdit received (approved=${req.approved}) but no pending edit; ignoring`,
+        `respondEdit received for unknown toolUseId=${req.toolUseId}; ignoring`,
       );
       return;
     }
-    for (const [id, meta] of entries) {
-      this.pendingEdits.delete(id);
-      if (!req.approved) {
-        meta.resolver({ continue: false, stopReason: "User rejected edit" });
-        continue;
-      }
-      if (typeof req.mergedContent === "string" && meta.path) {
-        try {
-          await fsPromises.writeFile(meta.path, req.mergedContent, "utf8");
-          // File is now at the user-merged state; tell the SDK to skip its
-          // own write so it doesn't overwrite us with the model's `after`.
-          meta.resolver({
-            continue: false,
-            stopReason: "Edit applied with user-merged hunks",
-          });
-          continue;
-        } catch (err) {
-          logStderr(
-            `mergedContent write failed for ${meta.path}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-          // Fall through to a regular approve so the model's full edit lands.
-        }
-      }
-      meta.resolver({ continue: true });
+    this.pendingEdits.delete(req.toolUseId);
+    if (!req.approved) {
+      meta.resolver({ continue: false, stopReason: "User rejected edit" });
+      return;
     }
+    if (typeof req.mergedContent === "string" && meta.path) {
+      try {
+        await fsPromises.writeFile(meta.path, req.mergedContent, "utf8");
+        // File is now at the user-merged state; tell the SDK to skip its
+        // own write so it doesn't overwrite us with the model's `after`.
+        meta.resolver({
+          continue: false,
+          stopReason: "Edit applied with user-merged hunks",
+        });
+        return;
+      } catch (err) {
+        logStderr(
+          `mergedContent write failed for ${meta.path}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        // Fall through to a regular approve so the model's full edit lands.
+      }
+    }
+    meta.resolver({ continue: true });
   }
 
   /**

@@ -1,4 +1,5 @@
 import type {
+  EditResponseRequest,
   Emit,
   RetryRequest,
   SendMessageRequest,
@@ -88,6 +89,20 @@ export class EchoProvider implements ProviderHandler {
       type: "chunk",
       sessionId: req.sessionId,
       text: `[echo] retry\n`,
+    });
+    emit({
+      type: "done",
+      sessionId: req.sessionId,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+  }
+
+  async respondEdit(req: EditResponseRequest, emit: Emit): Promise<void> {
+    emit({
+      type: "chunk",
+      sessionId: req.sessionId,
+      text: `[echo] edit_response: ${req.toolUseId}\n`,
     });
     emit({
       type: "done",

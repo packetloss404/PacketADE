@@ -1037,6 +1037,29 @@ pub struct RemotePathCheck {
     pub is_git_repo: bool,
 }
 
+fn resolve_remote_probe_password(
+    auth_method: &str,
+    supplied_password: Option<String>,
+    target_id: Option<&str>,
+    load_saved: impl FnOnce(&str) -> Result<Option<String>, String>,
+) -> Result<Option<String>, String> {
+    if auth_method != "password" {
+        return Ok(None);
+    }
+    if let Some(password) = supplied_password.filter(|value| !value.is_empty()) {
+        return Ok(Some(password));
+    }
+    let target_id = target_id
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "Password authentication requires a saved server target id".to_string())?;
+    load_saved(target_id)?
+        .ok_or_else(|| {
+            "No saved SSH password is available for this server. Re-save it in Servers settings."
+                .to_string()
+        })
+        .map(Some)
+}
+
 /// Probe a remote SSH host to determine whether `remote_path` exists, is a
 /// directory, and contains a `.git` directory. Used by the workspace
 /// creation modal for live validation of the "Remote project path" input.
@@ -1052,6 +1075,7 @@ pub async fn ssh_check_remote_path(
     host: String,
     port: u16,
     user: String,
+    target_id: Option<String>,
     auth_method: String,
     key_path: Option<String>,
     password: Option<String>,
@@ -1090,10 +1114,12 @@ pub async fn ssh_check_remote_path(
     // Mirror the auth heuristics from ssh_test_connection: if we have a
     // password to pipe to stdin, allow interactive password auth;
     // otherwise require key-only / BatchMode so SSH cannot hang.
-    let pw_in = match auth_method.as_str() {
-        "password" => password.clone(),
-        _ => None,
-    };
+    let pw_in = resolve_remote_probe_password(
+        &auth_method,
+        password,
+        target_id.as_deref(),
+        crate::commands::ssh_keys::load_ssh_password,
+    )?;
     if pw_in.is_none() {
         args.push("-o".to_string());
         args.push("BatchMode=yes".to_string());
@@ -1324,5 +1350,35 @@ mod tests {
             std::time::Duration::from_millis(5),
         ));
         assert_eq!(try_wait_calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn remote_probe_resolves_saved_password_by_target_id() {
+        let password =
+            resolve_remote_probe_password("password", None, Some("server-1"), |target| {
+                assert_eq!(target, "server-1");
+                Ok(Some("secret".to_string()))
+            })
+            .unwrap();
+
+        assert_eq!(password.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn remote_probe_never_loads_password_for_key_auth() {
+        let password = resolve_remote_probe_password("key", None, Some("server-1"), |_| {
+            panic!("saved password loader must not run for key auth")
+        })
+        .unwrap();
+
+        assert!(password.is_none());
+    }
+
+    #[test]
+    fn remote_probe_reports_missing_saved_password() {
+        let error = resolve_remote_probe_password("password", None, Some("server-1"), |_| Ok(None))
+            .unwrap_err();
+
+        assert!(error.contains("No saved SSH password"));
     }
 }

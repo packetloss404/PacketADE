@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, GitPullRequest, Rocket, Sparkles } from "lucide-react";
+import { AlertTriangle, GitPullRequest, Route, Rocket, Sparkles } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useAppStore } from "@/stores/appStore";
 import { useFlightStore } from "@/stores/flightStore";
@@ -11,6 +11,13 @@ import {
 import { useGitHubStore } from "@/stores/githubStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useLayoutStore } from "@/stores/layoutStore";
+import { useAgentTaskStore } from "@/stores/agentTaskStore";
+import { requestConversationSave } from "@/stores/agentConversationPersistence";
+import { focusConversationDeepLink } from "@/stores/sessionGlue";
+import {
+  buildFlightPlanningSystemPrompt,
+  FLIGHT_PLANNING_ALLOWED_TOOLS,
+} from "@/lib/flightPlanning";
 import { MultiTargetPicker, type PickedTarget } from "./MultiTargetPicker";
 import { type AttemptTargetSpec } from "@/lib/tauri";
 import type { FlightPriority } from "@/types/flight";
@@ -76,17 +83,23 @@ export function LaunchAsyncFlightModal({
   const defaultPublishAttemptsAsPrs = useGitHubStore((s) => s.defaultPublishAttemptsAsPrs);
 
   const existingFlight = useMemo(
-    () => (flightId ? flights.find((f) => f.id === flightId) ?? null : null),
+    () => (flightId ? (flights.find((f) => f.id === flightId) ?? null) : null),
     // flights is a fresh array each render but we only need the lookup to
     // re-run when the target id or flight count changes; the modal is
     // short-lived so staleness here is not a concern.
     [flightId, flights],
+  );
+  const planningConversationExists = useAgentTaskStore((state) =>
+    existingFlight?.planningConversationId
+      ? state.conversations.some((item) => item.id === existingFlight.planningConversationId)
+      : false,
   );
 
   const [prompt, setPrompt] = useState(() => existingFlight?.objective ?? "");
   const [title, setTitle] = useState(() => existingFlight?.title ?? "");
   const [picked, setPicked] = useState<PickedTarget[]>([]);
   const [launching, setLaunching] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // v0.8-G: per-attempt draft-PR publish toggle. When enabled, the
   // asyncFlightStore pipeline pushes each attempt's branch and opens a
@@ -138,7 +151,122 @@ export function LaunchAsyncFlightModal({
     picked.length > 0 &&
     launchCollisions.length === 0 &&
     unpinnedTargets.length === 0 &&
-    !launching;
+    !launching &&
+    !planning;
+
+  const canOpenExistingPlan = Boolean(
+    existingFlight?.planningConversationId && planningConversationExists,
+  );
+  const canPlan =
+    !launching &&
+    !planning &&
+    (canOpenExistingPlan ||
+      (prompt.trim().length > 0 && picked.length > 0 && unpinnedTargets.length === 0));
+
+  function createOrUpdateFlight() {
+    if (existingFlight) {
+      const updates = {
+        title: title.trim() || existingFlight.title,
+        objective: prompt.trim(),
+        prompt: prompt.trim(),
+        publishAttemptsAsPrs: publishAsPrs,
+      };
+      updateFlight(existingFlight.id, updates);
+      return { ...existingFlight, ...updates };
+    }
+    const primaryTarget = picked[0];
+    const targetWorkspaceId =
+      primaryTarget.kind === "local"
+        ? primaryTarget.workspaceId
+        : activeWorkspace?.serverId === primaryTarget.server.id
+          ? activeWorkspace.id
+          : null;
+    return addFlight({
+      title: title.trim() || promptShort || "Untitled flight",
+      objective: prompt.trim(),
+      priority: "medium" as FlightPriority,
+      projectPath: primaryTarget.basePath || activeWorkspace?.projectPath || projectPath || "",
+      workspaceId: targetWorkspaceId,
+      issueIds: [],
+      publishAttemptsAsPrs: publishAsPrs,
+    });
+  }
+
+  async function handlePlanFirst() {
+    if (!canPlan) return;
+    setPlanning(true);
+    setError(null);
+    try {
+      const currentConversationId = existingFlight?.planningConversationId;
+      if (
+        currentConversationId &&
+        useAgentTaskStore.getState().conversations.some((item) => item.id === currentConversationId)
+      ) {
+        focusConversationDeepLink(currentConversationId);
+        onClose();
+        return;
+      }
+      if (picked.length === 0) {
+        setError("Select an agent to start a new planning conversation.");
+        return;
+      }
+
+      const flight = createOrUpdateFlight();
+      await flushFlightPersistence();
+      const target = picked[0];
+      const sshTarget =
+        target.kind === "ssh"
+          ? {
+              serverId: target.server.id,
+              name: target.server.name,
+              host: target.server.host,
+              port: target.server.port,
+              user: target.server.username,
+              remotePath: target.basePath,
+              keyPath: target.server.keyPath ?? null,
+              authMethod: target.server.authMethod,
+              hostFingerprint: target.server.hostFingerprint ?? null,
+            }
+          : null;
+      const conversationId = await useAgentTaskStore.getState().createApiConversation({
+        agent: target.agent,
+        projectPath: target.basePath,
+        model: target.model,
+        initialMessage: `Create an implementation-ready upfront plan for this Flight.\n\nObjective:\n${prompt.trim()}`,
+        systemPromptOverride: buildFlightPlanningSystemPrompt(flight.id),
+        planMode: false,
+        sshTarget,
+        allowedTools: FLIGHT_PLANNING_ALLOWED_TOOLS,
+        enabledMcpServerIds: [],
+        memoryContextEnabled: true,
+        permissionMode: "deny_all",
+        approveWrites: false,
+      });
+
+      useAgentTaskStore.setState((state) => ({
+        conversations: state.conversations.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, title: `Flight plan — ${flight.title}` }
+            : conversation,
+        ),
+      }));
+      requestConversationSave(conversationId);
+      updateFlight(flight.id, {
+        planningConversationId: conversationId,
+        linkedSessionIds: Array.from(new Set([...flight.linkedSessionIds, conversationId])),
+        prompt: prompt.trim(),
+        status: "planning",
+      });
+      await flushFlightPersistence();
+      onLaunched?.(flight.id);
+      focusConversationDeepLink(conversationId);
+      onClose();
+    } catch (e) {
+      setError(typeof e === "string" ? e : ((e as Error)?.message ?? "Planning failed"));
+    } finally {
+      setPlanning(false);
+    }
+  }
 
   async function handleLaunch() {
     if (!canLaunch) return;
@@ -152,26 +280,7 @@ export function LaunchAsyncFlightModal({
       // When launching into an already-staged flight (e.g. from GitHub's
       // "Plan flight" hand-off or the Flights detail pane's empty-attempts
       // state), reuse it instead of minting a disconnected duplicate.
-      let flight;
-      if (existingFlight) {
-        const updates = {
-          title: title.trim() || existingFlight.title,
-          objective: prompt.trim(),
-          publishAttemptsAsPrs: publishAsPrs,
-        };
-        updateFlight(existingFlight.id, updates);
-        flight = { ...existingFlight, ...updates };
-      } else {
-        flight = addFlight({
-          title: title.trim() || promptShort || "Untitled flight",
-          objective: prompt.trim(),
-          priority: "medium" as FlightPriority,
-          projectPath: activeWorkspace?.projectPath || projectPath || "",
-          workspaceId: activeWorkspace?.id ?? null,
-          issueIds: [],
-          publishAttemptsAsPrs: publishAsPrs,
-        });
-      }
+      const flight = createOrUpdateFlight();
 
       // The backend appends Attempts to the persisted Flight. Ensure the
       // create/update above has landed first; otherwise a fast launch can see
@@ -204,10 +313,19 @@ export function LaunchAsyncFlightModal({
       <div className="flex items-center gap-2">
         <button
           onClick={onClose}
-          disabled={launching}
+          disabled={launching || planning}
           className="px-3 py-1.5 text-xs text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
         >
           Cancel
+        </button>
+        <button
+          onClick={() => void handlePlanFirst()}
+          disabled={!canPlan}
+          className="bg-accent-purple/10 border-accent-purple/30 hover:bg-accent-purple/20 flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium text-accent-purple transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+          title="Explore the repository and refine a structured plan in a normal agent conversation"
+        >
+          <Route size={11} />
+          {planning ? "Starting plan…" : canOpenExistingPlan ? "Open plan" : "Plan first"}
         </button>
         <button
           onClick={() => void handleLaunch()}
@@ -223,8 +341,12 @@ export function LaunchAsyncFlightModal({
 
   return (
     <Modal
-      onClose={launching ? () => {} : onClose}
-      title={existingFlight ? `Launch attempt — ${existingFlight.title || "Untitled flight"}` : "Launch parallel agents"}
+      onClose={launching || planning ? () => {} : onClose}
+      title={
+        existingFlight
+          ? `Launch attempt — ${existingFlight.title || "Untitled flight"}`
+          : "Launch parallel agents"
+      }
       icon={<Sparkles size={14} className="text-accent-green" />}
       width="w-[820px] max-w-[92vw]"
       footer={footer}
@@ -259,6 +381,12 @@ export function LaunchAsyncFlightModal({
 
         {/* Targets */}
         <MultiTargetPicker picked={picked} onChange={setPicked} />
+
+        <div className="border-accent-purple/20 bg-accent-purple/5 rounded border px-3 py-2 text-[10px] leading-relaxed text-text-muted">
+          <span className="font-medium text-text-secondary">Plan first</span> uses the first
+          selected agent in a read-only conversation. Refine the plan there, apply it to this
+          Flight, then configure and launch attempts when you are ready.
+        </div>
 
         {/* v0.8-G: publish attempts as draft PRs */}
         <label className="group flex cursor-pointer items-start gap-2">

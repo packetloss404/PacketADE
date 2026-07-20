@@ -79,6 +79,7 @@ mod tests {
                 total_tokens: 1000,
                 prompt: None,
                 attempts: vec![],
+                planning_conversation_id: None,
                 planner_session_id: None,
                 planner_status: None,
                 planner_cost: None,
