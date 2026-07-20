@@ -106,7 +106,8 @@ fn load_password(config: &SshConfig) -> Option<String> {
 /// Run an SSH command. If a password is saved in the keychain for this
 /// target, `BatchMode=yes` is dropped so SSH will accept interactive auth.
 /// On Windows the password is piped to ssh's stdin (OpenSSH-for-Windows reads
-/// it from a non-TTY stdin); on Unix it is NOT — see the stdin handling below.
+/// it from a non-TTY stdin); on Unix the self-reinvoked askpass helper supplies
+/// it without exposing the secret in argv or an environment value.
 ///
 /// Note: on Windows, when password auth is in use the remote process's stdin
 /// is occupied by the password — callers cannot use `stdin_data` and must
@@ -133,6 +134,12 @@ async fn ssh_run(
     {
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
+
+    #[cfg(unix)]
+    let _askpass_guard = password
+        .as_deref()
+        .map(|pw| crate::core::ssh_askpass::arm(&mut cmd, pw))
+        .transpose()?;
 
     let mut child = cmd
         .spawn()
