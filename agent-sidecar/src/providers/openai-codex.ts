@@ -47,10 +47,10 @@
 //     session-id was captured, or a fresh `codex exec` otherwise. Codex's
 //     exec mode is a one-shot turn; mid-stream follow-ups aren't supported.
 
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { promises as fsPromises } from "node:fs";
+import { existsSync, promises as fsPromises } from "node:fs";
 import * as nodePath from "node:path";
 import type {
   EditResponseRequest,
@@ -145,8 +145,7 @@ const logStderr = (msg: string): void => {
   process.stderr.write(`[sidecar:openai-codex] ${msg}\n`);
 };
 
-/** Windows requires the .cmd shim when invoking npm-installed CLIs via spawn. */
-const CODEX_BIN = process.platform === "win32" ? "codex.cmd" : "codex";
+const CODEX_BIN = "codex";
 const DEFAULT_CODEX_TURN_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
 function configuredIdleTimeoutMs(): number {
@@ -156,17 +155,76 @@ function configuredIdleTimeoutMs(): number {
     : DEFAULT_CODEX_TURN_IDLE_TIMEOUT_MS;
 }
 
-function resolveCodexCommand(req: StartSessionRequest): string {
+interface CodexInvocation {
+  command: string;
+  prefixArgs: string[];
+}
+
+function npmCodexScriptForShim(shimPath: string): string | null {
+  const script = nodePath.join(
+    nodePath.dirname(shimPath),
+    "node_modules",
+    "@openai",
+    "codex",
+    "bin",
+    "codex.js",
+  );
+  return existsSync(script) ? script : null;
+}
+
+function firstWhereResult(command: string): string | null {
+  try {
+    const output = execFileSync("where.exe", [command], {
+      encoding: "utf8",
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveCodexInvocation(req: StartSessionRequest): CodexInvocation {
   const aliases = req as StartSessionRequest & {
     manualPath?: unknown;
     cliPath?: unknown;
     codexCommandPath?: unknown;
   };
   const raw = req.commandPath ?? aliases.codexCommandPath ?? aliases.cliPath ?? aliases.manualPath;
-  if (typeof raw === "string" && raw.trim().length > 0) {
-    return raw.trim();
+  const requested = typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
+  if (process.platform !== "win32") {
+    return { command: requested ?? CODEX_BIN, prefixArgs: [] };
   }
-  return CODEX_BIN;
+
+  // Node's shell:false spawn cannot execute npm's .cmd shim (EINVAL), while
+  // shell:true would expose model/user argv to command-shell injection. Invoke
+  // the shim's adjacent JS entry through this sidecar's Node runtime instead.
+  if (requested) {
+    const resolvedRequested = /[\\/]/.test(requested)
+      ? requested
+      : (firstWhereResult(requested) ?? requested);
+    if (/\.cmd$/i.test(resolvedRequested)) {
+      const script = npmCodexScriptForShim(resolvedRequested);
+      if (script) return { command: process.execPath, prefixArgs: [script] };
+    }
+    if (/\.m?js$/i.test(resolvedRequested)) {
+      return { command: process.execPath, prefixArgs: [resolvedRequested] };
+    }
+    return { command: resolvedRequested, prefixArgs: [] };
+  }
+
+  const shim = firstWhereResult("codex.cmd");
+  if (shim) {
+    const script = npmCodexScriptForShim(shim);
+    if (script) return { command: process.execPath, prefixArgs: [script] };
+  }
+  const executable = firstWhereResult("codex.exe");
+  if (executable) return { command: executable, prefixArgs: [] };
+  return { command: "codex.cmd", prefixArgs: [] };
 }
 
 /**
@@ -295,6 +353,7 @@ export class OpenAICodexProvider implements ProviderHandler {
   private readonly turnIdleTimeoutMs: number;
   private sessionId: string | null = null;
   private codexCommand = CODEX_BIN;
+  private codexPrefixArgs: string[] = [];
   /** The Codex-assigned session UUID captured from session_start events. */
   private codexSessionId: string | null = null;
   private doneEmitted = false;
@@ -357,9 +416,13 @@ export class OpenAICodexProvider implements ProviderHandler {
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.sessionId = req.sessionId;
     this.lastReq = req;
-    this.codexCommand = resolveCodexCommand(req);
-    if (this.codexCommand !== CODEX_BIN) {
-      logStderr(`using manual codex command path: ${this.codexCommand}`);
+    const invocation = resolveCodexInvocation(req);
+    this.codexCommand = invocation.command;
+    this.codexPrefixArgs = invocation.prefixArgs;
+    if (this.codexCommand !== CODEX_BIN || this.codexPrefixArgs.length > 0) {
+      logStderr(
+        `resolved codex invocation: ${this.codexCommand} ${this.codexPrefixArgs.join(" ")}`,
+      );
     }
     this.doneEmitted = false;
     // Seed effective overrides from the initial request. `set_model` /
@@ -487,7 +550,7 @@ export class OpenAICodexProvider implements ProviderHandler {
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(this.codexCommand, args, {
+      child = spawn(this.codexCommand, [...this.codexPrefixArgs, ...args], {
         cwd,
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
