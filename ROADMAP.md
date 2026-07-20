@@ -1,8 +1,7 @@
 # PacketADE Roadmap
 
-Last updated: 2026-07-16 (adds the 2026-07-14..16 wave: N2 swarm escalation, N3
-PacketADE-as-MCP-server, and S7/S8-A/S8-B/S9 SSH + MCP-over-SSH tracks — all
-shipped and in `CHANGELOG.md` `[0.10.1]`)
+Last updated: 2026-07-19 (G33 and F53 hardening fixes merged; active fix-loop
+resume order is G01, Unix SSH password auth, then G09)
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
@@ -23,7 +22,7 @@ without turning PacketADE into a cloud-only coding agent.
 | ID  | Track                                     | Priority | Status                                            | Canonical Plan                                                                                                   |
 | --- | ----------------------------------------- | -------: | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | R0  | Remote Agents: PWA + Packet Cloud relay   |       P0 | Planning complete; ready for implementation split | [`dev/remoteagents/README.md`](./dev/remoteagents/README.md)                                                     |
-| R1  | Docs and planning consolidation           |       P1 | In progress                                       | [`dev/README.md`](./dev/README.md)                                                                               |
+| R1  | Docs and planning consolidation           |       P1 | Refreshed; ongoing maintenance                    | [`dev/README.md`](./dev/README.md)                                                                               |
 | R2  | Distribution readiness: signing + updater |       P1 | Still blocked on signing certificates             | [`dev/updater-setup.md`](./dev/updater-setup.md), [`dev/multi-platform-build.md`](./dev/multi-platform-build.md) |
 
 ### Remote Agents Acceptance Shape
@@ -44,6 +43,12 @@ the remaining R2 work is wiring the signing config and Tauri updater per the
 canonical plan docs.
 
 ## Next
+
+Before beginning a new feature track, finish the active reliability loop in
+[`dev/p1-p2-fix-loop-spec.md`](./dev/p1-p2-fix-loop-spec.md): G01 (sidecar
+process-tree shutdown), Unix SSH password authentication, then G09 (Codex exec
+permission/no-hang cleanup). G33 and F53 are already merged. The orphaned deploy
+backend remains deliberately paused for the delete-versus-rebuild decision.
 
 | ID  | Track                            | Priority | Status      | Notes                                                                                                                                                                                   |
 | --- | -------------------------------- | -------: | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

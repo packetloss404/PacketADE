@@ -13,6 +13,7 @@ use commands::github::create_github_auth_state;
 use commands::orchestration::create_shared_orchestrator;
 use commands::pty::create_shared_pty_manager;
 use commands::quality_runner::QualityRunnerState;
+use tauri::Manager;
 
 fn init_tracing() {
     use tracing_subscriber::{fmt, EnvFilter};
@@ -445,6 +446,13 @@ pub fn run() {
             mcp_server::mcp_server_status,
             mcp_server::mcp_server_recent_activity,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(manager) = app_handle.try_state::<std::sync::Arc<SidecarManager>>() {
+                    manager.shutdown();
+                }
+            }
+        });
 }

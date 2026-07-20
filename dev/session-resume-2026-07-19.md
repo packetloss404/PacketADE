@@ -1,8 +1,7 @@
-# Session Resume — paused 2026-07-19 (weekly usage limit)
+# Session Resume — resumed 2026-07-19
 
-Where the P1/P2 fix-loop effort stands and how to pick it back up. Written at pause;
-verify actual git state before acting — the F53 recovery agent may have finished
-after this was written.
+Live continuation note for the P1/P2 fix loop. Git state was re-verified before
+resuming: `main` is clean at `5bbf0c5`, with G33 and F53 merged.
 
 ## Fix-loop status (spec: `dev/p1-p2-fix-loop-spec.md`, workflow: `dev/p1-p2-fix-loop.workflow.js`)
 
@@ -10,16 +9,14 @@ after this was written.
 |---|---|---|
 | G33 | `fix/g33-stop-requeue` | ✅ Committed `722e316`, gate passed, 2 adversarial reviews SOUND (zero findings). **Merged to main 2026-07-19.** |
 | F53 | `fix/f53-cross-arch-sidecar` | ✅ Committed + **merged to main 2026-07-19**. Both reviews SOUND, zero findings (incl. confirming the temporary `pnpm.supportedArchitectures` injection in prune-sidecar.js is the spec design — no persistent package.json change — and vitest.config.ts over vite.config.ts was correct). Gate: full vitest 954/955; the 1 failure (`persistenceMigration.test.ts` ideation timeout) reproduces on clean main — pre-existing, unrelated (worth a standalone look: 5s testTimeout too tight for WSL). |
-| G01 | (branch deleted, clean) | ❌ Not started |
+| G01 | `fix/g01-sidecar-exit-hook` | ✅ Implemented; `cargo check --lib` and `pnpm run build` pass. The Windows test binary compiles but the local loader exits before the harness with `STATUS_ENTRYPOINT_NOT_FOUND`, so the manual quit/process-tree smoke remains required. |
 | sshpw-P2 | (branch deleted, clean) | ❌ Not started |
 | G09 | (branch deleted, clean) | ❌ Not started |
 | deploy-P2 | — | ⏸ Deliberately skipped — **needs user A/B decision** (A: delete dead `commands/deploy.rs` family, closes F22/23/24/25/39; B: re-surface UI). Run with `args:{deploy:"delete"}` for A. |
 
-First run of the workflow was killed by a ~2h wall of API 529s (run ID `wf_00ba113b-aa7`
-— cache-resume is same-session-only, so in a fresh session just re-launch for the
-remaining items; G33/F53 build agents will find their branches already have commits
-and their `git checkout -b` will fail — simplest is to edit ALL_ITEMS in the workflow
-file down to the remaining three (G01, sshpw-P2, G09) before launching).
+The remaining order is G01 → sshpw-P2 → G09. Do not re-run the already-merged
+G33/F53 items. Deploy-P2 remains skipped until the user chooses deletion or a UI
+rebuild.
 
 Gate note: full vitest on the WSL-mounted drive is very slow; use `--maxWorkers=4`.
 Commit trailer required by spec: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
