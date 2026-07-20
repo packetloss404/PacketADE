@@ -21,7 +21,6 @@ export const mockTauriInitScript = `
 
   const ignoredEventPatterns = [
     /^api-agent:(chunk|thinking|thinking-stop|tool-start|tool-result|permission-request|pending-edit|edit-baseline|plan-block|tool-output-extended|turn-summary|done|error):/,
-    /^deploy:(output|exit):/,
     /^dictation:(waveform|status|model-progress)$/,
     /^flight-chat:(chunk|done|error):/,
     /^pty:(output|exit|state):/,
@@ -94,9 +93,8 @@ export const mockTauriInitScript = `
     save_settings_slice: () => null,
     save_ui_slice: () => null,
     save_workspaces_slice: () => null,
-    // MCP / deploy config reads
+    // MCP config reads
     read_mcp_config: () => ({ servers: [] }),
-    read_deploy_config: () => ({}),
     // Analytics / history / cost
     get_analytics: () => ({}),
     get_prompt_history: () => [],

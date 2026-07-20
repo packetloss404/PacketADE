@@ -214,14 +214,11 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
   }
 }
 
-// v0.8 race-fix: module-level set tracking attempts currently mid-publish.
-// `publishAttemptAsDraftPr` is fire-and-forget from `setAttemptStatus`, and
-// its `patchAttempt({ draftPrNumber })` write doesn't land until step 4 of
-// the publish flow. Two concurrent `setAttemptStatus(..., "completed")`
-// calls would both pass the `!attempt.draftPrNumber` guard and each open a
-// duplicate draft PR. Holding the attempt id here from the moment we
-// decide to publish until the publish settles closes that window.
-const publishingAttempts = new Set<string>();
+// Module-level map tracking attempts currently mid-publish. Publishing must
+// finish before the backend marks an attempt completed because that terminal
+// transition removes the local worktree. The map also deduplicates concurrent
+// completion clicks before either call records the resulting PR number.
+const publishingAttempts = new Map<string, Promise<void>>();
 const ACTIVE_ATTEMPT_STATUSES: ReadonlySet<AttemptStatus> = new Set([
   "queued",
   "provisioning",
@@ -424,6 +421,39 @@ function composeAsyncLaunchPrompt(
   return `${brief.text}\n\n---\n\n${prompt}`;
 }
 
+async function attachAttemptConversation(attempt: Attempt, prompt: string): Promise<void> {
+  let sshTarget: CreateApiConversationOptions["sshTarget"] = null;
+  if (attempt.target.kind === "ssh") {
+    const server = useServerStore.getState().getServer(attempt.target.targetId);
+    if (server) {
+      sshTarget = {
+        serverId: server.id,
+        name: server.name,
+        host: server.host,
+        port: server.port,
+        user: server.username,
+        remotePath: attempt.target.basePath,
+        keyPath: server.keyPath ?? null,
+        authMethod: server.authMethod,
+        hostFingerprint: server.hostFingerprint ?? null,
+      };
+    }
+  }
+
+  await useAgentTaskStore.getState().createApiConversation({
+    agent: attempt.agentConfigId as AgentCli,
+    projectPath: attempt.target.worktreePath,
+    model: attempt.model,
+    initialMessage: prompt,
+    systemPromptOverride: null,
+    thinkingEnabled: false,
+    planMode: false,
+    sshTarget,
+    explicitId: attempt.sessionId,
+    skipBackendStart: true,
+  });
+}
+
 /**
  * Wave-M2: derive a `flight_completed` memory event from the terminal
  * state of an async Flight's attempts. Called once, at the moment the
@@ -489,6 +519,34 @@ function captureFlightCompletionOnTransition(flightId: string, statusBefore: str
     .captureFlightCompleted(buildFlightCompletedPayload(flight), flight.projectPath);
 }
 
+async function cleanupSshAttemptWorktree(flightId: string, attempt: Attempt): Promise<void> {
+  if (attempt.target.kind !== "ssh") return;
+  const server = useServerStore.getState().getServer(attempt.target.targetId);
+  if (!server) {
+    console.warn(
+      "SSH worktree cleanup skipped because the saved server no longer exists:",
+      attempt.target.targetId,
+    );
+    return;
+  }
+
+  try {
+    await cleanupAttemptWorktreeSsh({
+      flightId,
+      attemptId: attempt.id,
+      host: server.host,
+      port: server.port,
+      user: server.username,
+      keyPath: server.keyPath ?? null,
+      basePath: attempt.target.basePath,
+      targetId: server.id,
+      hostFingerprint: server.hostFingerprint ?? null,
+    });
+  } catch (err) {
+    console.warn("SSH worktree cleanup failed:", err);
+  }
+}
+
 export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
   launchAsync: async (flightId, prompt, targets, options = {}) => {
     assertAsyncLaunchPathGate(flightId, targets, options);
@@ -497,9 +555,32 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     }
     const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
     const promptForLaunch = composeAsyncLaunchPrompt(prompt, flight, targets);
-    const attempts = await launchFlightAsync(flightId, promptForLaunch, targets, {
-      allowPathCollisions: options.allowPathCollisions,
-    });
+    const attemptIdsBefore = new Set((flight?.attempts ?? []).map((attempt) => attempt.id));
+    let attempts: Attempt[];
+    try {
+      attempts = await launchFlightAsync(flightId, promptForLaunch, targets, {
+        allowPathCollisions: options.allowPathCollisions,
+      });
+    } catch (error) {
+      // Multi-target provisioning is sequential. If a later target fails,
+      // earlier attempts may already be persisted and running even though the
+      // command rejects. Rehydrate and attach those partial successes so they
+      // remain visible/controllable, then preserve the original launch error.
+      await useFlightStore.getState().hydrateFromBackend();
+      const partialAttempts =
+        useFlightStore
+          .getState()
+          .flights.find((current) => current.id === flightId)
+          ?.attempts?.filter((attempt) => !attemptIdsBefore.has(attempt.id)) ?? [];
+      for (const attempt of partialAttempts) {
+        try {
+          await attachAttemptConversation(attempt, prompt);
+        } catch (attachError) {
+          console.warn("Failed to attach partial Flight attempt listeners:", attempt.id, attachError);
+        }
+      }
+      throw error;
+    }
 
     const flightsWithAttempts = useFlightStore.getState().flights.map((currentFlight) => {
       if (currentFlight.id !== flightId) return currentFlight;
@@ -531,39 +612,9 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // the same backend event channel (apiAgent*Event(sessionId)) so AttemptTile
     // can render the live stream. The backend has already started the session;
     // we pass `skipBackendStart=true`.
-    const createApi = useAgentTaskStore.getState().createApiConversation;
     for (const a of attempts) {
-      let sshTarget: CreateApiConversationOptions["sshTarget"] = null;
-      if (a.target.kind === "ssh") {
-        const server = useServerStore.getState().getServer(a.target.targetId);
-        if (server) {
-          sshTarget = {
-            serverId: server.id,
-            name: server.name,
-            host: server.host,
-            port: server.port,
-            user: server.username,
-            remotePath: a.target.basePath,
-            keyPath: server.keyPath ?? null,
-            authMethod: server.authMethod,
-            hostFingerprint: server.hostFingerprint ?? null,
-          };
-        }
-      }
-      const projectPath = a.target.kind === "local" ? a.target.worktreePath : a.target.worktreePath;
       try {
-        await createApi({
-          agent: a.agentConfigId as AgentCli,
-          projectPath,
-          model: a.model,
-          initialMessage: prompt,
-          systemPromptOverride: null,
-          thinkingEnabled: false,
-          planMode: false,
-          sshTarget,
-          explicitId: a.sessionId, // match backend session id
-          skipBackendStart: true, // backend already started
-        });
+        await attachAttemptConversation(a, prompt);
       } catch (err) {
         console.warn("Failed to attach attempt listeners:", a.id, err);
       }
@@ -599,29 +650,9 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // is not itself a failure, so no `task_failed` event is recorded here.
     maybeEscalate(flightId);
 
-    // SSH worktree cleanup is deferred from the backend cancel because it
-    // doesn't have full ServerConfig info — issue it from here using the
-    // saved ServerConfig from serverStore (Phase 2 — was sshTargetStore).
-    if (attempt && attempt.target.kind === "ssh") {
-      try {
-        const server = useServerStore.getState().getServer(attempt.target.targetId);
-        if (server) {
-          await cleanupAttemptWorktreeSsh({
-            flightId,
-            attemptId,
-            host: server.host,
-            port: server.port,
-            user: server.username,
-            keyPath: server.keyPath ?? null,
-            basePath: attempt.target.basePath,
-            targetId: server.id,
-            hostFingerprint: server.hostFingerprint ?? null,
-          });
-        }
-      } catch (err) {
-        console.warn("SSH worktree cleanup failed:", err);
-      }
-    }
+    // SSH cleanup needs connection details that the backend Attempt record
+    // intentionally does not persist, so finish it from the saved Server.
+    if (attempt) await cleanupSshAttemptWorktree(flightId, attempt);
   },
 
   setAttemptStatus: async (flightId, attemptId, status) => {
@@ -629,6 +660,28 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // the non-`done` → `done` transition and capture a flight_completed
     // memory event exactly once (see captureFlightCompletionOnTransition).
     const statusBefore = useFlightStore.getState().computeFlightStatus(flightId);
+
+    const flightBefore = useFlightStore.getState().flights.find((f) => f.id === flightId);
+    const attemptBefore = flightBefore?.attempts?.find((a) => a.id === attemptId);
+
+    // Publish while the local worktree still exists. `markAttemptStatus(...,
+    // "completed")` removes it, so the old fire-and-forget ordering made every
+    // enabled local draft-PR publish fail at `git push` with a missing cwd.
+    if (
+      status === "completed" &&
+      flightBefore?.publishAttemptsAsPrs &&
+      attemptBefore &&
+      !attemptBefore.draftPrNumber
+    ) {
+      let publish = publishingAttempts.get(attemptBefore.id);
+      if (!publish) {
+        publish = publishAttemptAsDraftPr(flightBefore, attemptBefore).finally(() => {
+          publishingAttempts.delete(attemptBefore.id);
+        });
+        publishingAttempts.set(attemptBefore.id, publish);
+      }
+      await publish;
+    }
 
     await markAttemptStatus(flightId, attemptId, status);
     patchAttempt(flightId, attemptId, {
@@ -641,6 +694,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
       const attempt = flight?.attempts?.find((a) => a.id === attemptId);
       if (attempt) detachAttemptTerminalListeners(attempt.sessionId);
+      if (attemptBefore) await cleanupSshAttemptWorktree(flightId, attemptBefore);
     }
 
     // N2: a rejected/failed attempt records a coordination event and, when the
@@ -661,32 +715,5 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // transition regardless of which attempt outcome triggered it.
     captureFlightCompletionOnTransition(flightId, statusBefore);
 
-    // v0.8-G: post-attempt publish hook. Fire only when the attempt
-    // transitions to `completed` AND the parent Flight has opted in.
-    // Read the latest snapshot AFTER the patch above so we capture the
-    // current branch/worktree/etc. Errors are swallowed inside the
-    // helper so they never propagate out and disturb the UI flow.
-    if (status === "completed") {
-      const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
-      const attempt = flight?.attempts?.find((a) => a.id === attemptId);
-      if (
-        flight &&
-        attempt &&
-        flight.publishAttemptsAsPrs &&
-        !attempt.draftPrNumber &&
-        // v0.8 race-fix: guard against two concurrent `setAttemptStatus`
-        // calls both crossing the `!attempt.draftPrNumber` check before
-        // either has patched the attempt with the new PR number — without
-        // this set, both would each open a duplicate draft PR.
-        !publishingAttempts.has(attempt.id)
-      ) {
-        publishingAttempts.add(attempt.id);
-        // Fire-and-forget — caller doesn't need to await the publish.
-        const attemptId = attempt.id;
-        void publishAttemptAsDraftPr(flight, attempt).finally(() => {
-          publishingAttempts.delete(attemptId);
-        });
-      }
-    }
   },
 }));

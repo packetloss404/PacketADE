@@ -16,17 +16,25 @@ function loadState(): FlightState {
   return { flights: [], activeFlightId: null };
 }
 
+let persistenceTail: Promise<void> = Promise.resolve();
+let latestPersistence: Promise<void> = Promise.resolve();
+
 function saveState(state: FlightState) {
-  void syncFlightsToBackend(state);
+  // Serialize whole-slice writes in the same order as the local mutations that
+  // produced them. Flight launch explicitly flushes this queue before asking
+  // Rust to append an Attempt, so a freshly-created Flight cannot race its
+  // first launch and a delayed older snapshot cannot land afterwards.
+  const snapshot = { flights: [...state.flights], activeFlightId: state.activeFlightId };
+  const job = persistenceTail.then(() => syncFlightsToBackend(snapshot));
+  latestPersistence = job;
+  persistenceTail = job.catch((err) => {
+    console.warn("[flightStore.persist] swallowed error:", err);
+  });
 }
 
 async function syncFlightsToBackend(state: FlightState) {
-  try {
-    await saveFlightsSlice(state.flights);
-    await saveUiSlice({ selectedFlightId: state.activeFlightId });
-  } catch (err) {
-    console.warn("[flightStore.persist] swallowed error:", err);
-  }
+  await saveFlightsSlice(state.flights);
+  await saveUiSlice({ selectedFlightId: state.activeFlightId });
 }
 
 // === Helpers ===
@@ -134,6 +142,8 @@ interface FlightStore {
       Partial<Pick<Flight, "gitBranch" | "issueIds" | "workspaceId" | "publishAttemptsAsPrs">>,
   ) => Flight;
   updateFlight: (id: string, updates: Partial<Flight>) => void;
+  /** Wait for every Flight mutation queued before this call to reach Rust. */
+  flushPersistence: () => Promise<void>;
   /** N2: append a coordination event (task_failed / escalation suggestion / …)
    *  to a flight's timeline, surfaced in FlightsView's coordination log. */
   appendCoordinationEvent: (
@@ -197,6 +207,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       return { flights };
     });
   },
+
+  flushPersistence: () => latestPersistence,
 
   appendCoordinationEvent: (flightId, event) => {
     set((s) => {

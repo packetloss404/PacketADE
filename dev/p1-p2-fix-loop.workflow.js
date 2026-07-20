@@ -1,3 +1,4 @@
+// COMPLETED 2026-07-19. Historical executable record only; do not relaunch.
 export const meta = {
   name: 'p1-p2-fix-loop',
   description: 'Autonomous fix loop for F53/G01/G09/G33 + deploy & SSH-password P2s. One item per branch: implement -> 2 adversarial reviews -> fix -> gate -> commit. Reads dev/p1-p2-fix-loop-spec.md.',

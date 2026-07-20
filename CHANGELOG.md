@@ -136,6 +136,16 @@ task list.
 
 ### Fixed
 
+- **Flight Deck attempt reliability audit.** Flight creates/updates are now
+  serialized and flushed before Rust appends the first Attempt, and backend
+  merge logic preserves runtime-owned attempts/cost across delayed frontend
+  whole-slice saves. Local draft-PR publishing now pushes and records the PR
+  before terminal cleanup removes the worktree. Accept/reject also completes
+  the previously-deferred SSH worktree cleanup instead of leaking it remotely.
+  If a later target in a multi-target launch fails to provision, earlier
+  attempts are rehydrated and attached before the launch error is surfaced, so
+  already-running work never disappears from Flight Deck.
+
 - **P1/P2 reliability closeout (G01 / G09 / SSH password auth).** App exit now
   terminates local and SSH sidecar process trees (including Codex/MCP/SSH
   grandchildren) and suppresses supervisor resurrection. Password-authenticated

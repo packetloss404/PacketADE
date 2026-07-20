@@ -36,9 +36,5 @@ pub const TEMP_DIR_PREFIX: &str = "packetade";
 /// Internal environment variable used by the self-reinvoked SSH askpass helper.
 pub const SSH_ASKPASS_FILE_ENV: &str = "PACKETADE_ASKPASS_FILE";
 
-/// Deploy config filenames searched in project root, in preference order.
-/// The legacy name is kept forever so users don't have to rename project configs.
-pub const DEPLOY_CONFIG_FILENAMES: &[&str] = &["packetade.deploy.json", "packetcode.deploy.json"];
-
 /// Branded HTTP referer for OpenRouter attribution.
 pub const BRAND_URL: &str = "https://packetade.dev";

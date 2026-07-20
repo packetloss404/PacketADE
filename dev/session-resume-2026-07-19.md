@@ -1,7 +1,7 @@
 # Session Resume — loop completed 2026-07-19
 
-Live continuation note for the P1/P2 fix loop. Git state was re-verified before
-resuming: `main` is clean at `5bbf0c5`, with G33 and F53 merged.
+Continuation note for the P1/P2 fix loop. The recorded starting point was
+`main` at `5bbf0c5`; the loop and the follow-up cleanup have since advanced it.
 
 ## Fix-loop status (spec: `dev/p1-p2-fix-loop-spec.md`, workflow: `dev/p1-p2-fix-loop.workflow.js`)
 
@@ -12,10 +12,11 @@ resuming: `main` is clean at `5bbf0c5`, with G33 and F53 merged.
 | G01 | `fix/g01-sidecar-exit-hook` | ✅ Implemented; `cargo check --lib` and `pnpm run build` pass. The Windows test binary compiles but the local loader exits before the harness with `STATUS_ENTRYPOINT_NOT_FOUND`, so the manual quit/process-tree smoke remains required. |
 | sshpw-P2 | `fix/sshpw-askpass-unix` | ✅ Implemented; Rust check, frontend build/lint, and all 956 Vitest tests pass. Unix cross-check reaches the OpenSSL sysroot boundary on Windows; a real password-host smoke remains optional/manual. |
 | G09 | `fix/g09-codex-nohang` | ✅ Five commits merged locally: exec-compatible flags, clean unsupported-approval behavior, idle watchdog, gated smokes, and safe Windows npm-shim launch. Full sidecar gate passes. |
-| deploy-P2 | — | ⏸ Deliberately skipped — **needs user A/B decision** (A: delete dead `commands/deploy.rs` family, closes F22/23/24/25/39; B: re-surface UI). Run with `args:{deploy:"delete"}` for A. |
+| deploy-P2 | `f20801e` + residual cleanup | ✅ Option A had already shipped: the orphaned backend was deleted. The remaining constants and E2E mocks were removed in the follow-up cleanup. |
+| Flight Deck audit | current cleanup | ✅ Autonomous Planner deletion was safe for the live Attempt runtime. Fixed create/launch persistence ordering, stale snapshot merge, draft-PR-before-cleanup ordering, and SSH terminal cleanup. Product choice remains: attempt-only board vs lightweight conversation-backed planning. |
 
-All five mechanical items are now merged locally on `main`. Deploy-P2 remains
-skipped until the user chooses deletion or a UI rebuild.
+All five mechanical items, the deploy residual cleanup, and the Flight Deck
+runtime audit are complete.
 
 Gate note: all 956 Vitest tests pass when run without competing build jobs. A
 parallel gate can still trip the known 5s `persistenceMigration.test.ts` timeout;
@@ -25,10 +26,9 @@ still fails in the loader before the harness with `STATUS_ENTRYPOINT_NOT_FOUND`.
 ## After the loop (agreed sequencing)
 
 1. ✅ Merge the five `fix/*` branches into main and push to `origin/main`.
-2. User decides deploy-P2 (A/B above); if A, run it as a sixth item.
-3. Regenerate CLAUDE.md — it is gitignored/untracked and badly stale (says protocol
-   v6, real is v8; Agents tab deleted → ConversationTiles; etc.). Full drift list is
-   §5 of `dev/codebase-state-2026-07-16.md`. Decide whether to re-commit it to the repo.
+2. ✅ Reconcile deploy-P2: Option A was already implemented by `f20801e`; remove its residual constants/mocks and stale decision text.
+3. ✅ Refresh the gitignored local `AGENTS.md` and `CLAUDE.md` guides for protocol
+   v8, conversation tiles, the live Flight attempt runtime, and removed surfaces.
 4. User decisions blocking roadmap: R0 Remote Agents 3 Sprint-0 decisions
    (`dev/remoteagents/09-open-decisions.md`: auth provider, E2EE timing, code
    location, ~5 weeks stale); R2 = buy Win+macOS signing certs.

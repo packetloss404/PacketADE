@@ -19,12 +19,6 @@ export const LEGACY_STORAGE_PREFIX = "packetcode:";
 /** Custom URI scheme used by MCP resource URIs. */
 export const URI_SCHEME = "packetade";
 
-/** Legacy project-level deploy config filename (kept as backwards-compat alias). */
-export const LEGACY_DEPLOY_CONFIG_FILENAME = "packetcode.deploy.json";
-
-/** Current project-level deploy config filename. */
-export const DEPLOY_CONFIG_FILENAME = "packetade.deploy.json";
-
 /** Convenience: build a namespaced storage key. */
 export function storageKey(suffix: string): string {
   return STORAGE_PREFIX + suffix;
