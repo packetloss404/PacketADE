@@ -712,9 +712,9 @@ pub fn read_pty_transcript(session_id: String) -> Result<crate::core::pty::PtyTr
     crate::core::pty::read_transcript(&session_id)
 }
 
-/// Run an SSH command as a regular process (not PTY) with optional password piped to stdin.
-/// Used for connection tests and agent detection where we need password auth to work
-/// reliably on Windows (Windows OpenSSH ignores PTY stdin for password prompts).
+/// Run an SSH command as a regular process (not PTY). Windows OpenSSH receives
+/// an optional password over stdin; Unix OpenSSH uses the self-reinvoked
+/// askpass helper because it never reads a login password from stdin.
 #[tauri::command]
 pub async fn ssh_exec(
     command_args: Vec<String>,
@@ -732,18 +732,31 @@ pub async fn ssh_exec(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
+    #[cfg(unix)]
+    let _askpass_guard = password
+        .as_deref()
+        .map(|pw| crate::core::ssh_askpass::arm(&mut cmd, pw))
+        .transpose()?;
+
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn ssh: {}", e))?;
 
-    // Feed password to stdin if provided, then close stdin so SSH proceeds
-    if let Some(pw) = password {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(format!("{}\n", pw).as_bytes()).await;
-            let _ = stdin.flush().await;
-            drop(stdin);
+    // OpenSSH-for-Windows accepts the password on stdin. Unix must only close
+    // this pipe: writing the password can leak it to a multiplexed remote
+    // command when no authentication exchange occurs.
+    #[cfg(windows)]
+    {
+        if let Some(pw) = password.as_ref() {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(format!("{}\n", pw).as_bytes()).await;
+                let _ = stdin.flush().await;
+                drop(stdin);
+            }
         }
     }
+    #[cfg(unix)]
+    drop(child.stdin.take());
 
     let output = child
         .wait_with_output()

@@ -34,6 +34,7 @@ pub mod orchestrator;
 pub mod pty;
 pub mod shared;
 pub mod shell_path;
+pub mod ssh_askpass;
 pub mod storage;
 pub mod tool_custom_agent;
 pub mod tool_github;

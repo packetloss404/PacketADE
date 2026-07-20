@@ -13,5 +13,9 @@ fn main() {
         }
     }
 
+    if let Some(code) = packetade_lib::core::ssh_askpass::helper_main() {
+        std::process::exit(code);
+    }
+
     packetade_lib::run()
 }

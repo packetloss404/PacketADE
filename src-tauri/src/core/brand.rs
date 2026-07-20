@@ -33,6 +33,9 @@ pub const USER_AGENT: &str = "PacketADE/1.0";
 /// Prefix for temporary directories created under std::env::temp_dir().
 pub const TEMP_DIR_PREFIX: &str = "packetade";
 
+/// Internal environment variable used by the self-reinvoked SSH askpass helper.
+pub const SSH_ASKPASS_FILE_ENV: &str = "PACKETADE_ASKPASS_FILE";
+
 /// Deploy config filenames searched in project root, in preference order.
 /// The legacy name is kept forever so users don't have to rename project configs.
 pub const DEPLOY_CONFIG_FILENAMES: &[&str] = &["packetade.deploy.json", "packetcode.deploy.json"];

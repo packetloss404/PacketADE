@@ -10,7 +10,7 @@ resuming: `main` is clean at `5bbf0c5`, with G33 and F53 merged.
 | G33 | `fix/g33-stop-requeue` | ✅ Committed `722e316`, gate passed, 2 adversarial reviews SOUND (zero findings). **Merged to main 2026-07-19.** |
 | F53 | `fix/f53-cross-arch-sidecar` | ✅ Committed + **merged to main 2026-07-19**. Both reviews SOUND, zero findings (incl. confirming the temporary `pnpm.supportedArchitectures` injection in prune-sidecar.js is the spec design — no persistent package.json change — and vitest.config.ts over vite.config.ts was correct). Gate: full vitest 954/955; the 1 failure (`persistenceMigration.test.ts` ideation timeout) reproduces on clean main — pre-existing, unrelated (worth a standalone look: 5s testTimeout too tight for WSL). |
 | G01 | `fix/g01-sidecar-exit-hook` | ✅ Implemented; `cargo check --lib` and `pnpm run build` pass. The Windows test binary compiles but the local loader exits before the harness with `STATUS_ENTRYPOINT_NOT_FOUND`, so the manual quit/process-tree smoke remains required. |
-| sshpw-P2 | (branch deleted, clean) | ❌ Not started |
+| sshpw-P2 | `fix/sshpw-askpass-unix` | ✅ Implemented; Rust check, frontend build/lint, and all 956 Vitest tests pass. Unix cross-check reaches the OpenSSL sysroot boundary on Windows; a real password-host smoke remains optional/manual. |
 | G09 | (branch deleted, clean) | ❌ Not started |
 | deploy-P2 | — | ⏸ Deliberately skipped — **needs user A/B decision** (A: delete dead `commands/deploy.rs` family, closes F22/23/24/25/39; B: re-surface UI). Run with `args:{deploy:"delete"}` for A. |
 
