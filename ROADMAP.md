@@ -1,7 +1,7 @@
 # PacketADE Roadmap
 
-Last updated: 2026-07-19 (G33 and F53 hardening fixes merged; active fix-loop
-resume order is G01, Unix SSH password auth, then G09)
+Last updated: 2026-07-19 (P1/P2 hardening loop complete: G33, F53, G01,
+Unix SSH password auth, and G09 are merged locally on `main`)
 
 `ROADMAP.md` is the short product-direction document. It says what matters now
 and why. The task ledger lives in [`backlog.md`](./backlog.md); implementation
@@ -44,11 +44,11 @@ canonical plan docs.
 
 ## Next
 
-Before beginning a new feature track, finish the active reliability loop in
-[`dev/p1-p2-fix-loop-spec.md`](./dev/p1-p2-fix-loop-spec.md): G01 (sidecar
-process-tree shutdown), Unix SSH password authentication, then G09 (Codex exec
-permission/no-hang cleanup). G33 and F53 are already merged. The orphaned deploy
-backend remains deliberately paused for the delete-versus-rebuild decision.
+The reliability loop in
+[`dev/p1-p2-fix-loop-spec.md`](./dev/p1-p2-fix-loop-spec.md) is complete. The
+next local decision is whether to delete the orphaned deploy backend
+(recommended) or rebuild its UI. The next major-product gate remains the three
+Remote Agents Sprint-0 decisions: auth provider, E2EE timing, and code location.
 
 | ID  | Track                            | Priority | Status      | Notes                                                                                                                                                                                   |
 | --- | -------------------------------- | -------: | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

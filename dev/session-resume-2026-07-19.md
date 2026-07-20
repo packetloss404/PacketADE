@@ -1,4 +1,4 @@
-# Session Resume — resumed 2026-07-19
+# Session Resume — loop completed 2026-07-19
 
 Live continuation note for the P1/P2 fix loop. Git state was re-verified before
 resuming: `main` is clean at `5bbf0c5`, with G33 and F53 merged.
@@ -11,19 +11,20 @@ resuming: `main` is clean at `5bbf0c5`, with G33 and F53 merged.
 | F53 | `fix/f53-cross-arch-sidecar` | ✅ Committed + **merged to main 2026-07-19**. Both reviews SOUND, zero findings (incl. confirming the temporary `pnpm.supportedArchitectures` injection in prune-sidecar.js is the spec design — no persistent package.json change — and vitest.config.ts over vite.config.ts was correct). Gate: full vitest 954/955; the 1 failure (`persistenceMigration.test.ts` ideation timeout) reproduces on clean main — pre-existing, unrelated (worth a standalone look: 5s testTimeout too tight for WSL). |
 | G01 | `fix/g01-sidecar-exit-hook` | ✅ Implemented; `cargo check --lib` and `pnpm run build` pass. The Windows test binary compiles but the local loader exits before the harness with `STATUS_ENTRYPOINT_NOT_FOUND`, so the manual quit/process-tree smoke remains required. |
 | sshpw-P2 | `fix/sshpw-askpass-unix` | ✅ Implemented; Rust check, frontend build/lint, and all 956 Vitest tests pass. Unix cross-check reaches the OpenSSL sysroot boundary on Windows; a real password-host smoke remains optional/manual. |
-| G09 | (branch deleted, clean) | ❌ Not started |
+| G09 | `fix/g09-codex-nohang` | ✅ Five commits merged locally: exec-compatible flags, clean unsupported-approval behavior, idle watchdog, gated smokes, and safe Windows npm-shim launch. Full sidecar gate passes. |
 | deploy-P2 | — | ⏸ Deliberately skipped — **needs user A/B decision** (A: delete dead `commands/deploy.rs` family, closes F22/23/24/25/39; B: re-surface UI). Run with `args:{deploy:"delete"}` for A. |
 
-The remaining order is G01 → sshpw-P2 → G09. Do not re-run the already-merged
-G33/F53 items. Deploy-P2 remains skipped until the user chooses deletion or a UI
-rebuild.
+All five mechanical items are now merged locally on `main`. Deploy-P2 remains
+skipped until the user chooses deletion or a UI rebuild.
 
-Gate note: full vitest on the WSL-mounted drive is very slow; use `--maxWorkers=4`.
-Commit trailer required by spec: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+Gate note: all 956 Vitest tests pass when run without competing build jobs. A
+parallel gate can still trip the known 5s `persistenceMigration.test.ts` timeout;
+the affected file passes 16/16 in isolation. The Windows Rust test executable
+still fails in the loader before the harness with `STATUS_ENTRYPOINT_NOT_FOUND`.
 
 ## After the loop (agreed sequencing)
 
-1. Merge the five `fix/*` branches into main, push.
+1. ✅ Merge the five `fix/*` branches into main. Local merge complete; push not performed.
 2. User decides deploy-P2 (A/B above); if A, run it as a sixth item.
 3. Regenerate CLAUDE.md — it is gitignored/untracked and badly stale (says protocol
    v6, real is v8; Agents tab deleted → ConversationTiles; etc.). Full drift list is

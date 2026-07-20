@@ -10,7 +10,7 @@ Use these as the trust anchors before reading older plan files:
 
 | Area                       | Canonical owner                                                                                                                                                                                                                      | Notes                                                                                                  |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Live task register         | [`../backlog.md`](../backlog.md)                                                                                                                                                                                                     | Single source for outstanding work. The active hardening sequence is G01 → Unix SSH password auth → G09. |
+| Live task register         | [`../backlog.md`](../backlog.md)                                                                                                                                                                                                     | Single source for outstanding work. The July P1/P2 hardening loop is complete.                           |
 | Release priorities         | [`../ROADMAP.md`](../ROADMAP.md)                                                                                                                                                                                                     | Short current summary; detailed plans stay in this folder.                                             |
 | Remote/mobile agent access | [`remoteagents/README.md`](./remoteagents/README.md)                                                                                                                                                                                 | Supersedes the older `mobile/` investigation for phone/PWA work.                                       |
 | Multi-monitor operations   | [`send-to-monitor-plan.md`](./send-to-monitor-plan.md)                                                                                                                                                                               | Paused planning doc for detached Monitor windows; no implementation until current feature/bug checks.  |
@@ -29,16 +29,15 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
 - `sidecar-over-ssh-verification.md` — test and manual checklist for Sidecar-over-SSH provider parity
 - `updater-setup.md` — runbook for wiring up the Tauri v2 auto-updater (currently not enabled)
 - `ssh-tech-debt.md` — redirect to `/backlog.md` (left for old links)
+- `p1-p2-fix-loop-spec.md` / `session-resume-2026-07-19.md` — completed July hardening loop and verification record
 
 > Dated `code-review-YYYY-MM-DD.md` files (e.g. `code-review-2026-05-31.md`, `code-review-2026-06-07.md`) are intentionally left unindexed point-in-time audit artifacts; actionable items from them land in `/backlog.md`.
 
 ## Active (Outstanding Items)
 
-### Current hardening loop
+### Current decision gate
 
-- [`p1-p2-fix-loop-spec.md`](./p1-p2-fix-loop-spec.md) — G33 and F53 are merged; G01, Unix SSH password auth, and G09 remain, in that order.
-- [`session-resume-2026-07-19.md`](./session-resume-2026-07-19.md) — recovery notes and verification constraints for the current loop.
-- Deploy-P2 remains a product decision: delete the orphaned backend (recommended) or rebuild a UI. It is not part of the mechanical loop until that decision is made.
+- Deploy-P2 remains a product decision: delete the orphaned backend (recommended) or rebuild a UI. The mechanical G33/F53/G01/Unix-SSH/G09 hardening loop is complete.
 
 ### Swarm Orchestration
 

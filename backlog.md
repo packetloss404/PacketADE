@@ -39,11 +39,6 @@ created" copy.
 - **RA4 — `worktree.rs` force-remove guard.** Every current caller is an
   intentional discard that would pass `force=true`, so the guard is pure churn +
   risk with no live-caller benefit today. Revisit if a non-discard caller appears.
-- **S6 / SSH password on Unix (F11 follow-up).** `ssh_check_remote_path` ignoring
-  the saved keychain password is real, but password-over-stdin only functions on
-  Windows OpenSSH — on Unix the whole path is non-functional regardless (see the
-  new "SSH password auth on Unix" item below). Fixing S6 in isolation only helps
-  Windows and needs a new command param + FE wiring; folded into that larger item.
 - Recently shipped (all see the relevant sections below): **S8-Phase-B stdio
   MCP-over-SSH — SHIPPED 2026-07-16**; N3 PacketADE-as-MCP-server — SHIPPED
   2026-07-15; N2 swarm escalation — SHIPPED 2026-07-14; S7 remote git commands —
@@ -59,14 +54,6 @@ created" copy.
   review's F23 (`DeployConfig.env` never applied) and F24 (runs can't be
   cancelled) bugs in dead code. Either delete `deploy.rs` + its 4 registrations,
   or re-surface a deploy UI and fix F23/F24 then. **Supersedes F23/F24.**
-- **P2 — SSH password auth on Unix is non-functional.** Post-F06/F11, the keychain
-  password is only fed to ssh stdin on Windows, because Unix OpenSSH reads the
-  password from `/dev/tty`, not stdin. So password-auth SSH targets can't
-  authenticate non-interactively on macOS/Linux via `ssh_run`/`ssh_exec`, and with
-  `BatchMode` dropped a dev build with a controlling TTY can block until the
-  command timeout. Proper fix: `sshpass`/`SSH_ASKPASS` (or keep `BatchMode=yes` on
-  Unix to fail fast), applied consistently across `ssh_run`, `ssh_exec`, and
-  `ssh_check_remote_path` (subsumes **S6**).
 - **P3 — auth-watcher edge cases.** The new trailing-edge debounce has no
   max-wait cap (a cred file rewritten with <500 ms gaps indefinitely never emits —
   theoretical; real logins settle) and doesn't flush a pending emit if the channel
@@ -669,24 +656,24 @@ re-verification against current code.
 - ~~**F13 — deploy run stuck "running" forever on EIO**~~ — **SHIPPED (Batch B → CHANGELOG).**
 - ~~**F19 — MCP write clobbers shared `~/.claude/settings.json` on parse failure**~~ — **SHIPPED (Batch A → CHANGELOG).**
 - ~~**F20 — MCP server edit drops `disabled`/`type`/`url`/`headers`**~~ — **SHIPPED (Batch A → CHANGELOG).**
-- **F50 — duplicate pane IDs collide after hydration** — `stores/workspaceStore.ts`. `crypto.randomUUID()` or reconcile `wsCounter`. **(being fixed by H4 this wave.)**
-- **F53 — cross-arch build bundles the wrong native sidecar binary** — `scripts/prune-sidecar.js:171-193`. Target-aware prune + release-gate assert.
-- **G01 — sidecar + grandchildren orphaned on app exit** (no `kill_on_drop`/shutdown) — `agent_sidecar/supervisor.rs`, `lib.rs`.
+- ~~**F50 — duplicate pane IDs collide after hydration**~~ — **SHIPPED (H4 wave).** Hydration reconciles pane identity instead of reusing colliding counter-derived IDs.
+- ~~**F53 — cross-arch build bundles the wrong native sidecar binary**~~ — **SHIPPED 2026-07-19.** Target-aware prune + release-gate assertions now bind Node and Claude platform packages to the requested target triple.
+- ~~**G01 — sidecar + grandchildren orphaned on app exit**~~ — **SHIPPED 2026-07-19.** Tauri exit synchronously terminates tracked local/remote sidecar process trees and prevents supervisor resurrection.
 - ~~**G02 — sidecar restart silently bricks live sessions**~~ — **SHIPPED (Batch B → CHANGELOG).**
-- **G09 — Codex `respondPermission` writes to a stdin `codex exec` ignores → turn hangs** — `providers/openai-codex.ts:895-929`.
+- ~~**G09 — Codex `respondPermission` writes to a stdin `codex exec` ignores → turn hangs**~~ — **SHIPPED 2026-07-19.** Unsupported approvals are amputated, exec-compatible config flags replace rejected CLI flags, idle turns are reaped, and Windows npm shims launch without a command shell.
 - ~~**G16 — OpenAI-compat parallel tool calls collapse/cross-contaminate (`index` ignored)** — `core/llm_openai_compat.rs`.~~ **SHIPPED 2026-07-14.** The streamer tracked a single `current_tool_*` scalar, so parallel tool calls (distinguished only by `tool_calls[].index`, with possibly-interleaved arg deltas) collapsed onto one another. Now accumulated per-index in a `BTreeMap` (pure `accumulate_tool_call_delta` / `drain_tool_calls` helpers), emitting one `ToolUseEnd` per call in index order. Also guards the non-standard index-omitting-multiple-calls case (roll the slot on a new id). 4 tests cover interleaved parallel, start-once-per-index, index-omitting rollover, and single-call. 2-agent-reviewed.
 - ~~**G23 — orchestrated PTY task success uses exit reason, not exit code**~~ — **SHIPPED (Batch B → CHANGELOG).**
 - ~~**G25 — async attempt has no terminal transition on done/error**~~ — **SHIPPED (Batch B → CHANGELOG).**
-- **G33 — Stop with a queued message re-sends it (cancel emits `done` → drain)** — `agentTaskStore.ts`, `apiAgentListeners.ts`.
+- ~~**G33 — Stop with a queued message re-sends it (cancel emits `done` → drain)**~~ — **SHIPPED 2026-07-19.** Stop clears queued bubbles/messages synchronously before the cancel-induced `done` can drain them.
 
 ### P2 — confirmed medium
 
-- **F01 — `kill_pty`/`kill_sessions` leak zombie children on Unix** — `commands/pty.rs:393-410,117-128,329-331`.
-- **F06 — keyring password forwarded to remote stdin on ControlMaster-reused SSH** — `core/tool_runtime_ssh.rs:106-138`.
+- ~~**F01 — `kill_pty`/`kill_sessions` leak zombie children on Unix**~~ — **VERIFIED ALREADY FIXED 2026-07-13.** PTY children are reaped through the exit-child wait path.
+- ~~**F06 — keyring password forwarded to remote stdin on ControlMaster-reused SSH**~~ — **SHIPPED 2026-07-13.** Unix never writes the password to SSH stdin.
 - ~~**F09 — keyring migration deletes legacy cred even when new write fails**~~ — **SHIPPED (Batch A → CHANGELOG).**
 - ~~**F10 — Gemini key migration deletes localStorage in `finally` even when keyring throws**~~ — **SHIPPED (Batch A → CHANGELOG).**
-- **F11 — password auth writes to ssh stdin OpenSSH doesn't read** — `core/tool_runtime_ssh.rs:128-138`.
-- **F16 — leading-edge auth-watcher debounce drops the authoritative cred write** — `auth_watcher.rs:201-211`.
+- ~~**F11 — password auth writes to ssh stdin OpenSSH doesn't read**~~ — **SHIPPED 2026-07-19.** Unix uses the guarded self-exe `SSH_ASKPASS` path across `ssh_run` and `ssh_exec`; S6 is subsumed.
+- ~~**F16 — leading-edge auth-watcher debounce drops the authoritative cred write**~~ — **SHIPPED 2026-07-13.** Trailing-edge settle debounce probes the final credential write.
 - **F23 — `DeployConfig.env` typed end-to-end but never applied to the command** — `deploy.rs:9-15,220-264`.
 - **F24 — deploy runs cannot be cancelled (no kill handle / `kill_deploy`)** — `deploy.rs:266-327`. _(verified open.)_
 - **F28 — `send`/`retry` overwrite the in-process cancel sender, cancelling a running turn** — `api_agent.rs:701-724,1015-1037`.
