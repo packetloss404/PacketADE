@@ -147,6 +147,14 @@ const logStderr = (msg: string): void => {
 
 /** Windows requires the .cmd shim when invoking npm-installed CLIs via spawn. */
 const CODEX_BIN = process.platform === "win32" ? "codex.cmd" : "codex";
+const DEFAULT_CODEX_TURN_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
+function configuredIdleTimeoutMs(): number {
+  const configured = Number(process.env.CODEX_TURN_IDLE_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_CODEX_TURN_IDLE_TIMEOUT_MS;
+}
 
 function resolveCodexCommand(req: StartSessionRequest): string {
   const aliases = req as StartSessionRequest & {
@@ -283,6 +291,8 @@ export class OpenAICodexProvider implements ProviderHandler {
   private stdoutReader: ReadlineInterface | null = null;
   private stderrReader: ReadlineInterface | null = null;
   private killTimer: NodeJS.Timeout | null = null;
+  private idleTimer: NodeJS.Timeout | null = null;
+  private readonly turnIdleTimeoutMs: number;
   private sessionId: string | null = null;
   private codexCommand = CODEX_BIN;
   /** The Codex-assigned session UUID captured from session_start events. */
@@ -339,6 +349,10 @@ export class OpenAICodexProvider implements ProviderHandler {
    * lets the terminal `agent_message` forward only the unseen suffix (or nothing).
    */
   private flatTextEmitted = 0;
+
+  constructor(turnIdleTimeoutMs = configuredIdleTimeoutMs()) {
+    this.turnIdleTimeoutMs = Math.max(1, turnIdleTimeoutMs);
+  }
 
   async start(req: StartSessionRequest, emit: Emit): Promise<void> {
     this.sessionId = req.sessionId;
@@ -416,6 +430,49 @@ export class OpenAICodexProvider implements ProviderHandler {
     return modeToCodexFlags(req.planMode ? "plan" : "default");
   }
 
+  private clearIdleWatchdog(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  private scheduleForceKill(child: ChildProcessWithoutNullStreams): void {
+    if (this.killTimer) clearTimeout(this.killTimer);
+    this.killTimer = setTimeout(() => {
+      try {
+        if (child.exitCode === null) child.kill("SIGKILL");
+      } catch (err) {
+        logStderr(`SIGKILL failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }, 2000);
+  }
+
+  private resetIdleWatchdog(
+    child: ChildProcessWithoutNullStreams,
+    sessionId: string,
+    emit: Emit,
+  ): void {
+    this.clearIdleWatchdog();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.child !== child || child.exitCode !== null) return;
+
+      const message = `codex produced no stdout for ${this.turnIdleTimeoutMs}ms; terminating stalled turn`;
+      logStderr(message);
+      if (!this.doneEmitted) {
+        this.doneEmitted = true;
+        emit({ type: "error", sessionId, message });
+      }
+      try {
+        child.kill("SIGTERM");
+      } catch (err) {
+        logStderr(`watchdog SIGTERM failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.scheduleForceKill(child);
+    }, this.turnIdleTimeoutMs);
+  }
+
   private spawnCodex(args: string[], emit: Emit): void {
     const sessionId = this.sessionId;
     if (!sessionId) {
@@ -453,8 +510,10 @@ export class OpenAICodexProvider implements ProviderHandler {
     // emitted-length tracker or turn 2's item_0 would be seen as "already sent".
     this.itemTextEmitted.clear();
     this.flatTextEmitted = 0;
+    this.resetIdleWatchdog(child, sessionId, emit);
 
     child.on("error", (err) => {
+      this.clearIdleWatchdog();
       logStderr(`child process error: ${err.message}`);
       if (!this.doneEmitted) {
         this.doneEmitted = true;
@@ -467,6 +526,7 @@ export class OpenAICodexProvider implements ProviderHandler {
     });
 
     child.on("exit", (code, signal) => {
+      this.clearIdleWatchdog();
       if (this.killTimer) {
         clearTimeout(this.killTimer);
         this.killTimer = null;
@@ -497,6 +557,7 @@ export class OpenAICodexProvider implements ProviderHandler {
     child.stdout.setEncoding("utf8");
     this.stdoutReader = createInterface({ input: child.stdout });
     this.stdoutReader.on("line", (line) => {
+      this.resetIdleWatchdog(child, sessionId, emit);
       const trimmed = line.trim();
       if (trimmed.length === 0) return;
       let event: unknown;
@@ -1112,21 +1173,14 @@ export class OpenAICodexProvider implements ProviderHandler {
   async cancel(_emit: Emit): Promise<void> {
     const child = this.child;
     if (!child || child.exitCode !== null) return;
+    this.clearIdleWatchdog();
     try {
       // Prefer graceful shutdown first, then SIGKILL after 2s.
       child.kill("SIGTERM");
     } catch (err) {
       logStderr(`SIGTERM failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-    this.killTimer = setTimeout(() => {
-      try {
-        if (this.child && this.child.exitCode === null) {
-          this.child.kill("SIGKILL");
-        }
-      } catch (err) {
-        logStderr(`SIGKILL failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }, 2000);
+    this.scheduleForceKill(child);
     // `done` is emitted by the child 'exit' handler once the process unwinds.
   }
 
@@ -1198,6 +1252,7 @@ export class OpenAICodexProvider implements ProviderHandler {
   }
 
   async close(): Promise<void> {
+    this.clearIdleWatchdog();
     if (this.killTimer) {
       clearTimeout(this.killTimer);
       this.killTimer = null;
