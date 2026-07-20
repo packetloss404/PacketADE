@@ -72,7 +72,12 @@ async function runVariant({ malformed }) {
     const child = spawn(process.execPath, [sidecarEntry], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
-      env: { ...process.env, PACKETADE_REMOTE_SIDECAR: "1", HOME: home },
+      env: {
+        ...process.env,
+        PACKETADE_REMOTE_SIDECAR: "1",
+        HOME: home,
+        USERPROFILE: home,
+      },
     });
 
     const stderrChunks = [];

@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
-import { tmpdir, homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
@@ -29,7 +29,6 @@ if (!existsSync(modulePath)) {
 
 const { loadMcpFromFs } = await import(pathToFileURL(modulePath).href);
 
-const originalHome = homedir();
 const cleanups = [];
 
 /**
@@ -56,13 +55,19 @@ async function runScenario(global, project) {
     await writeFile(join(projectDir, ".mcp.json"), body, "utf8");
   }
 
-  // `os.homedir()` honors $HOME on POSIX; point the loader's global source at
-  // our throwaway home for the duration of this call.
+  // `os.homedir()` honors HOME on POSIX and USERPROFILE on Windows; point the
+  // loader's global source at our throwaway home for the duration of this call.
+  const savedHome = process.env.HOME;
+  const savedUserProfile = process.env.USERPROFILE;
   process.env.HOME = home;
+  process.env.USERPROFILE = home;
   try {
     return await loadMcpFromFs(projectDir, "mcp-config-merge-smoke");
   } finally {
-    process.env.HOME = originalHome;
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = savedUserProfile;
   }
 }
 
