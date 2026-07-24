@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::commands::orchestration::{OrchestratorSnapshot, RunningTaskSnapshot};
 use crate::core::{
     agent_config as core_agent, flight as core_flight, orchestrator as core_orchestrator,
     storage as core_storage, workspace as core_workspace,
@@ -683,40 +682,6 @@ pub struct PersistedStateDto {
     pub memory_patterns: Vec<serde_json::Value>,
     #[serde(default)]
     pub servers: Vec<ServerConfigDto>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskSpawnRequestDto {
-    pub flight_id: String,
-    pub milestone_id: String,
-    pub task_id: String,
-    pub agent_config_id: String,
-    pub command: String,
-    pub args: Vec<String>,
-    pub prompt: String,
-    pub project_path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct RunningTaskSnapshotDto {
-    pub task_id: String,
-    pub milestone_id: String,
-    pub flight_id: String,
-    pub session_id: String,
-    pub agent_config_id: String,
-    #[ts(type = "number")]
-    pub started_at: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct OrchestratorSnapshotDto {
-    pub running_task_ids: Vec<String>,
-    pub running_tasks: Vec<RunningTaskSnapshotDto>,
-    pub active_flight_ids: Vec<String>,
-    pub paused_at_milestone: Vec<(String, String)>,
 }
 
 impl From<core_workspace::GridPosition> for GridPositionDto {
@@ -1602,60 +1567,6 @@ impl From<PersistedStateDto> for core_storage::PersistedState {
     }
 }
 
-impl From<core_orchestrator::TaskSpawnRequest> for TaskSpawnRequestDto {
-    fn from(value: core_orchestrator::TaskSpawnRequest) -> Self {
-        Self {
-            flight_id: value.flight_id,
-            milestone_id: value.milestone_id,
-            task_id: value.task_id,
-            agent_config_id: value.agent_config_id,
-            command: value.command,
-            args: value.args,
-            prompt: value.prompt,
-            project_path: value.project_path,
-        }
-    }
-}
-
-impl From<TaskSpawnRequestDto> for core_orchestrator::TaskSpawnRequest {
-    fn from(value: TaskSpawnRequestDto) -> Self {
-        Self {
-            flight_id: value.flight_id,
-            milestone_id: value.milestone_id,
-            task_id: value.task_id,
-            agent_config_id: value.agent_config_id,
-            command: value.command,
-            args: value.args,
-            prompt: value.prompt,
-            project_path: value.project_path,
-        }
-    }
-}
-
-impl From<RunningTaskSnapshot> for RunningTaskSnapshotDto {
-    fn from(value: RunningTaskSnapshot) -> Self {
-        Self {
-            task_id: value.task_id,
-            milestone_id: value.milestone_id,
-            flight_id: value.flight_id,
-            session_id: value.session_id,
-            agent_config_id: value.agent_config_id,
-            started_at: value.started_at,
-        }
-    }
-}
-
-impl From<OrchestratorSnapshot> for OrchestratorSnapshotDto {
-    fn from(value: OrchestratorSnapshot) -> Self {
-        Self {
-            running_task_ids: value.running_task_ids,
-            running_tasks: value.running_tasks.into_iter().map(Into::into).collect(),
-            active_flight_ids: value.active_flight_ids,
-            paused_at_milestone: value.paused_at_milestone,
-        }
-    }
-}
-
 #[cfg(test)]
 fn generated_typescript_schema() -> String {
     let mut lines = vec![
@@ -1711,9 +1622,6 @@ fn generated_typescript_schema() -> String {
     push_decl!(AttemptDto);
     push_decl!(FlightDto);
     push_decl!(PersistedStateDto);
-    push_decl!(TaskSpawnRequestDto);
-    push_decl!(RunningTaskSnapshotDto);
-    push_decl!(OrchestratorSnapshotDto);
 
     lines.join("\n")
 }

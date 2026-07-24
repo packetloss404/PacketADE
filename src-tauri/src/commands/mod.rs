@@ -26,7 +26,6 @@ pub mod mcp;
 pub mod memory;
 pub mod flight_cost;
 pub mod ollama;
-pub mod orchestration;
 pub mod pricing;
 pub mod provider_auth;
 pub mod provider_stats;

@@ -13,7 +13,6 @@ use crate::core::llm_types::ToolDefinition;
 use crate::core::tool_runtime;
 
 const DEFAULT_MODEL: &str = "claude-haiku-4-5";
-const MAX_ITERATIONS: usize = 8;
 const TOOL_PREFIX: &str = "agent_";
 
 /// Default tool allowlist when an agent's frontmatter `tools` array is

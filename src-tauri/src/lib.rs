@@ -10,7 +10,6 @@ use commands::code_quality_autofix::CodeQualityAutoFixState;
 use commands::dictation::audio::create_dictation_state;
 use commands::dictation::whisper::WhisperState;
 use commands::github::create_github_auth_state;
-use commands::orchestration::create_shared_orchestrator;
 use commands::pty::create_shared_pty_manager;
 use commands::quality_runner::QualityRunnerState;
 use tauri::Manager;
@@ -129,12 +128,26 @@ pub fn run() {
     // Rename ~/.packetcode → ~/.packetade once per upgrade. Must run before
     // any command that reads/writes the data dir.
     core::migration::migrate_data_dir();
+    // Canonicalize any lingering legacy `missionId` keys in persisted
+    // flight-approval records to `flightId`. Runs after migrate_data_dir so the
+    // data dir is resolved; a no-op once the state has no legacy keys.
+    core::migration::migrate_mission_to_flight();
     commands::crashes::install_panic_hook();
 
     // Reap PTY-agent children stranded by a previous run's abnormal exit
     // (SIGKILL / crash / force-quit) before we spawn anything new. Runs after
     // migrate_data_dir so the registry resolves to the current data dir.
     core::pty::reap_orphaned_pty_children();
+
+    // Normalize persisted flights left in an interrupted state by a previous
+    // abnormal exit (stale Active/Running milestone-task status, dead session
+    // ids). Runs after migrate_data_dir so the data dir is resolved. Formerly
+    // done inside the (now-removed) shared-orchestrator constructor.
+    if let Err(e) =
+        core::storage::update_state(|state| core::orchestrator::recover_flights_on_startup(&mut state.flights))
+    {
+        tracing::warn!("Failed to persist flight recovery on startup: {}", e);
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -146,7 +159,6 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(create_github_auth_state())
         .manage(create_shared_pty_manager())
-        .manage(create_shared_orchestrator())
         .manage(create_dictation_state())
         .manage(WhisperState::default())
         .manage(std::sync::Arc::new(ApiAgentState::new()))
@@ -268,16 +280,6 @@ pub fn run() {
             // v0.8-G pr modal upgrades — async-Flight draft-PR publish
             commands::flight_attempts::set_attempt_draft_pr,
             commands::flight_attempts::set_flight_publish_attempts_as_prs,
-            commands::orchestration::launch_flight,
-            commands::orchestration::pause_flight,
-            commands::orchestration::resume_flight,
-            commands::orchestration::cancel_flight,
-            commands::orchestration::orchestration_tick,
-            commands::orchestration::get_orchestration_state,
-            commands::orchestration::record_task_spawn,
-            commands::orchestration::notify_task_complete,
-            commands::orchestration::notify_approval_needed,
-            commands::orchestration::notify_approval_resolved,
             // Unified persisted state
             commands::state::load_persisted_state,
             commands::state::save_persisted_state,

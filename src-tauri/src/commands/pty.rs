@@ -212,9 +212,10 @@ pub struct PtyExitPayload {
     /// child status couldn't be read (e.g. it was force-killed and reaped
     /// elsewhere). `0` means success; non-zero means the agent failed.
     pub exit_code: Option<i32>,
-    /// True when the session was killed by an orchestrator action
-    /// (flight pause/cancel via `kill_sessions`), so the frontend must NOT
-    /// score it as a successful task completion.
+    /// Whether the session was terminated by a backend action rather than
+    /// exiting on its own. Currently always `false` — the orchestrator
+    /// flight-kill path was removed with the legacy task scheduler — but kept
+    /// in the payload so the frontend `pty:exit` contract is unchanged.
     pub terminated: bool,
 }
 
@@ -240,11 +241,6 @@ struct PtySession {
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
     kill_flag: Arc<std::sync::atomic::AtomicBool>,
-    /// Set ONLY when an orchestrator action (flight pause/cancel) kills the
-    /// session via `kill_sessions`. The reader thread reads this to mark the
-    /// emitted `pty:exit` payload `terminated`, so a backend kill isn't
-    /// mis-scored as task success.
-    orchestrator_killed: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Manages all PTY sessions
@@ -259,39 +255,13 @@ impl PtyManager {
         }
     }
 
-    /// Kill multiple PTY sessions by ID. Skips missing sessions.
-    ///
-    /// Invoked by orchestrator flight pause/cancel. Sets `orchestrator_killed`
-    /// so the reader thread tags the resulting `pty:exit` payload as
-    /// `terminated`, preventing the frontend from scoring the kill as a
-    /// successful task completion.
-    pub fn kill_sessions(&mut self, session_ids: &[String]) {
-        for session_id in session_ids {
-            if let Some(mut session) = self.sessions.remove(session_id) {
-                info!(session_id = %session_id, "Killing PTY session (flight cleanup)");
-                session.info.alive = false;
-                if let Err(e) = signal_pty_kill(
-                    session_id,
-                    session.kill_flag.as_ref(),
-                    Some(session.orchestrator_killed.as_ref()),
-                    &session.killer,
-                ) {
-                    warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
-                }
-            }
-        }
-    }
 }
 
 fn signal_pty_kill(
     session_id: &str,
     kill_flag: &std::sync::atomic::AtomicBool,
-    orchestrator_killed: Option<&std::sync::atomic::AtomicBool>,
     killer: &SharedChildKiller,
 ) -> std::io::Result<()> {
-    if let Some(orchestrator_killed) = orchestrator_killed {
-        orchestrator_killed.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
     kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
 
     let mut killer = killer.lock().map_err(|_| {
@@ -518,7 +488,6 @@ pub fn create_pty_session(
         .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
 
     let kill_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let orchestrator_killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let info = PtySessionInfo {
         id: session_id.clone(),
@@ -534,7 +503,6 @@ pub fn create_pty_session(
         writer,
         master: pair.master,
         kill_flag: kill_flag.clone(),
-        orchestrator_killed: orchestrator_killed.clone(),
     };
 
     {
@@ -595,7 +563,9 @@ pub fn create_pty_session(
             },
             Err(_) => None,
         };
-        let terminated = orchestrator_killed.load(std::sync::atomic::Ordering::Relaxed);
+        // No backend "orchestrator kill" path exists anymore; every exit here
+        // is either a natural process exit or a user-initiated `kill_pty`.
+        let terminated = false;
 
         info!(session_id = %sid, exit_code = ?exit_code, terminated, "PTY session exited");
         let payload = PtyExitPayload {
@@ -668,12 +638,7 @@ pub fn kill_pty(manager: State<'_, SharedPtyManager>, session_id: String) -> Res
     if let Some(mut session) = mgr.sessions.remove(&session_id) {
         info!(session_id = %session_id, "Killing PTY session");
         session.info.alive = false;
-        if let Err(e) = signal_pty_kill(
-            &session_id,
-            session.kill_flag.as_ref(),
-            None,
-            &session.killer,
-        ) {
+        if let Err(e) = signal_pty_kill(&session_id, session.kill_flag.as_ref(), &session.killer) {
             warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
         }
     } else {
@@ -707,12 +672,7 @@ pub fn kill_pty_and_wait(
     info!(session_id = %session_id, "Killing PTY session and waiting for exit");
     if let Some(mut session) = mgr.sessions.remove(&session_id) {
         session.info.alive = false;
-        if let Err(e) = signal_pty_kill(
-            &session_id,
-            session.kill_flag.as_ref(),
-            None,
-            &session.killer,
-        ) {
+        if let Err(e) = signal_pty_kill(&session_id, session.kill_flag.as_ref(), &session.killer) {
             warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
         }
         let child = session.child.clone();
@@ -1246,19 +1206,16 @@ mod tests {
     }
 
     #[test]
-    fn signal_pty_kill_marks_orchestrator_terminated_and_uses_killer() {
+    fn signal_pty_kill_sets_flag_and_uses_killer() {
         let kill_flag = AtomicBool::new(false);
-        let orchestrator_killed = AtomicBool::new(false);
         let killed = Arc::new(AtomicBool::new(false));
         let killer: SharedChildKiller = Arc::new(Mutex::new(Box::new(FakeKiller {
             killed: killed.clone(),
         })));
 
-        signal_pty_kill("session-1", &kill_flag, Some(&orchestrator_killed), &killer)
-            .expect("signal kill");
+        signal_pty_kill("session-1", &kill_flag, &killer).expect("signal kill");
 
         assert!(kill_flag.load(Ordering::Relaxed));
-        assert!(orchestrator_killed.load(Ordering::Relaxed));
         assert!(killed.load(Ordering::Relaxed));
     }
 

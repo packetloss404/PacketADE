@@ -2,8 +2,11 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 // Must run BEFORE App is imported, because stores read localStorage at module
 // init time and we need the packetcode:* → packetade:* keys in place first.
-import { migrateLegacyStorage } from "@/lib/storage-migration";
+import { migrateIssuesMissionToFlight, migrateLegacyStorage } from "@/lib/storage-migration";
 migrateLegacyStorage();
+// Then canonicalize the legacy `missionId` flight link on persisted issues
+// (runs after the prefix copy above so `packetade:issues` is in place).
+migrateIssuesMissionToFlight();
 
 import App from "./App";
 import "./index.css";

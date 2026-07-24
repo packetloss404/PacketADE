@@ -152,11 +152,6 @@ user-launched. It does not restore Planner v1's autonomous runtime.
   surfacing the error, so they remain visible and controllable. A future wire
   result should report per-target success/failure directly instead of requiring
   recovery by diffing the persisted Attempt set.
-- **P2 — remove the legacy task-orchestration Tauri commands in
-  `commands/orchestration.rs`** (no frontend callers). BLOCKED: `commands/state.rs`
-  still consumes `SharedOrchestrator`, so state/settings persistence must be
-  untangled from the dead task scheduler before it can be deleted. (The
-  zero-caller `commands/flight_chat.rs` half of this item shipped 2026-07-24.)
 - **P3 — migrate or prune orphaned Planner data.** Legacy `planner_*` fields,
   approval records, and `missions/` journals are retained only so old state
   remains readable after Planner v1's removal. Define an eager migration and
@@ -173,26 +168,26 @@ are met.
 
 **Lazy read-side fallbacks (3 items).** All are deserialize-/read-time
 only: they re-emit the canonical `flightId` key the *next* time that record is
-persisted. There is no eager one-shot migration pass, so a record that is loaded
-but never re-saved keeps its legacy key on disk indefinitely.
+persisted.
 
 - **2 Rust `#[serde(alias = "missionId")]`** aliases on the legacy persisted
   Flight-approval DTO/record: `api/mod.rs` and `core/flight.rs`.
 - **1 frontend store read shim:** `issueStore.ts` (`flightId` falls back to the
   legacy `missionId` key).
 
-*Removal criteria:* no removal timeline exists today and none is
-implied by the code. Do NOT phrase removal as "after release X all data is
-migrated" — that is false here because these are lazy fallbacks with no eager
-pass, so never-touched records keep legacy keys forever. Removable only after
-(a) a one-shot eager migration ships that walks all persisted
-issues/approval records and rewrites them with canonical `flightId`
-keys, AND (b) at least one release cycle passes for that migration to run on
-users' machines. Earliest realistic target is the 1.0.0 cut (per SemVer, removals
-belong at a major bump; pre-1.0 the 0.x→0.(x+1)/1.0 cut is the legitimate window).
-Without the eager pass, removal silently drops the flight binding on any record
-not re-saved since the rename. **Action item:** build the eager mission→flight
-on-disk migration pass and gate removal on it shipping + one release.
+**Eager migration shipped 2026-07-24.** The one-shot passes now exist:
+`core::migration::migrate_mission_to_flight` re-saves persisted state when the
+raw file still carries a `missionId` key (canonicalizing flight-approval
+records), and `migrateIssuesMissionToFlight` in `lib/storage-migration.ts`
+rewrites the `missionId` link on `packetade:issues`. Both are guarded/idempotent
+and run at startup.
+
+*Removal criteria:* the eager-migration prerequisite (a) is now **met**. The
+three fallbacks are removable once **(b) at least one release cycle ships with
+the migration** so it has run on users' machines. Earliest realistic target is
+the 1.0.0 cut (per SemVer, removals belong at a major bump). Until that release
+has shipped, keep the aliases/shim so a machine that hasn't yet run the migration
+still loads legacy data losslessly.
 
 ## GitHub pane v0.9+ (from v0.8 deferrals)
 
