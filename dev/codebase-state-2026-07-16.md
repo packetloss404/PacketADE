@@ -1,5 +1,15 @@
 # PacketADE Codebase State — main @ ca2e248 (2026-07-16)
 
+> **⚠️ Dated snapshot — partially superseded (noted 2026-07-24).** This is a
+> point-in-time survey, not a live map. Notable drift since: the legacy task
+> scheduler was removed (`commands/orchestration.rs` + the `Orchestrator` /
+> `with_orchestrator_and_flights` lock are gone; `core::orchestrator` is now just
+> `OrchestratorSettings` + `recover_flights_on_startup`); `commands/flight_chat.rs`
+> (`ask_flight_chat_stream`) and the `flight-chat:*` events were deleted; the SSH
+> commands `set_ssh_password`/`delete_ssh_password`/`ssh_test_connection` were
+> removed; and the sidecar `PROTOCOL_VERSION` is now **10** (this doc says 8).
+> The most actively-misleading lines are corrected inline below.
+
 > Compiled from read-only subsystem surveys of a pinned detached worktree of `main @ ca2e248`. All paths below are repo-relative. Note: the environment's gitStatus "recent commits" block (MiniMax catalog, startup-perf c3bb58a) is a **stale mid-June snapshot** — those commits are ~150 commits *behind* ca2e248. Actual `main == ca2e248`; the primary checkout currently sits on branch `fix/g33-stop-requeue` at the same commit.
 
 ---
@@ -54,7 +64,7 @@ The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, ne
 - `commands/agent_sidecar/` — **directory module** (mod/supervisor/handler/events/protocol/status). `EXPECTED_PROTOCOL_VERSION = 8`; local supervision (≤3 restarts/60s, `sidecar-status:changed`) plus per-session **remote sidecars over SSH** with POSIX preflight.
 - `commands/provider_auth.rs` — statuses `ready | login_required | missing_key | service_down` (no more `coming_soon`); refresh-token-aware OAuth probes; new `sign_out_provider`. `auth_watcher.rs` — 500ms *trailing-edge* debounce, `$HOME` fallback.
 - `commands/mcp.rs` — global (`~/.claude/settings.json`) + project (`.mcp.json`) scopes; lenient reads, strict atomic writes; `raw_config` round-trip.
-- `commands/state.rs` / `orchestration.rs` — slice savers; bulk save *ignores* issues/retrospectives; orchestrator lock held across `update_state` by design.
+- `commands/state.rs` — slice savers; bulk save *ignores* issues/retrospectives. (`orchestration.rs` and its orchestrator lock were **removed 2026-07-24**.)
 - `commands/flight_attempts.rs` — async "one prompt → N agents" engine (local/SSH worktrees per attempt).
 - `src-tauri/src/mcp_server/` — N3 PacketADE-as-MCP-server. `src-tauri/src/api/` — ts-rs DTO layer (**replaces the deleted `src-tauri/src/session/`**).
 
@@ -115,7 +125,7 @@ The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, ne
 - `fix_path_for_gui_launch()` must remain the literal first statement of `run()` (pre-threads env mutation).
 - `SshConfig.host_fingerprint = None` silently downgrades to TOFU accept-new — always copy `hostFingerprint` (and `authMethod`) through from `ServerConfig`.
 - storage.rs lock order is strict (ASYNC_STATE_LOCK before STATE_LOCK); re-entering `with_state_lock` from its own closure deadlocks. `load_state` recovery is deliberately read-only; quarantine-before-recovery ordering matters.
-- Orchestrator mutations go through `with_orchestrator_and_flights` (lock held across `update_state` by design); never take the PTY lock while holding the orchestrator lock.
+- (**Removed 2026-07-24:** the `Orchestrator` / `with_orchestrator_and_flights` scheduler lock no longer exists — the legacy task scheduler was deleted; settings now persist via `save_settings_slice` straight to disk.)
 - `save_persisted_state` silently drops issues/retrospectives (slice-owned).
 - MCP: project-scope `disabled:true` *shadows* a same-named enabled global entry; write path must stay strict + atomic (no pre-remove).
 - Expired OAuth access token + present refresh token = `ready`, not `login_required`. Auth-watcher debounce must stay trailing-edge.
@@ -149,7 +159,7 @@ The pulled range `a6021cf..ca2e248` is **94 commits (2026-07-06 → 07-16)**, ne
 - **Agents Pane**: AgentsView/AgentSidebar/AgentInputArea deleted; chat is ConversationTile + `agents/composer/`. The 8-row table is coincidentally right again post-MiniMax-remerge, but auth statuses lost `coming_soon` and gained `sign_out_provider`.
 - **CoreView**: no `"deploy"`, no `"missions"` literal — Flights route is `"flights"`; Deploy view/deployStore/Ideation module/IdeationView all deleted (only dead `commands/deploy.rs` remains backend-side, pending the deploy-P2 decision).
 - **Stores**: flightPlannerStore, orchestrationStore, deployStore, ideationStore gone; ~25 existing stores undocumented (asyncFlightStore, sessionGlue, reviewStore, agentPlanStore, serverStore, costGuardrailStore, …).
-- **Flight creation**: NewFlightModal/FlightChatPanel/useFlightChat deleted; actual flow is LaunchAsyncFlightModal + AsyncFlightGrid/AttemptTile. `flight-chat:*` helpers in `events.ts` are orphaned dead code.
+- **Flight creation**: NewFlightModal/FlightChatPanel/useFlightChat deleted; actual flow is LaunchAsyncFlightModal + AsyncFlightGrid/AttemptTile. `flight-chat:*` helpers plus `flight_chat.rs`/`ask_flight_chat_stream` were **removed 2026-07-24**.
 - **api-agent events**: 9 documented, **14** real (add edit-baseline, plan-block, tool-output-extended, turn-summary, mcp-sources).
 - **File-structure drift**: `agent_sidecar.rs`, `statusline`, `dictation` are directory modules; `src-tauri/src/session/` replaced by `src-tauri/src/api/` (ts-rs DTOs); `src-tauri/src/mcp_server/` entirely undocumented; layout/ contents wrong (no PaneContainer/SessionTabBar); AgentCli lives in `agentTaskStore.ts`, not the types file; sidecar tests are 10 (protocol-v8-smoke, not v6); `scripts/` has 6 undocumented scripts; missing core modules (llm_openai_compat, execution, worktree, mcp_bridge/client, migration).
 - **Sidecar-over-SSH** (per-session remote sidecars + preflight) is a whole undocumented execution mode; sidecar entry-point section describes only local.

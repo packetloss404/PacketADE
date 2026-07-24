@@ -7,8 +7,8 @@ must run provider work on the SSH host, while the desktop keeps the same
 
 ## Current Behavior
 
-PacketADE now lets the Agents pane select SSH targets for sidecar-backed
-providers. On the backend, `start_api_agent_session` routes sidecar providers
+PacketADE now lets workspace conversation tiles select SSH targets for
+sidecar-backed providers. On the backend, `start_api_agent_session` routes sidecar providers
 with `ssh_config` through a dedicated SSH sidecar process instead of the
 app-wide local sidecar.
 
@@ -77,8 +77,8 @@ Use one Unix SSH host with a pinned host key and a real git checkout.
    `PACKETADE_REMOTE_SIDECAR_PATH` pointing at the remote entry path.
 4. Confirm `node` is on the remote PATH, or start PacketADE with
    `PACKETADE_REMOTE_NODE_PATH` set to the remote Node binary path.
-5. Start an Agents-pane conversation with **Anthropic (Subscription)** against
-   the SSH project.
+5. Start a conversation tile in a remote workspace with **Anthropic (Subscription)**
+   against the SSH project.
 6. Verify the local sidecar safety-net error does not appear:
    "Remote SSH workspace metadata reached the local sidecar".
 7. Verify streamed `api-agent:chunk`, `api-agent:thinking`,

@@ -78,8 +78,8 @@ does not restore the deleted autonomous Planner v1.
 
 Sprints 0-4, the Flight Deck worktree-attempt runtime, workspace panes, Issues, GitHub + Memory,
 dictation, cost analytics, cost guardrails / budget thresholds, API-agent
-conversations, sidecar protocol v9 (v6→v7 planner-amputation, v7→v8 S8-Phase-B
-MCP-over-SSH, v8→v9 targeted edit responses), PacketADE-as-MCP-server (N3), MCP servers over SSH (S8 A+B),
+conversations, sidecar protocol v10 (v6→v7 planner-amputation, v7→v8 S8-Phase-B
+MCP-over-SSH, v8→v9 targeted edit responses, v9→v10 explicit `cancelled` terminal marker), PacketADE-as-MCP-server (N3), MCP servers over SSH (S8 A+B),
 remote git commands (S7), Codex-over-SSH (S9), local quality gates, and the
 conversation-as-tile single-surface consolidation (the "match Claude Code &
 Codex" initiative, now folded into the Workspace tile surface) are shipped. The
