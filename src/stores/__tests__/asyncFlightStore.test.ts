@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AttemptTargetSpec } from "@/lib/tauri";
 import type { Attempt, Flight, Task } from "@/types/flight";
+import type { ServerConfig } from "@/types/server";
 import { apiAgentDoneEvent, apiAgentErrorEvent } from "@/lib/events";
 
 type TauriListener = (event: { payload?: { message?: string } }) => void;
@@ -113,7 +114,11 @@ vi.mock("@/stores/workspaceStore", () => ({
   },
 }));
 
-import { findAsyncLaunchPathCollisions, useAsyncFlightStore } from "@/stores/asyncFlightStore";
+import {
+  buildReassignSpec,
+  findAsyncLaunchPathCollisions,
+  useAsyncFlightStore,
+} from "@/stores/asyncFlightStore";
 import { useFlightStore } from "@/stores/flightStore";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 
@@ -756,5 +761,66 @@ describe("asyncFlightStore flight-prompt injection gate", () => {
     expect(mocks.composeMemoryBrief).not.toHaveBeenCalled();
     const promptArg = mocks.launchFlightAsync.mock.calls[0][1] as string;
     expect(promptArg).toBe("Do it");
+  });
+});
+
+describe("buildReassignSpec (E4)", () => {
+  const failedLocal: Attempt = {
+    id: "att-1",
+    flightId: "f1",
+    target: { kind: "local", basePath: "/repo", worktreePath: "/repo/wt" },
+    agentConfigId: "api-claude",
+    model: "claude-sonnet-4-6",
+    provider: "claude",
+    branch: "packetade/att-1",
+    baseBranch: "main",
+    sessionId: "s1",
+    status: "failed",
+    cost: 0,
+    tokens: 0,
+  };
+  const noServer = () => undefined;
+
+  it("rebuilds a local target with the new agent + its default model", () => {
+    const spec = buildReassignSpec(failedLocal, "api-openai", noServer);
+    expect(spec?.kind).toBe("local");
+    expect(spec?.agentConfigId).toBe("api-openai");
+    expect(spec?.provider).toBe("openai");
+    expect(spec?.basePath).toBe("/repo");
+    expect(spec?.baseBranch).toBe("main");
+    // The new agent's default model, not the failed attempt's claude model.
+    expect(spec?.model).not.toBe("claude-sonnet-4-6");
+  });
+
+  it("returns null for an SSH attempt whose server is no longer configured", () => {
+    const failedSsh: Attempt = {
+      ...failedLocal,
+      target: { kind: "ssh", targetId: "srv-x", basePath: "/repo", worktreePath: "/repo/wt" },
+    };
+    expect(buildReassignSpec(failedSsh, "api-openai", noServer)).toBeNull();
+  });
+
+  it("rebuilds an SSH target from the saved server config", () => {
+    const failedSsh: Attempt = {
+      ...failedLocal,
+      target: { kind: "ssh", targetId: "srv-1", basePath: "/repo", worktreePath: "/repo/wt" },
+    };
+    const server = {
+      id: "srv-1",
+      host: "example.com",
+      port: 2222,
+      username: "dev",
+      keyPath: "/keys/id",
+      authMethod: "key",
+      hostFingerprint: "SHA256:abc",
+    } as ServerConfig;
+    const spec = buildReassignSpec(failedSsh, "api-claude", () => server);
+    expect(spec?.kind).toBe("ssh");
+    if (spec?.kind === "ssh") {
+      expect(spec.host).toBe("example.com");
+      expect(spec.port).toBe(2222);
+      expect(spec.user).toBe("dev");
+      expect(spec.agentConfigId).toBe("api-claude");
+    }
   });
 });
