@@ -86,7 +86,7 @@ export type AttemptStatusDto = "queued" | "provisioning" | "running" | "reviewin
 
 export type AttemptTargetDto = { "kind": "local", basePath: string, worktreePath: string, } | { "kind": "ssh", targetId: string, basePath: string, worktreePath: string, };
 
-export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDto, agentConfigId: string, model: string, provider: string, branch: string, baseBranch: string, sessionId: string, status: AttemptStatusDto, startedAt?: number, completedAt?: number, cost: number, tokens: number, errorMessage?: string, 
+export type AttemptDto = { id: string, flightId: string, target: AttemptTargetDto, agentConfigId: string, model: string, provider: string, branch: string, baseBranch: string, sessionId: string, status: AttemptStatusDto, startedAt?: number, completedAt?: number, cost: number, tokens: number, errorMessage?: string, failureCategory?: string,
 /**
  * v0.8-G: when the parent Flight publishes attempts as draft PRs, the
  * resulting PR number is round-tripped here. Optional everywhere

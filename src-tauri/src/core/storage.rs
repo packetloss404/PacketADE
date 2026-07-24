@@ -888,6 +888,7 @@ mod tests {
             cost: 0.0,
             tokens: 0,
             error_message: None,
+            failure_category: None,
             draft_pr_number: None,
         }
     }

@@ -525,6 +525,11 @@ pub struct AttemptDto {
     #[serde(default)]
     #[ts(optional)]
     pub error_message: Option<String>,
+    /// E1: structured failure category (stable snake_case label) derived when
+    /// the attempt failed; `None` otherwise.
+    #[serde(default)]
+    #[ts(optional)]
+    pub failure_category: Option<String>,
     /// v0.8-G: when the parent Flight publishes attempts as draft PRs, the
     /// resulting PR number is round-tripped here. Optional everywhere
     /// because most attempts will not have a draft PR.
@@ -1433,6 +1438,7 @@ impl From<core_flight::Attempt> for AttemptDto {
             cost: a.cost,
             tokens: a.tokens,
             error_message: a.error_message,
+            failure_category: a.failure_category,
             draft_pr_number: a.draft_pr_number,
         }
     }
@@ -1456,6 +1462,7 @@ impl From<AttemptDto> for core_flight::Attempt {
             cost: a.cost,
             tokens: a.tokens,
             error_message: a.error_message,
+            failure_category: a.failure_category,
             draft_pr_number: a.draft_pr_number,
         }
     }

@@ -169,6 +169,11 @@ export function AttemptTile({ flight, attempt }: AttemptTileProps) {
 
         {attempt.errorMessage && (
           <div className="bg-accent-red/10 border-accent-red/30 rounded border px-2 py-1 text-[10px] text-accent-red">
+            {attempt.failureCategory && (
+              <span className="mr-1 rounded bg-accent-red/20 px-1 font-mono uppercase tracking-wide">
+                {attempt.failureCategory.replace(/_/g, " ")}
+              </span>
+            )}
             {attempt.errorMessage}
           </div>
         )}

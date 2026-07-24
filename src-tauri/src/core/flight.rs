@@ -356,6 +356,12 @@ pub struct Attempt {
     pub tokens: u64,
     #[serde(default)]
     pub error_message: Option<String>,
+    /// E1: structured failure category derived from `error_message` at the
+    /// moment the attempt goes `Failed` (via `core::error_classifier`). Stable
+    /// snake_case label (`auth`/`timeout`/`rate_limit`/…); `None` unless the
+    /// attempt failed. Lets the UI show more than free-text error output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_category: Option<String>,
     /// v0.8-G: when the parent Flight has `publish_attempts_as_prs == true`,
     /// the post-attempt pipeline pushes this attempt's branch to `origin`
     /// and opens a GitHub draft PR. The resulting PR number is recorded

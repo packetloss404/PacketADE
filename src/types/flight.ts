@@ -167,6 +167,21 @@ export type AttemptStatus =
   | "failed"
   | "cancelled";
 
+/**
+ * E1: structured failure category for a failed attempt (stable snake_case
+ * labels mirroring the Rust `AiErrorCategory`). Derived from the attempt's
+ * error output at the moment it fails.
+ */
+export type AttemptFailureCategory =
+  | "auth"
+  | "billing"
+  | "rate_limit"
+  | "context_overflow"
+  | "timeout"
+  | "server_error"
+  | "not_installed"
+  | "unknown";
+
 export type AttemptTarget =
   | { kind: "local"; basePath: string; worktreePath: string }
   | { kind: "ssh"; targetId: string; basePath: string; worktreePath: string };
@@ -187,6 +202,8 @@ export interface Attempt {
   cost: number;
   tokens: number;
   errorMessage?: string;
+  /** E1: structured failure category, set when the attempt fails. */
+  failureCategory?: AttemptFailureCategory;
   /**
    * v0.8-G: PR number of the draft PR opened for this attempt's branch
    * when the parent Flight has `publishAttemptsAsPrs == true`. Undefined

@@ -452,15 +452,30 @@ async fn update_attempt_status(
             ) {
                 attempt.completed_at = Some(now_ms());
             }
-            if let Some(msg) = error {
-                attempt.error_message = Some(msg);
-            }
+            record_attempt_error(attempt, status, error);
             flight.updated_at = now_ms();
             Ok(())
         })();
         std::future::ready(result)
     })
     .await
+}
+
+/// Record a terminal error on an attempt. On a `Failed` transition with a
+/// message, also derive a structured `failure_category` via the shared
+/// classifier (E1) so the UI can show a category, not just free text.
+fn record_attempt_error(attempt: &mut Attempt, status: AttemptStatus, error: Option<String>) {
+    if let Some(msg) = error {
+        if status == AttemptStatus::Failed {
+            attempt.failure_category = Some(
+                crate::core::error_classifier::classify_cli_error(&msg)
+                    .category
+                    .as_str()
+                    .to_string(),
+            );
+        }
+        attempt.error_message = Some(msg);
+    }
 }
 
 fn apply_attempt_status_by_session(
@@ -485,9 +500,7 @@ fn apply_attempt_status_by_session(
             ) {
                 attempt.completed_at = Some(now_ms());
             }
-            if let Some(message) = error {
-                attempt.error_message = Some(message);
-            }
+            record_attempt_error(attempt, status, error);
             flight.updated_at = now_ms();
             return true;
         }
@@ -687,6 +700,7 @@ pub async fn launch_flight_async(
             cost: 0.0,
             tokens: 0,
             error_message: None,
+            failure_category: None,
             draft_pr_number: None,
         };
 
@@ -768,6 +782,16 @@ pub async fn launch_flight_async(
                 AttemptStatus::Completed | AttemptStatus::Failed | AttemptStatus::Cancelled
             ) {
                 Some(now_ms())
+            } else {
+                None
+            },
+            failure_category: if final_status == AttemptStatus::Failed {
+                final_error.as_deref().map(|m| {
+                    crate::core::error_classifier::classify_cli_error(m)
+                        .category
+                        .as_str()
+                        .to_string()
+                })
             } else {
                 None
             },
@@ -1051,8 +1075,36 @@ mod tests {
             cost: 0.0,
             tokens: 0,
             error_message: None,
+            failure_category: None,
             draft_pr_number: None,
         }
+    }
+
+    #[test]
+    fn record_attempt_error_classifies_failed_message() {
+        let mut attempt = local_attempt("a1", "/tmp/x", AttemptStatus::Running);
+        record_attempt_error(
+            &mut attempt,
+            AttemptStatus::Failed,
+            Some("Error: unauthorized — invalid api key".to_string()),
+        );
+        assert_eq!(attempt.failure_category.as_deref(), Some("auth"));
+        assert_eq!(
+            attempt.error_message.as_deref(),
+            Some("Error: unauthorized — invalid api key")
+        );
+    }
+
+    #[test]
+    fn record_attempt_error_skips_category_when_not_failed() {
+        let mut attempt = local_attempt("a1", "/tmp/x", AttemptStatus::Cancelled);
+        record_attempt_error(
+            &mut attempt,
+            AttemptStatus::Cancelled,
+            Some("stopped by user".to_string()),
+        );
+        assert_eq!(attempt.failure_category, None);
+        assert_eq!(attempt.error_message.as_deref(), Some("stopped by user"));
     }
 
     fn flight_with_attempt(attempt: Attempt) -> Flight {

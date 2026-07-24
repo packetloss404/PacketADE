@@ -1,11 +1,11 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::core::flight::Task;
 
 /// Error categories for AI CLI invocations.
 /// Inspired by Hermes Agent's error_classifier — classifies stderr output from
 /// Claude CLI into actionable categories with recovery hints.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AiErrorCategory {
     /// Authentication failure — user needs to re-authenticate
@@ -24,6 +24,23 @@ pub enum AiErrorCategory {
     NotInstalled,
     /// Unknown / unclassified error
     Unknown,
+}
+
+impl AiErrorCategory {
+    /// Stable snake_case label (matches the serde representation). Used to
+    /// persist a structured failure category on an Attempt for the UI.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AiErrorCategory::Auth => "auth",
+            AiErrorCategory::Billing => "billing",
+            AiErrorCategory::RateLimit => "rate_limit",
+            AiErrorCategory::ContextOverflow => "context_overflow",
+            AiErrorCategory::Timeout => "timeout",
+            AiErrorCategory::ServerError => "server_error",
+            AiErrorCategory::NotInstalled => "not_installed",
+            AiErrorCategory::Unknown => "unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
