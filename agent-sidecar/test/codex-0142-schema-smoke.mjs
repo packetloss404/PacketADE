@@ -13,10 +13,41 @@ import { OpenAICodexProvider } from "../dist/providers/openai-codex.js";
 const EVENTS = [
   { type: "thread.started", thread_id: "019f1b3e-8168-7303-a12c-6ff7e947d6f2" },
   { type: "turn.started" },
-  { type: "item.started", item: { id: "item_0", type: "command_execution", command: "/bin/zsh -lc 'ls -1'", aggregated_output: "", exit_code: null, status: "in_progress" } },
-  { type: "item.completed", item: { id: "item_0", type: "command_execution", command: "/bin/zsh -lc 'ls -1'", aggregated_output: "sample.txt\n", exit_code: 0, status: "completed" } },
-  { type: "item.completed", item: { id: "item_1", type: "agent_message", text: "Found one file: `sample.txt`." } },
-  { type: "turn.completed", usage: { input_tokens: 27337, cached_input_tokens: 14592, output_tokens: 57, reasoning_output_tokens: 0 } },
+  {
+    type: "item.started",
+    item: {
+      id: "item_0",
+      type: "command_execution",
+      command: "/bin/zsh -lc 'ls -1'",
+      aggregated_output: "",
+      exit_code: null,
+      status: "in_progress",
+    },
+  },
+  {
+    type: "item.completed",
+    item: {
+      id: "item_0",
+      type: "command_execution",
+      command: "/bin/zsh -lc 'ls -1'",
+      aggregated_output: "sample.txt\n",
+      exit_code: 0,
+      status: "completed",
+    },
+  },
+  {
+    type: "item.completed",
+    item: { id: "item_1", type: "agent_message", text: "Found one file: `sample.txt`." },
+  },
+  {
+    type: "turn.completed",
+    usage: {
+      input_tokens: 27337,
+      cached_input_tokens: 14592,
+      output_tokens: 57,
+      reasoning_output_tokens: 0,
+    },
+  },
 ];
 
 const p = new OpenAICodexProvider();
@@ -24,19 +55,43 @@ p.sessionId = "s1"; // handleEvent needs a sessionId
 const emitted = [];
 for (const e of EVENTS) p.handleEvent(e, (ev) => emitted.push(ev));
 
-const text = emitted.filter((e) => e.type === "chunk").map((e) => e.text).join("");
+const text = emitted
+  .filter((e) => e.type === "chunk")
+  .map((e) => e.text)
+  .join("");
 const toolStart = emitted.filter((e) => e.type === "tool_start").length;
 const toolResult = emitted.find((e) => e.type === "tool_result");
 const summary = emitted.find((e) => e.type === "turn_summary");
 
+// Flat Codex variants sometimes omit the id on the completion record. The
+// provider must reuse the queued start id rather than emitting an orphan with
+// an empty toolUseId.
+const flatEmitted = [];
+p.handleEvent({ type: "exec_command_begin", command: "pwd" }, (event) => flatEmitted.push(event));
+p.handleEvent({ type: "exec_command_end", stdout: "/tmp\n", exit_code: 0 }, (event) =>
+  flatEmitted.push(event),
+);
+const flatStart = flatEmitted.find((event) => event.type === "tool_start");
+const flatResult = flatEmitted.find((event) => event.type === "tool_result");
+
 const failures = [];
-if (!text.includes("sample.txt")) failures.push(`agent_message text not mapped to chunk (got: ${JSON.stringify(text)})`);
+if (!text.includes("sample.txt"))
+  failures.push(`agent_message text not mapped to chunk (got: ${JSON.stringify(text)})`);
 if (toolStart !== 1) failures.push(`expected 1 tool_start, got ${toolStart}`);
-if (!toolResult || toolResult.output !== "sample.txt\n") failures.push(`tool_result output wrong: ${JSON.stringify(toolResult?.output)}`);
-if (!summary || summary.inputTokens !== 27337 || summary.outputTokens !== 57) failures.push(`turn_summary tokens wrong: ${JSON.stringify(summary)}`);
+if (!toolResult || toolResult.output !== "sample.txt\n")
+  failures.push(`tool_result output wrong: ${JSON.stringify(toolResult?.output)}`);
+if (!summary || summary.inputTokens !== 27337 || summary.outputTokens !== 57)
+  failures.push(`turn_summary tokens wrong: ${JSON.stringify(summary)}`);
+if (!flatStart?.toolUseId || flatResult?.toolUseId !== flatStart.toolUseId) {
+  failures.push(
+    `missing-id flat tool result was not correlated: ${JSON.stringify({ flatStart, flatResult })}`,
+  );
+}
 
 if (failures.length > 0) {
   console.error("FAIL codex-0142-schema-smoke:\n  " + failures.join("\n  "));
   process.exit(1);
 }
-console.log("PASS codex-0142-schema-smoke: text + tool_start + tool_result + tokens all mapped from 0.142 events");
+console.log(
+  "PASS codex-0142-schema-smoke: text + tool_start + tool_result + tokens all mapped from 0.142 events",
+);

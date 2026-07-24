@@ -41,7 +41,7 @@ fn resolve_command_path(command: &str) -> String {
                 }
             }
         }
-        format!("{}.cmd", command)
+        command.to_string()
     }
     #[cfg(not(windows))]
     {
@@ -50,7 +50,7 @@ fn resolve_command_path(command: &str) -> String {
 }
 
 const PTY_TRANSCRIPT_LIMIT_BYTES: usize = 256 * 1024;
-static PTY_TRANSCRIPT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static PTY_TRANSCRIPT_SEQUENCES: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
 
 pub(crate) fn decode_terminal_chunk(bytes: &[u8], pending: &mut Vec<u8>) -> String {
     // Combine any buffered bytes with the new chunk. Taking `pending` by value
@@ -123,6 +123,8 @@ pub struct PtyTranscript {
     pub session_id: String,
     pub data: String,
     pub truncated: bool,
+    /// Sequence of the newest output record included in `data`.
+    pub sequence: u64,
 }
 
 /// Internal state for one PTY session
@@ -498,8 +500,8 @@ pub fn read_transcript(session_id: &str) -> Result<PtyTranscript, String> {
     let path = transcript_path(session_id)
         .ok_or_else(|| "Unable to resolve transcript path".to_string())?;
 
-    let lock = PTY_TRANSCRIPT_LOCK.get_or_init(|| Mutex::new(()));
-    let _guard = lock
+    let state = PTY_TRANSCRIPT_SEQUENCES.get_or_init(|| Mutex::new(HashMap::new()));
+    let sequences = state
         .lock()
         .map_err(|_| "PTY transcript lock poisoned".to_string())?;
 
@@ -523,6 +525,7 @@ pub fn read_transcript(session_id: &str) -> Result<PtyTranscript, String> {
         session_id: session_id.to_string(),
         data: String::from_utf8_lossy(relevant).to_string(),
         truncated,
+        sequence: sequences.get(session_id).copied().unwrap_or(0),
     })
 }
 
@@ -630,15 +633,20 @@ fn mark_transcript_truncated(session_id: &str) {
     }
 }
 
-pub(crate) fn append_transcript(session_id: &str, data: &str) {
+pub(crate) fn append_transcript(session_id: &str, data: &str) -> u64 {
     let Some(path) = transcript_path(session_id) else {
-        return;
+        return 0;
     };
 
-    let lock = PTY_TRANSCRIPT_LOCK.get_or_init(|| Mutex::new(()));
-    let Ok(_guard) = lock.lock() else {
-        return;
+    let state = PTY_TRANSCRIPT_SEQUENCES.get_or_init(|| Mutex::new(HashMap::new()));
+    let Ok(mut sequences) = state.lock() else {
+        return 0;
     };
+    let sequence = sequences
+        .entry(session_id.to_string())
+        .and_modify(|value| *value = value.saturating_add(1))
+        .or_insert(1)
+        .to_owned();
 
     let incoming = data.as_bytes();
     let existing_len = fs::metadata(&path).map(|m| m.len() as usize).unwrap_or(0);
@@ -648,14 +656,14 @@ pub(crate) fn append_transcript(session_id: &str, data: &str) {
         if incoming.len() > PTY_TRANSCRIPT_LIMIT_BYTES || existing_len > 0 {
             mark_transcript_truncated(session_id);
         }
-        return;
+        return sequence;
     }
 
     if existing_len + incoming.len() <= PTY_TRANSCRIPT_LIMIT_BYTES {
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
             let _ = file.write_all(incoming);
         }
-        return;
+        return sequence;
     }
 
     let existing = fs::read(&path).unwrap_or_default();
@@ -666,6 +674,7 @@ pub(crate) fn append_transcript(session_id: &str, data: &str) {
     bounded.extend_from_slice(incoming);
     let _ = fs::write(&path, bounded);
     mark_transcript_truncated(session_id);
+    sequence
 }
 
 /// Thread-safe wrapper
@@ -745,7 +754,10 @@ mod tests {
             let out = decode_terminal_chunk(b"\xff", &mut pending);
             assert_eq!(out, "\u{FFFD}");
         }
-        assert!(pending.is_empty(), "pending must stay bounded on invalid input");
+        assert!(
+            pending.is_empty(),
+            "pending must stay bounded on invalid input"
+        );
     }
 
     #[test]
@@ -781,6 +793,7 @@ mod tests {
         assert!(transcript.truncated);
         assert_eq!(transcript.data.len(), PTY_TRANSCRIPT_LIMIT_BYTES);
         assert!(transcript.data.ends_with("bbbbbbbb"));
+        assert_eq!(transcript.sequence, 2);
 
         cleanup_transcript_files(&id);
     }

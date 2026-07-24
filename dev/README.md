@@ -11,6 +11,7 @@ Use these as the trust anchors before reading older plan files:
 | Area                       | Canonical owner                                                                                                                                                                                                                      | Notes                                                                                                  |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | Live task register         | [`../backlog.md`](../backlog.md)                                                                                                                                                                                                     | Single source for outstanding work. The July P1/P2 hardening loop is complete.                           |
+| Reliability remediation   | [`reliability-low-fix-loop-2026-07-19.md`](./reliability-low-fix-loop-2026-07-19.md)                                                                                                                                                  | Completed 30-finding revalidation, fix, regression, and verification record.                            |
 | Release priorities         | [`../ROADMAP.md`](../ROADMAP.md)                                                                                                                                                                                                     | Short current summary; detailed plans stay in this folder.                                             |
 | Remote/mobile agent access | [`remoteagents/README.md`](./remoteagents/README.md)                                                                                                                                                                                 | Supersedes the older `mobile/` investigation for phone/PWA work.                                       |
 | Multi-monitor operations   | [`send-to-monitor-plan.md`](./send-to-monitor-plan.md)                                                                                                                                                                               | Paused planning doc for detached Monitor windows; no implementation until current feature/bug checks.  |
@@ -45,6 +46,7 @@ Technical runbooks and how-tos. Not backlog items themselves (those live in [`/b
   autonomous Planner v1 remains historical, not a restoration candidate.
 - Distribution remains blocked on Windows and macOS signing credentials.
 - The mechanical G33/F53/G01/Unix-SSH/G09 hardening loop and deploy-backend cleanup are complete.
+- The 30 low-rated Reliability audit findings are closed; `backlog.md` no longer carries them.
 
 ### Flight Planner (archived — backend amputated 2026-07-11)
 

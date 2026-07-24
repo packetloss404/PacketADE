@@ -68,7 +68,9 @@ pub enum PermissionDecision {
     /// Deny-and-continue: `reason`, when present, is the user's steering
     /// text — folded into the synthetic tool result so the model is
     /// redirected instead of stalled on a bare refusal.
-    Deny { reason: Option<String> },
+    Deny {
+        reason: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -94,15 +96,29 @@ pub struct ApiAgentState {
     /// Session configs keyed by session_id.
     configs: Mutex<HashMap<String, SessionConfig>>,
     /// Pending permission prompts keyed by tool_call id.
-    pending_permissions: Mutex<HashMap<String, oneshot::Sender<PermissionDecision>>>,
+    pending_permissions: Mutex<HashMap<(String, String), oneshot::Sender<PermissionDecision>>>,
     /// Pending write_file edits awaiting user approval, keyed by tool_call id.
-    pending_edits: Mutex<HashMap<String, oneshot::Sender<EditDecision>>>,
+    pending_edits: Mutex<HashMap<(String, String), oneshot::Sender<EditDecision>>>,
 }
 
 struct ActiveTurn {
     id: u64,
     cancel: Option<oneshot::Sender<()>>,
     finished: watch::Sender<bool>,
+}
+
+fn drain_session_pending<T>(
+    pending: &mut HashMap<(String, String), T>,
+    session_id: &str,
+) -> Vec<T> {
+    let keys: Vec<(String, String)> = pending
+        .keys()
+        .filter(|(owner, _)| owner == session_id)
+        .cloned()
+        .collect();
+    keys.into_iter()
+        .filter_map(|key| pending.remove(&key))
+        .collect()
 }
 
 struct SessionConfig {
@@ -299,6 +315,7 @@ struct DonePayload {
     output_tokens: u64,
     cache_read_input_tokens: u64,
     cache_creation_input_tokens: u64,
+    cancelled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -635,6 +652,21 @@ mod tests {
                 .is_ok()
         );
     }
+
+    #[test]
+    fn pending_prompts_are_drained_by_session_only() {
+        let mut pending = HashMap::from([
+            (("session-a".to_string(), "tool-1".to_string()), 1),
+            (("session-b".to_string(), "tool-1".to_string()), 2),
+            (("session-a".to_string(), "tool-2".to_string()), 3),
+        ]);
+
+        let mut drained = drain_session_pending(&mut pending, "session-a");
+        drained.sort_unstable();
+        assert_eq!(drained, vec![1, 3]);
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending.values().copied().collect::<Vec<_>>(), vec![2]);
+    }
 }
 
 /// Fire all SessionEnd hooks (best-effort; failures logged).
@@ -886,7 +918,8 @@ pub async fn start_api_agent_session(
             remote_mcp_directive()
         } else {
             (
-                build_mcp_config_for_sidecar(&project_path, enabled_mcp_server_ids.as_deref()).await,
+                build_mcp_config_for_sidecar(&project_path, enabled_mcp_server_ids.as_deref())
+                    .await,
                 false,
             )
         };
@@ -1068,7 +1101,7 @@ pub async fn send_api_agent_message(
     attachments: Option<Vec<ImageAttachment>>,
 ) -> Result<(), String> {
     // Phase 3 slice C: forward to sidecar if it owns this session.
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         let attachments_json = match &attachments {
             Some(a) => serde_json::to_value(a).unwrap_or(serde_json::Value::Null),
             None => serde_json::Value::Null,
@@ -1136,7 +1169,7 @@ pub async fn cancel_api_agent_session(
     session_id: String,
 ) -> Result<(), String> {
     // Phase 3 slice C: forward to sidecar if it owns this session.
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         return sidecar.forward_cancel(session_id).await;
     }
 
@@ -1157,7 +1190,7 @@ pub async fn change_model(
     // Phase 3 slice C: forward to sidecar if it owns this session. The
     // Anthropic provider hot-swaps via SDK `setModel`; Codex stashes the
     // value for the next spawn.
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         return sidecar.forward_set_model(session_id, new_model).await;
     }
 
@@ -1180,7 +1213,7 @@ pub async fn set_plan_mode(
     // Phase 3 slice C: forward to sidecar if it owns this session. Translate
     // the legacy boolean into the SDK's permission-mode vocabulary:
     // `true` → "plan", `false` → "default".
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         let mode = if enabled { "plan" } else { "default" };
         return sidecar
             .forward_set_permission_mode(session_id, mode.to_string())
@@ -1207,7 +1240,7 @@ pub async fn set_permission_mode(
     // sidecar's Anthropic provider maps mode strings onto the SDK's
     // `setPermissionMode`; we pass the caller's string through verbatim so
     // the sidecar sees the same vocabulary the frontend picked.
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         return sidecar.forward_set_permission_mode(session_id, mode).await;
     }
 
@@ -1232,13 +1265,12 @@ pub async fn respond_permission(
     reason: Option<String>,
 ) -> Result<(), String> {
     // Phase 3 slice C: forward to sidecar if it owns this session.
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         return sidecar
             .forward_permission(session_id, tool_id, decision, reason)
             .await;
     }
 
-    let _ = session_id;
     let decision = match decision.as_str() {
         "allow_once" => PermissionDecision::AllowOnce,
         "allow_always" => PermissionDecision::AllowAlways,
@@ -1247,7 +1279,7 @@ pub async fn respond_permission(
     };
     let sender = {
         let mut pending = state.pending_permissions.lock().await;
-        pending.remove(&tool_id)
+        pending.remove(&(session_id.clone(), tool_id.clone()))
     };
     if let Some(tx) = sender {
         let _ = tx.send(decision);
@@ -1272,7 +1304,7 @@ pub async fn set_approve_writes(
     // already-customized permission mode will clobber that mode. It matches
     // the pre-sidecar in-process semantics, which also treated the two
     // knobs as orthogonal stores with the last-write winning.
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         let mode = if enabled { "acceptEdits" } else { "default" };
         return sidecar
             .forward_set_permission_mode(session_id, mode.to_string())
@@ -1301,7 +1333,7 @@ pub async fn respond_edit(
     merged_content: Option<String>,
 ) -> Result<(), String> {
     // Phase 3 slice C: forward to sidecar if it owns this session.
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         let approved = match decision.as_str() {
             "apply" => true,
             "reject" => false,
@@ -1312,7 +1344,6 @@ pub async fn respond_edit(
             .await;
     }
 
-    let _ = session_id;
     let decision = match decision.as_str() {
         "apply" => EditDecision::Apply { merged_content },
         "reject" => EditDecision::Reject,
@@ -1320,7 +1351,7 @@ pub async fn respond_edit(
     };
     let sender = {
         let mut pending = state.pending_edits.lock().await;
-        pending.remove(&tool_id)
+        pending.remove(&(session_id.clone(), tool_id.clone()))
     };
     if let Some(tx) = sender {
         let _ = tx.send(decision);
@@ -1330,38 +1361,32 @@ pub async fn respond_edit(
     Ok(())
 }
 
-/// F8: drain every parked permission_request and pending_edit prompt as
+/// F8: drain this session's parked permission_request and pending_edit prompts as
 /// denied without killing the agent loop. The tool gates each return a
 /// "User cancelled this tool" result and the loop continues normally.
-///
-/// Limitation: the in-process pending state is a flat map keyed by tool_id
-/// with no session ownership tracking. We drain ALL pending prompts on
-/// cancel — in practice users only have one session waiting on prompts at
-/// a time. Adding per-session ownership is a follow-up if multi-session
-/// concurrent-prompt usage becomes common.
 #[tauri::command]
 pub async fn cancel_pending_tools(
     state: tauri::State<'_, Arc<ApiAgentState>>,
     sidecar: tauri::State<'_, Arc<SidecarManager>>,
     session_id: String,
 ) -> Result<(), String> {
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         return sidecar.forward_cancel_pending_tools(session_id).await;
     }
 
     let perm_senders: Vec<_> = {
         let mut pending = state.pending_permissions.lock().await;
-        pending.drain().collect()
+        drain_session_pending(&mut pending, &session_id)
     };
-    for (_, tx) in perm_senders {
+    for tx in perm_senders {
         let _ = tx.send(PermissionDecision::Deny { reason: None });
     }
 
     let edit_senders: Vec<_> = {
         let mut pending = state.pending_edits.lock().await;
-        pending.drain().collect()
+        drain_session_pending(&mut pending, &session_id)
     };
-    for (_, tx) in edit_senders {
+    for tx in edit_senders {
         let _ = tx.send(EditDecision::Reject);
     }
 
@@ -1380,7 +1405,7 @@ pub async fn retry_last_turn(
     // Phase 3 slice C: forward to sidecar if it owns this session. If the
     // caller asked for a model swap, push that first so the retry uses the
     // new model; then emit the retry frame itself.
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         if let Some(model) = new_model {
             sidecar.forward_set_model(session_id.clone(), model).await?;
         }
@@ -1449,7 +1474,7 @@ pub async fn close_api_agent_session(
     session_id: String,
 ) -> Result<(), String> {
     // Phase 3 slice C: forward to sidecar if it owns this session.
-    if sidecar.owns_session(&session_id) {
+    if sidecar.owns_session(&session_id).await {
         return sidecar.forward_close(session_id).await;
     }
 
@@ -1464,6 +1489,20 @@ pub async fn close_api_agent_session(
     {
         let mut configs = state.configs.lock().await;
         configs.remove(&session_id);
+    }
+    let permission_senders = {
+        let mut pending = state.pending_permissions.lock().await;
+        drain_session_pending(&mut pending, &session_id)
+    };
+    for sender in permission_senders {
+        let _ = sender.send(PermissionDecision::Deny { reason: None });
+    }
+    let edit_senders = {
+        let mut pending = state.pending_edits.lock().await;
+        drain_session_pending(&mut pending, &session_id)
+    };
+    for sender in edit_senders {
+        let _ = sender.send(EditDecision::Reject);
     }
     info!(session_id = %session_id, "API agent session closed");
     Ok(())
@@ -1537,6 +1576,79 @@ fn spawn_executor_cost_rollup(
             }),
         );
     });
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn finish_cancelled_agent_turn(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<ApiAgentState>,
+    session_id: &str,
+    model: &str,
+    source: &str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read: u64,
+    cache_write: u64,
+    hooks_list: &[crate::core::hooks::HookConfig],
+) {
+    let permission_senders = {
+        let mut pending = state.pending_permissions.lock().await;
+        drain_session_pending(&mut pending, session_id)
+    };
+    for sender in permission_senders {
+        let _ = sender.send(PermissionDecision::Deny { reason: None });
+    }
+    let edit_senders = {
+        let mut pending = state.pending_edits.lock().await;
+        drain_session_pending(&mut pending, session_id)
+    };
+    for sender in edit_senders {
+        let _ = sender.send(EditDecision::Reject);
+    }
+
+    let _ = app_handle.emit(
+        &done_event(session_id),
+        DonePayload {
+            input_tokens,
+            output_tokens,
+            cache_read_input_tokens: cache_read,
+            cache_creation_input_tokens: cache_write,
+            cancelled: true,
+        },
+    );
+    let cost = crate::commands::pricing::calculate_cost(
+        model,
+        input_tokens,
+        output_tokens,
+        cache_read,
+        cache_write,
+    );
+    let entry = crate::commands::usage::UsageEntry {
+        ts: crate::commands::usage::current_timestamp_iso(),
+        source: source.to_string(),
+        model: model.to_string(),
+        agent_id: None,
+        session_id: session_id.to_string(),
+        input_tokens,
+        output_tokens,
+        cache_read,
+        cache_write,
+        cost_usd: cost,
+    };
+    if let Err(error) = crate::commands::usage::append_usage_entry(&entry) {
+        warn!(session_id = %session_id, error = %error, "Failed to persist cancelled API-agent usage");
+    }
+    spawn_executor_cost_rollup(
+        app_handle,
+        session_id,
+        model,
+        input_tokens,
+        output_tokens,
+        cache_read,
+        cache_write,
+        cost,
+    );
+    fire_session_end_hooks(hooks_list, session_id).await;
 }
 
 async fn run_agent_loop(
@@ -1615,47 +1727,19 @@ async fn run_agent_loop(
     for iteration in 0..MAX_TOOL_ITERATIONS {
         // Check cancellation
         if cancel_rx.try_recv().is_ok() {
-            mark_attempt_reviewing_for_session(session_id).await;
-            let _ = app_handle.emit(
-                &done_event(session_id),
-                DonePayload {
-                    input_tokens: total_input_tokens,
-                    output_tokens: total_output_tokens,
-                    cache_read_input_tokens: total_cache_read,
-                    cache_creation_input_tokens: total_cache_write,
-                },
-            );
-            let cost = crate::commands::pricing::calculate_cost(
-                &model,
-                total_input_tokens,
-                total_output_tokens,
-                total_cache_read,
-                total_cache_write,
-            );
-            let entry = crate::commands::usage::UsageEntry {
-                ts: crate::commands::usage::current_timestamp_iso(),
-                source: source.to_string(),
-                model: model.clone(),
-                agent_id: None,
-                session_id: session_id.to_string(),
-                input_tokens: total_input_tokens,
-                output_tokens: total_output_tokens,
-                cache_read: total_cache_read,
-                cache_write: total_cache_write,
-                cost_usd: cost,
-            };
-            let _ = crate::commands::usage::append_usage_entry(&entry);
-            spawn_executor_cost_rollup(
+            finish_cancelled_agent_turn(
                 app_handle,
+                state,
                 session_id,
                 &model,
+                source,
                 total_input_tokens,
                 total_output_tokens,
                 total_cache_read,
                 total_cache_write,
-                cost,
-            );
-            fire_session_end_hooks(&all_hooks, session_id).await;
+                &all_hooks,
+            )
+            .await;
             return Ok(());
         }
 
@@ -1716,47 +1800,19 @@ async fn run_agent_loop(
                     // `stream_chat` stops holding the upstream HTTP connection
                     // and pushing into the now-dropped mpsc channel.
                     stream_handle.abort();
-                    mark_attempt_reviewing_for_session(session_id).await;
-                    let _ = app_handle.emit(
-                        &done_event(session_id),
-                        DonePayload {
-                            input_tokens: total_input_tokens,
-                            output_tokens: total_output_tokens,
-                            cache_read_input_tokens: total_cache_read,
-                            cache_creation_input_tokens: total_cache_write,
-                        },
-                    );
-                    let cost = crate::commands::pricing::calculate_cost(
-                        &model,
-                        total_input_tokens,
-                        total_output_tokens,
-                        total_cache_read,
-                        total_cache_write,
-                    );
-                    let entry = crate::commands::usage::UsageEntry {
-                        ts: crate::commands::usage::current_timestamp_iso(),
-                        source: source.to_string(),
-                        model: model.clone(),
-                        agent_id: None,
-                        session_id: session_id.to_string(),
-                        input_tokens: total_input_tokens,
-                        output_tokens: total_output_tokens,
-                        cache_read: total_cache_read,
-                        cache_write: total_cache_write,
-                        cost_usd: cost,
-                    };
-                    let _ = crate::commands::usage::append_usage_entry(&entry);
-                    spawn_executor_cost_rollup(
+                    finish_cancelled_agent_turn(
                         app_handle,
+                        state,
                         session_id,
                         &model,
+                        source,
                         total_input_tokens,
                         total_output_tokens,
                         total_cache_read,
                         total_cache_write,
-                        cost,
-                    );
-                    fire_session_end_hooks(&all_hooks, session_id).await;
+                        &all_hooks,
+                    )
+                    .await;
                     return Ok(());
                 }
                 chunk = rx.recv() => {
@@ -1819,12 +1875,17 @@ async fn run_agent_loop(
             }
         }
 
-        // Wait for the stream task to finish
-        let _ = stream_handle.await;
+        // Wait for the provider result. Provider-level failures that did not
+        // arrive as a StreamChunk are surfaced by the outer loop exactly once.
+        let stream_result = stream_handle
+            .await
+            .map_err(|e| format!("LLM stream task failed: {}", e))?;
 
         if got_error {
-            return Err("LLM returned an error".to_string());
+            // The detailed StreamChunk::Error was already emitted above.
+            return Ok(());
         }
+        stream_result?;
 
         if let Some(assistant_msg) = build_assistant_history_message(&text_content, &tool_calls) {
             let mut histories = state.histories.lock().await;
@@ -1843,6 +1904,7 @@ async fn run_agent_loop(
                     output_tokens: total_output_tokens,
                     cache_read_input_tokens: total_cache_read,
                     cache_creation_input_tokens: total_cache_write,
+                    cancelled: false,
                 },
             );
             let cost = crate::commands::pricing::calculate_cost(
@@ -1864,7 +1926,9 @@ async fn run_agent_loop(
                 cache_write: total_cache_write,
                 cost_usd: cost,
             };
-            let _ = crate::commands::usage::append_usage_entry(&entry);
+            if let Err(error) = crate::commands::usage::append_usage_entry(&entry) {
+                warn!(session_id = %session_id, error = %error, "Failed to persist API-agent usage");
+            }
             spawn_executor_cost_rollup(
                 app_handle,
                 session_id,
@@ -1964,7 +2028,7 @@ async fn run_agent_loop(
                             let (tx, rx) = oneshot::channel::<PermissionDecision>();
                             {
                                 let mut pending = state.pending_permissions.lock().await;
-                                pending.insert(tc.id.clone(), tx);
+                                pending.insert((session_id.clone(), tc.id.clone()), tx);
                             }
                             let _ = app_handle.emit(
                                 &permission_request_event(&session_id),
@@ -2027,7 +2091,7 @@ async fn run_agent_loop(
                                     // Timed out — remove stale entry and deny.
                                     {
                                         let mut pending = state.pending_permissions.lock().await;
-                                        pending.remove(&tc.id);
+                                        pending.remove(&(session_id.clone(), tc.id.clone()));
                                     }
                                     let err = ToolResult {
                                         tool_call_id: tc.id.clone(),
@@ -2146,7 +2210,7 @@ async fn run_agent_loop(
                         let (tx, rx) = oneshot::channel::<EditDecision>();
                         {
                             let mut pending = state.pending_edits.lock().await;
-                            pending.insert(tc.id.clone(), tx);
+                            pending.insert((session_id.clone(), tc.id.clone()), tx);
                         }
                         let _ = app_handle.emit(
                             &pending_edit_event(&session_id),
@@ -2197,7 +2261,7 @@ async fn run_agent_loop(
                             Err(_) => {
                                 {
                                     let mut pending = state.pending_edits.lock().await;
-                                    pending.remove(&tc.id);
+                                    pending.remove(&(session_id.clone(), tc.id.clone()));
                                 }
                                 let err = ToolResult {
                                     tool_call_id: tc.id.clone(),
@@ -2356,7 +2420,29 @@ async fn run_agent_loop(
             })
             .collect();
 
-        let raw_results = futures::future::join_all(futures).await;
+        let raw_results = tokio::select! {
+            _ = &mut cancel_rx => {
+                // Dropping join_all drops every in-flight tool future. Child
+                // processes and network requests owned by those futures can
+                // unwind immediately instead of waiting for the next model
+                // iteration to observe cancellation.
+                finish_cancelled_agent_turn(
+                    app_handle,
+                    state,
+                    session_id,
+                    &model,
+                    source,
+                    total_input_tokens,
+                    total_output_tokens,
+                    total_cache_read,
+                    total_cache_write,
+                    &all_hooks,
+                )
+                .await;
+                return Ok(());
+            }
+            results = futures::future::join_all(futures) => results,
+        };
 
         // Rebuild tool_result_blocks in the original tool_calls order (critical for Anthropic pairing).
         let results_map: HashMap<String, ToolResult> = raw_results.into_iter().collect();
@@ -2400,6 +2486,7 @@ async fn run_agent_loop(
             output_tokens: total_output_tokens,
             cache_read_input_tokens: total_cache_read,
             cache_creation_input_tokens: total_cache_write,
+            cancelled: false,
         },
     );
     let cost = crate::commands::pricing::calculate_cost(
@@ -2421,7 +2508,9 @@ async fn run_agent_loop(
         cache_write: total_cache_write,
         cost_usd: cost,
     };
-    let _ = crate::commands::usage::append_usage_entry(&entry);
+    if let Err(error) = crate::commands::usage::append_usage_entry(&entry) {
+        warn!(session_id = %session_id, error = %error, "Failed to persist API-agent usage");
+    }
     spawn_executor_cost_rollup(
         app_handle,
         session_id,

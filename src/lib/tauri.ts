@@ -761,7 +761,7 @@ export async function listPtySessions(): Promise<
 
 export async function readPtyTranscript(
   sessionId: string,
-): Promise<{ session_id: string; data: string; truncated: boolean }> {
+): Promise<{ session_id: string; data: string; truncated: boolean; sequence?: number }> {
   return invoke("read_pty_transcript", { sessionId });
 }
 
@@ -2308,10 +2308,7 @@ export interface McpServerStatus {
   allowWrites: boolean;
 }
 
-export async function mcpServerStart(
-  port: number,
-  allowWrites: boolean,
-): Promise<McpServerStatus> {
+export async function mcpServerStart(port: number, allowWrites: boolean): Promise<McpServerStatus> {
   return invoke<McpServerStatus>("mcp_server_start", { port, allowWrites });
 }
 

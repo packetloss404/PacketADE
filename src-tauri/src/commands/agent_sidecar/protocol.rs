@@ -182,12 +182,11 @@ impl SidecarManager {
             "content": content,
             "attachments": attachments,
         });
-        let result = self.send_json_for_session(&session_id, req).await;
-        if result.is_err() {
-            self.forget_owned_session(&session_id).await;
-            self.close_remote_session(&session_id).await;
-        }
-        result
+        // Ownership is lifecycle state, not writer availability. The local
+        // supervisor or remote-process waiter clears it authoritatively if the
+        // transport really exited; a transient closed writer must not reroute a
+        // later message into the in-process runtime.
+        self.send_json_for_session(&session_id, req).await
     }
 
     /// Forward a permission decision to the sidecar. `reason`, when set on a
@@ -270,9 +269,10 @@ impl SidecarManager {
         self.send_json_for_session(&session_id, req).await
     }
 
-    /// Forward a cancel request to the sidecar. Does not remove the session
-    /// from `owned_sessions` — the sidecar should emit `done` or `error`
-    /// which will clean up.
+    /// Forward a turn cancel to the sidecar. Cancellation emits an explicit
+    /// `done { cancelled: true }` terminal event but intentionally keeps the
+    /// conversation and (for SSH) its remote sidecar alive for follow-up
+    /// turns. `forward_close` owns lifetime cleanup and releases both routes.
     pub async fn forward_cancel(&self, session_id: String) -> Result<(), String> {
         let req = json!({
             "type": "cancel",
