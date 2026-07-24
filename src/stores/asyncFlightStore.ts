@@ -27,6 +27,8 @@ import {
   syncAsyncAttemptTerminalListeners,
 } from "@/stores/asyncAttemptTerminalListeners";
 import { maybeEscalate, recordAttemptFailure } from "@/lib/flightCoordination";
+import { getDefaultModel, getProviderForAgent } from "@/lib/api-models";
+import type { ServerConfig } from "@/types/server";
 
 export interface AsyncLaunchOptions {
   allowPathCollisions?: boolean;
@@ -72,6 +74,61 @@ interface AsyncFlightStore {
     attemptId: string,
     status: Extract<AttemptStatus, "reviewing" | "completed" | "failed" | "cancelled">,
   ) => Promise<void>;
+
+  /**
+   * E4: relaunch a failed attempt on a different agent. Rebuilds a launch
+   * target from the failed attempt (same repo/branch, the new agent's default
+   * model), records a `handoff` coordination event, and appends a fresh attempt
+   * via `launchAsync`. The failed record is kept for history.
+   */
+  reassignAttempt: (
+    flightId: string,
+    attemptId: string,
+    newAgentConfigId: string,
+  ) => Promise<void>;
+}
+
+/**
+ * E4 (pure): build a launch target from a failed attempt, swapping in a new
+ * agent + its default model, reusing the attempt's repo base / branch. SSH
+ * targets are reconstructed from the saved `ServerConfig` (the Attempt record
+ * intentionally doesn't persist connection details); returns `null` when that
+ * server is no longer configured.
+ */
+export function buildReassignSpec(
+  failed: Attempt,
+  newAgentConfigId: string,
+  lookupServer: (id: string) => ServerConfig | undefined,
+): AttemptTargetSpec | null {
+  const provider = newAgentConfigId.replace(/^api-/, "");
+  const model = getDefaultModel(newAgentConfigId as AgentCli);
+  if (failed.target.kind === "local") {
+    return {
+      kind: "local",
+      basePath: failed.target.basePath,
+      baseBranch: failed.baseBranch,
+      agentConfigId: newAgentConfigId,
+      provider,
+      model,
+    };
+  }
+  const server = lookupServer(failed.target.targetId);
+  if (!server) return null;
+  return {
+    kind: "ssh",
+    targetId: server.id,
+    host: server.host,
+    port: server.port,
+    user: server.username,
+    keyPath: server.keyPath ?? null,
+    authMethod: server.authMethod,
+    hostFingerprint: server.hostFingerprint ?? null,
+    basePath: failed.target.basePath,
+    baseBranch: failed.baseBranch,
+    agentConfigId: newAgentConfigId,
+    provider,
+    model,
+  };
 }
 
 function applyAttemptsToFlightLocal(flightId: string, attempts: Attempt[], prompt: string) {
@@ -718,5 +775,35 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // Flight-completion memory capture. Runs on the terminal-success
     // transition regardless of which attempt outcome triggered it.
     captureFlightCompletionOnTransition(flightId, statusBefore);
+  },
+
+  reassignAttempt: async (flightId, attemptId, newAgentConfigId) => {
+    const flight = useFlightStore.getState().flights.find((f) => f.id === flightId);
+    const failed = flight?.attempts?.find((a) => a.id === attemptId);
+    if (!flight || !failed) return;
+
+    const spec = buildReassignSpec(failed, newAgentConfigId, (id) =>
+      useServerStore.getState().getServer(id),
+    );
+    if (!spec) {
+      console.warn(
+        `reassignAttempt: cannot rebuild target for attempt '${attemptId}' — SSH server no longer configured`,
+      );
+      return;
+    }
+
+    const toLabel = getProviderForAgent(newAgentConfigId as AgentCli)?.name ?? newAgentConfigId;
+    useFlightStore.getState().appendCoordinationEvent(flightId, {
+      type: "handoff",
+      taskId: attemptId,
+      agentId: newAgentConfigId,
+      summary: `Reassigned to ${toLabel} after the ${failed.provider} attempt failed.`,
+      metadata: { reassignedFromAttemptId: attemptId, toAgentId: newAgentConfigId },
+    });
+
+    // Reuse the normal launch path — it provisions a fresh worktree and appends
+    // a new attempt to this flight, leaving the failed record in place.
+    const prompt = flight.prompt ?? flight.objective ?? "";
+    await useAsyncFlightStore.getState().launchAsync(flightId, prompt, [spec]);
   },
 }));
