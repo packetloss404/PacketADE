@@ -25,7 +25,7 @@ import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightMo
 import { AsyncFlightGrid } from "@/components/flights/AsyncFlightGrid";
 import { FlightPlanningCard } from "@/components/flights/FlightPlanningCard";
 import { relativeTime } from "@/lib/time";
-import { summarizeFlightReview } from "@/lib/flightReview";
+import { summarizeFlightAttention, summarizeFlightReview } from "@/lib/flightReview";
 import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
 import type {
   Flight,
@@ -685,12 +685,43 @@ function FlightDetailPane({ flight, status, onLaunchAttempt }: DetailProps) {
 
         <AsyncFlightGrid flight={flight} onLaunch={onLaunchAttempt} />
 
+        <AttentionCard flight={flight} />
+
         <OutputReviewCard flight={flight} />
 
         <div className="grid min-h-[260px] flex-1 grid-cols-1 gap-3 lg:[grid-template-columns:1.4fr_1fr]">
           <MilestonesCard flight={flight} tasks={tasks} />
           <TimelineCard flight={flight} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+// E6: single "needs a human" strip — attempts awaiting review or failed.
+function AttentionCard({ flight }: { flight: Flight }) {
+  const attention = summarizeFlightAttention(flight);
+  if (attention.total === 0) return null;
+  return (
+    <div className="rounded border border-accent-amber/30 bg-accent-amber/10 px-3 py-2">
+      <div className="flex items-center gap-2 text-[11px] font-semibold text-accent-amber">
+        <span>Needs attention</span>
+        <span className="rounded-full bg-accent-amber/20 px-1.5 text-[10px]">{attention.total}</span>
+      </div>
+      <div className="mt-1 flex flex-col gap-0.5 text-[11px] text-text-secondary">
+        {attention.reviewing.length > 0 && (
+          <span>
+            {attention.reviewing.length} attempt{attention.reviewing.length === 1 ? "" : "s"} awaiting
+            review — accept or reject below.
+          </span>
+        )}
+        {attention.failed.map((a) => (
+          <span key={a.id} className="text-text-muted">
+            {a.provider} failed
+            {a.failureCategory ? ` (${a.failureCategory.replace(/_/g, " ")})` : ""} — reassign from
+            the timeline or review the diff.
+          </span>
+        ))}
       </div>
     </div>
   );
