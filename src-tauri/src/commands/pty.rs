@@ -786,88 +786,6 @@ pub async fn ssh_exec(
     Ok(format!("{}{}", stdout, stderr))
 }
 
-/// Test an SSH connection. Returns Ok(()) on success; Err with a human-readable
-/// reason on failure ("Authentication failed", "Could not reach host", etc).
-///
-/// When `host_fingerprint` is Some, SSH is invoked with
-/// `StrictHostKeyChecking=yes` + an `UserKnownHostsFile` pointing at the
-/// app-managed `known_hosts` file. When None (legacy / first-time test),
-/// falls back to `accept-new` for one connection.
-#[tauri::command]
-pub async fn ssh_test_connection(
-    host: String,
-    port: u16,
-    user: String,
-    key_path: Option<String>,
-    password: Option<String>,
-    host_fingerprint: Option<String>,
-) -> Result<(), String> {
-    const SENTINEL: &str = "PACKETCODE_SSH_OK";
-
-    let mut args: Vec<String> = vec![
-        "-p".to_string(),
-        port.to_string(),
-        "-o".to_string(),
-        "ConnectTimeout=8".to_string(),
-        "-o".to_string(),
-        "NumberOfPasswordPrompts=1".to_string(),
-    ];
-
-    if host_fingerprint.is_some() {
-        let kh = crate::core::execution::app_known_hosts_path();
-        args.push("-o".to_string());
-        args.push("StrictHostKeyChecking=yes".to_string());
-        args.push("-o".to_string());
-        args.push(format!("UserKnownHostsFile={}", kh.to_string_lossy()));
-    } else {
-        tracing::warn!(host = %host, port = %port, "ssh_test_connection without pinned fingerprint — TOFU fallback");
-        args.push("-o".to_string());
-        args.push("StrictHostKeyChecking=accept-new".to_string());
-    }
-
-    // If no password, force key-only auth so SSH doesn't hang waiting for a TTY.
-    if password.is_none() {
-        args.push("-o".to_string());
-        args.push("BatchMode=yes".to_string());
-    } else {
-        args.push("-o".to_string());
-        args.push("PreferredAuthentications=password,keyboard-interactive".to_string());
-    }
-
-    if let Some(kp) = key_path.as_ref().filter(|s| !s.trim().is_empty()) {
-        args.push("-i".to_string());
-        args.push(kp.clone());
-    }
-
-    args.push(format!("{}@{}", user, host));
-    args.push(format!("echo {}", SENTINEL));
-
-    let output = ssh_exec(args, password).await?;
-
-    if output.contains(SENTINEL) {
-        return Ok(());
-    }
-
-    // Map common failure patterns to friendly messages.
-    let lower = output.to_lowercase();
-    let msg = if lower.contains("permission denied") || lower.contains("authentication failed") {
-        "Authentication failed — check the password, username, or key path."
-    } else if lower.contains("could not resolve") || lower.contains("name or service not known") {
-        "Could not resolve host — check the hostname."
-    } else if lower.contains("connection refused") {
-        "Connection refused — check the host is reachable on that port."
-    } else if lower.contains("connection timed out") || lower.contains("operation timed out") {
-        "Connection timed out — host may be unreachable or behind a firewall."
-    } else if lower.contains("host key verification failed") {
-        "Host key verification failed — remove the stale entry from known_hosts and retry."
-    } else if output.trim().is_empty() {
-        "SSH did not respond."
-    } else {
-        return Err(output.trim().to_string());
-    };
-    Err(msg.to_string())
-}
-
 /// One discovered host key (algorithm + raw `known_hosts`-format line +
 /// derived SHA256 fingerprint). The frontend shows the fingerprint to the
 /// user for confirmation; the `key` line is what gets appended to the
@@ -1081,9 +999,9 @@ fn resolve_remote_probe_password(
 /// directory, and contains a `.git` directory. Used by the workspace
 /// creation modal for live validation of the "Remote project path" input.
 ///
-/// Times out after 8 seconds. Host-key pinning behaves identically to
-/// `ssh_test_connection`: when `host_fingerprint` is `Some` we use the
-/// app-managed `known_hosts` file with `StrictHostKeyChecking=yes`;
+/// Times out after 8 seconds. Host-key pinning: when `host_fingerprint` is
+/// `Some` we use the app-managed `known_hosts` file with
+/// `StrictHostKeyChecking=yes`;
 /// otherwise we fall back to TOFU `accept-new`. Callers that care about
 /// safety should require a verified fingerprint before invoking this.
 #[allow(clippy::too_many_arguments)]
@@ -1128,7 +1046,7 @@ pub async fn ssh_check_remote_path(
         args.push("StrictHostKeyChecking=accept-new".to_string());
     }
 
-    // Mirror the auth heuristics from ssh_test_connection: if we have a
+    // Auth heuristics: if we have a
     // password to pipe to stdin, allow interactive password auth;
     // otherwise require key-only / BatchMode so SSH cannot hang.
     let pw_in = resolve_remote_probe_password(

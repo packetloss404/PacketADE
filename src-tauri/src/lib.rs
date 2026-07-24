@@ -197,13 +197,10 @@ pub fn run() {
             commands::pty::list_pty_sessions,
             commands::pty::read_pty_transcript,
             commands::pty::ssh_exec,
-            commands::pty::ssh_test_connection,
             commands::pty::ssh_fetch_fingerprint,
             commands::pty::ssh_pin_host,
             commands::pty::ssh_check_remote_path,
             commands::pty::get_app_known_hosts_path,
-            commands::ssh_keys::set_ssh_password,
-            commands::ssh_keys::delete_ssh_password,
             commands::ssh_keys::get_ssh_password_exists,
             // Git
             commands::git::get_git_branch,
@@ -312,7 +309,6 @@ pub fn run() {
             // the Agents pane via the Scout profile).
             commands::insights::ask_agent_chat_stream,
             // Flight chat
-            commands::flight_chat::ask_flight_chat_stream,
             // Side chat (ephemeral context-aware helper)
             commands::side_chat::ask_side_chat_stream,
             // GitHub integration

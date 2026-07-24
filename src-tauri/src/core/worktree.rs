@@ -277,28 +277,32 @@ fn sanitize_trailer_value(s: &str) -> String {
 /// Worktrees have a `.git` *file* (not directory) pointing at the main
 /// repo's `worktrees/<id>` dir; we resolve it via `rev-parse
 /// --git-path hooks` so both styles work.
-async fn install_prepare_commit_msg_hook(
+/// Shared plumbing for installing a `prepare-commit-msg` hook.
+///
+/// Consults the persisted orchestration settings (`load_state` is sync, so it
+/// runs on a worker thread to keep the file I/O off the tokio executor),
+/// honors the `auto_commit_trailer_enabled` toggle, resolves the
+/// worktree-scoped hooks dir (`git rev-parse --git-path hooks`, falling back to
+/// `.git/hooks`), writes the script produced by `build_script`, and makes it
+/// executable on Unix (Windows' MSYS sh honours the shebang, so the missing +x
+/// bit is fine there). `build_script` receives the loaded settings — the flight
+/// variant needs `auto_commit_trailer_format`, the issue variant ignores it —
+/// and is only invoked when the toggle is enabled. Returns the written hook
+/// path, or `None` when installation was skipped because the toggle is off.
+async fn write_prepare_commit_msg_hook(
     worktree_path: &str,
-    attempt_id: &str,
-    flight: &WorktreeFlight,
-) -> Result<(), String> {
-    // v0.8: consult the persisted orchestration settings. `load_state`
-    // is sync; running it on a worker thread keeps us off the tokio
-    // executor for the file I/O. Failures degrade to defaults — we'd
-    // rather install the hook with the canonical format than skip
-    // installation because a settings read hiccuped.
+    skip_note: &str,
+    build_script: impl FnOnce(&crate::core::orchestrator::OrchestratorSettings) -> String,
+) -> Result<Option<std::path::PathBuf>, String> {
     let settings = tokio::task::spawn_blocking(|| crate::core::storage::load_state().settings)
         .await
         .map_err(|e| format!("settings load join error: {}", e))?;
 
     if !settings.auto_commit_trailer_enabled {
-        info!(path = %worktree_path, "Auto-trailer disabled in settings; skipping hook install");
-        return Ok(());
+        info!(path = %worktree_path, "{}", skip_note);
+        return Ok(None);
     }
 
-    // Resolve the hooks dir for this worktree. `git rev-parse --git-path
-    // hooks` returns the worktree-scoped hooks directory if it exists,
-    // falling back to `.git/hooks`.
     let (stdout, _, code) =
         run_local_git(worktree_path, &["rev-parse", "--git-path", "hooks"]).await?;
     if code != 0 {
@@ -312,8 +316,7 @@ async fn install_prepare_commit_msg_hook(
         return Err("git rev-parse returned empty hooks path".to_string());
     }
     // `rel` is relative to the worktree CWD. Join manually rather than
-    // depending on `std::path::PathBuf::is_absolute` behaviour across
-    // platforms.
+    // depending on `std::path::PathBuf::is_absolute` behaviour across platforms.
     let hooks_dir = if std::path::Path::new(rel).is_absolute() {
         std::path::PathBuf::from(rel)
     } else {
@@ -325,7 +328,30 @@ async fn install_prepare_commit_msg_hook(
     }
 
     let hook_path = hooks_dir.join("prepare-commit-msg");
+    let script = build_script(&settings);
+    if let Err(e) = std::fs::write(&hook_path, script) {
+        return Err(format!("write {:?} failed: {}", hook_path, e));
+    }
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&hook_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            if let Err(e) = std::fs::set_permissions(&hook_path, perms) {
+                warn!(path = ?hook_path, error = %e, "chmod +x on hook failed (non-fatal)");
+            }
+        }
+    }
+    Ok(Some(hook_path))
+}
+
+async fn install_prepare_commit_msg_hook(
+    worktree_path: &str,
+    attempt_id: &str,
+    flight: &WorktreeFlight,
+) -> Result<(), String> {
     // Flight metadata: prefer explicit values from the caller, fall
     // back to the legacy worktree-grandparent-name heuristic for the
     // flight id, and finally to `"unknown"`. Title defaults to empty.
@@ -342,66 +368,56 @@ async fn install_prepare_commit_msg_hook(
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "unknown".to_string())
         });
-    let flight_title = flight.flight_title.as_deref().unwrap_or("");
+    let flight_title = flight.flight_title.as_deref().unwrap_or("").to_string();
 
     let flight_id_safe = sanitize_trailer_value(&flight_id);
     let attempt_id_safe = sanitize_trailer_value(attempt_id);
-    let flight_title_safe = sanitize_trailer_value(flight_title);
-
-    let trailer_line = sanitize_trailer_value(&render_trailer_format(
-        &settings.auto_commit_trailer_format,
-        &flight_id_safe,
-        &attempt_id_safe,
-        &flight_title_safe,
-    ));
+    let flight_title_safe = sanitize_trailer_value(&flight_title);
 
     // Hook script. POSIX-sh; Git for Windows runs MSYS sh against the
     // shebang. Use a `case` rather than `grep -q` to keep the script
     // dependency-free. The trailer is injected into a single-quoted
-    // `printf` arg so `$VAR` / backticks inside the trailer are
-    // literal. We strip quotes from the trailer up front so the
-    // single-quoted literal can't be broken out of.
-    let script = format!(
-        "#!/bin/sh\n\
-         # PacketADE auto-trailer — appended to commits made inside this worktree.\n\
-         # v0.8: installed by core/worktree.rs::install_prepare_commit_msg_hook.\n\
-         FILE=\"$1\"\n\
-         MSG=$(cat \"$FILE\")\n\
-         case \"$MSG\" in\n\
-           *\"Run-By: PacketADE\"*) exit 0 ;;\n\
-         esac\n\
-         printf '\\n%s\\n' '{trailer}' >> \"$FILE\"\n",
-        trailer = trailer_line,
-    );
+    // `printf` arg so `$VAR` / backticks inside the trailer are literal. We
+    // strip quotes from the trailer up front so the single-quoted literal
+    // can't be broken out of.
+    let installed = write_prepare_commit_msg_hook(
+        worktree_path,
+        "Auto-trailer disabled in settings; skipping hook install",
+        |settings| {
+            let trailer_line = sanitize_trailer_value(&render_trailer_format(
+                &settings.auto_commit_trailer_format,
+                &flight_id_safe,
+                &attempt_id_safe,
+                &flight_title_safe,
+            ));
+            format!(
+                "#!/bin/sh\n\
+                 # PacketADE auto-trailer — appended to commits made inside this worktree.\n\
+                 # v0.8: installed by core/worktree.rs::install_prepare_commit_msg_hook.\n\
+                 FILE=\"$1\"\n\
+                 MSG=$(cat \"$FILE\")\n\
+                 case \"$MSG\" in\n\
+                   *\"Run-By: PacketADE\"*) exit 0 ;;\n\
+                 esac\n\
+                 printf '\\n%s\\n' '{trailer}' >> \"$FILE\"\n",
+                trailer = trailer_line,
+            )
+        },
+    )
+    .await?;
 
-    if let Err(e) = std::fs::write(&hook_path, script) {
-        return Err(format!("write {:?} failed: {}", hook_path, e));
+    // TODO(v0.8-16): consider also dropping a `prepare-commit-msg.cmd` shim for
+    // environments where the MSYS sh shim is missing from PATH. The native Git
+    // for Windows install always ships it, so this is a low-priority follow-up.
+
+    if let Some(hook_path) = installed {
+        info!(
+            path = ?hook_path,
+            flight = %flight_id_safe,
+            attempt = %attempt_id_safe,
+            "Installed prepare-commit-msg auto-trailer hook",
+        );
     }
-
-    // POSIX: make executable. Windows: git's MSYS shell honours the
-    // shebang directly, so the missing +x bit is fine.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(&hook_path) {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o755);
-            if let Err(e) = std::fs::set_permissions(&hook_path, perms) {
-                warn!(path = ?hook_path, error = %e, "chmod +x on hook failed (non-fatal)");
-            }
-        }
-    }
-    // TODO(v0.8-16): consider also dropping a
-    // `prepare-commit-msg.cmd` shim for environments where the MSYS sh
-    // shim is missing from PATH. The native Git for Windows install
-    // always ships it, so this is a low-priority follow-up.
-
-    info!(
-        path = ?hook_path,
-        flight = %flight_id_safe,
-        attempt = %attempt_id_safe,
-        "Installed prepare-commit-msg auto-trailer hook",
-    );
     Ok(())
 }
 
@@ -426,93 +442,52 @@ async fn install_prepare_commit_msg_hook_for_issue(
     worktree_path: &str,
     issue: &WorktreeIssue,
 ) -> Result<(), String> {
-    let settings = tokio::task::spawn_blocking(|| crate::core::storage::load_state().settings)
-        .await
-        .map_err(|e| format!("settings load join error: {}", e))?;
-
-    if !settings.auto_commit_trailer_enabled {
-        info!(path = %worktree_path, "Auto-trailer disabled in settings; skipping issue hook install");
-        return Ok(());
-    }
-
-    let (stdout, _, code) =
-        run_local_git(worktree_path, &["rev-parse", "--git-path", "hooks"]).await?;
-    if code != 0 {
-        return Err(format!(
-            "git rev-parse --git-path hooks failed (exit {})",
-            code
-        ));
-    }
-    let rel = stdout.trim();
-    if rel.is_empty() {
-        return Err("git rev-parse returned empty hooks path".to_string());
-    }
-    let hooks_dir = if std::path::Path::new(rel).is_absolute() {
-        std::path::PathBuf::from(rel)
-    } else {
-        std::path::PathBuf::from(worktree_path).join(rel)
-    };
-
-    if let Err(e) = std::fs::create_dir_all(&hooks_dir) {
-        return Err(format!("create_dir_all({:?}) failed: {}", hooks_dir, e));
-    }
-
-    let hook_path = hooks_dir.join("prepare-commit-msg");
-
     let issue_id_safe = sanitize_trailer_value(&issue.issue_id);
     let issue_number = issue.issue_number;
 
-    let fixes_trailer = format!("Fixes #{}", issue_number);
-    let run_by_trailer = format!("Run-By: PacketADE issue I-{}", issue_id_safe);
-
-    // Hook script. Two idempotency checks via `case` glob:
+    // Hook script. Two idempotency checks:
     //   - skip the `Fixes #N` write if the message already contains it
     //     (word-boundary anchored via grep -E so `Fixes #4` doesn't match
     //     a pre-existing `Fixes #42`)
     //   - skip the `Run-By` write if any existing `Run-By: PacketADE` line
     //     is present (so amended commits don't stack lineage trailers)
     //
-    // Single-quoted printf literals — `$` / backticks inside the
-    // sanitized values are already neutralised by sanitize_trailer_value().
-    let script = format!(
-        "#!/bin/sh\n\
-         # PacketADE auto-trailer (issue v0.8.5) — appended to commits made inside this issue worktree.\n\
-         FILE=\"$1\"\n\
-         MSG=$(cat \"$FILE\")\n\
-         if ! printf '%s' \"$MSG\" | grep -Eq '(^|[^0-9])Fixes #{number}([^0-9]|$)'; then\n\
-           printf '\\n%s\\n' '{fixes}' >> \"$FILE\"\n\
-         fi\n\
-         case \"$MSG\" in\n\
-           *\"Run-By: PacketADE\"*) ;;\n\
-           *) printf '%s\\n' '{run_by}' >> \"$FILE\" ;;\n\
-         esac\n",
-        number = issue_number,
-        fixes = fixes_trailer,
-        run_by = run_by_trailer,
-    );
+    // Single-quoted printf literals — `$` / backticks inside the sanitized
+    // values are already neutralised by sanitize_trailer_value().
+    let installed = write_prepare_commit_msg_hook(
+        worktree_path,
+        "Auto-trailer disabled in settings; skipping issue hook install",
+        |_settings| {
+            let fixes_trailer = format!("Fixes #{}", issue_number);
+            let run_by_trailer = format!("Run-By: PacketADE issue I-{}", issue_id_safe);
+            format!(
+                "#!/bin/sh\n\
+                 # PacketADE auto-trailer (issue v0.8.5) — appended to commits made inside this issue worktree.\n\
+                 FILE=\"$1\"\n\
+                 MSG=$(cat \"$FILE\")\n\
+                 if ! printf '%s' \"$MSG\" | grep -Eq '(^|[^0-9])Fixes #{number}([^0-9]|$)'; then\n\
+                   printf '\\n%s\\n' '{fixes}' >> \"$FILE\"\n\
+                 fi\n\
+                 case \"$MSG\" in\n\
+                   *\"Run-By: PacketADE\"*) ;;\n\
+                   *) printf '%s\\n' '{run_by}' >> \"$FILE\" ;;\n\
+                 esac\n",
+                number = issue_number,
+                fixes = fixes_trailer,
+                run_by = run_by_trailer,
+            )
+        },
+    )
+    .await?;
 
-    if let Err(e) = std::fs::write(&hook_path, script) {
-        return Err(format!("write {:?} failed: {}", hook_path, e));
+    if let Some(hook_path) = installed {
+        info!(
+            path = ?hook_path,
+            issue = %issue_id_safe,
+            number = issue_number,
+            "Installed prepare-commit-msg auto-trailer hook (issue)",
+        );
     }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(&hook_path) {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o755);
-            if let Err(e) = std::fs::set_permissions(&hook_path, perms) {
-                warn!(path = ?hook_path, error = %e, "chmod +x on issue hook failed (non-fatal)");
-            }
-        }
-    }
-
-    info!(
-        path = ?hook_path,
-        issue = %issue_id_safe,
-        number = issue_number,
-        "Installed prepare-commit-msg auto-trailer hook (issue)",
-    );
     Ok(())
 }
 

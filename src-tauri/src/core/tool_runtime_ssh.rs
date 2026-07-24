@@ -264,24 +264,6 @@ pub async fn execute_read_file(
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Pick a heredoc terminator that does not appear in `content`. Tries a
-/// random suffix; if (vanishingly unlikely) it collides with the content,
-/// extends the suffix and retries.
-fn pick_heredoc_terminator(content: &str) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let mut suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    loop {
-        let candidate = format!("PACKETCODE_EOF_{:x}", suffix);
-        if !content.contains(&candidate) {
-            return candidate;
-        }
-        suffix = suffix.wrapping_mul(31).wrapping_add(7);
-    }
-}
-
 pub async fn execute_write_file(
     args: &serde_json::Value,
     config: &SshConfig,
@@ -300,7 +282,7 @@ pub async fn execute_write_file(
 
     // Embed the content via a single-quoted heredoc so we don't depend on
     // the SSH stdin (which may be carrying the password).
-    let eof = pick_heredoc_terminator(content);
+    let eof = crate::core::shared::pick_heredoc_terminator(content, "PACKETADE_EOF_");
     // Confine the nearest existing ancestor before creation, then create and
     // re-confine the final parent/leaf immediately before writing. The `cat >
     // ... <<'EOF'` and its heredoc body must stay adjacent and untouched.
