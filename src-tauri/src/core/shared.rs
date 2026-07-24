@@ -66,3 +66,27 @@ pub const SKIP_DIRS: &[&str] = &[
 
 /// Maximum allowed size for PTY write payloads (64 KB).
 pub const MAX_PTY_WRITE_SIZE: usize = 65_536;
+
+/// Pick a heredoc terminator (with the given `prefix`) that does not appear in
+/// `content`.
+///
+/// The suffix is seeded from OS randomness (`RandomState`, no RNG dependency)
+/// so the terminator is not predictable from the payload — a crafted payload
+/// cannot embed the terminator to break out of the heredoc — then the loop
+/// guarantees the chosen terminator is absent from `content` so the heredoc
+/// always closes correctly.
+pub fn pick_heredoc_terminator(content: &str, prefix: &str) -> String {
+    use std::hash::{BuildHasher, Hasher};
+    // A fresh RandomState carries per-instance random keys; hashing empty input
+    // yields a different value on every call.
+    let mut suffix = std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish();
+    loop {
+        let candidate = format!("{prefix}{suffix:x}");
+        if !content.contains(&candidate) {
+            return candidate;
+        }
+        suffix = suffix.wrapping_mul(31).wrapping_add(7);
+    }
+}

@@ -84,45 +84,6 @@ pub fn load_ssh_password(target_id: &str) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub async fn set_ssh_password(target_id: String, password: String) -> Result<(), String> {
-    if target_id.trim().is_empty() {
-        return Err("target_id cannot be empty".to_string());
-    }
-    let entry =
-        keyring_entry(&target_id).ok_or_else(|| "Credential store unavailable".to_string())?;
-    entry
-        .set_password(&password)
-        .map_err(|e| format!("Failed to store SSH password: {}", e))?;
-    info!(target = %target_id, "SSH password stored");
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn delete_ssh_password(target_id: String) -> Result<(), String> {
-    let mut first_error: Option<String> = None;
-    let mut deleted = false;
-    for entry in [keyring_entry(&target_id), legacy_keyring_entry(&target_id)]
-        .into_iter()
-        .flatten()
-    {
-        match entry.delete_credential() {
-            Ok(()) => deleted = true,
-            Err(keyring::Error::NoEntry) => {}
-            Err(e) if first_error.is_none() => first_error = Some(e.to_string()),
-            Err(_) => {}
-        }
-    }
-    if let Some(e) = first_error {
-        Err(format!("Failed to delete SSH password: {}", e))
-    } else {
-        if deleted {
-            info!(target = %target_id, "SSH password deleted");
-        }
-        Ok(())
-    }
-}
-
-#[tauri::command]
 pub async fn get_ssh_password_exists(target_id: String) -> Result<bool, String> {
     let entry = match keyring_entry(&target_id) {
         Some(e) => e,

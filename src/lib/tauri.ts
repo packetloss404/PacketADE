@@ -770,24 +770,6 @@ export async function sshExec(commandArgs: string[], password?: string | null): 
   return invoke<string>("ssh_exec", { commandArgs, password: password ?? null });
 }
 
-export async function sshTestConnection(args: {
-  host: string;
-  port: number;
-  user: string;
-  keyPath?: string | null;
-  password?: string | null;
-  hostFingerprint?: string | null;
-}): Promise<void> {
-  return invoke("ssh_test_connection", {
-    host: args.host,
-    port: args.port,
-    user: args.user,
-    keyPath: args.keyPath ?? null,
-    password: args.password ?? null,
-    hostFingerprint: args.hostFingerprint ?? null,
-  });
-}
-
 /** One discovered SSH host key — matches `commands::pty::HostKey`. */
 export interface HostKey {
   algorithm: string;
@@ -851,14 +833,6 @@ export async function sshCheckRemotePath(args: {
     hostFingerprint: args.hostFingerprint ?? null,
     remotePath: args.remotePath,
   });
-}
-
-export async function setSshPassword(targetId: string, password: string): Promise<void> {
-  return invoke("set_ssh_password", { targetId, password });
-}
-
-export async function deleteSshPassword(targetId: string): Promise<void> {
-  return invoke("delete_ssh_password", { targetId });
 }
 
 export async function getSshPasswordExists(targetId: string): Promise<boolean> {

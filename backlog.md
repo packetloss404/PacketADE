@@ -85,27 +85,15 @@ them up before that gate clears.
   wrapper (`src/lib/tauri.ts`) exists but nothing invokes it. Surface a "Clone
   to remote workspace" action in `WorkspaceCreationModal` / ServersView, or
   remove the binding.
-- **P3 — Dead Tauri commands.** `get_ssh_password_exists` has a live caller and
-  `ssh_check_remote_path` now uses the internal keyring loader directly. The
-  remaining three commands — `set_ssh_password`, `delete_ssh_password`, and
-  `ssh_test_connection` — still have no callers beyond their `tauri.ts`
-  wrappers. Either surface them in Servers settings or remove the bindings.
 - **P3 — Rename `target_id` → `server_id` across the wire.** Field name
   kept for in-flight back-compat (see `src/lib/tauri.ts:1331-1336`).
 - **P3 — `resumeApiConversation` partial live-config lookup.** Resolves
   `port` / `keyPath` / `hostFingerprint` from live `ServerConfig` but uses
   persisted `host` / `user` / `remotePath`. If a user renames or repoints
   the server, resume hits the old host.
-- **P3 — Sentinel rename.** `src-tauri/src/commands/pty.rs`
-  `PACKETCODE_SSH_OK` and `src-tauri/src/core/tool_runtime_ssh.rs`
-  `PACKETCODE_EOF_*` still use the old brand. (Still open as of 2026-07-16 —
-  verified both sentinels remain; the earlier "fixed by H4" note was premature.
-  Internal-only sentinels, so cosmetic, but rename for brand consistency.)
 - **P3 — `cancel_flight_attempt` fingerprint asymmetry**
   (`src-tauri/src/commands/flight_attempts.rs:330-342`) — cleanup deferred
   to FE, which carries fingerprint correctly.
-- **P3 — Heredoc terminator predictability** — use random hex suffix
-  instead of unix-nanos.
 - **P3 — `keyPath` argv hygiene** — reject paths with non-printable / shell
   metacharacters at `ServerFormModal` save.
 - **P3 — SFTP / port-forward / file size cap (Phase 4.3).** Files currently
@@ -164,12 +152,6 @@ user-launched. It does not restore Planner v1's autonomous runtime.
   surfacing the error, so they remain visible and controllable. A future wire
   result should report per-target success/failure directly instead of requiring
   recovery by diffing the persisted Attempt set.
-- **P2 — remove or re-surface two zero-caller backend families after the product
-  decision:** `commands/flight_chat.rs` (`ask_flight_chat_stream`) and the
-  legacy task-orchestration Tauri commands in `commands/orchestration.rs` have
-  no frontend callers. The latter's settings data is still consumed by
-  worktree trailer generation, so separate settings persistence from the dead
-  task scheduler before deleting it.
 - **P3 — migrate or prune orphaned Planner data.** Legacy `planner_*` fields,
   approval records, and `missions/` journals are retained only so old state
   remains readable after Planner v1's removal. Define an eager migration and
@@ -186,26 +168,26 @@ are met.
 
 **Lazy read-side fallbacks (3 items).** All are deserialize-/read-time
 only: they re-emit the canonical `flightId` key the *next* time that record is
-persisted. There is no eager one-shot migration pass, so a record that is loaded
-but never re-saved keeps its legacy key on disk indefinitely.
+persisted.
 
 - **2 Rust `#[serde(alias = "missionId")]`** aliases on the legacy persisted
   Flight-approval DTO/record: `api/mod.rs` and `core/flight.rs`.
 - **1 frontend store read shim:** `issueStore.ts` (`flightId` falls back to the
   legacy `missionId` key).
 
-*Removal criteria:* no removal timeline exists today and none is
-implied by the code. Do NOT phrase removal as "after release X all data is
-migrated" — that is false here because these are lazy fallbacks with no eager
-pass, so never-touched records keep legacy keys forever. Removable only after
-(a) a one-shot eager migration ships that walks all persisted
-issues/approval records and rewrites them with canonical `flightId`
-keys, AND (b) at least one release cycle passes for that migration to run on
-users' machines. Earliest realistic target is the 1.0.0 cut (per SemVer, removals
-belong at a major bump; pre-1.0 the 0.x→0.(x+1)/1.0 cut is the legitimate window).
-Without the eager pass, removal silently drops the flight binding on any record
-not re-saved since the rename. **Action item:** build the eager mission→flight
-on-disk migration pass and gate removal on it shipping + one release.
+**Eager migration shipped 2026-07-24.** The one-shot passes now exist:
+`core::migration::migrate_mission_to_flight` re-saves persisted state when the
+raw file still carries a `missionId` key (canonicalizing flight-approval
+records), and `migrateIssuesMissionToFlight` in `lib/storage-migration.ts`
+rewrites the `missionId` link on `packetade:issues`. Both are guarded/idempotent
+and run at startup.
+
+*Removal criteria:* the eager-migration prerequisite (a) is now **met**. The
+three fallbacks are removable once **(b) at least one release cycle ships with
+the migration** so it has run on users' machines. Earliest realistic target is
+the 1.0.0 cut (per SemVer, removals belong at a major bump). Until that release
+has shipped, keep the aliases/shim so a machine that hasn't yet run the migration
+still loads legacy data losslessly.
 
 ## GitHub pane v0.9+ (from v0.8 deferrals)
 
@@ -268,36 +250,15 @@ Only unresolved follow-ups remain here; shipped audit work is in `CHANGELOG.md`.
 
 ### LLM provider stack
 
-- **P3 — Brand violation in `core/llm_system_prompt.rs:57`.**
-  `BASE_SYSTEM_PROMPT` hardcodes `"PacketADE"` instead of using
-  `brand::APP_NAME`. Switch to `format!`.
 - **P3 — Ollama usage discovery.** MiniMax now requests usage, but older Ollama
   builds reject the same option. Detect supported Ollama versions/capabilities
   before enabling it so local token/cost reporting is not permanently zero.
 
 ### Tool runtime
 
-- **P3 — `tool_subagent.rs` + `tool_custom_agent.rs` ~80 LoC dedupe.**
-  Both files share ~80% structure (collect_response, message-loop,
-  build/exec/dispatch). Extract a shared `agent_loop(provider, tools,
-  system_prompt, model, max_tokens, parent_target)` helper.
-- **P3 — `tool_pull_request.rs:124` orphan PR body tempfile on cancel
-  or crash.** `gh pr create` killed mid-flight leaves
-  `.pkt-pr-body-*.md` files behind. Switch to
-  `tempfile::NamedTempFile` so the file is dropped on scope exit.
-- **P3 — `tool_pull_request.rs:301-314` duplicates
-  `pick_heredoc_terminator` from `tool_runtime_ssh.rs:136-149`** —
-  hoist into `core::shared` (already pairs with the existing
-  `PACKETCODE_EOF_` rename backlog item).
 
 ### MCP / workspace / runtime
 
-- **P3 — `worktree.rs` ~120 LoC dedup.** 1,033 LoC file;
-  `install_prepare_commit_msg_hook` and
-  `install_prepare_commit_msg_hook_for_issue` are ~95% duplicated
-  (settings load, hooks-dir resolution, dir create, chmod, write).
-  Extract a shared `write_hook_script(worktree_path, script_body)`
-  helper.
 - **P3 — `worktree.rs` `attempt_id` ASCII sanitization.** Today the
   callers always pass UUIDs from `orchestrator.rs` / `commands/git.rs`,
   but the public function has no defence-in-depth. Tighten to

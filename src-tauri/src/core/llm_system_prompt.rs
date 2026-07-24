@@ -10,7 +10,7 @@ use std::path::Path;
 /// the PACKETCODE_DONE sentinel instruction so the Flight Deck
 /// AttemptTile can flip from Running to Reviewing.
 pub fn build_system_prompt(project_path: &str) -> String {
-    let mut prompt = BASE_SYSTEM_PROMPT.to_string();
+    let mut prompt = BASE_SYSTEM_PROMPT.replacen("{app}", crate::core::brand::APP_NAME, 1);
 
     prompt.push_str(&format!(
         "\n\n## Workspace\n\nYou are working in: `{}`\n",
@@ -54,7 +54,7 @@ fn truncate_utf8(s: &str, max_bytes: usize) -> &str {
     &s[..boundary]
 }
 
-const BASE_SYSTEM_PROMPT: &str = r#"You are an expert software engineer working as an AI coding assistant inside PacketADE, a desktop agent development environment. You have file/shell tools and run inside a real workspace.
+const BASE_SYSTEM_PROMPT: &str = r#"You are an expert software engineer working as an AI coding assistant inside {app}, a desktop agent development environment. You have file/shell tools and run inside a real workspace.
 
 ## Communication style
 

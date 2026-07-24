@@ -9,15 +9,10 @@
 use crate::commands::custom_agents::{discover_custom_agents, CustomAgentDef};
 use crate::core::execution::ExecutionTarget;
 use crate::core::llm_provider::get_provider;
-use crate::core::llm_types::{
-    ChatMessage, ChatRole, ContentBlock, LlmRequest, MessageContent, StreamChunk, ToolCall,
-    ToolDefinition,
-};
+use crate::core::llm_types::ToolDefinition;
 use crate::core::tool_runtime;
-use tokio::sync::mpsc;
 
 const DEFAULT_MODEL: &str = "claude-haiku-4-5";
-const MAX_ITERATIONS: usize = 8;
 const TOOL_PREFIX: &str = "agent_";
 
 /// Default tool allowlist when an agent's frontmatter `tools` array is
@@ -120,36 +115,6 @@ async fn build_allowed_tools(agent: &CustomAgentDef) -> Vec<ToolDefinition> {
     tools
 }
 
-/// Drain a `StreamChunk` receiver into (assistant text, tool calls).
-async fn collect_response(
-    mut rx: mpsc::Receiver<StreamChunk>,
-) -> Result<(String, Vec<ToolCall>), String> {
-    let mut text = String::new();
-    let mut tool_calls: Vec<ToolCall> = Vec::new();
-
-    while let Some(chunk) = rx.recv().await {
-        match chunk {
-            StreamChunk::TextDelta { text: t } => text.push_str(&t),
-            StreamChunk::ToolUseEnd {
-                id,
-                name,
-                arguments,
-            } => {
-                tool_calls.push(ToolCall {
-                    id,
-                    name,
-                    arguments,
-                });
-            }
-            StreamChunk::Error { message } => return Err(message),
-            StreamChunk::Done { .. } => break,
-            _ => {}
-        }
-    }
-
-    Ok((text, tool_calls))
-}
-
 /// Tool entry-point for `agent_*` invocations dispatched from `tool_runtime::execute_tool`.
 #[allow(dead_code)]
 pub async fn execute_custom_agent(
@@ -192,84 +157,19 @@ pub async fn execute_custom_agent(
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
 
-    let mut messages: Vec<ChatMessage> = vec![ChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::text(task),
-    }];
-
-    let mut final_text = String::new();
-
-    for _ in 0..MAX_ITERATIONS {
-        let request = LlmRequest {
-            model: model.clone(),
-            messages: messages.clone(),
-            tools: tools.clone(),
-            system_prompt: Some(agent.system_prompt.clone()),
-            max_tokens: 4096,
-            temperature: None,
-            attachments: Vec::new(),
-            thinking_enabled: false,
-            thinking_budget_tokens: 0,
-        };
-
-        let (tx, rx) = mpsc::channel::<StreamChunk>(64);
-        let provider_ref = &*provider;
-        let stream_fut = provider_ref.stream_chat(&api_key, request, tx);
-        let collect_fut = collect_response(rx);
-
-        let (stream_res, collected) = tokio::join!(stream_fut, collect_fut);
-        stream_res?;
-        let (assistant_text, tool_calls) = collected?;
-
-        let mut blocks: Vec<ContentBlock> = Vec::new();
-        if !assistant_text.is_empty() {
-            blocks.push(ContentBlock::Text {
-                text: assistant_text.clone(),
-            });
-        }
-        for call in &tool_calls {
-            blocks.push(ContentBlock::ToolUse {
-                id: call.id.clone(),
-                name: call.name.clone(),
-                arguments: call.arguments.clone(),
-            });
-        }
-
-        if tool_calls.is_empty() {
-            final_text = assistant_text;
-            break;
-        }
-
-        messages.push(ChatMessage {
-            role: ChatRole::Assistant,
-            content: MessageContent::Blocks(blocks),
-        });
-
-        let mut result_blocks: Vec<ContentBlock> = Vec::with_capacity(tool_calls.len());
-        for call in tool_calls {
-            // Recurses into execute_tool — caller boxes this future.
-            let result = tool_runtime::execute_tool(&call, parent_target).await;
-            result_blocks.push(ContentBlock::ToolResult {
-                tool_call_id: result.tool_call_id,
-                content: result.content,
-                is_error: result.is_error,
-            });
-        }
-        messages.push(ChatMessage {
-            role: ChatRole::Tool,
-            content: MessageContent::Blocks(result_blocks),
-        });
-
-        if !assistant_text.is_empty() {
-            final_text = assistant_text;
-        }
-    }
-
-    if final_text.trim().is_empty() {
-        Err("Custom agent finished without producing output".to_string())
-    } else {
-        Ok(final_text)
-    }
+    // `_depth_guard` (acquired above) stays alive across the whole loop.
+    crate::core::tool_subagent::run_agent_loop(
+        &*provider,
+        &api_key,
+        model,
+        agent.system_prompt.clone(),
+        tools,
+        4096,
+        task,
+        parent_target,
+        "Custom agent finished without producing output",
+    )
+    .await
 }
 
 #[cfg(test)]

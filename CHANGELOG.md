@@ -35,6 +35,34 @@ task list.
   bumped **v6 → v7** (negotiation stays warn-only). `planner_status` /
   `flight_approvals` persisted fields are kept read-only so old users' state
   still loads losslessly. See `backlog.md` → Flight Planner backend.
+- **Backlog cleanup batch (`chore/backlog-cleanup-loop`).** Closed the
+  self-contained cleanup items: the API-agent system prompt now injects
+  `brand::APP_NAME` instead of hardcoding the name; internal SSH/heredoc
+  sentinels renamed to `PACKETADE_*` with the heredoc terminator hoisted into
+  `core::shared` and seeded from OS randomness so it is no longer predictable
+  from the payload; the local PR-body temp file is now removed via an RAII
+  guard (survives async cancellation/panic); the dead `set_ssh_password`,
+  `delete_ssh_password`, and `ssh_test_connection` commands and the zero-caller
+  `ask_flight_chat_stream` flight-chat feature were removed; and the worktree
+  hook installers (~120 LoC) and sub-agent/custom-agent loops (~80 LoC) were
+  de-duplicated into shared helpers.
+- **Removed the legacy task-orchestration scheduler.** Deleted the zero-caller
+  `commands/orchestration.rs` command family (launch/pause/resume/cancel/tick/
+  record-spawn/notify-\* — no frontend callers) plus the `SharedOrchestrator`
+  managed state and its DTOs, and untangled `commands/state.rs` from it
+  (`save_settings_slice` now just persists to disk; everything reads settings
+  fresh via `load_state`). The `core::orchestrator` scheduler engine was pruned
+  to just `OrchestratorSettings` + a free `recover_flights_on_startup` function,
+  which lib.rs now calls directly at launch so post-restart flight/task
+  normalization is preserved exactly.
+- **Eager Mission→Flight migration.** Added one-shot startup passes that rewrite
+  the legacy `missionId` key to the canonical `flightId`:
+  `core::migration::migrate_mission_to_flight` re-saves persisted state when the
+  raw file still carries a `missionId` (canonicalizing flight-approval records),
+  and `migrateIssuesMissionToFlight` rewrites the link on `packetade:issues`.
+  Both are guarded/idempotent. This is the eager pass the read-side
+  `#[serde(alias = "missionId")]` / `issueStore` fallbacks needed before they can
+  be retired (one release cycle later). See `backlog.md` → Mission→Flight.
 
 ### Fixed
 

@@ -43,3 +43,51 @@ export function migrateLegacyStorage(): void {
     console.warn("[storage-migration] migration failed", e);
   }
 }
+
+const ISSUES_KEY = STORAGE_PREFIX + "issues";
+const MISSION_TO_FLIGHT_GUARD = STORAGE_PREFIX + "migrated-mission-to-flight";
+
+/**
+ * One-shot: rewrite the legacy `missionId` flight link on persisted issues to
+ * the canonical `flightId`, so the read-side fallback in `issueStore` can be
+ * retired a release later (the Mission→Flight rename kept `missionId` as a
+ * read alias).
+ *
+ * Must run AFTER {@link migrateLegacyStorage} (which copies `packetcode:issues`
+ * into `packetade:issues`) and BEFORE any store hydrates. Guarded so repeat
+ * launches are a no-op, and skipped entirely when the blob has no `missionId`.
+ */
+export function migrateIssuesMissionToFlight(): void {
+  try {
+    if (localStorage.getItem(MISSION_TO_FLIGHT_GUARD)) return;
+
+    const raw = localStorage.getItem(ISSUES_KEY);
+    if (raw && raw.includes("missionId")) {
+      const parsed = JSON.parse(raw) as { issues?: unknown };
+      if (parsed && Array.isArray(parsed.issues)) {
+        let rewritten = 0;
+        parsed.issues = parsed.issues.map((issue) => {
+          if (issue && typeof issue === "object" && "missionId" in issue) {
+            const { missionId, ...rest } = issue as Record<string, unknown> & {
+              missionId?: string | null;
+              flightId?: string | null;
+            };
+            rewritten++;
+            return { ...rest, flightId: missionId ?? rest.flightId ?? null };
+          }
+          return issue;
+        });
+        if (rewritten > 0) {
+          localStorage.setItem(ISSUES_KEY, JSON.stringify(parsed));
+          console.info(
+            `[storage-migration] Rewrote missionId→flightId on ${rewritten} issue(s)`,
+          );
+        }
+      }
+    }
+
+    localStorage.setItem(MISSION_TO_FLIGHT_GUARD, "1");
+  } catch (e) {
+    console.warn("[storage-migration] mission→flight issue migration failed", e);
+  }
+}

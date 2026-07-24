@@ -212,9 +212,10 @@ pub struct PtyExitPayload {
     /// child status couldn't be read (e.g. it was force-killed and reaped
     /// elsewhere). `0` means success; non-zero means the agent failed.
     pub exit_code: Option<i32>,
-    /// True when the session was killed by an orchestrator action
-    /// (flight pause/cancel via `kill_sessions`), so the frontend must NOT
-    /// score it as a successful task completion.
+    /// Whether the session was terminated by a backend action rather than
+    /// exiting on its own. Currently always `false` — the orchestrator
+    /// flight-kill path was removed with the legacy task scheduler — but kept
+    /// in the payload so the frontend `pty:exit` contract is unchanged.
     pub terminated: bool,
 }
 
@@ -240,11 +241,6 @@ struct PtySession {
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
     kill_flag: Arc<std::sync::atomic::AtomicBool>,
-    /// Set ONLY when an orchestrator action (flight pause/cancel) kills the
-    /// session via `kill_sessions`. The reader thread reads this to mark the
-    /// emitted `pty:exit` payload `terminated`, so a backend kill isn't
-    /// mis-scored as task success.
-    orchestrator_killed: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Manages all PTY sessions
@@ -259,39 +255,13 @@ impl PtyManager {
         }
     }
 
-    /// Kill multiple PTY sessions by ID. Skips missing sessions.
-    ///
-    /// Invoked by orchestrator flight pause/cancel. Sets `orchestrator_killed`
-    /// so the reader thread tags the resulting `pty:exit` payload as
-    /// `terminated`, preventing the frontend from scoring the kill as a
-    /// successful task completion.
-    pub fn kill_sessions(&mut self, session_ids: &[String]) {
-        for session_id in session_ids {
-            if let Some(mut session) = self.sessions.remove(session_id) {
-                info!(session_id = %session_id, "Killing PTY session (flight cleanup)");
-                session.info.alive = false;
-                if let Err(e) = signal_pty_kill(
-                    session_id,
-                    session.kill_flag.as_ref(),
-                    Some(session.orchestrator_killed.as_ref()),
-                    &session.killer,
-                ) {
-                    warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
-                }
-            }
-        }
-    }
 }
 
 fn signal_pty_kill(
     session_id: &str,
     kill_flag: &std::sync::atomic::AtomicBool,
-    orchestrator_killed: Option<&std::sync::atomic::AtomicBool>,
     killer: &SharedChildKiller,
 ) -> std::io::Result<()> {
-    if let Some(orchestrator_killed) = orchestrator_killed {
-        orchestrator_killed.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
     kill_flag.store(true, std::sync::atomic::Ordering::Relaxed);
 
     let mut killer = killer.lock().map_err(|_| {
@@ -518,7 +488,6 @@ pub fn create_pty_session(
         .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
 
     let kill_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let orchestrator_killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let info = PtySessionInfo {
         id: session_id.clone(),
@@ -534,7 +503,6 @@ pub fn create_pty_session(
         writer,
         master: pair.master,
         kill_flag: kill_flag.clone(),
-        orchestrator_killed: orchestrator_killed.clone(),
     };
 
     {
@@ -595,7 +563,9 @@ pub fn create_pty_session(
             },
             Err(_) => None,
         };
-        let terminated = orchestrator_killed.load(std::sync::atomic::Ordering::Relaxed);
+        // No backend "orchestrator kill" path exists anymore; every exit here
+        // is either a natural process exit or a user-initiated `kill_pty`.
+        let terminated = false;
 
         info!(session_id = %sid, exit_code = ?exit_code, terminated, "PTY session exited");
         let payload = PtyExitPayload {
@@ -668,12 +638,7 @@ pub fn kill_pty(manager: State<'_, SharedPtyManager>, session_id: String) -> Res
     if let Some(mut session) = mgr.sessions.remove(&session_id) {
         info!(session_id = %session_id, "Killing PTY session");
         session.info.alive = false;
-        if let Err(e) = signal_pty_kill(
-            &session_id,
-            session.kill_flag.as_ref(),
-            None,
-            &session.killer,
-        ) {
+        if let Err(e) = signal_pty_kill(&session_id, session.kill_flag.as_ref(), &session.killer) {
             warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
         }
     } else {
@@ -707,12 +672,7 @@ pub fn kill_pty_and_wait(
     info!(session_id = %session_id, "Killing PTY session and waiting for exit");
     if let Some(mut session) = mgr.sessions.remove(&session_id) {
         session.info.alive = false;
-        if let Err(e) = signal_pty_kill(
-            &session_id,
-            session.kill_flag.as_ref(),
-            None,
-            &session.killer,
-        ) {
+        if let Err(e) = signal_pty_kill(&session_id, session.kill_flag.as_ref(), &session.killer) {
             warn!(session_id = %session_id, error = %e, "Failed to kill PTY child process");
         }
         let child = session.child.clone();
@@ -784,88 +744,6 @@ pub async fn ssh_exec(
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     Ok(format!("{}{}", stdout, stderr))
-}
-
-/// Test an SSH connection. Returns Ok(()) on success; Err with a human-readable
-/// reason on failure ("Authentication failed", "Could not reach host", etc).
-///
-/// When `host_fingerprint` is Some, SSH is invoked with
-/// `StrictHostKeyChecking=yes` + an `UserKnownHostsFile` pointing at the
-/// app-managed `known_hosts` file. When None (legacy / first-time test),
-/// falls back to `accept-new` for one connection.
-#[tauri::command]
-pub async fn ssh_test_connection(
-    host: String,
-    port: u16,
-    user: String,
-    key_path: Option<String>,
-    password: Option<String>,
-    host_fingerprint: Option<String>,
-) -> Result<(), String> {
-    const SENTINEL: &str = "PACKETCODE_SSH_OK";
-
-    let mut args: Vec<String> = vec![
-        "-p".to_string(),
-        port.to_string(),
-        "-o".to_string(),
-        "ConnectTimeout=8".to_string(),
-        "-o".to_string(),
-        "NumberOfPasswordPrompts=1".to_string(),
-    ];
-
-    if host_fingerprint.is_some() {
-        let kh = crate::core::execution::app_known_hosts_path();
-        args.push("-o".to_string());
-        args.push("StrictHostKeyChecking=yes".to_string());
-        args.push("-o".to_string());
-        args.push(format!("UserKnownHostsFile={}", kh.to_string_lossy()));
-    } else {
-        tracing::warn!(host = %host, port = %port, "ssh_test_connection without pinned fingerprint — TOFU fallback");
-        args.push("-o".to_string());
-        args.push("StrictHostKeyChecking=accept-new".to_string());
-    }
-
-    // If no password, force key-only auth so SSH doesn't hang waiting for a TTY.
-    if password.is_none() {
-        args.push("-o".to_string());
-        args.push("BatchMode=yes".to_string());
-    } else {
-        args.push("-o".to_string());
-        args.push("PreferredAuthentications=password,keyboard-interactive".to_string());
-    }
-
-    if let Some(kp) = key_path.as_ref().filter(|s| !s.trim().is_empty()) {
-        args.push("-i".to_string());
-        args.push(kp.clone());
-    }
-
-    args.push(format!("{}@{}", user, host));
-    args.push(format!("echo {}", SENTINEL));
-
-    let output = ssh_exec(args, password).await?;
-
-    if output.contains(SENTINEL) {
-        return Ok(());
-    }
-
-    // Map common failure patterns to friendly messages.
-    let lower = output.to_lowercase();
-    let msg = if lower.contains("permission denied") || lower.contains("authentication failed") {
-        "Authentication failed — check the password, username, or key path."
-    } else if lower.contains("could not resolve") || lower.contains("name or service not known") {
-        "Could not resolve host — check the hostname."
-    } else if lower.contains("connection refused") {
-        "Connection refused — check the host is reachable on that port."
-    } else if lower.contains("connection timed out") || lower.contains("operation timed out") {
-        "Connection timed out — host may be unreachable or behind a firewall."
-    } else if lower.contains("host key verification failed") {
-        "Host key verification failed — remove the stale entry from known_hosts and retry."
-    } else if output.trim().is_empty() {
-        "SSH did not respond."
-    } else {
-        return Err(output.trim().to_string());
-    };
-    Err(msg.to_string())
 }
 
 /// One discovered host key (algorithm + raw `known_hosts`-format line +
@@ -1081,9 +959,9 @@ fn resolve_remote_probe_password(
 /// directory, and contains a `.git` directory. Used by the workspace
 /// creation modal for live validation of the "Remote project path" input.
 ///
-/// Times out after 8 seconds. Host-key pinning behaves identically to
-/// `ssh_test_connection`: when `host_fingerprint` is `Some` we use the
-/// app-managed `known_hosts` file with `StrictHostKeyChecking=yes`;
+/// Times out after 8 seconds. Host-key pinning: when `host_fingerprint` is
+/// `Some` we use the app-managed `known_hosts` file with
+/// `StrictHostKeyChecking=yes`;
 /// otherwise we fall back to TOFU `accept-new`. Callers that care about
 /// safety should require a verified fingerprint before invoking this.
 #[allow(clippy::too_many_arguments)]
@@ -1128,7 +1006,7 @@ pub async fn ssh_check_remote_path(
         args.push("StrictHostKeyChecking=accept-new".to_string());
     }
 
-    // Mirror the auth heuristics from ssh_test_connection: if we have a
+    // Auth heuristics: if we have a
     // password to pipe to stdin, allow interactive password auth;
     // otherwise require key-only / BatchMode so SSH cannot hang.
     let pw_in = resolve_remote_probe_password(
@@ -1328,19 +1206,16 @@ mod tests {
     }
 
     #[test]
-    fn signal_pty_kill_marks_orchestrator_terminated_and_uses_killer() {
+    fn signal_pty_kill_sets_flag_and_uses_killer() {
         let kill_flag = AtomicBool::new(false);
-        let orchestrator_killed = AtomicBool::new(false);
         let killed = Arc::new(AtomicBool::new(false));
         let killer: SharedChildKiller = Arc::new(Mutex::new(Box::new(FakeKiller {
             killed: killed.clone(),
         })));
 
-        signal_pty_kill("session-1", &kill_flag, Some(&orchestrator_killed), &killer)
-            .expect("signal kill");
+        signal_pty_kill("session-1", &kill_flag, &killer).expect("signal kill");
 
         assert!(kill_flag.load(Ordering::Relaxed));
-        assert!(orchestrator_killed.load(Ordering::Relaxed));
         assert!(killed.load(Ordering::Relaxed));
     }
 
