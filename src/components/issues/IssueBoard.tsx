@@ -32,11 +32,10 @@ import { SpecImportModal } from "./SpecImportModal";
  *                 linked Flight has an attempt with a draft PR open
  *   Done        — `done`
  *
- * Statuses `qa`, `blocked`, and `needs_human` are still valid lifecycle
- * states (and editable from `IssueDetail`), but they don't have a dedicated
- * column in this board — they're rolled into the closest semantic column
- * (`qa` -> In Review, `blocked`/`needs_human` -> In Progress) so nothing
- * disappears off the board.
+ * `blocked` and `needs_human` have their own **Needs Attention** column (E7)
+ * so escalated / blocked work is visible instead of hidden inside In Progress —
+ * a flight-attempt escalation flags its linked issues `needs_human`, landing
+ * them here. `qa` still rolls into In Review so nothing disappears off the board.
  */
 interface BoardColumn {
   key: string;
@@ -50,11 +49,12 @@ interface BoardColumn {
 const BOARD_COLUMNS: BoardColumn[] = [
   { key: "backlog", label: "Backlog", statuses: ["backlog"], dropTarget: "backlog" },
   { key: "up_next", label: "Up Next", statuses: ["up_next", "todo"], dropTarget: "up_next" },
+  { key: "in_progress", label: "In Progress", statuses: ["in_progress"], dropTarget: "in_progress" },
   {
-    key: "in_progress",
-    label: "In Progress",
-    statuses: ["in_progress", "blocked", "needs_human"],
-    dropTarget: "in_progress",
+    key: "blocked",
+    label: "Needs Attention",
+    statuses: ["blocked", "needs_human"],
+    dropTarget: "needs_human",
   },
   { key: "in_review", label: "In Review", statuses: ["in_review", "qa"], dropTarget: "in_review" },
   { key: "done", label: "Done", statuses: ["done"], dropTarget: "done" },

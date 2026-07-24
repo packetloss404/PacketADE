@@ -3,6 +3,7 @@ import {
   DEFAULT_STALL_THRESHOLD_MS,
   isAttemptStalled,
   isFlightStuck,
+  issuesToFlagNeedsHuman,
   reassignTargetFromEscalation,
   shouldEscalate,
   shouldEscalateStalled,
@@ -198,5 +199,26 @@ describe("reassignTargetFromEscalation (E5)", () => {
         attempt("b", "failed"),
       ]),
     ).toEqual({ attemptId: "b", agentId: "api-openai" });
+  });
+});
+
+describe("issuesToFlagNeedsHuman (E7)", () => {
+  const issue = (id: string, flightId: string | null, status: string) => ({ id, flightId, status });
+
+  it("flags only active issues linked to the flight", () => {
+    const issues = [
+      issue("i1", "flight-1", "in_progress"),
+      issue("i2", "flight-1", "in_review"),
+      issue("i3", "flight-1", "done"), // finished
+      issue("i4", "flight-1", "backlog"), // not started
+      issue("i5", "flight-1", "needs_human"), // already flagged
+      issue("i6", "flight-2", "in_progress"), // other flight
+      issue("i7", null, "in_progress"), // unlinked
+    ];
+    expect(issuesToFlagNeedsHuman(issues, "flight-1")).toEqual(["i1", "i2"]);
+  });
+
+  it("is empty when nothing is linked + active", () => {
+    expect(issuesToFlagNeedsHuman([issue("i1", "flight-1", "done")], "flight-1")).toEqual([]);
   });
 });
