@@ -163,8 +163,14 @@ fn resolve_windows_command(command: &str) -> String {
         }
     }
 
-    // Fallback: try .cmd extension (legacy behavior)
-    format!("{}.cmd", command)
+    windows_command_lookup_fallback(command)
+}
+
+/// Preserve the requested command when `where` cannot resolve it. Appending a
+/// fabricated extension hides the real executable name and turns the eventual
+/// spawn failure into a misleading "*.cmd not found" error.
+fn windows_command_lookup_fallback(command: &str) -> String {
+    command.to_string()
 }
 
 /// Info about a running PTY session
@@ -174,6 +180,16 @@ pub struct PtySessionInfo {
     pub project_path: String,
     pub pid: Option<u32>,
     pub alive: bool,
+}
+
+/// Payload for scoped PTY output. The monotonically increasing sequence lets
+/// the frontend join a transcript snapshot with live events without guessing
+/// based on repeated terminal text.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PtyOutputPayload {
+    pub data: String,
+    pub sequence: u64,
 }
 
 /// Payload for the scoped `pty:exit:{session_id}` event.
@@ -545,8 +561,9 @@ pub fn create_pty_session(
                 Ok(0) => break, // EOF — process exited
                 Ok(n) => {
                     let data = crate::core::pty::decode_terminal_chunk(&buf[..n], &mut pending);
-                    crate::core::pty::append_transcript(&sid, &data);
-                    if let Err(e) = app_handle.emit(&pty_output_event(&sid), &data) {
+                    let sequence = crate::core::pty::append_transcript(&sid, &data);
+                    let payload = PtyOutputPayload { data, sequence };
+                    if let Err(e) = app_handle.emit(&pty_output_event(&sid), &payload) {
                         warn!(session_id = %sid, error = %e, "Failed to emit scoped pty output");
                     }
                 }
@@ -1380,5 +1397,14 @@ mod tests {
             .unwrap_err();
 
         assert!(error.contains("No saved SSH password"));
+    }
+
+    #[test]
+    fn windows_command_lookup_fallback_preserves_requested_name() {
+        assert_eq!(
+            windows_command_lookup_fallback("missing-cli"),
+            "missing-cli"
+        );
+        assert_eq!(windows_command_lookup_fallback("custom.exe"), "custom.exe");
     }
 }

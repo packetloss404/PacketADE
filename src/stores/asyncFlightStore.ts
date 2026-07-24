@@ -574,9 +574,13 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
           ?.attempts?.filter((attempt) => !attemptIdsBefore.has(attempt.id)) ?? [];
       for (const attempt of partialAttempts) {
         try {
-          await attachAttemptConversation(attempt, prompt);
+          await attachAttemptConversation(attempt, promptForLaunch);
         } catch (attachError) {
-          console.warn("Failed to attach partial Flight attempt listeners:", attempt.id, attachError);
+          console.warn(
+            "Failed to attach partial Flight attempt listeners:",
+            attempt.id,
+            attachError,
+          );
         }
       }
       throw error;
@@ -587,7 +591,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
       return {
         ...currentFlight,
         attempts: [...(currentFlight.attempts ?? []), ...attempts],
-        prompt: currentFlight.prompt ?? prompt,
+        prompt: currentFlight.prompt ?? promptForLaunch,
         updatedAt: Date.now(),
       };
     });
@@ -606,7 +610,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     const latestAttempts = attempts.map(
       (attempt) => latestFlight?.attempts?.find((current) => current.id === attempt.id) ?? attempt,
     );
-    applyAttemptsToFlightLocal(flightId, latestAttempts, prompt);
+    applyAttemptsToFlightLocal(flightId, latestAttempts, promptForLaunch);
 
     // For each attempt, register a frontend AgentConversation that listens to
     // the same backend event channel (apiAgent*Event(sessionId)) so AttemptTile
@@ -614,7 +618,7 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // we pass `skipBackendStart=true`.
     for (const a of attempts) {
       try {
-        await attachAttemptConversation(a, prompt);
+        await attachAttemptConversation(a, promptForLaunch);
       } catch (err) {
         console.warn("Failed to attach attempt listeners:", a.id, err);
       }
@@ -714,6 +718,5 @@ export const useAsyncFlightStore = create<AsyncFlightStore>(() => ({
     // Flight-completion memory capture. Runs on the terminal-success
     // transition regardless of which attempt outcome triggered it.
     captureFlightCompletionOnTransition(flightId, statusBefore);
-
   },
 }));

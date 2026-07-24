@@ -132,23 +132,23 @@ fn save_to_disk(stats: &ProviderLaunchStats) -> Result<(), String> {
 /// Never panics. Disk-write failures are logged to stderr and swallowed —
 /// counting is best-effort; losing a count must never break a session.
 pub fn record_launch(provider: &str) {
-    let snapshot = {
-        let mut guard = match stats().lock() {
-            Ok(g) => g,
-            Err(poisoned) => {
-                eprintln!("provider_stats: stats mutex poisoned — recovering");
-                poisoned.into_inner()
-            }
-        };
-        let entry = guard.counts.entry(provider.to_string()).or_insert(0);
-        *entry = entry.saturating_add(1);
-        guard
-            .last_launch
-            .insert(provider.to_string(), current_timestamp_iso());
-        guard.clone()
+    let mut guard = match stats().lock() {
+        Ok(g) => g,
+        Err(poisoned) => {
+            eprintln!("provider_stats: stats mutex poisoned — recovering");
+            poisoned.into_inner()
+        }
     };
+    let entry = guard.counts.entry(provider.to_string()).or_insert(0);
+    *entry = entry.saturating_add(1);
+    guard
+        .last_launch
+        .insert(provider.to_string(), current_timestamp_iso());
 
-    if let Err(e) = save_to_disk(&snapshot) {
+    // Keep persistence inside the same critical section as mutation. If two
+    // callers wrote cloned snapshots after unlocking, the older snapshot could
+    // finish last and erase the newer count.
+    if let Err(e) = save_to_disk(&guard) {
         eprintln!(
             "provider_stats: failed to persist launch for '{}': {}",
             provider, e

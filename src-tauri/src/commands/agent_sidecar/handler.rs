@@ -305,12 +305,18 @@ impl SidecarManager {
                     .get("resumeToken")
                     .and_then(|v| v.as_str())
                     .map(String::from);
-                let _ = crate::commands::flight_attempts::update_attempt_status_by_session(
-                    &session_id,
-                    crate::core::flight::AttemptStatus::Reviewing,
-                    None,
-                )
-                .await;
+                let cancelled = value
+                    .get("cancelled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if !cancelled {
+                    let _ = crate::commands::flight_attempts::update_attempt_status_by_session(
+                        &session_id,
+                        crate::core::flight::AttemptStatus::Reviewing,
+                        None,
+                    )
+                    .await;
+                }
                 let _ = self.app_handle.emit(
                     &done_event(&session_id),
                     DonePayload {
@@ -318,6 +324,7 @@ impl SidecarManager {
                         output_tokens,
                         cache_read_input_tokens,
                         cache_creation_input_tokens,
+                        cancelled,
                         resume_token,
                     },
                 );
@@ -384,8 +391,7 @@ impl SidecarManager {
                     .map(|arr| {
                         arr.iter()
                             .filter_map(|item| {
-                                let name =
-                                    item.get("name").and_then(|v| v.as_str())?.to_string();
+                                let name = item.get("name").and_then(|v| v.as_str())?.to_string();
                                 let transport = item
                                     .get("transport")
                                     .and_then(|v| v.as_str())
@@ -416,8 +422,7 @@ impl SidecarManager {
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("project")
                                     .to_string();
-                                let path =
-                                    item.get("path").and_then(|v| v.as_str())?.to_string();
+                                let path = item.get("path").and_then(|v| v.as_str())?.to_string();
                                 let message = item
                                     .get("message")
                                     .and_then(|v| v.as_str())

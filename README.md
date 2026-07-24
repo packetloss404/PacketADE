@@ -87,9 +87,9 @@ The **Workspace is the single surface**: every agent — chat or terminal — is
 
 ### Sidecar Protocol
 
-The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **9**:
+The Anthropic Subscription, OpenAI ChatGPT subscription, and OpenAI Agents SDK providers run in a Node sidecar that emits a normalized `api-agent:*` event vocabulary the frontend listens to (the same shape the in-process Rust providers emit). PROTOCOL_VERSION is currently **10**:
 
-- Events: `ready` (handshake), `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken`), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns), and `rate_limited` (v6, typed provider quota-pause)
+- Events: `ready` (handshake), `chunk`, `thinking`, `thinking_stop`, `tool_start`, `tool_result`, `permission_request` (with optional `batchId`/`batchSize`), `pending_edit`, `done` (with optional `resumeToken` and v10 `cancelled` marker), `error`, `plan_block`, `tool_output_extended` (Bash exit code + stdout/stderr; Write/Edit modified paths), `turn_summary` (running tokens between turns), and `rate_limited` (v6, typed provider quota-pause)
 - Requests: `start_session` (with image attachments + resume), `send_message`, `permission_response`, `edit_response` (v9-correlated by required `toolUseId`, with optional `mergedContent` for per-hunk acceptance), `cancel`, `close_session`, `set_permission_mode`, `set_model`, `retry`, `cancel_pending_tools`, `inject_user_turn` (v5)
 
 ### Workspaces — Terminal CLI Command Center

@@ -95,6 +95,19 @@ fn delete_api_key_credentials(
     Ok(())
 }
 
+/// Interpret a keyring read without collapsing credential-store failures into
+/// the same state as a genuinely absent credential.
+fn keyring_lookup_exists(
+    provider: &str,
+    result: keyring::Result<String>,
+) -> Result<Option<bool>, String> {
+    match result {
+        Ok(_) => Ok(Some(true)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(format!("Failed to check API key for {}: {}", provider, e)),
+    }
+}
+
 /// Load an API key for a provider. Internal only — not exposed to frontend.
 pub fn load_api_key(provider: &str) -> Result<String, String> {
     if provider == "ollama" {
@@ -164,22 +177,18 @@ pub async fn get_api_key_exists(provider: String) -> Result<bool, String> {
         None => return Ok(false),
     };
 
-    match entry.get_password() {
-        Ok(_) => Ok(true),
-        Err(keyring::Error::NoEntry) => {
-            // Check legacy keyring service; don't migrate here (read-only path).
-            if let Some(legacy) = legacy_keyring_entry(&provider) {
-                if legacy.get_password().is_ok() {
-                    return Ok(true);
-                }
-            }
-            Ok(false)
-        }
-        Err(e) => {
-            warn!("Error checking API key for {}: {}", provider, e);
-            Ok(false)
+    if let Some(exists) = keyring_lookup_exists(&provider, entry.get_password())? {
+        return Ok(exists);
+    }
+
+    // Check legacy keyring service; don't migrate here (read-only path).
+    if let Some(legacy) = legacy_keyring_entry(&provider) {
+        if let Some(exists) = keyring_lookup_exists(&provider, legacy.get_password())? {
+            return Ok(exists);
         }
     }
+
+    Ok(false)
 }
 
 #[tauri::command]
@@ -267,5 +276,24 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(legacy_deleted.get());
+    }
+
+    #[test]
+    fn keyring_lookup_distinguishes_missing_from_unavailable() {
+        assert_eq!(
+            keyring_lookup_exists("openai", Err(keyring::Error::NoEntry)),
+            Ok(None)
+        );
+
+        let error = keyring_lookup_exists(
+            "openai",
+            Err(keyring::Error::Invalid(
+                "credential".into(),
+                "locked".into(),
+            )),
+        )
+        .unwrap_err();
+        assert!(error.contains("Failed to check API key for openai"));
+        assert!(error.contains("locked"));
     }
 }

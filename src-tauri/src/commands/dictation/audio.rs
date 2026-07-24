@@ -277,7 +277,7 @@ pub async fn stop_recording(
 
     let settings = super::config::get_dictation_settings()
         .and_then(|raw| serde_json::from_str::<DictationConfig>(&raw).map_err(|e| e.to_string()))?;
-    let model_path = models::model_path(&settings.model_size)?
+    let model_path = models::verified_model_path(&settings.model_size)?
         .to_string_lossy()
         .to_string();
     let whisper_state = (*whisper_state).clone();

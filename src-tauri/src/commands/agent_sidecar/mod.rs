@@ -75,7 +75,10 @@ pub const SIDECAR_PROVIDERS: &[&str] = &["claude-oauth", "openai-codex", "openai
 ///
 /// v9 (G11): `edit_response` now carries the pending edit's `toolUseId`, so
 /// providers resolve one exact approval instead of draining every edit.
-pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 9;
+///
+/// v10 (G06/G36): `done` can carry `cancelled`, making user cancellation an
+/// explicit terminal outcome without ending the reusable conversation.
+pub(super) const EXPECTED_PROTOCOL_VERSION: u32 = 10;
 
 /// Convenience predicate used by slice C to decide whether to call
 /// `forward_*` vs. the existing Rust path.

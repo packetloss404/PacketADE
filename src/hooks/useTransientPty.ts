@@ -8,6 +8,11 @@ import {
   writePty,
 } from "@/lib/tauri";
 import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
+import {
+  bufferedPtyRemainder,
+  parsePtyOutputPayload,
+  type PtyOutputPayload,
+} from "@/lib/ptyReplay";
 
 export type TransientPtyStatus = "idle" | "spawning" | "running" | "done" | "error";
 
@@ -35,15 +40,6 @@ export interface UseTransientPtyResult {
   sessionId: string | null;
   start: () => void;
   kill: () => void;
-}
-
-function nonOverlappingSuffix(base: string, tail: string): string {
-  if (!base || !tail) return tail;
-  const max = Math.min(base.length, tail.length);
-  for (let len = max; len > 0; len--) {
-    if (base.endsWith(tail.slice(0, len))) return tail.slice(len);
-  }
-  return tail;
 }
 
 /**
@@ -113,7 +109,7 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
         current.onSpawn?.(sid);
 
         let buffering = true;
-        let buffered = "";
+        const buffered: PtyOutputPayload[] = [];
         let exitWhileBuffering = false;
         const finish = (success: boolean) => {
           if (finishedRef.current) return;
@@ -129,11 +125,12 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
         };
 
         const [outputUnlisten, exitUnlisten] = await Promise.all([
-          listen<string>(ptyOutputEvent(sid), (event) => {
+          listen<unknown>(ptyOutputEvent(sid), (event) => {
+            const output = parsePtyOutputPayload(event.payload);
             if (buffering) {
-              buffered += event.payload;
+              buffered.push(output);
             } else {
-              current.onOutput?.(event.payload);
+              current.onOutput?.(output.data);
             }
           }),
           listen<string>(ptyExitEvent(sid), () => {
@@ -150,7 +147,7 @@ export function useTransientPty(opts: UseTransientPtyOptions): UseTransientPtyRe
         const transcript = await readPtyTranscript(sid).catch(() => null);
         const replayed = transcript?.data ?? "";
         if (mountedRef.current && replayed) current.onOutput?.(replayed);
-        const bufferedRemainder = nonOverlappingSuffix(replayed, buffered);
+        const bufferedRemainder = bufferedPtyRemainder(replayed, transcript?.sequence, buffered);
         if (mountedRef.current && bufferedRemainder) current.onOutput?.(bufferedRemainder);
         buffering = false;
         if (exitWhileBuffering) finish(true);
@@ -243,13 +240,14 @@ export async function runTransientPty(
   });
 
   let buffering = true;
-  let buffered = "";
+  const buffered: PtyOutputPayload[] = [];
   const [outputUnlisten, exitUnlisten] = await Promise.all([
-    listen<string>(ptyOutputEvent(sessionId), (event) => {
+    listen<unknown>(ptyOutputEvent(sessionId), (event) => {
+      const eventOutput = parsePtyOutputPayload(event.payload);
       if (buffering) {
-        buffered += event.payload;
+        buffered.push(eventOutput);
       } else {
-        output += event.payload;
+        output += eventOutput.data;
       }
     }),
     listen<string>(ptyExitEvent(sessionId), () => {
@@ -260,7 +258,7 @@ export async function runTransientPty(
   const transcript = await readPtyTranscript(sessionId).catch(() => null);
   const replayed = transcript?.data ?? "";
   output += replayed;
-  output += nonOverlappingSuffix(replayed, buffered);
+  output += bufferedPtyRemainder(replayed, transcript?.sequence, buffered);
   buffering = false;
 
   const sessions = await listPtySessions().catch(() => null);

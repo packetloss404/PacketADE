@@ -134,9 +134,7 @@ function toClaudePermissionMode(mode: SetPermissionModeRequest["mode"]): Permiss
  * values as `McpServerConfig`. Anything the SDK rejects will surface later
  * as an `auth_status` / `system` message we log and pass through.
  */
-function toMcpServers(
-  raw: Record<string, unknown>,
-): Record<string, McpServerConfig> | undefined {
+function toMcpServers(raw: Record<string, unknown>): Record<string, McpServerConfig> | undefined {
   const keys = Object.keys(raw);
   if (keys.length === 0) return undefined;
   // Cast-through: the Rust side is the source of truth for shape. If a user
@@ -365,14 +363,9 @@ function parseRetryAfterSeconds(err: unknown): number | undefined {
   if (!headers) return undefined;
   let raw: string | null | undefined;
   // Web Headers instance (case-insensitive `.get`).
-  if (
-    typeof (headers as { get?: unknown }).get === "function" &&
-    typeof headers === "object"
-  ) {
+  if (typeof (headers as { get?: unknown }).get === "function" && typeof headers === "object") {
     try {
-      raw = (headers as { get: (k: string) => string | null }).get(
-        "retry-after",
-      );
+      raw = (headers as { get: (k: string) => string | null }).get("retry-after");
     } catch {
       raw = undefined;
     }
@@ -422,10 +415,7 @@ export class AnthropicProvider implements ProviderHandler {
   /** F5: tool_use_id → tool name + (for write tools) path. Captured at
    * `tool_use` time so the matching `tool_result` can emit a structured
    * `tool_output_extended` event with exitCode / modifiedPaths. */
-  private toolUseMeta = new Map<
-    string,
-    { name: string; modifiedPaths?: string[] }
-  >();
+  private toolUseMeta = new Map<string, { name: string; modifiedPaths?: string[] }>();
   private runPromise: Promise<void> | null = null;
   private emitCurrent: Emit | null = null;
   private activeThinkingBlock = false;
@@ -582,8 +572,9 @@ export class AnthropicProvider implements ProviderHandler {
       });
     };
 
-    const mcpServers: NonNullable<Options["mcpServers"]> | undefined =
-      toMcpServers(req.mcpServers ?? {});
+    const mcpServers: NonNullable<Options["mcpServers"]> | undefined = toMcpServers(
+      req.mcpServers ?? {},
+    );
 
     const options: Options = {
       abortController: this.abort,
@@ -619,8 +610,7 @@ export class AnthropicProvider implements ProviderHandler {
     const initialMessage = req.resume
       ? req.initialMessage
       : buildResumeFallbackPrompt(req.resumeMessages, req.initialMessage);
-    const hasInitialMessage =
-      typeof initialMessage === "string" && initialMessage.length > 0;
+    const hasInitialMessage = typeof initialMessage === "string" && initialMessage.length > 0;
     if (hasInitialMessage) {
       prompt.push({
         type: "user",
@@ -736,7 +726,11 @@ export class AnthropicProvider implements ProviderHandler {
           } else if (b.type === "thinking" && typeof b.thinking === "string") {
             this.activeThinkingBlock = true;
             emit({ type: "thinking", sessionId, text: b.thinking });
-          } else if (b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
+          } else if (
+            b.type === "tool_use" &&
+            typeof b.id === "string" &&
+            typeof b.name === "string"
+          ) {
             if (this.activeThinkingBlock) {
               emit({ type: "thinking_stop", sessionId });
               this.activeThinkingBlock = false;
@@ -760,8 +754,7 @@ export class AnthropicProvider implements ProviderHandler {
                   : undefined;
             this.toolUseMeta.set(b.id, {
               name: b.name,
-              modifiedPaths:
-                WRITE_TOOLS.has(b.name) && filePath ? [filePath] : undefined,
+              modifiedPaths: WRITE_TOOLS.has(b.name) && filePath ? [filePath] : undefined,
             });
             // v3: TodoWrite tool calls double as a structured plan event so
             // the frontend can pin them in a dedicated panel rather than
@@ -784,12 +777,16 @@ export class AnthropicProvider implements ProviderHandler {
         // F6: emit a turn_summary with this assistant message's usage so the
         // frontend's SessionHealthBar can show live tokens between turns
         // instead of waiting for the final `done` event.
-        const usage = (msg.message as { usage?: {
-          input_tokens?: number;
-          output_tokens?: number;
-          cache_read_input_tokens?: number | null;
-          cache_creation_input_tokens?: number | null;
-        }}).usage;
+        const usage = (
+          msg.message as {
+            usage?: {
+              input_tokens?: number;
+              output_tokens?: number;
+              cache_read_input_tokens?: number | null;
+              cache_creation_input_tokens?: number | null;
+            };
+          }
+        ).usage;
         if (usage) {
           emit({
             type: "turn_summary",
@@ -939,21 +936,18 @@ export class AnthropicProvider implements ProviderHandler {
     } else {
       content = req.content;
     }
-    // E6-CAPS: honor the requested per-turn `maxOutputTokens` if the SDK
-    // exposes a setter. As of Claude Agent SDK 0.2.116, `Query` only exposes
-    // `setMaxThinkingTokens` (deprecated) and `applyFlagSettings` (which
-    // doesn't carry an output-tokens field). There is no per-turn
-    // `max_tokens` knob — output token budget is set at session start via
-    // `Options.taskBudget` and can't be changed mid-session. We log the
-    // request once so the planner-side intent is visible in stderr, then
-    // proceed with the SDK's defaults. If a future SDK version exposes a
-    // setter, this is the hook point.
+    // The current SDK has no per-turn output-token setter. Reject the request
+    // explicitly instead of accepting it and silently running with a different
+    // budget than the caller requested.
     if (typeof req.maxOutputTokens === "number" && req.maxOutputTokens > 0) {
-      logStderr(
-        `injectUserTurn: maxOutputTokens=${req.maxOutputTokens} requested but ` +
-          `SDK 0.2.116 has no per-turn max_tokens setter; honoring session-start ` +
-          `defaults (sessionId=${req.sessionId})`,
-      );
+      emit({
+        type: "error",
+        sessionId: req.sessionId,
+        message:
+          `maxOutputTokens=${req.maxOutputTokens} is unsupported for injected Anthropic turns; ` +
+          "start a new session with the required output budget",
+      });
+      return;
     }
     this.prompt.push({
       type: "user",
@@ -979,14 +973,11 @@ export class AnthropicProvider implements ProviderHandler {
       // Deny-and-continue: no `interrupt`, so the SDK fabricates a tool
       // result and the turn keeps going. The user's reason (when given)
       // becomes that result's message, steering the model's next step.
-      const reason =
-        typeof req.reason === "string" ? req.reason.trim() : "";
+      const reason = typeof req.reason === "string" ? req.reason.trim() : "";
       resolver({
         behavior: "deny",
         message:
-          reason.length > 0
-            ? `Denied by user. User's guidance: ${reason}`
-            : "denied by user",
+          reason.length > 0 ? `Denied by user. User's guidance: ${reason}` : "denied by user",
       });
     }
   }
@@ -998,9 +989,7 @@ export class AnthropicProvider implements ProviderHandler {
     // would clobber our merged result with the original `after`.
     const meta = this.pendingEdits.get(req.toolUseId);
     if (!meta) {
-      logStderr(
-        `respondEdit received for unknown toolUseId=${req.toolUseId}; ignoring`,
-      );
+      logStderr(`respondEdit received for unknown toolUseId=${req.toolUseId}; ignoring`);
       return;
     }
     this.pendingEdits.delete(req.toolUseId);
@@ -1035,10 +1024,7 @@ export class AnthropicProvider implements ProviderHandler {
    * ("User cancelled this tool") and keeps generating. Use `cancel()`
    * (not this) when the user wants the whole session to stop.
    */
-  async cancelPendingTools(
-    _req: CancelPendingToolsRequest,
-    _emit: Emit,
-  ): Promise<void> {
+  async cancelPendingTools(_req: CancelPendingToolsRequest, _emit: Emit): Promise<void> {
     // Permissions: deny WITHOUT interrupt — the SDK fabricates a
     // tool_result and feeds it back to the model. interrupt:true would
     // abort the streaming input pipeline.
@@ -1112,9 +1098,7 @@ export class AnthropicProvider implements ProviderHandler {
       emit({
         type: "error",
         sessionId: req.sessionId,
-        message: `setPermissionMode failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        message: `setPermissionMode failed: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   }
