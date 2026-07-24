@@ -225,6 +225,11 @@ still loads legacy data losslessly.
 
 ## Memory v0.9+ (from v0.8 deferrals)
 
+> **In progress:** the items below are scoped into a gated loop —
+> [`dev/memory-v9-loop.md`](./dev/memory-v9-loop.md) (M1–M10; local-embedding
+> semantic retrieval deferred). That doc also fixes the half-wired gaps (naive
+> search, dead `task_completed`, static confidence, stranded `summarize_flight`).
+
 - **P3 — Evaluate semantic retrieval only if keyword misses are measured.** If
   the current IDF-weighted retrieval proves insufficient, use a bundled local
   embedding model plus brute-force cosine over the small JSON corpus; a vector
