@@ -6,6 +6,7 @@ import {
   shouldEscalate,
   shouldEscalateStalled,
   stuckSignature,
+  suggestReassignmentAgent,
 } from "@/lib/flightCoordination";
 import type { Attempt, AttemptStatus, CoordinationEvent } from "@/types/flight";
 
@@ -138,5 +139,25 @@ describe("isAttemptStalled / shouldEscalateStalled (E2)", () => {
       },
     ];
     expect(shouldEscalateStalled(a, now, log)).toBe(false);
+  });
+});
+
+describe("suggestReassignmentAgent (E3)", () => {
+  const catalog = ["api-claude", "api-openai", "api-openai-codex"];
+
+  it("suggests the first catalog agent not yet tried", () => {
+    expect(suggestReassignmentAgent(["api-claude"], catalog)).toBe("api-openai");
+  });
+
+  it("skips all tried agents", () => {
+    expect(suggestReassignmentAgent(["api-claude", "api-openai"], catalog)).toBe("api-openai-codex");
+  });
+
+  it("returns undefined when everything has been tried", () => {
+    expect(suggestReassignmentAgent(catalog, catalog)).toBeUndefined();
+  });
+
+  it("suggests the first catalog agent when nothing was tried", () => {
+    expect(suggestReassignmentAgent([], catalog)).toBe("api-claude");
   });
 });

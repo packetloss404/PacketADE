@@ -1,5 +1,7 @@
 import type { Attempt, CoordinationEvent } from "@/types/flight";
 import { useFlightStore } from "@/stores/flightStore";
+import { API_PROVIDERS, getProviderForAgent } from "@/lib/api-models";
+import type { AgentCli } from "@/stores/agentTaskStore";
 
 /**
  * N2 — escalation *suggestions* (never auto-actions) on the flight coordination
@@ -21,6 +23,23 @@ function attemptLabel(a: Attempt): string {
 function truncate(s: string, max = 140): string {
   const t = s.replace(/\s+/g, " ").trim();
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
+}
+
+function agentLabel(agentId: string): string {
+  return getProviderForAgent(agentId as AgentCli)?.name ?? agentId;
+}
+
+/**
+ * E3: pick a concrete alternative agent to suggest for reassignment — the first
+ * catalog agent the flight hasn't already tried. Returns undefined when every
+ * catalog agent has been tried (nothing new to suggest).
+ */
+export function suggestReassignmentAgent(
+  triedAgentIds: string[],
+  catalog: string[] = API_PROVIDERS.map((p) => p.agentCli),
+): string | undefined {
+  const tried = new Set(triedAgentIds);
+  return catalog.find((id) => !tried.has(id));
 }
 
 /**
@@ -64,10 +83,19 @@ export function maybeEscalate(flightId: string): void {
   if (!fresh) return;
   const attempts = fresh.attempts ?? [];
   if (!shouldEscalate(attempts, fresh.coordinationLog ?? [])) return;
+  // E3: name a concrete alternative agent the flight hasn't tried yet, so the
+  // suggestion (and the one-click reassign in the timeline) has a target.
+  const suggestedAgentId = suggestReassignmentAgent(attempts.map((a) => a.agentConfigId));
+  const suggestion = suggestedAgentId
+    ? ` Suggested: reassign to ${agentLabel(suggestedAgentId)}.`
+    : "";
   useFlightStore.getState().appendCoordinationEvent(flightId, {
     type: "escalation",
-    summary: ESCALATION_SUMMARY,
-    metadata: { signature: stuckSignature(attempts) },
+    summary: ESCALATION_SUMMARY + suggestion,
+    metadata: {
+      signature: stuckSignature(attempts),
+      ...(suggestedAgentId ? { suggestedAgentId } : {}),
+    },
   });
 }
 
