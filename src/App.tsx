@@ -19,6 +19,7 @@ import { useAgentTabHoists } from "@/hooks/useAgentTabHoists";
 import { VIEW_HOTKEY_MAP } from "@/lib/viewHotkeys";
 import { initSessionGlue } from "@/stores/sessionGlue";
 import { startMcpWriteBridge } from "@/lib/mcpWriteBridge";
+import { startStallSweep } from "@/lib/flightCoordination";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore, getModuleId } from "@/stores/appStore";
@@ -123,6 +124,11 @@ export default function App() {
       if (unlisten) unlisten();
     };
   }, []);
+
+  // E2: periodic sweep that raises one escalation suggestion for any attempt
+  // stuck "running" past the stall threshold, so a hung agent doesn't stall a
+  // flight silently. Mount-once; startStallSweep returns its own stop fn.
+  useEffect(() => startStallSweep(), []);
 
   // Apply theme class to document
   useEffect(() => {

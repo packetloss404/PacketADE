@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_STALL_THRESHOLD_MS,
+  isAttemptStalled,
   isFlightStuck,
   shouldEscalate,
+  shouldEscalateStalled,
   stuckSignature,
 } from "@/lib/flightCoordination";
 import type { Attempt, AttemptStatus, CoordinationEvent } from "@/types/flight";
@@ -97,5 +100,43 @@ describe("shouldEscalate", () => {
     // cancelled — the flight is now stuck and must still get a suggestion.
     const attempts = [attempt("a", "failed"), attempt("b", "cancelled")];
     expect(shouldEscalate(attempts, [])).toBe(true);
+  });
+});
+
+describe("isAttemptStalled / shouldEscalateStalled (E2)", () => {
+  const T = DEFAULT_STALL_THRESHOLD_MS;
+  const running = (startedAt: number): Attempt => ({ ...attempt("a", "running"), startedAt });
+
+  it("is false within the threshold", () => {
+    expect(isAttemptStalled(running(1000), 1000 + T - 1)).toBe(false);
+  });
+
+  it("is true past the threshold", () => {
+    expect(isAttemptStalled(running(1000), 1000 + T + 1)).toBe(true);
+  });
+
+  it("is false for non-running statuses no matter how old", () => {
+    expect(isAttemptStalled({ ...attempt("a", "reviewing"), startedAt: 1 }, 1 + T * 10)).toBe(false);
+  });
+
+  it("is false without a startedAt timestamp", () => {
+    expect(isAttemptStalled(attempt("a", "running"), 9_999_999)).toBe(false);
+  });
+
+  it("escalates a stalled attempt once, then dedupes on its id", () => {
+    const a = running(1000);
+    const now = 1000 + T + 1;
+    expect(shouldEscalateStalled(a, now, [])).toBe(true);
+    const log: CoordinationEvent[] = [
+      {
+        id: "c1",
+        flightId: "flight-1",
+        type: "escalation",
+        summary: "stalled",
+        timestamp: 1,
+        metadata: { stalledAttemptId: "a" },
+      },
+    ];
+    expect(shouldEscalateStalled(a, now, log)).toBe(false);
   });
 });
