@@ -3,6 +3,7 @@ import {
   DEFAULT_STALL_THRESHOLD_MS,
   isAttemptStalled,
   isFlightStuck,
+  reassignTargetFromEscalation,
   shouldEscalate,
   shouldEscalateStalled,
   stuckSignature,
@@ -159,5 +160,43 @@ describe("suggestReassignmentAgent (E3)", () => {
 
   it("suggests the first catalog agent when nothing was tried", () => {
     expect(suggestReassignmentAgent([], catalog)).toBe("api-claude");
+  });
+});
+
+describe("reassignTargetFromEscalation (E5)", () => {
+  const esc = (metadata: Record<string, string>): CoordinationEvent => ({
+    id: "e1",
+    flightId: "flight-1",
+    type: "escalation",
+    summary: "stuck",
+    timestamp: 1,
+    metadata,
+  });
+
+  it("is null for non-escalation events", () => {
+    expect(
+      reassignTargetFromEscalation({ ...esc({ suggestedAgentId: "api-openai" }), type: "task_failed" }, [
+        attempt("a", "failed"),
+      ]),
+    ).toBeNull();
+  });
+
+  it("is null without a suggestedAgentId", () => {
+    expect(reassignTargetFromEscalation(esc({ signature: "x" }), [attempt("a", "failed")])).toBeNull();
+  });
+
+  it("is null when there is no failed attempt to template from", () => {
+    expect(
+      reassignTargetFromEscalation(esc({ suggestedAgentId: "api-openai" }), [attempt("a", "cancelled")]),
+    ).toBeNull();
+  });
+
+  it("resolves the most recent failed attempt + the suggested agent", () => {
+    expect(
+      reassignTargetFromEscalation(esc({ suggestedAgentId: "api-openai" }), [
+        attempt("a", "failed"),
+        attempt("b", "failed"),
+      ]),
+    ).toEqual({ attemptId: "b", agentId: "api-openai" });
   });
 });

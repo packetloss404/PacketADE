@@ -43,6 +43,24 @@ export function suggestReassignmentAgent(
 }
 
 /**
+ * E5: resolve the one-click reassignment an escalation row offers — its
+ * `suggestedAgentId` plus a concrete failed attempt to use as the launch
+ * template (the most recent failure). Returns null when the event is not an
+ * actionable escalation (no suggestion, or no failed attempt to template from).
+ */
+export function reassignTargetFromEscalation(
+  event: CoordinationEvent,
+  attempts: Attempt[],
+): { attemptId: string; agentId: string } | null {
+  if (event.type !== "escalation") return null;
+  const agentId = event.metadata?.suggestedAgentId;
+  if (!agentId) return null;
+  const template = [...attempts].reverse().find((a) => a.status === "failed");
+  if (!template) return null;
+  return { attemptId: template.id, agentId };
+}
+
+/**
  * A flight is "stuck" when every attempt is terminal-without-success — all
  * failed or cancelled, with at least one genuine failure. `reviewing`,
  * `completed`, `running`, and `provisioning` all mean a path forward still
