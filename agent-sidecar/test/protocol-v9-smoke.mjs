@@ -1,4 +1,5 @@
-// Protocol v9 regression smoke test for the PacketADE agent sidecar.
+// Protocol v10 regression smoke test for the PacketADE agent sidecar.
+// The historical filename is retained for package-script compatibility.
 //
 // Validates that the protocol v2 request types plus the v4
 // `cancel_pending_tools` request, the v5 `inject_user_turn` request, and
@@ -50,7 +51,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const SESSION_ID = "protocol-v9-smoke";
-const EXPECTED_PROTOCOL_VERSION = 9;
+const EXPECTED_PROTOCOL_VERSION = 10;
 const STEP_TIMEOUT_MS = 3000;
 const START_TIMEOUT_MS = 3000;
 const READY_TIMEOUT_MS = 3000;

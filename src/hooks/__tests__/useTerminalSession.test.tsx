@@ -86,7 +86,7 @@ function createFitAddonRef() {
   };
 }
 
-async function startHook() {
+async function startHook(onSessionEnded?: () => void) {
   const { term, ref: xtermRef } = createTerminalRef();
   const { fitAddon, ref: fitAddonRef } = createFitAddonRef();
   const sessionIdRef = { current: null } as RefObject<string | null>;
@@ -101,6 +101,7 @@ async function startHook() {
       xtermRef,
       fitAddonRef,
       sessionIdRef,
+      onSessionEnded,
     }),
   );
 
@@ -228,5 +229,20 @@ describe("useTerminalSession", () => {
     expect(result.current.alive).toBe(false);
 
     unmount();
+  });
+
+  it("emits session ended once when a manual kill races the PTY exit", async () => {
+    const onSessionEnded = vi.fn();
+    const { result, unmount } = await startHook(onSessionEnded);
+
+    await act(async () => {
+      await result.current.handleKill();
+    });
+    await act(async () => {
+      listeners[ptyExitEvent("sess-1")]?.({ payload: "sess-1" });
+    });
+    unmount();
+
+    expect(onSessionEnded).toHaveBeenCalledTimes(1);
   });
 });

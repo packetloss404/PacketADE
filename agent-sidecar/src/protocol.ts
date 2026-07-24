@@ -57,7 +57,10 @@
 //
 // v9 (G11): adds required `toolUseId` correlation to `edit_response` so one
 // approval resolves exactly one pending edit instead of draining the session.
-export const PROTOCOL_VERSION = 9;
+//
+// v10 (G06/G36): adds `cancelled` to terminal `done` events. Cancellation is
+// now an explicit terminal outcome rather than an indistinguishable success.
+export const PROTOCOL_VERSION = 10;
 
 /** Image content a model can interpret natively. base64-encoded bytes. */
 export type ImageAttachment = {
@@ -299,6 +302,8 @@ export type SidecarEvent =
       outputTokens: number;
       cacheReadInputTokens?: number;
       cacheCreationInputTokens?: number;
+      /** True only when this terminal event was produced by a user cancel. */
+      cancelled?: boolean;
       /** v3: opaque token the supervisor can persist and re-send via
        * StartSessionRequest.resume to continue this conversation after a
        * cold start. Provider-defined; treated as a black box by the host. */

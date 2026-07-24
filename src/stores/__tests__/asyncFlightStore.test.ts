@@ -540,9 +540,7 @@ describe("asyncFlightStore terminal cleanup and publishing", () => {
       activeFlightId: null,
     });
 
-    await useAsyncFlightStore
-      .getState()
-      .setAttemptStatus("flight-1", "att-running", "completed");
+    await useAsyncFlightStore.getState().setAttemptStatus("flight-1", "att-running", "completed");
 
     expect(mocks.gitPushBranch).toHaveBeenCalledWith(
       "D:\\Repo\\.git\\packetade-worktrees\\att-running",
@@ -581,9 +579,7 @@ describe("asyncFlightStore terminal cleanup and publishing", () => {
       activeFlightId: null,
     });
 
-    await useAsyncFlightStore
-      .getState()
-      .setAttemptStatus("flight-1", "att-running", "completed");
+    await useAsyncFlightStore.getState().setAttemptStatus("flight-1", "att-running", "completed");
 
     expect(mocks.cleanupAttemptWorktreeSsh).toHaveBeenCalledWith({
       flightId: "flight-1",
@@ -739,23 +735,23 @@ describe("asyncFlightStore flight-prompt injection gate", () => {
 
   it("prepends the memory brief when injectIntoFlightPrompts is on", async () => {
     useMemorySettingsStore.getState().setInjectIntoFlightPrompts(true);
+    mocks.launchFlightAsync.mockResolvedValue([attempt()]);
 
-    await useAsyncFlightStore
-      .getState()
-      .launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
+    await useAsyncFlightStore.getState().launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
 
     expect(mocks.composeMemoryBrief).toHaveBeenCalled();
     const promptArg = mocks.launchFlightAsync.mock.calls[0][1] as string;
     expect(promptArg).toContain("MEMORY BRIEF");
     expect(promptArg).toContain("Do it");
+    expect(mocks.createApiConversation).toHaveBeenCalledWith(
+      expect.objectContaining({ initialMessage: promptArg }),
+    );
   });
 
   it("sends the raw prompt when injectIntoFlightPrompts is off", async () => {
     useMemorySettingsStore.getState().setInjectIntoFlightPrompts(false);
 
-    await useAsyncFlightStore
-      .getState()
-      .launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
+    await useAsyncFlightStore.getState().launchAsync("flight-1", "Do it", [localTarget("d:/repo")]);
 
     expect(mocks.composeMemoryBrief).not.toHaveBeenCalled();
     const promptArg = mocks.launchFlightAsync.mock.calls[0][1] as string;

@@ -87,6 +87,15 @@ class RuntimeErrorProvider {
     });
   }
 
+  emitLateDone() {
+    this.emit?.({
+      type: "done",
+      sessionId: this.sessionId,
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+  }
+
   async sendMessage(req, emit) {
     this.events.push(`${req.sessionId}:send:${req.content}`);
     emit({
@@ -95,6 +104,10 @@ class RuntimeErrorProvider {
       inputTokens: 0,
       outputTokens: 0,
     });
+  }
+
+  async cancel() {
+    this.events.push(`${this.sessionId}:cancel`);
   }
 }
 
@@ -178,5 +191,40 @@ assert.equal(
   ),
   false,
 );
+
+await runtimeRegistry.dispatch("runtime", { type: "cancel", sessionId: "runtime" }, (event) =>
+  runtimeEmitted.push(event),
+);
+runtimeProvider.emitLateDone();
+const cancelledTerminalEvents = runtimeEmitted.filter(
+  (event) => event.type === "done" && event.sessionId === "runtime" && event.cancelled === true,
+);
+assert.equal(
+  cancelledTerminalEvents.length,
+  1,
+  "cancel emits exactly one explicit terminal marker",
+);
+assert.equal(runtimeEvents.at(-1), "runtime:cancel");
+
+await runtimeRegistry.dispatch(
+  "runtime",
+  { type: "send_message", sessionId: "runtime", content: "after-cancel" },
+  (event) => runtimeEmitted.push(event),
+);
+assert.equal(
+  runtimeEvents.at(-1),
+  "runtime:send:after-cancel",
+  "turn cancellation retains the reusable conversation",
+);
+assert.equal(runtimeEmitted.at(-1)?.type, "done");
+assert.notEqual(runtimeEmitted.at(-1)?.cancelled, true);
+
+await runtimeRegistry.close("runtime");
+await runtimeRegistry.dispatch(
+  "runtime",
+  { type: "send_message", sessionId: "runtime", content: "after-close" },
+  (event) => runtimeEmitted.push(event),
+);
+assert.match(runtimeEmitted.at(-1)?.message ?? "", /^No active session:/);
 
 console.log("[session-ordering-smoke] PASS");
