@@ -35,6 +35,19 @@ task list.
   bumped **v6 → v7** (negotiation stays warn-only). `planner_status` /
   `flight_approvals` persisted fields are kept read-only so old users' state
   still loads losslessly. See `backlog.md` → Flight Planner backend.
+- **Backlog cleanup batch (`chore/backlog-cleanup-loop`).** Closed the
+  self-contained cleanup items: the API-agent system prompt now injects
+  `brand::APP_NAME` instead of hardcoding the name; internal SSH/heredoc
+  sentinels renamed to `PACKETADE_*` with the heredoc terminator hoisted into
+  `core::shared` and seeded from OS randomness so it is no longer predictable
+  from the payload; the local PR-body temp file is now removed via an RAII
+  guard (survives async cancellation/panic); the dead `set_ssh_password`,
+  `delete_ssh_password`, and `ssh_test_connection` commands and the zero-caller
+  `ask_flight_chat_stream` flight-chat feature were removed; and the worktree
+  hook installers (~120 LoC) and sub-agent/custom-agent loops (~80 LoC) were
+  de-duplicated into shared helpers. Net −783/+282 lines. The
+  `orchestration.rs` scheduler removal stays open (blocked on untangling
+  `commands/state.rs` from `SharedOrchestrator`).
 
 ### Fixed
 
