@@ -135,6 +135,17 @@ Deferred items called out in `dev/multi-platform-build.md` and
 
 ## Flight Deck
 
+### Escalation & supervision (BridgeSwarm parity)
+
+- **Feature loop — structured escalation + auto-reassignment.** Scoped,
+  loop-ready plan at [`dev/bridgemind/flight-escalation-loop.md`](./dev/bridgemind/flight-escalation-loop.md)
+  (items E1–E9): structured failure reasons, stuck-threshold detection, targeted
+  reassignment suggestions, a one-click relaunch/reassign action, actionable
+  coordination-feed rows, a flight attention queue, and an issue-Kanban
+  Blocked/Needs-Attention column. Supersedes the stale Phase 4 of
+  `dev/bridgemind/swarm-orchestration-plan.md`. Deferred behind working through
+  the competitive research; not started.
+
 ### Runtime audit (2026-07-19)
 
 The deleted backend was the long-lived autonomous **Flight Planner**, not the
@@ -260,7 +271,7 @@ Only unresolved follow-ups remain here; shipped audit work is in `CHANGELOG.md`.
 ### MCP / workspace / runtime
 
 - **P3 — `worktree.rs` `attempt_id` ASCII sanitization.** Today the
-  callers always pass UUIDs from `orchestrator.rs` / `commands/git.rs`,
+  callers always pass UUIDs from `commands/flight_attempts.rs` / `commands/git.rs`,
   but the public function has no defence-in-depth. Tighten to
   ASCII-alphanumeric + `-_`.
 - **P3 — `core/mcp_bridge.rs::resolve_mcp_name` per-call server

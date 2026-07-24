@@ -1,18 +1,28 @@
 # Swarm Orchestration Plan
 
-Last updated: 2026-06-15
+> **⚠️ Superseded / status corrected 2026-07-24.** The escalation work (Phase 4)
+> is now scoped in the current [`flight-escalation-loop.md`](./flight-escalation-loop.md).
+> This doc is kept as the original design record, but its status table was
+> written against UI/backend that has since been **deleted** — corrected below.
+> Reality: the live Flight Deck UI is `src/components/views/FlightsView.tsx`
+> (worktree-attempt model). `MilestonesPanel.tsx`, `FlightDetail.tsx`,
+> `ReviewQueueView.tsx`, `create_task.rs`, the `orchestration*Store.ts` stores,
+> and `commands/orchestration.rs` are all gone; `core::orchestrator` was pruned
+> to `OrchestratorSettings` + `recover_flights_on_startup` (no scheduler).
 
-## Implementation Status — 2026-06-15
+Last updated: 2026-06-15 (status corrected 2026-07-24)
+
+## Implementation Status (corrected 2026-07-24)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Phase 1: TaskRole type | ✅ Done | coordinator/builder/reviewer/scout with badges; role-badge styling lives in `src/lib/flight-colors.ts` (`TASK_ROLE_CONFIG`) |
-| Phase 1: Role badges in UI | ✅ Done | In MilestonesPanel |
-| Phase 2: ownedPaths on tasks | ✅ Done | On Task interface; also wired in core Rust (`core/flight.rs` `owned_paths`, `create_task.rs`) |
-| Phase 2: File collision detection | ✅ Done | Pre-launch check in orchestrator; collision detection also in core Rust (`create_task.rs`) |
-| Phase 3: Coordination feed | ✅ Done | Handoff-log UI in `src/components/flights/MilestonesPanel.tsx` (rendered in FlightDetail); no standalone CoordinationFeed component exists |
-| Phase 3: Task handoff log | ✅ Done | handoffLog[] with UI |
-| Phase 4: Escalation | ⚠️ Partial | blockedReason exists, no auto-reassignment |
+| Phase 1: TaskRole type | ✅ Type only | `TaskRole` in `src/types/flight.ts`; `TASK_ROLE_CONFIG` in `src/lib/flight-colors.ts`. |
+| Phase 1: Role badges in UI | ❌ Not live | No component renders role badges (renderer died with `MilestonesPanel`). Tracked as **E8** in `flight-escalation-loop.md`. |
+| Phase 2: ownedPaths on tasks | ✅ Done | `owned_paths` on the Rust Task (`core/flight.rs`) + `ownedPaths` on the TS Task. |
+| Phase 2: File collision detection | ✅ Done (relocated) | Live pre-launch gate in `asyncFlightStore.findAsyncLaunchPathCollisions` + Rust `flight_attempts.rs` (`validate_target_claims_against_active_attempts`). The old scheduler / `create_task.rs` wiring is gone. |
+| Phase 3: Coordination feed | ✅ Done (relocated) | Live in `FlightsView.tsx` `TimelineCard` (reads `flight.coordinationLog`). The old `MilestonesPanel`/`FlightDetail` surface is gone. |
+| Phase 3: Task handoff log | ⚠️ Type only | `handoffLog[]` persists on the TS Task, but no component renders it (UI died with `MilestonesPanel`). Tracked as **E8**. |
+| Phase 4: Escalation | 🔁 Superseded | Now scoped in [`flight-escalation-loop.md`](./flight-escalation-loop.md) (E1–E7). A suggestions-only pipeline (`src/lib/flightCoordination.ts`) already exists. |
 
 ## Goal
 
@@ -33,13 +43,14 @@ PacketADE already has the key primitives:
 - orchestration loop
 - session launch and tracking
 
-Relevant code today:
+Relevant code today (corrected 2026-07-24):
 
-- `src/types/flight.ts`
-- `src/stores/orchestrationSchedulerStore.ts` and `src/stores/orchestrationStateStore.ts`
-- `src-tauri/src/commands/orchestration.rs`
+- `src/types/flight.ts` — Flight/Milestone/Task/Attempt types, `TaskRole`, `CoordinationEvent`
+- `src/stores/asyncFlightStore.ts` and `src/stores/flightStore.ts` — live worktree-attempt lifecycle + status rollup
+- `src/lib/flightCoordination.ts` — escalation-suggestion pipeline (N2, suggestions-only)
+- `src-tauri/src/commands/flight_attempts.rs` — attempt runtime + collision validation
 
-The missing piece is not orchestration from scratch. The missing piece is a stronger product model on top of the existing orchestration core.
+The missing piece is not orchestration from scratch. The missing piece is a stronger product model on top of the existing attempt runtime.
 
 ## Product Outcome
 
@@ -173,14 +184,14 @@ These should be added incrementally. The smallest useful change is `role` plus `
 
 ## UI Entry Points
 
-Natural integration points:
+Natural integration points (corrected 2026-07-24 — the live Flight Deck UI is a
+single view; `FlightDetail.tsx`, `MilestonesPanel.tsx`, and `ReviewQueueView.tsx`
+no longer exist):
 
-- `FlightsView.tsx`
-- `FlightDetail.tsx`
-- `MilestonesPanel.tsx`
-- `ReviewQueueView.tsx`
+- `src/components/views/FlightsView.tsx` — the live Flight Deck (its inner
+  `MilestonesCard` / `TimelineCard` / `FlightDetailPane` / `AttemptTile` are the
+  real integration surfaces)
 - `WorkspaceView.tsx`
-- task editing surfaces in flight detail UI
 
 ## Success Criteria
 

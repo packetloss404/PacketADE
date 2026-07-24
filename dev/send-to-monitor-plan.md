@@ -5,6 +5,12 @@ Last updated: 2026-05-29
 Status: **Paused after planning. Do not implement until the current feature and
 bug-check pass is complete.**
 
+> **Stale surfaces (noted 2026-07-24):** this pre-refactor plan names UI that has
+> since been retired — `AgentsView`/the "Agents pane" (folded into the workspace
+> `ConversationTile`/`AgentChatPane`) and `ReviewQueueView`/the "Review queue"
+> (no longer exists). Retarget those integration points to the current workspace
+> surfaces before any implementation.
+
 ## Summary
 
 **Send to Monitor** is PacketADE's proposed multi-window, multi-monitor
