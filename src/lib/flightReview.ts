@@ -1,4 +1,25 @@
-import type { Flight, Task, TaskStatus } from "@/types/flight";
+import type { Attempt, Flight, Task, TaskStatus } from "@/types/flight";
+
+export interface FlightAttentionSummary {
+  /** Attempts awaiting the user's Accept/Reject. */
+  reviewing: Attempt[];
+  /** Failed attempts — candidates for reassign or manual review. */
+  failed: Attempt[];
+  /** reviewing + failed. */
+  total: number;
+}
+
+/**
+ * E6: the single "needs a human" list for a flight — attempts that are either
+ * awaiting review (`reviewing`) or failed (candidates for reassign/review).
+ * Healthy (running/completed) and cancelled attempts never need intervention.
+ */
+export function summarizeFlightAttention(flight: Flight): FlightAttentionSummary {
+  const attempts = flight.attempts ?? [];
+  const reviewing = attempts.filter((a) => a.status === "reviewing");
+  const failed = attempts.filter((a) => a.status === "failed");
+  return { reviewing, failed, total: reviewing.length + failed.length };
+}
 
 export interface FlightReviewTaskRef {
   flightId: string;

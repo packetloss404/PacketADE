@@ -3,9 +3,10 @@ import {
   collectTaskReportedFiles,
   matchGitFilesToFlightTasks,
   selectFlightReviewFiles,
+  summarizeFlightAttention,
   summarizeFlightReview,
 } from "@/lib/flightReview";
-import type { Flight, Task } from "@/types/flight";
+import type { Attempt, Flight, Task } from "@/types/flight";
 
 function task(overrides: Partial<Task>): Task {
   return {
@@ -207,5 +208,44 @@ describe("flightReview", () => {
     expect(selected.flightIds).toEqual(["flight-1"]);
     expect(selected.attemptIds).toEqual(["att-empty"]);
     expect(selected.hasAttemptWithoutFileData).toBe(true);
+  });
+});
+
+describe("summarizeFlightAttention (E6)", () => {
+  const att = (id: string, status: Attempt["status"]): Attempt => ({
+    id,
+    flightId: "flight-1",
+    target: { kind: "local", basePath: "/repo", worktreePath: "/repo/wt" },
+    agentConfigId: "api-claude",
+    model: "m",
+    provider: "claude",
+    branch: "b",
+    baseBranch: "main",
+    sessionId: id,
+    status,
+    cost: 0,
+    tokens: 0,
+  });
+
+  it("counts reviewing + failed, ignoring running/completed/cancelled", () => {
+    const f: Flight = {
+      ...flight([]),
+      attempts: [
+        att("a", "reviewing"),
+        att("b", "failed"),
+        att("c", "completed"),
+        att("d", "cancelled"),
+        att("e", "running"),
+      ],
+    };
+    const s = summarizeFlightAttention(f);
+    expect(s.reviewing.map((a) => a.id)).toEqual(["a"]);
+    expect(s.failed.map((a) => a.id)).toEqual(["b"]);
+    expect(s.total).toBe(2);
+  });
+
+  it("is empty when nothing needs a human", () => {
+    const f: Flight = { ...flight([]), attempts: [att("a", "completed"), att("b", "running")] };
+    expect(summarizeFlightAttention(f).total).toBe(0);
   });
 });
