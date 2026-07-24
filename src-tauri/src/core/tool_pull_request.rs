@@ -69,6 +69,23 @@ fn temp_body_filename() -> String {
     format!(".pkt-pr-body-{:x}.md", nanos)
 }
 
+/// RAII guard that removes the worktree-local PR-body temp file on drop.
+///
+/// Manual removal at each return site misses async-task cancellation: if the
+/// tool future is dropped mid-flight (e.g. the turn is cancelled between
+/// writing the body and running `gh`), no return-site cleanup runs and the
+/// `.pkt-pr-body-*.md` file is orphaned. Dropping the guard covers early
+/// returns, panics, and cancellation alike.
+struct TempBodyFile {
+    path: PathBuf,
+}
+
+impl Drop for TempBodyFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 /// Tool entry point. Dispatches to local or SSH execution.
 pub async fn execute_create_pull_request(
     args: &serde_json::Value,
@@ -123,6 +140,11 @@ async fn run_local(
 
     std::fs::write(&body_path, body)
         .map_err(|e| format!("Failed to write PR body temp file: {}", e))?;
+    // Guard removes the temp file on every exit path — including async
+    // cancellation, which the old per-return removals missed.
+    let _body_guard = TempBodyFile {
+        path: body_path.clone(),
+    };
 
     // Stage 1: push the current branch.
     let push_out = run_local_cmd(
@@ -133,12 +155,10 @@ async fn run_local(
     .await;
 
     if let Err(e) = push_out {
-        let _ = std::fs::remove_file(&body_path);
         return Err(format!("git push failed: {}", e));
     }
     let push_out = push_out.unwrap();
     if !push_out.status.success() {
-        let _ = std::fs::remove_file(&body_path);
         let stderr = String::from_utf8_lossy(&push_out.stderr);
         return Err(format!(
             "git push failed (exit {}): {}",
@@ -167,7 +187,6 @@ async fn run_local(
         .collect();
 
     let result = run_local_cmd(project_path, &gh_argv, PR_TIMEOUT_SECS).await;
-    let _ = std::fs::remove_file(&body_path);
 
     let output = result.map_err(|e| format!("gh pr create failed: {}", e))?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -249,7 +268,7 @@ async fn run_ssh(
     // We embed the body via a single-quoted heredoc to avoid having to
     // escape user markdown. The body is written to the temp file, push
     // happens, gh runs, the temp file is removed unconditionally.
-    let eof = pick_heredoc_terminator(body);
+    let eof = crate::core::shared::pick_heredoc_terminator(body, "PACKETADE_PR_EOF_");
 
     let script = format!(
         "set -e\n\
@@ -299,19 +318,3 @@ async fn run_ssh(
     Ok(combined.trim().to_string())
 }
 
-/// Local copy of the heredoc-terminator picker (kept private to this module
-/// so we don't need to widen `tool_runtime_ssh`'s public surface).
-fn pick_heredoc_terminator(content: &str) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let mut suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    loop {
-        let candidate = format!("PACKETCODE_PR_EOF_{:x}", suffix);
-        if !content.contains(&candidate) {
-            return candidate;
-        }
-        suffix = suffix.wrapping_mul(31).wrapping_add(7);
-    }
-}
