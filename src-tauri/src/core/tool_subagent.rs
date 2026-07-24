@@ -77,7 +77,7 @@ async fn read_only_tool_definitions() -> Vec<ToolDefinition> {
 }
 
 /// Drain a `StreamChunk` receiver into (assistant text, tool calls).
-async fn collect_response(
+pub(crate) async fn collect_response(
     mut rx: mpsc::Receiver<StreamChunk>,
 ) -> Result<(String, Vec<ToolCall>), String> {
     let mut text = String::new();
@@ -104,6 +104,111 @@ async fn collect_response(
     }
 
     Ok((text, tool_calls))
+}
+
+/// Shared agentic tool loop for the sub-agent tools (`spawn_subagent` and
+/// custom `agent_*` tools). Runs up to `MAX_ITERATIONS` request→tool-dispatch
+/// rounds against `provider`, recursing into `tool_runtime::execute_tool` for
+/// each tool call (the recursion is boxed at `execute_tool`'s dispatch site),
+/// and returns the final assistant text. `empty_error` is returned when the
+/// loop finishes without producing any text.
+///
+/// Callers hold the shared [`SubagentDepthGuard`] across this call so nested
+/// sub-agent chains stay bounded.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_agent_loop(
+    provider: &dyn crate::core::llm_provider::LlmProvider,
+    api_key: &str,
+    model: String,
+    system_prompt: String,
+    tools: Vec<ToolDefinition>,
+    max_tokens: u32,
+    task: String,
+    parent_target: &ExecutionTarget,
+    empty_error: &str,
+) -> Result<String, String> {
+    let mut messages: Vec<ChatMessage> = vec![ChatMessage {
+        role: ChatRole::User,
+        content: MessageContent::text(task),
+    }];
+
+    let mut final_text = String::new();
+
+    for _ in 0..MAX_ITERATIONS {
+        let request = LlmRequest {
+            model: model.clone(),
+            messages: messages.clone(),
+            tools: tools.clone(),
+            system_prompt: Some(system_prompt.clone()),
+            max_tokens,
+            temperature: None,
+            attachments: Vec::new(),
+            thinking_enabled: false,
+            thinking_budget_tokens: 0,
+        };
+
+        let (tx, rx) = mpsc::channel::<StreamChunk>(64);
+        let stream_fut = provider.stream_chat(api_key, request, tx);
+        let collect_fut = collect_response(rx);
+
+        let (stream_res, collected) = tokio::join!(stream_fut, collect_fut);
+        stream_res?;
+        let (assistant_text, tool_calls) = collected?;
+
+        // Build the assistant turn (text + tool_use blocks) for history.
+        let mut blocks: Vec<ContentBlock> = Vec::new();
+        if !assistant_text.is_empty() {
+            blocks.push(ContentBlock::Text {
+                text: assistant_text.clone(),
+            });
+        }
+        for call in &tool_calls {
+            blocks.push(ContentBlock::ToolUse {
+                id: call.id.clone(),
+                name: call.name.clone(),
+                arguments: call.arguments.clone(),
+            });
+        }
+
+        if tool_calls.is_empty() {
+            // No tool calls => model's final answer.
+            final_text = assistant_text;
+            break;
+        }
+
+        messages.push(ChatMessage {
+            role: ChatRole::Assistant,
+            content: MessageContent::Blocks(blocks),
+        });
+
+        // Dispatch each tool call and collect results into a single tool message.
+        let mut result_blocks: Vec<ContentBlock> = Vec::with_capacity(tool_calls.len());
+        for call in tool_calls {
+            // Recurses into execute_tool — the future is boxed at that dispatch.
+            let result = tool_runtime::execute_tool(&call, parent_target).await;
+            result_blocks.push(ContentBlock::ToolResult {
+                tool_call_id: result.tool_call_id,
+                content: result.content,
+                is_error: result.is_error,
+            });
+        }
+        messages.push(ChatMessage {
+            role: ChatRole::Tool,
+            content: MessageContent::Blocks(result_blocks),
+        });
+
+        // Carry partial text forward so we still have something to return if
+        // the loop terminates early via the iteration cap.
+        if !assistant_text.is_empty() {
+            final_text = assistant_text;
+        }
+    }
+
+    if final_text.trim().is_empty() {
+        Err(empty_error.to_string())
+    } else {
+        Ok(final_text)
+    }
 }
 
 /// Shared recursion-depth guard for sub-agent tools (spawn_subagent +
@@ -161,88 +266,19 @@ pub async fn execute_spawn_subagent(
     let provider = get_provider("anthropic")?;
     let tools = read_only_tool_definitions().await;
 
-    let mut messages: Vec<ChatMessage> = vec![ChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::text(task),
-    }];
-
-    let mut final_text = String::new();
-
-    for _ in 0..MAX_ITERATIONS {
-        let request = LlmRequest {
-            model: SUBAGENT_MODEL.to_string(),
-            messages: messages.clone(),
-            tools: tools.clone(),
-            system_prompt: Some(SUBAGENT_SYSTEM_PROMPT.to_string()),
-            max_tokens: 2048,
-            temperature: None,
-            attachments: Vec::new(),
-            thinking_enabled: false,
-            thinking_budget_tokens: 0,
-        };
-
-        let (tx, rx) = mpsc::channel::<StreamChunk>(64);
-        let provider_ref = &*provider;
-        let stream_fut = provider_ref.stream_chat(&api_key, request, tx);
-        let collect_fut = collect_response(rx);
-
-        let (stream_res, collected) = tokio::join!(stream_fut, collect_fut);
-        stream_res?;
-        let (assistant_text, tool_calls) = collected?;
-
-        // Build the assistant turn (text + tool_use blocks) for history.
-        let mut blocks: Vec<ContentBlock> = Vec::new();
-        if !assistant_text.is_empty() {
-            blocks.push(ContentBlock::Text {
-                text: assistant_text.clone(),
-            });
-        }
-        for call in &tool_calls {
-            blocks.push(ContentBlock::ToolUse {
-                id: call.id.clone(),
-                name: call.name.clone(),
-                arguments: call.arguments.clone(),
-            });
-        }
-
-        if tool_calls.is_empty() {
-            // No tool calls => model's final answer (Anthropic stop_reason=end_turn equivalent).
-            final_text = assistant_text;
-            break;
-        }
-
-        messages.push(ChatMessage {
-            role: ChatRole::Assistant,
-            content: MessageContent::Blocks(blocks),
-        });
-
-        // Dispatch each tool call and collect results into a single tool message.
-        let mut result_blocks: Vec<ContentBlock> = Vec::with_capacity(tool_calls.len());
-        for call in tool_calls {
-            let result = tool_runtime::execute_tool(&call, parent_target).await;
-            result_blocks.push(ContentBlock::ToolResult {
-                tool_call_id: result.tool_call_id,
-                content: result.content,
-                is_error: result.is_error,
-            });
-        }
-        messages.push(ChatMessage {
-            role: ChatRole::Tool,
-            content: MessageContent::Blocks(result_blocks),
-        });
-
-        // Carry partial text forward so we still have something to return if
-        // the loop terminates early via the iteration cap.
-        if !assistant_text.is_empty() {
-            final_text = assistant_text;
-        }
-    }
-
-    if final_text.trim().is_empty() {
-        Err("Sub-agent finished without producing a summary".to_string())
-    } else {
-        Ok(final_text)
-    }
+    // `_depth_guard` (acquired above) stays alive across the whole loop.
+    run_agent_loop(
+        &*provider,
+        &api_key,
+        SUBAGENT_MODEL.to_string(),
+        SUBAGENT_SYSTEM_PROMPT.to_string(),
+        tools,
+        2048,
+        task,
+        parent_target,
+        "Sub-agent finished without producing a summary",
+    )
+    .await
 }
 
 #[cfg(test)]

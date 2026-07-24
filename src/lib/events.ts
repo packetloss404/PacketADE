@@ -18,18 +18,6 @@ export function agentChatDoneEvent(requestId: string): string {
   return `agent-chat:done:${requestId}`;
 }
 
-export function flightChatChunkEvent(requestId: string): string {
-  return `flight-chat:chunk:${requestId}`;
-}
-
-export function flightChatErrorEvent(requestId: string): string {
-  return `flight-chat:error:${requestId}`;
-}
-
-export function flightChatDoneEvent(requestId: string): string {
-  return `flight-chat:done:${requestId}`;
-}
-
 // Side chat (ephemeral helper overlay) — single global event names since
 // only one side-chat request is in flight at a time.
 export const sideChatChunkEvent = "side-chat:chunk";

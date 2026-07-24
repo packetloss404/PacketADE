@@ -49,6 +49,5 @@ pub mod worktree;
 
 pub use agent_config::AgentConfig;
 pub use flight::{Flight, FlightStatus, Milestone, Task, TaskStatus};
-pub use orchestrator::Orchestrator;
 pub use pty::{PtyEvent, PtyManager, PtySessionInfo};
 pub use shared::{hide_window, home_dir, lock_mutex, SKIP_DIRS};
