@@ -719,8 +719,8 @@ function AttentionCard({ flight }: { flight: Flight }) {
         {attention.failed.map((a) => (
           <span key={a.id} className="text-text-muted">
             {a.provider} failed
-            {a.failureCategory ? ` (${a.failureCategory.replace(/_/g, " ")})` : ""} — reassign from
-            the timeline or review the diff.
+            {a.failureCategory ? ` (${a.failureCategory.replace(/_/g, " ")})` : ""} — review the diff,
+            or reassign from the timeline when a suggestion appears.
           </span>
         ))}
       </div>
@@ -1012,6 +1012,7 @@ function TimelineRow({ event, flight }: { event: CoordinationEvent; flight: Flig
   const actor = event.agentId || (event.type === "escalation" ? "you" : "system");
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   // E5: an escalation that carries a concrete suggestion becomes a one-click
   // reassignment. Other event types render as display-only text.
@@ -1024,10 +1025,18 @@ function TimelineRow({ event, flight }: { event: CoordinationEvent; flight: Flig
   const doReassign = () => {
     if (!target || busy) return;
     setBusy(true);
+    setFailed(false);
     void useAsyncFlightStore
       .getState()
       .reassignAttempt(flight.id, target.attemptId, target.agentId)
       .then(() => setDismissed(true))
+      .catch((err) => {
+        // e.g. the new provider is over its cost guardrail, or the backend
+        // launch failed. Surface it and let the user retry rather than leaving
+        // an unhandled rejection with a silently re-enabled button.
+        console.warn("reassignAttempt failed", err);
+        setFailed(true);
+      })
       .finally(() => setBusy(false));
   };
 
@@ -1048,7 +1057,11 @@ function TimelineRow({ event, flight }: { event: CoordinationEvent; flight: Flig
               onClick={doReassign}
               className="rounded border border-accent-green/40 bg-accent-green/10 px-1.5 py-0.5 text-[10px] text-accent-green hover:bg-accent-green/20 disabled:opacity-50"
             >
-              {busy ? "Reassigning…" : `Reassign to ${agentLabel}`}
+              {busy
+                ? "Reassigning…"
+                : failed
+                  ? `Retry — reassign to ${agentLabel}`
+                  : `Reassign to ${agentLabel}`}
             </button>
             <button
               type="button"
