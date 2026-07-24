@@ -99,3 +99,82 @@ export function recordAttemptFailure(
   // against the latest attempt statuses and coordination log.
   maybeEscalate(flightId);
 }
+
+/* ------------------------------------------------------------------ *
+ * E2 — stuck-threshold detection.
+ *
+ * `isFlightStuck` above only fires once *every* attempt is terminal. A single
+ * attempt that just hangs (running, never emitting a terminal event) would
+ * otherwise never escalate. The sweep below raises one (per-attempt-deduped)
+ * escalation for any attempt that has been `running` past a wall-clock
+ * threshold.
+ * ------------------------------------------------------------------ */
+
+/** Default: an attempt running longer than 15 minutes is treated as stalled. */
+export const DEFAULT_STALL_THRESHOLD_MS = 15 * 60_000;
+
+/** True when an attempt has been `running` longer than `thresholdMs`. */
+export function isAttemptStalled(
+  attempt: Attempt,
+  nowMs: number,
+  thresholdMs = DEFAULT_STALL_THRESHOLD_MS,
+): boolean {
+  return (
+    attempt.status === "running" &&
+    typeof attempt.startedAt === "number" &&
+    nowMs - attempt.startedAt > thresholdMs
+  );
+}
+
+/** Escalate a stalled attempt at most once, deduped by its id in the log. */
+export function shouldEscalateStalled(
+  attempt: Attempt,
+  nowMs: number,
+  log: CoordinationEvent[],
+  thresholdMs = DEFAULT_STALL_THRESHOLD_MS,
+): boolean {
+  if (!isAttemptStalled(attempt, nowMs, thresholdMs)) return false;
+  return !log.some(
+    (e) => e.type === "escalation" && e.metadata?.stalledAttemptId === attempt.id,
+  );
+}
+
+/** Append one escalation per newly-stalled running attempt on the flight. */
+export function maybeEscalateStalled(
+  flightId: string,
+  nowMs: number,
+  thresholdMs = DEFAULT_STALL_THRESHOLD_MS,
+): void {
+  const store = useFlightStore.getState();
+  const flight = store.flights.find((f) => f.id === flightId);
+  if (!flight) return;
+  const log = flight.coordinationLog ?? [];
+  for (const attempt of flight.attempts ?? []) {
+    if (!shouldEscalateStalled(attempt, nowMs, log, thresholdMs)) continue;
+    const mins = Math.round((nowMs - (attempt.startedAt ?? nowMs)) / 60_000);
+    store.appendCoordinationEvent(flightId, {
+      type: "escalation",
+      taskId: attempt.id,
+      agentId: attempt.agentConfigId,
+      summary: `Attempt ${attemptLabel(attempt)} has been running ${mins}m without finishing — consider reassigning or checking on it.`,
+      metadata: { stalledAttemptId: attempt.id },
+    });
+  }
+}
+
+/**
+ * Start a periodic sweep for stalled running attempts across all flights.
+ * Returns a stop function. Runs only while some attempt is `running`.
+ */
+export function startStallSweep(intervalMs = 60_000): () => void {
+  const tick = () => {
+    const now = Date.now();
+    for (const f of useFlightStore.getState().flights) {
+      if ((f.attempts ?? []).some((a) => a.status === "running")) {
+        maybeEscalateStalled(f.id, now);
+      }
+    }
+  };
+  const handle = setInterval(tick, intervalMs);
+  return () => clearInterval(handle);
+}
