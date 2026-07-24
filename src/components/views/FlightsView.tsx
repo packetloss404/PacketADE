@@ -15,6 +15,10 @@ import {
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useFlightStore } from "@/stores/flightStore";
+import { useAsyncFlightStore } from "@/stores/asyncFlightStore";
+import { reassignTargetFromEscalation } from "@/lib/flightCoordination";
+import { getProviderForAgent } from "@/lib/api-models";
+import type { AgentCli } from "@/stores/agentTaskStore";
 import { useMemoryStore } from "@/stores/memoryStore";
 import { useAppStore } from "@/stores/appStore";
 import { LaunchAsyncFlightModal } from "@/components/flights/LaunchAsyncFlightModal";
@@ -953,7 +957,7 @@ function TimelineCard({ flight }: { flight: Flight }) {
         ) : (
           <div className="flex flex-col gap-2 p-2.5 text-[11px]">
             {events.map((e) => (
-              <TimelineRow key={e.id} event={e} />
+              <TimelineRow key={e.id} event={e} flight={flight} />
             ))}
           </div>
         )}
@@ -962,9 +966,30 @@ function TimelineCard({ flight }: { flight: Flight }) {
   );
 }
 
-function TimelineRow({ event }: { event: CoordinationEvent }) {
+function TimelineRow({ event, flight }: { event: CoordinationEvent; flight: Flight }) {
   const dot = EVENT_DOT[event.type] ?? "muted";
   const actor = event.agentId || (event.type === "escalation" ? "you" : "system");
+  const [dismissed, setDismissed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // E5: an escalation that carries a concrete suggestion becomes a one-click
+  // reassignment. Other event types render as display-only text.
+  const target = reassignTargetFromEscalation(event, flight.attempts ?? []);
+  const showAction = Boolean(target) && !dismissed;
+  const agentLabel = target
+    ? (getProviderForAgent(target.agentId as AgentCli)?.name ?? target.agentId)
+    : "";
+
+  const doReassign = () => {
+    if (!target || busy) return;
+    setBusy(true);
+    void useAsyncFlightStore
+      .getState()
+      .reassignAttempt(flight.id, target.attemptId, target.agentId)
+      .then(() => setDismissed(true))
+      .finally(() => setBusy(false));
+  };
+
   return (
     <div className="flex items-start gap-2">
       <span className="w-[32px] shrink-0 pt-px font-mono text-[10px] text-text-muted">
@@ -974,6 +999,25 @@ function TimelineRow({ event }: { event: CoordinationEvent }) {
       <span className="flex-1 leading-snug">
         <span className="font-medium text-text-primary">{actor}</span>{" "}
         <span className="text-text-secondary">{event.summary}</span>
+        {showAction && (
+          <span className="mt-1 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={doReassign}
+              className="rounded border border-accent-green/40 bg-accent-green/10 px-1.5 py-0.5 text-[10px] text-accent-green hover:bg-accent-green/20 disabled:opacity-50"
+            >
+              {busy ? "Reassigning…" : `Reassign to ${agentLabel}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDismissed(true)}
+              className="rounded border border-bg-border px-1.5 py-0.5 text-[10px] text-text-muted hover:text-text-secondary"
+            >
+              Dismiss
+            </button>
+          </span>
+        )}
       </span>
     </div>
   );
