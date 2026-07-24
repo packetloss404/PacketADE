@@ -17,11 +17,11 @@ Last updated: 2026-06-15 (status corrected 2026-07-24)
 | Item | Status | Notes |
 |------|--------|-------|
 | Phase 1: TaskRole type | ✅ Type only | `TaskRole` in `src/types/flight.ts`; `TASK_ROLE_CONFIG` in `src/lib/flight-colors.ts`. |
-| Phase 1: Role badges in UI | ❌ Not live | No component renders role badges (renderer died with `MilestonesPanel`). Tracked as **E8** in `flight-escalation-loop.md`. |
+| Phase 1: Role badges in UI | ✅ Restored (E8) | `TASK_ROLE_CONFIG` badges render per task in `FlightsView.tsx` `MilestonesCard` (re-added by the escalation loop's E8). |
 | Phase 2: ownedPaths on tasks | ✅ Done | `owned_paths` on the Rust Task (`core/flight.rs`) + `ownedPaths` on the TS Task. |
 | Phase 2: File collision detection | ✅ Done (relocated) | Live pre-launch gate in `asyncFlightStore.findAsyncLaunchPathCollisions` + Rust `flight_attempts.rs` (`validate_target_claims_against_active_attempts`). The old scheduler / `create_task.rs` wiring is gone. |
 | Phase 3: Coordination feed | ✅ Done (relocated) | Live in `FlightsView.tsx` `TimelineCard` (reads `flight.coordinationLog`). The old `MilestonesPanel`/`FlightDetail` surface is gone. |
-| Phase 3: Task handoff log | ⚠️ Type only | `handoffLog[]` persists on the TS Task, but no component renders it (UI died with `MilestonesPanel`). Tracked as **E8**. |
+| Phase 3: Task handoff log | ✅ Rendered | `handoff` coordination events render in `FlightsView.tsx` `TimelineCard`/`TimelineRow` (the escalation loop's E4/E5 emit them on reassignment). |
 | Phase 4: Escalation | 🔁 Superseded | Now scoped in [`flight-escalation-loop.md`](./flight-escalation-loop.md) (E1–E7). A suggestions-only pipeline (`src/lib/flightCoordination.ts`) already exists. |
 
 ## Goal

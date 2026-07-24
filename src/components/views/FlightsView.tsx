@@ -26,13 +26,14 @@ import { AsyncFlightGrid } from "@/components/flights/AsyncFlightGrid";
 import { FlightPlanningCard } from "@/components/flights/FlightPlanningCard";
 import { relativeTime } from "@/lib/time";
 import { summarizeFlightAttention, summarizeFlightReview } from "@/lib/flightReview";
-import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS } from "@/lib/flight-colors";
+import { FLIGHT_STATUS_CONFIG, FLIGHT_PRIORITY_COLORS, TASK_ROLE_CONFIG } from "@/lib/flight-colors";
 import type {
   Flight,
   FlightPriority,
   FlightStatus,
   CoordinationEvent,
   CoordinationEventType,
+  TaskRole,
 } from "@/types/flight";
 
 type ModalKind = null | "async";
@@ -891,6 +892,7 @@ function MilestonesCard({
       done: boolean;
       running: boolean;
       agent: string;
+      role?: TaskRole;
     }[] = [];
     for (const m of flight.milestones) {
       for (const t of m.tasks) {
@@ -901,6 +903,7 @@ function MilestonesCard({
           running:
             t.status === "running" || t.status === "queued" || t.status === "approval_needed",
           agent: t.agentConfigId || "—",
+          role: t.role,
         });
       }
     }
@@ -948,6 +951,13 @@ function MilestonesCard({
                 >
                   {m.title}
                 </span>
+                {m.role && (
+                  <span
+                    className={`shrink-0 text-[9px] font-medium uppercase tracking-wide ${TASK_ROLE_CONFIG[m.role].color}`}
+                  >
+                    {TASK_ROLE_CONFIG[m.role].label}
+                  </span>
+                )}
                 <span className="max-w-[140px] shrink-0 truncate text-[10px] text-text-muted">
                   {m.agent}
                 </span>
