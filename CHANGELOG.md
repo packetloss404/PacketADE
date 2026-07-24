@@ -45,9 +45,24 @@ task list.
   `delete_ssh_password`, and `ssh_test_connection` commands and the zero-caller
   `ask_flight_chat_stream` flight-chat feature were removed; and the worktree
   hook installers (~120 LoC) and sub-agent/custom-agent loops (~80 LoC) were
-  de-duplicated into shared helpers. Net −783/+282 lines. The
-  `orchestration.rs` scheduler removal stays open (blocked on untangling
-  `commands/state.rs` from `SharedOrchestrator`).
+  de-duplicated into shared helpers.
+- **Removed the legacy task-orchestration scheduler.** Deleted the zero-caller
+  `commands/orchestration.rs` command family (launch/pause/resume/cancel/tick/
+  record-spawn/notify-\* — no frontend callers) plus the `SharedOrchestrator`
+  managed state and its DTOs, and untangled `commands/state.rs` from it
+  (`save_settings_slice` now just persists to disk; everything reads settings
+  fresh via `load_state`). The `core::orchestrator` scheduler engine was pruned
+  to just `OrchestratorSettings` + a free `recover_flights_on_startup` function,
+  which lib.rs now calls directly at launch so post-restart flight/task
+  normalization is preserved exactly.
+- **Eager Mission→Flight migration.** Added one-shot startup passes that rewrite
+  the legacy `missionId` key to the canonical `flightId`:
+  `core::migration::migrate_mission_to_flight` re-saves persisted state when the
+  raw file still carries a `missionId` (canonicalizing flight-approval records),
+  and `migrateIssuesMissionToFlight` rewrites the link on `packetade:issues`.
+  Both are guarded/idempotent. This is the eager pass the read-side
+  `#[serde(alias = "missionId")]` / `issueStore` fallbacks needed before they can
+  be retired (one release cycle later). See `backlog.md` → Mission→Flight.
 
 ### Fixed
 

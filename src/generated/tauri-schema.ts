@@ -132,9 +132,3 @@ publishAttemptsAsPrs: boolean,
 coordinationLog: any[], };
 
 export type PersistedStateDto = { version: number, flights: Array<FlightDto>, agents: Array<AgentConfigDto>, issues: any[], settings: OrchestratorSettingsDto, ui: PersistedUiStateDto, workspaces: Array<WorkspaceDto>, memoryEvents: any[], memoryPatterns: any[], servers: Array<ServerConfigDto>, };
-
-export type TaskSpawnRequestDto = { flightId: string, milestoneId: string, taskId: string, agentConfigId: string, command: string, args: Array<string>, prompt: string, projectPath: string, };
-
-export type RunningTaskSnapshotDto = { taskId: string, milestoneId: string, flightId: string, sessionId: string, agentConfigId: string, startedAt: number, };
-
-export type OrchestratorSnapshotDto = { runningTaskIds: Array<string>, runningTasks: Array<RunningTaskSnapshotDto>, activeFlightIds: Array<string>, pausedAtMilestone: Array<[string, string]>, };

@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LEGACY_STORAGE_PREFIX, STORAGE_PREFIX } from "@/lib/brand";
-import { migrateLegacyStorage } from "@/lib/storage-migration";
+import { migrateIssuesMissionToFlight, migrateLegacyStorage } from "@/lib/storage-migration";
 
 const GUARD_KEY = STORAGE_PREFIX + "migrated-from-packetcode";
+const MISSION_GUARD_KEY = STORAGE_PREFIX + "migrated-mission-to-flight";
+const ISSUES_KEY = STORAGE_PREFIX + "issues";
 
 class MutationSensitiveStorage implements Storage {
   private readonly entries = new Map<string, string>();
@@ -105,5 +107,69 @@ describe("migrateLegacyStorage", () => {
     expect(localStorage.getItem(STORAGE_PREFIX + "settings")).toBe("current-settings");
     expect(localStorage.getItem(LEGACY_STORAGE_PREFIX + "settings")).toBe("legacy-settings");
     expect(localStorage.getItem(GUARD_KEY)).toBe("1");
+  });
+});
+
+describe("migrateIssuesMissionToFlight", () => {
+  const originalLocalStorage = globalThis.localStorage;
+
+  beforeEach(() => {
+    defineLocalStorage(originalLocalStorage);
+    localStorage.clear();
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    defineLocalStorage(originalLocalStorage);
+    localStorage.clear();
+  });
+
+  it("rewrites the legacy missionId flight link to flightId and drops the old key", () => {
+    localStorage.setItem(
+      ISSUES_KEY,
+      JSON.stringify({
+        issues: [
+          { id: "i1", title: "A", missionId: "F-1" },
+          { id: "i2", title: "B", flightId: "F-2" },
+        ],
+        nextTicketNum: 3,
+      }),
+    );
+
+    migrateIssuesMissionToFlight();
+
+    const parsed = JSON.parse(localStorage.getItem(ISSUES_KEY) as string);
+    expect(parsed.issues[0].flightId).toBe("F-1");
+    expect("missionId" in parsed.issues[0]).toBe(false);
+    expect(parsed.issues[1].flightId).toBe("F-2");
+    // Unrelated fields survive.
+    expect(parsed.nextTicketNum).toBe(3);
+    expect(localStorage.getItem(MISSION_GUARD_KEY)).toBe("1");
+  });
+
+  it("is a no-op once the guard is set", () => {
+    localStorage.setItem(MISSION_GUARD_KEY, "1");
+    const blob = JSON.stringify({ issues: [{ id: "i1", missionId: "F-1" }] });
+    localStorage.setItem(ISSUES_KEY, blob);
+
+    migrateIssuesMissionToFlight();
+
+    // Untouched — the guard short-circuits before any rewrite.
+    expect(localStorage.getItem(ISSUES_KEY)).toBe(blob);
+  });
+
+  it("sets the guard even when there is nothing to migrate", () => {
+    localStorage.setItem(
+      ISSUES_KEY,
+      JSON.stringify({ issues: [{ id: "i1", flightId: "F-9" }] }),
+    );
+
+    migrateIssuesMissionToFlight();
+
+    const parsed = JSON.parse(localStorage.getItem(ISSUES_KEY) as string);
+    expect(parsed.issues[0].flightId).toBe("F-9");
+    expect(localStorage.getItem(MISSION_GUARD_KEY)).toBe("1");
   });
 });

@@ -2,20 +2,9 @@ use crate::api::{
     AgentConfigDto, FlightDto, OrchestratorSettingsDto, PersistedStateDto, PersistedUiStateDto,
     ServerConfigDto, WorkspaceDto,
 };
-use crate::commands::orchestration::SharedOrchestrator;
 use crate::core::flight::Issue;
 use crate::core::orchestrator::OrchestratorSettings;
-use crate::core::shared::lock_mutex;
 use crate::core::storage::{self};
-
-pub fn apply_orchestrator_settings(
-    orchestrator: &SharedOrchestrator,
-    settings: OrchestratorSettings,
-) -> Result<(), String> {
-    let mut orch = lock_mutex(orchestrator)?;
-    orch.settings = settings;
-    Ok(())
-}
 
 #[tauri::command]
 pub fn load_persisted_state() -> Result<PersistedStateDto, String> {
@@ -60,13 +49,12 @@ pub fn save_agents_slice(agents: Vec<AgentConfigDto>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_settings_slice(
-    orchestrator: tauri::State<'_, SharedOrchestrator>,
-    settings: OrchestratorSettingsDto,
-) -> Result<(), String> {
+pub fn save_settings_slice(settings: OrchestratorSettingsDto) -> Result<(), String> {
+    // Persist to disk. Everything that reads settings (e.g. the worktree
+    // auto-trailer hook) loads them fresh from disk via `load_state().settings`,
+    // so there is no in-memory copy left to keep in sync.
     let settings: OrchestratorSettings = settings.into();
-    storage::save_settings(settings.clone())?;
-    apply_orchestrator_settings(&orchestrator, settings)
+    storage::save_settings(settings)
 }
 
 #[tauri::command]
@@ -97,42 +85,3 @@ pub fn save_servers_slice(servers: Vec<ServerConfigDto>) -> Result<(), String> {
     storage::save_servers(servers.into_iter().map(Into::into).collect())
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use crate::commands::orchestration::SharedOrchestrator;
-    use crate::core::orchestrator::{Orchestrator, OrchestratorSettings};
-
-    use super::apply_orchestrator_settings;
-
-    #[test]
-    fn apply_orchestrator_settings_updates_live_orchestrator() {
-        let orchestrator: SharedOrchestrator =
-            Arc::new(Mutex::new(Orchestrator::new(OrchestratorSettings {
-                max_parallel_sessions: 3,
-                milestone_gating: true,
-                project_path: "D:/old".to_string(),
-                auto_commit_trailer_enabled: true,
-                auto_commit_trailer_format:
-                    crate::core::orchestrator::DEFAULT_AUTO_COMMIT_TRAILER_FORMAT.to_string(),
-            })));
-        let next = OrchestratorSettings {
-            max_parallel_sessions: 8,
-            milestone_gating: false,
-            project_path: "D:/new".to_string(),
-            auto_commit_trailer_enabled: false,
-            auto_commit_trailer_format: "Custom: F-{flightId}/{attemptId}".to_string(),
-        };
-
-        apply_orchestrator_settings(&orchestrator, next.clone()).unwrap();
-
-        let orch = orchestrator.lock().unwrap();
-        assert_eq!(
-            orch.settings.max_parallel_sessions,
-            next.max_parallel_sessions
-        );
-        assert_eq!(orch.settings.milestone_gating, next.milestone_gating);
-        assert_eq!(orch.settings.project_path, next.project_path);
-    }
-}

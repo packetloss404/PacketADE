@@ -63,6 +63,34 @@ pub fn migrate_data_dir() {
     }
 }
 
+/// One-shot: canonicalize legacy `missionId` keys in persisted flight-approval
+/// records to `flightId`.
+///
+/// `FlightApprovalRequest`'s `#[serde(alias = "missionId")]` deserializes the
+/// legacy key into `flight_id`, so a single load → save round-trip through
+/// `update_state` re-serializes it canonically and drops the legacy key (along
+/// with any other unknown fields). Guarded on the raw state file still
+/// containing a `missionId` key, so it's a no-op after the first canonical
+/// save — cheap on every subsequent launch. Best-effort: warns on failure and
+/// never blocks startup. (The Mission→Flight rename kept `missionId` as a
+/// read-side alias; this is the eager pass that lets the alias be retired a
+/// release later.)
+pub fn migrate_mission_to_flight() {
+    let path = crate::core::storage::data_dir().join(crate::core::storage::STATE_FILENAME);
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        // No state file yet (fresh install) — nothing to migrate.
+        Err(_) => return,
+    };
+    if !raw.contains("\"missionId\"") {
+        return;
+    }
+    match crate::core::storage::update_state(|_| {}) {
+        Ok(()) => info!("Canonicalized legacy missionId keys to flightId in persisted state"),
+        Err(e) => warn!("mission->flight state migration failed: {}", e),
+    }
+}
+
 /// Recursively copy `src` into `dst`, creating `dst` and intermediate
 /// directories as needed. Best-effort helper for the cross-volume migration
 /// fallback; returns the first I/O error encountered.
@@ -79,4 +107,81 @@ fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrate_mission_to_flight_rewrites_legacy_key_on_disk() {
+        let tmp = std::env::temp_dir().join(format!(
+            "packetade-mission-mig-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let _guard = crate::core::storage::redirect_data_dir_for_test(tmp.clone());
+        let path = tmp.join(crate::core::storage::STATE_FILENAME);
+
+        // Build a real, valid state carrying one flight-approval record, then
+        // downgrade the canonical `flightId` key to the legacy `missionId` on
+        // disk so the migration has something to rewrite.
+        let mut state = crate::core::storage::PersistedState::default();
+        state
+            .flight_approvals
+            .push(crate::core::flight::FlightApprovalRequest {
+                id: "a1".to_string(),
+                flight_id: "F-1".to_string(),
+                question: "q?".to_string(),
+                options: Vec::new(),
+                awaiting_since: 0,
+                resolved: false,
+                resolution: None,
+                resolved_at: None,
+            });
+        let legacy = serde_json::to_string(&state)
+            .unwrap()
+            .replace("\"flightId\"", "\"missionId\"");
+        assert!(legacy.contains("\"missionId\":\"F-1\""));
+        std::fs::write(&path, legacy).unwrap();
+
+        migrate_mission_to_flight();
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            after.contains("\"flightId\":\"F-1\""),
+            "missionId should be rewritten to flightId: {after}"
+        );
+        assert!(
+            !after.contains("missionId"),
+            "legacy missionId key should be gone: {after}"
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn migrate_mission_to_flight_is_noop_without_legacy_key() {
+        let tmp = std::env::temp_dir().join(format!(
+            "packetade-mission-mig-noop-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let _guard = crate::core::storage::redirect_data_dir_for_test(tmp.clone());
+        let path = tmp.join(crate::core::storage::STATE_FILENAME);
+
+        let state = crate::core::storage::PersistedState::default();
+        let canonical = serde_json::to_string(&state).unwrap();
+        std::fs::write(&path, &canonical).unwrap();
+
+        migrate_mission_to_flight();
+
+        // Untouched: no legacy key present, so the file is not rewritten.
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(after, canonical);
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
 }
