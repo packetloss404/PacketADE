@@ -130,6 +130,7 @@ pub(super) struct DonePayload {
     pub output_tokens: u64,
     pub cache_read_input_tokens: u64,
     pub cache_creation_input_tokens: u64,
+    pub cancelled: bool,
     /// v3: opaque resume token the frontend can persist and re-send via
     /// `start_api_agent_session.resume` to continue this conversation across
     /// app restarts.
@@ -146,7 +147,7 @@ pub(super) struct PlanItemPayload {
     pub content: String,
     /// "pending" | "in_progress" | "completed"
     pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "activeForm", skip_serializing_if = "Option::is_none")]
     pub active_form: Option<String>,
 }
 
@@ -222,4 +223,23 @@ pub(super) struct McpReadError {
 pub(super) struct McpSourcesPayload {
     pub sources: Vec<McpSourceInfo>,
     pub read_errors: Vec<McpReadError>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PlanItemPayload;
+
+    #[test]
+    fn plan_item_serializes_active_form_in_frontend_shape() {
+        let value = serde_json::to_value(PlanItemPayload {
+            id: Some("todo-1".to_string()),
+            content: "Run checks".to_string(),
+            status: "in_progress".to_string(),
+            active_form: Some("Running checks".to_string()),
+        })
+        .expect("serialize plan item");
+
+        assert_eq!(value["activeForm"], "Running checks");
+        assert!(value.get("active_form").is_none());
+    }
 }

@@ -23,10 +23,11 @@ vi.mock("@/lib/agentsMd", () => ({
 }));
 
 const notifyApprovalNeededMock = vi.fn();
+const notifySessionCompleteMock = vi.fn();
 
 vi.mock("@/lib/notifications", () => ({
   notifyConversationDone: vi.fn().mockResolvedValue(undefined),
-  notifySessionComplete: vi.fn().mockResolvedValue(undefined),
+  notifySessionComplete: (...args: unknown[]) => notifySessionCompleteMock(...args),
   notifySessionError: vi.fn().mockResolvedValue(undefined),
   notifyApprovalNeeded: (...args: unknown[]) => notifyApprovalNeededMock(...args),
 }));
@@ -46,7 +47,6 @@ vi.mock("@/stores/layoutStore", () => ({
     })),
   },
 }));
-
 
 vi.mock("@/lib/tauri", () => ({
   createPtySession: vi.fn(),
@@ -222,6 +222,67 @@ describe("apiAgentListeners chunk coalescing", () => {
     expect(msg?.content).toBe("final words");
     expect(msg?.isStreaming).toBe(false);
   });
+
+  it("correlates a tool result that arrives after done settled the turn", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    useAgentTaskStore.setState({
+      conversations: [makeStreamingConversation("conv-late-tool")],
+      selectedConversationId: "conv-late-tool",
+    });
+    await installApiAgentListeners("conv-late-tool");
+
+    listeners.get("api-agent:tool-start:conv-late-tool")?.({
+      payload: { id: "tool-1", name: "read_file", input: '{"path":"README.md"}' },
+    });
+    listeners.get("api-agent:done:conv-late-tool")?.({
+      payload: {
+        input_tokens: 1,
+        output_tokens: 2,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
+    listeners.get("api-agent:tool-result:conv-late-tool")?.({
+      payload: {
+        id: "tool-1",
+        name: "read_file",
+        content: "late output",
+        is_error: false,
+        input: "",
+      },
+    });
+
+    const tool = useAgentTaskStore
+      .getState()
+      .conversations[0].messages.find((message) => message.role === "assistant")?.toolCalls?.[0];
+    expect(tool).toMatchObject({ id: "tool-1", status: "done", fullContent: "late output" });
+    expect(tool?.input).toBe('{"path":"README.md"}');
+  });
+
+  it("preserves the auto-failover notice when retry truncates the failed assistant", async () => {
+    const { useAgentTaskStore } = await import("@/stores/agentTaskStore");
+    const { installApiAgentListeners } = await import("@/stores/apiAgentListeners");
+    useAgentTaskStore.setState({
+      conversations: [makeStreamingConversation("conv-failover-notice")],
+      selectedConversationId: "conv-failover-notice",
+    });
+    await installApiAgentListeners("conv-failover-notice");
+
+    listeners.get("api-agent:error:conv-failover-notice")?.({
+      payload: { message: "429 rate limit exceeded" },
+    });
+    await Promise.resolve();
+
+    const conversation = useAgentTaskStore.getState().conversations[0];
+    expect(
+      conversation.messages.some((message) => message.content.startsWith("(auto-failover:")),
+    ).toBe(true);
+    expect(conversation.messages[conversation.messages.length - 1]).toMatchObject({
+      role: "assistant",
+      isStreaming: true,
+    });
+  });
 });
 
 describe("apiAgentListeners queued message drain", () => {
@@ -369,7 +430,7 @@ describe("Stop with a queued message does not re-send it (G33)", () => {
       };
       useAgentTaskStore.setState({
         conversations: [conv],
-        selectedConversationId: "conv-stop",
+        selectedConversationId: null,
       });
 
       await installApiAgentListeners("conv-stop");
@@ -383,16 +444,16 @@ describe("Stop with a queued message does not re-send it (G33)", () => {
           output_tokens: 2,
           cache_read_input_tokens: 0,
           cache_creation_input_tokens: 0,
+          cancelled: true,
         },
       });
 
       vi.runAllTimers();
 
       expect(sendApiAgentMessageMock).not.toHaveBeenCalled();
+      expect(notifySessionCompleteMock).not.toHaveBeenCalled();
 
-      const updated = useAgentTaskStore
-        .getState()
-        .conversations.find((c) => c.id === "conv-stop");
+      const updated = useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-stop");
       expect(updated?.queuedMessages).toEqual([]);
       expect(updated?.status).toBe("idle");
       expect(updated?.messages.some((m) => m.queued)).toBe(false);
@@ -598,12 +659,8 @@ describe("apiAgentListeners baseline recording", () => {
       },
     });
 
-    const conv = useAgentTaskStore
-      .getState()
-      .conversations.find((c) => c.id === "conv-in");
-    const tc = conv?.messages
-      .flatMap((m) => m.toolCalls ?? [])
-      .find((t) => t.id === "tc-1");
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-in");
+    const tc = conv?.messages.flatMap((m) => m.toolCalls ?? []).find((t) => t.id === "tc-1");
     expect(tc?.status).toBe("done");
     expect(tc?.name).toBe("Write");
     expect(tc?.input).toBe(writeInput);
@@ -632,12 +689,8 @@ describe("apiAgentListeners baseline recording", () => {
       },
     });
 
-    const conv = useAgentTaskStore
-      .getState()
-      .conversations.find((c) => c.id === "conv-ip");
-    const tc = conv?.messages
-      .flatMap((m) => m.toolCalls ?? [])
-      .find((t) => t.id === "tc-1");
+    const conv = useAgentTaskStore.getState().conversations.find((c) => c.id === "conv-ip");
+    const tc = conv?.messages.flatMap((m) => m.toolCalls ?? []).find((t) => t.id === "tc-1");
     expect(tc?.input).toBe(resultInput);
   });
 });
@@ -703,11 +756,7 @@ describe("apiAgentListeners tiered approval gating (P1-9)", () => {
       payload: { id: "tool-1", name: "Grep", arguments: '{"pattern":"foo"}' },
     });
 
-    expect(respondPermissionTauriMock).toHaveBeenCalledWith(
-      "conv-read",
-      "tool-1",
-      "allow_once",
-    );
+    expect(respondPermissionTauriMock).toHaveBeenCalledWith("conv-read", "tool-1", "allow_once");
     expect(useAgentApprovalStore.getState().permissions.has("conv-read")).toBe(false);
     expect(notifyApprovalNeededMock).not.toHaveBeenCalled();
   });
@@ -723,11 +772,7 @@ describe("apiAgentListeners tiered approval gating (P1-9)", () => {
       },
     });
 
-    expect(respondPermissionTauriMock).toHaveBeenCalledWith(
-      "conv-edit",
-      "tool-2",
-      "allow_once",
-    );
+    expect(respondPermissionTauriMock).toHaveBeenCalledWith("conv-edit", "tool-2", "allow_once");
     expect(useAgentApprovalStore.getState().permissions.has("conv-edit")).toBe(false);
   });
 
@@ -740,7 +785,10 @@ describe("apiAgentListeners tiered approval gating (P1-9)", () => {
 
     expect(respondPermissionTauriMock).not.toHaveBeenCalled();
     expect(
-      useAgentApprovalStore.getState().permissions.get("conv-shell")?.map((p) => p.id),
+      useAgentApprovalStore
+        .getState()
+        .permissions.get("conv-shell")
+        ?.map((p) => p.id),
     ).toEqual(["tool-3"]);
     expect(notifyApprovalNeededMock).toHaveBeenCalledWith("conv-shell", "Gating");
   });
@@ -758,7 +806,10 @@ describe("apiAgentListeners tiered approval gating (P1-9)", () => {
 
     expect(respondPermissionTauriMock).not.toHaveBeenCalled();
     expect(
-      useAgentApprovalStore.getState().permissions.get("conv-out")?.map((p) => p.id),
+      useAgentApprovalStore
+        .getState()
+        .permissions.get("conv-out")
+        ?.map((p) => p.id),
     ).toEqual(["tool-4"]);
   });
 
@@ -777,13 +828,12 @@ describe("apiAgentListeners tiered approval gating (P1-9)", () => {
       },
     });
 
-    expect(respondPermissionTauriMock).toHaveBeenCalledWith(
-      "conv-manual",
-      "tool-5",
-      "allow_once",
-    );
+    expect(respondPermissionTauriMock).toHaveBeenCalledWith("conv-manual", "tool-5", "allow_once");
     expect(
-      useAgentApprovalStore.getState().permissions.get("conv-manual")?.map((p) => p.id),
+      useAgentApprovalStore
+        .getState()
+        .permissions.get("conv-manual")
+        ?.map((p) => p.id),
     ).toEqual(["tool-6"]);
   });
 
@@ -798,7 +848,10 @@ describe("apiAgentListeners tiered approval gating (P1-9)", () => {
 
     expect(respondPermissionTauriMock).not.toHaveBeenCalled();
     expect(
-      useAgentApprovalStore.getState().permissions.get("conv-plan")?.map((p) => p.id),
+      useAgentApprovalStore
+        .getState()
+        .permissions.get("conv-plan")
+        ?.map((p) => p.id),
     ).toEqual(["tool-7"]);
   });
 
@@ -813,7 +866,10 @@ describe("apiAgentListeners tiered approval gating (P1-9)", () => {
 
     expect(respondPermissionTauriMock).not.toHaveBeenCalled();
     expect(
-      useAgentApprovalStore.getState().permissions.get("conv-deny")?.map((p) => p.id),
+      useAgentApprovalStore
+        .getState()
+        .permissions.get("conv-deny")
+        ?.map((p) => p.id),
     ).toEqual(["tool-8"]);
   });
 });

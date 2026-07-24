@@ -788,8 +788,17 @@ fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {
     if path.exists() {
         let previous =
             fs::read(path).map_err(|e| format!("Failed to read existing {:?}: {}", path, e))?;
-        fs::write(&backup_path, previous)
+        let mut backup = fs::File::create(&backup_path)
+            .map_err(|e| format!("Failed to create backup {:?}: {}", backup_path, e))?;
+        backup
+            .write_all(&previous)
             .map_err(|e| format!("Failed to write backup {:?}: {}", backup_path, e))?;
+        backup
+            .flush()
+            .map_err(|e| format!("Failed to flush backup {:?}: {}", backup_path, e))?;
+        backup
+            .sync_all()
+            .map_err(|e| format!("Failed to sync backup {:?}: {}", backup_path, e))?;
     }
 
     // Atomically replace the destination. std::fs::rename replaces an existing
@@ -798,6 +807,29 @@ fn write_with_backup(path: &PathBuf, content: &str) -> Result<(), String> {
     // neither the primary nor the renamed tmp exists on disk.
     fs::rename(&tmp_path, path).map_err(|e| format!("Failed to replace {:?}: {}", path, e))?;
 
+    sync_parent_directory(path)?;
+
+    Ok(())
+}
+
+/// Persist directory-entry updates on platforms where opening and syncing a
+/// directory is supported. Windows flushes the renamed file through the file
+/// handle above; Rust's standard library does not expose a portable directory
+/// handle there.
+#[cfg(unix)]
+fn sync_parent_directory(path: &std::path::Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Missing parent directory for {:?}", path))?;
+    let directory = fs::File::open(parent)
+        .map_err(|e| format!("Failed to open parent directory {:?}: {}", parent, e))?;
+    directory
+        .sync_all()
+        .map_err(|e| format!("Failed to sync parent directory {:?}: {}", parent, e))
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_path: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 

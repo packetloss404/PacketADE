@@ -104,12 +104,6 @@ if (exists("agent-sidecar/dist/index.js")) {
   fail("Sidecar dist exists", "Run pnpm run prebundle or pnpm run sidecar:build before packaging");
 }
 
-if (exists("src-tauri/binaries/node-x86_64-pc-windows-msvc.exe")) {
-  pass("Windows Node runtime fetched");
-} else {
-  fail("Windows Node runtime fetched", "Run pnpm run fetch-node before Windows packaging");
-}
-
 // Cross-arch consistency: the staged Node runtime and the installed sidecar
 // native platform package must both match the resolved build target.
 let releaseTarget = null;

@@ -1,6 +1,6 @@
 //! Anthropic Messages API provider.
 
-use crate::core::llm_provider::LlmProvider;
+use crate::core::llm_provider::{delimit_final_sse_line, LlmProvider};
 use crate::core::llm_types::*;
 use futures::StreamExt;
 use reqwest::header::{HeaderValue, CONTENT_TYPE};
@@ -189,11 +189,6 @@ impl LlmProvider for AnthropicProvider {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read response".to_string());
-            let _ = tx
-                .send(StreamChunk::Error {
-                    message: format!("Anthropic API error ({}): {}", status, body_text),
-                })
-                .await;
             return Err(format!("Anthropic API error ({}): {}", status, body_text));
         }
 
@@ -213,14 +208,28 @@ impl LlmProvider for AnthropicProvider {
         let mut cache_read_input_tokens: u64 = 0;
         let mut cache_creation_input_tokens: u64 = 0;
 
-        while let Some(chunk_result) = stream.next().await {
+        let mut stream_ended = false;
+        loop {
             // RA1: if the consumer dropped the receiver, stop parsing the rest of
             // the upstream HTTP stream instead of draining it into a dead channel.
             if tx.is_closed() {
                 return Ok(());
             }
-            let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
-            buffer.extend_from_slice(&chunk);
+            if !stream_ended {
+                match stream.next().await {
+                    Some(chunk_result) => {
+                        let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
+                        buffer.extend_from_slice(&chunk);
+                    }
+                    None => {
+                        stream_ended = true;
+                        // SSE permits the final record at EOF without a trailing
+                        // newline. Add a parser delimiter so it follows the exact
+                        // same path as every other complete line.
+                        delimit_final_sse_line(&mut buffer);
+                    }
+                }
+            }
 
             while let Some(line_end) = buffer.iter().position(|&b| b == b'\n') {
                 let line_bytes: Vec<u8> = buffer.drain(..=line_end).collect();
@@ -386,17 +395,16 @@ impl LlmProvider for AnthropicProvider {
                                     .and_then(|e| e.get("message"))
                                     .and_then(|m| m.as_str())
                                     .unwrap_or("Unknown error");
-                                let _ = tx
-                                    .send(StreamChunk::Error {
-                                        message: msg.to_string(),
-                                    })
-                                    .await;
                                 return Err(msg.to_string());
                             }
                             _ => {}
                         }
                     }
                 }
+            }
+
+            if stream_ended {
+                break;
             }
         }
 

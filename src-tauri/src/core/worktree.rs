@@ -348,12 +348,12 @@ async fn install_prepare_commit_msg_hook(
     let attempt_id_safe = sanitize_trailer_value(attempt_id);
     let flight_title_safe = sanitize_trailer_value(flight_title);
 
-    let trailer_line = render_trailer_format(
+    let trailer_line = sanitize_trailer_value(&render_trailer_format(
         &settings.auto_commit_trailer_format,
         &flight_id_safe,
         &attempt_id_safe,
         &flight_title_safe,
-    );
+    ));
 
     // Hook script. POSIX-sh; Git for Windows runs MSYS sh against the
     // shebang. Use a `case` rather than `grep -q` to keep the script
@@ -944,7 +944,11 @@ pub async fn ssh_unstage_files(
     args.extend(paths.iter().map(|s| s.as_str()));
     let (out, code) = ssh_git(cfg, remote_path, &args).await?;
     if code != 0 {
-        return Err(format!("git restore failed (exit {}): {}", code, out.trim()));
+        return Err(format!(
+            "git restore failed (exit {}): {}",
+            code,
+            out.trim()
+        ));
     }
     Ok(out)
 }
@@ -984,11 +988,17 @@ pub async fn ssh_push(cfg: &SshConfig, remote_path: &str) -> Result<String, Stri
         ));
     }
     if !ssh_worktree_clean(cfg, remote_path).await? {
-        return Err("Cannot push with local changes present. Commit or stash them first.".to_string());
+        return Err(
+            "Cannot push with local changes present. Commit or stash them first.".to_string(),
+        );
     }
     // No upstream set → push with -u to establish tracking; else a plain push.
-    let (_, up_code) =
-        ssh_git(cfg, remote_path, &["rev-parse", "--abbrev-ref", "@{upstream}"]).await?;
+    let (_, up_code) = ssh_git(
+        cfg,
+        remote_path,
+        &["rev-parse", "--abbrev-ref", "@{upstream}"],
+    )
+    .await?;
     let (out, code) = if up_code != 0 {
         ssh_git(cfg, remote_path, &["push", "-u", "origin", &branch]).await?
     } else {
@@ -1245,6 +1255,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rendered_user_format_is_sanitized_after_substitution() {
+        let rendered = render_trailer_format(
+            "Run-By: {flightId}'\nprintf pwned",
+            "safe-flight",
+            "attempt",
+            "title",
+        );
+        let cleaned = sanitize_trailer_value(&rendered);
+        assert_eq!(cleaned, "Run-By: safe-flight  printf pwned");
+        assert!(!cleaned.contains('\''));
+        assert!(!cleaned.contains('\n'));
+    }
+
     // --- P2-S2: remove_local_worktree delete_branch flag ---
 
     /// Build a fixture repo with a conversation worktree at
@@ -1351,7 +1375,9 @@ mod tests {
         let root = fixture_repo_with_worktree("missing", conv);
         let base = root.to_string_lossy().to_string();
         // Remove once (with flag) then again — the second call is a no-op.
-        remove_local_worktree(&base, conv, true).await.expect("first removal");
+        remove_local_worktree(&base, conv, true)
+            .await
+            .expect("first removal");
         remove_local_worktree(&base, conv, true)
             .await
             .expect("idempotent second removal");

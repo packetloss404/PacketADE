@@ -82,6 +82,28 @@ fn confine_prelude(base_q: &str, tgt_q: &str, mode: ConfineTarget) -> String {
     }
 }
 
+/// Confine the nearest existing ancestor of a path before creating any missing
+/// directories. This closes the window where `mkdir -p` could follow an
+/// existing in-workspace symlink to a directory outside the workspace before
+/// the normal parent confinement ran.
+fn confine_creation_ancestor_prelude(base_q: &str, tgt_q: &str) -> String {
+    format!(
+        "__base=$(realpath -- {base}) || exit {nr}\n\
+         __probe=$(dirname -- {tgt})\n\
+         while [ ! -e \"$__probe\" ] && [ ! -L \"$__probe\" ]; do\n\
+         __next=$(dirname -- \"$__probe\")\n\
+         [ \"$__next\" = \"$__probe\" ] && exit {esc}\n\
+         __probe=$__next\n\
+         done\n\
+         __ancestor=$(realpath -- \"$__probe\") || exit {nr}\n\
+         case \"$__ancestor/\" in \"$__base\"/*) : ;; *) exit {esc};; esac\n",
+        base = base_q,
+        tgt = tgt_q,
+        nr = EXIT_NO_REALPATH,
+        esc = EXIT_ESCAPE,
+    )
+}
+
 /// Map a remote-script exit status to a confinement-specific error message,
 /// or `None` if the failure was not a confinement failure (caller handles
 /// the generic case).
@@ -279,18 +301,20 @@ pub async fn execute_write_file(
     // Embed the content via a single-quoted heredoc so we don't depend on
     // the SSH stdin (which may be carrying the password).
     let eof = pick_heredoc_terminator(content);
-    // Create the parent first so realpath can resolve it, then confine on the
-    // PARENT (the leaf may not exist yet — mirrors the local
-    // canonicalize-the-parent behaviour), then write. The `cat > ... <<'EOF'`
-    // and its heredoc body must stay adjacent and untouched.
+    // Confine the nearest existing ancestor before creation, then create and
+    // re-confine the final parent/leaf immediately before writing. The `cat >
+    // ... <<'EOF'` and its heredoc body must stay adjacent and untouched.
     let script = format!(
         "p={q}\n\
+         {ancestor_confine}\
          mkdir -p \"$(dirname \"$p\")\" || exit 5\n\
          {confine}\
          cat > \"$p\" <<'{eof}'\n\
          {content}\n\
          {eof}\n",
         q = sh_quote(&full),
+        ancestor_confine =
+            confine_creation_ancestor_prelude(&sh_quote(&config.remote_path), "\"$p\""),
         confine = confine_prelude(
             &sh_quote(&config.remote_path),
             "\"$p\"",
@@ -523,5 +547,20 @@ mod tests {
         // base + the single existing-target resolve.
         assert_eq!(s.matches(&format!("exit {}", EXIT_NO_REALPATH)).count(), 2);
         assert_eq!(s.matches(&format!("exit {}", EXIT_ESCAPE)).count(), 1);
+    }
+
+    #[test]
+    fn creation_ancestor_is_confined_before_mkdir() {
+        let ancestor = confine_creation_ancestor_prelude("'/ws'", "\"$p\"");
+        let script = format!(
+            "p='/ws/new/file'\n{}mkdir -p \"$(dirname \"$p\")\"\n",
+            ancestor
+        );
+
+        let confine_pos = script.find("__ancestor=$(realpath").unwrap();
+        let mkdir_pos = script.find("mkdir -p").unwrap();
+        assert!(confine_pos < mkdir_pos);
+        assert!(ancestor.contains("while [ ! -e \"$__probe\" ] && [ ! -L \"$__probe\" ]"));
+        assert!(ancestor.contains("case \"$__ancestor/\""));
     }
 }

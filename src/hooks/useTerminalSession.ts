@@ -11,6 +11,11 @@ import {
 } from "@/lib/tauri";
 import { logSwallowed } from "@/lib/logSwallowed";
 import { ptyExitEvent, ptyOutputEvent } from "@/lib/events";
+import {
+  bufferedPtyRemainder,
+  parsePtyOutputPayload,
+  type PtyOutputPayload,
+} from "@/lib/ptyReplay";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useActivityStore } from "@/stores/activityStore";
@@ -27,15 +32,6 @@ function useLatestRef<T>(value: T): RefObject<T> {
   const ref = useRef(value);
   ref.current = value;
   return ref;
-}
-
-function nonOverlappingSuffix(base: string, tail: string): string {
-  if (!base || !tail) return tail;
-  const max = Math.min(base.length, tail.length);
-  for (let len = max; len > 0; len--) {
-    if (base.endsWith(tail.slice(0, len))) return tail.slice(len);
-  }
-  return tail;
 }
 
 interface UseTerminalSessionOptions {
@@ -85,13 +81,19 @@ export function useTerminalSession({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const unlistenersRef = useRef<UnlistenFn[]>([]);
   const exitRequestedRef = useRef(false);
+  const endedSessionIdsRef = useRef(new Set<string>());
 
   // Store callbacks in refs so they never destabilize memoised effects.
   const onSessionCreatedRef = useLatestRef(onSessionCreated);
   const onSessionEndedRef = useLatestRef(onSessionEnded);
-  const emitSessionEnded = useCallback(() => {
-    onSessionEndedRef.current?.();
-  }, [onSessionEndedRef]);
+  const emitSessionEnded = useCallback(
+    (sessionId: string | null) => {
+      if (!sessionId || endedSessionIdsRef.current.has(sessionId)) return;
+      endedSessionIdsRef.current.add(sessionId);
+      onSessionEndedRef.current?.();
+    },
+    [onSessionEndedRef],
+  );
 
   const [alive, setAlive] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -249,7 +251,7 @@ export function useTerminalSession({
       startDurationTimer(tabId);
 
       let buffering = true;
-      let buffered = "";
+      const buffered: PtyOutputPayload[] = [];
       let exitWhileBuffering = false;
       let sessionFinished = false;
       const finishSession = () => {
@@ -274,7 +276,7 @@ export function useTerminalSession({
         setCurrentSessionId(null);
         sessionIdRef.current = null;
         useLayoutStore.getState().setPaneSession(paneId, null);
-        emitSessionEnded();
+        emitSessionEnded(sessionId);
         term.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
         useTabStore.getState().updateTabStatus(tabId, "done");
         stopDurationTimer();
@@ -294,11 +296,12 @@ export function useTerminalSession({
         }
       };
 
-      const outputUnlisten = await listen<string>(ptyOutputEvent(sessionId), (event) => {
+      const outputUnlisten = await listen<unknown>(ptyOutputEvent(sessionId), (event) => {
+        const output = parsePtyOutputPayload(event.payload);
         if (buffering) {
-          buffered += event.payload;
+          buffered.push(output);
         } else {
-          term.write(event.payload);
+          term.write(output.data);
         }
       });
 
@@ -316,7 +319,7 @@ export function useTerminalSession({
       const transcript = await readPtyTranscript(sessionId).catch(() => null);
       const replayed = transcript?.data ?? "";
       if (replayed) term.write(replayed);
-      const bufferedRemainder = nonOverlappingSuffix(replayed, buffered);
+      const bufferedRemainder = bufferedPtyRemainder(replayed, transcript?.sequence, buffered);
       if (bufferedRemainder) term.write(bufferedRemainder);
       buffering = false;
       if (exitWhileBuffering) finishSession();
@@ -399,7 +402,7 @@ export function useTerminalSession({
         killPty(sid).catch(() => {});
       }
       useLayoutStore.getState().setPaneSession(paneId, null);
-      emitSessionEnded();
+      emitSessionEnded(sid);
       const tid = tabIdRef.current;
       if (tid) {
         useTabStore.getState().removeTab(tid);
@@ -420,7 +423,7 @@ export function useTerminalSession({
     setCurrentSessionId(null);
     sessionIdRef.current = null;
     useLayoutStore.getState().setPaneSession(paneId, null);
-    emitSessionEnded();
+    emitSessionEnded(sid);
     stopDurationTimer();
     const tid = tabIdRef.current;
     if (tid) {
@@ -441,7 +444,7 @@ export function useTerminalSession({
     setShowApproval(false);
     setCurrentSessionId(null);
     useLayoutStore.getState().setPaneSession(paneId, null);
-    emitSessionEnded();
+    emitSessionEnded(sid);
     stopDurationTimer();
 
     const tid = tabIdRef.current;

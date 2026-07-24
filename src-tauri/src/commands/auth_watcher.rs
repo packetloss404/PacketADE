@@ -21,6 +21,7 @@
 //! - The watcher is owned by app-managed state so Tauri drops it when the
 //!   app exits, cleanly releasing OS file handles.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -49,7 +50,12 @@ const DEBOUNCE_MS: u64 = 500;
 /// `&mut self` for `watch`/`unwatch` and we want the struct to be `Send +
 /// Sync` so it can live in `tauri::State`.
 pub struct AuthWatcherState {
-    _watcher: Mutex<Option<RecommendedWatcher>>,
+    _registration: Arc<Mutex<AuthWatchRegistration>>,
+}
+
+struct AuthWatchRegistration {
+    watcher: RecommendedWatcher,
+    watched_paths: HashSet<PathBuf>,
 }
 
 /// Payload for the `provider-auth:changed` event. Shape is intentionally
@@ -116,6 +122,7 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         let _ = tx.blocking_send(res);
     })?;
 
+    let mut watched_paths = HashSet::new();
     for target in &watch_targets {
         // Non-recursive: credential files are direct children of the
         // watched dirs. Recursive would just waste cycles on unrelated
@@ -124,14 +131,27 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             warn!("auth_watcher: failed to watch {:?}: {}", target, e);
         } else {
             info!("auth_watcher: watching {:?}", target);
+            watched_paths.insert(target.clone());
         }
     }
+
+    let registration = Arc::new(Mutex::new(AuthWatchRegistration {
+        watcher,
+        watched_paths,
+    }));
+
+    // Manage the live watcher before the consumer starts so a directory-create
+    // event can immediately install the provider-directory watch.
+    app_handle.manage(AuthWatcherState {
+        _registration: Arc::clone(&registration),
+    });
 
     // Spawn the consumer task. It owns the receiver and debounces per
     // provider before emitting.
     let app_for_task = app_handle.clone();
     let claude_dir_for_task = claude_dir;
     let codex_dir_for_task = codex_dir;
+    let registration_for_task = Arc::clone(&registration);
     tauri::async_runtime::spawn(async move {
         // F16: trailing-edge debounce. A login writes the cred file several times
         // in quick succession; a leading-edge debounce emitted on the FIRST event
@@ -189,6 +209,12 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
 
+            for dir in [&claude_dir_for_task, &codex_dir_for_task] {
+                if event.paths.iter().any(|path| path_is_in(path, dir)) {
+                    ensure_provider_directory_watch(&registration_for_task, dir);
+                }
+            }
+
             // Mark which provider(s) this event affects; the actual probe + emit
             // happens on the trailing edge above.
             for p in &event.paths {
@@ -202,16 +228,36 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Keep the watcher alive via managed state.
-    app_handle.manage(AuthWatcherState {
-        _watcher: Mutex::new(Some(watcher)),
-    });
-
-    // Suppress unused-import warnings on platforms where we don't exercise
-    // every branch of `watch_targets`.
-    let _ = Arc::new(());
-
     Ok(())
+}
+
+fn ensure_provider_directory_watch(
+    registration: &Arc<Mutex<AuthWatchRegistration>>,
+    directory: &Path,
+) {
+    if !directory.is_dir() {
+        return;
+    }
+    let Ok(mut registration) = registration.lock() else {
+        warn!("auth_watcher: watch registration mutex poisoned");
+        return;
+    };
+    if registration.watched_paths.contains(directory) {
+        return;
+    }
+    match registration
+        .watcher
+        .watch(directory, RecursiveMode::NonRecursive)
+    {
+        Ok(()) => {
+            registration.watched_paths.insert(directory.to_path_buf());
+            info!("auth_watcher: watching newly-created {:?}", directory);
+        }
+        Err(e) => warn!(
+            "auth_watcher: failed to watch newly-created {:?}: {}",
+            directory, e
+        ),
+    }
 }
 
 /// True if `candidate` is the same as `dir` or a direct/indirect child of it.
@@ -219,3 +265,16 @@ fn path_is_in(candidate: &Path, dir: &Path) -> bool {
     candidate == dir || candidate.starts_with(dir)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::path_is_in;
+    use std::path::Path;
+
+    #[test]
+    fn provider_directory_create_and_later_credential_paths_match() {
+        let dir = Path::new("C:/Users/test/.codex");
+        assert!(path_is_in(Path::new("C:/Users/test/.codex"), dir));
+        assert!(path_is_in(Path::new("C:/Users/test/.codex/auth.json"), dir));
+        assert!(!path_is_in(Path::new("C:/Users/test/.claude"), dir));
+    }
+}

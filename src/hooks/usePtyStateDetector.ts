@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentStatusPatterns } from "@/types/agent";
 import { stripAnsi } from "@/agents/types";
 import { ptyOutputEvent } from "@/lib/events";
+import { parsePtyOutputPayload } from "@/lib/ptyReplay";
 
 // Default patterns (Claude Code style) — used when no agent config is provided
 const DEFAULT_PATTERNS: AgentStatusPatterns = {
@@ -235,9 +236,9 @@ export function usePtyStateDetector({
     let unlisten: UnlistenFn | null = null;
     let mounted = true;
 
-    listen<string>(ptyOutputEvent(sessionId), (event) => {
+    listen<unknown>(ptyOutputEvent(sessionId), (event) => {
       if (!mounted) return;
-      processData(event.payload);
+      processData(parsePtyOutputPayload(event.payload).data);
     }).then((fn) => {
       if (mounted) {
         unlisten = fn;

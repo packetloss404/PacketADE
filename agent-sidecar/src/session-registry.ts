@@ -40,6 +40,10 @@ const PROVIDERS: ProviderFactories = {
 interface SessionEntry {
   handler: ProviderHandler;
   provider: string;
+  lifecycle: {
+    cancelRequested: boolean;
+    terminalEmitted: boolean;
+  };
 }
 
 export class SessionRegistry {
@@ -104,14 +108,20 @@ export class SessionRegistry {
       emit({ type: "mcp_sources", sessionId: req.sessionId, ...summary });
     }
     const handler = factory();
-    this.sessions.set(req.sessionId, { handler, provider: req.provider });
+    const entry: SessionEntry = {
+      handler,
+      provider: req.provider,
+      lifecycle: { cancelRequested: false, terminalEmitted: false },
+    };
+    this.sessions.set(req.sessionId, entry);
     let startFailed = false;
     let starting = true;
+    const lifecycleEmit = this.lifecycleEmit(req.sessionId, entry, emit);
     const startEmit: Emit = (event) => {
       if (starting && event.type === "error" && event.sessionId === req.sessionId) {
         startFailed = true;
       }
-      emit(event);
+      lifecycleEmit(event);
     };
     try {
       await handler.start(req, startEmit);
@@ -171,10 +181,13 @@ export class SessionRegistry {
       return;
     }
     const { handler, provider } = entry;
+    const lifecycleEmit = this.lifecycleEmit(sessionId, entry, emit);
     try {
       switch (req.type) {
         case "send_message":
-          if (handler.sendMessage) await handler.sendMessage(req, emit);
+          entry.lifecycle.cancelRequested = false;
+          entry.lifecycle.terminalEmitted = false;
+          if (handler.sendMessage) await handler.sendMessage(req, lifecycleEmit);
           break;
         case "permission_response":
           if (handler.respondPermission) await handler.respondPermission(req, emit);
@@ -183,7 +196,16 @@ export class SessionRegistry {
           if (handler.respondEdit) await handler.respondEdit(req, emit);
           break;
         case "cancel":
-          if (handler.cancel) await handler.cancel(emit);
+          entry.lifecycle.cancelRequested = true;
+          entry.lifecycle.terminalEmitted = false;
+          if (handler.cancel) await handler.cancel(lifecycleEmit);
+          lifecycleEmit({
+            type: "done",
+            sessionId,
+            inputTokens: 0,
+            outputTokens: 0,
+            cancelled: true,
+          });
           break;
         case "set_permission_mode":
           if (handler.setPermissionMode) {
@@ -208,8 +230,10 @@ export class SessionRegistry {
           }
           break;
         case "retry":
+          entry.lifecycle.cancelRequested = false;
+          entry.lifecycle.terminalEmitted = false;
           if (handler.retry) {
-            await handler.retry(req, emit);
+            await handler.retry(req, lifecycleEmit);
           } else {
             emit({
               type: "error",
@@ -230,8 +254,10 @@ export class SessionRegistry {
           }
           break;
         case "inject_user_turn":
+          entry.lifecycle.cancelRequested = false;
+          entry.lifecycle.terminalEmitted = false;
           if (handler.injectUserTurn) {
-            await handler.injectUserTurn(req, emit);
+            await handler.injectUserTurn(req, lifecycleEmit);
           } else {
             emit({
               type: "error",
@@ -248,6 +274,22 @@ export class SessionRegistry {
         message: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  private lifecycleEmit(sessionId: string, entry: SessionEntry, emit: Emit): Emit {
+    return (event) => {
+      if (event.type === "done" && event.sessionId === sessionId) {
+        if (entry.lifecycle.terminalEmitted) return;
+        entry.lifecycle.terminalEmitted = true;
+        emit(entry.lifecycle.cancelRequested ? { ...event, cancelled: true } : event);
+        return;
+      }
+      if (event.type === "error" && event.sessionId === sessionId) {
+        if (entry.lifecycle.terminalEmitted) return;
+        entry.lifecycle.terminalEmitted = true;
+      }
+      emit(event);
+    };
   }
 
   async close(sessionId: string): Promise<void> {

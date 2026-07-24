@@ -3,6 +3,7 @@
  * mutation. Runs under the root vitest config (`pnpm test -- --run`).
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   SUPPORTED_TRIPLES,
@@ -161,9 +162,9 @@ describe("resolveTarget", () => {
   });
 
   it("throws on an unknown env triple", () => {
-    expect(() =>
-      resolveTarget({ argv: [], env: { TAURI_TARGET: "not-a-triple" } }),
-    ).toThrow(/unknown target/);
+    expect(() => resolveTarget({ argv: [], env: { TAURI_TARGET: "not-a-triple" } })).toThrow(
+      /unknown target/,
+    );
     expect(() =>
       resolveTarget({ argv: [], env: { TAURI_ENV_TARGET_TRIPLE: "not-a-triple" } }),
     ).toThrow(/unknown target/);
@@ -187,5 +188,13 @@ describe("resolveTarget", () => {
       return;
     }
     expect(SUPPORTED_TRIPLES).toContain(resolved);
+  });
+});
+
+describe("release gate target artifacts", () => {
+  it("does not retain a host-specific Windows Node prerequisite", () => {
+    const source = readFileSync("scripts/release-gate.mjs", "utf8");
+    expect(source).not.toContain("node-x86_64-pc-windows-msvc.exe");
+    expect(source).toContain("node-${releaseTarget}");
   });
 });

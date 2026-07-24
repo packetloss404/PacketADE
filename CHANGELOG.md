@@ -38,6 +38,16 @@ task list.
 
 ### Fixed
 
+- **Completed the 30-item low-rated Reliability audit loop.** Terminal replay
+  now uses backend sequence metadata and session endings are idempotent;
+  filesystem/auth/persistence paths fail closed or durably; Whisper downloads
+  are pinned and SHA-256 verified; API-agent permissions, edits, ownership,
+  cancellation, usage logging, and provider errors have deterministic
+  lifecycle handling; sidecar queues are bounded and protocol v10 carries an
+  explicit `cancelled` terminal marker; Codex tool IDs, Flight prompt parity,
+  retry notices, and late tool results are preserved. The completed
+  per-finding ledger and gate record are in
+  [`dev/reliability-low-fix-loop-2026-07-19.md`](./dev/reliability-low-fix-loop-2026-07-19.md).
 - **API-agent turn cancellation ownership (F28).** In-process sessions now own
   cancellation per turn, serialize overlapping send/retry work before mutating
   the transcript, keep cancelled turns reserved until their task unwinds, and

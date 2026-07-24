@@ -331,35 +331,6 @@ Full evidence for the original findings remains in
 [`dev/code-review-2026-06-07.md`](./dev/code-review-2026-06-07.md). This section
 contains only unresolved items.
 
-### P3 — confirmed low
-
-- **F03** onSessionEnded double-fire on kill — `useTerminalSession.ts:406-425`.
-- **F04** transcript-replay dedupe unsound — `useTerminalSession.ts:245-319`.
-- **F05** `resolve_windows_command` fabricates `.cmd` on `where` failure — `pty.rs:82-84`.
-- **F12** remote `mkdir -p` before symlink confine — `tool_runtime_ssh.rs:255-266`.
-- **F15** `write_with_backup` no fsync of backup/parent — `core/storage.rs:651-662`.
-- **F17** first-ever login badge miss (non-recursive $HOME watch) — `auth_watcher.rs:84-128`.
-- **F18** locked cred store reported as "missing key" — `api_keys.rs:119-123`.
-- **F26/G04** `owns_session()` `try_lock` misroutes follow-up messages → dropped — `supervisor.rs:131-145`. _(panel: med→low)_
-- **F27** `cancel_pending_tools` drains across all in-process sessions — `api_agent.rs:941-968`.
-- **F29** `provider_stats` lost-update race — `provider_stats.rs:134-157`.
-- **F35** usage/cost write failures `let _ =` swallowed ×4 — `api_agent.rs:1248,1348,1492,2002`.
-- **F37** `close_api_agent_session` orphans pending oneshots — `api_agent.rs:1042-1072`.
-- **F41** commit-trailer template → shell injection in generated hook — `core/worktree.rs:351-375`.
-- **F42** Whisper model download has no checksum/signature — `dictation/models.rs:125-212`.
-- **F43** `active_form` snake_case vs `activeForm` (blank in-progress todos) — `agent_sidecar/events.rs:115-124`.
-- **F47** final SSE line without trailing newline dropped — `llm_anthropic.rs:215`, `llm_openai_compat.rs:237`.
-- **F54** `release-gate.mjs` hardcodes the Windows Node triple — `scripts/release-gate.mjs:105-109`.
-- **F57** SSH pinning branch in `baseSshArgs` untested — `lib/ssh.ts:19-63`.
-- **G05** sessions forgotten on transient writer-closed error during restart — `agent_sidecar/protocol.rs:181-186,281-286`. _(panel: med→low)_
-- **G06** cancelled sidecar sessions leak ownership + remote ssh procs — `agent_sidecar/protocol.rs:361-370`.
-- **G07** unbounded writer channel + stdout line buffer (no backpressure/cap) — `supervisor.rs:598,679,779-808`.
-- **G13** Codex `tool_result` can carry empty `toolUseId`, orphaning it — `providers/openai-codex.ts:623-645`.
-- **G14** `rate_limited` + `error` race two `drain_chunk_buffer` tasks (fragile) — `anthropic.ts:689-703`, `handler.rs:668-749`.
-- **G15** `injectUserTurn` `maxOutputTokens` accepted but silently dropped — `anthropic.ts:943-958`.
-- **G20** cancellation during tool execution not honored until next iteration — `api_agent.rs:1217-1219,1938`.
-- **G21** Anthropic non-stream HTTP error double-surfaces — `api_agent.rs:1408-1426`.
-- **G30** attempt user-message display diverges from prompt sent — `asyncFlightStore.ts:411-454`.
-- **G34** auto-failover system notice deleted by `retryLastTurn` truncation — `stores/apiAgentListeners.ts:281-298`. _(panel: med→low)_
-- **G35** late tool-result after turn end silently dropped — `stores/apiAgentListeners.ts:156-189`.
-- **G36** done notification + queue drain fire even on user cancel — `stores/apiAgentListeners.ts:251-265`.
+No unresolved low-rated findings remain. The 30-item remediation loop completed
+on 2026-07-19; its per-finding acceptance evidence and gate record live in
+[`dev/reliability-low-fix-loop-2026-07-19.md`](./dev/reliability-low-fix-loop-2026-07-19.md).

@@ -2,6 +2,7 @@
 //!
 //! Used by OpenAI, MiniMax, OpenRouter, and Ollama providers.
 
+use crate::core::llm_provider::delimit_final_sse_line;
 use crate::core::llm_types::*;
 use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
@@ -284,7 +285,10 @@ pub async fn stream_chat_compat(
     // include it here to get token/cost counts (was OpenAI/OpenRouter only). Ollama
     // is deliberately left out: older builds reject unknown params, and a hard
     // stream failure isn't worth cosmetic usage counts — revisit once verified.
-    if matches!(config.provider_id.as_str(), "openai" | "openrouter" | "minimax") {
+    if matches!(
+        config.provider_id.as_str(),
+        "openai" | "openrouter" | "minimax"
+    ) {
         body["stream_options"] = serde_json::json!({ "include_usage": true });
     }
 
@@ -319,15 +323,10 @@ pub async fn stream_chat_compat(
             .text()
             .await
             .unwrap_or_else(|_| "Failed to read response body".to_string());
-        let _ = tx
-            .send(StreamChunk::Error {
-                message: format!(
-                    "{} API error ({}): {}",
-                    config.provider_id, status, body_text
-                ),
-            })
-            .await;
-        return Err(format!("API error ({}): {}", status, body_text));
+        return Err(format!(
+            "{} API error ({}): {}",
+            config.provider_id, status, body_text
+        ));
     }
 
     let mut stream = response.bytes_stream();
@@ -344,14 +343,25 @@ pub async fn stream_chat_compat(
     let mut input_tokens: u64 = 0;
     let mut output_tokens: u64 = 0;
 
-    while let Some(chunk_result) = stream.next().await {
+    let mut stream_ended = false;
+    loop {
         // RA1: if the consumer dropped the receiver, stop parsing the rest of the
         // upstream HTTP stream instead of draining it into a dead channel.
         if tx.is_closed() {
             return Ok(());
         }
-        let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
-        buffer.extend_from_slice(&chunk);
+        if !stream_ended {
+            match stream.next().await {
+                Some(chunk_result) => {
+                    let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
+                    buffer.extend_from_slice(&chunk);
+                }
+                None => {
+                    stream_ended = true;
+                    delimit_final_sse_line(&mut buffer);
+                }
+            }
+        }
 
         // Process complete SSE lines
         while let Some(line_end) = buffer.iter().position(|&b| b == b'\n') {
@@ -415,8 +425,7 @@ pub async fn stream_chat_compat(
                                 delta.get("tool_calls").and_then(|tc| tc.as_array())
                             {
                                 for tc in tool_calls {
-                                    for chunk in
-                                        accumulate_tool_call_delta(tc, &mut tool_calls_acc)
+                                    for chunk in accumulate_tool_call_delta(tc, &mut tool_calls_acc)
                                     {
                                         let _ = tx.send(chunk).await;
                                     }
@@ -441,6 +450,10 @@ pub async fn stream_chat_compat(
                     }
                 }
             }
+        }
+
+        if stream_ended {
+            break;
         }
     }
 
@@ -485,8 +498,16 @@ mod tests {
         assert_eq!(ends.len(), 2, "one ToolUseEnd per parallel call");
         match (&ends[0], &ends[1]) {
             (
-                StreamChunk::ToolUseEnd { id: id0, name: n0, arguments: a0 },
-                StreamChunk::ToolUseEnd { id: id1, name: n1, arguments: a1 },
+                StreamChunk::ToolUseEnd {
+                    id: id0,
+                    name: n0,
+                    arguments: a0,
+                },
+                StreamChunk::ToolUseEnd {
+                    id: id1,
+                    name: n1,
+                    arguments: a1,
+                },
             ) => {
                 // Emitted in index order, each with its OWN id/name/args.
                 assert_eq!(id0, "call_a");
@@ -510,11 +531,11 @@ mod tests {
         );
         assert!(matches!(first[0], StreamChunk::ToolUseStart { .. }));
         // A second delta for the same index must NOT re-emit ToolUseStart.
-        let more = accumulate_tool_call_delta(
-            &json!({"index":0,"function":{"arguments":"}"}}),
-            &mut acc,
-        );
-        assert!(more.iter().all(|c| !matches!(c, StreamChunk::ToolUseStart { .. })));
+        let more =
+            accumulate_tool_call_delta(&json!({"index":0,"function":{"arguments":"}"}}), &mut acc);
+        assert!(more
+            .iter()
+            .all(|c| !matches!(c, StreamChunk::ToolUseStart { .. })));
         let ends = drain_tool_calls(&mut acc);
         assert_eq!(ends.len(), 1);
     }
@@ -559,7 +580,12 @@ mod tests {
         }
         let ends = drain_tool_calls(&mut acc);
         assert_eq!(ends.len(), 1);
-        if let StreamChunk::ToolUseEnd { id, name, arguments } = &ends[0] {
+        if let StreamChunk::ToolUseEnd {
+            id,
+            name,
+            arguments,
+        } = &ends[0]
+        {
             assert_eq!(id, "c1");
             assert_eq!(name, "do");
             assert_eq!(arguments["a"], true);

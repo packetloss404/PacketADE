@@ -106,12 +106,7 @@ interface CodexSandboxFlags {
 export function modeToCodexFlags(mode: string | null | undefined): CodexSandboxFlags {
   const safe = (sandbox: "read-only" | "workspace-write"): CodexSandboxFlags => ({
     execArgs: ["--sandbox", sandbox, "-c", "approval_policy=never"],
-    resumeArgs: [
-      "-c",
-      `sandbox_mode=${sandbox}`,
-      "-c",
-      "approval_policy=never",
-    ],
+    resumeArgs: ["-c", `sandbox_mode=${sandbox}`, "-c", "approval_policy=never"],
   });
   switch (mode) {
     case "plan":
@@ -178,10 +173,12 @@ function firstWhereResult(command: string): string | null {
       windowsHide: true,
       stdio: ["ignore", "pipe", "ignore"],
     });
-    return output
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean) ?? null;
+    return (
+      output
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean) ?? null
+    );
   } catch {
     return null;
   }
@@ -407,6 +404,9 @@ export class OpenAICodexProvider implements ProviderHandler {
    * lets the terminal `agent_message` forward only the unseen suffix (or nothing).
    */
   private flatTextEmitted = 0;
+  /** FIFO fallback for Codex JSONL variants that omit correlation ids on the
+   * completion record. Starts and results are ordered for these variants. */
+  private pendingToolUseIds: string[] = [];
 
   constructor(turnIdleTimeoutMs = configuredIdleTimeoutMs()) {
     this.turnIdleTimeoutMs = Math.max(1, turnIdleTimeoutMs);
@@ -655,9 +655,7 @@ export class OpenAICodexProvider implements ProviderHandler {
     try {
       child.stdin.end();
     } catch (err) {
-      logStderr(
-        `failed to close codex stdin: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      logStderr(`failed to close codex stdin: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -688,12 +686,8 @@ export class OpenAICodexProvider implements ProviderHandler {
         rawPath = typeof c.path === "string" ? c.path : undefined;
       }
       if (!rawPath) continue;
-      const resolved = nodePath.isAbsolute(rawPath)
-        ? rawPath
-        : nodePath.join(projectPath, rawPath);
-      const before = await fsPromises
-        .readFile(resolved, "utf8")
-        .catch(() => null);
+      const resolved = nodePath.isAbsolute(rawPath) ? rawPath : nodePath.join(projectPath, rawPath);
+      const before = await fsPromises.readFile(resolved, "utf8").catch(() => null);
       emit({
         type: "edit_baseline",
         sessionId,
@@ -780,19 +774,14 @@ export class OpenAICodexProvider implements ProviderHandler {
     }
     if (typeStr === "turn.failed" || typeStr === "thread.error") {
       const errObj = payload.error ?? payload;
-      const message =
-        pickString(errObj, "message", "error", "reason") ?? stringifyUnknown(errObj);
+      const message = pickString(errObj, "message", "error", "reason") ?? stringifyUnknown(errObj);
       if (!this.doneEmitted) {
         this.doneEmitted = true;
         emit({ type: "error", sessionId, message: `codex error: ${message}` });
       }
       return;
     }
-    if (
-      typeStr === "item.started" ||
-      typeStr === "item.updated" ||
-      typeStr === "item.completed"
-    ) {
+    if (typeStr === "item.started" || typeStr === "item.updated" || typeStr === "item.completed") {
       const item = (payload.item ?? envelope.item) as Record<string, unknown> | undefined;
       if (!item || typeof item !== "object") return;
       const itemType = pickString(item, "type") ?? "";
@@ -802,9 +791,7 @@ export class OpenAICodexProvider implements ProviderHandler {
       // item.updated sequence plus the final item.completed can't double-print.
       if (itemType === "agent_message" || itemType === "assistant_message") {
         const full =
-          pickString(item, "text", "message", "content") ??
-          extractTextBlock(item.content) ??
-          "";
+          pickString(item, "text", "message", "content") ?? extractTextBlock(item.content) ?? "";
         const already = this.itemTextEmitted.get(itemId) ?? 0;
         if (full.length > already) {
           emit({ type: "chunk", sessionId, text: full.slice(already) });
@@ -815,8 +802,7 @@ export class OpenAICodexProvider implements ProviderHandler {
 
       // Reasoning / chain-of-thought — same suffix-forwarding as text.
       if (itemType === "reasoning" || itemType === "agent_reasoning") {
-        const full =
-          pickString(item, "text", "content") ?? extractTextBlock(item.content) ?? "";
+        const full = pickString(item, "text", "content") ?? extractTextBlock(item.content) ?? "";
         const already = this.itemTextEmitted.get(itemId) ?? 0;
         if (full.length > already) {
           emit({ type: "thinking", sessionId, text: full.slice(already) });
@@ -870,7 +856,13 @@ export class OpenAICodexProvider implements ProviderHandler {
             // overwrites a real baseline.
             void this.captureFileChangeBaselines(item, sessionId, itemId, emit);
           }
-          emit({ type: "tool_start", sessionId, toolUseId: itemId, name: "apply_patch", input: item });
+          emit({
+            type: "tool_start",
+            sessionId,
+            toolUseId: itemId,
+            name: "apply_patch",
+            input: item,
+          });
         }
         return;
       }
@@ -984,6 +976,7 @@ export class OpenAICodexProvider implements ProviderHandler {
         payload.parameters ??
         payload.command ??
         payload;
+      this.pendingToolUseIds.push(toolUseId);
       emit({ type: "tool_start", sessionId, toolUseId, name, input });
       return;
     }
@@ -999,7 +992,10 @@ export class OpenAICodexProvider implements ProviderHandler {
       const toolUseId =
         pickString(payload, "id", "call_id", "sub_id", "tool_call_id") ??
         pickString(envelope, "id") ??
-        "";
+        this.pendingToolUseIds.shift() ??
+        randomUUID();
+      const queuedIndex = this.pendingToolUseIds.indexOf(toolUseId);
+      if (queuedIndex >= 0) this.pendingToolUseIds.splice(queuedIndex, 1);
       const stdout = pickString(payload, "stdout", "output", "text") ?? "";
       const stderr = pickString(payload, "stderr") ?? "";
       const output =

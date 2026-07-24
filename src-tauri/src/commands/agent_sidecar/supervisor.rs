@@ -32,6 +32,8 @@ use crate::commands::ssh_keys;
 use crate::core::execution::{sh_quote, SshConfig};
 
 const REMOTE_SIDECAR_TIMEOUT_SECS: u64 = 25;
+const SIDECAR_WRITER_CAPACITY: usize = 256;
+const MAX_SIDECAR_STDOUT_LINE_BYTES: usize = 8 * 1024 * 1024;
 const REMOTE_PATH_SETUP: &str = r#"export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.cargo/bin:$HOME/.opencode/bin:$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node/" 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH" 2>/dev/null;"#;
 const SIDECAR_RESTART_RECOVERABLE_ERROR: &str =
     "Sidecar restarted — please resend your message to continue this conversation.";
@@ -64,7 +66,7 @@ fn kill_process_tree(pid: u32, own_group: bool) {
 
 #[derive(Clone)]
 pub(super) struct RemoteSidecarSession {
-    writer_tx: mpsc::UnboundedSender<String>,
+    writer_tx: mpsc::Sender<String>,
     target_label: String,
 }
 
@@ -102,7 +104,7 @@ pub struct SidecarManager {
     sidecar_path: PathBuf,
     /// Sender for JSON lines destined for the sidecar's stdin.
     /// Held inside a Mutex so the writer can be swapped on respawn.
-    writer_tx: Mutex<Option<mpsc::UnboundedSender<String>>>,
+    writer_tx: Mutex<Option<mpsc::Sender<String>>>,
     /// Sessions we've started and not yet closed. Used by slice C's
     /// `owns_session()` check and to fan-out sidecar-crash errors.
     pub(super) owned_sessions: Arc<Mutex<HashSet<String>>>,
@@ -171,20 +173,8 @@ impl SidecarManager {
     /// Check whether a session id was started via this supervisor. Slice C
     /// uses this to pick between the sidecar and the in-process runtime on
     /// `send_message` / `cancel` / `close` after the fact.
-    pub fn owns_session(&self, session_id: &str) -> bool {
-        // Uses blocking lock — the `Mutex` here is `tokio::sync::Mutex` which
-        // doesn't have `try_lock` semantics that work from sync code, so this
-        // is an async-aware lock; we expose a blocking-looking API by running
-        // the lock in a block_on. Callers in slice C should prefer calling
-        // from async contexts (which is true for Tauri commands).
-        match self.owned_sessions.try_lock() {
-            Ok(guard) => guard.contains(session_id),
-            // If we can't grab the lock right now, assume not-owned rather
-            // than blocking the caller; slice C will fall through to the
-            // Rust runtime which will error cleanly if the session doesn't
-            // exist there either.
-            Err(_) => false,
-        }
+    pub async fn owns_session(&self, session_id: &str) -> bool {
+        self.owned_sessions.lock().await.contains(session_id)
     }
 
     /// Stop local and SSH-backed sidecars synchronously while Tauri's exit
@@ -281,6 +271,7 @@ impl SidecarManager {
         };
         let tx = tx.ok_or_else(|| "sidecar writer not initialized".to_string())?;
         tx.send(line)
+            .await
             .map_err(|_| "sidecar writer channel closed".to_string())?;
         Ok(())
     }
@@ -303,6 +294,7 @@ impl SidecarManager {
             remote
                 .writer_tx
                 .send(line)
+                .await
                 .map_err(|_| format!("remote sidecar writer closed for {}", remote.target_label))?;
             return Ok(());
         }
@@ -401,7 +393,7 @@ impl SidecarManager {
                 .take()
                 .ok_or_else(|| "SSH sidecar stderr was not piped".to_string())?;
 
-            let (writer_tx, writer_rx) = mpsc::unbounded_channel::<String>();
+            let (writer_tx, writer_rx) = mpsc::channel::<String>(SIDECAR_WRITER_CAPACITY);
             let target_label = remote_target_label(config);
             {
                 let mut remote_owned = self.remote_owned_sessions.lock().await;
@@ -710,7 +702,7 @@ impl SidecarManager {
             .ok_or_else(|| "sidecar stderr was not piped".to_string())?;
 
         // Writer task: pull lines from an mpsc channel, append '\n', write.
-        let (writer_tx, writer_rx) = mpsc::unbounded_channel::<String>();
+        let (writer_tx, writer_rx) = mpsc::channel::<String>(SIDECAR_WRITER_CAPACITY);
         {
             let mut guard = self.writer_tx.lock().await;
             *guard = Some(writer_tx);
@@ -801,7 +793,7 @@ impl SidecarManager {
         // We move the child into the writer task so it can be mutated there;
         // to let the reader still observe terminate-on-exit, we use the
         // Terminated event from the event channel rather than `child.wait()`.
-        let (writer_tx, mut writer_rx) = mpsc::unbounded_channel::<String>();
+        let (writer_tx, mut writer_rx) = mpsc::channel::<String>(SIDECAR_WRITER_CAPACITY);
         {
             let mut guard = self.writer_tx.lock().await;
             *guard = Some(writer_tx);
@@ -828,6 +820,14 @@ impl SidecarManager {
             while let Some(event) = rx.recv().await {
                 match event {
                     CommandEvent::Stdout(bytes) => {
+                        if bytes.len() > MAX_SIDECAR_STDOUT_LINE_BYTES {
+                            warn!(
+                                bytes = bytes.len(),
+                                limit = MAX_SIDECAR_STDOUT_LINE_BYTES,
+                                "agent sidecar stdout record exceeded limit"
+                            );
+                            break;
+                        }
                         // The shell plugin delivers already line-split bytes
                         // (one event per newline) when raw_out is false.
                         let line = String::from_utf8_lossy(&bytes);
@@ -903,9 +903,10 @@ impl SidecarManager {
     /// Consume lines from the sidecar's stdout, parse each as JSON, and emit
     /// the corresponding `api-agent:*` event.
     async fn reader_loop(self: Arc<Self>, stdout: tokio::process::ChildStdout) {
-        let mut reader = BufReader::new(stdout).lines();
+        let mut reader = BufReader::new(stdout);
+        let mut buffer = Vec::new();
         loop {
-            match reader.next_line().await {
+            match read_capped_line(&mut reader, &mut buffer).await {
                 Ok(Some(line)) => {
                     if line.trim().is_empty() {
                         continue;
@@ -941,9 +942,10 @@ impl SidecarManager {
         session_id: String,
         stdout: tokio::process::ChildStdout,
     ) {
-        let mut reader = BufReader::new(stdout).lines();
+        let mut reader = BufReader::new(stdout);
+        let mut buffer = Vec::new();
         loop {
-            match reader.next_line().await {
+            match read_capped_line(&mut reader, &mut buffer).await {
                 Ok(Some(line)) => {
                     if line.trim().is_empty() {
                         continue;
@@ -1102,7 +1104,7 @@ async fn fan_out_crash_error_to_local_sessions<F>(
 
 /// Pump JSON lines from the mpsc receiver to the sidecar's stdin. Terminates
 /// when the channel is closed (on respawn / shutdown) or stdin write fails.
-async fn writer_loop(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<String>) {
+async fn writer_loop(mut stdin: ChildStdin, mut rx: mpsc::Receiver<String>) {
     while let Some(line) = rx.recv().await {
         let mut buf = line.into_bytes();
         buf.push(b'\n');
@@ -1115,6 +1117,54 @@ async fn writer_loop(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<Stri
             break;
         }
     }
+}
+
+async fn read_capped_line<R>(
+    reader: &mut R,
+    buffer: &mut Vec<u8>,
+) -> std::io::Result<Option<String>>
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+{
+    buffer.clear();
+    loop {
+        let (take, consume, found_newline, reached_eof) = {
+            let available = reader.fill_buf().await?;
+            if available.is_empty() {
+                (Vec::new(), 0, false, true)
+            } else if let Some(index) = available.iter().position(|byte| *byte == b'\n') {
+                (available[..index].to_vec(), index + 1, true, false)
+            } else {
+                (available.to_vec(), available.len(), false, false)
+            }
+        };
+
+        if reached_eof {
+            if buffer.is_empty() {
+                return Ok(None);
+            }
+            break;
+        }
+        if buffer.len().saturating_add(take.len()) > MAX_SIDECAR_STDOUT_LINE_BYTES {
+            reader.consume(consume);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "sidecar stdout record exceeded {} bytes",
+                    MAX_SIDECAR_STDOUT_LINE_BYTES
+                ),
+            ));
+        }
+        buffer.extend_from_slice(&take);
+        reader.consume(consume);
+        if found_newline {
+            break;
+        }
+    }
+
+    String::from_utf8(buffer.clone())
+        .map(Some)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
 async fn stderr_loop(stderr: ChildStderr) {
@@ -1629,5 +1679,24 @@ mod remote_tests {
         let script = remote_sidecar_launch_script(&sample_cfg("/home/alice/project"));
         assert!(script.contains("cd \"$PROJECT_PATH\""));
         assert!(script.contains("PACKETADE_REMOTE_SIDECAR=1 exec \"$NODE_BIN\" \"$SIDECAR_ENTRY\""));
+    }
+
+    #[tokio::test]
+    async fn capped_sidecar_line_reader_accepts_normal_and_rejects_oversized_records() {
+        let normal = b"{\"type\":\"done\"}\n";
+        let mut reader = BufReader::new(normal.as_slice());
+        let mut buffer = Vec::new();
+        assert_eq!(
+            read_capped_line(&mut reader, &mut buffer).await.unwrap(),
+            Some("{\"type\":\"done\"}".to_string())
+        );
+
+        let mut oversized = vec![b'x'; MAX_SIDECAR_STDOUT_LINE_BYTES + 1];
+        oversized.push(b'\n');
+        let mut reader = BufReader::new(oversized.as_slice());
+        let error = read_capped_line(&mut reader, &mut buffer)
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
 }

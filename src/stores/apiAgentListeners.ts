@@ -57,6 +57,64 @@ import type {
 // session (re)start), so a broken remote config never stacks duplicates.
 const REMOTE_MCP_NOTICE_PREFIX = "(remote MCP:";
 
+type ToolResultEventPayload = {
+  id: string;
+  name: string;
+  content: string;
+  is_error: boolean;
+  input: string;
+};
+
+function applyToolResult(
+  messages: AgentMessage[],
+  payload: ToolResultEventPayload,
+): AgentMessage[] {
+  let targetIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index].toolCalls?.some((tool) => tool.id === payload.id)) {
+      targetIndex = index;
+      break;
+    }
+  }
+  if (targetIndex === -1) {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      if (messages[index].role === "assistant") {
+        targetIndex = index;
+        break;
+      }
+    }
+  }
+  if (targetIndex === -1) return messages;
+
+  return messages.map((message, index) => {
+    if (index !== targetIndex) return message;
+    const existing = message.toolCalls ?? [];
+    const result = {
+      id: payload.id,
+      name: payload.name,
+      status: (payload.is_error ? "error" : "done") as AgentToolCall["status"],
+      summary: payload.content.slice(0, 200),
+      fullContent: payload.content,
+      input: payload.input || undefined,
+    };
+    const matching = existing.findIndex((tool) => tool.id === payload.id);
+    const toolCalls =
+      matching >= 0
+        ? existing.map((tool, toolIndex) =>
+            toolIndex === matching
+              ? {
+                  ...tool,
+                  ...result,
+                  name: payload.name || tool.name,
+                  input: payload.input || tool.input,
+                }
+              : tool,
+          )
+        : [...existing, result];
+    return { ...message, toolCalls };
+  });
+}
+
 function sendPromotedQueuedMessage(
   conversationId: string,
   content: string,
@@ -173,62 +231,22 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     id: string;
     name: string;
     input?: string | null;
-  }>(
-    apiAgentToolStartEvent(id),
-    (event) => {
-      let touched = false;
-      setState((s) => ({
-        conversations: s.conversations.map((c) => {
-          if (c.id !== id) return c;
-          const messages = c.messages.map((m) => {
-            if (m.isStreaming && m.role === "assistant") {
-              const toolCalls: AgentToolCall[] = [
-                ...(m.toolCalls ?? []),
-                {
-                  id: event.payload.id,
-                  name: event.payload.name,
-                  status: "running" as const,
-                  input: event.payload.input ?? undefined,
-                },
-              ];
-              return { ...m, toolCalls };
-            }
-            return m;
-          });
-          touched = true;
-          return { ...c, messages, updatedAt: Date.now() };
-        }),
-      }));
-      if (touched) requestConversationSave(id);
-    },
-  );
-
-  const toolResultUnlisten = await listen<{
-    id: string;
-    name: string;
-    content: string;
-    is_error: boolean;
-    input: string;
-  }>(apiAgentToolResultEvent(id), (event) => {
+  }>(apiAgentToolStartEvent(id), (event) => {
     let touched = false;
     setState((s) => ({
       conversations: s.conversations.map((c) => {
         if (c.id !== id) return c;
         const messages = c.messages.map((m) => {
-          if (m.isStreaming && m.role === "assistant" && m.toolCalls) {
-            const toolCalls = m.toolCalls.map((tc) =>
-              tc.id === event.payload.id
-                ? {
-                    ...tc,
-                    status: (event.payload.is_error ? "error" : "done") as AgentToolCall["status"],
-                    summary: event.payload.content.slice(0, 200),
-                    fullContent: event.payload.content,
-                    // Sidecar results don't echo the input; keep the copy
-                    // captured at tool_start instead of clobbering it with "".
-                    input: event.payload.input || tc.input,
-                  }
-                : tc,
-            );
+          if (m.isStreaming && m.role === "assistant") {
+            const toolCalls: AgentToolCall[] = [
+              ...(m.toolCalls ?? []),
+              {
+                id: event.payload.id,
+                name: event.payload.name,
+                status: "running" as const,
+                input: event.payload.input ?? undefined,
+              },
+            ];
             return { ...m, toolCalls };
           }
           return m;
@@ -240,12 +258,29 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     if (touched) requestConversationSave(id);
   });
 
+  const toolResultUnlisten = await listen<ToolResultEventPayload>(
+    apiAgentToolResultEvent(id),
+    (event) => {
+      let touched = false;
+      setState((s) => ({
+        conversations: s.conversations.map((c) => {
+          if (c.id !== id) return c;
+          const messages = applyToolResult(c.messages, event.payload);
+          touched = true;
+          return { ...c, messages, updatedAt: Date.now() };
+        }),
+      }));
+      if (touched) requestConversationSave(id);
+    },
+  );
+
   const doneUnlisten = await listen<{
     input_tokens: number;
     output_tokens: number;
     cache_read_input_tokens: number;
     cache_creation_input_tokens: number;
     resume_token?: string | null;
+    cancelled?: boolean;
   }>(apiAgentDoneEvent(id), (event) => {
     // Land any buffered stream deltas before flipping isStreaming off —
     // otherwise the pending frame would find no streaming message and the
@@ -282,7 +317,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
         );
         const queued = c.queuedMessages ?? [];
         let remainingQueued = queued;
-        const shouldDrainQueued = queued.length > 0;
+        const shouldDrainQueued = !event.payload.cancelled && queued.length > 0;
         if (queued.length > 0) {
           nextQueued = queued[0];
           remainingQueued = queued.slice(1);
@@ -326,7 +361,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
         }
       }, 0);
     }
-    if (updated && getState().selectedConversationId !== id) {
+    if (!event.payload.cancelled && updated && getState().selectedConversationId !== id) {
       // Route through the pref-gated helper so desktop notifications honor the
       // user's notificationStore settings (enabled / onlyWhenUnfocused /
       // onSessionComplete / per-session debounce) instead of bypassing them.
@@ -432,15 +467,9 @@ export async function installApiAgentListeners(conversationId: string): Promise<
       // requests fall through to a blocking prompt. The mode chip rules:
       // tiering applies under Default/yolo, reads-only under manual, and
       // plan / deny-risky postures keep every prompt.
-      const tier = classifyToolTier(
-        event.payload.name,
-        event.payload.arguments,
-        conv.projectPath,
-      );
+      const tier = classifyToolTier(event.payload.name, event.payload.arguments, conv.projectPath);
       if (decideApprovalGate(deriveMode(conv), tier) === "auto_allow") {
-        void useAgentApprovalStore
-          .getState()
-          .autoAllowPermission(id, event.payload.id);
+        void useAgentApprovalStore.getState().autoAllowPermission(id, event.payload.id);
         return;
       }
       useAgentApprovalStore.getState().addPendingPermission(id, event.payload);
@@ -461,21 +490,11 @@ export async function installApiAgentListeners(conversationId: string): Promise<
     // relative — the review surface dedupes, deep-links and displays pending
     // edits against those keys, so a raw absolute path would render the same
     // file twice and double-count it.
-    const relativePath = toProjectRelativePath(
-      event.payload.path,
-      conv.projectPath,
-    );
+    const relativePath = toProjectRelativePath(event.payload.path, conv.projectPath);
     useEditBaselineStore
       .getState()
-      .recordBaseline(
-        id,
-        relativePath,
-        event.payload.before ?? null,
-        event.payload.id,
-      );
-    useAgentApprovalStore
-      .getState()
-      .addPendingEdit(id, { ...event.payload, path: relativePath });
+      .recordBaseline(id, relativePath, event.payload.before ?? null, event.payload.id);
+    useAgentApprovalStore.getState().addPendingEdit(id, { ...event.payload, path: relativePath });
     void notifyApprovalNeeded(id, conv.title);
   });
 
@@ -557,8 +576,7 @@ export async function installApiAgentListeners(conversationId: string): Promise<
                     inputTokens: event.payload.input_tokens,
                     outputTokens: event.payload.output_tokens,
                     cacheReadTokens: event.payload.cache_read_input_tokens,
-                    reasoningTokens:
-                      event.payload.reasoning_tokens ?? m.reasoningTokens,
+                    reasoningTokens: event.payload.reasoning_tokens ?? m.reasoningTokens,
                   }) ?? undefined,
               }
             : m,
