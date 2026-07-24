@@ -2,6 +2,7 @@ import type { Attempt, CoordinationEvent } from "@/types/flight";
 import { useFlightStore } from "@/stores/flightStore";
 import { API_PROVIDERS, getProviderForAgent } from "@/lib/api-models";
 import type { AgentCli } from "@/stores/agentTaskStore";
+import { useIssueStore } from "@/stores/issueStore";
 
 /**
  * N2 — escalation *suggestions* (never auto-actions) on the flight coordination
@@ -61,6 +62,33 @@ export function reassignTargetFromEscalation(
 }
 
 /**
+ * E7: active issue statuses worth flagging `needs_human` when their flight
+ * escalates. Not backlog/done (not in-flight) or already blocked/needs_human.
+ */
+const FLAGGABLE_ISSUE_STATUSES = new Set(["up_next", "todo", "in_progress", "in_review", "qa"]);
+
+/** E7 (pure): ids of a flight's linked issues that an escalation should flag. */
+export function issuesToFlagNeedsHuman(
+  issues: { id: string; flightId: string | null; status: string }[],
+  flightId: string,
+): string[] {
+  return issues
+    .filter((i) => i.flightId === flightId && FLAGGABLE_ISSUE_STATUSES.has(i.status))
+    .map((i) => i.id);
+}
+
+/**
+ * E7: flag a flight's active linked issues `needs_human` so they surface in the
+ * issue board's "Needs Attention" column when the flight escalates.
+ */
+function flagLinkedIssuesNeedHuman(flightId: string): void {
+  const store = useIssueStore.getState();
+  for (const id of issuesToFlagNeedsHuman(store.issues, flightId)) {
+    store.updateIssue(id, { status: "needs_human" });
+  }
+}
+
+/**
  * A flight is "stuck" when every attempt is terminal-without-success — all
  * failed or cancelled, with at least one genuine failure. `reviewing`,
  * `completed`, `running`, and `provisioning` all mean a path forward still
@@ -115,6 +143,8 @@ export function maybeEscalate(flightId: string): void {
       ...(suggestedAgentId ? { suggestedAgentId } : {}),
     },
   });
+  // E7: surface the stuck flight on the issue board.
+  flagLinkedIssuesNeedHuman(flightId);
 }
 
 /**
@@ -195,6 +225,7 @@ export function maybeEscalateStalled(
   const flight = store.flights.find((f) => f.id === flightId);
   if (!flight) return;
   const log = flight.coordinationLog ?? [];
+  let escalated = false;
   for (const attempt of flight.attempts ?? []) {
     if (!shouldEscalateStalled(attempt, nowMs, log, thresholdMs)) continue;
     const mins = Math.round((nowMs - (attempt.startedAt ?? nowMs)) / 60_000);
@@ -205,7 +236,10 @@ export function maybeEscalateStalled(
       summary: `Attempt ${attemptLabel(attempt)} has been running ${mins}m without finishing — consider reassigning or checking on it.`,
       metadata: { stalledAttemptId: attempt.id },
     });
+    escalated = true;
   }
+  // E7: a newly-stalled flight surfaces on the issue board too.
+  if (escalated) flagLinkedIssuesNeedHuman(flightId);
 }
 
 /**
