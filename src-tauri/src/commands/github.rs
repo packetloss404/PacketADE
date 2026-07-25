@@ -1042,13 +1042,15 @@ pub async fn github_list_repo_labels(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/labels?per_page=100",
-        owner, repo
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/labels?{}",
+        owner,
+        repo,
+        host.page_params(100, 1)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -1063,11 +1065,13 @@ pub async fn github_list_repo_milestones(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/milestones?state=open&per_page=100",
-        owner, repo
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/milestones?state=open&{}",
+        owner,
+        repo,
+        host.page_params(100, 1)
+    ));
     let resp = client
         .get(&url)
         .send()
@@ -1084,11 +1088,13 @@ pub async fn github_list_repo_assignable_users(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/assignees?per_page=100",
-        owner, repo
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/assignees?{}",
+        owner,
+        repo,
+        host.page_params(100, 1)
+    ));
     let resp = client
         .get(&url)
         .send()
