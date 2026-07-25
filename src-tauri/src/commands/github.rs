@@ -897,13 +897,10 @@ pub async fn github_post_issue_comment(
     if trimmed.is_empty() {
         return Err("Comment body cannot be empty".to_string());
     }
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/issues/{}/comments",
-        owner, repo, number
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!("/repos/{}/{}/issues/{}/comments", owner, repo, number));
     let resp = client
-        .post(&url)
+        .post(url)
         .json(&serde_json::json!({ "body": trimmed }))
         .send()
         .await
@@ -921,13 +918,10 @@ async fn patch_issue(
     number: u32,
     payload: serde_json::Value,
 ) -> Result<String, String> {
-    let client = github_client_from_state(auth).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/issues/{}",
-        owner, repo, number
-    );
+    let (client, host) = active_host_session(auth).await?;
+    let url = host.url(&format!("/repos/{}/{}/issues/{}", owner, repo, number));
     let resp = client
-        .patch(&url)
+        .patch(url)
         .json(&payload)
         .send()
         .await
@@ -1003,18 +997,58 @@ pub async fn github_set_issue_labels(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/issues/{}/labels",
-        owner, repo, number
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!("/repos/{}/{}/issues/{}/labels", owner, repo, number));
+    // GitHub's PUT accepts label *names*; Gitea expects label *ids*, so resolve
+    // names → ids against the repo's label set first.
+    let payload = match host.kind {
+        GitHostKind::GitHub => serde_json::json!({ "labels": labels }),
+        GitHostKind::Gitea => {
+            let ids = resolve_gitea_label_ids(&client, &host, &owner, &repo, &labels).await?;
+            serde_json::json!({ "labels": ids })
+        }
+    };
     let resp = client
-        .put(&url)
-        .json(&serde_json::json!({ "labels": labels }))
+        .put(url)
+        .json(&payload)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
     github_response_text(resp).await
+}
+
+/// Gitea's issue-label PUT takes label ids, not names. Fetch the repo's labels
+/// and map the requested names to ids (unknown names are dropped).
+async fn resolve_gitea_label_ids(
+    client: &reqwest::Client,
+    host: &GitHost,
+    owner: &str,
+    repo: &str,
+    names: &[String],
+) -> Result<Vec<u64>, String> {
+    let url = host.url(&format!(
+        "/repos/{}/{}/labels?{}",
+        owner,
+        repo,
+        host.page_params(100, 1)
+    ));
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let body = github_response_text(resp).await?;
+    let all: Vec<serde_json::Value> =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse labels: {}", e))?;
+    let ids = names
+        .iter()
+        .filter_map(|name| {
+            all.iter()
+                .find(|l| l["name"].as_str() == Some(name.as_str()))
+                .and_then(|l| l["id"].as_u64())
+        })
+        .collect();
+    Ok(ids)
 }
 
 #[tauri::command]
