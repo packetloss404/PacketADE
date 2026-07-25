@@ -754,13 +754,15 @@ pub async fn github_list_prs(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/pulls?state=open&per_page=30",
-        owner, repo
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/pulls?state=open&{}",
+        owner,
+        repo,
+        host.page_params(30, 1)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -776,25 +778,16 @@ pub async fn github_get_pr_diff(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let token = auth
-        .tokens
-        .read()
-        .await
-        .get(GITHUB_CONNECTION_ID)
-        .cloned()
-        .ok_or_else(|| "GitHub token not set".to_string())?;
-
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/pulls/{}",
-        owner, repo, pr_number
-    );
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .header(AUTHORIZATION, format!("Bearer {}", token))
-        .header(ACCEPT, "application/vnd.github.diff")
-        .header(USER_AGENT, BRAND_USER_AGENT)
+    // G6: GitHub serves the diff from the PR resource via a media-type Accept
+    // header; Gitea serves it at a `.diff` URL suffix. Route through the active
+    // host's client so auth is correct for either.
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&host.pr_diff_path(&owner, &repo, pr_number));
+    let mut req = client.get(url);
+    if let Some(accept) = host.pr_diff_accept() {
+        req = req.header(ACCEPT, accept);
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -1168,13 +1161,16 @@ pub async fn github_list_prs_page(
         "open" | "closed" | "all" => state,
         _ => "open".to_string(),
     };
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/pulls?state={}&per_page=30&page={}",
-        owner, repo, state_clean, page
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/pulls?state={}&{}",
+        owner,
+        repo,
+        state_clean,
+        host.page_params(30, page)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -1686,13 +1682,15 @@ pub async fn github_list_branches(
 ) -> Result<Vec<GitHubBranch>, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/branches?per_page=100",
-        owner, repo
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/branches?{}",
+        owner,
+        repo,
+        host.page_params(100, 1)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -1706,7 +1704,12 @@ pub async fn github_list_branches(
         if name.is_empty() {
             continue;
         }
-        let sha = b["commit"]["sha"].as_str().unwrap_or("").to_string();
+        // GitHub exposes the tip SHA as commit.sha; Gitea as commit.id.
+        let sha = b["commit"]["sha"]
+            .as_str()
+            .or_else(|| b["commit"]["id"].as_str())
+            .unwrap_or("")
+            .to_string();
         let is_protected = b["protected"].as_bool().unwrap_or(false);
         out.push(GitHubBranch {
             name,
