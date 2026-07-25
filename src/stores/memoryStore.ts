@@ -95,6 +95,13 @@ interface MemoryStore {
 
   // Auto-capture (called from the flight lifecycle)
   captureFlightCompleted: (payload: FlightCompletedPayload, projectPath: string) => void;
+  /** M9: merge a rich LLM retrospective onto the already-captured
+   *  `flight_completed` event for `flightId` (async enrichment). No-op if the
+   *  event was never captured (e.g. `captureFlights` disabled). */
+  updateFlightRetrospective: (
+    flightId: string,
+    retro: Partial<FlightCompletedPayload>,
+  ) => void;
   /**
    * v0.8-D — manual capture from any UI surface (initial caller is GitHub
    * "Save as memory"). Bypasses the per-type capture toggles in
@@ -728,6 +735,18 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
     if (!getMemorySettings().captureFlights) return;
     const event = createEvent("flight_completed", projectPath, payload);
     const events = capEvents([...get().events, event]);
+    set({ events });
+    void persistState(events, get().patterns);
+  },
+
+  updateFlightRetrospective: (flightId, retro) => {
+    let changed = false;
+    const events = get().events.map((e) => {
+      if (e.type !== "flight_completed" || e.payload.flightId !== flightId) return e;
+      changed = true;
+      return { ...e, payload: { ...e.payload, ...retro } };
+    });
+    if (!changed) return;
     set({ events });
     void persistState(events, get().patterns);
   },

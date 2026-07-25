@@ -103,6 +103,43 @@ describe("memoryStore settings integration", () => {
     expect(events[0].type).toBe("flight_completed");
   });
 
+  it("M9: updateFlightRetrospective merges rich fields onto the captured event", async () => {
+    const { useMemoryStore } = await loadStores();
+    useMemoryStore.getState().captureFlightCompleted(
+      {
+        flightId: "flight-1",
+        flightTitle: "Flight",
+        summary: "mechanical summary",
+        whatWorked: [],
+        whatFailed: [],
+        lessonsLearned: ["derived: avoid X"],
+        suggestedImprovements: [],
+        tags: ["flight"],
+      },
+      "D:/projects/example",
+    );
+
+    useMemoryStore.getState().updateFlightRetrospective("flight-1", {
+      summary: "model summary",
+      lessonsLearned: ["pin the seed", "cache the build"],
+    });
+
+    const event = useMemoryStore.getState().events[0];
+    expect(event.type).toBe("flight_completed");
+    if (event.type === "flight_completed") {
+      expect(event.payload.summary).toBe("model summary");
+      expect(event.payload.lessonsLearned).toEqual(["pin the seed", "cache the build"]);
+      expect(event.payload.tags).toEqual(["flight"]); // untouched field preserved
+    }
+  });
+
+  it("M9: updateFlightRetrospective is a no-op for an unknown flight", async () => {
+    const { useMemoryStore } = await loadStores();
+    useMemoryStore.setState({ events: [] });
+    useMemoryStore.getState().updateFlightRetrospective("missing", { summary: "x" });
+    expect(mocks.saveMemorySlice).not.toHaveBeenCalled();
+  });
+
   it("caps stored events using the configured max", async () => {
     const { useMemorySettingsStore, useMemoryStore } = await loadStores();
     useMemorySettingsStore.getState().setMaxEvents(20);

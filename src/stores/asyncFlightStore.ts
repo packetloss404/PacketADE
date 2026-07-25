@@ -5,8 +5,14 @@ import {
   cleanupAttemptWorktreeSsh,
   markAttemptStatus,
   setAttemptDraftPr,
+  summarizeFlight,
   type AttemptTargetSpec,
 } from "@/lib/tauri";
+import {
+  buildFlightSummaryInput,
+  buildAttemptSessionLogs,
+  parseFlightRetrospective,
+} from "@/lib/flightRetrospective";
 import { publishBranchAsPr } from "@/lib/gitPublish";
 import { useFlightStore } from "@/stores/flightStore";
 import {
@@ -584,6 +590,37 @@ function captureFlightCompletionOnTransition(flightId: string, statusBefore: str
   // decay signal.
   const success = (flight.attempts ?? []).some((a) => a.status === "completed");
   memory.adjustConfidenceForFlight(flightId, success);
+  // M9: opt-in LLM retrospective enrichment (fire-and-forget). Runs after the
+  // mechanical capture so a missing/unauthed CLI just leaves the derived
+  // payload in place.
+  void enrichFlightRetrospective(flight);
+}
+
+/**
+ * M9: replace the mechanically-derived `lessonsLearned` (and sibling fields)
+ * with a model-authored retrospective when learning is enabled. Best-effort:
+ * any failure (CLI absent, non-JSON output, non-local project) is swallowed and
+ * the already-captured mechanical payload stands.
+ */
+async function enrichFlightRetrospective(flight: Flight): Promise<void> {
+  const settings = getMemorySettings();
+  if (!settings.captureFlights || !settings.summarizeSessions) return;
+  if (!flight.projectPath?.trim()) return;
+  // Remote/SSH attempts don't have a validatable local project_path for the
+  // Rust command; only enrich all-local flights.
+  const attempts = flight.attempts ?? [];
+  if (attempts.some((a) => a.target.kind !== "local")) return;
+  try {
+    const raw = await summarizeFlight(
+      flight.projectPath,
+      buildFlightSummaryInput(flight),
+      buildAttemptSessionLogs(flight),
+    );
+    const retro = parseFlightRetrospective(raw);
+    if (retro) useMemoryStore.getState().updateFlightRetrospective(flight.id, retro);
+  } catch (err) {
+    console.warn("flight retrospective enrichment failed", err);
+  }
 }
 
 async function cleanupSshAttemptWorktree(flightId: string, attempt: Attempt): Promise<void> {
