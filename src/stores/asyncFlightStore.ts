@@ -6,6 +6,7 @@ import {
   markAttemptStatus,
   setAttemptDraftPr,
   summarizeFlight,
+  gitPushRemote,
   type AttemptTargetSpec,
 } from "@/lib/tauri";
 import {
@@ -190,23 +191,33 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
     return;
   }
 
-  // SSH attempts live on a remote host — `git push` from the local app
-  // wouldn't reach the worktree there. Skip cleanly with a clear UI
-  // surface (errorMessage is rendered on the AttemptTile) so the user
-  // knows why no PR appeared. (Remote publish is v1.1.)
-  if (attempt.target.kind !== "local") {
-    console.warn(
-      "publishAttemptAsDraftPr: SSH attempts are not yet supported; skipping",
-      attempt.id,
-    );
-    patchAttempt(flight.id, attempt.id, {
-      errorMessage:
-        "Draft-PR publish skipped: SSH attempts are not supported yet. Push the branch and open a PR manually from the remote.",
-    });
-    return;
+  // GP5: pick the push transport. Local pushes from the app's checkout; SSH
+  // pushes from the remote worktree host (`git_push_remote`) so origin has the
+  // branch before we open the PR via the GitHub API — no remote `gh` needed.
+  const worktreePath = attempt.target.worktreePath;
+  let remotePush: (() => Promise<void>) | undefined;
+  if (attempt.target.kind === "ssh") {
+    const server = useServerStore.getState().getServer(attempt.target.targetId);
+    if (!server) {
+      patchAttempt(flight.id, attempt.id, {
+        errorMessage:
+          "Draft-PR publish skipped: the SSH server for this attempt no longer exists.",
+      });
+      return;
+    }
+    const serverConfig = {
+      id: server.id,
+      host: server.host,
+      port: server.port,
+      username: server.username,
+      keyPath: server.keyPath ?? null,
+      hostFingerprint: server.hostFingerprint ?? null,
+    };
+    remotePush = async () => {
+      await gitPushRemote(serverConfig, worktreePath);
+    };
   }
 
-  const worktreePath = attempt.target.worktreePath;
   const branchName = attempt.branch;
   const baseBranch = attempt.baseBranch || "main";
 
@@ -231,6 +242,7 @@ async function publishAttemptAsDraftPr(flight: Flight, attempt: Attempt): Promis
     title,
     body,
     draft: true,
+    remotePush,
   });
 
   if (!result.ok) {
