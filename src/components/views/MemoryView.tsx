@@ -13,6 +13,9 @@ import {
   Zap,
   Download,
   Upload,
+  MessageSquare,
+  Lightbulb,
+  FileText,
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
 import {
@@ -22,7 +25,9 @@ import {
   filterMemoryEventsByScope,
   serializeMemoryExport,
   serializeMemoryMarkdown,
+  computeContextItems,
   type MemoryDateRange,
+  type ContextItem,
 } from "@/stores/memoryStore";
 import { computeMemoryDigest, type MemoryDigest } from "@/lib/memoryDigest";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
@@ -31,7 +36,7 @@ import { MemoryEventCard } from "./memory/MemoryEventCard";
 import type { MemoryEvent, MemoryEventType, PatternCategory, LearnedPattern } from "@/types/memory";
 import { relativeTime } from "@/lib/time";
 
-type Tab = "patterns" | "timeline";
+type Tab = "patterns" | "timeline" | "ask";
 type FilterType = "all" | MemoryEventType;
 
 const FILTERS: { key: FilterType; label: string }[] = [
@@ -386,6 +391,12 @@ export function MemoryView() {
           label="Events"
           badge={events.length}
         />
+        <MemTab
+          active={activeTab === "ask"}
+          onClick={() => setActiveTab("ask")}
+          icon={<MessageSquare size={10} />}
+          label="Ask"
+        />
         <div className="flex-1" />
         <span className="text-[10px] text-text-faint">
           {lastPatternRefreshAt ? (
@@ -461,6 +472,10 @@ export function MemoryView() {
           projects={projects}
         />
       )}
+
+      {activeTab === "ask" && (
+        <AskTab events={events} patterns={patterns} projectPath={projectPath} />
+      )}
     </div>
   );
 }
@@ -470,7 +485,7 @@ interface MemTabProps {
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
-  badge: number;
+  badge?: number;
   accent?: boolean;
 }
 
@@ -996,6 +1011,101 @@ function TimelineTab({
         )}
       </div>
     </>
+  );
+}
+
+// M8: "Ask your project" — a keyword-ranked answer over the memory corpus.
+// No LLM: reuses computeContextItems (the same query-aware ranker the launch
+// pipeline uses) so results match what would actually be injected.
+const ASK_ICON: Record<ContextItem["kind"], React.ReactNode> = {
+  pattern: <Sparkles size={11} className="text-accent-green" />,
+  lesson: <Lightbulb size={11} className="text-accent-amber" />,
+  session: <FileText size={11} className="text-text-muted" />,
+};
+
+function AskTab({
+  events,
+  patterns,
+  projectPath,
+}: {
+  events: MemoryEvent[];
+  patterns: LearnedPattern[];
+  projectPath: string | null;
+}) {
+  const [query, setQuery] = useState("");
+  const [submitted, setSubmitted] = useState("");
+
+  const results = useMemo(() => {
+    const q = submitted.trim();
+    if (!q || !projectPath) return [];
+    return computeContextItems(events, patterns, { kind: "local", projectPath }, q);
+  }, [events, patterns, projectPath, submitted]);
+
+  const submit = () => setSubmitted(query);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-bg-border bg-bg-secondary px-3.5 py-2.5">
+        <MessageSquare size={12} className="text-accent-green" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          placeholder="Ask your project memory — e.g. how do we handle SSH auth?"
+          className="focus:border-accent-green/50 flex-1 rounded border border-bg-border bg-bg-primary px-2.5 py-1.5 text-xs text-text-primary outline-none placeholder:text-text-muted"
+        />
+        <button
+          onClick={submit}
+          disabled={!query.trim() || !projectPath}
+          className="rounded bg-accent-green/20 px-2.5 py-1.5 text-[11px] font-medium text-accent-green transition-colors hover:bg-accent-green/30 disabled:opacity-40"
+        >
+          Ask
+        </button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3">
+        {!projectPath ? (
+          <EmptyState
+            icon={<MessageSquare size={20} className="text-text-faint" />}
+            title="No project open"
+            body="Open a workspace to ask its accumulated memory."
+          />
+        ) : !submitted.trim() ? (
+          <EmptyState
+            icon={<MessageSquare size={20} className="text-text-faint" />}
+            title="Ask your project"
+            body="Type a question to search learned patterns and flight lessons, ranked by relevance. No AI call — this is your own memory."
+          />
+        ) : results.length === 0 ? (
+          <EmptyState
+            icon={<Search size={20} className="text-text-faint" />}
+            title="Nothing relevant found"
+            body="No patterns or recent lessons matched that question for this project."
+          />
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <div className="mb-1 text-[10px] text-text-faint">
+              {results.length} result{results.length === 1 ? "" : "s"} for{" "}
+              <span className="font-mono text-text-muted">“{submitted.trim()}”</span>
+            </div>
+            {results.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-start gap-2 rounded border border-bg-border bg-bg-primary px-2.5 py-2"
+              >
+                <span className="mt-px shrink-0">{ASK_ICON[item.kind]}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] leading-snug text-text-primary">{item.title}</div>
+                  <div className="mt-0.5 text-[9.5px] text-text-faint">{item.reason}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
