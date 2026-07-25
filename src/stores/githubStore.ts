@@ -444,11 +444,16 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   },
 
   removeGitHostConnection: async (id) => {
+    const wasActive = get().activeConnectionId === id;
     await gitHostRemoveConnection(id);
     await get().loadConnections();
-    // If we removed the active host, fall back to GitHub.
-    if (get().activeConnectionId === id) {
+    // If we removed the active host, fall back to GitHub — and sync the backend
+    // (its active_connection_id must not dangle at the deleted id).
+    if (wasActive) {
       set({ activeConnectionId: GITHUB_CONNECTION_ID });
+      void gitHostSetActive(GITHUB_CONNECTION_ID).catch((e) =>
+        console.warn("[githubStore] gitHostSetActive failed:", e),
+      );
     }
   },
 
