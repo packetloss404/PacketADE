@@ -1,0 +1,117 @@
+# Gitea / Forgejo Support — Scoped Loop
+
+Created: 2026-07-25
+Backlog: [`../backlog.md`](../backlog.md) → new "Git host providers (GitHub + Gitea/Forgejo)".
+Shape: same gated-loop cadence as [`memory-v9-loop.md`](./memory-v9-loop.md)
+(discrete, independently-gated items; per-item commit; verify → record).
+
+## Objective
+
+Support a **self-hosted Gitea/Forgejo host alongside cloud GitHub, both
+configured at once**. A workspace uses whichever host its `origin` remote
+belongs to; the pane's logo/labels follow that host. No global "active provider"
+switch — dual-config is a first-class requirement, resolved per workspace.
+
+Forgejo shares Gitea's `/api/v1`, so "Gitea support" delivers Forgejo for free.
+
+## The "both configured" model (design decision)
+
+- Config holds a **list** of git-host connections, each
+  `{ id, type: "github" | "gitea", baseUrl, token, label }`. Multiple GitHub +
+  multiple Gitea allowed. (Today: a single in-memory GitHub token.)
+- **Per-workspace resolution:** match the repo's `origin` remote host to a
+  configured connection — `github.com` → the GitHub connection; a configured
+  Gitea `baseUrl` host → that Gitea connection.
+- **Branding follows the resolved host** (nav icon/label, RepoSelector, PR URLs).
+- **Ambiguous cases** (no matching connection, multiple remotes, host not
+  configured) → a small manual host picker / per-workspace override.
+- Secrets: tokens stay in-memory per current model; **Gitea `baseUrl` persists**
+  (not a secret, needed to build any request).
+
+## Grounding — what's live today (do not rebuild)
+
+| Piece | Where | Notes |
+|---|---|---|
+| GitHub API layer | `commands/github.rs` (3118 ln) | All `reqwest`, host hardcoded `https://api.github.com`. 45 Tauri commands. Client builder `github_client` (:173), token from state `github_client_from_state` (:260). `Link`-header pagination (:800). |
+| 2nd GitHub client | `core/tool_github.rs` | Independent client + token loader for API-agent tools (`gh_list_issues`/`_get_issue`/`_list_prs`). Also hardcodes `api.github.com`. Must become host-aware too. |
+| `gh` CLI shell-out | `core/tool_pull_request.rs` | The ONLY `gh` dependency — `create_pull_request` agent tool (local + SSH). Hardcodes `github.com/.../pull/`. Gitea has no `gh` (→ `tea`/API). |
+| Auth | `GitHubAuthState { token: RwLock<Option<String>> }` (github.rs:157) | In-memory only; keyring/file read-once-then-scrubbed at startup (:87). No restart persistence. |
+| Frontend store | `stores/githubStore.ts` | `githubHasToken`/`SetToken`/`ClearToken`; persists selected repo only (`packetade:github`) + settings (`packetade:github:settings`). |
+| View | `views/GitHubView.tsx` (1007 ln) + `views/github/*` | Tabs `issues \| prs \| activity \| inbox`; PR sub-tabs `overview \| checks`. |
+| DTOs | `types/github.ts` | Two families: **passthrough snake_case** (`GitHubRepo/Issue/Pr` — raw GitHub JSON parsed on the frontend → couples to GitHub wire shape) and **camelCase Rust DTOs** (checks/reviews/notifications — already normalized, frontend-stable). |
+| Provider-picker precedent | `lib/api-models.ts` `API_PROVIDERS` | The 8-row LLM catalog with per-provider capability flags — the pattern to mirror for a `GIT_HOSTS` catalog. |
+| Branding | lucide `Github` icon + "GitHub" in ~20 files | `LeftRail.tsx:20`, `GitHubView`, `GitHubSettingsCard`, `CommandPalette`, `ToolsView`, `StatusStrip`, workspace cards, etc. No Gitea glyph in lucide → custom SVG needed. |
+
+## Gitea vs GitHub API divergences (the hard edges)
+
+| Area | GitHub | Gitea `/api/v1` | Item |
+|---|---|---|---|
+| Auth | `Bearer` | `token <PAT>` (also accepts Bearer) | G2/G4 |
+| Pagination | `per_page` + `Link rel=next` | `page`+`limit` + `X-Total-Count` | G4 |
+| PR diff | `Accept: application/vnd.github.diff` | `.diff` **URL suffix** | G6 |
+| Merge | `PUT .../merge {merge_method}` | `{Do: merge\|squash\|rebase}` | G9 |
+| Draft PR | GraphQL `convertPullRequestToDraft` (+`node_id`) | REST `draft` field / `WIP:` title — **no GraphQL** | G10 |
+| Review state enum | `CHANGES_REQUESTED` | `REQUEST_CHANGES` | G11 |
+| Inline review comment | `line`+`side`+`commit_id` | `path`+`new_position`/`old_position` | G11 |
+| Checks | `/commits/{sha}/check-runs` + `/status` | `/status` only (no check-runs → 404) | G10 |
+| Notifications | `GET /notifications`, `PATCH /threads/{id}` (205) | `GET /api/v1/notifications`, mark-read `?to-status=read` | G12 |
+| Activity feed | `/repos/.../events` (typed events) | no equivalent (`/activities/feeds`, diff schema) | G10 (hide) |
+
+## Loop ledger
+
+`queued → in-progress → gated → closed`. Foundation first, then read, write,
+divergent surfaces, branding. Sizes from the map.
+
+| ID | Item | Acceptance | Key hooks | Gate | Size | Status |
+|---|---|---|---|---|---|---|
+| **G1** | `GitHost` trait + `GitHubHost` impl (pure refactor) | New `core/git_host.rs` (mirror `core/llm_provider.rs`) owns `base_url()`, client builder, and the divergence points. `github.rs` command bodies delegate through it. **GitHub behavior byte-identical.** | `core/git_host.rs`; `commands/github.rs` handlers. | cargo check REAL_EXIT=0; existing GitHub cmd behavior unchanged (spot-review). | L | queued |
+| **G2** | Multi-connection auth + config model | `GitHostAuthState` holds a list of `{id,type,baseUrl,token,label}`; Gitea `baseUrl` persists, tokens in-memory (keyring per connection). Frontend `GIT_HOSTS` catalog (mirror `api-models.ts`) + `githubStore` connections list + settings UI to add a Gitea host (baseUrl+PAT). | `github.rs` auth state; `lib/git-hosts.ts`; `githubStore.ts`; `GitHubSettingsCard.tsx`. | Vitest (store connection CRUD) + cargo check. | L | queued |
+| **G3** | Per-workspace host resolution from remote | Pure resolver: `origin` URL → matching connection (`github.com`→github, configured Gitea host→gitea); returns null/override for ambiguous. Wired so the active host is workspace-scoped. | New `lib/gitHostResolve.ts`; workspace `githubRepo` gains a host discriminator. | Vitest: github.com match, gitea host match, no-match, multi-remote (pure). | M | queued |
+| **G4** | `GiteaHost` — auth, user, repos (+ normalization) | `GiteaHost` impl: `token` header, `/api/v1` base, `GET /user`, `GET /user/repos` with `page`+`limit` pagination; **normalize Gitea JSON → GitHub-shaped** for the passthrough `GitHubRepo` string. | `core/git_host.rs` `GiteaHost`; JSON normalizer. | cargo check + Rust unit test on repo normalization. | M | queued |
+| **G5** | Gitea issues read | List/get issues (+comments) via Gitea, normalized to `GitHubIssue`; PR-strip filter is a no-op (harmless). | `git_host.rs`; reuse `github.rs` issue commands via trait. | cargo check + issue-normalize unit test. | M | queued |
+| **G6** | Gitea PRs read | List PRs, PR **diff via `.diff` suffix**, branches; normalize to `GitHubPr`. | `git_host.rs` diff/PR methods. | cargo check + PR-normalize unit test. | M | queued |
+| **G7** | Gitea labels / milestones / assignees read | The metadata read endpoints behind the trait. | `git_host.rs`. | cargo check. | S | queued |
+| **G8** | Gitea issue writes | Close/reopen (PATCH state), post comment, set assignees/labels/milestone. | `git_host.rs` write methods. | cargo check (+ mocked write test where feasible). | M | queued |
+| **G9** | Gitea PR writes | Create PR, **merge (`Do` + value mapping)**, close/reopen, set reviewers/labels/milestone. | `git_host.rs`. | cargo check. | M | queued |
+| **G10** | Capability flags + graceful degradation | Per-host capability map (mirror `api-models` flags): draft mechanism (REST/title, not GraphQL), checks (status-only), **Activity/Events tab hidden for Gitea**, notifications variant. UI conditionals key off the capability map. | `lib/git-hosts.ts` caps; `GitHubView.tsx` tab gating; `PRActionBar`/`PRChecksTab`. | Vitest: capability gating + UI conditionals. | M | queued |
+| **G11** | Gitea PR reviews + inline comments | Reviews list with enum mapping (`REQUEST_CHANGES`↔`CHANGES_REQUESTED`); inline comment via Gitea reviews API (`path`+position). Hardest write path — feature-gate to "comment only" for v1 if the line/side model won't map cleanly. | `git_host.rs` review methods; `PullRequestReviewsPanel`. | cargo check + enum-map unit test. | L | queued |
+| **G12** | Gitea notifications | List + mark-read (`?to-status=read`/bulk), normalize `GithubNotification`; host-specific subject/browser-URL builder. | `git_host.rs` notif methods; `notification_subject_html_url` → host-aware. | cargo check + normalize test. | M | queued |
+| **G13** | Branding follows host | `<HostIcon provider>` + `hostLabel(provider)` helpers; custom Gitea/Forgejo inline SVG; sweep the ~20 "GitHub" spots so nav icon/label, RepoSelector, PR URLs follow the workspace's resolved host. Manual host-picker for ambiguous workspaces. | New `components/HostIcon.tsx`; `LeftRail`, `GitHubView`, settings, palette, status. | Vitest (host label/icon) + pnpm lint + build. | M | queued |
+| **G14** | Agent-tool + PR-tool host-awareness | `core/tool_github.rs` (2nd client) resolves host per repo; `core/tool_pull_request.rs` `gh`-CLI path → API-based create-PR (or `tea`) + host-aware URL extraction. | `core/tool_github.rs`; `core/tool_pull_request.rs`. | cargo check. | M | queued |
+
+## Deferred (not in this loop)
+
+- **Full Gitea Actions/check-runs parity** — Gitea has no check-runs API; G10
+  degrades to combined commit status. Richer CI surfacing is its own effort.
+- **AI compare-diff for Gitea** — GitHub's `/compare` returns a raw diff; Gitea's
+  returns JSON, so `github_ai_pr_description`'s compare path degrades to the
+  `.diff` PR endpoint on Gitea (fine for single-PR); multi-commit compare deferred.
+- **GraphQL-only GitHub features** beyond the draft toggle stay GitHub-only
+  (capability-gated, never called on Gitea).
+
+## Loop protocol
+
+Each iteration: claim the lowest-ID `queued` item whose deps are `closed`;
+revalidate hooks against current code (line refs drift); implement minimally;
+add a focused test (prefer pure helpers + Rust unit tests / mocked clients);
+gate (targeted vitest + `pnpm lint` + `pnpm build`; `cargo check` real-exit for
+Rust — into the redirected `packetade-build` target dir); flip to `closed` +
+record; commit one item per commit on `feat/gitea-support`.
+
+## Suggested slices
+
+- **Foundation slice (must-do first):** G1 → G2 → G3. The trait seam + multi-
+  connection config + per-workspace resolution. Nothing Gitea-facing works until
+  these land, and GitHub keeps working throughout.
+- **MVP-usable slice:** + G4 → G6 → G8/G9 (partial) + G13. A Gitea workspace can
+  browse repos/issues/PRs, read diffs, do basic issue/PR actions, with the Gitea
+  logo. Feature-gate reviews/checks/notifications (G10 hides them) until later.
+- **Full-parity slice:** G7, G10–G12, G14 — reviews, notifications, capability
+  gating, and the agent/PR tools.
+
+## Scope note
+
+This is materially larger than the Memory loop (45 commands across **three**
+GitHub client locations + ~20 branding files + real API divergences). Recommended
+to run the **Foundation slice first** and re-confirm before the Gitea client work,
+so GitHub stays green and the seam is proven before breadth.

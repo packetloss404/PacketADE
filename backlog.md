@@ -223,35 +223,33 @@ still loads legacy data losslessly.
   draft PRs" Flight option skips SSH attempts (logged as `errorMessage`).
   Add support for running git push from the remote worktree host.
 
+## Git host providers — GitHub + Gitea/Forgejo (dual-config)
+
+> **Scoped into a gated loop:** [`dev/gitea-support-loop.md`](./dev/gitea-support-loop.md)
+> (G1–G14). Adds self-hosted **Gitea/Forgejo** alongside cloud GitHub, **both
+> configurable at once** — a workspace uses whichever host its `origin` remote
+> belongs to, and the pane's logo/labels follow that host. Central change: the
+> single in-memory GitHub token becomes a **list of git-host connections** behind
+> a new `core/git_host.rs` `GitHost` trait (mirroring the `LlmProvider` pattern).
+> Foundation slice (G1–G3) keeps GitHub byte-identical while introducing the seam.
+
 ## Memory v0.9+ (from v0.8 deferrals)
 
-> **In progress:** the items below are scoped into a gated loop —
-> [`dev/memory-v9-loop.md`](./dev/memory-v9-loop.md) (M1–M10; local-embedding
-> semantic retrieval deferred). That doc also fixes the half-wired gaps (naive
-> search, dead `task_completed`, static confidence, stranded `summarize_flight`).
+> **Shipped:** the M1–M10 loop ([`dev/memory-v9-loop.md`](./dev/memory-v9-loop.md))
+> was peer-reviewed and merged to `main` on 2026-07-24 — IDF-ranked Timeline
+> search (M1), project + date-range scope chips (M2), export/import JSON+MD (M3),
+> "+ Add to memory" on the flight timeline + agent transcript (M4), confidence
+> auto-rerating on flight outcome (M5), recurring-error "this looks familiar"
+> launch hint (M6), 30-day digest (M7), "Ask your project" tab (M8), the wired-in
+> `summarize_flight` retrospective (M9), and retirement of the dead
+> `task_completed` path (M10). Only the deferred item below remains open.
 
-- **P3 — Evaluate semantic retrieval only if keyword misses are measured.** If
-  the current IDF-weighted retrieval proves insufficient, use a bundled local
-  embedding model plus brute-force cosine over the small JSON corpus; a vector
-  database is not justified at its current size.
-- **P3 — Recurring-error detector.** Pattern-extraction pipeline could
-  watch for repeated failure modes and surface a "this looks familiar"
-  hint at the next agent launch.
-- **P3 — "Ask your project" memory chat tab.** A chat surface that
-  queries memory directly (with the RAG layer above this is trivial;
-  without it, fall back to keyword search).
-- **P3 — Confidence auto-rerating on outcome.** When a pattern is
-  referenced and the resulting attempt succeeds/fails, bump or decay
-  the pattern's confidence score.
-- **P3 — Manual capture "+ Add to memory" button** in more surfaces
-  beyond the GitHub investigation. Anywhere the user encounters
-  insight (Flight coordination timeline, agent transcript, code review thread)
-  should have a single-click capture affordance.
-- **P3 — Project-scoped filter chips in the Timeline.** (The `TimelineTab` now
-  lives inside `src/components/views/MemoryView.tsx`.)
-- **P3 — Export / import memory** as JSON+Markdown.
-- **P3 — Date-range scope chips.**
-- **P3 — 30-day memory digest.**
+- **P3 (deferred) — Evaluate semantic retrieval only if keyword misses are
+  measured.** If the current IDF-weighted retrieval proves insufficient, use a
+  bundled local embedding model plus brute-force cosine over the small JSON
+  corpus; a vector database is not justified at its current size. M1's IDF scorer
+  and M8's Ask tab now make keyword quality measurable — revisit only if it falls
+  short.
 
 ## Product tracks (from `dev/README.md`)
 
