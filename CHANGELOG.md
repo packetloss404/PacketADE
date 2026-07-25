@@ -7,6 +7,41 @@ For current direction, use [`ROADMAP.md`](./ROADMAP.md). For planning briefs and
 runbooks, use [`dev/README.md`](./dev/README.md). This file is history, not a
 task list.
 
+## [Unreleased]
+
+### Added — Memory v0.9+ (Memory pane, fully wired)
+
+A ten-item loop (`dev/memory-v9-loop.md`) that fixed the half-wired gaps and
+shipped the deferred Memory enhancements. Local-embedding semantic retrieval
+remains deliberately deferred (do it only if keyword misses are measured).
+
+- **Timeline search now ranks by the IDF scorer** it sat next to (M1): best
+  match first, substring hits preserved, blank query = identity.
+- **Timeline scope chips** (M2): rolling date-window (All/24h/7d/30d) + per-
+  project chips, composing with the type filters and search.
+- **Export / import memory** (M3): download the corpus as round-trippable JSON
+  or a readable Markdown digest; import merges JSON deduped by id.
+- **"+ Add to memory" on more surfaces** (M4): the flight coordination timeline
+  and assistant transcript turns, alongside the existing GitHub investigation.
+- **Confidence that learns** (M5): patterns injected into a flight's brief are
+  nudged up on success and decayed on failure when the flight settles.
+- **"This looks familiar" launch hint** (M6): an amber warning when a prompt
+  overlaps a known pitfall or a lesson that recurred across prior flights.
+- **Rolling 30-day digest** (M7): event/pattern counts, top patterns, and the
+  freshest lessons, in the Patterns rail.
+- **"Ask your project" tab** (M8): a keyword-ranked answer over your own memory,
+  no LLM call.
+- **Rich flight retrospective wired in** (M9): flight capture now enriches its
+  lessons with the previously-stranded `summarize_flight` LLM retrospective
+  when learning is enabled (best-effort, local flights).
+
+### Changed
+
+- **Dead `task_completed` surface retired** (M10): nothing has emitted that
+  event since the July 2026 scheduler removal, so the permanently-empty "Tasks"
+  Timeline chip is gone. The type and its renderer stay read-only for any
+  events persisted before the removal.
+
 ## [0.10.1] - 2026-07-19
 
 ### Changed
