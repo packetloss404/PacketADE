@@ -595,16 +595,13 @@ async fn github_client_from_state(auth: &GitHubAuthState) -> Result<reqwest::Cli
 
 async fn github_get_issue_with_client(
     client: &reqwest::Client,
+    host: &GitHost,
     owner: &str,
     repo: &str,
     issue_number: u32,
 ) -> Result<String, String> {
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/issues/{}",
-        owner, repo, issue_number
-    );
     let resp = client
-        .get(&url)
+        .get(host.url(&format!("/repos/{}/{}/issues/{}", owner, repo, issue_number)))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -662,13 +659,15 @@ pub async fn github_list_issues(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/issues?state=open&per_page=50",
-        owner, repo
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/issues?state=open&{}",
+        owner,
+        repo,
+        host.page_params(50, 1)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -701,8 +700,8 @@ pub async fn github_get_issue(
 ) -> Result<String, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    github_get_issue_with_client(&client, &owner, &repo, issue_number).await
+    let (client, host) = active_host_session(auth.inner()).await?;
+    github_get_issue_with_client(&client, &host, &owner, &repo, issue_number).await
 }
 
 /// `POST /repos/{owner}/{repo}/pulls` — create a Pull Request.
@@ -872,13 +871,16 @@ pub async fn github_list_issue_comments(
 ) -> Result<Vec<GhIssueComment>, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/issues/{}/comments?per_page=100",
-        owner, repo, number
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/issues/{}/comments?{}",
+        owner,
+        repo,
+        number,
+        host.page_params(100, 1)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -1116,16 +1118,20 @@ pub async fn github_list_issues_page(
         "open" | "closed" | "all" => state,
         _ => "open".to_string(),
     };
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/issues?state={}&per_page=30&page={}",
-        owner, repo, state_clean, page
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/issues?state={}&{}",
+        owner,
+        repo,
+        state_clean,
+        host.page_params(30, page)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
+    // Both GitHub and Gitea emit RFC5988 Link headers with rel="next".
     let has_more = resp
         .headers()
         .get(LINK)
@@ -1202,7 +1208,9 @@ pub async fn github_investigate_issue(
     validate_github_name(&repo, "repo")?;
     let client = github_client_from_state(auth.inner()).await?;
 
-    let issue_json = github_get_issue_with_client(&client, &owner, &repo, issue_number).await?;
+    let issue_json =
+        github_get_issue_with_client(&client, &GitHost::github(), &owner, &repo, issue_number)
+            .await?;
     let issue: serde_json::Value =
         serde_json::from_str(&issue_json).map_err(|e| format!("Failed to parse issue: {}", e))?;
 
@@ -2315,7 +2323,7 @@ pub async fn github_ai_triage(
 
     let mut issue_payloads: Vec<serde_json::Value> = Vec::with_capacity(issue_numbers.len());
     for n in &issue_numbers {
-        let body = github_get_issue_with_client(&client, &owner, &repo, *n).await?;
+        let body = github_get_issue_with_client(&client, &GitHost::github(), &owner, &repo, *n).await?;
         let parsed: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| format!("Failed to parse issue #{}: {}", n, e))?;
         let title = parsed
