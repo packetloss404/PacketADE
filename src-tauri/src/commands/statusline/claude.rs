@@ -22,8 +22,17 @@ pub struct StatusLineData {
     pub timestamp: u64,
 }
 
+// Polled on mount + every 5s. The body does a blocking `read_dir` + per-file
+// read/parse, so run it off the main/event-loop thread via `spawn_blocking` —
+// a sync command would starve the OS message pump and freeze the window.
 #[tauri::command]
-pub fn read_statusline_states() -> Vec<StatusLineData> {
+pub async fn read_statusline_states() -> Vec<StatusLineData> {
+    tokio::task::spawn_blocking(read_statusline_states_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn read_statusline_states_blocking() -> Vec<StatusLineData> {
     let home = match home_dir() {
         Some(h) => h,
         None => return vec![],

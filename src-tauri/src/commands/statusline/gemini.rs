@@ -18,8 +18,16 @@ pub struct GeminiStatusLineData {
     pub timestamp: u64,
 }
 
+// Polled on mount + every 5s. Blocking fs work runs off the main thread via
+// `spawn_blocking` so it never freezes the window.
 #[tauri::command]
-pub fn read_gemini_statusline_states() -> Vec<GeminiStatusLineData> {
+pub async fn read_gemini_statusline_states() -> Vec<GeminiStatusLineData> {
+    tokio::task::spawn_blocking(read_gemini_statusline_states_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn read_gemini_statusline_states_blocking() -> Vec<GeminiStatusLineData> {
     let home = match home_dir() {
         Some(h) => h,
         None => return vec![],
