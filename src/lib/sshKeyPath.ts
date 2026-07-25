@@ -13,10 +13,11 @@
  * drive colons, and both slash flavors are all allowed.
  */
 
-/** Shell metacharacters that have no business in a key path. Backslash is
- *  intentionally excluded (Windows paths need it); newline and other control
- *  bytes are caught separately by the char-code scan below. */
-const UNSAFE_KEYPATH_CHARS = /[;|&$`<>"']/;
+/** Shell metacharacters (incl. glob wildcards) that have no business in a key
+ *  path. Backslash is intentionally excluded (Windows paths need it), as are
+ *  `(`/`)` (`Program Files (x86)`); newline and other control bytes are caught
+ *  separately by the char-code scan below. */
+const UNSAFE_KEYPATH_CHARS = /[;|&$`<>"'*?]/;
 
 /**
  * True if `keyPath` is safe to persist and hand to `ssh -i`. An empty string is
