@@ -13,6 +13,7 @@ import {
   githubListPrsPage,
   githubListReposPage,
   githubListRepos,
+  githubListReleases,
   githubPostIssueComment,
   githubReopenIssue,
   githubSetIssueAssignees,
@@ -29,7 +30,7 @@ import {
   gitHostSetActive,
   gitGetOriginUrl,
 } from "@/lib/tauri";
-import type { GithubNotification, GitHostConnectionInfo } from "@/lib/tauri";
+import type { GithubNotification, GitHostConnectionInfo, GitHubRelease } from "@/lib/tauri";
 import { resolveConnectionForRemote } from "@/lib/gitHostResolve";
 import { GITHUB_CONNECTION_ID } from "@/lib/git-hosts";
 import type {
@@ -139,6 +140,12 @@ interface GitHubStore {
   investigation: string | null;
   isInvestigating: boolean;
   prs: GitHubPr[];
+  /** GP6: the selected repo's releases (read-only view). */
+  releases: GitHubRelease[];
+  /** GP6: releases fetch in flight — distinguishes "loading" from "genuinely none". */
+  isReleasesLoading: boolean;
+  /** GP6: last releases fetch failed (vs. an empty repo) so the UI can say so. */
+  releasesError: string | null;
   prDiff: string | null;
   isPrLoading: boolean;
   /** Unix millis of the last successful repos/issues/PRs fetch. */
@@ -176,6 +183,8 @@ interface GitHubStore {
     draft?: boolean,
   ) => Promise<string>;
   fetchPrs: () => Promise<void>;
+  /** GP6: fetch the selected repo's releases. */
+  fetchReleases: () => Promise<void>;
   getPrDiff: (prNumber: number) => Promise<void>;
 
   // v0.8-A: optimistic PR patch. Lets PRActionBar reflect merge/close/reopen
@@ -309,6 +318,9 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   investigation: null,
   isInvestigating: false,
   prs: [],
+  releases: [],
+  isReleasesLoading: false,
+  releasesError: null,
   prDiff: null,
   isPrLoading: false,
   lastSyncAt: null,
@@ -678,6 +690,24 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         }
       }
       set({ error: message, isPrLoading: false });
+    }
+  },
+
+  fetchReleases: async () => {
+    const { config } = get();
+    if (!get().isConnected || !config.selectedRepo) return;
+    set({ isReleasesLoading: true, releasesError: null });
+    try {
+      const json = await githubListReleases(config.selectedRepo.owner, config.selectedRepo.repo);
+      const releases: GitHubRelease[] = JSON.parse(json);
+      set({ releases, isReleasesLoading: false, releasesError: null });
+    } catch (e) {
+      logSwallowed("githubStore.fetchReleases")(e);
+      set({
+        releases: [],
+        isReleasesLoading: false,
+        releasesError: e instanceof Error ? e.message : String(e),
+      });
     }
   },
 

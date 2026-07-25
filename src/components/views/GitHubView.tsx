@@ -4,6 +4,7 @@ import type { DiffCommentAnchor } from "@/components/views/DiffViewer";
 import {
   AlertCircle,
   Bell,
+  Tag,
   Brain,
   Check,
   Clock,
@@ -19,8 +20,10 @@ import {
 } from "lucide-react";
 import { useGitHubStore } from "@/stores/githubStore";
 import { capabilitiesFor, hostLabel } from "@/lib/git-hosts";
+import { useNotificationsPoller } from "@/hooks/useNotificationsPoller";
 import { HostIcon } from "@/components/HostIcon";
-import type { GitHostKind } from "@/lib/tauri";
+import type { GitHostKind, GitHubRelease } from "@/lib/tauri";
+import type { ReviewComment } from "@/lib/reviewCommentThreads";
 import { useIssueStore } from "@/stores/issueStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
@@ -66,7 +69,7 @@ function slugifyIssueTitle(title: string): string {
     .replace(/-+$/g, "");
 }
 
-type TabKey = "issues" | "prs" | "activity" | "inbox";
+type TabKey = "issues" | "prs" | "activity" | "inbox" | "releases";
 
 export function GitHubView() {
   const {
@@ -113,6 +116,10 @@ export function GitHubView() {
     unreadCount,
     notifications,
     fetchNotifications,
+    releases,
+    isReleasesLoading,
+    releasesError,
+    fetchReleases,
   } = useGitHubStore();
 
   const addIssue = useIssueStore((s) => s.addIssue);
@@ -128,6 +135,8 @@ export function GitHubView() {
   // Bumped after posting an inline review comment so PullRequestReviewsPanel
   // refetches and shows the new thread.
   const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
+  // GP1: review comments for the selected PR, rendered inline in the diff.
+  const [prReviewComments, setPrReviewComments] = useState<ReviewComment[]>([]);
   const [prDetailTab, setPrDetailTab] = useState<"overview" | "checks">(
     "overview",
   );
@@ -137,6 +146,9 @@ export function GitHubView() {
   useEffect(() => {
     initializeAuth();
   }, [initializeAuth]);
+
+  // GP2: keep the unread badge live while the pane is open (visibility-aware).
+  useNotificationsPoller();
 
   // G3: resolve which host this workspace belongs to (from its origin remote)
   // so the pane targets the right host and shows the right branding.
@@ -160,6 +172,32 @@ export function GitHubView() {
     // If we land on a tab the active host doesn't support, fall back to Issues.
     if (tab === "activity" && !activeCaps.activityFeed) setTab("issues");
   }, [tab, activeCaps.activityFeed]);
+
+  // GP1: fetch the selected PR's review comments so the diff can anchor them
+  // inline. Refetches after a comment is posted (reviewRefreshKey) and on host
+  // change. Gitea returns [] (inline authoring gated), so this is a no-op there.
+  useEffect(() => {
+    if (!isConnected || !config.selectedRepo || selectedPrNumber == null) {
+      setPrReviewComments([]);
+      return;
+    }
+    const { owner, repo } = config.selectedRepo;
+    let cancelled = false;
+    void invoke<ReviewComment[]>("github_list_pr_review_comments", {
+      owner,
+      repo,
+      prNumber: selectedPrNumber,
+    })
+      .then((cs) => {
+        if (!cancelled) setPrReviewComments(cs);
+      })
+      .catch(() => {
+        if (!cancelled) setPrReviewComments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, config.selectedRepo, selectedPrNumber, reviewRefreshKey, activeConnectionId]);
 
   // Refetch repos on connect AND whenever the active host changes (a Gitea
   // workspace resolves to a different connection → different repo set).
@@ -186,6 +224,13 @@ export function GitHubView() {
       fetchNotifications();
     }
   }, [isConnected, tab, notifications.length, activeConnectionId, fetchNotifications]);
+
+  // GP6: lazy-load releases when the Releases tab opens (or host/repo changes).
+  useEffect(() => {
+    if (isConnected && tab === "releases" && config.selectedRepo) {
+      void fetchReleases();
+    }
+  }, [isConnected, tab, config.selectedRepo, activeConnectionId, fetchReleases]);
 
   useEffect(() => {
     if (selectedIssueNum == null && issues.length > 0) {
@@ -516,6 +561,7 @@ export function GitHubView() {
                       <div className="border border-bg-border rounded-lg overflow-hidden">
                         <DiffViewer
                           diff={prDiff}
+                          reviewComments={prReviewComments}
                           onAddComment={
                             config.selectedRepo && selectedPrNumber != null
                               ? async (anchor: DiffCommentAnchor, body: string) => {
@@ -570,6 +616,12 @@ export function GitHubView() {
             </div>
           )}
         </div>
+      ) : tab === "releases" ? (
+        <ReleasesList
+          releases={releases}
+          loading={isReleasesLoading}
+          error={releasesError}
+        />
       ) : (
         <ActivityFeed
           issues={issues}
@@ -603,6 +655,81 @@ export function GitHubView() {
           onApply={handleTriageApply}
         />
       )}
+    </div>
+  );
+}
+
+/** GP6: read-only list of the selected repo's releases (GitHub + Gitea). */
+function ReleasesList({
+  releases,
+  loading,
+  error,
+}: {
+  releases: GitHubRelease[];
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading && releases.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
+        Loading releases…
+      </div>
+    );
+  }
+  if (error && releases.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center px-4 text-center text-[11px] text-accent-red">
+        Couldn’t load releases: {error}
+      </div>
+    );
+  }
+  if (releases.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-[11px] text-text-muted">
+        No releases published for this repository.
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+      {releases.map((r) => (
+        <a
+          key={r.id}
+          href={r.html_url}
+          target="_blank"
+          rel="noreferrer"
+          className="block rounded-lg border border-bg-border bg-bg-primary px-3 py-2 hover:border-line-strong transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Tag size={11} className="text-text-muted flex-shrink-0" />
+            <span className="text-[12px] font-semibold text-text-primary truncate">
+              {r.name || r.tag_name}
+            </span>
+            <span className="text-[10px] font-mono text-text-muted">{r.tag_name}</span>
+            {r.draft && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-amber/15 text-accent-amber">
+                draft
+              </span>
+            )}
+            {r.prerelease && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-blue/15 text-accent-blue">
+                pre-release
+              </span>
+            )}
+            <span className="flex-1" />
+            {r.published_at && (
+              <span className="text-[10px] text-text-muted flex-shrink-0">
+                {relativeTime(Date.parse(r.published_at))}
+              </span>
+            )}
+          </div>
+          {r.body && (
+            <p className="mt-1 text-[11px] text-text-secondary leading-snug line-clamp-3 whitespace-pre-wrap">
+              {r.body.slice(0, 400)}
+            </p>
+          )}
+        </a>
+      ))}
     </div>
   );
 }
@@ -731,6 +858,13 @@ function SubTabs({
         icon={<Bell size={10} />}
         label="Inbox"
         badge={unreadCount > 0 ? unreadCount : undefined}
+        accent="default"
+      />
+      <GhTab
+        active={tab === "releases"}
+        onClick={() => onTab("releases")}
+        icon={<Tag size={10} />}
+        label="Releases"
         accent="default"
       />
       <div className="flex-1" />
