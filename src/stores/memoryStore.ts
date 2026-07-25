@@ -327,6 +327,29 @@ function relevanceScores(query: string, candidates: string[]): number[] {
 }
 
 /**
+ * M1: rank/filter memory events for the Timeline search box using the IDF
+ * scorer (`relevanceScores`) instead of a naive substring match. Keeps any
+ * substring hit (so no result the old search found is lost) but orders by
+ * relevance, best first; chronological order (the caller's array order) is the
+ * tie-break. A blank query returns the input unchanged.
+ */
+export function searchMemoryEvents<T extends { payload: unknown }>(
+  events: T[],
+  query: string,
+): T[] {
+  const q = query.trim();
+  if (!q) return events;
+  const ql = q.toLowerCase();
+  const candidates = events.map((e) => JSON.stringify(e.payload).toLowerCase());
+  const scores = relevanceScores(ql, candidates);
+  return events
+    .map((e, i) => ({ e, i, score: scores[i], substr: candidates[i].includes(ql) }))
+    .filter((x) => x.score > 0 || x.substr)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((x) => x.e);
+}
+
+/**
  * v0.8-H: structured context items used by both `getContextForSession`
  * (rendered preview) and `composeMemoryBrief` (prompt injection). Kept as
  * an internal module helper — the only external callers are the two store

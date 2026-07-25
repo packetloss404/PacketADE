@@ -13,7 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useMemoryStore, memoryBriefStats } from "@/stores/memoryStore";
+import { useMemoryStore, memoryBriefStats, searchMemoryEvents } from "@/stores/memoryStore";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
@@ -140,10 +140,7 @@ export function MemoryView() {
     let result = [...events].reverse();
     if (matchesFlightFilter) result = result.filter(matchesFlightFilter);
     if (filter !== "all") result = result.filter((e) => e.type === filter);
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((e) => JSON.stringify(e.payload).toLowerCase().includes(q));
-    }
+    result = searchMemoryEvents(result, searchQuery);
     return result;
   }, [events, filter, searchQuery, matchesFlightFilter]);
 
