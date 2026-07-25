@@ -64,6 +64,11 @@ them up before that gate clears.
 
 ## SSH & remote workspaces
 
+> **Scoped into a gated loop:** [`dev/ssh-remote-loop.md`](./dev/ssh-remote-loop.md)
+> (S1–S11). Safety first (process-tree kill, keyPath hygiene, remote-git path
+> guards), then wire hygiene, then Windows-OpenSSH / `realpath` platform parity;
+> S11 (live smoke) is environment-gated.
+
 - **P2 — Live Codex-over-SSH smoke.** The generic remote-sidecar route and
   provider capability are regression-tested, but still need one real remote
   host smoke with remote Codex auth and the installed sidecar. Follow
@@ -201,6 +206,10 @@ has shipped, keep the aliases/shim so a machine that hasn't yet run the migratio
 still loads legacy data losslessly.
 
 ## GitHub pane v0.9+ (from v0.8 deferrals)
+
+> **Scoped into a gated loop:** [`dev/github-pane-v9-loop.md`](./dev/github-pane-v9-loop.md)
+> (GP1–GP7). New host-facing commands route through the dual-host
+> `active_host_session` seam and are capability-gated for Gitea.
 
 - **P3 — PR review concurrency and context.** Pin the fetched diff's head SHA as
   `commit_id` when authoring line comments, and surface existing review comments
