@@ -108,18 +108,28 @@ Do **not** enable P2 without P0's planner being green.
 - Gitea milestones exist; the "group by milestone" model works on both.
 - The hidden body marker is host-neutral (both render issue bodies as text).
 
-## Open decisions for review (before P1 code)
+## Resolved decisions (2026-07-25)
 
-1. **Mapping A vs B** (recommend B: milestone-grouped issues).
-2. **Conflict default** — LWW-with-attention (recommended) vs pull-wins vs
-   push-wins.
-3. **Scope of mirrored fields** — start with title/state/labels/milestone; defer
-   assignees + comments to a later phase?
-4. **Poll cadence** for mirrored Flights (reuse GP2's 60s visibility-aware gate?).
+The four open questions were reviewed and decided — P0 is now unblocked.
+
+1. **Mapping → B (milestone-grouped).** One issue per Flight milestone/task,
+   grouped under a host milestone named after the Flight; fall back to a single
+   issue (option A) for Flights with no milestones.
+2. **Conflict default → LWW-with-attention.** Structured fields (state, labels,
+   milestone) resolve last-writer-wins by timestamp; the losing value is recorded
+   in `conflicts[]` and raises a "Needs Attention" chip (nothing silently
+   discarded). Prose bodies/descriptions **append both** with a separator rather
+   than overwrite.
+3. **Mirrored fields (v1) → title, state, labels, milestone.** Assignees and
+   comment threads are deferred to a later phase (larger blast radius + cross-host
+   identity matching).
+4. **Poll cadence → reuse GP2's 60s visibility-aware poller**, paused when the
+   window is hidden, plus an explicit "Sync now" action.
 
 ## GP7 status
 
-This design doc is the GP7 deliverable for this loop pass. **Implementation
-(P0→P3) is intentionally not started** — it's gated on a review of the four open
-decisions above. When approved, P0 (the pure planner + data model) is the first
-committable slice.
+Design + decisions are **locked**. Implementation is the phased P0→P3 plan
+above; **P0** (the pure `diffMirrorState(local, host, lastSynced)` planner + the
+`mirror` record/body-marker data model, fully unit-tested, no I/O) is the first
+committable slice and can start now. Do not enable P2 (pull) until P0's planner
+is green.
