@@ -349,6 +349,34 @@ export function searchMemoryEvents<T extends { payload: unknown }>(
     .map((x) => x.e);
 }
 
+export type MemoryDateRange = "all" | "24h" | "7d" | "30d";
+
+const MEMORY_RANGE_MS: Record<Exclude<MemoryDateRange, "all">, number> = {
+  "24h": 24 * 60 * 60_000,
+  "7d": 7 * 24 * 60 * 60_000,
+  "30d": 30 * 24 * 60 * 60_000,
+};
+
+/**
+ * M2: scope memory events by project path and/or a rolling date window. Pure;
+ * `now` is injectable for tests. `project = null` and `dateRange = "all"` are
+ * both no-ops, so this composes cleanly with the type + search filters.
+ */
+export function filterMemoryEventsByScope<
+  T extends { projectPath?: string | null; timestamp: number },
+>(
+  events: T[],
+  opts: { project?: string | null; dateRange?: MemoryDateRange; now?: number },
+): T[] {
+  const { project = null, dateRange = "all", now = Date.now() } = opts;
+  const cutoff = dateRange === "all" ? null : now - MEMORY_RANGE_MS[dateRange];
+  return events.filter((e) => {
+    if (project && e.projectPath !== project) return false;
+    if (cutoff !== null && e.timestamp < cutoff) return false;
+    return true;
+  });
+}
+
 /**
  * v0.8-H: structured context items used by both `getContextForSession`
  * (rendered preview) and `composeMemoryBrief` (prompt injection). Kept as

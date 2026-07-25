@@ -13,7 +13,13 @@ import {
   Zap,
 } from "lucide-react";
 import { useLayoutStore } from "@/stores/layoutStore";
-import { useMemoryStore, memoryBriefStats, searchMemoryEvents } from "@/stores/memoryStore";
+import {
+  useMemoryStore,
+  memoryBriefStats,
+  searchMemoryEvents,
+  filterMemoryEventsByScope,
+  type MemoryDateRange,
+} from "@/stores/memoryStore";
 import { useMemorySettingsStore } from "@/stores/memorySettingsStore";
 import { useAppStore } from "@/stores/appStore";
 import { MemoryEventCard } from "./memory/MemoryEventCard";
@@ -30,6 +36,47 @@ const FILTERS: { key: FilterType; label: string }[] = [
   { key: "flight_completed", label: "Flights" },
   { key: "manual_note", label: "Notes" },
 ];
+
+// M2: rolling date-window chips for the Timeline.
+const DATE_RANGES: { key: MemoryDateRange; label: string }[] = [
+  { key: "all", label: "All time" },
+  { key: "24h", label: "24h" },
+  { key: "7d", label: "7d" },
+  { key: "30d", label: "30d" },
+];
+
+/** Last path segment of a project path, for a compact project chip label. */
+function projectBasename(p: string): string {
+  const parts = p.replace(/[\\/]+$/, "").split(/[\\/]/);
+  return parts[parts.length - 1] || p;
+}
+
+function ScopeChip({
+  active,
+  label,
+  title,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  title?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`max-w-[140px] truncate rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+        active
+          ? "border-accent-line bg-accent-soft font-semibold text-accent-green"
+          : "border-transparent bg-transparent font-medium text-text-muted hover:text-text-secondary"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
 
 const CATEGORY_ORDER: PatternCategory[] = ["architecture", "convention", "preference", "pitfall"];
 
@@ -98,6 +145,8 @@ export function MemoryView() {
   const [activeTab, setActiveTab] = useState<Tab>("patterns");
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateRange, setDateRange] = useState<MemoryDateRange>("all");
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
 
   useEffect(() => {
     if (incomingFilter?.flightId) {
@@ -140,9 +189,15 @@ export function MemoryView() {
     let result = [...events].reverse();
     if (matchesFlightFilter) result = result.filter(matchesFlightFilter);
     if (filter !== "all") result = result.filter((e) => e.type === filter);
+    result = filterMemoryEventsByScope(result, { project: projectFilter, dateRange });
     result = searchMemoryEvents(result, searchQuery);
     return result;
-  }, [events, filter, searchQuery, matchesFlightFilter]);
+  }, [events, filter, searchQuery, matchesFlightFilter, projectFilter, dateRange]);
+
+  const projects = useMemo(
+    () => [...new Set(events.map((e) => e.projectPath).filter((p): p is string => Boolean(p)))].sort(),
+    [events],
+  );
 
   const groupedPatterns = useMemo(() => {
     const groups: Partial<Record<PatternCategory, LearnedPattern[]>> = {};
@@ -314,6 +369,11 @@ export function MemoryView() {
           totalEvents={events.length}
           captureEnabled={captureEnabled}
           onDeleteEvent={deleteEvent}
+          dateRange={dateRange}
+          onDateRangeChange={setDateRange}
+          projectFilter={projectFilter}
+          onProjectChange={setProjectFilter}
+          projects={projects}
         />
       )}
     </div>
@@ -645,6 +705,11 @@ interface TimelineTabProps {
   totalEvents: number;
   captureEnabled: boolean;
   onDeleteEvent: (id: string) => void;
+  dateRange: MemoryDateRange;
+  onDateRangeChange: (r: MemoryDateRange) => void;
+  projectFilter: string | null;
+  onProjectChange: (p: string | null) => void;
+  projects: string[];
 }
 
 function TimelineTab({
@@ -657,6 +722,11 @@ function TimelineTab({
   totalEvents,
   captureEnabled,
   onDeleteEvent,
+  dateRange,
+  onDateRangeChange,
+  projectFilter,
+  onProjectChange,
+  projects,
 }: TimelineTabProps) {
   return (
     <>
@@ -697,6 +767,42 @@ function TimelineTab({
           />
         </div>
       </div>
+
+      {/* M2: date-range + project scope chips */}
+      {(projects.length > 0 || dateRange !== "all" || projectFilter !== null) && (
+        <div className="flex flex-shrink-0 flex-wrap items-center gap-1 border-b border-bg-border bg-bg-secondary px-3.5 py-1.5">
+          <span className="mr-0.5 text-[9px] uppercase tracking-wide text-text-faint">When</span>
+          {DATE_RANGES.map((r) => (
+            <ScopeChip
+              key={r.key}
+              active={dateRange === r.key}
+              label={r.label}
+              onClick={() => onDateRangeChange(r.key)}
+            />
+          ))}
+          {projects.length > 0 && (
+            <>
+              <span className="ml-2 mr-0.5 text-[9px] uppercase tracking-wide text-text-faint">
+                Project
+              </span>
+              <ScopeChip
+                active={projectFilter === null}
+                label="All"
+                onClick={() => onProjectChange(null)}
+              />
+              {projects.map((p) => (
+                <ScopeChip
+                  key={p}
+                  active={projectFilter === p}
+                  label={projectBasename(p)}
+                  title={p}
+                  onClick={() => onProjectChange(p)}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Event list */}
       <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-3.5 py-3">
