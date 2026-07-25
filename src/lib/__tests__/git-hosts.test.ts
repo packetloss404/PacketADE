@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { GIT_HOSTS, normalizeGiteaBaseUrl } from "@/lib/git-hosts";
+import { GIT_HOSTS, normalizeGiteaBaseUrl, capabilitiesFor } from "@/lib/git-hosts";
+
+describe("git-host capabilities (G10)", () => {
+  it("gives GitHub the GitHub-only surfaces and gates them off for Gitea", () => {
+    const gh = capabilitiesFor("github");
+    const gt = capabilitiesFor("gitea");
+    expect(gh.activityFeed).toBe(true);
+    expect(gh.checkRuns).toBe(true);
+    expect(gh.draftPrToggle).toBe(true);
+    // Gitea has no Events feed, no check-runs, no GraphQL draft toggle...
+    expect(gt.activityFeed).toBe(false);
+    expect(gt.checkRuns).toBe(false);
+    expect(gt.draftPrToggle).toBe(false);
+    // ...but does support reviews (G11).
+    expect(gt.prReviews).toBe(true);
+  });
+});
 
 describe("GIT_HOSTS catalog (G2)", () => {
   it("marks GitHub as fixed-host and Gitea as needing a base URL", () => {
