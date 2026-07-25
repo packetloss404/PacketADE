@@ -3093,11 +3093,14 @@ fn parse_pr_review(v: &serde_json::Value) -> PullRequestReview {
             .and_then(|x| x.as_str())
             .unwrap_or("")
             .to_string(),
-        state: v
-            .get("state")
-            .and_then(|x| x.as_str())
-            .unwrap_or("COMMENTED")
-            .to_string(),
+        // G11: normalize the review-state enum. Gitea emits REQUEST_CHANGES /
+        // COMMENT; the frontend keys on GitHub's CHANGES_REQUESTED / COMMENTED.
+        state: match v.get("state").and_then(|x| x.as_str()).unwrap_or("COMMENTED") {
+            "REQUEST_CHANGES" => "CHANGES_REQUESTED",
+            "COMMENT" => "COMMENTED",
+            other => other,
+        }
+        .to_string(),
         submitted_at: v
             .get("submitted_at")
             .and_then(|x| x.as_str())
@@ -3160,13 +3163,16 @@ pub async fn github_list_pr_reviews(
 ) -> Result<Vec<PullRequestReview>, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/pulls/{}/reviews?per_page=100",
-        owner, repo, pr_number
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    let url = host.url(&format!(
+        "/repos/{}/{}/pulls/{}/reviews?{}",
+        owner,
+        repo,
+        pr_number,
+        host.page_params(100, 1)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -3188,13 +3194,21 @@ pub async fn github_list_pr_review_comments(
 ) -> Result<Vec<PullRequestReviewComment>, String> {
     validate_github_name(&owner, "owner")?;
     validate_github_name(&repo, "repo")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/pulls/{}/comments?per_page=100",
-        owner, repo, pr_number
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    // Gitea's flat PR-comments listing differs from GitHub's; degrade to an
+    // empty thread list rather than erroring (inline authoring is gated below).
+    if host.kind == GitHostKind::Gitea {
+        return Ok(vec![]);
+    }
+    let url = host.url(&format!(
+        "/repos/{}/{}/pulls/{}/comments?{}",
+        owner,
+        repo,
+        pr_number,
+        host.page_params(100, 1)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -3225,6 +3239,15 @@ pub async fn github_post_pr_review_comment(
     let trimmed = body.trim();
     if trimmed.is_empty() {
         return Err("Comment body cannot be empty".to_string());
+    }
+    // G11: Gitea's inline-comment model (review-scoped path+position) differs
+    // enough that v1 gates authoring — the user can still leave a regular PR
+    // comment. Viewing reviews works on both hosts.
+    if active_host_kind(auth.inner()).await == GitHostKind::Gitea {
+        return Err(
+            "Inline review comments aren't supported on Gitea yet — post a regular PR comment instead."
+                .to_string(),
+        );
     }
     // GitHub only accepts LEFT/RIGHT; default anything else to RIGHT (new file).
     let side_norm = if side.eq_ignore_ascii_case("LEFT") {
