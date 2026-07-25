@@ -21,6 +21,7 @@ import { useGitHubStore } from "@/stores/githubStore";
 import { capabilitiesFor, hostLabel } from "@/lib/git-hosts";
 import { HostIcon } from "@/components/HostIcon";
 import type { GitHostKind } from "@/lib/tauri";
+import type { ReviewComment } from "@/lib/reviewCommentThreads";
 import { useIssueStore } from "@/stores/issueStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
@@ -128,6 +129,8 @@ export function GitHubView() {
   // Bumped after posting an inline review comment so PullRequestReviewsPanel
   // refetches and shows the new thread.
   const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
+  // GP1: review comments for the selected PR, rendered inline in the diff.
+  const [prReviewComments, setPrReviewComments] = useState<ReviewComment[]>([]);
   const [prDetailTab, setPrDetailTab] = useState<"overview" | "checks">(
     "overview",
   );
@@ -160,6 +163,32 @@ export function GitHubView() {
     // If we land on a tab the active host doesn't support, fall back to Issues.
     if (tab === "activity" && !activeCaps.activityFeed) setTab("issues");
   }, [tab, activeCaps.activityFeed]);
+
+  // GP1: fetch the selected PR's review comments so the diff can anchor them
+  // inline. Refetches after a comment is posted (reviewRefreshKey) and on host
+  // change. Gitea returns [] (inline authoring gated), so this is a no-op there.
+  useEffect(() => {
+    if (!isConnected || !config.selectedRepo || selectedPrNumber == null) {
+      setPrReviewComments([]);
+      return;
+    }
+    const { owner, repo } = config.selectedRepo;
+    let cancelled = false;
+    void invoke<ReviewComment[]>("github_list_pr_review_comments", {
+      owner,
+      repo,
+      prNumber: selectedPrNumber,
+    })
+      .then((cs) => {
+        if (!cancelled) setPrReviewComments(cs);
+      })
+      .catch(() => {
+        if (!cancelled) setPrReviewComments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, config.selectedRepo, selectedPrNumber, reviewRefreshKey, activeConnectionId]);
 
   // Refetch repos on connect AND whenever the active host changes (a Gitea
   // workspace resolves to a different connection → different repo set).
@@ -516,6 +545,7 @@ export function GitHubView() {
                       <div className="border border-bg-border rounded-lg overflow-hidden">
                         <DiffViewer
                           diff={prDiff}
+                          reviewComments={prReviewComments}
                           onAddComment={
                             config.selectedRepo && selectedPrNumber != null
                               ? async (anchor: DiffCommentAnchor, body: string) => {
