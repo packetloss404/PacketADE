@@ -21,6 +21,9 @@ const mocks = vi.hoisted(() => ({
   notifyAttemptCompleted: vi.fn(),
   composeMemoryBrief: vi.fn(),
   captureFlightCompleted: vi.fn(),
+  adjustConfidenceForFlight: vi.fn(),
+  recordInjectedPatterns: vi.fn(),
+  updateFlightRetrospective: vi.fn(),
   conversations: [] as Array<{
     id: string;
     messages: Array<{ role: string; content: string; isStreaming?: boolean }>;
@@ -84,6 +87,9 @@ vi.mock("@/stores/memoryStore", () => ({
     getState: () => ({
       composeMemoryBrief: mocks.composeMemoryBrief,
       captureFlightCompleted: mocks.captureFlightCompleted,
+      adjustConfidenceForFlight: mocks.adjustConfidenceForFlight,
+      recordInjectedPatterns: mocks.recordInjectedPatterns,
+      updateFlightRetrospective: mocks.updateFlightRetrospective,
     }),
   },
 }));
@@ -734,7 +740,7 @@ describe("asyncFlightStore flight-prompt injection gate", () => {
       mocks.listeners.set(eventName, callback);
       return Promise.resolve(() => mocks.listeners.delete(eventName));
     });
-    mocks.composeMemoryBrief.mockReturnValue({ text: "MEMORY BRIEF" });
+    mocks.composeMemoryBrief.mockReturnValue({ text: "MEMORY BRIEF", items: [] });
     useFlightStore.setState({ flights: [flight()], activeFlightId: null });
   });
 
