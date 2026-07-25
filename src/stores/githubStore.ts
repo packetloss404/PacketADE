@@ -26,6 +26,7 @@ import {
   gitHostListConnections,
   gitHostAddGitea,
   gitHostRemoveConnection,
+  gitHostSetActive,
   gitGetOriginUrl,
 } from "@/lib/tauri";
 import type { GithubNotification, GitHostConnectionInfo } from "@/lib/tauri";
@@ -451,7 +452,12 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
     }
   },
 
-  setActiveConnection: (id) => set({ activeConnectionId: id }),
+  setActiveConnection: (id) => {
+    set({ activeConnectionId: id });
+    void gitHostSetActive(id).catch((e) =>
+      console.warn("[githubStore] gitHostSetActive failed:", e),
+    );
+  },
 
   resolveActiveConnectionForProject: async (projectPath) => {
     if (!projectPath) return;
@@ -460,7 +466,10 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
       if (get().connections.length === 0) await get().loadConnections();
       const origin = await gitGetOriginUrl(projectPath);
       const { connectionId } = resolveConnectionForRemote(origin, get().connections);
-      set({ activeConnectionId: connectionId ?? GITHUB_CONNECTION_ID });
+      const active = connectionId ?? GITHUB_CONNECTION_ID;
+      set({ activeConnectionId: active });
+      // Tell the backend so its commands target the right host.
+      await gitHostSetActive(active);
     } catch (e) {
       console.warn("[githubStore] resolveActiveConnectionForProject failed:", e);
     }
