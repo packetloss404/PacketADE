@@ -139,10 +139,34 @@ async fn ssh_run(
     remote_cmd: &str,
     timeout_secs: u64,
 ) -> Result<std::process::Output, String> {
+    ssh_run_inner(config, remote_cmd, timeout_secs, false).await
+}
+
+/// Inner SSH runner. `request_tty` forces a remote pseudo-terminal (`ssh -tt`)
+/// so that when we kill the local ssh client on timeout, the dropped connection
+/// hangs up the remote pty and the kernel delivers SIGHUP to the whole remote
+/// job — reaping grandchildren the plain channel-close would orphan (S1, the
+/// remote analogue of the local process-group kill / sidecar `killTree`).
+///
+/// Only the unconfined `bash` tool opts in: a TTY applies line-discipline (CR
+/// translation, echo) that would corrupt the file tools' `cat` output and
+/// heredoc bodies, so those keep the clean piped channel. TTY is also skipped
+/// under password auth, where stdin is already reserved for the secret.
+async fn ssh_run_inner(
+    config: &SshConfig,
+    remote_cmd: &str,
+    timeout_secs: u64,
+    request_tty: bool,
+) -> Result<std::process::Output, String> {
     let password = load_password(config);
     let password_auth = password.is_some();
 
     let mut cmd = tokio::process::Command::new("ssh");
+    // `-tt` must precede the host; ssh options come before `user@host` in the
+    // arg vector (host is last, remote_cmd is appended after).
+    if request_tty && !password_auth {
+        cmd.arg("-tt");
+    }
     cmd.args(config.ssh_args(password_auth));
     cmd.arg(remote_cmd);
     cmd.stdout(std::process::Stdio::piped());
@@ -393,20 +417,23 @@ pub async fn execute_bash(args: &serde_json::Value, config: &SshConfig) -> Resul
 
     let remote_cmd = format!("cd {} && {}", sh_quote(&config.remote_path), command);
 
-    let output = ssh_run(config, &remote_cmd, timeout_secs).await?;
+    // S1: request a remote TTY so a timeout hangs up the remote job tree (SIGHUP)
+    // instead of orphaning grandchildren. `-tt` line-discipline turns bare `\n`
+    // into `\r\n`, so normalize it back out of the captured output below.
+    let output = ssh_run_inner(config, &remote_cmd, timeout_secs, true).await?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     let mut result = String::new();
     if !stdout.is_empty() {
-        result.push_str(&stdout);
+        result.push_str(stdout.replace("\r\n", "\n").as_str());
     }
     if !stderr.is_empty() {
         if !result.is_empty() {
             result.push_str("\n--- stderr ---\n");
         }
-        result.push_str(&stderr);
+        result.push_str(stderr.replace("\r\n", "\n").as_str());
     }
 
     if result.len() > MAX_OUTPUT_SIZE {
