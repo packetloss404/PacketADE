@@ -445,6 +445,33 @@ async fn execute_list_directory(
     Ok(lines.join("\n"))
 }
 
+/// S1: force-kill an entire process tree rooted at `pid`.
+///
+/// `execute_bash` runs `sh -c` / `cmd /C`, which routinely fork grandchildren
+/// (`foo &`, pipelines, sub-shells). `kill_on_drop` only reaps the direct child,
+/// orphaning those. On timeout we kill the whole tree so nothing outlives the
+/// deadline — parity with the sidecar's `killTree`.
+#[cfg(unix)]
+fn kill_process_tree(pid: u32) {
+    // The child leads its own process group (see `process_group(0)` at spawn),
+    // so a negative pid signals every process in that group, not just `sh`.
+    unsafe {
+        libc::kill(-(pid as i32), libc::SIGKILL);
+    }
+}
+
+#[cfg(windows)]
+fn kill_process_tree(pid: u32) {
+    use std::os::windows::process::CommandExt;
+    // taskkill walks the tree from `pid` (/T) and force-kills it (/F). It must
+    // run while the root is still alive, otherwise the snapshot can't reach
+    // reparented grandchildren — so the caller kills before dropping the child.
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .status();
+}
+
 async fn execute_bash(args: &serde_json::Value, project_path: &str) -> Result<String, String> {
     let command = args
         .get("command")
@@ -472,29 +499,74 @@ async fn execute_bash(args: &serde_json::Value, project_path: &str) -> Result<St
     cmd.current_dir(project_path);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
-    // Reap the child if we bail out on the timeout below instead of leaving it
-    // running; dropping the `Child` then terminates the OS process.
+    // Backstop reap of the direct child if the `Child` is dropped; the timeout
+    // path below additionally kills the whole tree (grandchildren included).
     cmd.kill_on_drop(true);
+
+    // S1: give the child its own process group so a timeout can signal every
+    // descendant, not just the `sh`/`cmd` we spawned directly.
+    #[cfg(unix)]
+    cmd.process_group(0);
 
     #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn command: {}", e))?;
+    // Captured before `wait()` — `Child::id()` returns `None` once it has exited.
+    let child_pid = child.id();
 
-    let output = tokio::time::timeout(
+    // Drain stdout/stderr concurrently with the wait so a command that fills the
+    // OS pipe buffer (>64 KB) can't deadlock into a false timeout. The pipe
+    // handles are taken out of `child` so awaiting exit only borrows the child —
+    // we keep ownership so the tree can be killed while it's still alive.
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
+    let read_stdout = async {
+        use tokio::io::AsyncReadExt;
+        let mut buf = Vec::new();
+        if let Some(p) = stdout_pipe.as_mut() {
+            let _ = p.read_to_end(&mut buf).await;
+        }
+        buf
+    };
+    let read_stderr = async {
+        use tokio::io::AsyncReadExt;
+        let mut buf = Vec::new();
+        if let Some(p) = stderr_pipe.as_mut() {
+            let _ = p.read_to_end(&mut buf).await;
+        }
+        buf
+    };
+
+    let run = async { tokio::join!(child.wait(), read_stdout, read_stderr) };
+    let (status, out_bytes, err_bytes) = match tokio::time::timeout(
         std::time::Duration::from_secs(timeout_secs),
-        child.wait_with_output(),
+        run,
     )
     .await
-    .map_err(|_| format!("Command timed out after {} seconds", timeout_secs))?
-    .map_err(|e| format!("Command failed: {}", e))?;
+    {
+        Ok((status_res, out, err)) => (
+            status_res.map_err(|e| format!("Command failed: {}", e))?,
+            out,
+            err,
+        ),
+        Err(_) => {
+            // S1: kill the whole tree before the `Child` is dropped, so
+            // grandchildren don't outlive the deadline.
+            if let Some(pid) = child_pid {
+                kill_process_tree(pid);
+            }
+            let _ = child.start_kill();
+            return Err(format!("Command timed out after {} seconds", timeout_secs));
+        }
+    };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&out_bytes);
+    let stderr = String::from_utf8_lossy(&err_bytes);
 
     let mut result = String::new();
     if !stdout.is_empty() {
@@ -513,7 +585,7 @@ async fn execute_bash(args: &serde_json::Value, project_path: &str) -> Result<St
         result.push_str("\n... [output truncated]");
     }
 
-    let exit_code = output.status.code().unwrap_or(-1);
+    let exit_code = status.code().unwrap_or(-1);
     if exit_code != 0 {
         result.push_str(&format!("\n[exit code: {}]", exit_code));
         return Err(result);
@@ -726,5 +798,41 @@ mod tests {
         assert!(result.is_error);
         assert!(result.content.contains("[exit code: 7]"));
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    // S1: a timed-out bash command must take its whole process tree with it —
+    // not just the `sh` we spawned, but backgrounded grandchildren too.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn local_bash_timeout_kills_grandchildren() {
+        let (base, workspace) = temp_workspace("bash-reap");
+        let pidfile = workspace.join("grandchild.pid");
+        // Background a long `sleep` (the grandchild), record its pid, then block
+        // in a foreground `sleep` so the shell outlives the 1s timeout.
+        let command = format!(
+            "sleep 60 & echo $! > {}; sleep 60",
+            pidfile.to_string_lossy()
+        );
+        let args = json!({ "command": command, "timeout": 1 });
+
+        let result = execute_bash(&args, workspace.to_str().unwrap()).await;
+        assert!(result.is_err(), "command should have timed out");
+
+        // Let the process-group SIGKILL propagate.
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
+        let pid: i32 = std::fs::read_to_string(&pidfile)
+            .expect("grandchild pid file")
+            .trim()
+            .parse()
+            .expect("valid pid");
+        // kill(pid, 0) probes existence: 0 = alive, -1/ESRCH = reaped.
+        let alive = unsafe { libc::kill(pid, 0) } == 0;
+        if alive {
+            // Don't leak the process if the assertion is about to fail.
+            unsafe { libc::kill(pid, libc::SIGKILL) };
+        }
+        let _ = std::fs::remove_dir_all(base);
+        assert!(!alive, "grandchild sleep (pid {pid}) survived the timeout");
     }
 }

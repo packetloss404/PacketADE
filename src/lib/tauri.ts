@@ -519,6 +519,28 @@ export async function gitPullRemote(
   return invoke<string>("git_pull_remote", { serverConfig, remotePath });
 }
 
+/** S3: HEAD blob + working content of one file on a remote SSH workspace, for
+ *  the per-file diff viewer (fed into the same buildDiffRows renderer as local).
+ *  Either side is null when absent (new file → no head; deleted → no work). */
+export interface RemoteFileDiff {
+  head: string | null;
+  work: string | null;
+}
+
+export async function gitDiffFileRemote(
+  serverConfig: GitServerConfigInput,
+  remotePath: string,
+  oldPath: string,
+  newPath: string,
+): Promise<RemoteFileDiff> {
+  return invoke<RemoteFileDiff>("git_diff_file_remote", {
+    serverConfig,
+    remotePath,
+    oldPath,
+    newPath,
+  });
+}
+
 export async function gitCreateBranchRemote(
   serverConfig: GitServerConfigInput,
   remotePath: string,

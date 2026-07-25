@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Server, ShieldCheck, AlertTriangle, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { sshFetchFingerprint, sshPinHost, type HostKey } from "@/lib/tauri";
+import { isSafeKeyPath, UNSAFE_KEYPATH_MESSAGE } from "@/lib/sshKeyPath";
 import type { ServerConfig } from "@/types/server";
 
 interface ServerFormModalProps {
@@ -69,9 +70,13 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
     }
   }
 
+  // S2: reject key paths with control/shell-special bytes before they reach argv.
+  const keyPathInvalid = authMethod === "key" && !isSafeKeyPath(keyPath.trim());
+
   function handleSubmit() {
     if (!name.trim() || !host.trim() || !username.trim()) return;
     if (needsVerification) return; // gate save until pinned
+    if (keyPathInvalid) return;
     onSubmit({
       name: name.trim(),
       host: host.trim(),
@@ -99,9 +104,16 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
           !name.trim() ||
           !host.trim() ||
           !username.trim() ||
-          needsVerification
+          needsVerification ||
+          keyPathInvalid
         }
-        title={needsVerification ? "Verify the host key before saving" : undefined}
+        title={
+          needsVerification
+            ? "Verify the host key before saving"
+            : keyPathInvalid
+              ? UNSAFE_KEYPATH_MESSAGE
+              : undefined
+        }
         className="px-4 py-1.5 text-xs bg-accent-green/15 text-accent-green border border-accent-green/30 rounded font-medium hover:bg-accent-green/25 transition-colors disabled:opacity-40"
       >
         {initial ? "Save" : "Add Server"}
@@ -189,8 +201,19 @@ export function ServerFormModal({ onClose, onSubmit, initial }: ServerFormModalP
               value={keyPath}
               onChange={(e) => setKeyPath(e.target.value)}
               placeholder="~/.ssh/id_rsa"
-              className="bg-bg-primary text-xs text-text-primary font-mono px-3 py-2 rounded border border-bg-border outline-none focus:border-accent-green/50"
+              aria-invalid={keyPathInvalid}
+              aria-describedby={keyPathInvalid ? "keypath-error" : undefined}
+              className={`bg-bg-primary text-xs text-text-primary font-mono px-3 py-2 rounded border outline-none ${
+                keyPathInvalid
+                  ? "border-accent-red/60 focus:border-accent-red"
+                  : "border-bg-border focus:border-accent-green/50"
+              }`}
             />
+            {keyPathInvalid && (
+              <p id="keypath-error" className="text-[10px] text-accent-red">
+                {UNSAFE_KEYPATH_MESSAGE}
+              </p>
+            )}
           </div>
         )}
 

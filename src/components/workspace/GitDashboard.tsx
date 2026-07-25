@@ -31,6 +31,7 @@ import {
   gitCommitRemote,
   gitPushRemote,
   gitPullRemote,
+  gitDiffFileRemote,
   gitCreateBranchRemote,
   getFileHeadContent,
   readFileForDiff,
@@ -545,10 +546,25 @@ export function GitDashboard({
       const reqId = ++diffReqRef.current;
       setDiff({ path: newPath, status: "loading", rows: [] });
       try {
-        const [head, work] = await Promise.all([
-          getFileHeadContent(projectPath, oldPath),
-          readFileForDiff(projectPath, newPath),
-        ]);
+        let head: string | null;
+        let work: string | null;
+        if (isRemote) {
+          // S3: remote workspaces fetch both sides over SSH in one round-trip.
+          if (!serverConfig) throw new Error("Remote server config unavailable");
+          const d = await gitDiffFileRemote(
+            serverConfig,
+            projectPath,
+            oldPath,
+            newPath,
+          );
+          head = d.head;
+          work = d.work;
+        } else {
+          [head, work] = await Promise.all([
+            getFileHeadContent(projectPath, oldPath),
+            readFileForDiff(projectPath, newPath),
+          ]);
+        }
         if (diffReqRef.current !== reqId) return;
         const rows = buildDiffRows(head ?? "", work ?? "");
         setDiff({ path: newPath, status: "ready", rows });
@@ -557,13 +573,13 @@ export function GitDashboard({
         setDiff({ path: newPath, status: "error", rows: [], error: String(e) });
       }
     },
-    [projectPath],
+    [projectPath, isRemote, serverConfig],
   );
 
-  // Remote (SSH) workspaces now support write actions (stage / commit / push /
-  // pull / create-branch) via the git_*_remote commands. The per-file diff
-  // viewer still requires local file reads, so rows stay non-interactive on
-  // remote (see `rowInteractive` below).
+  // Remote (SSH) workspaces support write actions (stage / commit / push /
+  // pull / create-branch) via the git_*_remote commands, and — since S3 — the
+  // per-file diff viewer too (via `git_diff_file_remote`), so rows are
+  // interactive on remote as well when a server config is available.
   const hasUnstaged = files.some((f) => f.unstaged);
 
   return (
@@ -793,7 +809,8 @@ export function GitDashboard({
           files.map((f, i) => {
             const match = reviewContext.matchesByPath.get(flightReviewKey(f.path));
             const primaryRef = match?.refs[0];
-            const rowInteractive = !isRemote;
+            // S3: remote rows are interactive too when we have a server config.
+            const rowInteractive = !isRemote || !!serverConfig;
             return (
               <div
                 key={`${f.path}-${i}`}

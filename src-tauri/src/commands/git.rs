@@ -671,6 +671,37 @@ pub async fn git_commit_remote(
     worktree::ssh_commit(&cfg, &remote_path, &message).await
 }
 
+/// S3: HEAD blob + working-tree content for one file on a remote SSH workspace,
+/// so the GitDashboard per-file diff viewer works on remote rows too (it feeds
+/// these two strings into the same `buildDiffRows` renderer as local diffs).
+/// Either side is `null` when absent (new file → no head; deleted → no work).
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteFileDiff {
+    pub head: Option<String>,
+    pub work: Option<String>,
+}
+
+/// S3: fetch the HEAD and working content of one file for the remote diff view.
+/// `old_path`/`new_path` differ only for renames (diff new working vs old HEAD).
+#[tauri::command]
+pub async fn git_diff_file_remote(
+    server_config: GitServerConfigDto,
+    remote_path: String,
+    old_path: String,
+    new_path: String,
+) -> Result<RemoteFileDiff, String> {
+    if remote_path.trim().is_empty() {
+        return Err("Remote path cannot be empty".to_string());
+    }
+    super::validate_input_size(&old_path, super::MAX_INPUT_SIZE, "File path")?;
+    super::validate_input_size(&new_path, super::MAX_INPUT_SIZE, "File path")?;
+    let cfg = server_config.into_ssh_config(remote_path.clone());
+    let head = worktree::ssh_show_head(&cfg, &remote_path, &old_path).await?;
+    let work = worktree::ssh_read_working_file(&cfg, &remote_path, &new_path).await?;
+    Ok(RemoteFileDiff { head, work })
+}
+
 /// Push the current branch of a remote SSH workspace to origin.
 #[tauri::command]
 pub async fn git_push_remote(
