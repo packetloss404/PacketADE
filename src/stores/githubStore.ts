@@ -23,8 +23,15 @@ import {
   githubGetPrDiff,
   githubListNotifications,
   githubMarkNotificationRead,
+  gitHostListConnections,
+  gitHostAddGitea,
+  gitHostRemoveConnection,
+  gitHostSetActive,
+  gitGetOriginUrl,
 } from "@/lib/tauri";
-import type { GithubNotification } from "@/lib/tauri";
+import type { GithubNotification, GitHostConnectionInfo } from "@/lib/tauri";
+import { resolveConnectionForRemote } from "@/lib/gitHostResolve";
+import { GITHUB_CONNECTION_ID } from "@/lib/git-hosts";
 import type {
   GitHubRepo,
   GitHubIssue,
@@ -137,9 +144,25 @@ interface GitHubStore {
   /** Unix millis of the last successful repos/issues/PRs fetch. */
   lastSyncAt: number | null;
 
+  /** G2: all configured git-host connections (GitHub + Gitea/Forgejo). */
+  connections: GitHostConnectionInfo[];
+  /** G3: the connection the current workspace resolves to (from its origin
+   *  remote). Defaults to GitHub. Drives which host the pane targets + branding. */
+  activeConnectionId: string;
+
   initializeAuth: () => Promise<void>;
   connect: (token: string) => Promise<void>;
   disconnect: () => Promise<void>;
+  /** G2: refresh the connection list from the backend. */
+  loadConnections: () => Promise<void>;
+  /** G2: add a Gitea/Forgejo host (base URL already normalized). */
+  addGiteaHost: (baseUrl: string, label: string, token: string) => Promise<void>;
+  /** G2: remove a non-GitHub connection. */
+  removeGitHostConnection: (id: string) => Promise<void>;
+  /** G3: manually set the active connection (host override). */
+  setActiveConnection: (id: string) => void;
+  /** G3: resolve + set the active connection from a project's origin remote. */
+  resolveActiveConnectionForProject: (projectPath: string) => Promise<void>;
   fetchRepos: () => Promise<void>;
   selectRepo: (owner: string, repo: string) => void;
   fetchIssues: () => Promise<void>;
@@ -289,6 +312,8 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   prDiff: null,
   isPrLoading: false,
   lastSyncAt: null,
+  connections: [],
+  activeConnectionId: GITHUB_CONNECTION_ID,
 
   // v0.8-B: per-PR CI status cache.
   prChecks: {},
@@ -402,6 +427,56 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         isLoading: false,
         error: String(e),
       });
+    }
+  },
+
+  loadConnections: async () => {
+    try {
+      set({ connections: await gitHostListConnections() });
+    } catch (e) {
+      console.warn("[githubStore] loadConnections failed:", e);
+    }
+  },
+
+  addGiteaHost: async (baseUrl, label, token) => {
+    await gitHostAddGitea(baseUrl, label, token);
+    await get().loadConnections();
+  },
+
+  removeGitHostConnection: async (id) => {
+    const wasActive = get().activeConnectionId === id;
+    await gitHostRemoveConnection(id);
+    await get().loadConnections();
+    // If we removed the active host, fall back to GitHub — and sync the backend
+    // (its active_connection_id must not dangle at the deleted id).
+    if (wasActive) {
+      set({ activeConnectionId: GITHUB_CONNECTION_ID });
+      void gitHostSetActive(GITHUB_CONNECTION_ID).catch((e) =>
+        console.warn("[githubStore] gitHostSetActive failed:", e),
+      );
+    }
+  },
+
+  setActiveConnection: (id) => {
+    set({ activeConnectionId: id });
+    void gitHostSetActive(id).catch((e) =>
+      console.warn("[githubStore] gitHostSetActive failed:", e),
+    );
+  },
+
+  resolveActiveConnectionForProject: async (projectPath) => {
+    if (!projectPath) return;
+    try {
+      // Ensure the connection list is loaded so the resolver can match.
+      if (get().connections.length === 0) await get().loadConnections();
+      const origin = await gitGetOriginUrl(projectPath);
+      const { connectionId } = resolveConnectionForRemote(origin, get().connections);
+      const active = connectionId ?? GITHUB_CONNECTION_ID;
+      set({ activeConnectionId: active });
+      // Tell the backend so its commands target the right host.
+      await gitHostSetActive(active);
+    } catch (e) {
+      console.warn("[githubStore] resolveActiveConnectionForProject failed:", e);
     }
   },
 

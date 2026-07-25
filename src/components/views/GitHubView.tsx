@@ -18,6 +18,9 @@ import {
   X,
 } from "lucide-react";
 import { useGitHubStore } from "@/stores/githubStore";
+import { capabilitiesFor, hostLabel } from "@/lib/git-hosts";
+import { HostIcon } from "@/components/HostIcon";
+import type { GitHostKind } from "@/lib/tauri";
 import { useIssueStore } from "@/stores/issueStore";
 import { useLayoutStore } from "@/stores/layoutStore";
 import { useAppStore } from "@/stores/appStore";
@@ -135,27 +138,54 @@ export function GitHubView() {
     initializeAuth();
   }, [initializeAuth]);
 
+  // G3: resolve which host this workspace belongs to (from its origin remote)
+  // so the pane targets the right host and shows the right branding.
+  const resolveActiveConnectionForProject = useGitHubStore(
+    (s) => s.resolveActiveConnectionForProject,
+  );
   useEffect(() => {
-    if (isConnected && repos.length === 0) {
+    if (projectPath) void resolveActiveConnectionForProject(projectPath);
+  }, [projectPath, resolveActiveConnectionForProject]);
+
+  // G10: capability gating for the active host (Gitea hides GitHub-only surfaces).
+  const connections = useGitHubStore((s) => s.connections);
+  const activeConnectionId = useGitHubStore((s) => s.activeConnectionId);
+  const activeHostKind = useMemo(
+    () => connections.find((c) => c.id === activeConnectionId)?.kind ?? "github",
+    [connections, activeConnectionId],
+  );
+  const activeCaps = useMemo(() => capabilitiesFor(activeHostKind), [activeHostKind]);
+  const setActiveConnection = useGitHubStore((s) => s.setActiveConnection);
+  useEffect(() => {
+    // If we land on a tab the active host doesn't support, fall back to Issues.
+    if (tab === "activity" && !activeCaps.activityFeed) setTab("issues");
+  }, [tab, activeCaps.activityFeed]);
+
+  // Refetch repos on connect AND whenever the active host changes (a Gitea
+  // workspace resolves to a different connection → different repo set).
+  useEffect(() => {
+    if (isConnected) {
       fetchRepos();
     }
-  }, [isConnected, repos.length, fetchRepos]);
+  }, [isConnected, activeConnectionId, fetchRepos]);
 
   useEffect(() => {
     if (isConnected && config.selectedRepo) {
       fetchIssues();
       fetchPrs();
     }
-  }, [isConnected, config.selectedRepo, fetchIssues, fetchPrs]);
+    // activeConnectionId: the same owner/repo lives on a different host, so a
+    // host switch must refetch (and correct any fetch that raced resolution).
+  }, [isConnected, config.selectedRepo, activeConnectionId, fetchIssues, fetchPrs]);
 
   // Lazy-load notifications the first time the Inbox tab is opened. Unlike
   // issues/PRs these are global to the authenticated user, so they don't
-  // depend on the selected repo.
+  // depend on the selected repo (but they DO depend on the active host).
   useEffect(() => {
     if (isConnected && tab === "inbox" && notifications.length === 0) {
       fetchNotifications();
     }
-  }, [isConnected, tab, notifications.length, fetchNotifications]);
+  }, [isConnected, tab, notifications.length, activeConnectionId, fetchNotifications]);
 
   useEffect(() => {
     if (selectedIssueNum == null && issues.length > 0) {
@@ -315,7 +345,31 @@ export function GitHubView() {
         isLoading={isLoading || isPrLoading}
         onNewPR={() => setShowPRModal(true)}
         onDisconnect={disconnect}
+        hostKind={activeHostKind}
       />
+
+      {/* G13: host indicator + override (shown once a second host is configured) */}
+      {connections.length > 1 && (
+        <div className="flex items-center gap-1.5 px-3 py-1 bg-bg-secondary border-b border-bg-border flex-shrink-0">
+          <span className="text-[10px] text-text-muted">Host</span>
+          {connections.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setActiveConnection(c.id)}
+              title={c.baseUrl}
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] transition-colors ${
+                c.id === activeConnectionId
+                  ? "bg-bg-elevated text-text-primary border border-line-strong"
+                  : "text-text-muted hover:text-text-secondary border border-transparent"
+              }`}
+            >
+              <HostIcon kind={c.kind} size={11} />
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <SubTabs
         tab={tab}
@@ -324,6 +378,7 @@ export function GitHubView() {
         prCount={prs.length}
         unreadCount={unreadCount}
         lastSyncAt={lastSyncAt}
+        showActivity={activeCaps.activityFeed}
       />
 
       {error && (
@@ -561,6 +616,8 @@ interface HeaderBandProps {
   isLoading: boolean;
   onNewPR: () => void;
   onDisconnect: () => void;
+  /** G13: the active host, so the header icon + label follow the workspace. */
+  hostKind: GitHostKind;
 }
 
 function HeaderBand({
@@ -572,11 +629,12 @@ function HeaderBand({
   isLoading,
   onNewPR,
   onDisconnect,
+  hostKind,
 }: HeaderBandProps) {
   return (
     <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-bg-border bg-bg-secondary flex-shrink-0">
-      <Github size={13} className="text-text-primary" />
-      <span className="text-xs font-semibold text-text-primary">GitHub</span>
+      <HostIcon kind={hostKind} size={13} className="text-text-primary" />
+      <span className="text-xs font-semibold text-text-primary">{hostLabel(hostKind)}</span>
 
       <RepoSelector
         selected={selected}
@@ -627,6 +685,8 @@ interface SubTabsProps {
   prCount: number;
   unreadCount: number;
   lastSyncAt: number | null;
+  /** G10: Gitea has no Events activity feed — hide the tab for it. */
+  showActivity: boolean;
 }
 
 function SubTabs({
@@ -636,6 +696,7 @@ function SubTabs({
   prCount,
   unreadCount,
   lastSyncAt,
+  showActivity,
 }: SubTabsProps) {
   return (
     <div className="flex items-center px-2.5 bg-bg-secondary border-b border-bg-border flex-shrink-0">
@@ -655,13 +716,15 @@ function SubTabs({
         badge={prCount}
         accent="purple"
       />
-      <GhTab
-        active={tab === "activity"}
-        onClick={() => onTab("activity")}
-        icon={<Clock size={10} />}
-        label="Activity"
-        accent="default"
-      />
+      {showActivity && (
+        <GhTab
+          active={tab === "activity"}
+          onClick={() => onTab("activity")}
+          icon={<Clock size={10} />}
+          label="Activity"
+          accent="default"
+        />
+      )}
       <GhTab
         active={tab === "inbox"}
         onClick={() => onTab("inbox")}

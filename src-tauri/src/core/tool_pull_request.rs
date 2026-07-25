@@ -47,11 +47,24 @@ pub fn create_pull_request_definition() -> ToolDefinition {
     }
 }
 
-/// Pluck a `https://github.com/.../pull/<n>` URL out of `gh` stdout.
+/// Pluck a PR URL out of CLI stdout. Host-agnostic (G14): matches GitHub's
+/// `.../pull/<n>` and Gitea/Forgejo's `.../pulls/<n>` so the same extraction
+/// works whether the PR was opened with `gh` or `tea`/the API.
 fn extract_pr_url(stdout: &str) -> Option<String> {
     for line in stdout.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("https://github.com/") && trimmed.contains("/pull/") {
+        if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+            continue;
+        }
+        // Require a numeric PR index right after `/pull/` or `/pulls/` so an
+        // incidental API/tutorial URL isn't mistaken for the created PR.
+        let has_pr_number = ["/pull/", "/pulls/"].iter().any(|seg| {
+            trimmed
+                .split_once(seg)
+                .map(|(_, rest)| rest.chars().next().is_some_and(|c| c.is_ascii_digit()))
+                .unwrap_or(false)
+        });
+        if has_pr_number {
             return Some(trimmed.to_string());
         }
     }
