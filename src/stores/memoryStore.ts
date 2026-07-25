@@ -135,6 +135,10 @@ interface MemoryStore {
   togglePinPattern: (id: string) => void;
   clearMemory: () => void;
 
+  /** M3: merge a JSON memory export into the corpus (dedup by id). Returns the
+   *  counts of newly-added items, or null if the JSON was invalid. */
+  importMemory: (json: string) => { addedEvents: number; addedPatterns: number } | null;
+
   /** Context injection (live, not snapshot). Accepts either a project-path
    * string (legacy single-arg form) or an options object so callers can
    * pass a sessionId without breaking back-compat. */
@@ -375,6 +379,94 @@ export function filterMemoryEventsByScope<
     if (cutoff !== null && e.timestamp < cutoff) return false;
     return true;
   });
+}
+
+/* ------------------------------------------------------------------ *
+ * M3 — export / import.
+ * ------------------------------------------------------------------ */
+
+/** M3: stable, import-round-trippable JSON export of the memory corpus. */
+export function serializeMemoryExport(events: MemoryEvent[], patterns: LearnedPattern[]): string {
+  return JSON.stringify({ version: 1, events, patterns }, null, 2);
+}
+
+/** M3: parse + shallow-validate a JSON memory export. Returns null on bad input. */
+export function parseMemoryImport(
+  json: string,
+): { events: MemoryEvent[]; patterns: LearnedPattern[] } | null {
+  try {
+    const parsed = JSON.parse(json) as { events?: unknown; patterns?: unknown };
+    if (!parsed || typeof parsed !== "object") return null;
+    const events = Array.isArray(parsed.events) ? (parsed.events as MemoryEvent[]) : [];
+    const patterns = Array.isArray(parsed.patterns) ? (parsed.patterns as LearnedPattern[]) : [];
+    return {
+      // Only entries with an id are merge candidates (dedup key).
+      events: events.filter((e) => e && typeof e.id === "string"),
+      patterns: patterns.filter((p) => p && typeof p.id === "string"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * M3: merge imported events/patterns into the current corpus, deduped by id
+ * (existing entries win). Returns the merged arrays plus counts of new items.
+ */
+export function mergeMemoryImport(
+  current: { events: MemoryEvent[]; patterns: LearnedPattern[] },
+  imported: { events: MemoryEvent[]; patterns: LearnedPattern[] },
+): {
+  events: MemoryEvent[];
+  patterns: LearnedPattern[];
+  addedEvents: number;
+  addedPatterns: number;
+} {
+  const merge = <T extends { id: string }>(
+    existing: T[],
+    incoming: T[],
+  ): { merged: T[]; added: number } => {
+    const map = new Map(existing.map((x) => [x.id, x]));
+    let added = 0;
+    for (const x of incoming) {
+      if (!map.has(x.id)) {
+        map.set(x.id, x);
+        added++;
+      }
+    }
+    return { merged: [...map.values()], added };
+  };
+  const e = merge(current.events, imported.events);
+  const p = merge(current.patterns, imported.patterns);
+  return { events: e.merged, patterns: p.merged, addedEvents: e.added, addedPatterns: p.added };
+}
+
+/** M3: a human-readable Markdown digest of the memory corpus. */
+export function serializeMemoryMarkdown(events: MemoryEvent[], patterns: LearnedPattern[]): string {
+  const lines: string[] = ["# PacketADE memory export", ""];
+  const byType = new Map<string, number>();
+  for (const ev of events) byType.set(ev.type, (byType.get(ev.type) ?? 0) + 1);
+  lines.push(`- Events: ${events.length}`);
+  for (const [t, n] of byType) lines.push(`  - ${t}: ${n}`);
+  lines.push(`- Learned patterns: ${patterns.length}`, "");
+
+  if (patterns.length) {
+    const byCat = new Map<string, LearnedPattern[]>();
+    for (const p of patterns) {
+      const arr = byCat.get(p.category) ?? [];
+      arr.push(p);
+      byCat.set(p.category, arr);
+    }
+    lines.push("## Learned patterns", "");
+    for (const [cat, ps] of byCat) {
+      lines.push(`### ${cat}`, "");
+      for (const p of [...ps].sort((a, b) => b.confidence - a.confidence)) {
+        lines.push(`- ${p.pinned ? "📌 " : ""}(${Math.round(p.confidence * 100)}%) ${p.pattern}`);
+      }
+      lines.push("");
+    }
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -801,6 +893,17 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
       summariesSinceLastRefresh: 0,
     });
     void persistState([], []);
+  },
+
+  importMemory: (json) => {
+    const parsed = parseMemoryImport(json);
+    if (!parsed) return null;
+    const merged = mergeMemoryImport({ events: get().events, patterns: get().patterns }, parsed);
+    const events = capEvents(merged.events);
+    const patterns = capPatterns(merged.patterns);
+    set({ events, patterns });
+    void persistState(events, patterns);
+    return { addedEvents: merged.addedEvents, addedPatterns: merged.addedPatterns };
   },
 
   getContextForSession: (input) => {
