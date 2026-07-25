@@ -3408,12 +3408,18 @@ fn parse_notification(v: &serde_json::Value) -> GithubNotification {
         .and_then(|s| s.get("type"))
         .and_then(|x| x.as_str())
         .unwrap_or("");
+    // G12: Gitea provides a ready-made subject.html_url; GitHub does not, so we
+    // synthesize one from the API subject URL there.
+    let subject_html_url = subject
+        .and_then(|s| s.get("html_url"))
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty());
     GithubNotification {
+        // GitHub ids are strings; Gitea's are numbers.
         id: v
             .get("id")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string(),
+            .and_then(|x| x.as_str().map(str::to_string).or_else(|| x.as_u64().map(|n| n.to_string())))
+            .unwrap_or_default(),
         unread: v.get("unread").and_then(|x| x.as_bool()).unwrap_or(false),
         reason: v
             .get("reason")
@@ -3431,7 +3437,9 @@ fn parse_notification(v: &serde_json::Value) -> GithubNotification {
             .unwrap_or("")
             .to_string(),
         subject_type: subject_type.to_string(),
-        html_url: notification_subject_html_url(subject_type, subject_url, &repository),
+        html_url: subject_html_url
+            .map(str::to_string)
+            .unwrap_or_else(|| notification_subject_html_url(subject_type, subject_url, &repository)),
         repository,
     }
 }
@@ -3443,14 +3451,15 @@ pub async fn github_list_notifications(
     auth: State<'_, GitHubAuthState>,
     all: Option<bool>,
 ) -> Result<Vec<GithubNotification>, String> {
-    let client = github_client_from_state(auth.inner()).await?;
+    let (client, host) = active_host_session(auth.inner()).await?;
     let all = all.unwrap_or(false);
-    let url = format!(
-        "https://api.github.com/notifications?all={}&per_page=50",
-        all
-    );
+    let url = host.url(&format!(
+        "/notifications?all={}&{}",
+        all,
+        host.page_params(50, 1)
+    ));
     let resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
@@ -3468,13 +3477,14 @@ pub async fn github_mark_notification_read(
     thread_id: String,
 ) -> Result<(), String> {
     validate_github_name(&thread_id, "thread_id")?;
-    let client = github_client_from_state(auth.inner()).await?;
-    let url = format!(
-        "https://api.github.com/notifications/threads/{}",
-        thread_id
-    );
+    let (client, host) = active_host_session(auth.inner()).await?;
+    // GitHub marks a thread read with a bare PATCH; Gitea needs ?to-status=read.
+    let path = match host.kind {
+        GitHostKind::GitHub => format!("/notifications/threads/{}", thread_id),
+        GitHostKind::Gitea => format!("/notifications/threads/{}?to-status=read", thread_id),
+    };
     let resp = client
-        .patch(&url)
+        .patch(host.url(&path))
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
