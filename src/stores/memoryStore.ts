@@ -147,8 +147,12 @@ interface MemoryStore {
   importMemory: (json: string) => { addedEvents: number; addedPatterns: number } | null;
 
   /** M5: record which learned-pattern ids were injected into a flight's launch
-   *  brief, so their confidence can be rerated when the flight settles. */
+   *  brief, so their confidence can be rerated when the flight settles. Unions
+   *  with any prior record for the same flight. */
   recordInjectedPatterns: (flightId: string, patternIds: string[]) => void;
+  /** M5: drop a flight's injection provenance without rerating (e.g. the flight
+   *  was cancelled — not the pattern's fault). */
+  clearInjectedPatterns: (flightId: string) => void;
   /** M5: rerate the confidence of every pattern injected into `flightId` by the
    *  flight's success, then clear that flight's provenance. No-op if nothing was
    *  recorded (e.g. injection disabled, or the flight settled after a restart). */
@@ -359,7 +363,9 @@ export function searchMemoryEvents<T extends { payload: unknown }>(
   const q = query.trim();
   if (!q) return events;
   const ql = q.toLowerCase();
-  const candidates = events.map((e) => JSON.stringify(e.payload).toLowerCase());
+  // `?? {}` guards against a malformed event whose payload is undefined —
+  // JSON.stringify(undefined) returns undefined, and .toLowerCase() would throw.
+  const candidates = events.map((e) => JSON.stringify(e.payload ?? {}).toLowerCase());
   const scores = relevanceScores(ql, candidates);
   return events
     .map((e, i) => ({ e, i, score: scores[i], substr: candidates[i].includes(ql) }))
@@ -405,18 +411,42 @@ export function serializeMemoryExport(events: MemoryEvent[], patterns: LearnedPa
   return JSON.stringify({ version: 1, events, patterns }, null, 2);
 }
 
-/** M3: parse + shallow-validate a JSON memory export. Returns null on bad input. */
+const IMPORTABLE_EVENT_TYPES = new Set<MemoryEventType>([
+  "session_completed",
+  "task_completed",
+  "flight_completed",
+  "manual_note",
+]);
+
+/** A structurally-valid MemoryEvent: correct id/type/timestamp and an object
+ *  payload. This is the import trust boundary — a malformed entry (e.g. a
+ *  `flight_completed` with no `payload.lessonsLearned`) would otherwise crash
+ *  the digest / hint / search consumers that assume the shape. */
+function isValidMemoryEvent(e: unknown): e is MemoryEvent {
+  if (!e || typeof e !== "object") return false;
+  const ev = e as Record<string, unknown>;
+  return (
+    typeof ev.id === "string" &&
+    typeof ev.timestamp === "number" &&
+    IMPORTABLE_EVENT_TYPES.has(ev.type as MemoryEventType) &&
+    typeof ev.payload === "object" &&
+    ev.payload !== null
+  );
+}
+
+/** M3: parse + validate a JSON memory export. Returns null on bad input. */
 export function parseMemoryImport(
   json: string,
 ): { events: MemoryEvent[]; patterns: LearnedPattern[] } | null {
   try {
     const parsed = JSON.parse(json) as { events?: unknown; patterns?: unknown };
     if (!parsed || typeof parsed !== "object") return null;
-    const events = Array.isArray(parsed.events) ? (parsed.events as MemoryEvent[]) : [];
+    const events = Array.isArray(parsed.events) ? parsed.events : [];
     const patterns = Array.isArray(parsed.patterns) ? (parsed.patterns as LearnedPattern[]) : [];
     return {
-      // Only entries with an id are merge candidates (dedup key).
-      events: events.filter((e) => e && typeof e.id === "string"),
+      // Structurally validate events (untrusted import data); patterns only need
+      // a string id to be a dedup candidate.
+      events: events.filter(isValidMemoryEvent),
       patterns: patterns.filter((p) => p && typeof p.id === "string"),
     };
   } catch {
@@ -752,7 +782,17 @@ export const useMemoryStore = create<MemoryStore>((set, get) => ({
   },
 
   recordInjectedPatterns: (flightId, patternIds) => {
-    if (patternIds.length > 0) injectedPatternsByFlight.set(flightId, patternIds);
+    if (patternIds.length === 0) return;
+    // Union with any prior record: a flight can be launched more than once
+    // (e.g. extra attempts added later) with different injected sets, and every
+    // pattern that ever rode along should be eligible for rerating.
+    const prior = injectedPatternsByFlight.get(flightId);
+    const merged = prior ? [...new Set([...prior, ...patternIds])] : patternIds;
+    injectedPatternsByFlight.set(flightId, merged);
+  },
+
+  clearInjectedPatterns: (flightId) => {
+    injectedPatternsByFlight.delete(flightId);
   },
 
   adjustConfidenceForFlight: (flightId, success) => {

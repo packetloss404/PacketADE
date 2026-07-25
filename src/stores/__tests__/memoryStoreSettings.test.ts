@@ -140,6 +140,97 @@ describe("memoryStore settings integration", () => {
     expect(mocks.saveMemorySlice).not.toHaveBeenCalled();
   });
 
+  it("M5: adjustConfidenceForFlight decays injected patterns on failure", async () => {
+    const { useMemoryStore } = await loadStores();
+    useMemoryStore.setState({
+      events: [],
+      patterns: [
+        {
+          id: "p-inj",
+          pattern: "injected",
+          category: "pitfall",
+          confidence: 0.8,
+          extractedAt: 1,
+          projectPath: "D:/projects/A",
+        },
+      ],
+    });
+    const store = useMemoryStore.getState();
+    store.recordInjectedPatterns("flight-1", ["p-inj"]);
+    store.adjustConfidenceForFlight("flight-1", false); // decay
+    expect(useMemoryStore.getState().patterns[0].confidence).toBeCloseTo(0.7);
+    // provenance consumed — a second call is a no-op
+    store.adjustConfidenceForFlight("flight-1", false);
+    expect(useMemoryStore.getState().patterns[0].confidence).toBeCloseTo(0.7);
+  });
+
+  it("M5: recordInjectedPatterns unions successive records for the same flight", async () => {
+    const { useMemoryStore } = await loadStores();
+    const mk = (id: string) => ({
+      id,
+      pattern: id,
+      category: "convention" as const,
+      confidence: 0.8,
+      extractedAt: 1,
+      projectPath: "D:/projects/A",
+    });
+    useMemoryStore.setState({ events: [], patterns: [mk("p1"), mk("p2")] });
+    const store = useMemoryStore.getState();
+    store.recordInjectedPatterns("flight-1", ["p1"]);
+    store.recordInjectedPatterns("flight-1", ["p2"]); // union, not overwrite
+    store.adjustConfidenceForFlight("flight-1", true);
+    const patterns = useMemoryStore.getState().patterns;
+    expect(patterns.find((p) => p.id === "p1")?.confidence).toBeCloseTo(0.85);
+    expect(patterns.find((p) => p.id === "p2")?.confidence).toBeCloseTo(0.85);
+  });
+
+  it("M5: clearInjectedPatterns drops provenance without rerating", async () => {
+    const { useMemoryStore } = await loadStores();
+    useMemoryStore.setState({
+      events: [],
+      patterns: [
+        {
+          id: "p",
+          pattern: "p",
+          category: "convention",
+          confidence: 0.8,
+          extractedAt: 1,
+          projectPath: "D:/projects/A",
+        },
+      ],
+    });
+    const store = useMemoryStore.getState();
+    store.recordInjectedPatterns("flight-1", ["p"]);
+    store.clearInjectedPatterns("flight-1");
+    store.adjustConfidenceForFlight("flight-1", false); // provenance gone → no-op
+    expect(useMemoryStore.getState().patterns[0].confidence).toBe(0.8);
+  });
+
+  it("M3/#4: parseMemoryImport drops structurally-malformed events", async () => {
+    const { parseMemoryImport } = await loadStores();
+    const json = JSON.stringify({
+      events: [
+        // valid
+        {
+          id: "ok",
+          type: "manual_note",
+          timestamp: 1,
+          projectPath: "/p",
+          payload: { source: "s", summary: "x", body: "", tags: [] },
+        },
+        // flight_completed with no payload — would crash digest/hint consumers
+        { id: "bad1", type: "flight_completed", timestamp: 2, projectPath: "/p" },
+        // unknown type
+        { id: "bad2", type: "bogus", timestamp: 3, projectPath: "/p", payload: {} },
+        // non-numeric timestamp
+        { id: "bad3", type: "manual_note", timestamp: "nope", projectPath: "/p", payload: {} },
+      ],
+      patterns: [],
+    });
+    const parsed = parseMemoryImport(json);
+    expect(parsed?.events.map((e) => e.id)).toEqual(["ok"]);
+  });
+
   it("caps stored events using the configured max", async () => {
     const { useMemorySettingsStore, useMemoryStore } = await loadStores();
     useMemorySettingsStore.getState().setMaxEvents(20);

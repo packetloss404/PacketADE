@@ -72,7 +72,7 @@ export function selectRecurringErrorHint(
   const lessonFlights = new Map<string, Set<string>>();
   const lessonText = new Map<string, string>();
   for (const e of events) {
-    if (e.type !== "flight_completed") continue;
+    if (e.type !== "flight_completed" || !Array.isArray(e.payload?.lessonsLearned)) continue;
     const seen = new Set<string>();
     for (const lesson of e.payload.lessonsLearned) {
       const key = lesson.trim().toLowerCase();

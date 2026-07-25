@@ -53,7 +53,7 @@ export function computeMemoryDigest(
     if (e.timestamp < cutoff) continue;
     eventCount++;
     byType[e.type]++;
-    if (e.type === "flight_completed") {
+    if (e.type === "flight_completed" && Array.isArray(e.payload?.lessonsLearned)) {
       for (const lesson of e.payload.lessonsLearned) {
         const trimmed = lesson.trim();
         if (trimmed) recentLessons.push(trimmed);
